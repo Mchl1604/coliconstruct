@@ -1,0 +1,27 @@
+.create-project-card {
+    margin: 0 auto;
+}
+
+.create-project-card .form-label {
+    font-weight: 600;
+    margin-bottom: .45rem;
+    color: #374151;
+}
+
+.create-project-card .form-control,
+.create-project-card .form-select {
+    height: 46px;
+    border-radius: 10px;
+    border: 1px solid #dcdfe5;
+    transition: all .2s ease;
+}
+
+.create-project-card .form-control:focus,
+.create-project-card .form-select:focus {
+    border-color: #0d6efd;
+    box-shadow: 0 0 0 .2rem rgba(13,110,253,.15);
+}
+
+.create-project-card .btn {
+    min-width: 120px;
+}

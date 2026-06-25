@@ -1,0 +1,109 @@
+
+    .projects-status-tabs {
+        border-bottom: 1px solid #e5e7eb;
+        gap: 0.35rem;
+    }
+
+    .projects-status-tabs .nav-link {
+        border: 0;
+        border-radius: 0.5rem 0.5rem 0 0;
+        color: #0d6efd;
+        font-weight: 500;
+        padding: 0.7rem 1rem;
+    }
+
+    .projects-status-tabs .nav-link:hover {
+        color: #0d6efd;
+    }
+
+    .projects-status-tabs .nav-link.active {
+        background: #0d6efd;
+        color: #ffffff;
+    }
+
+    .projects-action-buttons {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.35rem;
+        flex-wrap: nowrap;
+        white-space: nowrap;
+    }
+    .projects-status-tabs {
+    border-bottom: 1px solid #e5e7eb;
+    gap: 0.35rem;
+}
+
+.projects-status-tabs .nav-link {
+    border: 0;
+    border-radius: .5rem .5rem 0 0;
+    color: #2563eb;
+    font-weight: 500;
+    padding: .7rem 1rem;
+}
+
+.projects-status-tabs .nav-link:hover {
+    color: #0d6efd;
+}
+
+.projects-status-tabs .nav-link.active {
+    background: #2563eb;
+    color: #fff;
+}
+
+.projects-action-buttons {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: .35rem;
+    flex-wrap: nowrap;
+    white-space: nowrap;
+}
+
+/* DataTable */
+.dt-layout-row:first-child{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:1rem;
+    margin-bottom:1rem;
+}
+
+.dt-layout-start{
+    display:flex;
+    align-items:center;
+}
+
+.dt-layout-end{
+    display:flex;
+    justify-content:flex-end;
+    align-items:center;
+}
+
+.dt-search input{
+    min-width:250px;
+}
+
+@media (max-width:768px){
+
+    .dt-layout-row:first-child{
+        flex-direction:column;
+        align-items:stretch;
+    }
+
+    .dt-layout-start,
+    .dt-layout-end{
+        width:100%;
+        justify-content:flex-start;
+    }
+
+    .dt-search{
+        width:100%;
+    }
+
+    .dt-search input{
+        width:100%;
+        min-width:0;
+    }
+}
+    
