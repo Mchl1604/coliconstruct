@@ -3,6 +3,7 @@
 @push('styles')
     <link href="/css/super-admin/createProject.css" rel="stylesheet">
     <link href="/css/super-admin/createProjectProgress.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 @endpush
 
 @section('content')
@@ -49,6 +50,18 @@
 
     <div class="card shadow-sm border-0 rounded-4 create-project-card">
         <div class="card-body p-4 p-lg-5">
+            @php
+                $technicianWizardData = $technicians->map(function ($technician) use ($technicianSchedules) {
+                    return [
+                        'id' => $technician->technician_id,
+                        'name' => $technician->name,
+                        'role' => $technician->role,
+                        'skills' => $technician->skill_names,
+                        'schedules' => $technicianSchedules[$technician->technician_id] ?? [],
+                    ];
+                })->values();
+            @endphp
+
             <form method="POST" action="{{ route('super-admin.projects.create.store') }}" enctype="multipart/form-data"
                 data-project-wizard>
                 @csrf
@@ -90,22 +103,22 @@
                     </div>
 
                     <div class="row g-3">
-                        <div class="col-md-4">
+                        <div class="col-md-5">
                             <label for="surname" class="form-label">Surname</label>
                             <input type="text" name="surname" id="surname" class="form-control"
                                 placeholder="Enter surname" data-summary-input="surname" required>
                         </div>
 
-                        <div class="col-md-4">
+                        <div class="col-md-5">
                             <label for="firstname" class="form-label">First Name</label>
                             <input type="text" name="firstname" id="firstname" class="form-control"
                                 placeholder="Enter first name" data-summary-input="firstname" required>
                         </div>
 
-                        <div class="col-md-4">
-                            <label for="middleName" class="form-label">Middle Name</label>
+                        <div class="col-md-2">
+                            <label for="middleName" class="form-label">Middle Initial</label>
                             <input type="text" name="middle_name" id="middleName" class="form-control"
-                                placeholder="Enter middle name" data-summary-input="middle_name">
+                                placeholder="Enter M.I" data-summary-input="middle_name">
                         </div>
 
                         <div class="col-md-6">
@@ -138,53 +151,36 @@
                                 placeholder="Enter project address" data-summary-input="project_address" required></textarea>
                         </div>
 
+                        <div class="col-md-6">
+                            <label for="quotationAmount" class="form-label">Quotation Amount</label>
+                            <div class="input-group">
+                                <span class="input-group-text">&#8369;</span>
+                                <input type="number" name="quotation_amount" id="quotationAmount"
+                                    class="form-control" min="0" step="0.01" inputmode="decimal"
+                                    placeholder="Enter quotation amount" data-summary-input="quotation_amount"
+                                    required>
+                            </div>
+                        </div>
+
                         <div class="col-12">
                             <div class="d-flex align-items-center justify-content-between gap-3 mb-2">
                                 <label class="form-label mb-0">Project Type</label>
                                 <small class="text-secondary">Select one or more</small>
                             </div>
+                            
 
                             <div class="project-type-grid" data-project-type-group>
-                                <label class="project-type-option is-selected" data-project-type-option>
-                                    <input type="checkbox" name="project_types[]" value="Aircon Installation"
-                                        class="visually-hidden" data-project-type-checkbox
-                                        data-label="Aircon Installation" checked>
-                                    <span class="project-type-icon"><i class="bi bi-snow" aria-hidden="true"></i></span>
-                                    <span class="project-type-name">Aircon Installation</span>
-                                </label>
-
-                                <label class="project-type-option" data-project-type-option>
-                                    <input type="checkbox" name="project_types[]" value="Aircon Repair"
-                                        class="visually-hidden" data-project-type-checkbox data-label="Aircon Repair">
-                                    <span class="project-type-icon"><i class="bi bi-wrench"
-                                            aria-hidden="true"></i></span>
-                                    <span class="project-type-name">Aircon Repair</span>
-                                </label>
-
-                                <label class="project-type-option" data-project-type-option>
-                                    <input type="checkbox" name="project_types[]" value="Aircon Cleaning"
-                                        class="visually-hidden" data-project-type-checkbox data-label="Aircon Cleaning">
-                                    <span class="project-type-icon"><i class="bi bi-stars" aria-hidden="true"></i></span>
-                                    <span class="project-type-name">Aircon Cleaning</span>
-                                </label>
-
-                                <label class="project-type-option" data-project-type-option>
-                                    <input type="checkbox" name="project_types[]" value="Ducting Fabrication"
-                                        class="visually-hidden" data-project-type-checkbox
-                                        data-label="Ducting Fabrication">
-                                    <span class="project-type-icon"><i class="bi bi-scissors"
-                                            aria-hidden="true"></i></span>
-                                    <span class="project-type-name">Ducting Fabrication</span>
-                                </label>
-
-                                <label class="project-type-option" data-project-type-option>
-                                    <input type="checkbox" name="project_types[]" value="Ducting Installation"
-                                        class="visually-hidden" data-project-type-checkbox
-                                        data-label="Ducting Installation">
-                                    <span class="project-type-icon"><i class="bi bi-box-seam"
-                                            aria-hidden="true"></i></span>
-                                    <span class="project-type-name">Ducting Installation</span>
-                                </label>
+                                @foreach ($projectTypes as $projectType)
+                                    <label class="project-type-option" data-project-type-option>
+                                        <input type="checkbox" name="project_types[]"
+                                            value="{{ $projectType->type_name }}" class="visually-hidden"
+                                            data-project-type-checkbox data-label="{{ $projectType->type_name }}">
+                                        <span class="project-type-icon"><i
+                                                class="bi bi-{{ $projectType->icon_class }}" aria-hidden="true"></i></span>
+                                        <span class="project-type-name">{{ $projectType->type_name }}</span>
+                                    </label>
+                                @endforeach
+                                
                             </div>
 
                             <div class="form-text text-danger mt-2 d-none" data-project-type-error>Please select at least
@@ -218,7 +214,7 @@
                                         data-summary-input="approved_quotation" required>
                                 </div>
 
-                                <div class="upload-card">
+                                <div class="upload-card" data-contract-upload-card hidden>
                                     <div class="upload-card-header">
                                         <i class="bi bi-file-earmark-text" aria-hidden="true"></i>
                                         <div>
@@ -227,7 +223,7 @@
                                         </div>
                                     </div>
                                     <input type="file" name="contract" class="form-control"
-                                        data-summary-input="contract" required>
+                                        data-summary-input="contract" data-contract-upload-input>
                                 </div>
                             </div>
                         </div>
@@ -250,7 +246,7 @@
                     <div class="row g-3">
                         <div class="col-md-12">
                             <label for="leadTech" class="form-label">Lead Technician</label>
-                            <select name="lead_tech" id="leadTech" class="form-select" required>
+                            <select name="lead_tech" id="leadTech" class="form-select" required data-lead-tech-select>
                                 <option value="" selected disabled>Select Lead Technician</option>
 
                                 @foreach ($technicians as $technician)
@@ -273,18 +269,39 @@
                                         Select technicians
                                     </button>
 
-                                    <ul class="dropdown-menu technician-dropdown-menu w-100">
-                                        @foreach ($technicians as $technician)
-                                            @if ($technician->role == 'technician')
-                                                <li>
-                                                    <button type="button" class="dropdown-item"
-                                                        data-technician-option="{{ $technician->name}}"
-                                                        data-technician-name="{{ $technician->name }}">
-                                                        {{ $technician->name }}
-                                                    </button>
-                                                </li>
-                                            @endif
-                                        @endforeach
+                                    <ul class="dropdown-menu technician-dropdown-menu w-100" data-technician-dropdown-menu>
+                                        <li class="dropdown-header text-uppercase small text-secondary">Suggested
+                                            Technicians</li>
+
+                                        @forelse ($suggestedTechnicians->where('role', 'technician') as $technician)
+                                            <li>
+                                                <button type="button" class="dropdown-item"
+                                                    data-technician-option="{{ $technician->technician_id }}"
+                                                    data-technician-name="{{ $technician->name }}">
+                                                    {{ $technician->name }}
+                                                </button>
+                                            </li>
+                                        @empty
+                                            <li><span class="dropdown-item-text text-secondary">No suggested
+                                                    technicians yet.</span></li>
+                                        @endforelse
+
+                                        <li class="dropdown-divider"></li>
+                                        <li class="dropdown-header text-uppercase small text-secondary">Other
+                                            Technicians</li>
+
+                                        @forelse ($otherTechnicians->where('role', 'technician') as $technician)
+                                            <li>
+                                                <button type="button" class="dropdown-item"
+                                                    data-technician-option="{{ $technician->technician_id }}"
+                                                    data-technician-name="{{ $technician->name }}">
+                                                    {{ $technician->name }}
+                                                </button>
+                                            </li>
+                                        @empty
+                                            <li><span class="dropdown-item-text text-secondary">No other
+                                                    technicians available.</span></li>
+                                        @endforelse
                                     </ul>
                                 </div>
 
@@ -296,13 +313,13 @@
                         <div class="col-md-6">
                             <label for="startDate" class="form-label">Start Date</label>
                             <input type="date" name="start_date" id="startDate" class="form-control"
-                                data-summary-input="start_date" required>
+                                data-summary-input="start_date" data-schedule-date-input disabled required>
                         </div>
 
                         <div class="col-md-6">
                             <label for="endDate" class="form-label">End Date</label>
                             <input type="date" name="end_date" id="endDate" class="form-control"
-                                data-summary-input="end_date" required>
+                                data-summary-input="end_date" data-schedule-date-input disabled required>
                         </div>
                     </div>
                 </section>
@@ -320,7 +337,8 @@
                         </div>
                         <div class="review-card">
                             <div class="review-card-label">Company Name</div>
-                            <div class="review-card-value" data-summary-target="company_name">Not filled yet</div>
+                            <div class="review-card-value" data-summary-target="company_name"
+                                data-company-review-card>Not filled yet</div>
                         </div>
                         <div class="review-card">
                             <div class="review-card-label">Client Name</div>
@@ -337,6 +355,10 @@
                         <div class="review-card">
                             <div class="review-card-label">Project Address</div>
                             <div class="review-card-value" data-summary-target="project_address">Not filled yet</div>
+                        </div>
+                        <div class="review-card">
+                            <div class="review-card-label">Quotation Amount</div>
+                            <div class="review-card-value" data-summary-target="quotation_amount">Not filled yet</div>
                         </div>
                         <div class="review-card">
                             <div class="review-card-label">Project Types</div>
@@ -385,9 +407,16 @@
     </div>
 
     @push('scripts')
+        <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
         <script>
+            window.projectWizardData = @json($technicianWizardData);
+
             document.addEventListener('DOMContentLoaded', function() {
                 const form = document.querySelector('[data-project-wizard]');
+                const wizardData = Array.isArray(window.projectWizardData) ? window.projectWizardData : [];
+                const technicianLookup = new Map(wizardData.map(function(technician) {
+                    return [String(technician.id), technician];
+                }));
 
                 if (!form) {
                     return;
@@ -403,6 +432,7 @@
                 const clientTypeRadios = Array.from(form.querySelectorAll('[data-client-type-radio]'));
                 const companyWrap = form.querySelector('[data-company-name-wrap]');
                 const companyInput = form.querySelector('[data-summary-input="company_name"]');
+                const quotationAmountInput = form.querySelector('[data-summary-input="quotation_amount"]');
                 const projectTypeCheckboxes = Array.from(form.querySelectorAll('[data-project-type-checkbox]'));
                 const projectTypeError = form.querySelector('[data-project-type-error]');
                 const technicianPicker = form.querySelector('[data-technician-picker]');
@@ -410,7 +440,14 @@
                 const technicianDropdownMenu = form.querySelector('[data-technician-dropdown-menu]');
                 const technicianSelectedList = form.querySelector('[data-technician-selected-list]');
                 const technicianHiddenInputs = form.querySelector('[data-technician-hidden-inputs]');
-                const technicianOptions = Array.from(form.querySelectorAll('[data-technician-option]'));
+                const leadTechSelect = form.querySelector('[data-lead-tech-select]');
+                const startDateInput = form.querySelector('[data-summary-input="start_date"]');
+                const endDateInput = form.querySelector('[data-summary-input="end_date"]');
+                const contractUploadCard = form.querySelector('[data-contract-upload-card]');
+                const contractUploadInput = form.querySelector('[data-contract-upload-input]');
+                const companyReviewCard = document.querySelector('[data-company-review-card]');
+                let startPicker = null;
+                let endPicker = null;
                 const currentStep = {
                     value: 1
                 };
@@ -423,6 +460,10 @@
 
                 function formatFieldValue(field) {
                     if (!field) {
+                        return 'Not filled yet';
+                    }
+
+                    if (field.disabled) {
                         return 'Not filled yet';
                     }
 
@@ -443,36 +484,154 @@
                     return value;
                 }
 
-                function updateSelectedState(inputs, optionSelector) {
-                    inputs.forEach(function(input) {
-                        const option = input.closest(optionSelector);
+                function selectedTechnicianIdsFromInputs() {
+                    if (!technicianHiddenInputs) {
+                        return [];
+                    }
 
-                        if (option) {
-                            option.classList.toggle('is-selected', input.checked || input.value.trim() !== '');
-                        }
+                    return Array.from(technicianHiddenInputs.querySelectorAll('input[type="hidden"]')).map(function(input) {
+                        return input.value;
                     });
                 }
 
-                function updateClientType() {
-                    const commercialSelected = form.querySelector('[data-client-type-radio][value="Commercial"]')
-                        ?.checked;
+                function activeTechnicianIds() {
+                    const leadTechnicianId = leadTechSelect && leadTechSelect.value ? String(leadTechSelect.value) : null;
 
-                    clientTypeOptions.forEach(function(option) {
-                        const input = option.querySelector('input');
-                        option.classList.toggle('is-selected', Boolean(input && input.checked));
-                    });
+                    return Array.from(new Set([
+                        ...(leadTechnicianId ? [leadTechnicianId] : []),
+                        ...selectedTechnicianIdsFromInputs(),
+                    ]));
+                }
 
-                    if (companyWrap) {
-                        companyWrap.hidden = !commercialSelected;
+                function normalizeDateString(value) {
+                    if (!(value instanceof Date) || Number.isNaN(value.getTime())) {
+                        return null;
                     }
 
-                    if (companyInput) {
-                        companyInput.required = Boolean(commercialSelected);
+                    const year = String(value.getFullYear());
+                    const month = String(value.getMonth() + 1).padStart(2, '0');
+                    const day = String(value.getDate()).padStart(2, '0');
 
-                        if (!commercialSelected) {
-                            companyInput.value = '';
+                    return year + '-' + month + '-' + day;
+                }
+
+                function busyRangesForTechnicians(technicianIds) {
+                    return technicianIds.flatMap(function(technicianId) {
+                        const technician = technicianLookup.get(String(technicianId));
+
+                        if (!technician || !Array.isArray(technician.schedules)) {
+                            return [];
+                        }
+
+                        return technician.schedules.map(function(range) {
+                            return {
+                                start: range.start,
+                                end: range.end,
+                            };
+                        });
+                    });
+                }
+
+                function overlapsBusyRanges(startValue, endValue, busyRanges) {
+                    return busyRanges.some(function(range) {
+                        return startValue <= range.end && endValue >= range.start;
+                    });
+                }
+
+                function startDateDisabled(date) {
+                    const dateString = normalizeDateString(date);
+                    const busyRanges = busyRangesForTechnicians(activeTechnicianIds());
+
+                    return busyRanges.some(function(range) {
+                        return dateString >= range.start && dateString <= range.end;
+                    });
+                }
+
+                function endDateDisabled(date) {
+                    const dateString = normalizeDateString(date);
+                    const startValue = startPicker && startPicker.selectedDates[0]
+                        ? normalizeDateString(startPicker.selectedDates[0])
+                        : null;
+                    const busyRanges = busyRangesForTechnicians(activeTechnicianIds());
+
+                    if (!startValue) {
+                        return busyRanges.some(function(range) {
+                            return dateString >= range.start && dateString <= range.end;
+                        });
+                    }
+
+                    return overlapsBusyRanges(startValue, dateString, busyRanges);
+                }
+
+                function refreshDatePickers() {
+                    const enabled = scheduleInputsReady();
+
+                    if (startDateInput) {
+                        startDateInput.disabled = !enabled;
+                    }
+
+                    if (endDateInput) {
+                        endDateInput.disabled = !enabled;
+                    }
+
+                    if (startPicker) {
+                        startPicker.set('disable', [startDateDisabled]);
+                    }
+
+                    if (endPicker) {
+                        endPicker.set('disable', [endDateDisabled]);
+
+                        if (startPicker && startPicker.selectedDates[0]) {
+                            endPicker.set('minDate', startPicker.selectedDates[0]);
+                        } else {
+                            endPicker.set('minDate', null);
                         }
                     }
+
+                    if (!enabled) {
+                        resetScheduleDates();
+                    }
+                }
+
+                function initializeDatePickers() {
+                    if (!window.flatpickr || !startDateInput || !endDateInput) {
+                        return;
+                    }
+
+                    startPicker = window.flatpickr(startDateInput, {
+                        dateFormat: 'Y-m-d',
+                        allowInput: true,
+                        disable: [startDateDisabled],
+                        onChange: function(selectedDates, dateStr, instance) {
+                            if (endPicker) {
+                                endPicker.clear();
+                            }
+
+                            refreshDatePickers();
+                            validateScheduleInputs();
+                        },
+                    });
+
+                    endPicker = window.flatpickr(endDateInput, {
+                        dateFormat: 'Y-m-d',
+                        allowInput: true,
+                        disable: [endDateDisabled],
+                        onChange: function() {
+                            validateScheduleInputs();
+                        },
+                    });
+
+                    refreshDatePickers();
+                }
+
+                function isScheduleRangeAvailable(startValue, endValue) {
+                    if (!startValue || !endValue) {
+                        return true;
+                    }
+
+                    const busyRanges = busyRangesForTechnicians(activeTechnicianIds());
+
+                    return !overlapsBusyRanges(startValue, endValue, busyRanges);
                 }
 
                 function selectedProjectTypes() {
@@ -485,15 +644,127 @@
                         });
                 }
 
-                function selectedTechnicians() {
+                function selectedTechnicianIds() {
                     if (!technicianHiddenInputs) {
                         return [];
                     }
 
-                    return Array.from(technicianHiddenInputs.querySelectorAll('input[type="hidden"]')).map(function(
-                        input) {
+                    return Array.from(technicianHiddenInputs.querySelectorAll('input[type="hidden"]')).map(function(input) {
                         return input.value;
                     });
+                }
+
+                function selectedTechnicians() {
+                    return selectedTechnicianIds()
+                        .map(function(technicianId) {
+                            return technicianLookup.get(String(technicianId));
+                        })
+                        .filter(Boolean);
+                }
+
+                function selectedLeadTechnician() {
+                    if (!leadTechSelect || !leadTechSelect.value) {
+                        return null;
+                    }
+
+                    return technicianLookup.get(String(leadTechSelect.value)) || null;
+                }
+
+                function updateSelectedState() {
+                    clientTypeOptions.forEach(function(option) {
+                        const input = option.querySelector('input');
+                        option.classList.toggle('is-selected', Boolean(input && input.checked));
+                    });
+
+                    projectTypeCheckboxes.forEach(function(checkbox) {
+                        const option = checkbox.closest('[data-project-type-option]');
+
+                        if (option) {
+                            option.classList.toggle('is-selected', checkbox.checked);
+                        }
+                    });
+                }
+
+                function updateClientType() {
+                    const commercialSelected = form.querySelector('[data-client-type-radio][value="Commercial"]')?.checked;
+
+                    if (companyWrap) {
+                        companyWrap.hidden = !commercialSelected;
+                    }
+
+                    if (companyInput) {
+                        companyInput.required = Boolean(commercialSelected);
+                        companyInput.disabled = !commercialSelected;
+
+                        if (!commercialSelected) {
+                            companyInput.value = '';
+                        }
+                    }
+
+                    if (contractUploadCard) {
+                        contractUploadCard.hidden = !commercialSelected;
+                    }
+
+                    if (contractUploadInput) {
+                        contractUploadInput.required = Boolean(commercialSelected);
+                        contractUploadInput.disabled = !commercialSelected;
+
+                        if (!commercialSelected) {
+                            contractUploadInput.value = '';
+                        }
+                    }
+
+                    if (companyReviewCard) {
+                        companyReviewCard.closest('.review-card')?.classList.toggle('d-none', !commercialSelected);
+                    }
+                }
+
+                function technicianMatchesProjectTypes(technician, projectTypes) {
+                    if (!technician || !Array.isArray(technician.skills)) {
+                        return false;
+                    }
+
+                    return projectTypes.some(function(projectType) {
+                        return technician.skills.includes(projectType);
+                    });
+                }
+
+                function getTechnicianSections() {
+                    const projectTypes = selectedProjectTypes();
+                    const selectedIds = selectedTechnicianIds();
+
+                    const suggested = wizardData
+                        .filter(function(technician) {
+                            return technician.role === 'technician' && technicianMatchesProjectTypes(technician, projectTypes);
+                        })
+                        .sort(function(left, right) {
+                            const leftMatches = left.skills.filter(function(skill) {
+                                return projectTypes.includes(skill);
+                            }).length;
+
+                            const rightMatches = right.skills.filter(function(skill) {
+                                return projectTypes.includes(skill);
+                            }).length;
+
+                            return rightMatches - leftMatches || left.name.localeCompare(right.name);
+                        });
+
+                    const other = wizardData
+                        .filter(function(technician) {
+                            return technician.role === 'technician'
+                                && !suggested.some(function(item) {
+                                    return item.id === technician.id;
+                                });
+                        })
+                        .sort(function(left, right) {
+                            return left.name.localeCompare(right.name);
+                        });
+
+                    return {
+                        suggested: suggested,
+                        other: other,
+                        selectedIds: selectedIds,
+                    };
                 }
 
                 function updateTechnicianDropdownButton() {
@@ -506,13 +777,63 @@
                         'Select technicians';
                 }
 
-                function syncTechnicianMenuState() {
-                    const selected = selectedTechnicians();
+                function renderTechnicianDropdown() {
+                    if (!technicianDropdownMenu) {
+                        return;
+                    }
 
-                    technicianOptions.forEach(function(button) {
+                    const sections = getTechnicianSections();
+                    const selectedIds = sections.selectedIds.map(String);
+
+                    const renderButtons = function(technicians) {
+                        return technicians.map(function(technician) {
+                            const activeClass = selectedIds.includes(String(technician.id)) ? ' active' : '';
+                            const pressed = selectedIds.includes(String(technician.id)) ? 'true' : 'false';
+
+                            return '<li><button type="button" class="dropdown-item' + activeClass + '" ' +
+                                'data-technician-option="' + technician.id + '" ' +
+                                'data-technician-name="' + technician.name + '" aria-pressed="' + pressed + '">' +
+                                technician.name + '</button></li>';
+                        }).join('');
+                    };
+
+                    const suggestedHtml = sections.suggested.length
+                        ? renderButtons(sections.suggested)
+                        : '<li><span class="dropdown-item-text text-secondary">No suggested technicians yet.</span></li>';
+
+                    const otherHtml = sections.other.length
+                        ? renderButtons(sections.other)
+                        : '<li><span class="dropdown-item-text text-secondary">No other technicians available.</span></li>';
+
+                    technicianDropdownMenu.innerHTML = [
+                        '<li class="dropdown-header text-uppercase small text-secondary">Suggested Technicians</li>',
+                        suggestedHtml,
+                        '<li><hr class="dropdown-divider"></li>',
+                        '<li class="dropdown-header text-uppercase small text-secondary">Other Technicians</li>',
+                        otherHtml,
+                    ].join('');
+
+                    technicianDropdownMenu.querySelectorAll('[data-technician-option]').forEach(function(button) {
+                        button.addEventListener('click', function() {
+                            const technicianId = button.dataset.technicianOption || '';
+                            addTechnician(technicianId);
+                        });
+                    });
+                }
+
+                function syncTechnicianMenuState() {
+                    const selected = selectedTechnicianIds();
+
+                    if (!technicianDropdownMenu) {
+                        return;
+                    }
+
+                    technicianDropdownMenu.querySelectorAll('[data-technician-option]').forEach(function(button) {
                         const value = button.dataset.technicianOption || button.textContent.trim();
-                        button.classList.toggle('active', selected.includes(value));
-                        button.setAttribute('aria-pressed', String(selected.includes(value)));
+                        const isSelected = selected.includes(value);
+
+                        button.classList.toggle('active', isSelected);
+                        button.setAttribute('aria-pressed', String(isSelected));
                     });
                 }
 
@@ -530,18 +851,18 @@
                         emptyState.textContent = 'No technicians selected yet.';
                         technicianSelectedList.appendChild(emptyState);
                     } else {
-                        selected.forEach(function(technicianName) {
+                        selected.forEach(function(technician) {
                             const chip = document.createElement('span');
                             chip.className = 'technician-chip';
-                            chip.textContent = technicianName;
+                            chip.textContent = technician.name;
 
                             const removeButton = document.createElement('button');
                             removeButton.type = 'button';
                             removeButton.className = 'technician-chip-remove';
-                            removeButton.setAttribute('aria-label', 'Remove ' + technicianName);
+                            removeButton.setAttribute('aria-label', 'Remove ' + technician.name);
                             removeButton.innerHTML = '<i class="bi bi-x" aria-hidden="true"></i>';
                             removeButton.addEventListener('click', function() {
-                                removeTechnician(technicianName);
+                                removeTechnician(String(technician.id));
                             });
 
                             chip.appendChild(removeButton);
@@ -558,7 +879,7 @@
                         return;
                     }
 
-                    if (selectedTechnicians().includes(technicianName)) {
+                    if (selectedTechnicianIds().includes(String(technicianName))) {
                         return;
                     }
 
@@ -567,7 +888,10 @@
                     hiddenInput.name = 'technicians[]';
                     hiddenInput.value = technicianName;
                     technicianHiddenInputs.appendChild(hiddenInput);
+                    resetScheduleDates();
+                    refreshDatePickers();
                     renderTechnicianChips();
+                    updateScheduleFieldState();
                 }
 
                 function removeTechnician(technicianName) {
@@ -584,11 +908,109 @@
                         hiddenInput.remove();
                     }
 
+                    resetScheduleDates();
+                    refreshDatePickers();
                     renderTechnicianChips();
+                    updateScheduleFieldState();
+                }
+
+                function resetScheduleDates() {
+                    if (startPicker) {
+                        startPicker.clear();
+                    }
+
+                    if (endPicker) {
+                        endPicker.clear();
+                    }
+
+                    if (startDateInput) {
+                        startDateInput.value = '';
+                        startDateInput.setCustomValidity('');
+                    }
+
+                    if (endDateInput) {
+                        endDateInput.value = '';
+                        endDateInput.setCustomValidity('');
+                    }
+                }
+
+                function scheduleInputsReady() {
+                    return Boolean(selectedLeadTechnician()) && selectedTechnicianIds().length > 0;
+                }
+
+                function updateScheduleFieldState() {
+                    const enabled = scheduleInputsReady();
+
+                    if (startDateInput) {
+                        startDateInput.disabled = !enabled;
+                    }
+
+                    if (endDateInput) {
+                        endDateInput.disabled = !enabled;
+                    }
+
+                    refreshDatePickers();
+
+                    if (!enabled) {
+                        resetScheduleDates();
+                    }
+                }
+
+                function dateRangeOverlaps(leftStart, leftEnd, rightStart, rightEnd) {
+                    return leftStart <= rightEnd && leftEnd >= rightStart;
+                }
+
+                function selectedBusyRanges() {
+                    return activeTechnicianIds().flatMap(function(technicianId) {
+                        const technician = technicianLookup.get(String(technicianId));
+
+                        if (!technician || !Array.isArray(technician.schedules)) {
+                            return [];
+                        }
+
+                        return technician.schedules.map(function(range) {
+                            return {
+                                start: range.start,
+                                end: range.end,
+                            };
+                        });
+                    });
+                }
+
+                function scheduleRangeIsAvailable(startValue, endValue) {
+                    return isScheduleRangeAvailable(startValue, endValue);
+                }
+
+                function validateScheduleInputs() {
+                    if (!startDateInput || !endDateInput || startDateInput.disabled || endDateInput.disabled) {
+                        return true;
+                    }
+
+                    startDateInput.setCustomValidity('');
+                    endDateInput.setCustomValidity('');
+
+                    if (!startDateInput.value || !endDateInput.value) {
+                        return true;
+                    }
+
+                    if (!scheduleRangeIsAvailable(startDateInput.value, endDateInput.value)) {
+                        const message = 'Selected dates overlap an existing schedule for one or more technicians.';
+                        startDateInput.setCustomValidity(message);
+                        endDateInput.setCustomValidity(message);
+                        return false;
+                    }
+
+                    return true;
                 }
 
                 function selectedFiles() {
-                    return ['assessment_report', 'approved_quotation', 'contract'].map(function(fieldName) {
+                    const documentFields = ['assessment_report', 'approved_quotation'];
+
+                    if (contractUploadInput && !contractUploadInput.disabled) {
+                        documentFields.push('contract');
+                    }
+
+                    return documentFields.map(function(fieldName) {
                         const input = form.querySelector('[data-summary-input="' + fieldName + '"]');
 
                         if (!input || !input.files || !input.files[0]) {
@@ -619,6 +1041,7 @@
                         client_phone: formatFieldValue(form.querySelector('[data-summary-input="client_phone"]')),
                         project_address: formatFieldValue(form.querySelector(
                             '[data-summary-input="project_address"]')),
+                        quotation_amount: formatFieldValue(quotationAmountInput),
                         project_types: selectedProjectTypes().join(', '),
                         project_documents: selectedFiles().join(', '),
                         project_description: formatFieldValue(form.querySelector(
@@ -639,6 +1062,11 @@
                             target.textContent = summaryMap[key] || 'Not filled yet';
                         });
                     });
+
+                    if (companyReviewCard) {
+                        const commercialSelected = form.querySelector('[data-client-type-radio][value="Commercial"]')?.checked;
+                        companyReviewCard.closest('.review-card')?.classList.toggle('d-none', !commercialSelected);
+                    }
                 }
 
                 function setStep(stepNumber) {
@@ -662,6 +1090,7 @@
                     submitButton.classList.toggle('d-none', stepNumber !== steps.length);
                     nextButton.textContent = stepNumber === steps.length - 1 ? 'Review' : 'Next';
                     updateSummary();
+                    validateScheduleInputs();
                 }
 
                 function validateActiveStep() {
@@ -705,25 +1134,15 @@
                         return false;
                     }
 
+                    if (currentStep.value === 3 && !validateScheduleInputs()) {
+                        return false;
+                    }
+
                     return true;
                 }
 
                 function syncSelectableCards() {
-                    clientTypeRadios.forEach(function(radio) {
-                        const option = radio.closest('[data-client-type-option]');
-
-                        if (option) {
-                            option.classList.toggle('is-selected', radio.checked);
-                        }
-                    });
-
-                    projectTypeCheckboxes.forEach(function(checkbox) {
-                        const option = checkbox.closest('[data-project-type-option]');
-
-                        if (option) {
-                            option.classList.toggle('is-selected', checkbox.checked);
-                        }
-                    });
+                    updateSelectedState();
                 }
 
                 backButton.addEventListener('click', function() {
@@ -744,6 +1163,7 @@
 
                 clientTypeRadios.forEach(function(radio) {
                     radio.addEventListener('change', function() {
+                        syncSelectableCards();
                         updateClientType();
                         updateSummary();
                     });
@@ -752,6 +1172,7 @@
                 projectTypeCheckboxes.forEach(function(checkbox) {
                     checkbox.addEventListener('change', function() {
                         syncSelectableCards();
+                        renderTechnicianDropdown();
 
                         if (projectTypeError) {
                             projectTypeError.classList.add('d-none');
@@ -761,15 +1182,18 @@
                     });
                 });
 
-                technicianOptions.forEach(function(button) {
-                    button.addEventListener('click', function() {
-                        const technicianName = button.dataset.technicianOption || button.textContent
-                            .trim();
-                        addTechnician(technicianName);
+                if (leadTechSelect) {
+                    leadTechSelect.addEventListener('change', function() {
+                        resetScheduleDates();
+                        refreshDatePickers();
+                        updateScheduleFieldState();
+                        validateScheduleInputs();
+                        updateSummary();
                     });
-                });
+                }
 
                 form.addEventListener('input', function() {
+                    validateScheduleInputs();
                     updateSummary();
                 });
 
@@ -778,9 +1202,24 @@
                     updateSummary();
                 });
 
+                if (startDateInput) {
+                    startDateInput.addEventListener('change', function() {
+                        validateScheduleInputs();
+                    });
+                }
+
+                if (endDateInput) {
+                    endDateInput.addEventListener('change', function() {
+                        validateScheduleInputs();
+                    });
+                }
+
                 syncSelectableCards();
                 updateClientType();
+                renderTechnicianDropdown();
                 renderTechnicianChips();
+                initializeDatePickers();
+                updateScheduleFieldState();
                 updateSummary();
                 setStep(1);
             });
