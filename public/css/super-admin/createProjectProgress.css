@@ -39,6 +39,11 @@
 		color: #ffffff;
 	}
 
+		.client-progress-step.completed .client-progress-circle {
+			background: #22c55e;
+			color: #ffffff;
+		}
+
 	.client-progress-label {
 		margin-top: 0.4rem;
 		font-size: 0.72rem;
@@ -53,6 +58,11 @@
 		font-weight: 600;
 	}
 
+	.client-progress-step.completed .client-progress-label {
+		color: #166534;
+		font-weight: 600;
+	}
+
 	.client-progress-line {
 		width: 28px;
 		height: 5px;
@@ -60,6 +70,10 @@
 		background: #e5e7eb;
 		border-radius: 999px;
 		flex: 0 0 auto;
+	}
+
+	.client-progress-step.completed + .client-progress-line {
+		background: linear-gradient(90deg, #22c55e 0%, #3b82f6 100%);
 	}
 
 	@media (max-width: 575.98px) {

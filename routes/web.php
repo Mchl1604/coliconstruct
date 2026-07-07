@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\ProjectController;
 
 // Public routes
 Route::get('/', function () {
@@ -20,12 +21,9 @@ Route::prefix('super-admin')
             return view('super-admin.dashboard');
         })->name('dashboard');
 
-        Route::get('/projects', function () {
-            return view('super-admin.projects');
-        })->name('projects');
+        Route::get('/projects', [ProjectController::class, 'index'])->name('projects');
 
-        Route::get('/projects/create/clientInfo', function () {
-            return view('super-admin.createProject.clientInfo');
-        })->name('projects.create');
+        Route::get('/projects/create', [ProjectController::class, 'create'])->name('projects.create');
+        Route::post('/projects/create', [ProjectController::class, 'store'])->name('projects.create.store');
 
     });
