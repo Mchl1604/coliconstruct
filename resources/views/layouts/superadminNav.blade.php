@@ -124,6 +124,38 @@ href="https://cdn.datatables.net/2.3.8/css/dataTables.dataTables.css">
             </main>
         </div>
     </div>
+    
+{{-- Success Toast --}}
+@if (session('success'))
+<div class="toast-container position-fixed top-0 end-0 p-3">
+    <div class="toast align-items-center bg-success text-white border-0"
+         role="alert"
+         data-bs-autohide="true"
+         data-bs-delay="3000">
+
+        <div class="toast-body">
+            {{ session('success') }}
+        </div>
+
+    </div>
+</div>
+@endif
+
+{{-- Error Toast --}}
+@if (session('error'))
+<div class="toast-container position-fixed top-0 end-0 p-3">
+    <div class="toast align-items-center bg-danger text-white border-0"
+         role="alert"
+         data-bs-autohide="true"
+         data-bs-delay="3000">
+
+        <div class="toast-body">
+            {{ session('error') }}
+        </div>
+
+    </div>
+</div>
+@endif
 
        <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 
@@ -132,6 +164,12 @@ href="https://cdn.datatables.net/2.3.8/css/dataTables.dataTables.css">
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function () {
+            const toastElList = document.querySelectorAll('.toast');
+
+    toastElList.forEach(function (toastEl) {
+        const toast = new bootstrap.Toast(toastEl);
+        toast.show();
+    });
             const shell = document.querySelector('[data-admin-shell]');
             const toggle = document.querySelector('[data-sidebar-toggle]');
             const backdrop = document.querySelector('[data-sidebar-backdrop]');

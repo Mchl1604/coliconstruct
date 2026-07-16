@@ -16,6 +16,8 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
+use Throwable;
+use Illuminate\Http\Request;
 
 class ProjectController extends Controller
 {
@@ -63,83 +65,107 @@ class ProjectController extends Controller
     {
         $validated = $request->validated();
 
-        DB::transaction(function () use ($validated, $request): void {
-            $project = Project::create([
-                'name' => $this->resolveProjectName($validated),
-                'status' => 'pending',
-                'quotation' => $validated['quotation_amount'],
-                'address' => $validated['project_address'],
-                'description' => $validated['project_description'],
-            ]);
+        try {
 
-            $project->forceFill([
-                'reference_no' => $this->generateReferenceNumber($project->project_id),
-            ])->save();
+            DB::transaction(function () use ($validated, $request): void {
 
-            Client::create([
-                'project_id' => $project->project_id,
-                'client_type' => $validated['client_type'],
-                'surname' => $validated['surname'] ?? null,
-                'firstname' => $validated['firstname'],
-                'middlename' => $validated['middle_name'] ?? null,
-                'lastname' => trim(collect([
-                    $validated['firstname'],
-                    $validated['middle_name'] ?? null,
-                    $validated['surname'] ?? null,
-                ])->filter()->implode(' ')),
-                'email_address' => $validated['client_email'],
-                'contact_number' => $validated['client_phone'],
-            ]);
+                $project = Project::create([
+                    'name' => $this->resolveProjectName($validated),
+                    'status' => 'pending',
+                    'quotation' => $validated['quotation_amount'],
+                    'address' => $validated['project_address'],
+                    'description' => $validated['project_description'],
+                ]);
 
-            $projectTypeIds = ProjectType::query()
-                ->get()
-                ->filter(function (ProjectType $projectType) use ($validated): bool {
-                    return in_array($projectType->type_name, $validated['project_types'], true);
-                })
-                ->pluck('type_id')
-                ->all();
+                $project->forceFill([
+                    'reference_no' => $this->generateReferenceNumber($project->project_id),
+                ])->save();
 
-            $project->projectTypes()->sync($projectTypeIds);
-
-            $selectedTechnicianIds = collect([
-                $validated['lead_tech'],
-                ...$validated['technicians'],
-            ])
-                ->map(fn ($technicianId): int => (int) $technicianId)
-                ->unique()
-                ->values();
-
-            $projectTechnicians = $selectedTechnicianIds->map(function (int $technicianId) use ($project): ProjectTechnician {
-                return ProjectTechnician::create([
+                Client::create([
                     'project_id' => $project->project_id,
-                    'technician_id' => $technicianId,
+                    'client_type' => $validated['client_type'],
+                    'company_name' => $this->inputCompanyName($validated),
+                    'surname' => $validated['surname'] ?? null,
+                    'firstname' => $validated['firstname'],
+                    'middlename' => $validated['middle_name'] ?? null,
+                    'fullname' => trim(collect([
+                        $validated['firstname'],
+                        $validated['middle_name'] ?? null,
+                        $validated['surname'] ?? null,
+                    ])->filter()->implode(' ')),
+                    'email_address' => $validated['client_email'],
+                    'contact_number' => $validated['client_phone'],
                 ]);
+
+                $projectTypeIds = ProjectType::query()
+                    ->get()
+                    ->filter(fn(ProjectType $projectType) =>
+                    in_array($projectType->type_name, $validated['project_types'], true))
+                    ->pluck('type_id')
+                    ->all();
+
+                $project->projectTypes()->sync($projectTypeIds);
+
+                $selectedTechnicianIds = collect([
+                    $validated['lead_tech'],
+                    ...$validated['technicians'],
+                ])
+                    ->map(fn($id) => (int) $id)
+                    ->unique()
+                    ->values();
+
+                $projectTechnicians = $selectedTechnicianIds->map(function (int $technicianId) use ($project) {
+                    return ProjectTechnician::create([
+                        'project_id' => $project->project_id,
+                        'technician_id' => $technicianId,
+                    ]);
+                });
+
+                $schedule = Schedule::create([
+                    'project_id' => $project->project_id,
+                    'start_datetime' => CarbonImmutable::parse($validated['start_date'])->startOfDay(),
+                    'end_datetime' => CarbonImmutable::parse($validated['end_date'])->endOfDay(),
+                    'status' => 'scheduled',
+                    'remarks' => 'Created from project wizard',
+                ]);
+
+                $projectTechnicians->each(function ($projectTechnician) use ($schedule) {
+                    ScheduleTechnician::create([
+                        'schedule_id' => $schedule->schedule_id,
+                        'project_technician_id' => $projectTechnician->project_technician_id,
+                    ]);
+                });
+
+                $this->storeDocument(
+                    $request->file('assessment_report'),
+                    $project->project_id,
+                    'assessment'
+                );
+
+                $this->storeDocument(
+                    $request->file('approved_quotation'),
+                    $project->project_id,
+                    'quotation'
+                );
+
+                if ($validated['client_type'] !== 'Residential' && $request->hasFile('contract')) {
+                    $this->storeDocument(
+                        $request->file('contract'),
+                        $project->project_id,
+                        'contract'
+                    );
+                }
             });
 
-            $schedule = Schedule::create([
-                'project_id' => $project->project_id,
-                'start_datetime' => CarbonImmutable::parse($validated['start_date'])->startOfDay(),
-                'end_datetime' => CarbonImmutable::parse($validated['end_date'])->endOfDay(),
-                'status' => 'scheduled',
-                'remarks' => 'Created from project wizard',
-            ]);
+            return redirect()
+                ->route('super-admin.projects')
+                ->with(session()->flash('success', 'Project created successfully.'));
+        } catch (Throwable $e) {
 
-            $projectTechnicians->each(function (ProjectTechnician $projectTechnician) use ($schedule): void {
-                ScheduleTechnician::create([
-                    'schedule_id' => $schedule->schedule_id,
-                    'project_technician_id' => $projectTechnician->project_technician_id,
-                ]);
-            });
-
-            $this->storeDocument($request->file('assessment_report'), $project->project_id, 'assessment');
-            $this->storeDocument($request->file('approved_quotation'), $project->project_id, 'quotation');
-
-            if ($validated['client_type'] !== 'Residential' && $request->hasFile('contract')) {
-                $this->storeDocument($request->file('contract'), $project->project_id, 'contract');
-            }
-        });
-
-        return redirect()->route('super-admin.projects');
+            return redirect()
+                ->route('super-admin.projects')
+                ->with(session()->flash('error', 'An error occurred while creating the project: ' . $e->getMessage()));
+        }
     }
 
     private function defaultSelectedProjectTypes(Collection $projectTypes): array
@@ -216,6 +242,13 @@ class ProjectController extends Controller
             $validated['surname'],
         ])->filter()->implode(' '));
     }
+    private function inputCompanyName(array $validated): ?string
+    {
+        if ($validated['client_type'] === 'Commercial' && filled($validated['company_name'] ?? null)) {
+            return $validated['company_name'] ?? null;
+        }
+        return null;
+    }
 
     private function generateReferenceNumber(int $projectId): string
     {
@@ -228,19 +261,203 @@ class ProjectController extends Controller
             return;
         }
 
-        $directory = public_path('uploads/'.$folder);
+        $directory = public_path('uploads/' . $folder);
 
         File::ensureDirectoryExists($directory);
 
-        $fileName = Str::uuid()->toString().'.'.$uploadedFile->getClientOriginalExtension();
+        $fileName = Str::uuid()->toString() . '.' . $uploadedFile->getClientOriginalExtension();
         $uploadedFile->move($directory, $fileName);
 
         Document::create([
             'project_id' => $projectId,
             'document_type' => $folder,
             'document_name' => $fileName,
-            'document_path' => 'uploads/'.$folder.'/'.$fileName,
+            'document_path' => 'uploads/' . $folder . '/' . $fileName,
             'uploaded_at' => now(),
         ]);
+    }
+
+    public function show(int $id)
+    {
+        $project = Project::query()
+            ->with(['clients', 'documents', 'schedule', 'projectTypes', 'projectTechnicians.technician'])
+            ->findOrFail($id);
+        $projectTypes = ProjectType::query()
+            ->orderBy('type_name', 'asc')
+            ->get();
+
+        return view('super-admin.projectDetails', compact('project', 'projectTypes'));
+    }
+
+    public function previewDocument(int $id, string $type)
+    {
+        $project = Project::query()
+            ->with(['documents'])
+            ->findOrFail($id);
+
+        $document = $project->documents->firstWhere('document_type', $type);
+
+        abort_unless($document, 404);
+
+        $documentUrl = asset($document->document_path);
+        $extension = strtolower(pathinfo($document->document_path, PATHINFO_EXTENSION));
+
+        $previewType = match ($extension) {
+            'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg' => 'image',
+            'pdf' => 'pdf',
+            'doc', 'docx' => 'docx',
+            default => 'file',
+        };
+
+        $title = match ($type) {
+            'assessment' => 'Assessment',
+            'quotation' => 'Quotation',
+            'contract' => 'Contract',
+            default => ucfirst($type),
+        };
+
+        return view('super-admin.projectDocumentPreview', compact(
+            'project',
+            'document',
+            'documentUrl',
+            'previewType',
+            'title'
+        ));
+    }
+
+
+    public function update(Request $request, int $id)
+    {
+        $validated = $request->validate([
+            'first_name' => ['required', 'string', 'max:255'],
+            'middle_initial' => ['nullable', 'string', 'max:255'],
+            'last_name' => ['required', 'string', 'max:255'],
+            'company_name' => ['nullable', 'string', 'max:255'],
+            'address' => ['required', 'string'],
+            'contact_number' => ['required', 'regex:/^09\d{9}$/'],
+            'email_address' => ['required', 'email', 'max:255'],
+            'quotation' => ['required', 'numeric', 'min:0'],
+            'project_description' => ['required', 'string'],
+            'project_types' => ['required', 'array', 'min:1'],
+            'project_types.*' => ['required', 'integer', 'exists:tbl_project_types,type_id'],
+
+            'assessmentDocument' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf,docx'],
+            'quotationDocument' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf,docx'],
+            'contractDocument' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf,docx'],
+        ]);
+
+        try {
+
+            DB::transaction(function () use ($validated, $request, $id) {
+
+                $project = Project::findOrFail($id);
+
+                $project->update([
+                    'quotation' => $validated['quotation'],
+                    'address' => $validated['address'],
+                    'description' => $validated['project_description'],
+                ]);
+
+                $client = Client::query()
+                    ->where('project_id', $project->project_id)
+                    ->firstOrFail();
+
+                $client->update([
+                    'client_type' => $client->client_type,
+                    'company_name' => $validated['company_name'] ?? null,
+                    'surname' => $validated['last_name'],
+                    'firstname' => $validated['first_name'],
+                    'middlename' => $validated['middle_initial'] ?? null,
+                    'fullname' => trim(collect([
+                        $validated['first_name'],
+                        $validated['middle_initial'] ?? null,
+                        $validated['last_name'],
+                    ])->filter()->implode(' ')),
+                    'email_address' => $validated['email_address'],
+                    'contact_number' => $validated['contact_number'],
+                ]);
+
+                $project->projectTypes()->sync($validated['project_types']);
+
+                // Update documents here if needed...
+                $this->replaceDocument(
+                    $request->file('assessmentDocument'),
+                    $project->project_id,
+                    'assessment'
+                );
+
+                $this->replaceDocument(
+                    $request->file('quotationDocument'),
+                    $project->project_id,
+                    'quotation'
+                );
+
+                if (
+                    $client->client_type === 'Commercial' &&
+                    $request->hasFile('contractDocument')
+                ) {
+                    $this->replaceDocument(
+                        $request->file('contractDocument'),
+                        $project->project_id,
+                        'contract'
+                    );
+                }
+            });
+
+            return redirect()
+                ->route('super-admin.projects.show', $id)
+                ->with('success', 'Project updated successfully.');
+        } catch (\Throwable $e) {
+
+            return redirect()
+                ->route('super-admin.projects.show', $id)
+                ->with('error', $e->getMessage());
+        }
+    }
+
+    private function replaceDocument($uploadedFile, int $projectId, string $documentType): void
+    {
+        if (! $uploadedFile) {
+            return;
+        }
+
+        $directory = public_path('uploads/' . $documentType);
+
+        File::ensureDirectoryExists($directory);
+
+        // Find existing document
+        $document = Document::query()
+            ->where('project_id', $projectId)
+            ->where('document_type', $documentType)
+            ->first();
+
+        // Delete old physical file
+        if ($document && File::exists(public_path($document->document_path))) {
+            File::delete(public_path($document->document_path));
+        }
+
+        // Store new file
+        $fileName = Str::uuid() . '.' . $uploadedFile->getClientOriginalExtension();
+
+        $uploadedFile->move($directory, $fileName);
+
+        $data = [
+            'document_name' => $fileName,
+            'document_path' => 'uploads/' . $documentType . '/' . $fileName,
+            'uploaded_at' => now(),
+        ];
+
+        if ($document) {
+
+            // Replace existing database record
+            $document->update($data);
+        } else {
+
+            // Create one if it doesn't exist
+            Document::create(array_merge($data, [
+                'project_id' => $projectId,
+                'document_type' => $documentType,
+            ]));
+        }
     }
 }

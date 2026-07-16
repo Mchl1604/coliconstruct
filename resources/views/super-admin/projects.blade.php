@@ -63,7 +63,7 @@
                             <tr data-status="{{ $project->status }}">
                                 <td>{{ $project->project_id }}</td>
                                 <td>{{ $project->reference_no }}</td>
-                                <td>{{ $project->clients->first()->lastname ?? 'N/A' }}</td>
+                                <td>{{ $project->clients->first()->fullname ?? 'N/A' }}</td>
                                 <td>
                                     {{ $project->projectTypes->pluck('type_name')->join(', ') ?: 'N/A' }}
                                 </td>
@@ -80,7 +80,7 @@
                                 </td>
                                 <td class="text-center">
                                     <div class="projects-action-buttons">
-                                        <button class="btn btn-sm btn-primary py-1 px-2">
+                                        <button class="btn btn-sm btn-primary py-1 px-2" onclick="window.location='{{ route('super-admin.projects.show', $project->project_id) }}'">
                                             <i class="bi bi-eye"></i>
                                         </button>
 
