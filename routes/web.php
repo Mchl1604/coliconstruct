@@ -2,6 +2,8 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\ProjectController;
+use App\Http\Controllers\TechnicianReportController;
+use App\Http\Controllers\TaskController;
 
 // Public routes
 Route::get('/', function () {
@@ -28,4 +30,21 @@ Route::prefix('super-admin')
         Route::get('/projects/{id}', [ProjectController::class, 'show'])->name('projects.show');
         Route::get('/projects/{id}/documents/{type}', [ProjectController::class, 'previewDocument'])->name('projects.documents.preview');
         Route::put('/projects/{id}', [ProjectController::class, 'update'])->name('projects.update');
+        Route::post('/projects/{id}/reports', [TechnicianReportController::class, 'store'])
+        ->name('technician.reports.store');
+
+        Route::post('/projects/{id}/task', [TaskController::class, 'store'])
+    ->name('task.store');
+    Route::patch('/tasks/{task}/complete',
+    [TaskController::class, 'complete'])
+    ->name('tasks.complete');
+
+Route::put('/tasks/{task}',
+    [TaskController::class, 'update'])
+    ->name('tasks.update');
+
+Route::delete('/tasks/{task}',
+    [TaskController::class, 'destroy'])
+    ->name('tasks.destroy');
+
     });

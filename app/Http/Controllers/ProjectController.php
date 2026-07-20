@@ -17,6 +17,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use Throwable;
+use App\Models\TechnicianReport;
+use App\Models\Task;
 use Illuminate\Http\Request;
 
 class ProjectController extends Controller
@@ -277,17 +279,63 @@ class ProjectController extends Controller
         ]);
     }
 
-    public function show(int $id)
-    {
-        $project = Project::query()
-            ->with(['clients', 'documents', 'schedule', 'projectTypes', 'projectTechnicians.technician'])
-            ->findOrFail($id);
-        $projectTypes = ProjectType::query()
-            ->orderBy('type_name', 'asc')
-            ->get();
+    public function show(Request $request, int $id)
+{
+    $project = Project::with([
 
-        return view('super-admin.projectDetails', compact('project', 'projectTypes'));
+    'clients',
+
+    'documents',
+
+    'schedule',
+
+    'projectTypes',
+
+    'projectTechnicians.technician' => function ($query) {
+
+        $query->with('account')
+              ->withCount([
+                  'tasks as tasks_count' => function ($q) {
+
+                      $q->whereIn('status', [
+                          'pending',
+                          'ongoing'
+                      ]);
+
+                  }
+              ]);
+
     }
+
+])->findOrFail($id);
+
+    $projectTypes = ProjectType::query()
+        ->orderBy('type_name', 'asc')
+        ->get();
+
+    // Get technician reports for this project
+    $reports = TechnicianReport::with('images')
+        ->where('project_id', $id);
+
+    $tasks = Task::with(['technician', 'images'])
+    ->where('project_id', $id)
+    ->latest()
+    ->get();
+
+    // Filter by report type
+    if ($request->filled('report_type')) {
+        $reports->where('report_type', $request->report_type);
+    }
+
+    $reports = $reports->latest()->get();
+
+    return view('super-admin.projectDetails', compact(
+        'project',
+        'projectTypes',
+        'reports',
+        'tasks'
+    ));
+}
 
     public function previewDocument(int $id, string $type)
     {

@@ -56,5 +56,86 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
     });
+document.getElementById('reportImages').addEventListener('change', function () {
+
+    const preview = document.getElementById('imagePreview');
+    preview.innerHTML = '';
+
+    Array.from(this.files).forEach(file => {
+
+        const reader = new FileReader();
+
+        reader.onload = function(e){
+
+            preview.innerHTML += `
+                <div class="col-md-3">
+                    <div class="card">
+                        <img src="${e.target.result}"
+                             class="card-img-top"
+                             style="height:160px;object-fit:cover;">
+                    </div>
+                </div>
+            `;
+        };
+
+        reader.readAsDataURL(file);
+
+    });
+
+});
+
+let tasksTable;
+
+$('button[data-bs-target="#tasks"]').on('shown.bs.tab', function () {
+
+    if (!$.fn.DataTable.isDataTable('#tasksTable')) {
+
+        tasksTable = $('#tasksTable').DataTable({
+            responsive: true,
+            autoWidth: false,
+            pageLength: 5,
+            lengthMenu: [5, 10, 25, 50],
+            info: false,
+            language: {
+                search: "",
+                searchPlaceholder: "Search tasks..."
+            }
+        });
+
+    } else {
+
+        tasksTable.columns.adjust().responsive.recalc();
+
+    }
+
+});
+
+document.getElementById('taskStartDate').addEventListener('change', function () {
+
+    document.getElementById('taskDueDate').min = this.value;
+
+});
+
+$(function () {
+
+    const taskTable = $('#tasksTable').DataTable({
+
+        responsive: true,
+        autoWidth: false,
+        pageLength: 5,
+        lengthMenu: [5,10,25,50],
+        info: false,
+
+        language:{
+
+            search:"",
+            searchPlaceholder:"Search tasks..."
+
+        }
+
+    });
+
+});
+
 
 });

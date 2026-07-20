@@ -41,6 +41,14 @@ class Technician extends Model
             'skill_id'
         );
     }
+    public function tasks()
+{
+    return $this->hasMany(
+        Task::class,
+        'technician_id',
+        'technician_id'
+    );
+}
 
     public function projectTechnicians(): HasMany
     {
