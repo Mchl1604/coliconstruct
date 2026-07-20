@@ -646,56 +646,68 @@ class ProjectController extends Controller
         }
     }
 
-    public function updateAssignedTeam(Request $request, int $id)
-    {
-        $project = Project::findOrFail($id);
+   public function updateAssignedTeam(Request $request, int $id)
+{
+    $project = Project::findOrFail($id);
 
-        $validated = $request->validate([
-            'lead_tech' => ['required', 'integer', 'exists:tbl_technicians,technician_id'],
-            'technicians' => ['nullable', 'array'],
-            'technicians.*' => ['integer', 'exists:tbl_technicians,technician_id'],
-        ], [
-            'lead_tech.required' => 'A lead technician is required.',
+    $validated = $request->validate([
+        'lead_tech' => ['required', 'integer', 'exists:tbl_technicians,technician_id'],
+        'technicians' => ['nullable', 'array'],
+        'technicians.*' => ['integer', 'exists:tbl_technicians,technician_id'],
+    ], [
+        'lead_tech.required' => 'A lead technician is required.',
+    ]);
+
+    $technicianIds = collect([
+        $validated['lead_tech'],
+        ...($validated['technicians'] ?? []),
+    ])
+        ->map(fn ($technicianId) => (int) $technicianId)
+        ->unique()
+        ->values();
+
+    DB::transaction(function () use ($project, $technicianIds): void {
+        $projectTechniciansToRemove = DB::table('tbl_project_technicians')
+            ->select('project_technician_id', 'technician_id')
+            ->where('project_id', '=', $project->project_id)
+            ->whereNotIn('technician_id', $technicianIds->toArray())
+            ->get();
+
+        if ($projectTechniciansToRemove->isNotEmpty()) {
+
+    $projectTechnicianIds = $projectTechniciansToRemove
+        ->pluck('project_technician_id')
+        ->toArray();
+
+    $removedTechnicianIds = $projectTechniciansToRemove
+        ->pluck('technician_id')
+        ->toArray();
+
+    DB::table('tbl_schedule_technicians')
+        ->whereIn('project_technician_id', $projectTechnicianIds)
+        ->delete();
+
+    DB::table('tbl_project_technicians')
+        ->whereIn('project_technician_id', $projectTechnicianIds)
+        ->delete();
+
+    Task::where('project_id', $project->project_id)
+        ->whereIn('technician_id', $removedTechnicianIds)
+        ->where('status', '!=', 'completed') // don't touch finished work
+        ->update([
+            'technician_id' => null,
+            'status' => 'unassigned',
         ]);
+}
 
-        $technicianIds = collect([
-            $validated['lead_tech'],
-            ...($validated['technicians'] ?? []),
-        ])
-            ->map(fn($technicianId) => (int) $technicianId)
-            ->unique()
-            ->values();
-
-        DB::transaction(function () use ($project, $technicianIds): void {
-            $projectTechniciansToRemove = DB::table('tbl_project_technicians')
-                ->select('project_technician_id')
-                ->where('project_id', '=', $project->project_id)
-                ->whereNotIn('technician_id', $technicianIds->toArray())
-                ->get();
-
-            if ($projectTechniciansToRemove->isNotEmpty()) {
-
-                $projectTechnicianIds = $projectTechniciansToRemove
-                    ->pluck('project_technician_id')
-                    ->toArray();
-
-                DB::table('tbl_schedule_technicians')
-                    ->whereIn('project_technician_id', $projectTechnicianIds)
-                    ->delete();
-
-                DB::table('tbl_project_technicians')
-                    ->whereIn('project_technician_id', $projectTechnicianIds)
-                    ->delete();
-            }
-
-            $technicianIds->each(function (int $technicianId) use ($project): void {
-                ProjectTechnician::firstOrCreate([
-                    'project_id' => $project->project_id,
-                    'technician_id' => $technicianId,
-                ]);
-            });
+        $technicianIds->each(function (int $technicianId) use ($project): void {
+            ProjectTechnician::firstOrCreate([
+                'project_id' => $project->project_id,
+                'technician_id' => $technicianId,
+            ]);
         });
+    });
 
-        return back()->with('success', 'Assigned team updated.');
-    }
+    return back()->with('success', 'Assigned team updated.');
+}
 }

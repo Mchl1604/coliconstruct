@@ -69,62 +69,55 @@ class TaskController extends Controller
     }
 
     public function update(Request $request, $taskId)
-    {
-        $task = Task::findOrFail($taskId);
+{
+    $task = Task::findOrFail($taskId);
 
-        if ($task->status == 'completed') {
-            return back();
-        }
-
-        $query = Schedule::query();
-
-        $schedule = $query
-            ->where('project_id', $task->project_id)
-            ->firstOrFail();
-
-        $projectStart = $schedule->start_datetime->format('Y-m-d');
-        $projectEnd = $schedule->end_datetime->format('Y-m-d');
-
-        $validated = $request->validate([
-            'task_title' => 'required|string|max:255',
-            'task_description' => 'required|string',
-            'technician_id' => 'required|exists:tbl_technicians,technician_id',
-            'start_date' => [
-                'required',
-                'date',
-                'after_or_equal:' . $projectStart,
-                'before_or_equal:' . $projectEnd,
-            ],
-            'due_date' => [
-                'required',
-                'date',
-                'after_or_equal:start_date',
-                'before_or_equal:' . $projectEnd,
-            ],
-        ]);
-
-        DB::beginTransaction();
-
-        try {
-
-            $task->update($validated);
-
-            DB::commit();
-
-            return back()->with(
-                'success',
-                'Task updated successfully.'
-            );
-        } catch (\Exception $e) {
-
-            DB::rollBack();
-
-            return back()->with(
-                'error',
-                $e->getMessage()
-            );
-        }
+    if ($task->status == 'completed') {
+        return back();
     }
+
+    $query = Schedule::query();
+
+    $schedule = $query
+        ->where('project_id', $task->project_id)
+        ->firstOrFail();
+
+    $projectStart = $schedule->start_datetime->format('Y-m-d');
+    $projectEnd = $schedule->end_datetime->format('Y-m-d');
+
+    $validated = $request->validate([
+        'task_title' => 'required|string|max:255',
+        'task_description' => 'required|string',
+        'technician_id' => 'required|exists:tbl_technicians,technician_id',
+        'start_date' => [
+            'required',
+            'date',
+            'after_or_equal:' . $projectStart,
+            'before_or_equal:' . $projectEnd,
+        ],
+        'due_date' => [
+            'required',
+            'date',
+            'after_or_equal:start_date',
+            'before_or_equal:' . $projectEnd,
+        ],
+    ]);
+
+    if ($task->status === 'unassigned') {
+        $validated['status'] = 'pending';
+    }
+
+    DB::beginTransaction();
+
+    try {
+        $task->update($validated);
+        DB::commit();
+        return back()->with('success', 'Task updated successfully.');
+    } catch (\Exception $e) {
+        DB::rollBack();
+        return back()->with('error', $e->getMessage());
+    }
+}
     public function complete($taskId)
     {
         $task = Task::findOrFail($taskId);

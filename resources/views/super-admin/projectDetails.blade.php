@@ -196,11 +196,10 @@
                         <h4 class="mb-0 fw-bold">
                             Assigned Team
                         </h4>
-                        <button class="btn btn-outline-primary"
-    data-bs-toggle="modal"
-    data-bs-target="#editAssignedTeamModal">
-    <i class="bi bi-pencil-square"></i>
-</button>
+                        <button class="btn btn-outline-primary" data-bs-toggle="modal"
+                            data-bs-target="#editAssignedTeamModal">
+                            <i class="bi bi-pencil-square"></i>
+                        </button>
 
                     </div>
 
@@ -501,6 +500,10 @@
 
                                             <td>
                                                 @switch($task->status)
+                                                    @case('unassigned')
+                                                        <span class="badge bg-warning text-dark">Unassigned</span>
+                                                    @break
+
                                                     @case('pending')
                                                         <span class="badge bg-secondary">Pending</span>
                                                     @break
@@ -532,7 +535,7 @@
                                                     </button>
 
                                                     {{-- Complete --}}
-                                                    @if ($task->status != 'completed')
+                                                    @if ($task->status != 'completed' && $task->status != 'unassigned')
                                                         <button class="btn btn-sm btn-success" data-bs-toggle="modal"
                                                             data-bs-target="#completeTaskModal{{ $task->task_id }}">
 
@@ -848,105 +851,105 @@
 
     <!-- END OF EDIT PROJECT DETAILS MODAL -->
     <!-- EDIT ASSIGNED TEAM MODAL -->
-<div class="modal fade" id="editAssignedTeamModal" tabindex="-1" aria-labelledby="editAssignedTeamModalLabel"
-    aria-hidden="true">
+    <div class="modal fade" id="editAssignedTeamModal" tabindex="-1" aria-labelledby="editAssignedTeamModalLabel"
+        aria-hidden="true">
 
-    <div class="modal-dialog modal-lg">
+        <div class="modal-dialog modal-lg">
 
-        <form action="{{ route('super-admin.projects.team.update', $project->project_id) }}" method="POST"
-            data-team-form>
+            <form action="{{ route('super-admin.projects.team.update', $project->project_id) }}" method="POST"
+                data-team-form>
 
-            @csrf
-            @method('PUT')
+                @csrf
+                @method('PUT')
 
-            <div class="modal-content">
+                <div class="modal-content">
 
-                <div class="modal-header bg-primary text-white">
-                    <h5 class="modal-title" id="editAssignedTeamModalLabel">
-                        <i class="bi bi-people me-2"></i>
-                        Edit Assigned Team
-                    </h5>
+                    <div class="modal-header bg-primary text-white">
+                        <h5 class="modal-title" id="editAssignedTeamModalLabel">
+                            <i class="bi bi-people me-2"></i>
+                            Edit Assigned Team
+                        </h5>
 
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                </div>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
 
-                <div class="modal-body">
+                    <div class="modal-body">
 
-                    <div class="mb-4">
-                        <label for="editLeadTech" class="form-label fw-bold">
-                            Lead Technician <span class="text-danger">*</span>
-                        </label>
+                        <div class="mb-4">
+                            <label for="editLeadTech" class="form-label fw-bold">
+                                Lead Technician <span class="text-danger">*</span>
+                            </label>
 
-                        <select class="form-select" id="editLeadTech" name="lead_tech" required
-                            data-lead-tech-select>
-                            <option value="" disabled {{ $currentLeadTechnicianId ? '' : 'selected' }}>
-                                Select lead technician
-                            </option>
-
-                            @foreach ($leadTechnicianOptions as $technician)
-                                <option value="{{ $technician->technician_id }}"
-                                    {{ (string) $technician->technician_id === (string) $currentLeadTechnicianId ? 'selected' : '' }}>
-                                    {{ $technician->name }}
+                            <select class="form-select" id="editLeadTech" name="lead_tech" required
+                                data-lead-tech-select>
+                                <option value="" disabled {{ $currentLeadTechnicianId ? '' : 'selected' }}>
+                                    Select lead technician
                                 </option>
-                            @endforeach
-                        </select>
 
-                        <div class="form-text text-danger d-none" data-lead-tech-error>
-                            A lead technician is required.
+                                @foreach ($leadTechnicianOptions as $technician)
+                                    <option value="{{ $technician->technician_id }}"
+                                        {{ (string) $technician->technician_id === (string) $currentLeadTechnicianId ? 'selected' : '' }}>
+                                        {{ $technician->name }}
+                                    </option>
+                                @endforeach
+                            </select>
+
+                            <div class="form-text text-danger d-none" data-lead-tech-error>
+                                A lead technician is required.
+                            </div>
                         </div>
+
+                        <hr>
+
+                        <label class="form-label fw-bold mb-2">Technicians</label>
+
+                        <div class="technician-picker" data-technician-picker>
+                            <div class="dropdown w-100">
+                                <button type="button" class="form-select technician-dropdown-toggle text-start"
+                                    data-bs-toggle="dropdown" aria-expanded="false" data-technician-dropdown-button>
+                                    Select technicians
+                                </button>
+
+                                <ul class="dropdown-menu w-100" data-technician-dropdown-menu></ul>
+                            </div>
+
+                            <div class="technician-selected-list mt-3" data-technician-selected-list></div>
+                            <div class="technician-hidden-inputs" data-technician-hidden-inputs></div>
+                        </div>
+
                     </div>
 
-                    <hr>
+                    <div class="modal-footer">
 
-                    <label class="form-label fw-bold mb-2">Technicians</label>
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                            Close
+                        </button>
 
-                    <div class="technician-picker" data-technician-picker>
-                        <div class="dropdown w-100">
-                            <button type="button" class="form-select technician-dropdown-toggle text-start"
-                                data-bs-toggle="dropdown" aria-expanded="false" data-technician-dropdown-button>
-                                Select technicians
-                            </button>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-lg me-1"></i>
+                            Save Changes
+                        </button>
 
-                            <ul class="dropdown-menu w-100" data-technician-dropdown-menu></ul>
-                        </div>
-
-                        <div class="technician-selected-list mt-3" data-technician-selected-list></div>
-                        <div class="technician-hidden-inputs" data-technician-hidden-inputs></div>
                     </div>
 
                 </div>
 
-                <div class="modal-footer">
+            </form>
 
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                        Close
-                    </button>
-
-                    <button type="submit" class="btn btn-primary">
-                        <i class="bi bi-check-lg me-1"></i>
-                        Save Changes
-                    </button>
-
-                </div>
-
-            </div>
-
-        </form>
+        </div>
 
     </div>
+    <!-- END OF EDIT ASSIGNED TEAM MODAL -->
 
-</div>
-<!-- END OF EDIT ASSIGNED TEAM MODAL -->
-
-@push('scripts')
-    <script>
-        window.assignedTeamData = @json($assignedTeamLookup);
-        window.assignedTeamState = @json([
-            'leadTechId' => $currentLeadTechnicianId,
-            'technicianIds' => $currentTeamTechnicianIds,
-        ]);
-    </script>
-@endpush
+    @push('scripts')
+        <script>
+            window.assignedTeamData = @json($assignedTeamLookup);
+            window.assignedTeamState = @json([
+                'leadTechId' => $currentLeadTechnicianId,
+                'technicianIds' => $currentTeamTechnicianIds,
+            ]);
+        </script>
+    @endpush
 
     <!-- Add Technician Report Modal -->
     <div class="modal fade" id="addTechnicianReportModal" tabindex="-1" aria-labelledby="addTechnicianReportModalLabel"
@@ -1575,10 +1578,10 @@
         <script src="/js/super-admin/projectDetails.js"></script>
         <script>
             window.assignedTeamData = @json($assignedTeamLookup);
-        window.assignedTeamState = @json([
-            'leadTechId' => $currentLeadTechnicianId,
-            'technicianIds' => $currentTeamTechnicianIds,
-        ]);
+            window.assignedTeamState = @json([
+                'leadTechId' => $currentLeadTechnicianId,
+                'technicianIds' => $currentTeamTechnicianIds,
+            ]);
         </script>
     @endpush
 @endsection
