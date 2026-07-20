@@ -98,8 +98,16 @@
                             };
                         @endphp
 
-                        <span class="badge rounded-pill fs-6 px-4 py-3 {{ $statusClass }}">
-                            {{ ucfirst($project->status) }}
+
+                        @if ($project->on_hold === true)
+                            <span class="badge rounded-pill fs-6 px-4 py-3 bg-secondary text-white">
+                                On Hold
+                            </span>
+                        @else
+                            <span class="badge rounded-pill fs-6 px-4 py-3 {{ $statusClass }}">
+                                {{ ucfirst($project->status) }}
+                            </span>
+                        @endif
                         </span>
 
                     </div>
@@ -188,10 +196,11 @@
                         <h4 class="mb-0 fw-bold">
                             Assigned Team
                         </h4>
-
-                        <button class="btn btn-outline-primary">
-                            Edit Schedule
-                        </button>
+                        <button class="btn btn-outline-primary"
+    data-bs-toggle="modal"
+    data-bs-target="#editAssignedTeamModal">
+    <i class="bi bi-pencil-square"></i>
+</button>
 
                     </div>
 
@@ -199,21 +208,34 @@
 
                         <ul class="list-group list-group-flush">
 
-                            <li class="list-group-item d-flex align-items-center justify-content-between">
-                                Tech. Carl Dominguez
+                            @forelse($project->projectTechnicians as $projectTechnician)
+                                @php
+                                    $technician = $projectTechnician->technician;
+                                @endphp
 
-                                <span class="badge bg-primary">
-                                    Lead
-                                </span>
-                            </li>
+                                @if ($technician)
+                                    <li class="list-group-item d-flex justify-content-between align-items-center">
 
-                            <li class="list-group-item">
-                                Tech. Anne Mendoza
-                            </li>
+                                        <div>
+                                            <i class="bi bi-person-circle me-2 text-primary"></i>
+                                            {{ $technician->name }}
+                                        </div>
 
-                            <li class="list-group-item">
-                                Tech. Lito Ramos
-                            </li>
+                                        @if (optional($technician->account)->role === 'lead_technician')
+                                            <span class="badge bg-primary">
+                                                Lead Technician
+                                            </span>
+                                        @endif
+
+                                    </li>
+                                @endif
+
+                            @empty
+
+                                <li class="list-group-item text-muted">
+                                    No technicians assigned.
+                                </li>
+                            @endforelse
 
                         </ul>
 
@@ -825,6 +847,106 @@
     </div>
 
     <!-- END OF EDIT PROJECT DETAILS MODAL -->
+    <!-- EDIT ASSIGNED TEAM MODAL -->
+<div class="modal fade" id="editAssignedTeamModal" tabindex="-1" aria-labelledby="editAssignedTeamModalLabel"
+    aria-hidden="true">
+
+    <div class="modal-dialog modal-lg">
+
+        <form action="{{ route('super-admin.projects.team.update', $project->project_id) }}" method="POST"
+            data-team-form>
+
+            @csrf
+            @method('PUT')
+
+            <div class="modal-content">
+
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title" id="editAssignedTeamModalLabel">
+                        <i class="bi bi-people me-2"></i>
+                        Edit Assigned Team
+                    </h5>
+
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+
+                <div class="modal-body">
+
+                    <div class="mb-4">
+                        <label for="editLeadTech" class="form-label fw-bold">
+                            Lead Technician <span class="text-danger">*</span>
+                        </label>
+
+                        <select class="form-select" id="editLeadTech" name="lead_tech" required
+                            data-lead-tech-select>
+                            <option value="" disabled {{ $currentLeadTechnicianId ? '' : 'selected' }}>
+                                Select lead technician
+                            </option>
+
+                            @foreach ($leadTechnicianOptions as $technician)
+                                <option value="{{ $technician->technician_id }}"
+                                    {{ (string) $technician->technician_id === (string) $currentLeadTechnicianId ? 'selected' : '' }}>
+                                    {{ $technician->name }}
+                                </option>
+                            @endforeach
+                        </select>
+
+                        <div class="form-text text-danger d-none" data-lead-tech-error>
+                            A lead technician is required.
+                        </div>
+                    </div>
+
+                    <hr>
+
+                    <label class="form-label fw-bold mb-2">Technicians</label>
+
+                    <div class="technician-picker" data-technician-picker>
+                        <div class="dropdown w-100">
+                            <button type="button" class="form-select technician-dropdown-toggle text-start"
+                                data-bs-toggle="dropdown" aria-expanded="false" data-technician-dropdown-button>
+                                Select technicians
+                            </button>
+
+                            <ul class="dropdown-menu w-100" data-technician-dropdown-menu></ul>
+                        </div>
+
+                        <div class="technician-selected-list mt-3" data-technician-selected-list></div>
+                        <div class="technician-hidden-inputs" data-technician-hidden-inputs></div>
+                    </div>
+
+                </div>
+
+                <div class="modal-footer">
+
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        Close
+                    </button>
+
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-lg me-1"></i>
+                        Save Changes
+                    </button>
+
+                </div>
+
+            </div>
+
+        </form>
+
+    </div>
+
+</div>
+<!-- END OF EDIT ASSIGNED TEAM MODAL -->
+
+@push('scripts')
+    <script>
+        window.assignedTeamData = @json($assignedTeamLookup);
+        window.assignedTeamState = @json([
+            'leadTechId' => $currentLeadTechnicianId,
+            'technicianIds' => $currentTeamTechnicianIds,
+        ]);
+    </script>
+@endpush
 
     <!-- Add Technician Report Modal -->
     <div class="modal fade" id="addTechnicianReportModal" tabindex="-1" aria-labelledby="addTechnicianReportModalLabel"
@@ -1231,54 +1353,44 @@
                             @endforeach
 
                         </div>
-                        @if($task->status == 'completed')
+                        @if ($task->status == 'completed')
+                            <hr>
 
-    <hr>
+                            <h6 class="fw-bold mb-3">
+                                <i class="bi bi-images me-2"></i>
+                                Completion Images
+                            </h6>
 
-    <h6 class="fw-bold mb-3">
-        <i class="bi bi-images me-2"></i>
-        Completion Images
-    </h6>
+                            @if ($task->images->count())
+                                <div class="row g-3">
 
-    @if($task->images->count())
+                                    @foreach ($task->images as $image)
+                                        <div class="col-lg-4 col-md-6">
 
-        <div class="row g-3">
+                                            <a href="{{ asset('storage/' . $image->image_path) }}" target="_blank">
 
-            @foreach($task->images as $image)
+                                                <img src="{{ asset('storage/' . $image->image_path) }}"
+                                                    class="img-fluid rounded border shadow-sm"
+                                                    style="height:200px;width:100%;object-fit:cover;">
 
-                <div class="col-lg-4 col-md-6">
+                                            </a>
 
-                    <a href="{{ asset('storage/' . $image->image_path) }}"
-                        target="_blank">
+                                        </div>
+                                    @endforeach
 
-                        <img
-                            src="{{ asset('storage/' . $image->image_path) }}"
-                            class="img-fluid rounded border shadow-sm"
-                            style="height:200px;width:100%;object-fit:cover;">
+                                </div>
+                            @else
+                                <div class="alert alert-warning mb-0">
 
-                    </a>
+                                    <i class="bi bi-exclamation-circle me-2"></i>
 
-                </div>
+                                    <strong>No image available.</strong>
 
-            @endforeach
+                                    This task was marked as completed without any uploaded completion images.
 
-        </div>
-
-    @else
-
-        <div class="alert alert-warning mb-0">
-
-            <i class="bi bi-exclamation-circle me-2"></i>
-
-            <strong>No image available.</strong>
-
-            This task was marked as completed without any uploaded completion images.
-
-        </div>
-
-    @endif
-
-@endif
+                                </div>
+                            @endif
+                        @endif
 
                     </div>
 
@@ -1461,5 +1573,12 @@
 
     @push('scripts')
         <script src="/js/super-admin/projectDetails.js"></script>
+        <script>
+            window.assignedTeamData = @json($assignedTeamLookup);
+        window.assignedTeamState = @json([
+            'leadTechId' => $currentLeadTechnicianId,
+            'technicianIds' => $currentTeamTechnicianIds,
+        ]);
+        </script>
     @endpush
 @endsection

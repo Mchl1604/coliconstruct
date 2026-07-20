@@ -20,10 +20,14 @@ class Project extends Model
         'quotation',
         'address',
         'description',
+        'on_hold' ,
+        'is_archived',
     ];
 
     protected $casts = [
         'quotation' => 'decimal:2',
+        'on_hold' => 'boolean',
+        'is_archived' => 'boolean',
     ];
 
     public function clients(): HasMany

@@ -55,46 +55,49 @@ class StoreProjectRequest extends FormRequest
     }
 
     public function after(): array
-    {
-        return [
-            function ($validator): void {
-                $technicianIds = collect([
-                    $this->input('lead_tech'),
-                    ...($this->input('technicians', [])),
-                ])
-                    ->filter()
-                    ->map(fn ($technicianId): int => (int) $technicianId)
-                    ->unique()
-                    ->values();
+{
+    return [
+        function ($validator): void {
+            $technicianIds = collect([
+                $this->input('lead_tech'),
+                ...($this->input('technicians', [])),
+            ])
+                ->filter()
+                ->map(fn ($technicianId): int => (int) $technicianId)
+                ->unique()
+                ->values();
 
-                if ($technicianIds->isEmpty()) {
-                    return;
-                }
+            if ($technicianIds->isEmpty()) {
+                return;
+            }
 
-                $startDate = CarbonImmutable::parse($this->input('start_date'))->startOfDay();
-                $endDate = CarbonImmutable::parse($this->input('end_date'))->endOfDay();
+            $startDate = CarbonImmutable::parse($this->input('start_date'))->startOfDay();
+            $endDate = CarbonImmutable::parse($this->input('end_date'))->endOfDay();
 
-                $conflictingSchedules = Schedule::query()
-                    ->with(['scheduleTechnicians.projectTechnician'])
-                    ->whereHas('scheduleTechnicians.projectTechnician', function ($query) use ($technicianIds): void {
-                        $query->whereIn('technician_id', $technicianIds->all());
-                    })
-                    ->get()
-                    ->filter(function (Schedule $schedule) use ($startDate, $endDate): bool {
-                        $existingStart = CarbonImmutable::parse($schedule->start_datetime)->startOfDay();
-                        $existingEnd = CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime)->endOfDay();
+            $conflictingSchedules = Schedule::query()
+                ->whereHas('project', function ($query): void {
+                    $query->whereIn('status', ['pending', 'ongoing']);
+                })
+                ->with(['scheduleTechnicians.projectTechnician'])
+                ->whereHas('scheduleTechnicians.projectTechnician', function ($query) use ($technicianIds): void {
+                    $query->whereIn('technician_id', $technicianIds->all());
+                })
+                ->get()
+                ->filter(function (Schedule $schedule) use ($startDate, $endDate): bool {
+                    $existingStart = CarbonImmutable::parse($schedule->start_datetime)->startOfDay();
+                    $existingEnd = CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime)->endOfDay();
 
-                        return $startDate->lessThanOrEqualTo($existingEnd)
-                            && $endDate->greaterThanOrEqualTo($existingStart);
-                    });
+                    return $startDate->lessThanOrEqualTo($existingEnd)
+                        && $endDate->greaterThanOrEqualTo($existingStart);
+                });
 
-                if ($conflictingSchedules->isNotEmpty()) {
-                    $validator->errors()->add('start_date', 'The selected schedule overlaps an existing technician assignment.');
-                    $validator->errors()->add('end_date', 'The selected schedule overlaps an existing technician assignment.');
-                }
-            },
-        ];
-    }
+            if ($conflictingSchedules->isNotEmpty()) {
+                $validator->errors()->add('start_date', 'The selected schedule overlaps an existing technician assignment.');
+                $validator->errors()->add('end_date', 'The selected schedule overlaps an existing technician assignment.');
+            }
+        },
+    ];
+}
 
     /**
      * @return array<int, string>

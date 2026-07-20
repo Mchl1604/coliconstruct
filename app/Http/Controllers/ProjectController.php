@@ -30,6 +30,8 @@ class ProjectController extends Controller
             ->orderBy('project_id', 'desc')
             ->get();
 
+        $this->updateStatus($projects); // Call the function to update project statuses
+
         return view('super-admin.projects', compact('projects'));
     }
 
@@ -206,8 +208,14 @@ class ProjectController extends Controller
     private function buildTechnicianSchedules(): array
     {
         $schedules = Schedule::query()
-            ->with(['scheduleTechnicians.projectTechnician'])
-            ->get();
+            ->whereHas('project', function ($query): void {
+                $query->whereIn('status', ['pending', 'ongoing']);
+            })
+            ->with([
+                'scheduleTechnicians:schedule_technician_id,schedule_id,project_technician_id',
+                'scheduleTechnicians.projectTechnician:project_technician_id,technician_id',
+            ])
+            ->get(['schedule_id', 'project_id', 'start_datetime', 'end_datetime']);
 
         $scheduleMap = [];
 
@@ -280,62 +288,124 @@ class ProjectController extends Controller
     }
 
     public function show(Request $request, int $id)
-{
-    $project = Project::with([
+    {
+        $project = Project::with([
+            'clients',
+            'documents',
+            'schedule',
+            'projectTypes',
+            'projectTechnicians.technician' => function ($query) {
 
-    'clients',
+                $query->with('account')
+                    ->withCount([
+                        'tasks as tasks_count' => function ($q) {
 
-    'documents',
+                            $q->whereIn('status', [
+                                'pending',
+                                'ongoing'
+                            ]);
+                        }
+                    ]);
+            }
 
-    'schedule',
+        ])->findOrFail($id);
+        $sortedProjectTechnicians = $project->projectTechnicians
+        ->sortByDesc(function ($projectTechnician) {
+            return optional($projectTechnician->technician?->account)->role === 'lead_technician' ? 1 : 0;
+        })
+        ->values();
 
-    'projectTypes',
+    $project->setRelation('projectTechnicians', $sortedProjectTechnicians);
+        $schedule = $project->schedule;
 
-    'projectTechnicians.technician' => function ($query) {
+        $assignedTechnicianIds = $project->projectTechnicians
+            ->pluck('technician_id');
 
-        $query->with('account')
-              ->withCount([
-                  'tasks as tasks_count' => function ($q) {
+        $availableTechnicians = Technician::with('account')
+            ->whereHas('account', function ($query) {
+                $query->whereIn('role', ['technician', 'lead_technician']);
+            })
+            ->whereNotIn('technician_id', $assignedTechnicianIds)
+            ->whereDoesntHave('projectTechnicians.scheduleTechnicians.schedule', function ($query) use ($schedule) {
+                $query->where(function ($q) use ($schedule) {
+                    $q->whereBetween('start_datetime', [
+                        $schedule->start_datetime,
+                        $schedule->end_datetime,
+                    ])
+                        ->orWhereBetween('end_datetime', [
+                            $schedule->start_datetime,
+                            $schedule->end_datetime,
+                        ])
+                        ->orWhere(function ($q2) use ($schedule) {
+                            $q2->where('start_datetime', '<=', $schedule->start_datetime)
+                                ->where('end_datetime', '>=', $schedule->end_datetime);
+                        });
+                });
+            })
+            ->get()
+            ->sortBy('name')
+            ->values();
 
-                      $q->whereIn('status', [
-                          'pending',
-                          'ongoing'
-                      ]);
+        $currentLeadTechnicianId = optional(
+            $project->projectTechnicians->first(function ($projectTechnician) {
+                return optional($projectTechnician->technician?->account)->role === 'lead_technician';
+            })
+        )->technician_id;
 
-                  }
-              ]);
+        $currentTeamTechnicianIds = $project->projectTechnicians
+            ->pluck('technician_id')
+            ->reject(fn($technicianId) => $technicianId === $currentLeadTechnicianId)
+            ->values();
 
+        $leadTechnicianOptions = Technician::with('account')
+            ->whereHas('account', fn($query) => $query->where('role', 'lead_technician'))
+            ->get()
+            ->sortBy('name')
+            ->values();
+
+        $assignedTeamLookup = $availableTechnicians
+            ->concat($project->projectTechnicians->pluck('technician')->filter())
+            ->concat($leadTechnicianOptions)
+            ->unique('technician_id')
+            ->map(fn(Technician $technician) => [
+                'id' => $technician->technician_id,
+                'name' => $technician->name,
+                'role' => optional($technician->account)->role,
+            ])
+            ->values();
+
+        $projectTypes = ProjectType::query()
+            ->orderBy('type_name', 'asc')
+            ->get();
+
+        // Get technician reports for this project
+        $reports = TechnicianReport::with('images')
+            ->where('project_id', $id);
+
+        $tasks = Task::with(['technician', 'images'])
+            ->where('project_id', $id)
+            ->latest()
+            ->get();
+
+        // Filter by report type
+        if ($request->filled('report_type')) {
+            $reports->where('report_type', $request->report_type);
+        }
+
+        $reports = $reports->latest()->get();
+
+        return view('super-admin.projectDetails', compact(
+            'project',
+            'projectTypes',
+            'reports',
+            'tasks',
+            'availableTechnicians',
+            'leadTechnicianOptions',
+            'currentLeadTechnicianId',
+            'currentTeamTechnicianIds',
+            'assignedTeamLookup'
+        ));
     }
-
-])->findOrFail($id);
-
-    $projectTypes = ProjectType::query()
-        ->orderBy('type_name', 'asc')
-        ->get();
-
-    // Get technician reports for this project
-    $reports = TechnicianReport::with('images')
-        ->where('project_id', $id);
-
-    $tasks = Task::with(['technician', 'images'])
-    ->where('project_id', $id)
-    ->latest()
-    ->get();
-
-    // Filter by report type
-    if ($request->filled('report_type')) {
-        $reports->where('report_type', $request->report_type);
-    }
-
-    $reports = $reports->latest()->get();
-
-    return view('super-admin.projectDetails', compact(
-        'project',
-        'projectTypes',
-        'reports',
-        'tasks'
-    ));
-}
 
     public function previewDocument(int $id, string $type)
     {
@@ -507,5 +577,125 @@ class ProjectController extends Controller
                 'document_type' => $documentType,
             ]));
         }
+    }
+
+    public function putOnHold(Request $request, int $id)
+    {
+        $project = Project::findOrFail($id);
+
+        $project->update(['on_hold' => true]);
+
+        return redirect()
+            ->route('super-admin.projects', $id)
+            ->with('success', 'Project has been put on hold.');
+    }
+
+    public function resume(Request $request, int $id)
+    {
+        $project = Project::findOrFail($id);
+
+        $project->update(['on_hold' => false]);
+
+        return redirect()
+            ->route('super-admin.projects', $id)
+            ->with('success', 'Project has been resumed.');
+    }
+
+    public function updateStatus($projects)
+    {
+        $projects = Project::all();
+
+        foreach ($projects as $project) {
+
+            $firstSchedule = DB::table('tbl_schedule')
+                ->select('*')
+                ->where('project_id', '=', $project->project_id)
+                ->orderBy('start_datetime', 'asc')
+                ->first();
+
+            if (!$firstSchedule) {
+                continue;
+            }
+
+            switch ($project->status) {
+
+                case 'pending':
+                    if (now()->gte(\Carbon\Carbon::parse($firstSchedule->start_datetime))) {
+                        $project->update([
+                            'status' => 'ongoing'
+                        ]);
+                    }
+                    break;
+
+                case 'ongoing':
+                    // Check if project should become completed
+                    break;
+
+                case 'on_hold':
+                    // Do nothing while on hold
+                    break;
+
+                case 'completed':
+                    // Do nothing
+                    break;
+
+                case 'cancelled':
+                    // Do nothing
+                    break;
+            }
+        }
+    }
+
+    public function updateAssignedTeam(Request $request, int $id)
+    {
+        $project = Project::findOrFail($id);
+
+        $validated = $request->validate([
+            'lead_tech' => ['required', 'integer', 'exists:tbl_technicians,technician_id'],
+            'technicians' => ['nullable', 'array'],
+            'technicians.*' => ['integer', 'exists:tbl_technicians,technician_id'],
+        ], [
+            'lead_tech.required' => 'A lead technician is required.',
+        ]);
+
+        $technicianIds = collect([
+            $validated['lead_tech'],
+            ...($validated['technicians'] ?? []),
+        ])
+            ->map(fn($technicianId) => (int) $technicianId)
+            ->unique()
+            ->values();
+
+        DB::transaction(function () use ($project, $technicianIds): void {
+            $projectTechniciansToRemove = DB::table('tbl_project_technicians')
+                ->select('project_technician_id')
+                ->where('project_id', '=', $project->project_id)
+                ->whereNotIn('technician_id', $technicianIds->toArray())
+                ->get();
+
+            if ($projectTechniciansToRemove->isNotEmpty()) {
+
+                $projectTechnicianIds = $projectTechniciansToRemove
+                    ->pluck('project_technician_id')
+                    ->toArray();
+
+                DB::table('tbl_schedule_technicians')
+                    ->whereIn('project_technician_id', $projectTechnicianIds)
+                    ->delete();
+
+                DB::table('tbl_project_technicians')
+                    ->whereIn('project_technician_id', $projectTechnicianIds)
+                    ->delete();
+            }
+
+            $technicianIds->each(function (int $technicianId) use ($project): void {
+                ProjectTechnician::firstOrCreate([
+                    'project_id' => $project->project_id,
+                    'technician_id' => $technicianId,
+                ]);
+            });
+        });
+
+        return back()->with('success', 'Assigned team updated.');
     }
 }

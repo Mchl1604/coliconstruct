@@ -32,7 +32,7 @@
                     <button type="button" class="nav-link" data-status-filter="ongoing">Ongoing</button>
                 </li>
                 <li class="nav-item">
-                    
+
                     <button type="button" class="nav-link" data-status-filter="completed">Completed</button>
                 </li>
 
@@ -69,10 +69,17 @@
                                 </td>
                                 <td>₱ {{ number_format($project->quotation, 2) }}</td>
                                 <td>
-                                    <span
-                                        class="badge bg-{{ $project->status === 'pending' ? 'warning' : ($project->status === 'ongoing' ? 'success' : 'secondary') }}">
-                                        {{ ucfirst($project->status) }}
-                                    </span>
+                                    @if ($project->on_hold)
+                                        <span class="badge bg-secondary">On Hold</span>
+                                    @elseif ($project->status === 'pending')
+                                        <span class="badge bg-warning">Pending</span>
+                                    @elseif ($project->status === 'ongoing')
+                                        <span class="badge bg-primary">Ongoing</span>
+                                    @elseif ($project->status === 'completed')
+                                        <span class="badge bg-success">Completed</span>
+                                    @elseif ($project->status === 'cancelled')
+                                        <span class="badge bg-danger">Cancelled</span>
+                                    @endif
                                 </td>
                                 <td>
                                     {{ $project->schedule?->start_datetime?->format('M d, Y') ?? 'N/A' }} -
@@ -80,20 +87,110 @@
                                 </td>
                                 <td class="text-center">
                                     <div class="projects-action-buttons">
-                                        <button class="btn btn-sm btn-primary py-1 px-2" onclick="window.location='{{ route('super-admin.projects.show', $project->project_id) }}'">
+                                        <button class="btn btn-sm btn-primary py-1 px-2"
+                                            onclick="window.location='{{ route('super-admin.projects.show', $project->project_id) }}'">
                                             <i class="bi bi-eye"></i>
                                         </button>
-
-                                        <button class="btn btn-sm btn-warning py-1 px-2">
-                                            <i class="bi bi-pause"></i>
-                                        </button>
-
+                                        @if ($project->on_hold !== true)
+                                            <button class="btn btn-sm btn-warning py-1 px-2" data-bs-toggle="modal"
+                                                data-bs-target="#onHoldModal{{ $project->project_id }}">
+                                                <i class="bi bi-pause"></i>
+                                            </button>
+                                        @endif
+                                        @if ($project->on_hold === true)
+                                            <button class="btn btn-sm btn-success py-1 px-2" data-bs-toggle="modal"
+                                                data-bs-target="#resumeModal{{ $project->project_id }}">
+                                                <i class="bi bi-play"></i>
+                                            </button>
+                                        @endif
                                         <button class="btn btn-sm btn-danger py-1 px-2">
                                             <i class="bi bi-trash"></i>
                                         </button>
                                     </div>
                                 </td>
                             </tr>
+                            <!-- ON HOLD MODAL -->
+                            <div class="modal fade" id="onHoldModal{{ $project->project_id }}" tabindex="-1"
+                                aria-labelledby="onHoldModalLabel{{ $project->project_id }}" aria-hidden="true">
+
+                                <div class="modal-dialog">
+                                    <div class="modal-content">
+
+                                        <div class="modal-header">
+                                            <h5 class="modal-title" id="onHoldModalLabel{{ $project->project_id }}">
+                                                Put Project On Hold
+                                            </h5>
+
+                                            <button type="button" class="btn-close" data-bs-dismiss="modal">
+                                            </button>
+                                        </div>
+
+                                        <div class="modal-body">
+                                            Are you sure you want to put
+                                            <strong>{{ $project->reference_no }}</strong>
+                                            on hold?
+                                        </div>
+
+                                        <div class="modal-footer">
+                                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                                                Cancel
+                                            </button>
+
+                                            <form method="POST"
+                                                action="{{ route('super-admin.projects.hold', $project->project_id) }}">
+
+                                                @csrf
+                                                @method('PUT')
+                                                <button type="submit" class="btn btn-warning">
+                                                    Put on Hold
+                                                </button>
+                                            </form>
+                                        </div>
+
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- RESUME MODAL -->
+                            <div class="modal fade" id="resumeModal{{ $project->project_id }}"
+                                tabindex="-1" aria-labelledby="resumeModalLabel{{ $project->project_id }}"
+                                aria-hidden="true">
+
+                                <div class="modal-dialog">
+                                    <div class="modal-content">
+
+                                        <div class="modal-header">
+                                            <h5 class="modal-title" id="resumeModalLabel{{ $project->project_id }}">
+                                                Resume Project
+                                            </h5>
+
+                                            <button type="button" class="btn-close" data-bs-dismiss="modal">
+                                            </button>
+                                        </div>
+
+                                        <div class="modal-body">
+                                            Are you sure you want to resume
+                                            <strong>{{ $project->reference_no }}</strong>?
+                                        </div>
+
+                                        <div class="modal-footer">
+                                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                                                Cancel
+                                            </button>
+
+                                            <form method="POST"
+                                                action="{{ route('super-admin.projects.resume', $project->project_id) }}">
+
+                                                @csrf
+                                                @method('PUT')
+                                                <button type="submit" class="btn btn-success">
+                                                    Resume Project
+                                                </button>
+                                            </form>
+                                        </div>
+
+                                    </div>
+                                </div>
+                            </div>
                         @endforeach
 
 
@@ -105,6 +202,7 @@
 
         </div>
     </div>
+
 
     @push('scripts')
         <script>

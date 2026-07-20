@@ -12,3 +12,47 @@
 .technician-card:hover{
     transform:translateY(-3px);
 }
+.technician-dropdown-toggle {
+    cursor: pointer;
+}
+
+.technician-selected-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.technician-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.6rem;
+    border-radius: 999px;
+    background: #eef2ff;
+    color: #3730a3;
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+.technician-chip-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: #3730a3;
+    padding: 0;
+    line-height: 1;
+}
+
+.technician-chip-remove:hover {
+    background: rgba(55, 48, 163, 0.15);
+}
+
+.technician-empty-state {
+    color: #9ca3af;
+    font-size: 0.9rem;
+}

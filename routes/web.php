@@ -28,8 +28,14 @@ Route::prefix('super-admin')
         Route::get('/projects/create', [ProjectController::class, 'create'])->name('projects.create');
         Route::post('/projects/create', [ProjectController::class, 'store'])->name('projects.create.store');
         Route::get('/projects/{id}', [ProjectController::class, 'show'])->name('projects.show');
+        Route::put('/projects/{id}/hold', [ProjectController::class, 'putOnHold'])->name('projects.hold');
+        Route::put('/projects/{id}/resume', [ProjectController::class, 'resume'])->name('projects.resume');
         Route::get('/projects/{id}/documents/{type}', [ProjectController::class, 'previewDocument'])->name('projects.documents.preview');
         Route::put('/projects/{id}', [ProjectController::class, 'update'])->name('projects.update');
+        Route::put(
+    '/projects/{id}/team',
+    [ProjectController::class, 'updateAssignedTeam']
+)->name('projects.team.update');
         Route::post('/projects/{id}/reports', [TechnicianReportController::class, 'store'])
         ->name('technician.reports.store');
 
