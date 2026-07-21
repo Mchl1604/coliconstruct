@@ -258,30 +258,20 @@
                     </div>
 
                     <div class="card-body">
-
-                        <div class="mb-3">
-
-                            <label class="text-muted">
-                                Start Date
-                            </label>
-
-                            <h5 class="fw-bold">
-                                Apr 14, 2026
-                            </h5>
-
-                        </div>
-
                         <div>
-
-                            <label class="text-muted">
-                                End Date
-                            </label>
-
-                            <h5 class="fw-bold">
-                                Apr 22, 2026
-                            </h5>
-
+                            <strong>Date Ranges:</strong>
                         </div>
+                        <ul>
+                            @forelse($project->schedules as $schedule)
+                                <li class="list-group-item">
+                                    <strong>{{ \Carbon\Carbon::parse($schedule->start_datetime)->format('M d, Y') }}</strong> - <strong>{{ \Carbon\Carbon::parse($schedule->end_datetime)->format('M d, Y') }}</strong>
+                                </li>
+                            @empty
+                                <li class="list-group-item text-muted">
+                                    No schedule set.
+                                </li>
+                            @endforelse
+                        </ul>
 
                     </div>
 

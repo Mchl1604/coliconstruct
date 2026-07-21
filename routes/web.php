@@ -41,4 +41,5 @@ Route::prefix('super-admin')
 
         //ROUTE FOR SUPER ADMIN SCHEDULES PAGE
         Route::get('/schedules', [ScheduleController::class, 'index'])->name('schedules.index');
+        Route::put('/schedules/{id}', [ScheduleController::class, 'update'])->name('schedules.update');
     });

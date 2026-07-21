@@ -41,9 +41,16 @@ class Project extends Model
     }
 
     public function schedule(): HasOne
-    {
-        return $this->hasOne(Schedule::class, 'project_id', 'project_id');
-    }
+{
+    return $this->hasOne(Schedule::class, 'project_id', 'project_id')
+        ->orderBy('start_datetime');
+}
+
+public function schedules(): HasMany
+{
+    return $this->hasMany(Schedule::class, 'project_id', 'project_id')
+        ->orderBy('start_datetime');
+}
 
     public function projectTypes(): BelongsToMany
     {

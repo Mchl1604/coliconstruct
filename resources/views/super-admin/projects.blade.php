@@ -50,10 +50,11 @@
                             <th>Project ID</th>
                             <th>Reference No.</th>
                             <th>Client</th>
+                            <th>Client Type</th>
                             <th>Project Type</th>
                             <th>Quotation</th>
                             <th>Status</th>
-                            <th>Timeline</th>
+                            
                             <th class="text-center">Actions</th>
                         </tr>
                     </thead>
@@ -64,6 +65,7 @@
                                 <td>{{ $project->project_id }}</td>
                                 <td>{{ $project->reference_no }}</td>
                                 <td>{{ $project->clients->first()->fullname ?? 'N/A' }}</td>
+                                <td>{{ $project->clients->first()->client_type }}</td>
                                 <td>
                                     {{ $project->projectTypes->pluck('type_name')->join(', ') ?: 'N/A' }}
                                 </td>
@@ -80,10 +82,6 @@
                                     @elseif ($project->status === 'cancelled')
                                         <span class="badge bg-danger">Cancelled</span>
                                     @endif
-                                </td>
-                                <td>
-                                    {{ $project->schedule?->start_datetime?->format('M d, Y') ?? 'N/A' }} -
-                                    {{ $project->schedule?->end_datetime?->format('M d, Y') ?? 'N/A' }}
                                 </td>
                                 <td class="text-center">
                                     <div class="projects-action-buttons">
