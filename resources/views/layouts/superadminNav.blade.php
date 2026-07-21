@@ -38,7 +38,7 @@ href="https://cdn.datatables.net/2.3.8/css/dataTables.dataTables.css">
 [
     'label' => 'Schedules',
     'icon' => 'bi-calendar-event',
-    'url' => '#',
+    'url' => route('super-admin.schedules.index'),
     'active' => request()->routeIs('super-admin.schedules.*'),
 ],
 
