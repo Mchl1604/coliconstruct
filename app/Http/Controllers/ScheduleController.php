@@ -3,6 +3,7 @@ namespace App\Http\Controllers;
 use App\Models\Project;
 use App\Models\Schedule;
 use App\Models\ScheduleTechnician;
+use App\Models\Task;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -44,6 +45,14 @@ class ScheduleController extends Controller
 
     public function update(Request $request, int $id)
     {
+        $project = Project::with(['schedules', 'projectTechnicians'])->findOrFail($id);
+
+        if ($project->isReadOnly()) {
+            return redirect()
+                ->route('super-admin.schedules.index')
+                ->with('error', 'This project is ' . $project->status . ' and its schedule can no longer be changed.');
+        }
+
         $validated = $request->validate([
             'ranges' => ['required', 'array', 'min:1'],
             'ranges.*.schedule_id' => ['nullable', 'integer', 'exists:tbl_schedule,schedule_id'],
@@ -53,8 +62,6 @@ class ScheduleController extends Controller
             'ranges.required' => 'At least one date range is required.',
             'ranges.min' => 'At least one date range is required.',
         ]);
-
-        $project = Project::with(['schedules', 'projectTechnicians'])->findOrFail($id);
 
         try {
             DB::transaction(function () use ($validated, $project): void {
@@ -107,6 +114,9 @@ class ScheduleController extends Controller
                         ]);
                     });
                 });
+
+                $this->syncTaskDatesWithSchedule($project, $ranges);
+                $this->promoteStatusAfterScheduling($project);
             });
 
             return redirect()
@@ -117,6 +127,64 @@ class ScheduleController extends Controller
                 ->route('super-admin.schedules.index')
                 ->with('error', $e->getMessage());
         }
+    }
+
+    /**
+     * Tasks must always reflect the latest schedule. Any task whose dates
+     * no longer fall inside at least one of the project's current date
+     * ranges gets its dates cleared (shown as "Unassigned" in the UI)
+     * instead of silently keeping stale dates.
+     *
+     * @param  Collection<int, array{schedule_id: ?int, start: CarbonImmutable, end: CarbonImmutable}>  $ranges
+     */
+    private function syncTaskDatesWithSchedule(Project $project, Collection $ranges): void
+    {
+        $currentRanges = $ranges->map(fn (array $range) => [
+            'start' => $range['start']->toDateString(),
+            'end' => $range['end']->toDateString(),
+        ]);
+
+        Task::query()
+            ->where('project_id', $project->project_id)
+            ->whereNotNull('start_date')
+            ->whereNotNull('due_date')
+            ->get()
+            ->each(function (Task $task) use ($currentRanges): void {
+                $taskStart = CarbonImmutable::parse($task->start_date)->toDateString();
+                $taskEnd = CarbonImmutable::parse($task->due_date)->toDateString();
+
+                $stillCovered = $currentRanges->contains(function (array $range) use ($taskStart, $taskEnd): bool {
+                    return $taskStart >= $range['start'] && $taskEnd <= $range['end'];
+                });
+
+                if (! $stillCovered) {
+                    $task->update([
+                        'start_date' => null,
+                        'due_date' => null,
+                    ]);
+                }
+            });
+    }
+
+    /**
+     * Promote a Not Yet Scheduled project once it receives a schedule from
+     * the schedules page, mirroring ProjectController's promotion rule.
+     */
+    private function promoteStatusAfterScheduling(Project $project): void
+    {
+        if ($project->status !== 'not_yet_scheduled') {
+            return;
+        }
+
+        $firstSchedule = $project->schedules()->orderBy('start_datetime')->first();
+
+        if (! $firstSchedule) {
+            return;
+        }
+
+        $status = now()->gte($firstSchedule->start_datetime) ? 'ongoing' : 'pending';
+
+        $project->update(['status' => $status]);
     }
 
     /**

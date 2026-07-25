@@ -68,6 +68,8 @@
                                 <td>
                                     @if ($project->on_hold)
                                         <span class="badge bg-secondary">On Hold</span>
+                                    @elseif ($project->status === 'not_yet_scheduled')
+                                        <span class="badge bg-info text-dark">Not Yet Scheduled</span>
                                     @elseif ($project->status === 'pending')
                                         <span class="badge bg-warning">Pending</span>
                                     @elseif ($project->status === 'ongoing')
@@ -76,14 +78,20 @@
                                         <span class="badge bg-success">Completed</span>
                                     @elseif ($project->status === 'cancelled')
                                         <span class="badge bg-danger">Cancelled</span>
+                                    @elseif ($project->status === 'archived')
+                                        <span class="badge bg-dark">Archived</span>
                                     @endif
                                 </td>
                                 <td class="text-center">
-                                    <button type="button" class="btn btn-sm btn-primary py-1 px-2"
-                                        data-bs-toggle="modal" data-bs-target="#scheduleEditModal{{ $project->project_id }}">
-                                        <i class="bi bi-calendar2-week"></i>
-                                        Edit Schedule
-                                    </button>
+                                    @if (in_array($project->status, ['completed', 'cancelled', 'archived'], true))
+                                        <span class="text-muted small">View only</span>
+                                    @else
+                                        <button type="button" class="btn btn-sm btn-primary py-1 px-2"
+                                            data-bs-toggle="modal" data-bs-target="#scheduleEditModal{{ $project->project_id }}">
+                                            <i class="bi bi-calendar2-week"></i>
+                                            Edit Schedule
+                                        </button>
+                                    @endif
                                 </td>
                             </tr>
                         @endforeach
@@ -234,5 +242,22 @@
         <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
         <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
         <script src="/js/super-admin/schedule.js"></script>
+        <script>
+            document.addEventListener('DOMContentLoaded', function() {
+                const params = new URLSearchParams(window.location.search);
+                const openScheduleId = params.get('openSchedule');
+
+                if (!openScheduleId) {
+                    return;
+                }
+
+                const modalEl = document.getElementById('scheduleEditModal' + openScheduleId);
+
+                if (modalEl && window.bootstrap) {
+                    const modal = window.bootstrap.Modal.getOrCreateInstance(modalEl);
+                    modal.show();
+                }
+            });
+        </script>
     @endpush
 @endsection

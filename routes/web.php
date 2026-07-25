@@ -26,11 +26,16 @@ Route::prefix('super-admin')
 
         //ROUTE FOR SUPER ADMIN PROJECTS PAGE
         Route::get('/projects', [ProjectController::class, 'index'])->name('projects');
+        Route::get('/projects/archived', [ProjectController::class, 'archivedIndex'])->name('projects.archived');
         Route::get('/projects/create', [ProjectController::class, 'create'])->name('projects.create');
         Route::post('/projects/create', [ProjectController::class, 'store'])->name('projects.create.store');
         Route::get('/projects/{id}', [ProjectController::class, 'show'])->name('projects.show');
         Route::put('/projects/{id}/hold', [ProjectController::class, 'putOnHold'])->name('projects.hold');
         Route::put('/projects/{id}/resume', [ProjectController::class, 'resume'])->name('projects.resume');
+        Route::post('/projects/{id}/complete', [ProjectController::class, 'complete'])->name('projects.complete');
+        Route::post('/projects/{id}/cancel', [ProjectController::class, 'cancel'])->name('projects.cancel');
+        Route::post('/projects/{id}/archive', [ProjectController::class, 'archive'])->name('projects.archive');
+        Route::put('/projects/{id}/restore', [ProjectController::class, 'restore'])->name('projects.restore');
         Route::get('/projects/{id}/documents/{type}', [ProjectController::class, 'previewDocument'])->name('projects.documents.preview');
         Route::put('/projects/{id}', [ProjectController::class, 'update'])->name('projects.update');
         Route::put('/projects/{id}/team',[ProjectController::class, 'updateAssignedTeam'])->name('projects.team.update');

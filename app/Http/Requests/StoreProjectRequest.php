@@ -41,7 +41,7 @@ class StoreProjectRequest extends FormRequest
             'lead_tech' => ['required', 'integer', Rule::exists('tbl_technicians', 'technician_id')],
             'technicians' => ['required', 'array', 'min:1'],
             'technicians.*' => ['required', 'integer', Rule::exists('tbl_technicians', 'technician_id')],
-            'start_date' => ['required', 'date'],
+            'start_date' => ['required', 'date', 'after_or_equal:today'],
             'end_date' => ['required', 'date', 'after_or_equal:start_date'],
         ];
     }

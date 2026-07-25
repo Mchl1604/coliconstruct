@@ -181,7 +181,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (startPicker && startPicker.selectedDates[0]) {
                 endPicker.set('minDate', startPicker.selectedDates[0]);
             } else {
-                endPicker.set('minDate', null);
+                endPicker.set('minDate', 'today');
             }
         }
 
@@ -198,6 +198,7 @@ document.addEventListener('DOMContentLoaded', function() {
         startPicker = window.flatpickr(startDateInput, {
             dateFormat: 'Y-m-d',
             allowInput: true,
+            minDate: 'today',
             disable: [startDateDisabled],
             onChange: function(selectedDates, dateStr, instance) {
                 if (endPicker) {
@@ -212,6 +213,7 @@ document.addEventListener('DOMContentLoaded', function() {
         endPicker = window.flatpickr(endDateInput, {
             dateFormat: 'Y-m-d',
             allowInput: true,
+            minDate: 'today',
             disable: [endDateDisabled],
             onChange: function() {
                 validateScheduleInputs();

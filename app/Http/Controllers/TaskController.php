@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Project;
 use App\Models\Task;
 use App\Models\Schedule;
 use Illuminate\Http\Request;
@@ -11,15 +12,21 @@ class TaskController extends Controller
 {
     public function store(Request $request, $projectId)
     {
-        // Get the project schedule
-        $query = Schedule::query();
+        $project = Project::findOrFail($projectId);
 
-        $schedule = $query
-            ->where('project_id', $projectId)
-            ->firstOrFail();
+        if ($project->isReadOnly()) {
+            return redirect()
+                ->back()
+                ->with('error', 'This project is ' . $project->status . ' and no longer accepts new tasks.');
+        }
 
-        $projectStart = $schedule->start_datetime->format('Y-m-d');
-        $projectEnd = $schedule->end_datetime->format('Y-m-d');
+        [$projectStart, $projectEnd] = $this->scheduleSpan($projectId);
+
+        if (! $projectStart || ! $projectEnd) {
+            return redirect()
+                ->back()
+                ->with('error', 'This project has no schedule yet. Set a schedule before adding tasks.');
+        }
 
         $validated = $request->validate([
             'task_title' => 'required|string|max:255',
@@ -69,58 +76,67 @@ class TaskController extends Controller
     }
 
     public function update(Request $request, $taskId)
-{
-    $task = Task::findOrFail($taskId);
+    {
+        $task = Task::findOrFail($taskId);
 
-    if ($task->status == 'completed') {
-        return back();
+        $project = Project::findOrFail($task->project_id);
+
+        if ($project->isReadOnly()) {
+            return back()->with('error', 'This project is ' . $project->status . ' and its tasks can no longer be edited.');
+        }
+
+        if ($task->status == 'completed') {
+            return back();
+        }
+
+        [$projectStart, $projectEnd] = $this->scheduleSpan($task->project_id);
+
+        if (! $projectStart || ! $projectEnd) {
+            return back()->with('error', 'This project has no schedule yet.');
+        }
+
+        $validated = $request->validate([
+            'task_title' => 'required|string|max:255',
+            'task_description' => 'required|string',
+            'technician_id' => 'required|exists:tbl_technicians,technician_id',
+            'start_date' => [
+                'required',
+                'date',
+                'after_or_equal:' . $projectStart,
+                'before_or_equal:' . $projectEnd,
+            ],
+            'due_date' => [
+                'required',
+                'date',
+                'after_or_equal:start_date',
+                'before_or_equal:' . $projectEnd,
+            ],
+        ]);
+
+        if ($task->status === 'unassigned') {
+            $validated['status'] = 'pending';
+        }
+
+        DB::beginTransaction();
+
+        try {
+            $task->update($validated);
+            DB::commit();
+            return back()->with('success', 'Task updated successfully.');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->with('error', $e->getMessage());
+        }
     }
 
-    $query = Schedule::query();
-
-    $schedule = $query
-        ->where('project_id', $task->project_id)
-        ->firstOrFail();
-
-    $projectStart = $schedule->start_datetime->format('Y-m-d');
-    $projectEnd = $schedule->end_datetime->format('Y-m-d');
-
-    $validated = $request->validate([
-        'task_title' => 'required|string|max:255',
-        'task_description' => 'required|string',
-        'technician_id' => 'required|exists:tbl_technicians,technician_id',
-        'start_date' => [
-            'required',
-            'date',
-            'after_or_equal:' . $projectStart,
-            'before_or_equal:' . $projectEnd,
-        ],
-        'due_date' => [
-            'required',
-            'date',
-            'after_or_equal:start_date',
-            'before_or_equal:' . $projectEnd,
-        ],
-    ]);
-
-    if ($task->status === 'unassigned') {
-        $validated['status'] = 'pending';
-    }
-
-    DB::beginTransaction();
-
-    try {
-        $task->update($validated);
-        DB::commit();
-        return back()->with('success', 'Task updated successfully.');
-    } catch (\Exception $e) {
-        DB::rollBack();
-        return back()->with('error', $e->getMessage());
-    }
-}
     public function complete($taskId)
     {
         $task = Task::findOrFail($taskId);
+        $project = Project::findOrFail($task->project_id);
+
+        if ($project->isReadOnly()) {
+            return back()->with('error', 'This project is ' . $project->status . ' and its tasks can no longer be edited.');
+        }
 
         if ($task->status === 'completed') {
             return back()->with(
@@ -138,13 +154,19 @@ class TaskController extends Controller
             'Task marked as completed.'
         );
     }
+
     public function destroy($taskId)
     {
+        $task = Task::findOrFail($taskId);
+        $project = Project::findOrFail($task->project_id);
+
+        if ($project->isReadOnly()) {
+            return back()->with('error', 'This project is ' . $project->status . ' and its tasks can no longer be edited.');
+        }
+
         DB::beginTransaction();
 
         try {
-
-            $task = Task::findOrFail($taskId);
 
             $task->delete();
 
@@ -163,5 +185,31 @@ class TaskController extends Controller
                 $e->getMessage()
             );
         }
+    }
+
+    /**
+     * A project can have several date ranges. Tasks must be constrained to
+     * the overall span of the project's current schedule (earliest start
+     * to latest end) so the check always reflects the latest schedule.
+     *
+     * @return array{0: ?string, 1: ?string}
+     */
+    private function scheduleSpan(int $projectId): array
+    {
+        $schedules = Schedule::query()
+            ->where('project_id', $projectId)
+            ->get(['start_datetime', 'end_datetime']);
+
+        if ($schedules->isEmpty()) {
+            return [null, null];
+        }
+
+        $start = $schedules->min('start_datetime');
+        $end = $schedules->max('end_datetime');
+
+        return [
+            $start ? $start->format('Y-m-d') : null,
+            $end ? $end->format('Y-m-d') : null,
+        ];
     }
 }

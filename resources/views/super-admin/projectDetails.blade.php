@@ -4,6 +4,11 @@
     @push('styles')
         <link rel="stylesheet" href="/css/super-admin/projectDetails.css">
     @endpush
+    @php
+        $scheduleStart = $project->schedules->min('start_datetime');
+        $scheduleEnd = $project->schedules->max('end_datetime');
+        $hasSchedule = $scheduleStart && $scheduleEnd;
+    @endphp
     <div class="container-fluid py-4">
 
         <!-- Header -->
@@ -25,10 +30,12 @@
                                 {{ $project->clients->first()->fullname ?? 'N/A' }}
                             </h2>
 
-                            <button class="btn btn-outline-info border btn-sm ms-2" data-bs-toggle="modal"
-                                data-bs-target="#editProjectDetailsModal">
-                                <i class="bi bi-pencil-square"></i>
-                            </button>
+                            @unless ($isReadOnly)
+                                <button class="btn btn-outline-info border btn-sm ms-2" data-bs-toggle="modal"
+                                    data-bs-target="#editProjectDetailsModal">
+                                    <i class="bi bi-pencil-square"></i>
+                                </button>
+                            @endunless
                         </div>
                         <span class="fw-bold me-4 mb-3">
                             {{ $project->reference_no }}
@@ -90,12 +97,15 @@
                     <div>
                         @php
                             $statusClass = match ($project->status) {
+                                'not_yet_scheduled' => 'bg-info text-dark',
                                 'pending' => 'bg-warning text-dark',
                                 'ongoing' => 'bg-primary',
                                 'completed' => 'bg-success',
                                 'cancelled' => 'bg-danger',
+                                'archived' => 'bg-dark',
                                 default => 'bg-secondary',
                             };
+                            $statusLabel = ucwords(str_replace('_', ' ', $project->status));
                         @endphp
 
 
@@ -105,7 +115,7 @@
                             </span>
                         @else
                             <span class="badge rounded-pill fs-6 px-4 py-3 {{ $statusClass }}">
-                                {{ ucfirst($project->status) }}
+                                {{ $statusLabel }}
                             </span>
                         @endif
                         </span>
@@ -113,6 +123,76 @@
                     </div>
 
                 </div>
+
+                @if ($project->isCompleted())
+                    <hr>
+                    <div class="completion-report">
+                        <h5 class="fw-bold text-success mb-3">
+                            <i class="bi bi-check-circle me-2"></i>
+                            Completion Report
+                        </h5>
+
+                        <div class="mb-2">
+                            <span class="fw-semibold me-2">Completion Date:</span>
+                            <span>{{ $project->completed_at ? \Carbon\Carbon::parse($project->completed_at)->format('M d, Y') : 'N/A' }}</span>
+                        </div>
+
+                        <div class="mb-2">
+                            <span class="fw-semibold d-block">Completion Summary:</span>
+                            <p class="mb-0">{{ $project->completion_summary ?? 'N/A' }}</p>
+                        </div>
+
+                        @if ($project->completion_remarks)
+                            <div class="mb-2">
+                                <span class="fw-semibold d-block">Completion Remarks:</span>
+                                <p class="mb-0">{{ $project->completion_remarks }}</p>
+                            </div>
+                        @endif
+
+                        @if ($project->completionPhotos->isNotEmpty())
+                            <div class="mt-3">
+                                <span class="fw-semibold d-block mb-2">Completion Photos:</span>
+                                <div class="row g-3">
+                                    @foreach ($project->completionPhotos as $photo)
+                                        <div class="col-lg-3 col-md-4 col-6">
+                                            <a href="{{ asset($photo->photo_path) }}" target="_blank" rel="noopener noreferrer">
+                                                <img src="{{ asset($photo->photo_path) }}" class="img-fluid rounded border"
+                                                    style="height:170px;width:100%;object-fit:cover;">
+                                            </a>
+                                        </div>
+                                    @endforeach
+                                </div>
+                            </div>
+                        @endif
+                    </div>
+                @endif
+
+                @if ($project->isCancelled())
+                    <hr>
+                    <div class="cancellation-report">
+                        <h5 class="fw-bold text-danger mb-3">
+                            <i class="bi bi-x-circle me-2"></i>
+                            Cancellation Report
+                        </h5>
+
+                        <div class="mb-2">
+                            <span class="fw-semibold me-2">Cancellation Date:</span>
+                            <span>{{ $project->cancelled_at ? \Carbon\Carbon::parse($project->cancelled_at)->format('M d, Y') : 'N/A' }}</span>
+                        </div>
+
+                        <div class="mb-2">
+                            <span class="fw-semibold d-block">Cancellation Reason:</span>
+                            <p class="mb-0">{{ $project->cancellation_reason ?? 'N/A' }}</p>
+                        </div>
+
+                        @if ($project->cancellation_remarks)
+                            <div class="mb-2">
+                                <span class="fw-semibold d-block">Additional Remarks:</span>
+                                <p class="mb-0">{{ $project->cancellation_remarks }}</p>
+                            </div>
+                        @endif
+                    </div>
+                @endif
 
                 <hr>
 
@@ -196,10 +276,12 @@
                         <h4 class="mb-0 fw-bold">
                             Assigned Team
                         </h4>
-                        <button class="btn btn-outline-primary" data-bs-toggle="modal"
-                            data-bs-target="#editAssignedTeamModal">
-                            <i class="bi bi-pencil-square"></i>
-                        </button>
+                        @unless ($isReadOnly)
+                            <button class="btn btn-outline-primary" data-bs-toggle="modal"
+                                data-bs-target="#editAssignedTeamModal">
+                                <i class="bi bi-pencil-square"></i>
+                            </button>
+                        @endunless
 
                     </div>
 
@@ -249,11 +331,19 @@
 
                 <div class="card shadow-sm h-100">
 
-                    <div class="card-header bg-white">
+                    <div class="card-header bg-white d-flex justify-content-between align-items-center">
 
                         <h4 class="mb-0 fw-bold">
                             Project Schedule
                         </h4>
+
+                        @unless ($isReadOnly)
+                            <a href="{{ route('super-admin.schedules.index', ['openSchedule' => $project->project_id]) }}"
+                                class="btn btn-outline-primary btn-sm">
+                                <i class="bi bi-calendar-week me-1"></i>
+                                Update Schedule
+                            </a>
+                        @endunless
 
                     </div>
 
@@ -435,10 +525,12 @@
                                 Task List
                             </h5>
 
-                            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addTaskModal">
-                                <i class="bi bi-plus-lg me-1"></i>
-                                Add Task
-                            </button>
+                            @unless ($isReadOnly || ! $hasSchedule)
+                                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addTaskModal">
+                                    <i class="bi bi-plus-lg me-1"></i>
+                                    Add Task
+                                </button>
+                            @endunless
 
                         </div>
 
@@ -481,11 +573,11 @@
                                             </td>
 
                                             <td>
-                                                {{ \Carbon\Carbon::parse($task->start_date)->format('M d, Y') }}
+                                                {{ $task->start_date ? \Carbon\Carbon::parse($task->start_date)->format('M d, Y') : 'Unassigned' }}
                                             </td>
 
                                             <td>
-                                                {{ \Carbon\Carbon::parse($task->due_date)->format('M d, Y') }}
+                                                {{ $task->due_date ? \Carbon\Carbon::parse($task->due_date)->format('M d, Y') : 'Unassigned' }}
                                             </td>
 
                                             <td>
@@ -563,6 +655,72 @@
 
         </div>
     </div>
+
+    @unless ($isReadOnly)
+        <div class="d-flex justify-content-end mt-3 mb-4">
+            <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#cancelProjectModal">
+                <i class="bi bi-x-circle me-1"></i>
+                Cancel Project
+            </button>
+        </div>
+
+        <!-- CANCEL PROJECT MODAL -->
+        <div class="modal fade" id="cancelProjectModal" tabindex="-1" aria-labelledby="cancelProjectModalLabel"
+            aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content">
+
+                    <form method="POST" action="{{ route('super-admin.projects.cancel', $project->project_id) }}">
+                        @csrf
+
+                        <div class="modal-header bg-danger text-white">
+                            <h5 class="modal-title" id="cancelProjectModalLabel">
+                                <i class="bi bi-x-circle me-2"></i>
+                                Cancel Project
+                            </h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                        </div>
+
+                        <div class="modal-body">
+                            <p class="mb-3">
+                                Cancelling <strong>{{ $project->reference_no }}</strong> will remove its schedule and
+                                assigned technicians, freeing them up for other projects. This action cannot be undone.
+                            </p>
+
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold">Cancellation Date</label>
+                                <input type="date" class="form-control" name="cancellation_date"
+                                    value="{{ now()->format('Y-m-d') }}" required>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold">Cancellation Reason</label>
+                                <input type="text" class="form-control" name="cancellation_reason"
+                                    placeholder="Reason for cancellation" required>
+                            </div>
+
+                            <div class="mb-1">
+                                <label class="form-label fw-semibold">Additional Remarks</label>
+                                <textarea class="form-control" name="cancellation_remarks" rows="2"
+                                    placeholder="Optional remarks"></textarea>
+                            </div>
+                        </div>
+
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                                Close
+                            </button>
+                            <button type="submit" class="btn btn-danger">
+                                <i class="bi bi-x-circle me-1"></i>
+                                Confirm Cancellation
+                            </button>
+                        </div>
+                    </form>
+
+                </div>
+            </div>
+        </div>
+    @endunless
 
     <!-- EDIT PROJECT DETAILS MODAL -->
     <div class="modal fade" id="editProjectDetailsModal" tabindex="-1" aria-labelledby="editProjectDetailsModalLabel"
@@ -1087,8 +1245,8 @@
                                 </label>
 
                                 <input type="date" id="taskStartDate" name="start_date" class="form-control"
-                                    min="{{ \Carbon\Carbon::parse($project->schedule->start_datetime)->format('Y-m-d') }}"
-                                    max="{{ \Carbon\Carbon::parse($project->schedule->end_datetime)->format('Y-m-d') }}"
+                                    min="{{ $scheduleStart ? \Carbon\Carbon::parse($scheduleStart)->format('Y-m-d') : '' }}"
+                                    max="{{ $scheduleEnd ? \Carbon\Carbon::parse($scheduleEnd)->format('Y-m-d') : '' }}"
                                     required>
 
                             </div>
@@ -1100,8 +1258,8 @@
                                 </label>
 
                                 <input type="date" id="taskDueDate" name="due_date" class="form-control"
-                                    min="{{ \Carbon\Carbon::parse($project->schedule->start_datetime)->format('Y-m-d') }}"
-                                    max="{{ \Carbon\Carbon::parse($project->schedule->end_datetime)->format('Y-m-d') }}"
+                                    min="{{ $scheduleStart ? \Carbon\Carbon::parse($scheduleStart)->format('Y-m-d') : '' }}"
+                                    max="{{ $scheduleEnd ? \Carbon\Carbon::parse($scheduleEnd)->format('Y-m-d') : '' }}"
                                     required>
 
                             </div>
@@ -1263,8 +1421,8 @@
 
                                 <input type="date" class="form-control" name="start_date"
                                     value="{{ $task->start_date }}"
-                                    min="{{ \Carbon\Carbon::parse($project->schedule->start_datetime)->format('Y-m-d') }}"
-                                    max="{{ \Carbon\Carbon::parse($project->schedule->end_datetime)->format('Y-m-d') }}"
+                                    min="{{ $scheduleStart ? \Carbon\Carbon::parse($scheduleStart)->format('Y-m-d') : '' }}"
+                                    max="{{ $scheduleEnd ? \Carbon\Carbon::parse($scheduleEnd)->format('Y-m-d') : '' }}"
                                     {{ $task->status == 'completed' ? 'readonly' : '' }}>
 
                             </div>
@@ -1280,8 +1438,8 @@
 
                                 <input type="date" class="form-control" name="due_date"
                                     value="{{ $task->due_date }}"
-                                    min="{{ \Carbon\Carbon::parse($project->schedule->start_datetime)->format('Y-m-d') }}"
-                                    max="{{ \Carbon\Carbon::parse($project->schedule->end_datetime)->format('Y-m-d') }}"
+                                    min="{{ $scheduleStart ? \Carbon\Carbon::parse($scheduleStart)->format('Y-m-d') : '' }}"
+                                    max="{{ $scheduleEnd ? \Carbon\Carbon::parse($scheduleEnd)->format('Y-m-d') : '' }}"
                                     {{ $task->status == 'completed' ? 'readonly' : '' }}>
 
                             </div>

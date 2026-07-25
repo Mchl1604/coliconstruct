@@ -6,6 +6,7 @@ use App\Http\Requests\StoreProjectRequest;
 use App\Models\Client;
 use App\Models\Document;
 use App\Models\Project;
+use App\Models\ProjectCompletionPhoto;
 use App\Models\ProjectTechnician;
 use App\Models\ProjectType;
 use App\Models\Schedule;
@@ -27,12 +28,28 @@ class ProjectController extends Controller
     {
         $projects = Project::query()
             ->with(['clients', 'documents', 'schedule', 'projectTypes', 'projectTechnicians.technician'])
+            ->where('is_archived', false)
+            ->where('status', '!=', 'archived')
             ->orderBy('project_id', 'desc')
             ->get();
 
         $this->updateStatus($projects); // Call the function to update project statuses
 
         return view('super-admin.projects', compact('projects'));
+    }
+
+    public function archivedIndex()
+    {
+        $projects = Project::query()
+            ->with(['clients', 'documents'])
+            ->where(function ($query): void {
+                $query->where('is_archived', true)
+                    ->orWhere('status', 'archived');
+            })
+            ->orderBy('archived_at', 'desc')
+            ->get();
+
+        return view('super-admin.archivedProjects', compact('projects'));
     }
 
     public function create()
@@ -75,7 +92,7 @@ class ProjectController extends Controller
 
                 $project = Project::create([
                     'name' => $this->resolveProjectName($validated),
-                    'status' => 'pending',
+                    'status' => 'not_yet_scheduled',
                     'quotation' => $validated['quotation_amount'],
                     'address' => $validated['project_address'],
                     'description' => $validated['project_description'],
@@ -139,6 +156,8 @@ class ProjectController extends Controller
                         'project_technician_id' => $projectTechnician->project_technician_id,
                     ]);
                 });
+
+                $this->promoteStatusAfterScheduling($project);
 
                 $this->storeDocument(
                     $request->file('assessment_report'),
@@ -321,27 +340,44 @@ class ProjectController extends Controller
         $assignedTechnicianIds = $project->projectTechnicians
             ->pluck('technician_id');
 
-        $availableTechnicians = Technician::with('account')
-            ->whereHas('account', function ($query) {
-                $query->whereIn('role', ['technician', 'lead_technician']);
-            })
-            ->whereNotIn('technician_id', $assignedTechnicianIds)
-            ->whereDoesntHave('projectTechnicians.scheduleTechnicians.schedule', function ($query) use ($schedule) {
-                $query->where(function ($q) use ($schedule) {
-                    $q->whereBetween('start_datetime', [
-                        $schedule->start_datetime,
-                        $schedule->end_datetime,
-                    ])
-                        ->orWhereBetween('end_datetime', [
+        $applyAvailabilityFilter = function ($query) use ($schedule) {
+            if (! $schedule) {
+                return $query;
+            }
+
+            return $query->whereDoesntHave('projectTechnicians.scheduleTechnicians.schedule', function ($scheduleQuery) use ($schedule) {
+                $scheduleQuery->whereHas('project', function ($projectQuery): void {
+                    // Only projects that are actually active can block availability.
+                    // Not Yet Scheduled, On Hold, Completed, Cancelled, and Archived
+                    // projects must never create a scheduling conflict.
+                    $projectQuery->whereIn('status', Project::ACTIVE_PROJECT_STATUSES);
+                })
+                    ->where(function ($q) use ($schedule) {
+                        $q->whereBetween('start_datetime', [
                             $schedule->start_datetime,
                             $schedule->end_datetime,
                         ])
-                        ->orWhere(function ($q2) use ($schedule) {
-                            $q2->where('start_datetime', '<=', $schedule->start_datetime)
-                                ->where('end_datetime', '>=', $schedule->end_datetime);
-                        });
-                });
+                            ->orWhereBetween('end_datetime', [
+                                $schedule->start_datetime,
+                                $schedule->end_datetime,
+                            ])
+                            ->orWhere(function ($q2) use ($schedule) {
+                                $q2->where('start_datetime', '<=', $schedule->start_datetime)
+                                    ->where('end_datetime', '>=', $schedule->end_datetime);
+                            });
+                    });
+            });
+        };
+
+        $availableTechniciansQuery = Technician::with('account')
+            ->whereHas('account', function ($query) {
+                $query->whereIn('role', ['technician', 'lead_technician']);
             })
+            ->whereNotIn('technician_id', $assignedTechnicianIds);
+
+        $availableTechniciansQuery = $applyAvailabilityFilter($availableTechniciansQuery);
+
+        $availableTechnicians = $availableTechniciansQuery
             ->get()
             ->sortBy('name')
             ->values();
@@ -357,9 +393,26 @@ class ProjectController extends Controller
             ->reject(fn($technicianId) => $technicianId === $currentLeadTechnicianId)
             ->values();
 
-        $leadTechnicianOptions = Technician::with('account')
+        $leadTechnicianOptionsQuery = Technician::with('account')
             ->whereHas('account', fn($query) => $query->where('role', 'lead_technician'))
+            ->whereNotIn('technician_id', $assignedTechnicianIds->reject(fn($id) => $id === $currentLeadTechnicianId));
+
+        $leadTechnicianOptionsQuery = $applyAvailabilityFilter($leadTechnicianOptionsQuery);
+
+        // The currently-assigned lead technician must always remain a valid
+        // option even if they'd otherwise be filtered out, so the select
+        // doesn't lose the existing selection.
+        $leadTechnicianOptions = $leadTechnicianOptionsQuery
             ->get()
+            ->when($currentLeadTechnicianId, function ($collection) use ($currentLeadTechnicianId) {
+                if ($collection->contains('technician_id', $currentLeadTechnicianId)) {
+                    return $collection;
+                }
+
+                $currentLead = Technician::with('account')->find($currentLeadTechnicianId);
+
+                return $currentLead ? $collection->push($currentLead) : $collection;
+            })
             ->sortBy('name')
             ->values();
 
@@ -394,6 +447,8 @@ class ProjectController extends Controller
 
         $reports = $reports->latest()->get();
 
+        $isReadOnly = $project->isReadOnly();
+
         return view('super-admin.projectDetails', compact(
             'project',
             'projectTypes',
@@ -403,6 +458,7 @@ class ProjectController extends Controller
             'leadTechnicianOptions',
             'currentLeadTechnicianId',
             'currentTeamTechnicianIds',
+            'isReadOnly',
             'assignedTeamLookup'
         ));
     }
@@ -446,6 +502,14 @@ class ProjectController extends Controller
 
     public function update(Request $request, int $id)
     {
+        $project = Project::findOrFail($id);
+
+        if ($project->isReadOnly()) {
+            return redirect()
+                ->route('super-admin.projects.show', $id)
+                ->with('error', 'This project is ' . $project->status . ' and can no longer be edited.');
+        }
+
         $validated = $request->validate([
             'first_name' => ['required', 'string', 'max:255'],
             'middle_initial' => ['nullable', 'string', 'max:255'],
@@ -583,22 +647,307 @@ class ProjectController extends Controller
     {
         $project = Project::findOrFail($id);
 
-        $project->update(['on_hold' => true]);
+        if ($project->isReadOnly()) {
+            return redirect()
+                ->route('super-admin.projects', $id)
+                ->with('error', 'This project is ' . $project->status . ' and cannot be put on hold.');
+        }
 
-        return redirect()
-            ->route('super-admin.projects', $id)
-            ->with('success', 'Project has been put on hold.');
+        if ($project->status === 'not_yet_scheduled') {
+            return redirect()
+                ->route('super-admin.projects', $id)
+                ->with('error', 'This project has no schedule yet.');
+        }
+
+        try {
+            DB::transaction(function () use ($project): void {
+                $project->update([
+                    'on_hold' => true,
+                    'status' => 'not_yet_scheduled',
+                ]);
+
+                $this->releaseScheduleAndTechnicians($project);
+            });
+
+            return redirect()
+                ->route('super-admin.projects', $id)
+                ->with('success', 'Project has been put on hold. Its schedule and technicians were released.');
+        } catch (Throwable $e) {
+            return redirect()
+                ->route('super-admin.projects', $id)
+                ->with('error', 'An error occurred while putting the project on hold: ' . $e->getMessage());
+        }
     }
 
     public function resume(Request $request, int $id)
     {
         $project = Project::findOrFail($id);
 
+        if ($project->isReadOnly()) {
+            return redirect()
+                ->route('super-admin.projects', $id)
+                ->with('error', 'This project is ' . $project->status . ' and cannot be resumed.');
+        }
+
         $project->update(['on_hold' => false]);
 
         return redirect()
             ->route('super-admin.projects', $id)
-            ->with('success', 'Project has been resumed.');
+            ->with('success', 'Project has been resumed. It is Not Yet Scheduled and must be scheduled again.');
+    }
+
+    /**
+     * Show the completion confirmation modal's data validation, mark a
+     * project as Complete, and store the completion report. Completed
+     * projects keep every schedule/technician/task record for auditing;
+     * only their editability changes.
+     */
+    public function complete(Request $request, int $id)
+    {
+        $project = Project::findOrFail($id);
+
+        if ($project->isReadOnly()) {
+            return redirect()
+                ->route('super-admin.projects')
+                ->with('error', 'This project is already ' . $project->status . ' and cannot be completed.');
+        }
+
+        $validated = $request->validate([
+            'completion_date' => ['required', 'date'],
+            'completion_summary' => ['required', 'string'],
+            'completion_remarks' => ['nullable', 'string'],
+            'completion_photos' => ['nullable', 'array'],
+            'completion_photos.*' => ['file', 'mimes:jpg,jpeg,png'],
+        ]);
+
+        try {
+            DB::transaction(function () use ($validated, $project, $request): void {
+                $project->update([
+                    'status' => 'completed',
+                    'on_hold' => false,
+                    'completed_at' => CarbonImmutable::parse($validated['completion_date']),
+                    'completion_summary' => $validated['completion_summary'],
+                    'completion_remarks' => $validated['completion_remarks'] ?? null,
+                ]);
+
+                if ($request->hasFile('completion_photos')) {
+                    $directory = public_path('uploads/completion');
+                    File::ensureDirectoryExists($directory);
+
+                    foreach ($request->file('completion_photos') as $photo) {
+                        $fileName = Str::uuid()->toString() . '.' . $photo->getClientOriginalExtension();
+                        $photo->move($directory, $fileName);
+
+                        ProjectCompletionPhoto::create([
+                            'project_id' => $project->project_id,
+                            'photo_path' => 'uploads/completion/' . $fileName,
+                            'uploaded_at' => now(),
+                        ]);
+                    }
+                }
+
+                // Everything else (schedule, technicians, task history) is
+                // intentionally left untouched for auditing/reporting.
+            });
+
+            return redirect()
+                ->route('super-admin.projects')
+                ->with('success', 'Project marked as completed.');
+        } catch (Throwable $e) {
+            return redirect()
+                ->route('super-admin.projects')
+                ->with('error', 'An error occurred while completing the project: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Cancel a project: store the cancellation report and free up every
+     * schedule/technician assignment so those technicians become
+     * available for other projects again.
+     */
+    public function cancel(Request $request, int $id)
+    {
+        $project = Project::findOrFail($id);
+
+        if ($project->isCompleted()) {
+            return redirect()
+                ->route('super-admin.projects.show', $id)
+                ->with('error', 'A completed project cannot be cancelled.');
+        }
+
+        if ($project->isCancelled() || $project->isArchived()) {
+            return redirect()
+                ->route('super-admin.projects.show', $id)
+                ->with('error', 'This project is already ' . $project->status . '.');
+        }
+
+        $validated = $request->validate([
+            'cancellation_date' => ['required', 'date'],
+            'cancellation_reason' => ['required', 'string', 'max:255'],
+            'cancellation_remarks' => ['nullable', 'string'],
+        ]);
+
+        try {
+            DB::transaction(function () use ($validated, $project): void {
+                $project->update([
+                    'status' => 'cancelled',
+                    'on_hold' => false,
+                    'cancelled_at' => CarbonImmutable::parse($validated['cancellation_date']),
+                    'cancellation_reason' => $validated['cancellation_reason'],
+                    'cancellation_remarks' => $validated['cancellation_remarks'] ?? null,
+                ]);
+
+                // Schedule, technician assignments, and task history are kept
+                // intact for the record. Technicians are still freed up for
+                // other work because the availability checker already
+                // ignores cancelled projects entirely.
+            });
+
+            return redirect()
+                ->route('super-admin.projects.show', $id)
+                ->with('success', 'Project has been cancelled.');
+        } catch (Throwable $e) {
+            return redirect()
+                ->route('super-admin.projects.show', $id)
+                ->with('error', 'An error occurred while cancelling the project: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Archive a project: keep every field for historical purposes but move
+     * it out of the active Projects list and free its technicians.
+     */
+    public function archive(Request $request, int $id)
+    {
+        $project = Project::findOrFail($id);
+
+        if ($project->isArchived()) {
+            return redirect()
+                ->route('super-admin.projects')
+                ->with('error', 'This project is already archived.');
+        }
+
+        try {
+            DB::transaction(function () use ($project, $request): void {
+                $project->update([
+                    'status' => 'archived',
+                    'is_archived' => true,
+                    'on_hold' => false,
+                    'archived_at' => now(),
+                    'archived_by' => $request->user()?->id,
+                ]);
+
+                $this->releaseScheduleAndTechnicians($project);
+            });
+
+            return redirect()
+                ->route('super-admin.projects')
+                ->with('success', 'Project has been archived.');
+        } catch (Throwable $e) {
+            return redirect()
+                ->route('super-admin.projects')
+                ->with('error', 'An error occurred while archiving the project: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Restore an archived project back into the active pipeline as
+     * Not Yet Scheduled. It must be scheduled again from scratch.
+     */
+    public function restore(int $id)
+    {
+        $project = Project::findOrFail($id);
+
+        if (! $project->isArchived()) {
+            return redirect()
+                ->route('super-admin.projects.archived')
+                ->with('error', 'Only archived projects can be restored.');
+        }
+
+        try {
+            DB::transaction(function () use ($project): void {
+                $project->update([
+                    'status' => 'not_yet_scheduled',
+                    'is_archived' => false,
+                    'archived_at' => null,
+                    'archived_by' => null,
+                ]);
+
+                // Schedule/technicians were already released on archive,
+                // but this guarantees a clean slate either way.
+                $this->releaseScheduleAndTechnicians($project);
+            });
+
+            return redirect()
+                ->route('super-admin.projects')
+                ->with('success', 'Project restored. It is now Not Yet Scheduled.');
+        } catch (Throwable $e) {
+            return redirect()
+                ->route('super-admin.projects.archived')
+                ->with('error', 'An error occurred while restoring the project: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Remove a project's schedule, schedule-technician, and
+     * project-technician records so its technicians are freed up for
+     * other work. Used by cancel/archive/restore. Task history is left
+     * alone; unassigned tasks simply show "Unassigned".
+     */
+    private function releaseScheduleAndTechnicians(Project $project): void
+    {
+        $projectTechnicianIds = DB::table('tbl_project_technicians')
+            ->where('project_id', $project->project_id)
+            ->pluck('project_technician_id');
+
+        if ($projectTechnicianIds->isNotEmpty()) {
+            DB::table('tbl_schedule_technicians')
+                ->whereIn('project_technician_id', $projectTechnicianIds->all())
+                ->delete();
+        }
+
+        DB::table('tbl_project_technicians')
+            ->where('project_id', $project->project_id)
+            ->delete();
+
+        DB::table('tbl_schedule')
+            ->where('project_id', $project->project_id)
+            ->delete();
+
+        Task::where('project_id', $project->project_id)
+            ->where('status', '!=', 'completed')
+            ->update([
+                'technician_id' => null,
+                'status' => 'unassigned',
+                'start_date' => null,
+                'due_date' => null,
+            ]);
+    }
+
+    /**
+     * Promote a freshly-scheduled project out of Not Yet Scheduled. Mirrors
+     * the same "pending vs ongoing" rule used by updateStatus().
+     */
+    private function promoteStatusAfterScheduling(Project $project): void
+    {
+        if ($project->status !== 'not_yet_scheduled') {
+            return;
+        }
+
+        $firstSchedule = DB::table('tbl_schedule')
+            ->where('project_id', $project->project_id)
+            ->orderBy('start_datetime', 'asc')
+            ->first();
+
+        if (! $firstSchedule) {
+            return;
+        }
+
+        $status = now()->gte(\Carbon\Carbon::parse($firstSchedule->start_datetime))
+            ? 'ongoing'
+            : 'pending';
+
+        $project->update(['status' => $status]);
     }
 
     public function updateStatus($projects)
@@ -606,6 +955,10 @@ class ProjectController extends Controller
         $projects = Project::all();
 
         foreach ($projects as $project) {
+
+            if (in_array($project->status, Project::READ_ONLY_STATUSES, true)) {
+                continue;
+            }
 
             $firstSchedule = DB::table('tbl_schedule')
                 ->select('*')
@@ -618,6 +971,10 @@ class ProjectController extends Controller
             }
 
             switch ($project->status) {
+
+                case 'not_yet_scheduled':
+                    $this->promoteStatusAfterScheduling($project);
+                    break;
 
                 case 'pending':
                     if (now()->gte(\Carbon\Carbon::parse($firstSchedule->start_datetime))) {
@@ -634,14 +991,6 @@ class ProjectController extends Controller
                 case 'on_hold':
                     // Do nothing while on hold
                     break;
-
-                case 'completed':
-                    // Do nothing
-                    break;
-
-                case 'cancelled':
-                    // Do nothing
-                    break;
             }
         }
     }
@@ -649,6 +998,10 @@ class ProjectController extends Controller
    public function updateAssignedTeam(Request $request, int $id)
 {
     $project = Project::findOrFail($id);
+
+    if ($project->isReadOnly()) {
+        return back()->with('error', 'This project is ' . $project->status . ' and its team can no longer be edited.');
+    }
 
     $validated = $request->validate([
         'lead_tech' => ['required', 'integer', 'exists:tbl_technicians,technician_id'],
@@ -665,6 +1018,43 @@ class ProjectController extends Controller
         ->map(fn ($technicianId) => (int) $technicianId)
         ->unique()
         ->values();
+
+    $schedule = $project->schedule;
+    $currentlyAssignedIds = $project->projectTechnicians->pluck('technician_id');
+    $newlyAddedIds = $technicianIds->diff($currentlyAssignedIds);
+
+    if ($schedule && $newlyAddedIds->isNotEmpty()) {
+        $conflictingTechnicians = Technician::whereIn('technician_id', $newlyAddedIds)
+            ->whereHas('projectTechnicians.scheduleTechnicians.schedule', function ($query) use ($schedule) {
+                $query->whereHas('project', function ($projectQuery): void {
+                    $projectQuery->whereIn('status', Project::ACTIVE_PROJECT_STATUSES);
+                })
+                    ->where(function ($q) use ($schedule) {
+                        $q->whereBetween('start_datetime', [
+                            $schedule->start_datetime,
+                            $schedule->end_datetime,
+                        ])
+                            ->orWhereBetween('end_datetime', [
+                                $schedule->start_datetime,
+                                $schedule->end_datetime,
+                            ])
+                            ->orWhere(function ($q2) use ($schedule) {
+                                $q2->where('start_datetime', '<=', $schedule->start_datetime)
+                                    ->where('end_datetime', '>=', $schedule->end_datetime);
+                            });
+                    });
+            })
+            ->get()
+            ->pluck('name');
+
+        if ($conflictingTechnicians->isNotEmpty()) {
+            return back()->with(
+                'error',
+                'These technicians are already assigned to another active project during this schedule: '
+                    . $conflictingTechnicians->join(', ')
+            );
+        }
+    }
 
     DB::transaction(function () use ($project, $technicianIds): void {
         $projectTechniciansToRemove = DB::table('tbl_project_technicians')
