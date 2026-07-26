@@ -43,6 +43,13 @@ href="https://cdn.datatables.net/2.3.8/css/dataTables.dataTables.css">
 ],
 
 [
+    'label' => 'Task',
+    'icon' => 'bi-list-task',
+    'url' => route('super-admin.tasks.index'),
+    'active' => request()->routeIs('super-admin.tasks.*'),
+],
+
+[
     'label' => 'Technicians',
     'icon' => 'bi-tools',
     'url' => '#',

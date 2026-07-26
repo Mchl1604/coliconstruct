@@ -10,6 +10,114 @@ use Illuminate\Support\Facades\DB;
 
 class TaskController extends Controller
 {
+    /**
+     * Tasks page: shows tasks across all projects with a project filter
+     * dropdown, and an Add Task modal that lets you pick the project first.
+     */
+    public function index(Request $request)
+    {
+        $tasks = Task::with([
+            'project.projectTechnicians.technician.account',
+            'project.schedules',
+            'technician',
+            'images',
+        ])
+            ->orderBy('project_id')
+            ->orderBy('start_date')
+            ->get();
+
+        $projects = Project::query()
+            ->orderBy('name')
+            ->get(['project_id', 'name', 'reference_no', 'status']);
+
+        // Only projects that can actually receive new tasks (editable and
+        // already have a schedule) are selectable in the Add Task modal.
+        $schedulableProjects = $projects->filter(function (Project $project) {
+            return ! $project->isReadOnly();
+        })->values();
+
+        // Active task counts for every technician that shows up on any
+        // project involved, used by the Assign To cards in both the Add
+        // Task and per-task Edit Task modals.
+        $allTechnicianIds = $tasks
+            ->pluck('project.projectTechnicians')
+            ->filter()
+            ->flatten()
+            ->pluck('technician_id')
+            ->filter()
+            ->unique()
+            ->values();
+
+        $technicianActiveTaskCounts = Task::query()
+            ->whereIn('technician_id', $allTechnicianIds)
+            ->whereIn('status', ['pending', 'ongoing'])
+            ->selectRaw('technician_id, count(*) as active_count')
+            ->groupBy('technician_id')
+            ->pluck('active_count', 'technician_id');
+
+        return view('super-admin.tasks', compact(
+            'tasks',
+            'projects',
+            'schedulableProjects',
+            'technicianActiveTaskCounts'
+        ));
+    }
+
+    /**
+     * JSON data used by the Add Task modal once a project is chosen:
+     * that project's assigned team (so the technician list changes per
+     * project) and its current schedule span (for the date min/max).
+     */
+    public function projectFormData(int $projectId)
+    {
+        $project = Project::with(['projectTechnicians.technician.account', 'schedules'])->findOrFail($projectId);
+
+        if ($project->isReadOnly()) {
+            return response()->json([
+                'error' => 'This project is ' . $project->status . ' and no longer accepts new tasks.',
+            ], 422);
+        }
+
+        $scheduleStart = $project->schedules->min('start_datetime');
+        $scheduleEnd = $project->schedules->max('end_datetime');
+
+        if (! $scheduleStart || ! $scheduleEnd) {
+            return response()->json([
+                'error' => 'This project has no schedule yet. Set a schedule before adding tasks.',
+            ], 422);
+        }
+
+        $technicians = $project->projectTechnicians
+            ->filter(fn ($projectTechnician) => $projectTechnician->technician)
+            ->map(fn ($projectTechnician) => $projectTechnician->technician);
+
+        $technicianIds = $technicians->pluck('technician_id')->filter()->values();
+
+        $activeTaskCounts = Task::query()
+            ->whereIn('technician_id', $technicianIds)
+            ->whereIn('status', ['pending', 'ongoing'])
+            ->selectRaw('technician_id, count(*) as active_count')
+            ->groupBy('technician_id')
+            ->pluck('active_count', 'technician_id');
+
+        $technicians = $technicians
+            ->map(function ($technician) use ($activeTaskCounts) {
+                return [
+                    'technician_id' => $technician->technician_id,
+                    'name' => $technician->name,
+                    'role' => optional($technician->account)->role,
+                    'active_task_count' => (int) ($activeTaskCounts[$technician->technician_id] ?? 0),
+                ];
+            })
+            ->values();
+
+        return response()->json([
+            'technicians' => $technicians,
+            'schedule_start' => \Carbon\Carbon::parse($scheduleStart)->format('Y-m-d'),
+            'schedule_end' => \Carbon\Carbon::parse($scheduleEnd)->format('Y-m-d'),
+        ]);
+    }
+
     public function store(Request $request, $projectId)
     {
         $project = Project::findOrFail($projectId);

@@ -449,6 +449,15 @@ class ProjectController extends Controller
 
         $isReadOnly = $project->isReadOnly();
 
+        $assignedTeamTechnicianIds = $project->projectTechnicians->pluck('technician_id')->filter()->values();
+
+        $technicianActiveTaskCounts = Task::query()
+            ->whereIn('technician_id', $assignedTeamTechnicianIds)
+            ->whereIn('status', ['pending', 'ongoing'])
+            ->selectRaw('technician_id, count(*) as active_count')
+            ->groupBy('technician_id')
+            ->pluck('active_count', 'technician_id');
+
         return view('super-admin.projectDetails', compact(
             'project',
             'projectTypes',
@@ -459,8 +468,10 @@ class ProjectController extends Controller
             'currentLeadTechnicianId',
             'currentTeamTechnicianIds',
             'isReadOnly',
-            'assignedTeamLookup'
+            'assignedTeamLookup',
+            'technicianActiveTaskCounts'
         ));
+    
     }
 
     public function previewDocument(int $id, string $type)

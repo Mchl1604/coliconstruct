@@ -1304,8 +1304,8 @@
 
                                                 <small class="text-muted">
 
-                                                    {{ $technician->tasks_count ?? 0 }}
-                                                    Active Tasks
+                                                    {{ $technicianActiveTaskCounts[$technician->technician_id] ?? 0 }}
+                                                    Active Task{{ ($technicianActiveTaskCounts[$technician->technician_id] ?? 0) == 1 ? '' : 's' }}
 
                                                 </small>
 

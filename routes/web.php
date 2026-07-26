@@ -47,4 +47,8 @@ Route::prefix('super-admin')
         //ROUTE FOR SUPER ADMIN SCHEDULES PAGE
         Route::get('/schedules', [ScheduleController::class, 'index'])->name('schedules.index');
         Route::put('/schedules/{id}', [ScheduleController::class, 'update'])->name('schedules.update');
+
+        //ROUTE FOR SUPER ADMIN TASKS PAGE  
+        Route::get('/tasks', [TaskController::class, 'index'])->name('tasks.index');
+Route::get('/projects/{id}/task-form-data', [TaskController::class, 'projectFormData'])->name('projects.task-form-data');
     });
