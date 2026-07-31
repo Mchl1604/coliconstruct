@@ -60,7 +60,7 @@ href="https://cdn.datatables.net/2.3.8/css/dataTables.dataTables.css">
 [
     'label' => 'Reports',
     'icon' => 'bi-graph-up',
-    'url' => '#',
+    'url' => route('super-admin.reports.index'),
     'active' => request()->routeIs('super-admin.reports.*'),
 ],
 

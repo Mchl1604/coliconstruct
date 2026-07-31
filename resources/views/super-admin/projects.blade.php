@@ -81,12 +81,21 @@
                                 data-overdue="{{ $project->isOverdue() ? '1' : '0' }}">
                                 <td>{{ $project->project_id }}</td>
                                 <td>{{ $project->reference_no }}</td>
-                                <td>{{ $project->clients->first()->fullname ?? 'N/A' }}</td>
-                                <td>{{ $project->clients->first()->client_type }}</td>
                                 <td>
-                                    {{ $project->projectTypes->pluck('type_name')->join(', ') ?: 'N/A' }}
+                                    @php
+                                        $client = $project->clients->first();
+                                    @endphp
+                                    {{ $client?->client_type === 'Commercial' ? ($client->company_name ?? $client->fullname) : $client?->fullname ?? 'N/A' }}
                                 </td>
-                                <td>₱ {{ number_format($project->quotation, 2) }}</td>
+                                <td>{{ $client?->client_type }}</td>
+                                <td>
+                                    @forelse ($project->projectTypes as $projectType)
+                                        <span class="project-type-chip">{{ $projectType->type_name }}</span>
+                                    @empty
+                                        <span class="text-muted small">N/A</span>
+                                    @endforelse
+                                </td>
+                                <td class="text-success fw-semibold">₱ {{ number_format($project->quotation, 2) }}</td>
                                 <td>
                                     <x-project-status-badge :project="$project" />
                                 </td>

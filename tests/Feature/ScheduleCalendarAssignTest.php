@@ -112,9 +112,9 @@ class ScheduleCalendarAssignTest extends TestCase
         $tech = $this->createTechnician('Free Tech');
 
         $this->createProject('Ongoing Project', [$tech]);
+        $this->createProject('Pending Project', [$this->createTechnician('T1')], 'pending');
         $this->createProject('Completed Project', [$this->createTechnician('T2')], 'completed');
         $this->createProject('Cancelled Project', [$this->createTechnician('T3')], 'cancelled');
-        $this->createProject('Not Yet Scheduled', [$this->createTechnician('T4')], 'not_yet_scheduled');
         $this->createProject('On Hold Project', [$this->createTechnician('T5')], 'ongoing', true);
 
         $response = $this->getJson(route('super-admin.schedules.assignable', [
@@ -129,10 +129,80 @@ class ScheduleCalendarAssignTest extends TestCase
         $allReturned = array_merge($names, $blockedNames);
 
         $this->assertContains('Ongoing Project', $names);
+        $this->assertContains('Pending Project', $names);
         $this->assertNotContains('Completed Project', $allReturned);
         $this->assertNotContains('Cancelled Project', $allReturned);
-        $this->assertNotContains('Not Yet Scheduled', $allReturned);
         $this->assertNotContains('On Hold Project', $allReturned);
+    }
+
+    /**
+     * A not-yet-scheduled project is the main thing you would want to book
+     * from the calendar - restoring an archived project leaves it in exactly
+     * that state, with no schedule at all.
+     */
+    public function test_not_yet_scheduled_projects_can_be_booked_from_the_calendar(): void
+    {
+        $tech = $this->createTechnician('Free Tech');
+        $fresh = $this->createProject('Not Yet Scheduled', [$tech], 'not_yet_scheduled');
+
+        $response = $this->getJson(route('super-admin.schedules.assignable', [
+            'start_date' => $this->day(5),
+            'end_date' => $this->day(6),
+        ]));
+
+        $response->assertOk();
+        $this->assertContains(
+            'Not Yet Scheduled',
+            collect($response->json('projects'))->pluck('name')->all()
+        );
+
+        $save = $this->postJson(route('super-admin.schedules.assign'), [
+            'start_date' => $this->day(5),
+            'end_date' => $this->day(6),
+            'project_ids' => [$fresh->project_id],
+        ]);
+
+        $save->assertOk();
+
+        $schedule = Schedule::where('project_id', $fresh->project_id)->first();
+        $this->assertNotNull($schedule);
+
+        // Booking it promotes the project off not_yet_scheduled.
+        $this->assertSame('pending', $fresh->fresh()->status);
+    }
+
+    /**
+     * A restored project has no technicians either, so it must still be
+     * bookable - availability has nobody to conflict with.
+     */
+    public function test_a_restored_project_with_no_technicians_can_be_booked(): void
+    {
+        $bare = Project::create([
+            'name' => 'Restored Project',
+            'reference_no' => 'REF-RESTORED',
+            'status' => 'not_yet_scheduled',
+            'address' => 'Address',
+            'description' => 'Description',
+        ]);
+
+        $response = $this->getJson(route('super-admin.schedules.assignable', [
+            'start_date' => $this->day(5),
+            'end_date' => $this->day(6),
+        ]));
+
+        $response->assertOk();
+        $this->assertContains(
+            'Restored Project',
+            collect($response->json('projects'))->pluck('name')->all()
+        );
+
+        $this->postJson(route('super-admin.schedules.assign'), [
+            'start_date' => $this->day(5),
+            'end_date' => $this->day(6),
+            'project_ids' => [$bare->project_id],
+        ])->assertOk();
+
+        $this->assertSame(1, Schedule::where('project_id', $bare->project_id)->count());
     }
 
     /**

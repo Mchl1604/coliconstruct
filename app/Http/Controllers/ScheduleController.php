@@ -24,6 +24,18 @@ class ScheduleController extends Controller
      */
     private const ACTIVE_PROJECT_STATUSES = ['pending', 'ongoing'];
 
+    /**
+     * Statuses that can be booked onto a date from the calendar.
+     *
+     * Wider than ACTIVE_PROJECT_STATUSES on purpose: a not-yet-scheduled
+     * project is the main thing you would want to schedule. Restoring an
+     * archived project leaves it in exactly that state, with its schedule
+     * released, so it has to be reachable here.
+     *
+     * @var array<int, string>
+     */
+    private const SCHEDULABLE_STATUSES = ['not_yet_scheduled', 'pending', 'ongoing'];
+
     public function index()
     {
         $projects = Project::query()
@@ -117,9 +129,10 @@ class ScheduleController extends Controller
     /**
      * Projects that can take on the given date range.
      *
-     * A project qualifies when it is schedulable (pending/ongoing, not on
-     * hold or archived), none of its own ranges already cover these dates,
-     * and every technician on it is continuously free for the whole range.
+     * A project qualifies when it is schedulable (not-yet-scheduled, pending
+     * or ongoing, and neither on hold nor archived), none of its own ranges
+     * already cover these dates, and every technician on it is continuously
+     * free for the whole range.
      *
      * The response also carries each project's technician ids so the browser
      * can grey out projects that share a technician the moment one is picked,
@@ -147,7 +160,7 @@ class ScheduleController extends Controller
 
         $candidates = Project::query()
             ->with(['clients', 'schedules', 'projectTechnicians.technician.account'])
-            ->whereIn('status', self::ACTIVE_PROJECT_STATUSES)
+            ->whereIn('status', self::SCHEDULABLE_STATUSES)
             ->where('is_archived', false)
             ->where(function ($query): void {
                 $query->where('on_hold', false)->orWhereNull('on_hold');
@@ -395,7 +408,7 @@ class ScheduleController extends Controller
             throw new RuntimeException($project->name . ' is on hold and cannot be scheduled.');
         }
 
-        if (! in_array($project->status, self::ACTIVE_PROJECT_STATUSES, true)) {
+        if (! in_array($project->status, self::SCHEDULABLE_STATUSES, true)) {
             throw new RuntimeException(sprintf(
                 '%s cannot be scheduled from the calendar while it is %s.',
                 $project->name,

@@ -1,0 +1,134 @@
+/* ---- Summary cards ---- */
+
+.report-card-heading {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #64748b;
+    margin-bottom: 0.75rem;
+}
+
+.report-stat-list {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    row-gap: 0.4rem;
+    column-gap: 0.75rem;
+    margin: 0;
+}
+
+.report-stat-list dt {
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: #64748b;
+}
+
+.report-stat-list dd {
+    margin: 0;
+    text-align: right;
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+/* Figures that deserve emphasis get their own colour. */
+.report-stat-list dd.is-accent {
+    color: #2563eb;
+}
+
+.report-stat-list dd.is-warning {
+    color: #fd7e14;
+}
+
+.report-stat-list dd.is-success {
+    color: #198754;
+}
+
+.report-stat-list dd.is-danger {
+    color: #dc3545;
+}
+
+/* ---- Charts ---- */
+
+.report-section-title {
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #94a3b8;
+    margin-bottom: 0.6rem;
+}
+
+.report-chart-title {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: #0f172a;
+    margin-bottom: 0.75rem;
+}
+
+/* A fixed height keeps Chart.js from growing without bound on redraw. */
+.report-chart-wrap {
+    position: relative;
+    height: 260px;
+}
+
+.report-chart-wrap canvas {
+    max-width: 100%;
+}
+
+/* ---- Report viewer ---- */
+
+.report-description {
+    /* Keeps the technician's own line breaks and indentation. */
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 0.9rem;
+    color: #1e293b;
+    background: #f8fafc;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.5rem;
+    padding: 0.85rem 1rem;
+}
+
+.report-gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 0.6rem;
+}
+
+.report-gallery-item {
+    display: block;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.5rem;
+    overflow: hidden;
+    background: #f1f5f9;
+    padding: 0;
+    cursor: zoom-in;
+}
+
+.report-gallery-item img {
+    display: block;
+    width: 100%;
+    height: 120px;
+    object-fit: cover;
+    transition: transform 0.15s ease;
+}
+
+.report-gallery-item:hover img {
+    transform: scale(1.04);
+}
+
+/* ---- Table ---- */
+
+#reportsTable tbody tr {
+    cursor: default;
+}
+
+.report-id-cell {
+    font-variant-numeric: tabular-nums;
+    color: #64748b;
+    font-size: 0.85rem;
+}

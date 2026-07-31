@@ -716,6 +716,108 @@ class TechnicianManagementTest extends TestCase
         $this->assertNotContains('Completed Project', array_merge($eligible, $blocked));
     }
 
+    /**
+     * A project's lead is derived from the account role, so it can only have
+     * one. A lead technician is therefore only offered projects that don't
+     * already have a lead.
+     */
+    public function test_a_lead_technician_is_only_offered_projects_without_a_lead(): void
+    {
+        $incoming = $this->leadTechnician('Carlo Ramirez');
+        $existingLead = $this->leadTechnician('Jose Garcia');
+        $ana = $this->technician('Ana Mendoza');
+
+        $ledAlready = $this->project('Already Led', [$existingLead, $ana]);
+        $this->schedule($ledAlready, $this->day(5), $this->day(6));
+
+        // Only a regular technician on it, so no lead yet.
+        $needsLead = $this->project('Needs A Lead', [$ana]);
+        $this->schedule($needsLead, $this->day(20), $this->day(21));
+
+        $response = $this->getJson(route('super-admin.technicians.assignable', $incoming->technician_id));
+
+        $response->assertOk();
+
+        $eligible = collect($response->json('projects'))->pluck('name')->all();
+        $blocked = collect($response->json('blocked'));
+
+        $this->assertSame(['Needs A Lead'], $eligible);
+        $this->assertTrue(
+            $blocked->contains(fn (array $row): bool => $row['name'] === 'Already Led'
+                && str_contains((string) $row['reason'], 'Jose Garcia')
+                && str_contains((string) $row['reason'], 'only have one lead'))
+        );
+    }
+
+    /**
+     * The rule is specific to leads: a supporting technician can still join a
+     * project that already has one.
+     */
+    public function test_a_regular_technician_can_still_join_a_project_that_has_a_lead(): void
+    {
+        $existingLead = $this->leadTechnician('Jose Garcia');
+        $ana = $this->technician('Ana Mendoza');
+        $incoming = $this->technician('Kevin Lopez');
+
+        $ledAlready = $this->project('Already Led', [$existingLead, $ana]);
+        $this->schedule($ledAlready, $this->day(5), $this->day(6));
+
+        $response = $this->getJson(route('super-admin.technicians.assignable', $incoming->technician_id));
+
+        $response->assertOk();
+        $this->assertContains(
+            'Already Led',
+            collect($response->json('projects'))->pluck('name')->all()
+        );
+    }
+
+    public function test_assigning_a_second_lead_by_direct_post_is_rejected(): void
+    {
+        $incoming = $this->leadTechnician('Carlo Ramirez');
+        $existingLead = $this->leadTechnician('Jose Garcia');
+
+        $ledAlready = $this->project('Already Led', [$existingLead]);
+        $this->schedule($ledAlready, $this->day(5), $this->day(6));
+
+        $response = $this->postJson(
+            route('super-admin.technicians.projects.store', $incoming->technician_id),
+            ['project_ids' => [$ledAlready->project_id]]
+        );
+
+        $response->assertStatus(422);
+        $this->assertStringContainsString('only have one lead', $response->json('error'));
+        $this->assertDatabaseMissing('tbl_project_technicians', [
+            'project_id' => $ledAlready->project_id,
+            'technician_id' => $incoming->technician_id,
+        ]);
+    }
+
+    public function test_a_lead_technician_can_be_assigned_to_a_project_without_a_lead(): void
+    {
+        $incoming = $this->leadTechnician('Carlo Ramirez');
+        $ana = $this->technician('Ana Mendoza');
+
+        $needsLead = $this->project('Needs A Lead', [$ana]);
+        $schedule = $this->schedule($needsLead, $this->day(5), $this->day(6));
+
+        $response = $this->postJson(
+            route('super-admin.technicians.projects.store', $incoming->technician_id),
+            ['project_ids' => [$needsLead->project_id]]
+        );
+
+        $response->assertOk();
+
+        $assignment = ProjectTechnician::where('project_id', $needsLead->project_id)
+            ->where('technician_id', $incoming->technician_id)
+            ->first();
+
+        $this->assertNotNull($assignment);
+        $this->assertDatabaseHas('tbl_schedule_technicians', [
+            'schedule_id' => $schedule->schedule_id,
+            'project_technician_id' => $assignment->project_technician_id,
+        ]);
+    }
+
     public function test_assigning_creates_project_and_schedule_rows(): void
     {
         $ana = $this->technician('Ana Mendoza');
@@ -793,6 +895,107 @@ class TechnicianManagementTest extends TestCase
         $this->assertSame(
             0,
             ProjectTechnician::where('technician_id', $ana->technician_id)->count()
+        );
+    }
+
+    /**
+     * A project can be staffed before it is scheduled - restoring an archived
+     * project leaves it not-yet-scheduled with no team at all.
+     */
+    public function test_not_yet_scheduled_projects_can_be_staffed(): void
+    {
+        $ana = $this->technician('Ana Mendoza');
+        $lead = $this->leadTechnician('Jose Garcia');
+
+        $fresh = $this->project('Restored Project', [$lead], 'not_yet_scheduled');
+
+        $response = $this->getJson(route('super-admin.technicians.assignable', $ana->technician_id));
+
+        $response->assertOk();
+
+        $eligible = collect($response->json('projects'));
+        $row = $eligible->firstWhere('name', 'Restored Project');
+
+        $this->assertNotNull($row, 'An unscheduled project should be offered.');
+        $this->assertFalse($row['has_schedule'] ?? true);
+        $this->assertSame('No schedule set', $row['range_label']);
+
+        $save = $this->postJson(
+            route('super-admin.technicians.projects.store', $ana->technician_id),
+            ['project_ids' => [$fresh->project_id]]
+        );
+
+        $save->assertOk();
+
+        $this->assertDatabaseHas('tbl_project_technicians', [
+            'project_id' => $fresh->project_id,
+            'technician_id' => $ana->technician_id,
+        ]);
+
+        // Nothing to link yet, so no schedule rows are created.
+        $this->assertSame(0, ScheduleTechnician::count());
+    }
+
+    /**
+     * Staffing first then scheduling must end up with the technician linked to
+     * the new range, otherwise they would be on the team but not the schedule.
+     */
+    public function test_scheduling_after_staffing_links_the_technician_to_the_new_range(): void
+    {
+        $ana = $this->technician('Ana Mendoza');
+        $lead = $this->leadTechnician('Jose Garcia');
+
+        $fresh = $this->project('Restored Project', [$lead], 'not_yet_scheduled');
+
+        $this->postJson(
+            route('super-admin.technicians.projects.store', $ana->technician_id),
+            ['project_ids' => [$fresh->project_id]]
+        )->assertOk();
+
+        // Now book it from the schedules calendar.
+        $this->postJson(route('super-admin.schedules.assign'), [
+            'start_date' => $this->day(5),
+            'end_date' => $this->day(6),
+            'project_ids' => [$fresh->project_id],
+        ])->assertOk();
+
+        $schedule = Schedule::where('project_id', $fresh->project_id)->firstOrFail();
+
+        // Both the pre-existing lead and the later-added technician are linked.
+        $linkedTechnicians = ScheduleTechnician::where('schedule_id', $schedule->schedule_id)
+            ->get()
+            ->map(fn (ScheduleTechnician $link) => $link->projectTechnician?->technician_id)
+            ->filter()
+            ->sort()
+            ->values()
+            ->all();
+
+        $this->assertSame(
+            collect([$lead->technician_id, $ana->technician_id])->sort()->values()->all(),
+            $linkedTechnicians
+        );
+    }
+
+    /**
+     * An unscheduled project has no dates, so it can never be the source of an
+     * availability clash - it stays offered however busy the technician is.
+     */
+    public function test_an_unscheduled_project_is_offered_even_to_a_fully_booked_technician(): void
+    {
+        $ana = $this->technician('Ana Mendoza');
+        $lead = $this->leadTechnician('Jose Garcia');
+
+        $busy = $this->project('Busy Project', [$ana]);
+        $this->schedule($busy, $this->day(1), $this->day(30));
+
+        $fresh = $this->project('Restored Project', [$lead], 'not_yet_scheduled');
+
+        $response = $this->getJson(route('super-admin.technicians.assignable', $ana->technician_id));
+
+        $response->assertOk();
+        $this->assertContains(
+            'Restored Project',
+            collect($response->json('projects'))->pluck('name')->all()
         );
     }
 

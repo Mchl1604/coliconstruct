@@ -4,6 +4,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\TechnicianReportController;
 use App\Http\Controllers\TaskController;
+use App\Http\Controllers\ReportController;
 use App\Http\Controllers\ScheduleController;
 use App\Http\Controllers\TechnicianController;
 
@@ -51,6 +52,14 @@ Route::prefix('super-admin')
         Route::post('/schedules/assign', [ScheduleController::class, 'assign'])->name('schedules.assign');
         Route::get('/schedules/date/{date}', [ScheduleController::class, 'dateDetails'])->name('schedules.date');
         Route::put('/schedules/{id}', [ScheduleController::class, 'update'])->name('schedules.update');
+
+        //ROUTE FOR SUPER ADMIN REPORTS PAGE
+        Route::get('/reports', [ReportController::class, 'index'])->name('reports.index');
+        Route::get('/reports/technician-reports', [ReportController::class, 'technicianReports'])->name('reports.technician');
+        Route::get('/reports/technician-reports/{report}', [ReportController::class, 'showTechnicianReport'])->name('reports.technician.show');
+        Route::get('/reports/reportable-projects', [ReportController::class, 'reportableProjects'])->name('reports.reportable');
+        Route::get('/reports/system', [ReportController::class, 'systemReports'])->name('reports.system');
+        Route::post('/reports/export', [ReportController::class, 'export'])->name('reports.export');
 
         //ROUTE FOR SUPER ADMIN TECHNICIANS PAGE
         Route::get('/technicians', [TechnicianController::class, 'index'])->name('technicians.index');

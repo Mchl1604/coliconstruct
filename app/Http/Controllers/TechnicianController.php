@@ -36,6 +36,18 @@ class TechnicianController extends Controller
      */
     private const LEAD_ROLE = 'lead_technician';
 
+    /**
+     * Statuses that can still take technicians.
+     *
+     * Wider than Project::ACTIVE_PROJECT_STATUSES on purpose: a project can be
+     * staffed before it is scheduled. Restoring an archived project leaves it
+     * not-yet-scheduled with no team, so it has to be reachable here - and
+     * scheduling it later links every assigned technician to the new range.
+     *
+     * @var array<int, string>
+     */
+    private const STAFFABLE_STATUSES = ['not_yet_scheduled', 'pending', 'ongoing'];
+
     public function index()
     {
         $technicians = Technician::query()
@@ -179,7 +191,6 @@ class TechnicianController extends Controller
                 'is_lead_technician' => $lead
                     && (int) $lead->technician_id === (int) $technician->technician_id,
                 'technician_task_count' => (int) ($taskCounts[$project->project_id] ?? 0),
-                'has_schedule' => $project->schedules->isNotEmpty(),
             ];
         })->values();
     }
@@ -316,7 +327,7 @@ class TechnicianController extends Controller
     {
         $candidates = Project::query()
             ->with(['clients', 'schedules', 'projectTechnicians.technician.account'])
-            ->whereIn('status', Project::ACTIVE_PROJECT_STATUSES)
+            ->whereIn('status', self::STAFFABLE_STATUSES)
             ->where('is_archived', false)
             ->where(function ($query): void {
                 $query->where('on_hold', false)->orWhereNull('on_hold');
@@ -329,6 +340,10 @@ class TechnicianController extends Controller
 
         $eligible = [];
         $blocked = [];
+
+        // A project has exactly one lead, derived from the account role, so a
+        // lead technician can only join projects that don't have one yet.
+        $isLeadTechnician = optional($technician->account)->role === self::LEAD_ROLE;
 
         // Every candidate range in one window, so availability costs a fixed
         // handful of queries no matter how many projects are in play. The
@@ -350,10 +365,26 @@ class TechnicianController extends Controller
             )[(int) $technician->technician_id] ?? []);
 
         foreach ($candidates as $project) {
+            if ($isLeadTechnician) {
+                $existingLead = $this->leadAssignment($project);
+
+                if ($existingLead) {
+                    $blocked[] = $this->projectPayload($project, sprintf(
+                        'Already led by %s. A project can only have one lead technician.',
+                        $existingLead->technician?->name ?? 'another lead technician'
+                    ));
+
+                    continue;
+                }
+            }
+
             $ranges = $this->projectRanges($project);
 
+            // Not scheduled yet means there are no dates to clash with. The
+            // technician is simply put on the team; scheduling the project
+            // later links them to whatever range is created.
             if ($ranges === []) {
-                $blocked[] = $this->projectPayload($project, 'No schedule set yet, so there is nothing to assign to.');
+                $eligible[] = $this->projectPayload($project);
 
                 continue;
             }
@@ -410,14 +441,16 @@ class TechnicianController extends Controller
         }
 
         $projects = Project::query()
-            ->with(['schedules', 'projectTechnicians'])
+            // technician.account is needed to spot an existing lead.
+            ->with(['schedules', 'projectTechnicians.technician.account'])
             ->whereIn('project_id', $validator->validated()['project_ids'])
             ->get();
 
+        $isLeadTechnician = optional($technician->account)->role === self::LEAD_ROLE;
         $availability = app(TechnicianAvailabilityService::class);
 
         try {
-            DB::transaction(function () use ($technician, $projects, $availability): void {
+            DB::transaction(function () use ($technician, $projects, $availability, $isLeadTechnician): void {
                 $claimedRanges = [];
 
                 foreach ($projects as $project) {
@@ -429,41 +462,58 @@ class TechnicianController extends Controller
                         ));
                     }
 
-                    $ranges = $this->projectRanges($project);
+                    // Re-checked here so a stale page can't create a second
+                    // lead on a project that already has one.
+                    if ($isLeadTechnician) {
+                        $existingLead = $this->leadAssignment($project);
 
-                    if ($ranges === []) {
-                        throw new RuntimeException($this->sentence($project->name . ' has no schedule yet'));
+                        if ($existingLead) {
+                            throw new RuntimeException(sprintf(
+                                '%s is already led by %s. A project can only have one lead technician.',
+                                $project->name,
+                                $existingLead->technician?->name ?? 'another lead technician'
+                            ));
+                        }
                     }
 
-                    // Against everything already stored.
-                    $availability->assertContinuouslyAvailable(
-                        [$technician->technician_id],
-                        $ranges,
-                        $project->project_id
-                    );
+                    $ranges = $this->projectRanges($project);
 
-                    // Against the other projects being saved in this request,
-                    // which share no rows yet and so can't be caught above.
-                    foreach ($ranges as $range) {
-                        foreach ($claimedRanges as $claimed) {
-                            $overlaps = $range['start']->lte($claimed['end'])
-                                && $range['end']->gte($claimed['start']);
+                    // An unscheduled project has no dates, so there is nothing
+                    // to check availability against and nothing to overlap.
+                    // attachTechnician() below simply adds the team row; the
+                    // schedule rows follow when the project is scheduled.
+                    if ($ranges !== []) {
+                        // Against everything already stored.
+                        $availability->assertContinuouslyAvailable(
+                            [$technician->technician_id],
+                            $ranges,
+                            $project->project_id
+                        );
 
-                            if ($overlaps) {
-                                throw new RuntimeException(sprintf(
-                                    '%s overlaps %s, so %s cannot take both.',
-                                    $project->name,
-                                    $claimed['project'],
-                                    $technician->name
-                                ));
+                        // Against the other projects being saved in this
+                        // request, which share no rows yet and so can't be
+                        // caught above.
+                        foreach ($ranges as $range) {
+                            foreach ($claimedRanges as $claimed) {
+                                $overlaps = $range['start']->lte($claimed['end'])
+                                    && $range['end']->gte($claimed['start']);
+
+                                if ($overlaps) {
+                                    throw new RuntimeException(sprintf(
+                                        '%s overlaps %s, so %s cannot take both.',
+                                        $project->name,
+                                        $claimed['project'],
+                                        $technician->name
+                                    ));
+                                }
                             }
-                        }
 
-                        $claimedRanges[] = [
-                            'start' => $range['start'],
-                            'end' => $range['end'],
-                            'project' => $project->name,
-                        ];
+                            $claimedRanges[] = [
+                                'start' => $range['start'],
+                                'end' => $range['end'],
+                                'project' => $project->name,
+                            ];
+                        }
                     }
 
                     $this->attachTechnician($project, $technician);
@@ -643,7 +693,7 @@ class TechnicianController extends Controller
             throw new RuntimeException($this->sentence($project->name . ' is on hold'));
         }
 
-        if (! in_array($project->status, Project::ACTIVE_PROJECT_STATUSES, true)) {
+        if (! in_array($project->status, self::STAFFABLE_STATUSES, true)) {
             throw new RuntimeException(sprintf(
                 '%s cannot take technicians while it is %s.',
                 $project->name,
@@ -703,6 +753,7 @@ class TechnicianController extends Controller
             'range_label' => $start && $end
                 ? CarbonImmutable::parse($start)->format('M j, Y') . ' - ' . CarbonImmutable::parse($end)->format('M j, Y')
                 : 'No schedule set',
+            'has_schedule' => $schedules->isNotEmpty(),
             'ranges' => $schedules->map(fn (Schedule $schedule): array => [
                 'start' => CarbonImmutable::parse($schedule->start_datetime)->toDateString(),
                 'end' => CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime)->toDateString(),
