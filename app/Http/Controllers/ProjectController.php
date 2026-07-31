@@ -12,6 +12,7 @@ use App\Models\ProjectType;
 use App\Models\Schedule;
 use App\Models\ScheduleTechnician;
 use App\Models\Technician;
+use App\Services\TechnicianAvailabilityService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -1008,7 +1009,7 @@ class ProjectController extends Controller
 
    public function updateAssignedTeam(Request $request, int $id)
 {
-    $project = Project::findOrFail($id);
+    $project = Project::with(['schedules', 'projectTechnicians'])->findOrFail($id);
 
     if ($project->isReadOnly()) {
         return back()->with('error', 'This project is ' . $project->status . ' and its team can no longer be edited.');
@@ -1030,40 +1031,30 @@ class ProjectController extends Controller
         ->unique()
         ->values();
 
-    $schedule = $project->schedule;
     $currentlyAssignedIds = $project->projectTechnicians->pluck('technician_id');
-    $newlyAddedIds = $technicianIds->diff($currentlyAssignedIds);
+    $newlyAddedIds = $technicianIds->diff($currentlyAssignedIds)->values();
 
-    if ($schedule && $newlyAddedIds->isNotEmpty()) {
-        $conflictingTechnicians = Technician::whereIn('technician_id', $newlyAddedIds)
-            ->whereHas('projectTechnicians.scheduleTechnicians.schedule', function ($query) use ($schedule) {
-                $query->whereHas('project', function ($projectQuery): void {
-                    $projectQuery->whereIn('status', Project::ACTIVE_PROJECT_STATUSES);
-                })
-                    ->where(function ($q) use ($schedule) {
-                        $q->whereBetween('start_datetime', [
-                            $schedule->start_datetime,
-                            $schedule->end_datetime,
-                        ])
-                            ->orWhereBetween('end_datetime', [
-                                $schedule->start_datetime,
-                                $schedule->end_datetime,
-                            ])
-                            ->orWhere(function ($q2) use ($schedule) {
-                                $q2->where('start_datetime', '<=', $schedule->start_datetime)
-                                    ->where('end_datetime', '>=', $schedule->end_datetime);
-                            });
-                    });
-            })
-            ->get()
-            ->pluck('name');
+    // Every one of the project's date ranges has to be checked, not just the
+    // first one, and every day inside each range - a technician who is free on
+    // the endpoints but booked mid-range must still be rejected.
+    $ranges = $project->schedules
+        ->map(fn ($schedule): array => [
+            'start' => CarbonImmutable::parse($schedule->start_datetime)->startOfDay(),
+            'end' => CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime)->startOfDay(),
+        ])
+        ->all();
 
-        if ($conflictingTechnicians->isNotEmpty()) {
-            return back()->with(
-                'error',
-                'These technicians are already assigned to another active project during this schedule: '
-                    . $conflictingTechnicians->join(', ')
-            );
+    if ($ranges !== [] && $newlyAddedIds->isNotEmpty()) {
+        $availability = app(TechnicianAvailabilityService::class);
+
+        $conflicts = $availability->findConflicts(
+            $newlyAddedIds,
+            $ranges,
+            $project->project_id
+        );
+
+        if ($conflicts->isNotEmpty()) {
+            return back()->with('error', $availability->conflictMessage($conflicts));
         }
     }
 

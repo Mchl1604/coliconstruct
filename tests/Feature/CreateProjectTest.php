@@ -10,6 +10,7 @@ use App\Models\ScheduleTechnician;
 use App\Models\Skill;
 use App\Models\Technician;
 use App\Models\User;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -36,6 +37,20 @@ class CreateProjectTest extends TestCase
         ]);
     }
 
+    /**
+     * Dates are relative to today so the suite keeps working as time passes -
+     * start_date is validated with after_or_equal:today.
+     */
+    private function scheduleStart(): string
+    {
+        return CarbonImmutable::today()->addDays(10)->toDateString();
+    }
+
+    private function scheduleEnd(): string
+    {
+        return CarbonImmutable::today()->addDays(12)->toDateString();
+    }
+
     private function baseProjectPayload(Technician $leadTechnician, Technician $technician, bool $includeContract = false): array
     {
         $payload = [
@@ -53,8 +68,8 @@ class CreateProjectTest extends TestCase
             'project_description' => 'Test project description',
             'lead_tech' => $leadTechnician->technician_id,
             'technicians' => [$technician->technician_id],
-            'start_date' => '2026-07-20',
-            'end_date' => '2026-07-22',
+            'start_date' => $this->scheduleStart(),
+            'end_date' => $this->scheduleEnd(),
         ];
 
         if ($includeContract) {
@@ -122,9 +137,89 @@ class CreateProjectTest extends TestCase
             'skill_id' => $skill->skill_id,
         ]);
 
+        $this->bookTechnician($technician, $this->scheduleStart(), $this->scheduleEnd());
+
+        $response = $this->post(route('super-admin.projects.create.store'), $this->baseProjectPayload($leadTechnician, $technician));
+
+        $response->assertSessionHasErrors(['start_date', 'end_date']);
+        $this->assertDatabaseCount('tbl_projects', 1);
+    }
+
+    /**
+     * The bug this guards against: the range's first and last day are both
+     * free, but a day in the MIDDLE is already booked. Endpoint-only or
+     * naive checks let this through; continuous availability must not.
+     */
+    public function test_it_rejects_a_range_whose_middle_days_are_unavailable(): void
+    {
+        ProjectType::create(['type_name' => 'Aircon Installation']);
+
+        $skill = Skill::create(['skill_name' => 'Aircon Installation']);
+        $leadTechnician = $this->createWizardTechnician('lead_technician', 'Lead Technician');
+        $technician = $this->createWizardTechnician('technician', 'Juan Technician');
+
+        DB::table('tbl_skill_map')->insert([
+            'technician_id' => $technician->technician_id,
+            'skill_id' => $skill->skill_id,
+        ]);
+
+        // Wizard asks for day 10 -> day 12. Day 10 and day 12 are free, but
+        // the technician is already booked on day 11.
+        $middleDay = CarbonImmutable::today()->addDays(11)->toDateString();
+        $this->bookTechnician($technician, $middleDay, $middleDay);
+
+        $response = $this->post(
+            route('super-admin.projects.create.store'),
+            $this->baseProjectPayload($leadTechnician, $technician)
+        );
+
+        $response->assertSessionHasErrors(['start_date', 'end_date']);
+        $this->assertStringContainsString(
+            'is unavailable on',
+            session('errors')->first('start_date')
+        );
+        $this->assertDatabaseCount('tbl_projects', 1);
+    }
+
+    public function test_it_ignores_bookings_on_completed_and_cancelled_projects(): void
+    {
+        ProjectType::create(['type_name' => 'Aircon Installation']);
+
+        $skill = Skill::create(['skill_name' => 'Aircon Installation']);
+        $leadTechnician = $this->createWizardTechnician('lead_technician', 'Lead Technician');
+        $technician = $this->createWizardTechnician('technician', 'Juan Technician');
+
+        DB::table('tbl_skill_map')->insert([
+            'technician_id' => $technician->technician_id,
+            'skill_id' => $skill->skill_id,
+        ]);
+
+        // Same dates the wizard is about to request, but on projects whose
+        // status no longer blocks a technician.
+        $this->bookTechnician($technician, $this->scheduleStart(), $this->scheduleEnd(), 'completed');
+        $this->bookTechnician($technician, $this->scheduleStart(), $this->scheduleEnd(), 'cancelled');
+
+        $response = $this->post(
+            route('super-admin.projects.create.store'),
+            $this->baseProjectPayload($leadTechnician, $technician)
+        );
+
+        $response->assertSessionHasNoErrors();
+        $this->assertDatabaseCount('tbl_projects', 3);
+    }
+
+    /**
+     * Book a technician on another project for the given inclusive date range.
+     */
+    private function bookTechnician(
+        Technician $technician,
+        string $startDate,
+        string $endDate,
+        string $projectStatus = 'ongoing'
+    ): void {
         $existingProject = Project::create([
             'name' => 'Existing Project',
-            'status' => 'scheduled',
+            'status' => $projectStatus,
             'address' => 'Existing Address',
             'description' => 'Existing description',
         ]);
@@ -136,8 +231,8 @@ class CreateProjectTest extends TestCase
 
         $existingSchedule = Schedule::create([
             'project_id' => $existingProject->project_id,
-            'start_datetime' => '2026-07-20 00:00:00',
-            'end_datetime' => '2026-07-22 23:59:59',
+            'start_datetime' => $startDate.' 00:00:00',
+            'end_datetime' => $endDate.' 23:59:59',
             'status' => 'scheduled',
             'remarks' => 'Existing booking',
         ]);
@@ -146,11 +241,6 @@ class CreateProjectTest extends TestCase
             'schedule_id' => $existingSchedule->schedule_id,
             'project_technician_id' => $projectTechnician->project_technician_id,
         ]);
-
-        $response = $this->post(route('super-admin.projects.create.store'), $this->baseProjectPayload($leadTechnician, $technician));
-
-        $response->assertSessionHasErrors(['start_date', 'end_date']);
-        $this->assertDatabaseCount('tbl_projects', 1);
     }
 
     public function test_it_rejects_a_negative_quotation_amount(): void

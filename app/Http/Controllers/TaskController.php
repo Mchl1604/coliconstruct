@@ -5,8 +5,10 @@ namespace App\Http\Controllers;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\Schedule;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 
 class TaskController extends Controller
 {
@@ -16,25 +18,42 @@ class TaskController extends Controller
      */
     public function index(Request $request)
     {
+        // Only live work belongs on this page: a task is listed when its
+        // project is pending or ongoing. Not-yet-scheduled, on-hold,
+        // completed, cancelled and archived projects are all left out.
         $tasks = Task::with([
             'project.projectTechnicians.technician.account',
             'project.schedules',
             'technician',
             'images',
         ])
+            ->whereHas('project', function ($query): void {
+                $query->whereIn('status', Project::ACTIVE_PROJECT_STATUSES)
+                    ->where('is_archived', false);
+            })
             ->orderBy('project_id')
             ->orderBy('start_date')
             ->get();
 
         $projects = Project::query()
             ->orderBy('name')
-            ->get(['project_id', 'name', 'reference_no', 'status']);
+            ->get(['project_id', 'name', 'reference_no', 'status', 'on_hold', 'is_archived']);
 
-        // Only projects that can actually receive new tasks (editable and
-        // already have a schedule) are selectable in the Add Task modal.
+        // Only projects that can actually receive new tasks are selectable in
+        // the Add Task modal: completed, cancelled and archived are excluded.
         $schedulableProjects = $projects->filter(function (Project $project) {
-            return ! $project->isReadOnly();
+            return ! $project->isReadOnly() && ! $project->isArchived();
         })->values();
+
+        // The filter offers every pending/ongoing project - the same set the
+        // table can show - whether or not it currently has any tasks. Picking
+        // one with no tasks is a valid, informative result.
+        $filterProjects = $projects
+            ->filter(function (Project $project): bool {
+                return in_array($project->status, Project::ACTIVE_PROJECT_STATUSES, true)
+                    && ! $project->isArchived();
+            })
+            ->values();
 
         // Active task counts for every technician that shows up on any
         // project involved, used by the Assign To cards in both the Add
@@ -57,7 +76,7 @@ class TaskController extends Controller
 
         return view('super-admin.tasks', compact(
             'tasks',
-            'projects',
+            'filterProjects',
             'schedulableProjects',
             'technicianActiveTaskCounts'
         ));
@@ -78,14 +97,16 @@ class TaskController extends Controller
             ], 422);
         }
 
-        $scheduleStart = $project->schedules->min('start_datetime');
-        $scheduleEnd = $project->schedules->max('end_datetime');
+        $ranges = $this->scheduleRanges($projectId);
 
-        if (! $scheduleStart || ! $scheduleEnd) {
+        if ($ranges === []) {
             return response()->json([
                 'error' => 'This project has no schedule yet. Set a schedule before adding tasks.',
             ], 422);
         }
+
+        $scheduleStart = $project->schedules->min('start_datetime');
+        $scheduleEnd = $project->schedules->max('end_datetime');
 
         $technicians = $project->projectTechnicians
             ->filter(fn ($projectTechnician) => $projectTechnician->technician)
@@ -113,8 +134,11 @@ class TaskController extends Controller
 
         return response()->json([
             'technicians' => $technicians,
-            'schedule_start' => \Carbon\Carbon::parse($scheduleStart)->format('Y-m-d'),
-            'schedule_end' => \Carbon\Carbon::parse($scheduleEnd)->format('Y-m-d'),
+            // Kept as a coarse outer bound; `ranges` is what actually decides
+            // which days are selectable, gaps included.
+            'schedule_start' => Carbon::parse($scheduleStart)->format('Y-m-d'),
+            'schedule_end' => Carbon::parse($scheduleEnd)->format('Y-m-d'),
+            'ranges' => $ranges,
         ]);
     }
 
@@ -128,31 +152,25 @@ class TaskController extends Controller
                 ->with('error', 'This project is ' . $project->status . ' and no longer accepts new tasks.');
         }
 
-        [$projectStart, $projectEnd] = $this->scheduleSpan($projectId);
+        $ranges = $this->scheduleRanges($projectId);
 
-        if (! $projectStart || ! $projectEnd) {
+        if ($ranges === []) {
             return redirect()
                 ->back()
                 ->with('error', 'This project has no schedule yet. Set a schedule before adding tasks.');
         }
 
-        $validated = $request->validate([
+        $validator = Validator::make($request->all(), [
             'task_title' => 'required|string|max:255',
             'task_description' => 'required|string',
             'technician_id' => 'required|exists:tbl_technicians,technician_id',
-            'start_date' => [
-                'required',
-                'date',
-                'after_or_equal:' . $projectStart,
-                'before_or_equal:' . $projectEnd,
-            ],
-            'due_date' => [
-                'required',
-                'date',
-                'after_or_equal:start_date',
-                'before_or_equal:' . $projectEnd,
-            ],
+            'start_date' => ['required', 'date'],
+            'due_date' => ['required', 'date', 'after_or_equal:start_date'],
         ]);
+
+        $this->attachRangeRule($validator, $ranges);
+
+        $validated = $validator->validate();
 
         DB::beginTransaction();
 
@@ -197,29 +215,23 @@ class TaskController extends Controller
             return back();
         }
 
-        [$projectStart, $projectEnd] = $this->scheduleSpan($task->project_id);
+        $ranges = $this->scheduleRanges($task->project_id);
 
-        if (! $projectStart || ! $projectEnd) {
+        if ($ranges === []) {
             return back()->with('error', 'This project has no schedule yet.');
         }
 
-        $validated = $request->validate([
+        $validator = Validator::make($request->all(), [
             'task_title' => 'required|string|max:255',
             'task_description' => 'required|string',
             'technician_id' => 'required|exists:tbl_technicians,technician_id',
-            'start_date' => [
-                'required',
-                'date',
-                'after_or_equal:' . $projectStart,
-                'before_or_equal:' . $projectEnd,
-            ],
-            'due_date' => [
-                'required',
-                'date',
-                'after_or_equal:start_date',
-                'before_or_equal:' . $projectEnd,
-            ],
+            'start_date' => ['required', 'date'],
+            'due_date' => ['required', 'date', 'after_or_equal:start_date'],
         ]);
+
+        $this->attachRangeRule($validator, $ranges);
+
+        $validated = $validator->validate();
 
         if ($task->status === 'unassigned') {
             $validated['status'] = 'pending';
@@ -296,28 +308,95 @@ class TaskController extends Controller
     }
 
     /**
-     * A project can have several date ranges. Tasks must be constrained to
-     * the overall span of the project's current schedule (earliest start
-     * to latest end) so the check always reflects the latest schedule.
+     * Every date range on a project's schedule, as 'Y-m-d' pairs.
      *
-     * @return array{0: ?string, 1: ?string}
+     * A project can have several ranges with gaps between them (July 10-15
+     * and July 20-25, say). Checking only the earliest start and the latest
+     * end would wrongly accept July 16-19, so callers must test the ranges
+     * individually.
+     *
+     * @return array<int, array{start: string, end: string}>
      */
-    private function scheduleSpan(int $projectId): array
+    private function scheduleRanges(int $projectId): array
     {
-        $schedules = Schedule::query()
+        return Schedule::query()
             ->where('project_id', $projectId)
-            ->get(['start_datetime', 'end_datetime']);
+            ->orderBy('start_datetime')
+            ->get(['start_datetime', 'end_datetime'])
+            ->map(fn (Schedule $schedule): array => [
+                'start' => Carbon::parse($schedule->start_datetime)->format('Y-m-d'),
+                'end' => Carbon::parse($schedule->end_datetime ?? $schedule->start_datetime)->format('Y-m-d'),
+            ])
+            ->values()
+            ->all();
+    }
 
-        if ($schedules->isEmpty()) {
-            return [null, null];
+    /**
+     * A task must sit entirely inside ONE of the project's date ranges - it
+     * cannot straddle the gap between two of them. This mirrors the rule
+     * ScheduleController uses when it re-checks tasks after a reschedule.
+     *
+     * @param  array<int, array{start: string, end: string}>  $ranges
+     */
+    private function rangeCovering(array $ranges, ?string $startDate, ?string $dueDate): ?array
+    {
+        if (! $startDate || ! $dueDate) {
+            return null;
         }
 
-        $start = $schedules->min('start_datetime');
-        $end = $schedules->max('end_datetime');
+        foreach ($ranges as $range) {
+            if ($startDate >= $range['start'] && $dueDate <= $range['end']) {
+                return $range;
+            }
+        }
 
-        return [
-            $start ? $start->format('Y-m-d') : null,
-            $end ? $end->format('Y-m-d') : null,
-        ];
+        return null;
+    }
+
+    /**
+     * Human-readable list of the allowed windows, for validation messages.
+     *
+     * @param  array<int, array{start: string, end: string}>  $ranges
+     */
+    private function describeRanges(array $ranges): string
+    {
+        return collect($ranges)
+            ->map(fn (array $range): string => Carbon::parse($range['start'])->format('M j, Y')
+                . ' - '
+                . Carbon::parse($range['end'])->format('M j, Y'))
+            ->join('; ');
+    }
+
+    /**
+     * Add the "inside a single schedule range" check to a validator.
+     *
+     * @param  array<int, array{start: string, end: string}>  $ranges
+     */
+    private function attachRangeRule(\Illuminate\Validation\Validator $validator, array $ranges): void
+    {
+        $validator->after(function ($validator) use ($ranges): void {
+            if ($validator->errors()->hasAny(['start_date', 'due_date'])) {
+                return;
+            }
+
+            $data = $validator->getData();
+            $covering = $this->rangeCovering(
+                $ranges,
+                $data['start_date'] ?? null,
+                $data['due_date'] ?? null
+            );
+
+            if ($covering) {
+                return;
+            }
+
+            $message = count($ranges) === 1
+                ? 'The task dates must fall inside the project schedule (' . $this->describeRanges($ranges) . ').'
+                : 'The task dates must fall inside a single one of the project\'s schedule ranges ('
+                    . $this->describeRanges($ranges) . '). A task cannot span the gap between two ranges.';
+
+            $validator->errors()->add('start_date', $message);
+            $validator->errors()->add('due_date', $message);
+        });
     }
 }

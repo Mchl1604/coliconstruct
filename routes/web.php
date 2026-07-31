@@ -5,6 +5,7 @@ use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\TechnicianReportController;
 use App\Http\Controllers\TaskController;
 use App\Http\Controllers\ScheduleController;
+use App\Http\Controllers\TechnicianController;
 
 // Public routes
 Route::get('/', function () {
@@ -46,9 +47,23 @@ Route::prefix('super-admin')
 
         //ROUTE FOR SUPER ADMIN SCHEDULES PAGE
         Route::get('/schedules', [ScheduleController::class, 'index'])->name('schedules.index');
+        Route::get('/schedules/assignable', [ScheduleController::class, 'assignableProjects'])->name('schedules.assignable');
+        Route::post('/schedules/assign', [ScheduleController::class, 'assign'])->name('schedules.assign');
+        Route::get('/schedules/date/{date}', [ScheduleController::class, 'dateDetails'])->name('schedules.date');
         Route::put('/schedules/{id}', [ScheduleController::class, 'update'])->name('schedules.update');
 
-        //ROUTE FOR SUPER ADMIN TASKS PAGE  
+        //ROUTE FOR SUPER ADMIN TECHNICIANS PAGE
+        Route::get('/technicians', [TechnicianController::class, 'index'])->name('technicians.index');
+        Route::get('/technicians/{technician}', [TechnicianController::class, 'show'])->name('technicians.show');
+        Route::post('/technicians/{technician}/specialties', [TechnicianController::class, 'addSpecialties'])->name('technicians.specialties.store');
+        Route::delete('/technicians/{technician}/specialties/{skill}', [TechnicianController::class, 'removeSpecialty'])->name('technicians.specialties.destroy');
+        Route::get('/technicians/{technician}/calendar', [TechnicianController::class, 'calendar'])->name('technicians.calendar');
+        Route::get('/technicians/{technician}/assignable-projects', [TechnicianController::class, 'assignableProjects'])->name('technicians.assignable');
+        Route::post('/technicians/{technician}/projects', [TechnicianController::class, 'assignToProjects'])->name('technicians.projects.store');
+        Route::get('/technicians/{technician}/projects/{project}', [TechnicianController::class, 'assignment'])->name('technicians.assignment');
+        Route::delete('/technicians/{technician}/projects/{project}', [TechnicianController::class, 'removeFromProject'])->name('technicians.projects.destroy');
+
+        //ROUTE FOR SUPER ADMIN TASKS PAGE
         Route::get('/tasks', [TaskController::class, 'index'])->name('tasks.index');
 Route::get('/projects/{id}/task-form-data', [TaskController::class, 'projectFormData'])->name('projects.task-form-data');
     });

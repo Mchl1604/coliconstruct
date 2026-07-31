@@ -3,7 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Models\ProjectType;
-use App\Models\Schedule;
+use App\Services\TechnicianAvailabilityService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -55,49 +55,47 @@ class StoreProjectRequest extends FormRequest
     }
 
     public function after(): array
-{
-    return [
-        function ($validator): void {
-            $technicianIds = collect([
-                $this->input('lead_tech'),
-                ...($this->input('technicians', [])),
-            ])
-                ->filter()
-                ->map(fn ($technicianId): int => (int) $technicianId)
-                ->unique()
-                ->values();
+    {
+        return [
+            function ($validator): void {
+                // Only run once the fields this check depends on are themselves
+                // valid, otherwise a bad date string would blow up the parser.
+                if ($validator->errors()->hasAny(['start_date', 'end_date', 'lead_tech', 'technicians'])) {
+                    return;
+                }
 
-            if ($technicianIds->isEmpty()) {
-                return;
-            }
+                $technicianIds = collect([
+                    $this->input('lead_tech'),
+                    ...($this->input('technicians', [])),
+                ])
+                    ->filter()
+                    ->map(fn ($technicianId): int => (int) $technicianId)
+                    ->unique()
+                    ->values();
 
-            $startDate = CarbonImmutable::parse($this->input('start_date'))->startOfDay();
-            $endDate = CarbonImmutable::parse($this->input('end_date'))->endOfDay();
+                if ($technicianIds->isEmpty() || ! $this->filled(['start_date', 'end_date'])) {
+                    return;
+                }
 
-            $conflictingSchedules = Schedule::query()
-                ->whereHas('project', function ($query): void {
-                    $query->whereIn('status', ['pending', 'ongoing']);
-                })
-                ->with(['scheduleTechnicians.projectTechnician'])
-                ->whereHas('scheduleTechnicians.projectTechnician', function ($query) use ($technicianIds): void {
-                    $query->whereIn('technician_id', $technicianIds->all());
-                })
-                ->get()
-                ->filter(function (Schedule $schedule) use ($startDate, $endDate): bool {
-                    $existingStart = CarbonImmutable::parse($schedule->start_datetime)->startOfDay();
-                    $existingEnd = CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime)->endOfDay();
+                $ranges = [[
+                    'start' => CarbonImmutable::parse($this->input('start_date'))->startOfDay(),
+                    'end' => CarbonImmutable::parse($this->input('end_date'))->startOfDay(),
+                ]];
 
-                    return $startDate->lessThanOrEqualTo($existingEnd)
-                        && $endDate->greaterThanOrEqualTo($existingStart);
-                });
+                $conflicts = app(TechnicianAvailabilityService::class)
+                    ->findConflicts($technicianIds, $ranges);
 
-            if ($conflictingSchedules->isNotEmpty()) {
-                $validator->errors()->add('start_date', 'The selected schedule overlaps an existing technician assignment.');
-                $validator->errors()->add('end_date', 'The selected schedule overlaps an existing technician assignment.');
-            }
-        },
-    ];
-}
+                if ($conflicts->isEmpty()) {
+                    return;
+                }
+
+                $message = app(TechnicianAvailabilityService::class)->conflictMessage($conflicts);
+
+                $validator->errors()->add('start_date', $message);
+                $validator->errors()->add('end_date', $message);
+            },
+        ];
+    }
 
     /**
      * @return array<int, string>

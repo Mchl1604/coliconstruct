@@ -157,6 +157,16 @@
     filter: brightness(0.93);
 }
 
+/* Completed / cancelled / archived projects have no edit modal to open. */
+#schedulesCalendar .fc-event.fc-event-readonly {
+    cursor: default;
+    opacity: 0.75;
+}
+
+#schedulesCalendar .fc-event.fc-event-readonly:hover {
+    filter: none;
+}
+
 #schedulesCalendar .fc-daygrid-more-link {
     font-size: 0.72rem;
     font-weight: 600;
@@ -174,4 +184,294 @@
 
 .schedule-range-row .flatpickr-input[readonly] {
     background-color: #fff;
+}
+
+/* Every calendar day is clickable, so make that discoverable. */
+#schedulesCalendar .fc-daygrid-day {
+    cursor: pointer;
+    transition: background-color 0.12s ease;
+}
+
+#schedulesCalendar .fc-daygrid-day:hover {
+    background: #f1f5f9;
+}
+
+#schedulesCalendar .fc-day-today:hover {
+    background: #fef3c7;
+}
+
+/* ---- Modal headings (shared by the edit + date modals) ---- */
+
+.schedule-modal-heading {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-width: 0;
+}
+
+.schedule-modal-eyebrow {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #94a3b8;
+}
+
+.schedule-modal-heading .modal-title {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: #0f172a;
+    line-height: 1.25;
+}
+
+.schedule-modal-ref {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    align-self: flex-start;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #2563eb;
+    text-decoration: none;
+    padding: 0.1rem 0.45rem 0.1rem 0.4rem;
+    border-radius: 0.35rem;
+    background: #eff6ff;
+}
+
+.schedule-modal-ref:hover {
+    background: #dbeafe;
+    color: #1d4ed8;
+    text-decoration: none;
+}
+
+.schedule-modal-team {
+    background: #f8fafc;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.6rem;
+    padding: 0.7rem 0.85rem;
+}
+
+.schedule-modal-team-label {
+    display: block;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #64748b;
+    margin-bottom: 0.5rem;
+}
+
+.schedule-modal-team-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+
+.schedule-tech-chip {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #1e293b;
+    background: #fff;
+    border: 1px solid #cbd5e1;
+    border-radius: 999px;
+    padding: 0.2rem 0.65rem;
+}
+
+/* ---- Date-details modal ---- */
+
+.schedule-section-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #64748b;
+    margin-bottom: 0.6rem;
+}
+
+.schedule-count-pill {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #475569;
+    background: #e2e8f0;
+    border-radius: 999px;
+    padding: 0.1rem 0.5rem;
+    letter-spacing: 0;
+}
+
+.schedule-date-list,
+.schedule-eligible-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.schedule-date-card {
+    border: 1px solid #e5e7eb;
+    border-left: 4px solid #cbd5e1;
+    border-radius: 0.55rem;
+    padding: 0.7rem 0.85rem;
+    background: #fff;
+}
+
+.schedule-date-card-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.schedule-date-card-name {
+    font-weight: 700;
+    color: #0f172a;
+    line-height: 1.3;
+}
+
+.schedule-date-card-meta {
+    font-size: 0.8rem;
+    color: #64748b;
+    margin-top: 0.15rem;
+}
+
+.schedule-date-card-range {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #334155;
+    background: #f1f5f9;
+    border-radius: 0.35rem;
+    padding: 0.15rem 0.5rem;
+    margin-top: 0.4rem;
+    margin-right: 0.3rem;
+}
+
+.schedule-empty-state {
+    border: 1px dashed #d1d5db;
+    border-radius: 0.55rem;
+    padding: 1rem;
+    text-align: center;
+    color: #94a3b8;
+    font-size: 0.85rem;
+}
+
+.schedule-add-panel {
+    margin-top: 1rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.65rem;
+    padding: 1rem;
+    background: #f8fafc;
+}
+
+/* ---- Selectable project rows ---- */
+
+.schedule-pick {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.65rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.55rem;
+    padding: 0.65rem 0.8rem;
+    background: #fff;
+    cursor: pointer;
+    transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.schedule-pick:hover {
+    border-color: #93c5fd;
+}
+
+.schedule-pick.is-selected {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.14);
+    background: #f5f9ff;
+}
+
+.schedule-pick.is-disabled {
+    cursor: not-allowed;
+    opacity: 0.62;
+    background: #f8fafc;
+    border-style: dashed;
+}
+
+.schedule-pick.is-disabled:hover {
+    border-color: #e5e7eb;
+}
+
+.schedule-pick input[type="checkbox"] {
+    margin-top: 0.2rem;
+    flex-shrink: 0;
+}
+
+.schedule-pick-body {
+    min-width: 0;
+    flex: 1;
+}
+
+.schedule-pick-name {
+    font-weight: 700;
+    color: #0f172a;
+    line-height: 1.3;
+}
+
+.schedule-pick-meta {
+    font-size: 0.78rem;
+    color: #64748b;
+    margin-top: 0.1rem;
+}
+
+.schedule-pick-techs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin-top: 0.4rem;
+}
+
+.schedule-pick-reason {
+    display: block;
+    font-size: 0.76rem;
+    font-weight: 600;
+    color: #b45309;
+    margin-top: 0.4rem;
+}
+
+.schedule-blocked-wrap {
+    margin-top: 0.9rem;
+}
+
+.schedule-blocked-toggle {
+    background: none;
+    border: 0;
+    padding: 0;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #64748b;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.schedule-blocked-toggle:hover {
+    color: #334155;
+}
+
+.schedule-blocked-toggle.is-open i {
+    transform: rotate(90deg);
+}
+
+.schedule-blocked-toggle i {
+    transition: transform 0.15s ease;
+}
+
+.schedule-blocked-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 0.6rem;
 }

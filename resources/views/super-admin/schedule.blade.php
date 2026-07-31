@@ -101,8 +101,10 @@
         </div>
     </div>
 
-    {{-- Per-project schedule edit modals --}}
-    @foreach ($projects as $project)
+    {{-- Per-project schedule edit modals. Completed, cancelled and archived
+         projects are view-only, so no edit modal is rendered for them at all
+         and the calendar has nothing to open. --}}
+    @foreach ($projects->reject(fn ($project) => $project->isReadOnly()) as $project)
         <div class="modal fade" id="scheduleEditModal{{ $project->project_id }}" tabindex="-1"
             aria-labelledby="scheduleEditModalLabel{{ $project->project_id }}" aria-hidden="true"
             data-schedule-edit-modal
@@ -116,18 +118,36 @@
                         @csrf
                         @method('PUT')
 
-                        <div class="modal-header">
-                            <h5 class="modal-title" id="scheduleEditModalLabel{{ $project->project_id }}">
-                                Edit Schedule &mdash; {{ $project->reference_no }}
-                            </h5>
+                        <div class="modal-header align-items-start">
+                            <div class="schedule-modal-heading">
+                                <span class="schedule-modal-eyebrow">Edit Schedule</span>
+                                <h5 class="modal-title mb-1" id="scheduleEditModalLabel{{ $project->project_id }}">
+                                    {{ $project->name }}
+                                </h5>
+                                <a href="{{ route('super-admin.projects.show', $project->project_id) }}"
+                                    class="schedule-modal-ref" title="Open project details">
+                                    <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i>
+                                    {{ $project->reference_no }}
+                                </a>
+                            </div>
                             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                         </div>
 
                         <div class="modal-body">
-                            <p class="text-secondary small mb-3">
-                                {{ $project->name }} &middot;
-                                Assigned: {{ $project->projectTechnicians->pluck('technician.name')->filter()->join(', ') ?: 'No technicians assigned' }}
-                            </p>
+                            <div class="schedule-modal-team mb-3">
+                                <span class="schedule-modal-team-label">
+                                    <i class="bi bi-people-fill me-1" aria-hidden="true"></i>
+                                    Assigned Technicians
+                                </span>
+
+                                <div class="schedule-modal-team-chips">
+                                    @forelse ($project->projectTechnicians->pluck('technician.name')->filter() as $technicianName)
+                                        <span class="schedule-tech-chip">{{ $technicianName }}</span>
+                                    @empty
+                                        <span class="text-muted small">No technicians assigned</span>
+                                    @endforelse
+                                </div>
+                            </div>
 
                             <p class="text-muted small mb-3">
                                 <i class="bi bi-info-circle me-1"></i>
@@ -212,6 +232,116 @@
 
     @endforeach
 
+    {{-- Clicking any calendar date opens this: what's booked that day, plus
+         the flow for scheduling another project starting from it. --}}
+    <div class="modal fade" id="scheduleDateModal" tabindex="-1" aria-labelledby="scheduleDateModalLabel"
+        aria-hidden="true" data-schedule-date-modal>
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+
+                <div class="modal-header align-items-start">
+                    <div class="schedule-modal-heading">
+                        <span class="schedule-modal-eyebrow">Schedule</span>
+                        <h5 class="modal-title mb-0" id="scheduleDateModalLabel" data-date-title>Selected date</h5>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+
+                <div class="modal-body">
+                    {{-- Projects already booked on the clicked date --}}
+                    <div data-date-projects-section>
+                        <div class="schedule-section-heading">
+                            <span><i class="bi bi-calendar2-check me-1" aria-hidden="true"></i> Scheduled on this
+                                date</span>
+                            <span class="schedule-count-pill d-none" data-date-count></span>
+                        </div>
+
+                        <div data-date-loading class="text-secondary small py-3">
+                            <span class="spinner-border spinner-border-sm me-2" role="status"
+                                aria-hidden="true"></span>
+                            Loading projects&hellip;
+                        </div>
+
+                        <div data-date-projects class="schedule-date-list"></div>
+
+                        <div data-date-empty class="schedule-empty-state d-none">
+                            No projects are scheduled on this date.
+                        </div>
+                    </div>
+
+                    <hr class="my-4">
+
+                    {{-- Step 1: reveal the add-project flow --}}
+                    <button type="button" class="btn btn-primary" data-add-project-toggle>
+                        <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
+                        Add Project
+                    </button>
+
+                    {{-- Step 2 onward --}}
+                    <div class="schedule-add-panel d-none" data-add-project-panel>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label small mb-1" for="scheduleAddStartDate">Start Date</label>
+                                <input type="text" class="form-control" id="scheduleAddStartDate"
+                                    data-add-start readonly disabled>
+                                <div class="form-text">Set by the date you clicked.</div>
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label small mb-1" for="scheduleAddEndDate">End Date</label>
+                                <input type="text" class="form-control" id="scheduleAddEndDate"
+                                    data-add-end placeholder="Select end date" required>
+                                <div class="form-text">Pick this to see which projects are free.</div>
+                            </div>
+                        </div>
+
+                        <div class="schedule-eligible-wrap d-none" data-eligible-wrap>
+                            <div class="schedule-section-heading mt-4">
+                                <span><i class="bi bi-list-check me-1" aria-hidden="true"></i> Available
+                                    projects</span>
+                                <span class="schedule-count-pill d-none" data-eligible-count></span>
+                            </div>
+
+                            <div data-eligible-loading class="text-secondary small py-3 d-none">
+                                <span class="spinner-border spinner-border-sm me-2" role="status"
+                                    aria-hidden="true"></span>
+                                Checking technician availability&hellip;
+                            </div>
+
+                            <div class="schedule-eligible-list" data-eligible-list></div>
+
+                            <div class="schedule-empty-state d-none" data-eligible-empty>
+                                No projects can take this date range. Every candidate either already has a booking
+                                or has a technician who isn't free for the whole range.
+                            </div>
+
+                            <div class="schedule-blocked-wrap d-none" data-blocked-wrap>
+                                <button type="button" class="schedule-blocked-toggle" data-blocked-toggle>
+                                    <i class="bi bi-chevron-right" aria-hidden="true"></i>
+                                    <span data-blocked-label>Show unavailable projects</span>
+                                </button>
+                                <div class="schedule-blocked-list d-none" data-blocked-list></div>
+                            </div>
+                        </div>
+
+                        <div class="alert alert-danger mt-3 d-none" role="alert" data-add-error></div>
+                        <div class="alert alert-success mt-3 d-none" role="alert" data-add-success></div>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-success d-none" data-add-save disabled>
+                        <span class="spinner-border spinner-border-sm me-1 d-none" role="status"
+                            aria-hidden="true" data-add-save-spinner></span>
+                        Save Schedule
+                    </button>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
     {{-- Range row template used by JS when adding a new date range (shared markup) --}}
     <template data-range-template>
         <div class="schedule-range-row row g-2 align-items-end mb-2" data-range-row>
@@ -238,6 +368,7 @@
         <script>
             window.scheduleCalendarEvents = @json($calendarEvents);
             window.scheduleTechnicianAvailability = @json($technicianSchedules);
+            window.scheduleTechnicianNames = @json($technicianNames);
         </script>
         <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
         <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>

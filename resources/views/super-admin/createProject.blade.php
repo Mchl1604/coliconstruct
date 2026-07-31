@@ -48,6 +48,16 @@
         </div>
     </div>
 
+    @if ($errors->any())
+        <div class="alert alert-danger" role="alert" data-server-errors>
+            <ul class="mb-0 ps-3">
+                @foreach (collect($errors->all())->unique() as $error)
+                    <li>{{ $error }}</li>
+                @endforeach
+            </ul>
+        </div>
+    @endif
+
     <div class="card shadow-sm border-0 rounded-4 create-project-card">
         <div class="card-body p-4 p-lg-5">
             @php
@@ -321,6 +331,10 @@
                             <label for="endDate" class="form-label">End Date</label>
                             <input type="date" name="end_date" id="endDate" class="form-control"
                                 data-summary-input="end_date" data-schedule-date-input disabled required>
+                        </div>
+
+                        <div class="col-md-12">
+                            <div class="form-text text-danger mt-0 d-none" data-schedule-error></div>
                         </div>
                     </div>
                 </section>

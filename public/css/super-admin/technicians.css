@@ -1,0 +1,288 @@
+.technician-tabs {
+    border-bottom: 1px solid #e5e7eb;
+    gap: 0.25rem;
+}
+
+.technician-tabs .nav-link {
+    border: 0;
+    border-bottom: 2px solid transparent;
+    color: #64748b;
+    font-weight: 600;
+    font-size: 0.9rem;
+    padding: 0.6rem 1rem;
+    border-radius: 0;
+}
+
+.technician-tabs .nav-link:hover {
+    color: #334155;
+    border-bottom-color: #cbd5e1;
+}
+
+.technician-tabs .nav-link.active {
+    color: #2563eb;
+    background: transparent;
+    border-bottom-color: #2563eb;
+}
+
+.technician-eyebrow {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #94a3b8;
+}
+
+.technician-meta {
+    font-size: 0.8rem;
+    color: #64748b;
+}
+
+/* Specialty chips reused in the table and the details modal. */
+.technician-chip {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #1e293b;
+    background: #f1f5f9;
+    border: 1px solid #cbd5e1;
+    border-radius: 999px;
+    padding: 0.12rem 0.55rem;
+    margin: 0.1rem 0.15rem 0.1rem 0;
+}
+
+.technician-field-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #94a3b8;
+    margin-bottom: 0.15rem;
+}
+
+.technician-field-value {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #0f172a;
+    word-break: break-word;
+}
+
+/* ---- Current specialties, each removable ---- */
+
+.technician-specialty-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.technician-specialty-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #1e293b;
+    background: #fff;
+    border: 1px solid #cbd5e1;
+    border-radius: 999px;
+    padding: 0.25rem 0.35rem 0.25rem 0.75rem;
+}
+
+.technician-specialty-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.25rem;
+    height: 1.25rem;
+    border: 0;
+    border-radius: 50%;
+    background: #fee2e2;
+    color: #b91c1c;
+    font-size: 0.7rem;
+    line-height: 1;
+    padding: 0;
+}
+
+.technician-specialty-remove:hover {
+    background: #fecaca;
+    color: #7f1d1d;
+}
+
+.technician-specialty-remove:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* ---- Add-specialty picker ---- */
+
+.technician-specialty-picker {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.technician-specialty-option {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #1e293b;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.5rem;
+    padding: 0.4rem 0.75rem;
+    cursor: pointer;
+    transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.technician-specialty-option:hover {
+    border-color: #93c5fd;
+}
+
+.technician-specialty-option.is-checked {
+    border-color: #2563eb;
+    background: #f5f9ff;
+}
+
+/* Already-assigned specialties drop out of the picker entirely. */
+.technician-specialty-option.is-hidden {
+    display: none;
+}
+
+/* ---- Lead replacement ---- */
+
+.technician-lead-panel {
+    border: 1px solid #fed7aa;
+    background: #fffbeb;
+    border-radius: 0.6rem;
+    padding: 0.9rem 1rem;
+}
+
+.technician-lead-options {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.technician-lead-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.5rem;
+    padding: 0.6rem 0.8rem;
+    cursor: pointer;
+    transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.technician-lead-option:hover {
+    border-color: #93c5fd;
+}
+
+.technician-lead-option.is-selected {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.14);
+    background: #f5f9ff;
+}
+
+.technician-lead-option input[type="radio"] {
+    margin-top: 0.2rem;
+    flex-shrink: 0;
+}
+
+.technician-lead-name {
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.technician-lead-skills {
+    font-size: 0.76rem;
+    color: #64748b;
+    margin-top: 0.1rem;
+}
+
+/* ---- Calendar ---- */
+
+#technicianCalendar {
+    max-width: 100%;
+}
+
+#technicianCalendar .fc-toolbar.fc-header-toolbar {
+    margin-bottom: 1rem;
+}
+
+#technicianCalendar .fc-prev-button,
+#technicianCalendar .fc-next-button,
+#technicianCalendar .fc-today-button {
+    background: #fff;
+    border: 1px solid #d1d5db;
+    color: #374151;
+    box-shadow: none;
+}
+
+#technicianCalendar .fc-prev-button:hover,
+#technicianCalendar .fc-next-button:hover,
+#technicianCalendar .fc-today-button:hover {
+    background: #f3f4f6;
+    color: #111827;
+    border-color: #9ca3af;
+}
+
+#technicianCalendar .fc-theme-standard td,
+#technicianCalendar .fc-theme-standard th {
+    border-color: #eef0f3;
+}
+
+#technicianCalendar .fc-col-header-cell {
+    background: #f8fafc;
+    padding: 0.4rem 0;
+}
+
+#technicianCalendar .fc-col-header-cell-cushion {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+#technicianCalendar .fc-daygrid-day-number {
+    font-size: 0.8rem;
+    color: #6b7280;
+    padding: 0.3rem 0.5rem;
+}
+
+#technicianCalendar .fc-day-today {
+    background: #fffbeb;
+}
+
+#technicianCalendar .fc-daygrid-day-frame {
+    min-height: 88px;
+}
+
+#technicianCalendar .fc-event {
+    cursor: pointer;
+    border: 0;
+    border-radius: 0.35rem;
+    font-size: 0.72rem;
+}
+
+#technicianCalendar .fc-daygrid-event {
+    margin: 1px 2px;
+    padding: 0.1rem 0.4rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#technicianCalendar .fc-daygrid-event .fc-event-title {
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#technicianCalendar .fc-event:hover {
+    filter: brightness(0.93);
+}

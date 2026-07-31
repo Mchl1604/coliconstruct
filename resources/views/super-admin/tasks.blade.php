@@ -74,7 +74,7 @@
                 <label for="taskProjectFilter" class="fw-semibold small text-nowrap mb-0">Project:</label>
                 <select id="taskProjectFilter" class="form-select form-select-sm">
                     <option value="all">All Projects</option>
-                    @foreach ($projects as $project)
+                    @foreach ($filterProjects as $project)
                         <option value="{{ $project->project_id }}">
                             {{ $project->reference_no }} &mdash; {{ $project->name }}
                         </option>
@@ -97,7 +97,11 @@
                     </thead>
 
                     <tbody>
-                        @forelse ($tasks as $task)
+                        {{-- No blade fallback row here: a single colspan cell has
+                             fewer cells than the header, which DataTables cannot
+                             parse ("Requested unknown parameter"). Its own
+                             emptyTable message covers it (see the init below). --}}
+                        @foreach ($tasks as $task)
                             <tr data-project-id="{{ $task->project_id }}" data-status="{{ $task->status }}">
                                 <td>
                                     @if ($task->project)
@@ -105,6 +109,7 @@
                                             {{ $task->project->reference_no }}
                                         </a>
                                         <div class="small text-muted">{{ $task->project->name }}</div>
+                                        <x-project-status-badge :project="$task->project" class="mt-1" />
                                     @else
                                         <span class="text-muted">N/A</span>
                                     @endif
@@ -171,11 +176,7 @@
                                     </div>
                                 </td>
                             </tr>
-                        @empty
-                            <tr>
-                                <td colspan="7" class="text-center text-muted py-4">No tasks found.</td>
-                            </tr>
-                        @endforelse
+                        @endforeach
                     </tbody>
                 </table>
             </div>
@@ -241,14 +242,18 @@
                             <div class="row">
                                 <div class="col-md-6 mb-3">
                                     <label class="form-label fw-semibold">Start Date</label>
-                                    <input type="date" id="modalTaskStartDate" name="start_date" class="form-control"
-                                        required>
+                                    <input type="text" id="modalTaskStartDate" name="start_date" class="form-control"
+                                        placeholder="Select start date" required>
                                 </div>
 
                                 <div class="col-md-6 mb-3">
                                     <label class="form-label fw-semibold">Due Date</label>
-                                    <input type="date" id="modalTaskDueDate" name="due_date" class="form-control"
-                                        required>
+                                    <input type="text" id="modalTaskDueDate" name="due_date" class="form-control"
+                                        placeholder="Select due date" required>
+                                </div>
+
+                                <div class="col-12 mb-3">
+                                    <div class="form-text" id="taskScheduleRangesHint"></div>
                                 </div>
                             </div>
 
@@ -283,6 +288,16 @@
             $taskProject = $task->project;
             $taskScheduleStart = $taskProject ? $taskProject->schedules->min('start_datetime') : null;
             $taskScheduleEnd = $taskProject ? $taskProject->schedules->max('end_datetime') : null;
+            // Every range individually - min/max alone would let a task be
+            // placed in the gap between two of them.
+            $taskScheduleRanges = $taskProject
+                ? $taskProject->schedules
+                    ->map(fn($schedule) => [
+                        'start' => \Carbon\Carbon::parse($schedule->start_datetime)->format('Y-m-d'),
+                        'end' => \Carbon\Carbon::parse($schedule->end_datetime ?? $schedule->start_datetime)->format('Y-m-d'),
+                    ])
+                    ->values()
+                : collect();
         @endphp
 
         <div class="modal fade" id="taskModal{{ $task->task_id }}" tabindex="-1">
@@ -327,26 +342,30 @@
                                 {{ $task->status == 'completed' ? 'readonly' : '' }}>{{ $task->task_description }}</textarea>
                         </div>
 
-                        <div class="row">
+                        <div class="row" data-task-date-row
+                            data-schedule-ranges='@json($taskScheduleRanges)'>
                             {{-- Start Date --}}
                             <div class="col-md-6">
                                 <label class="form-label">Start Date</label>
-                                <input type="date" class="form-control" name="start_date"
-                                    value="{{ $task->start_date }}"
-                                    min="{{ $taskScheduleStart ? \Carbon\Carbon::parse($taskScheduleStart)->format('Y-m-d') : '' }}"
-                                    max="{{ $taskScheduleEnd ? \Carbon\Carbon::parse($taskScheduleEnd)->format('Y-m-d') : '' }}"
+                                <input type="text" class="form-control" name="start_date"
+                                    value="{{ $task->start_date }}" data-task-start
+                                    placeholder="Select start date"
                                     {{ $task->status == 'completed' ? 'readonly' : '' }}>
                             </div>
 
                             {{-- Due Date --}}
                             <div class="col-md-6">
                                 <label class="form-label">Due Date</label>
-                                <input type="date" class="form-control" name="due_date"
-                                    value="{{ $task->due_date }}"
-                                    min="{{ $taskScheduleStart ? \Carbon\Carbon::parse($taskScheduleStart)->format('Y-m-d') : '' }}"
-                                    max="{{ $taskScheduleEnd ? \Carbon\Carbon::parse($taskScheduleEnd)->format('Y-m-d') : '' }}"
+                                <input type="text" class="form-control" name="due_date"
+                                    value="{{ $task->due_date }}" data-task-due
+                                    placeholder="Select due date"
                                     {{ $task->status == 'completed' ? 'readonly' : '' }}>
                             </div>
+                        </div>
+
+                        <div class="form-text">
+                            Allowed:
+                            {{ $taskScheduleRanges->map(fn($range) => \Carbon\Carbon::parse($range['start'])->format('M j, Y') . ' – ' . \Carbon\Carbon::parse($range['end'])->format('M j, Y'))->join('; ') ?: 'No schedule set' }}
                         </div>
 
                         <hr>
@@ -503,6 +522,109 @@
     @endforeach
 
     @push('scripts')
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+        <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+        <script>
+            // A project's schedule can have gaps (July 10-15 and July 20-25).
+            // Tasks must sit inside ONE range, so the pickers enable only the
+            // days those ranges actually cover and the due date is pinned to
+            // the same range as the start date. The server re-checks this.
+            function describeRanges(ranges) {
+                return (ranges || []).map(function(range) {
+                    const format = { month: 'short', day: 'numeric', year: 'numeric' };
+                    return new Date(range.start + 'T00:00:00').toLocaleDateString(undefined, format) +
+                        ' – ' +
+                        new Date(range.end + 'T00:00:00').toLocaleDateString(undefined, format);
+                }).join('; ');
+            }
+
+            function enableSpecs(ranges) {
+                return (ranges || []).map(function(range) {
+                    return { from: range.start, to: range.end };
+                });
+            }
+
+            function rangeContaining(ranges, dateString) {
+                return (ranges || []).find(function(range) {
+                    return dateString >= range.start && dateString <= range.end;
+                }) || null;
+            }
+
+            function applyScheduleRanges(startInput, dueInput, ranges) {
+                if (!window.flatpickr || !startInput || !dueInput) {
+                    return;
+                }
+
+                [startInput, dueInput].forEach(function(input) {
+                    if (input._flatpickr) {
+                        input._flatpickr.destroy();
+                    }
+                });
+
+                if (!ranges || !ranges.length) {
+                    return;
+                }
+
+                const duePicker = window.flatpickr(dueInput, {
+                    dateFormat: 'Y-m-d',
+                    allowInput: false,
+                    enable: enableSpecs(ranges),
+                });
+
+                window.flatpickr(startInput, {
+                    dateFormat: 'Y-m-d',
+                    allowInput: false,
+                    enable: enableSpecs(ranges),
+                    onChange: function(selectedDates, dateStr) {
+                        const active = rangeContaining(ranges, dateStr);
+
+                        if (!active) {
+                            return;
+                        }
+
+                        // Confine the due date to the same range, so a task
+                        // can never straddle a gap.
+                        duePicker.set('enable', [{ from: dateStr, to: active.end }]);
+
+                        if (dueInput.value && (dueInput.value < dateStr || dueInput.value > active.end)) {
+                            duePicker.clear(false);
+                        }
+                    },
+                });
+
+                // Re-applying an existing start value narrows the due picker
+                // straight away when editing a saved task.
+                if (startInput.value) {
+                    const active = rangeContaining(ranges, startInput.value);
+
+                    if (active) {
+                        duePicker.set('enable', [{ from: startInput.value, to: active.end }]);
+                    }
+                }
+            }
+
+            // Per-task edit modals carry their project's ranges inline.
+            document.addEventListener('DOMContentLoaded', function() {
+                document.querySelectorAll('[data-task-date-row]').forEach(function(row) {
+                    const startInput = row.querySelector('[data-task-start]');
+                    const dueInput = row.querySelector('[data-task-due]');
+
+                    if (!startInput || !dueInput || startInput.hasAttribute('readonly')) {
+                        return;
+                    }
+
+                    let ranges = [];
+
+                    try {
+                        ranges = JSON.parse(row.dataset.scheduleRanges || '[]');
+                    } catch (error) {
+                        ranges = [];
+                    }
+
+                    applyScheduleRanges(startInput, dueInput, ranges);
+                });
+            });
+        </script>
         <script>
             $(function() {
                 const table = $('#tasksTable').DataTable({
@@ -513,7 +635,9 @@
                     info: false,
                     language: {
                         search: "",
-                        searchPlaceholder: "Search tasks..."
+                        searchPlaceholder: "Search tasks...",
+                        emptyTable: "No tasks found.",
+                        zeroRecords: "No tasks match your filters."
                     }
                 });
 
@@ -594,10 +718,17 @@
                             return payload;
                         })
                         .then((data) => {
-                            startInput.min = data.schedule_start;
-                            startInput.max = data.schedule_end;
-                            dueInput.min = data.schedule_start;
-                            dueInput.max = data.schedule_end;
+                            applyScheduleRanges(startInput, dueInput, data.ranges || []);
+
+                            const hint = document.getElementById('taskScheduleRangesHint');
+
+                            if (hint) {
+                                hint.textContent = (data.ranges || []).length
+                                    ? 'Allowed: ' + describeRanges(data.ranges) +
+                                    ((data.ranges.length > 1) ?
+                                        '. A task cannot span the gap between two ranges.' : '.')
+                                    : '';
+                            }
 
                             if (!data.technicians.length) {
                                 errorBox.textContent =

@@ -30,12 +30,13 @@ document.addEventListener('DOMContentLoaded', function() {
     const leadTechSelect = form.querySelector('[data-lead-tech-select]');
     const startDateInput = form.querySelector('[data-summary-input="start_date"]');
     const endDateInput = form.querySelector('[data-summary-input="end_date"]');
+    const scheduleError = form.querySelector('[data-schedule-error]');
     const contractUploadCard = form.querySelector('[data-contract-upload-card]');
     const contractUploadInput = form.querySelector('[data-contract-upload-input]');
     const companyReviewCard = document.querySelector('[data-company-review-card]');
     let startPicker = null;
     let endPicker = null;
-    let disabledDateSet = new Set();
+    let activeBusyRanges = [];
     const currentStep = {
         value: 1
     };
@@ -91,18 +92,6 @@ document.addEventListener('DOMContentLoaded', function() {
         ]));
     }
 
-    function normalizeDateString(value) {
-        if (!(value instanceof Date) || Number.isNaN(value.getTime())) {
-            return null;
-        }
-
-        const year = String(value.getFullYear());
-        const month = String(value.getMonth() + 1).padStart(2, '0');
-        const day = String(value.getDate()).padStart(2, '0');
-
-        return year + '-' + month + '-' + day;
-    }
-
     function busyRangesForTechnicians(technicianIds) {
         return technicianIds.flatMap(function(technicianId) {
             const technician = technicianLookup.get(String(technicianId));
@@ -120,42 +109,122 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    function overlapsBusyRanges(startValue, endValue, busyRanges) {
-        return busyRanges.some(function(range) {
-            return startValue <= range.end && endValue >= range.start;
-        });
-    }
+    // Inclusive list of 'YYYY-MM-DD' strings between two date strings.
+    function eachDate(fromValue, toValue) {
+        const dates = [];
+        const cursor = new Date(fromValue + 'T00:00:00');
+        const end = new Date(toValue + 'T00:00:00');
 
-    function recomputeDisabledDates() {
-        disabledDateSet = new Set();
-
-        busyRangesForTechnicians(activeTechnicianIds()).forEach(function(range) {
-            const cursor = new Date(range.start + 'T00:00:00');
-            const end = new Date(range.end + 'T00:00:00');
-
-            while (cursor <= end) {
-                disabledDateSet.add(normalizeDateString(cursor));
-                cursor.setDate(cursor.getDate() + 1);
-            }
-        });
-    }
-
-    function startDateDisabled(date) {
-        return disabledDateSet.has(normalizeDateString(date));
-    }
-
-    function endDateDisabled(date) {
-        const dateString = normalizeDateString(date);
-
-        if (disabledDateSet.has(dateString)) {
-            return true;
+        if (Number.isNaN(cursor.getTime()) || Number.isNaN(end.getTime())) {
+            return dates;
         }
 
-        const startValue = startPicker && startPicker.selectedDates[0]
-            ? normalizeDateString(startPicker.selectedDates[0])
-            : null;
+        while (cursor <= end) {
+            const year = String(cursor.getFullYear());
+            const month = String(cursor.getMonth() + 1).padStart(2, '0');
+            const day = String(cursor.getDate()).padStart(2, '0');
 
-        return startValue ? dateString < startValue : false;
+            dates.push(year + '-' + month + '-' + day);
+            cursor.setDate(cursor.getDate() + 1);
+        }
+
+        return dates;
+    }
+
+    // Mirrors TechnicianAvailabilityService on the server: a range is only
+    // valid when every selected technician is free on EVERY day inside it,
+    // so a range whose endpoints are free but which spans a busy day in the
+    // middle is still rejected.
+    function scheduleConflicts(startValue, endValue) {
+        if (!startValue || !endValue || startValue > endValue) {
+            return [];
+        }
+
+        const selectedDays = eachDate(startValue, endValue);
+
+        if (!selectedDays.length) {
+            return [];
+        }
+
+        return activeTechnicianIds().reduce(function(conflicts, technicianId) {
+            const technician = technicianLookup.get(String(technicianId));
+
+            if (!technician || !Array.isArray(technician.schedules)) {
+                return conflicts;
+            }
+
+            const busyDays = new Set();
+
+            technician.schedules.forEach(function(range) {
+                eachDate(range.start, range.end).forEach(function(day) {
+                    busyDays.add(day);
+                });
+            });
+
+            const hits = selectedDays.filter(function(day) {
+                return busyDays.has(day);
+            });
+
+            if (hits.length) {
+                conflicts.push({ name: technician.name, dates: hits });
+            }
+
+            return conflicts;
+        }, []);
+    }
+
+    function formatDateList(dates) {
+        const currentYear = new Date().getFullYear();
+        const allCurrentYear = dates.every(function(date) {
+            return Number(date.slice(0, 4)) === currentYear;
+        });
+
+        const shown = dates.slice(0, 8);
+        const remaining = dates.length - shown.length;
+
+        const labels = shown.map(function(date) {
+            const parsed = new Date(date + 'T00:00:00');
+
+            return parsed.toLocaleDateString(undefined, allCurrentYear
+                ? { month: 'long', day: 'numeric' }
+                : { month: 'long', day: 'numeric', year: 'numeric' });
+        });
+
+        if (remaining > 0) {
+            labels.push(remaining + ' more date' + (remaining === 1 ? '' : 's'));
+        }
+
+        if (labels.length === 1) {
+            return labels[0];
+        }
+
+        if (labels.length === 2) {
+            return labels[0] + ' and ' + labels[1];
+        }
+
+        const last = labels.pop();
+
+        return labels.join(', ') + ', and ' + last;
+    }
+
+    function conflictMessage(conflicts) {
+        if (!conflicts.length) {
+            return '';
+        }
+
+        return conflicts.map(function(conflict) {
+            return 'Technician ' + conflict.name + ' is unavailable on ' + formatDateList(conflict.dates) + '.';
+        }).join(' ') + ' Please select a continuous date range where all selected technicians are available.';
+    }
+
+    function recomputeActiveBusyRanges() {
+        activeBusyRanges = busyRangesForTechnicians(activeTechnicianIds());
+    }
+
+    function disableRangesForFlatpickr() {
+        return activeBusyRanges.map(function(range) {
+            return { from: range.start, to: range.end };
+        });
     }
 
     function refreshDatePickers() {
@@ -169,14 +238,16 @@ document.addEventListener('DOMContentLoaded', function() {
             endDateInput.disabled = !enabled;
         }
 
-        recomputeDisabledDates();
+        recomputeActiveBusyRanges();
+
+        const disableRanges = disableRangesForFlatpickr();
 
         if (startPicker) {
-            startPicker.set('disable', [startDateDisabled]);
+            startPicker.set('disable', disableRanges);
         }
 
         if (endPicker) {
-            endPicker.set('disable', [endDateDisabled]);
+            endPicker.set('disable', disableRanges);
 
             if (startPicker && startPicker.selectedDates[0]) {
                 endPicker.set('minDate', startPicker.selectedDates[0]);
@@ -186,6 +257,8 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         if (!enabled) {
+            resetScheduleDates();
+        } else if (!isScheduleRangeAvailable(startDateInput && startDateInput.value, endDateInput && endDateInput.value)) {
             resetScheduleDates();
         }
     }
@@ -199,10 +272,9 @@ document.addEventListener('DOMContentLoaded', function() {
             dateFormat: 'Y-m-d',
             allowInput: true,
             minDate: 'today',
-            disable: [startDateDisabled],
             onChange: function(selectedDates, dateStr, instance) {
                 if (endPicker) {
-                    endPicker.clear();
+                    endPicker.clear(false);
                 }
 
                 refreshDatePickers();
@@ -214,7 +286,6 @@ document.addEventListener('DOMContentLoaded', function() {
             dateFormat: 'Y-m-d',
             allowInput: true,
             minDate: 'today',
-            disable: [endDateDisabled],
             onChange: function() {
                 validateScheduleInputs();
             },
@@ -228,9 +299,7 @@ document.addEventListener('DOMContentLoaded', function() {
             return true;
         }
 
-        const busyRanges = busyRangesForTechnicians(activeTechnicianIds());
-
-        return !overlapsBusyRanges(startValue, endValue, busyRanges);
+        return scheduleConflicts(startValue, endValue).length === 0;
     }
 
     function selectedProjectTypes() {
@@ -348,12 +417,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 return rightMatches - leftMatches || left.name.localeCompare(right.name);
             });
 
+        const suggestedIds = new Set(suggested.map(function(technician) {
+            return technician.id;
+        }));
+
         const other = wizardData
             .filter(function(technician) {
-                return technician.role === 'technician'
-                    && !suggested.some(function(item) {
-                        return item.id === technician.id;
-                    });
+                return technician.role === 'technician' && !suggestedIds.has(technician.id);
             })
             .sort(function(left, right) {
                 return left.name.localeCompare(right.name);
@@ -415,7 +485,12 @@ document.addEventListener('DOMContentLoaded', function() {
         technicianDropdownMenu.querySelectorAll('[data-technician-option]').forEach(function(button) {
             button.addEventListener('click', function() {
                 const technicianId = button.dataset.technicianOption || '';
-                addTechnician(technicianId);
+
+                if (selectedTechnicianIds().includes(String(technicianId))) {
+                    removeTechnician(technicianId);
+                } else {
+                    addTechnician(technicianId);
+                }
             });
         });
     }
@@ -487,8 +562,6 @@ document.addEventListener('DOMContentLoaded', function() {
         hiddenInput.name = 'technicians[]';
         hiddenInput.value = technicianName;
         technicianHiddenInputs.appendChild(hiddenInput);
-        resetScheduleDates();
-        refreshDatePickers();
         renderTechnicianChips();
         updateScheduleFieldState();
     }
@@ -507,19 +580,17 @@ document.addEventListener('DOMContentLoaded', function() {
             hiddenInput.remove();
         }
 
-        resetScheduleDates();
-        refreshDatePickers();
         renderTechnicianChips();
         updateScheduleFieldState();
     }
 
     function resetScheduleDates() {
         if (startPicker) {
-            startPicker.clear();
+            startPicker.clear(false);
         }
 
         if (endPicker) {
-            endPicker.clear();
+            endPicker.clear(false);
         }
 
         if (startDateInput) {
@@ -538,29 +609,21 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function updateScheduleFieldState() {
-        const enabled = scheduleInputsReady();
-
-        if (startDateInput) {
-            startDateInput.disabled = !enabled;
-        }
-
-        if (endDateInput) {
-            endDateInput.disabled = !enabled;
-        }
-
         refreshDatePickers();
-
-        if (!enabled) {
-            resetScheduleDates();
-        }
     }
 
-    function scheduleRangeIsAvailable(startValue, endValue) {
-        return isScheduleRangeAvailable(startValue, endValue);
+    function showScheduleError(message) {
+        if (!scheduleError) {
+            return;
+        }
+
+        scheduleError.textContent = message;
+        scheduleError.classList.toggle('d-none', !message);
     }
 
     function validateScheduleInputs() {
         if (!startDateInput || !endDateInput || startDateInput.disabled || endDateInput.disabled) {
+            showScheduleError('');
             return true;
         }
 
@@ -568,15 +631,21 @@ document.addEventListener('DOMContentLoaded', function() {
         endDateInput.setCustomValidity('');
 
         if (!startDateInput.value || !endDateInput.value) {
+            showScheduleError('');
             return true;
         }
 
-        if (!scheduleRangeIsAvailable(startDateInput.value, endDateInput.value)) {
-            const message = 'Selected dates overlap an existing schedule for one or more technicians.';
+        const conflicts = scheduleConflicts(startDateInput.value, endDateInput.value);
+
+        if (conflicts.length) {
+            const message = conflictMessage(conflicts);
             startDateInput.setCustomValidity(message);
             endDateInput.setCustomValidity(message);
+            showScheduleError(message);
             return false;
         }
+
+        showScheduleError('');
 
         return true;
     }
@@ -767,13 +836,25 @@ document.addEventListener('DOMContentLoaded', function() {
 
     if (leadTechSelect) {
         leadTechSelect.addEventListener('change', function() {
-            resetScheduleDates();
-            refreshDatePickers();
             updateScheduleFieldState();
             validateScheduleInputs();
             updateSummary();
         });
     }
+
+    // Last line of defence: the review step can be reached before a technician
+    // change invalidates the chosen dates, so re-check on submit too. The
+    // server enforces the same rule regardless.
+    form.addEventListener('submit', function(event) {
+        if (!validateScheduleInputs()) {
+            event.preventDefault();
+            setStep(3);
+
+            if (startDateInput) {
+                startDateInput.reportValidity();
+            }
+        }
+    });
 
     form.addEventListener('input', function() {
         validateScheduleInputs();

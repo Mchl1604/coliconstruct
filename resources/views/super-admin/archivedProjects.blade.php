@@ -33,7 +33,11 @@
                     </thead>
 
                     <tbody>
-                        @forelse ($projects as $project)
+                        {{-- No blade fallback row here: a single colspan cell has
+                             fewer cells than the header, which DataTables cannot
+                             parse ("Requested unknown parameter"). Its own
+                             emptyTable message covers it (see the init below). --}}
+                        @foreach ($projects as $project)
                             <tr>
                                 <td>{{ $project->name }}</td>
                                 <td>{{ $project->clients->first()->fullname ?? 'N/A' }}</td>
@@ -88,11 +92,7 @@
                                     </div>
                                 </div>
                             </div>
-                        @empty
-                            <tr>
-                                <td colspan="5" class="text-center text-muted py-4">No archived projects.</td>
-                            </tr>
-                        @endforelse
+                        @endforeach
                     </tbody>
                 </table>
             </div>
@@ -110,7 +110,9 @@
                     info: false,
                     language: {
                         search: "",
-                        searchPlaceholder: "Search archived projects..."
+                        searchPlaceholder: "Search archived projects...",
+                        emptyTable: "No archived projects.",
+                        zeroRecords: "No archived projects match your search."
                     }
                 });
             });
