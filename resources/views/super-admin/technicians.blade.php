@@ -128,34 +128,216 @@
                 </div>
             </div>
 
-            {{-- Nothing renders until a technician is chosen. --}}
-            <div class="card shadow-sm border-0 rounded-2 d-none" data-technician-calendar-card>
+            {{-- Split panel: calendar on the left, always-visible project
+                 details on the right. No modal is used for project details. --}}
+            <div class="row g-3 technician-split">
+
+                {{-- ---------------- LEFT: calendar ---------------- --}}
+                <div class="col-12 col-xl-8">
+                    <div class="card shadow-sm border-0 rounded-2 h-100">
+                        <div class="card-body p-3">
+                            <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+                                <div>
+                                    <div class="technician-eyebrow">Calendar View</div>
+                                    <h5 class="fw-bold mb-0" data-calendar-technician-name>
+                                        No technician selected
+                                    </h5>
+                                </div>
+                                <span class="schedule-count-pill d-none" data-calendar-assignment-count></span>
+                            </div>
+
+                            <div class="schedule-legend mb-3">
+                                <span class="schedule-legend-item"><i class="schedule-dot"
+                                        style="background:#f0ad4e"></i> Pending</span>
+                                <span class="schedule-legend-item"><i class="schedule-dot"
+                                        style="background:#0d6efd"></i> Ongoing</span>
+                                <span class="schedule-legend-item"><i class="schedule-dot"
+                                        style="background:#198754"></i> Completed</span>
+                                <span class="schedule-legend-item"><i class="schedule-dot"
+                                        style="background:#dc3545"></i> Cancelled</span>
+                                <span class="schedule-legend-item"><i class="schedule-dot"
+                                        style="background:#6c757d"></i> On Hold</span>
+                            </div>
+
+                            <div id="technicianCalendar" class="d-none"></div>
+
+                            <div class="schedule-empty-state" data-calendar-placeholder>
+                                Please select a technician to view their schedule.
+                            </div>
+
+                            <div class="schedule-empty-state mt-3 d-none" data-calendar-empty>
+                                This technician has no scheduled projects yet.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {{-- ---------------- RIGHT: project details ---------------- --}}
+                <div class="col-12 col-xl-4">
+                    <div class="card shadow-sm border-0 rounded-2 h-100" data-details-panel>
+                        <div class="card-body p-3">
+
+                            {{-- State 1: no technician chosen --}}
+                            <div data-panel-no-technician>
+                                <div class="technician-eyebrow mb-2">Selected Project</div>
+                                <div class="schedule-empty-state">
+                                    Please select a technician to view their schedule.
+                                </div>
+                            </div>
+
+                            {{-- State 2: technician chosen, no project clicked --}}
+                            <div class="d-none" data-panel-no-project>
+                                <div class="technician-eyebrow mb-2">Selected Project</div>
+                                <div class="schedule-empty-state">
+                                    Select a scheduled project from the calendar to view its details.
+                                </div>
+                            </div>
+
+                            {{-- State 3: a project is selected --}}
+                            <div class="d-none" data-panel-project>
+                                <div class="technician-eyebrow mb-2">Selected Project</div>
+
+                                <a href="#" class="panel-reference" data-panel-ref target="_blank">
+                                    <span data-panel-ref-text></span>
+                                    <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i>
+                                </a>
+
+                                <h5 class="panel-project-name" data-panel-name></h5>
+
+                                <div class="panel-meta" data-panel-client-wrap>
+                                    <i class="bi bi-person" aria-hidden="true"></i>
+                                    <span data-panel-client></span>
+                                </div>
+
+                                <div class="panel-meta" data-panel-address-wrap>
+                                    <i class="bi bi-geo-alt" aria-hidden="true"></i>
+                                    <span data-panel-address></span>
+                                </div>
+
+                                {{-- The project's whole schedule, never the clicked day. --}}
+                                <div class="panel-meta" data-panel-schedule-wrap>
+                                    <i class="bi bi-calendar3" aria-hidden="true"></i>
+                                    <span data-panel-schedule></span>
+                                </div>
+
+                                <div class="mt-2" data-panel-status></div>
+
+                                <hr class="panel-divider">
+
+                                <div class="panel-section-heading">
+                                    <i class="bi bi-people-fill" aria-hidden="true"></i>
+                                    Assigned Technicians
+                                </div>
+
+                                <div class="panel-lead-row">
+                                    <span class="panel-role-label">Lead</span>
+                                    <span class="panel-role-value" data-panel-lead></span>
+                                </div>
+
+                                <div class="panel-support-row">
+                                    <span class="panel-role-label">Supporting</span>
+                                    <div class="schedule-modal-team-chips" data-panel-supporting></div>
+                                </div>
+
+                                <hr class="panel-divider">
+
+                                {{-- Only this technician's tasks on the project,
+                                     not the project's whole task board. --}}
+                                <div class="panel-section-heading">
+                                    <i class="bi bi-list-task" aria-hidden="true"></i>
+                                    Tasks
+                                    <span class="schedule-count-pill ms-auto d-none" data-panel-task-count></span>
+                                </div>
+
+                                <p class="text-muted small mb-2" data-panel-tasks-note></p>
+
+                                <div class="panel-task-list" data-panel-tasks></div>
+
+                                <div class="schedule-empty-state d-none" data-panel-tasks-empty>
+                                    No tasks assigned to this technician on this project.
+                                </div>
+
+                                <hr class="panel-divider">
+
+                                {{-- Inline lead reassignment - no modal. --}}
+                                <div class="technician-lead-panel d-none" data-panel-lead-replacement>
+                                    <div class="panel-section-heading">
+                                        <i class="bi bi-person-badge" aria-hidden="true"></i>
+                                        Assign New Lead Technician
+                                    </div>
+                                    <p class="text-muted small mb-2" data-panel-lead-intro></p>
+                                    <div class="technician-lead-options" data-panel-lead-options></div>
+                                    <div class="schedule-empty-state d-none" data-panel-lead-empty>
+                                        No lead technician is available for this project's dates. Free one up, or
+                                        change the project schedule, before removing the current lead.
+                                    </div>
+                                </div>
+
+                                <div class="alert alert-danger mt-3 mb-0 d-none" role="alert"
+                                    data-panel-error></div>
+                                <div class="alert alert-success mt-3 mb-0 d-none" role="alert"
+                                    data-panel-success></div>
+
+                                <div class="d-grid gap-2 mt-3">
+                                    <button type="button" class="btn btn-outline-danger d-none"
+                                        data-panel-remove>
+                                        <i class="bi bi-person-dash me-1" aria-hidden="true"></i>
+                                        Remove Technician from Project
+                                    </button>
+
+                                    <button type="button" class="btn btn-danger d-none" data-panel-confirm-remove
+                                        disabled>
+                                        <span class="spinner-border spinner-border-sm me-1 d-none" role="status"
+                                            aria-hidden="true" data-panel-confirm-spinner></span>
+                                        Reassign Lead &amp; Remove
+                                    </button>
+
+                                    <button type="button" class="btn btn-link btn-sm d-none"
+                                        data-panel-cancel-remove>
+                                        Cancel
+                                    </button>
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {{-- Every project the selected technician is assigned to. --}}
+            <div class="card shadow-sm border-0 rounded-2 mt-3">
                 <div class="card-body p-3">
                     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
                         <div>
-                            <div class="technician-eyebrow">Showing schedule for</div>
-                            <h5 class="fw-bold mb-0" data-calendar-technician-name></h5>
+                            <div class="technician-eyebrow">Assignments</div>
+                            <h6 class="fw-bold mb-0">Projects this technician is assigned to</h6>
                         </div>
-                        <span class="schedule-count-pill" data-calendar-assignment-count></span>
+                        <span class="schedule-count-pill d-none" data-assignments-count></span>
                     </div>
 
-                    <div class="schedule-legend mb-3">
-                        <span class="schedule-legend-item"><i class="schedule-dot" style="background:#f0ad4e"></i>
-                            Pending</span>
-                        <span class="schedule-legend-item"><i class="schedule-dot" style="background:#0d6efd"></i>
-                            Ongoing</span>
-                        <span class="schedule-legend-item"><i class="schedule-dot" style="background:#198754"></i>
-                            Completed</span>
-                        <span class="schedule-legend-item"><i class="schedule-dot" style="background:#dc3545"></i>
-                            Cancelled</span>
-                        <span class="schedule-legend-item"><i class="schedule-dot" style="background:#6c757d"></i> On
-                            Hold</span>
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0 technician-assignments-table">
+                            <thead class="table-info">
+                                <tr>
+                                    <th>Reference No.</th>
+                                    <th>Project</th>
+                                    <th>Client</th>
+                                    <th>Schedule</th>
+                                    <th>Role</th>
+                                    <th class="text-center">My Tasks</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody data-assignments-body></tbody>
+                        </table>
                     </div>
 
-                    <div id="technicianCalendar"></div>
+                    <div class="schedule-empty-state mt-3" data-assignments-placeholder>
+                        Select a technician to see their project assignments.
+                    </div>
 
-                    <div class="schedule-empty-state mt-3 d-none" data-calendar-empty>
-                        This technician has no scheduled projects yet.
+                    <div class="schedule-empty-state mt-3 d-none" data-assignments-empty>
+                        This technician is not assigned to any projects.
                     </div>
                 </div>
             </div>
@@ -219,100 +401,15 @@
                     </div>
 
                     <div class="alert alert-danger mt-3 d-none" role="alert" data-details-error></div>
-                    <div class="alert alert-success mt-3 d-none" role="alert" data-details-success></div>
                 </div>
 
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <span class="technician-pending-note me-auto d-none" data-details-pending></span>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                     <button type="button" class="btn btn-primary" data-details-save disabled>
                         <span class="spinner-border spinner-border-sm me-1 d-none" role="status" aria-hidden="true"
                             data-details-save-spinner></span>
-                        Add Selected
-                    </button>
-                </div>
-
-            </div>
-        </div>
-    </div>
-
-    {{-- ============================ PROJECT ASSIGNMENT MODAL ============================ --}}
-    <div class="modal fade" id="assignmentDetailsModal" tabindex="-1" aria-hidden="true"
-        data-assignment-modal>
-        <div class="modal-dialog modal-lg modal-dialog-scrollable">
-            <div class="modal-content">
-
-                <div class="modal-header align-items-start">
-                    <div class="schedule-modal-heading">
-                        <span class="schedule-modal-eyebrow">Project Assignment</span>
-                        <h5 class="modal-title mb-1" data-assignment-name>&nbsp;</h5>
-                        <a href="#" class="schedule-modal-ref" data-assignment-ref target="_blank">
-                            <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i>
-                            <span data-assignment-ref-text></span>
-                        </a>
-                    </div>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-
-                <div class="modal-body">
-                    <div class="row g-3 mb-3">
-                        <div class="col-sm-6">
-                            <div class="technician-field-label">Client</div>
-                            <div class="technician-field-value" data-assignment-client></div>
-                        </div>
-                        <div class="col-sm-3">
-                            <div class="technician-field-label">Start Date</div>
-                            <div class="technician-field-value" data-assignment-start></div>
-                        </div>
-                        <div class="col-sm-3">
-                            <div class="technician-field-label">End Date</div>
-                            <div class="technician-field-value" data-assignment-end></div>
-                        </div>
-                        <div class="col-sm-6">
-                            <div class="technician-field-label">Project Status</div>
-                            <div class="technician-field-value" data-assignment-status></div>
-                        </div>
-                        <div class="col-sm-6">
-                            <div class="technician-field-label">Lead Technician</div>
-                            <div class="technician-field-value" data-assignment-lead></div>
-                        </div>
-                    </div>
-
-                    <div class="schedule-section-heading">
-                        <span><i class="bi bi-people-fill me-1" aria-hidden="true"></i> Assigned Technicians</span>
-                    </div>
-                    <div class="schedule-modal-team-chips" data-assignment-team></div>
-
-                    {{-- Shown only when the technician being removed is the lead. --}}
-                    <div class="technician-lead-panel mt-4 d-none" data-lead-replacement-panel>
-                        <div class="schedule-section-heading">
-                            <span><i class="bi bi-person-badge me-1" aria-hidden="true"></i> Assign New Lead
-                                Technician</span>
-                        </div>
-                        <p class="text-muted small">
-                            <span data-lead-replacement-intro></span>
-                            Choose a lead technician who is free for this project's whole schedule.
-                        </p>
-                        <div class="technician-lead-options" data-lead-replacement-options></div>
-                        <div class="schedule-empty-state d-none" data-lead-replacement-empty>
-                            No lead technician is available for this project's dates. Free one up, or change the
-                            project schedule, before removing the current lead.
-                        </div>
-                    </div>
-
-                    <div class="alert alert-danger mt-3 d-none" role="alert" data-assignment-error></div>
-                    <div class="alert alert-success mt-3 d-none" role="alert" data-assignment-success></div>
-                </div>
-
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                    <button type="button" class="btn btn-outline-danger d-none" data-remove-technician>
-                        <i class="bi bi-person-dash me-1" aria-hidden="true"></i>
-                        Remove Technician
-                    </button>
-                    <button type="button" class="btn btn-danger d-none" data-confirm-removal disabled>
-                        <span class="spinner-border spinner-border-sm me-1 d-none" role="status" aria-hidden="true"
-                            data-confirm-removal-spinner></span>
-                        Reassign Lead &amp; Remove
+                        Save Changes
                     </button>
                 </div>
 

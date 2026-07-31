@@ -102,6 +102,11 @@ class Project extends Model
         return $this->hasMany(ProjectCompletionPhoto::class, 'project_id', 'project_id');
     }
 
+    public function tasks(): HasMany
+    {
+        return $this->hasMany(Task::class, 'project_id', 'project_id');
+    }
+
     public function archivedByUser(): BelongsTo
     {
         return $this->belongsTo(User::class, 'archived_by', 'id');

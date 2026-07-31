@@ -127,6 +127,11 @@ document.addEventListener("DOMContentLoaded", function () {
         "[data-technician-details-modal]",
     );
 
+    /**
+     * Specialty changes are staged locally - ticking one to add, or clicking
+     * the x on one to drop - and nothing is written until Save Changes. That
+     * keeps the whole edit as a single decision the user can back out of.
+     */
     function initDetailsModal(modal) {
         const nameEl = modal.querySelector("[data-details-name]");
         const metaEl = modal.querySelector("[data-details-meta]");
@@ -137,45 +142,96 @@ document.addEventListener("DOMContentLoaded", function () {
         const availableEl = modal.querySelector("[data-details-available]");
         const allAssignedEl = modal.querySelector("[data-details-all-assigned]");
         const errorEl = modal.querySelector("[data-details-error]");
-        const successEl = modal.querySelector("[data-details-success]");
+        const pendingEl = modal.querySelector("[data-details-pending]");
         const saveBtn = modal.querySelector("[data-details-save]");
         const saveSpinner = modal.querySelector("[data-details-save-spinner]");
 
         let technicianId = null;
+        // What the server currently has.
+        let savedSpecialties = [];
+        // What the modal will save: starts as a copy of savedSpecialties.
+        let draftIds = [];
 
-        function selectedSkillIds() {
-            return Array.from(
-                availableEl.querySelectorAll('input[type="checkbox"]:checked'),
-            ).map(function (input) {
-                return parseInt(input.value, 10);
+        function skillNameById(skillId) {
+            const saved = savedSpecialties.find(function (item) {
+                return item.skill_id === skillId;
             });
+
+            if (saved) {
+                return saved.skill_name;
+            }
+
+            const option = availableEl.querySelector(
+                '[data-available-option="' + skillId + '"] span',
+            );
+
+            return option ? option.textContent.trim() : "Specialty";
         }
 
-        function refreshSaveState() {
-            saveBtn.disabled = selectedSkillIds().length === 0;
+        function isDirty() {
+            const saved = savedSpecialties
+                .map(function (item) {
+                    return item.skill_id;
+                })
+                .sort();
+            const draft = draftIds.slice().sort();
+
+            return (
+                saved.length !== draft.length ||
+                saved.some(function (id, index) {
+                    return id !== draft[index];
+                })
+            );
         }
 
-        function renderSpecialties(technician) {
-            const assignedIds = technician.specialties.map(function (item) {
+        function renderPendingNote() {
+            const savedIds = savedSpecialties.map(function (item) {
                 return item.skill_id;
             });
+            const added = draftIds.filter(function (id) {
+                return savedIds.indexOf(id) === -1;
+            }).length;
+            const removed = savedIds.filter(function (id) {
+                return draftIds.indexOf(id) === -1;
+            }).length;
 
-            if (!technician.specialties.length) {
+            const parts = [];
+
+            if (added) {
+                parts.push(added + " to add");
+            }
+
+            if (removed) {
+                parts.push(removed + " to remove");
+            }
+
+            pendingEl.textContent = parts.length
+                ? "Unsaved: " + parts.join(", ")
+                : "";
+            pendingEl.classList.toggle("d-none", parts.length === 0);
+        }
+
+        /**
+         * Draw the draft, not the saved state: specialties queued for removal
+         * disappear from the list and reappear in the picker straight away.
+         */
+        function renderDraft() {
+            if (!draftIds.length) {
                 specialtiesEl.innerHTML =
                     '<span class="text-muted small">No specialties assigned.</span>';
             } else {
-                specialtiesEl.innerHTML = technician.specialties
-                    .map(function (specialty) {
+                specialtiesEl.innerHTML = draftIds
+                    .map(function (skillId) {
+                        const name = skillNameById(skillId);
+
                         return (
                             '<span class="technician-specialty-pill">' +
-                            escapeHtml(specialty.skill_name) +
+                            escapeHtml(name) +
                             '<button type="button" class="technician-specialty-remove" ' +
                             'data-remove-specialty="' +
-                            specialty.skill_id +
-                            '" data-specialty-name="' +
-                            escapeHtml(specialty.skill_name) +
+                            skillId +
                             '" aria-label="Remove ' +
-                            escapeHtml(specialty.skill_name) +
+                            escapeHtml(name) +
                             '"><i class="bi bi-x" aria-hidden="true"></i></button>' +
                             "</span>"
                         );
@@ -183,36 +239,39 @@ document.addEventListener("DOMContentLoaded", function () {
                     .join("");
             }
 
-            // Anything already assigned leaves the picker, which is what makes
-            // adding a duplicate impossible from the UI.
+            // Anything in the draft leaves the picker, which is what makes
+            // adding a duplicate impossible.
             let remaining = 0;
 
             availableEl
                 .querySelectorAll("[data-available-option]")
                 .forEach(function (option) {
-                    const skillId = parseInt(
-                        option.dataset.availableOption,
-                        10,
-                    );
-                    const assigned = assignedIds.indexOf(skillId) !== -1;
+                    const skillId = parseInt(option.dataset.availableOption, 10);
+                    const inDraft = draftIds.indexOf(skillId) !== -1;
                     const checkbox = option.querySelector("input");
 
-                    option.classList.toggle("is-hidden", assigned);
+                    option.classList.toggle("is-hidden", inDraft);
                     option.classList.remove("is-checked");
                     checkbox.checked = false;
-                    checkbox.disabled = assigned;
+                    checkbox.disabled = inDraft;
 
-                    if (!assigned) {
+                    if (!inDraft) {
                         remaining++;
                     }
                 });
 
             allAssignedEl.classList.toggle("d-none", remaining > 0);
-            refreshSaveState();
+            saveBtn.disabled = !isDirty();
+            renderPendingNote();
         }
 
         function render(technician) {
             technicianId = technician.technician_id;
+            savedSpecialties = technician.specialties.slice();
+            draftIds = savedSpecialties.map(function (item) {
+                return item.skill_id;
+            });
+
             nameEl.textContent = technician.name;
             metaEl.textContent =
                 technician.position +
@@ -220,134 +279,119 @@ document.addEventListener("DOMContentLoaded", function () {
             idEl.textContent = technician.technician_id;
             positionEl.textContent = technician.position;
             emailEl.textContent = technician.email || "Not on file";
-            renderSpecialties(technician);
+
+            renderDraft();
             syncTableRow(technician);
         }
 
+        // Ticking an available specialty queues it; nothing is saved yet.
         availableEl.addEventListener("change", function (event) {
             const option = event.target.closest("[data-available-option]");
 
-            if (option) {
-                option.classList.toggle("is-checked", event.target.checked);
+            if (!option) {
+                return;
+            }
+
+            const skillId = parseInt(option.dataset.availableOption, 10);
+
+            if (event.target.checked) {
+                if (draftIds.indexOf(skillId) === -1) {
+                    draftIds.push(skillId);
+                }
+            } else {
+                draftIds = draftIds.filter(function (id) {
+                    return id !== skillId;
+                });
             }
 
             setAlert(errorEl, "");
-            refreshSaveState();
+            renderDraft();
         });
 
+        // Removing just drops it from the draft - no prompt, no request.
         specialtiesEl.addEventListener("click", function (event) {
             const button = event.target.closest("[data-remove-specialty]");
 
-            if (!button || button.disabled) {
+            if (!button) {
                 return;
             }
 
-            const skillId = button.dataset.removeSpecialty;
-            const skillName = button.dataset.specialtyName;
+            const skillId = parseInt(button.dataset.removeSpecialty, 10);
 
-            if (
-                !window.confirm(
-                    'Remove "' + skillName + '" from this technician?',
-                )
-            ) {
-                return;
-            }
-
-            button.disabled = true;
-            setAlert(errorEl, "");
-            setAlert(successEl, "");
-
-            request(
-                "/super-admin/technicians/" +
-                    technicianId +
-                    "/specialties/" +
-                    skillId,
-                { method: "DELETE" },
-            ).then(function (result) {
-                if (!result.ok) {
-                    button.disabled = false;
-                    setAlert(
-                        errorEl,
-                        result.body.error || "Could not remove that specialty.",
-                    );
-
-                    return;
-                }
-
-                render(result.body.technician);
-                setAlert(successEl, result.body.message);
+            draftIds = draftIds.filter(function (id) {
+                return id !== skillId;
             });
+
+            setAlert(errorEl, "");
+            renderDraft();
         });
 
         saveBtn.addEventListener("click", function () {
-            const skillIds = selectedSkillIds();
-
-            if (!skillIds.length) {
+            if (!isDirty()) {
                 return;
             }
 
             saveBtn.disabled = true;
             saveSpinner.classList.remove("d-none");
             setAlert(errorEl, "");
-            setAlert(successEl, "");
 
-            request(
-                "/super-admin/technicians/" + technicianId + "/specialties",
-                {
-                    method: "POST",
-                    body: JSON.stringify({ skill_ids: skillIds }),
-                },
-            ).then(function (result) {
+            request("/super-admin/technicians/" + technicianId + "/specialties", {
+                method: "PUT",
+                body: JSON.stringify({ skill_ids: draftIds }),
+            }).then(function (result) {
                 saveSpinner.classList.add("d-none");
 
                 if (!result.ok) {
                     saveBtn.disabled = false;
                     setAlert(
                         errorEl,
-                        result.body.error || "Could not add those specialties.",
+                        result.body.error || "Could not save the specialties.",
                     );
 
                     return;
                 }
 
                 render(result.body.technician);
-                setAlert(successEl, result.body.message);
+
+                if (window.bootstrap) {
+                    window.bootstrap.Modal.getOrCreateInstance(modal).hide();
+                }
             });
         });
 
         modal.addEventListener("hidden.bs.modal", function () {
             setAlert(errorEl, "");
-            setAlert(successEl, "");
+            pendingEl.classList.add("d-none");
         });
 
         return {
             open: function (id) {
                 technicianId = id;
+                savedSpecialties = [];
+                draftIds = [];
                 setAlert(errorEl, "");
-                setAlert(successEl, "");
+                pendingEl.classList.add("d-none");
                 nameEl.textContent = "Loading…";
                 metaEl.textContent = "";
                 specialtiesEl.innerHTML = "";
+                saveBtn.disabled = true;
 
                 if (window.bootstrap) {
                     window.bootstrap.Modal.getOrCreateInstance(modal).show();
                 }
 
-                request("/super-admin/technicians/" + id).then(
-                    function (result) {
-                        if (!result.ok) {
-                            setAlert(
-                                errorEl,
-                                result.body.error ||
-                                    "Could not load this technician.",
-                            );
+                request("/super-admin/technicians/" + id).then(function (result) {
+                    if (!result.ok) {
+                        setAlert(
+                            errorEl,
+                            result.body.error || "Could not load this technician.",
+                        );
 
-                            return;
-                        }
+                        return;
+                    }
 
-                        render(result.body);
-                    },
-                );
+                    render(result.body);
+                });
             },
         };
     }
@@ -414,8 +458,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
     const picker = document.querySelector("[data-technician-picker]");
     const pickerHint = document.querySelector("[data-technician-picker-hint]");
-    const calendarCard = document.querySelector(
-        "[data-technician-calendar-card]",
+    const calendarPlaceholderEl = document.querySelector(
+        "[data-calendar-placeholder]",
     );
     const calendarEl = document.getElementById("technicianCalendar");
     const calendarNameEl = document.querySelector(
@@ -427,7 +471,14 @@ document.addEventListener("DOMContentLoaded", function () {
     const calendarEmptyEl = document.querySelector("[data-calendar-empty]");
     const addOpenBtn = document.querySelector("[data-add-to-project-open]");
 
-    const assignmentModalEl = document.querySelector("[data-assignment-modal]");
+    const assignmentsBodyEl = document.querySelector("[data-assignments-body]");
+    const assignmentsCountEl = document.querySelector("[data-assignments-count]");
+    const assignmentsEmptyEl = document.querySelector("[data-assignments-empty]");
+    const assignmentsPlaceholderEl = document.querySelector(
+        "[data-assignments-placeholder]",
+    );
+
+    const detailsPanelEl = document.querySelector("[data-details-panel]");
     const addProjectModalEl = document.querySelector("[data-add-project-modal]");
 
     let calendar = null;
@@ -504,17 +555,101 @@ document.addEventListener("DOMContentLoaded", function () {
                 info.el.setAttribute("title", parts.join(" · "));
             },
             eventClick: function (info) {
-                if (!assignmentModal || !selectedTechnician) {
+                if (!detailsPanel || !selectedTechnician) {
                     return;
                 }
 
-                assignmentModal.open(info.event.extendedProps.projectId);
+                // Fills the right-hand panel; no modal is opened.
+                detailsPanel.open(info.event.extendedProps.projectId);
+                highlightAssignmentRow(info.event.extendedProps.projectId);
             },
         });
 
         calendar.render();
 
         return calendar;
+    }
+
+    /**
+     * Table of every project the technician is on, including ones with no
+     * schedule yet (those never appear on the calendar). Clicking a row
+     * opens the same details panel a calendar event would.
+     */
+    function renderAssignments(projects) {
+        const rows = projects || [];
+
+        assignmentsPlaceholderEl.classList.add("d-none");
+        assignmentsEmptyEl.classList.toggle("d-none", rows.length > 0);
+        assignmentsCountEl.textContent =
+            rows.length + (rows.length === 1 ? " project" : " projects");
+        assignmentsCountEl.classList.toggle("d-none", rows.length === 0);
+
+        assignmentsBodyEl.innerHTML = rows
+            .map(function (project) {
+                return (
+                    '<tr data-assignment-row="' +
+                    project.project_id +
+                    '">' +
+                    "<td>" +
+                    '<a href="' +
+                    escapeHtml(project.url) +
+                    '" target="_blank" rel="noopener">' +
+                    escapeHtml(project.reference_no || "—") +
+                    "</a>" +
+                    "</td>" +
+                    '<td class="fw-semibold">' +
+                    escapeHtml(project.name) +
+                    "</td>" +
+                    "<td>" +
+                    escapeHtml(project.client || "—") +
+                    "</td>" +
+                    '<td class="small">' +
+                    escapeHtml(project.range_label) +
+                    "</td>" +
+                    "<td>" +
+                    (project.is_lead_technician
+                        ? '<span class="badge bg-primary">Lead</span>'
+                        : '<span class="badge bg-secondary">Supporting</span>') +
+                    "</td>" +
+                    '<td class="text-center">' +
+                    project.technician_task_count +
+                    "</td>" +
+                    "<td>" +
+                    '<span class="badge ' +
+                    statusBadgeClass(project.status, project.status_label) +
+                    '">' +
+                    escapeHtml(project.status_label) +
+                    "</span>" +
+                    "</td>" +
+                    "</tr>"
+                );
+            })
+            .join("");
+    }
+
+    if (assignmentsBodyEl) {
+        assignmentsBodyEl.addEventListener("click", function (event) {
+            const row = event.target.closest("[data-assignment-row]");
+
+            // Let the reference-number link do its own thing.
+            if (!row || event.target.closest("a") || !detailsPanel) {
+                return;
+            }
+
+            detailsPanel.open(parseInt(row.dataset.assignmentRow, 10));
+            highlightAssignmentRow(parseInt(row.dataset.assignmentRow, 10));
+        });
+    }
+
+    function highlightAssignmentRow(projectId) {
+        assignmentsBodyEl
+            .querySelectorAll("[data-assignment-row]")
+            .forEach(function (row) {
+                row.classList.toggle(
+                    "is-active",
+                    parseInt(row.dataset.assignmentRow, 10) === projectId,
+                );
+            });
     }
 
     function loadCalendar() {
@@ -533,14 +668,20 @@ document.addEventListener("DOMContentLoaded", function () {
 
             const events = result.body.events || [];
 
-            calendarCard.classList.remove("d-none");
+            // The calendar column is always on screen; only its contents
+            // swap between the placeholder and the grid.
+            calendarPlaceholderEl.classList.add("d-none");
+            calendarEl.classList.remove("d-none");
             calendarNameEl.textContent = result.body.technician.name;
             calendarCountEl.textContent =
                 result.body.assignmentCount +
                 (result.body.assignmentCount === 1
                     ? " project"
                     : " projects");
+            calendarCountEl.classList.remove("d-none");
             calendarEmptyEl.classList.toggle("d-none", events.length > 0);
+
+            renderAssignments(result.body.projects);
 
             const instance = ensureCalendar();
 
@@ -562,11 +703,26 @@ document.addEventListener("DOMContentLoaded", function () {
 
             if (!match) {
                 selectedTechnician = null;
-                calendarCard.classList.add("d-none");
+                calendarEl.classList.add("d-none");
+                calendarPlaceholderEl.classList.remove("d-none");
+                calendarPlaceholderEl.textContent =
+                    "Please select a technician to view their schedule.";
+                calendarEmptyEl.classList.add("d-none");
+                calendarCountEl.classList.add("d-none");
+                calendarNameEl.textContent = "No technician selected";
                 addOpenBtn.classList.add("d-none");
                 pickerHint.textContent = picker.value
                     ? "No technician matches that. Pick one from the list."
                     : "Pick a technician to load their calendar.";
+
+                assignmentsBodyEl.innerHTML = "";
+                assignmentsEmptyEl.classList.add("d-none");
+                assignmentsCountEl.classList.add("d-none");
+                assignmentsPlaceholderEl.classList.remove("d-none");
+
+                if (detailsPanel) {
+                    detailsPanel.reset();
+                }
 
                 return;
             }
@@ -575,6 +731,12 @@ document.addEventListener("DOMContentLoaded", function () {
             picker.value = match.technician_id + " — " + match.name;
             pickerHint.textContent = "Showing schedule for " + match.name + ".";
             addOpenBtn.classList.remove("d-none");
+
+            // A new technician means any previously shown project is stale.
+            if (detailsPanel) {
+                detailsPanel.reset();
+            }
+
             loadCalendar();
         });
     }
@@ -592,75 +754,146 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     // ---------------------------------------------------------------
-    // Project assignment modal (view + remove technician)
+    // Project details panel (permanent, right-hand column)
+    //
+    // Replaces the old modal. Clicking a calendar event fills this in; the
+    // panel is never hidden, it just switches between three states.
     // ---------------------------------------------------------------
 
-    function initAssignmentModal(modal) {
-        const nameEl = modal.querySelector("[data-assignment-name]");
-        const refEl = modal.querySelector("[data-assignment-ref]");
-        const refTextEl = modal.querySelector("[data-assignment-ref-text]");
-        const clientEl = modal.querySelector("[data-assignment-client]");
-        const startEl = modal.querySelector("[data-assignment-start]");
-        const endEl = modal.querySelector("[data-assignment-end]");
-        const statusEl = modal.querySelector("[data-assignment-status]");
-        const leadEl = modal.querySelector("[data-assignment-lead]");
-        const teamEl = modal.querySelector("[data-assignment-team]");
+    function initDetailsPanel(panel) {
+        const noTechnicianEl = panel.querySelector("[data-panel-no-technician]");
+        const noProjectEl = panel.querySelector("[data-panel-no-project]");
+        const projectEl = panel.querySelector("[data-panel-project]");
 
-        const leadPanel = modal.querySelector("[data-lead-replacement-panel]");
-        const leadIntro = modal.querySelector("[data-lead-replacement-intro]");
-        const leadOptions = modal.querySelector(
-            "[data-lead-replacement-options]",
-        );
-        const leadEmpty = modal.querySelector("[data-lead-replacement-empty]");
+        const refEl = panel.querySelector("[data-panel-ref]");
+        const refTextEl = panel.querySelector("[data-panel-ref-text]");
+        const nameEl = panel.querySelector("[data-panel-name]");
+        const clientWrap = panel.querySelector("[data-panel-client-wrap]");
+        const clientEl = panel.querySelector("[data-panel-client]");
+        const addressWrap = panel.querySelector("[data-panel-address-wrap]");
+        const addressEl = panel.querySelector("[data-panel-address]");
+        const scheduleEl = panel.querySelector("[data-panel-schedule]");
+        const statusEl = panel.querySelector("[data-panel-status]");
 
-        const errorEl = modal.querySelector("[data-assignment-error]");
-        const successEl = modal.querySelector("[data-assignment-success]");
-        const removeBtn = modal.querySelector("[data-remove-technician]");
-        const confirmBtn = modal.querySelector("[data-confirm-removal]");
-        const confirmSpinner = modal.querySelector(
-            "[data-confirm-removal-spinner]",
-        );
+        const leadEl = panel.querySelector("[data-panel-lead]");
+        const supportingEl = panel.querySelector("[data-panel-supporting]");
+
+        const taskListEl = panel.querySelector("[data-panel-tasks]");
+        const tasksEmptyEl = panel.querySelector("[data-panel-tasks-empty]");
+        const taskCountEl = panel.querySelector("[data-panel-task-count]");
+        const taskNoteEl = panel.querySelector("[data-panel-tasks-note]");
+
+        const leadPanelEl = panel.querySelector("[data-panel-lead-replacement]");
+        const leadIntroEl = panel.querySelector("[data-panel-lead-intro]");
+        const leadOptionsEl = panel.querySelector("[data-panel-lead-options]");
+        const leadEmptyEl = panel.querySelector("[data-panel-lead-empty]");
+
+        const errorEl = panel.querySelector("[data-panel-error]");
+        const successEl = panel.querySelector("[data-panel-success]");
+        const removeBtn = panel.querySelector("[data-panel-remove]");
+        const confirmBtn = panel.querySelector("[data-panel-confirm-remove]");
+        const confirmSpinner = panel.querySelector("[data-panel-confirm-spinner]");
+        const cancelBtn = panel.querySelector("[data-panel-cancel-remove]");
 
         let projectId = null;
         let payload = null;
         let selectedLeadId = null;
 
-        function reset() {
-            leadPanel.classList.add("d-none");
-            leadOptions.innerHTML = "";
-            leadEmpty.classList.add("d-none");
-            removeBtn.classList.add("d-none");
+        function showState(state) {
+            noTechnicianEl.classList.toggle("d-none", state !== "no-technician");
+            noProjectEl.classList.toggle("d-none", state !== "no-project");
+            projectEl.classList.toggle("d-none", state !== "project");
+        }
+
+        function resetRemovalUi() {
+            leadPanelEl.classList.add("d-none");
+            leadOptionsEl.innerHTML = "";
+            leadEmptyEl.classList.add("d-none");
             confirmBtn.classList.add("d-none");
             confirmBtn.disabled = true;
+            cancelBtn.classList.add("d-none");
             selectedLeadId = null;
-            setAlert(errorEl, "");
-            setAlert(successEl, "");
+        }
+
+        function taskBadgeClass(status) {
+            return (
+                {
+                    unassigned: "bg-warning text-dark",
+                    pending: "bg-secondary",
+                    ongoing: "bg-primary",
+                    completed: "bg-success",
+                    cancelled: "bg-danger",
+                }[status] || "bg-secondary"
+            );
+        }
+
+        function renderTasks(tasks) {
+            taskListEl.innerHTML = (tasks || [])
+                .map(function (task) {
+                    return (
+                        '<div class="panel-task-card">' +
+                        '<div class="panel-task-range">' +
+                        escapeHtml(task.range_label) +
+                        "</div>" +
+                        '<div class="panel-task-title">' +
+                        escapeHtml(task.title) +
+                        "</div>" +
+                        (task.description
+                            ? '<div class="panel-task-description">' +
+                              escapeHtml(task.description) +
+                              "</div>"
+                            : "") +
+                        '<div class="panel-task-meta">' +
+                        '<span class="badge ' +
+                        taskBadgeClass(task.status) +
+                        '">' +
+                        escapeHtml(task.status_label) +
+                        "</span>" +
+                        (task.technician
+                            ? '<span class="panel-task-technician">' +
+                              escapeHtml(task.technician) +
+                              "</span>"
+                            : "") +
+                        "</div>" +
+                        "</div>"
+                    );
+                })
+                .join("");
+
+            const count = (tasks || []).length;
+
+            tasksEmptyEl.classList.toggle("d-none", count > 0);
+            taskCountEl.textContent = count + (count === 1 ? " task" : " tasks");
+            taskCountEl.classList.toggle("d-none", count === 0);
+            taskNoteEl.textContent =
+                "Assigned to " + selectedTechnician.name + " on this project.";
+            taskNoteEl.classList.toggle("d-none", count === 0);
         }
 
         function renderLeadOptions() {
             const candidates = payload.replacement_leads || [];
 
-            leadPanel.classList.remove("d-none");
-            leadIntro.textContent =
+            leadPanelEl.classList.remove("d-none");
+            leadIntroEl.textContent =
                 selectedTechnician.name +
-                " is the lead technician on this project.";
+                " is the lead technician on this project. Choose a replacement who is free for its whole schedule.";
 
             if (!candidates.length) {
-                leadOptions.innerHTML = "";
-                leadEmpty.classList.remove("d-none");
+                leadOptionsEl.innerHTML = "";
+                leadEmptyEl.classList.remove("d-none");
                 confirmBtn.disabled = true;
 
                 return;
             }
 
-            leadEmpty.classList.add("d-none");
-            leadOptions.innerHTML = candidates
+            leadEmptyEl.classList.add("d-none");
+            leadOptionsEl.innerHTML = candidates
                 .map(function (candidate) {
                     return (
                         '<label class="technician-lead-option" data-lead-option="' +
                         candidate.technician_id +
                         '">' +
-                        '<input type="radio" name="replacementLead" class="form-check-input" value="' +
+                        '<input type="radio" name="panelReplacementLead" class="form-check-input" value="' +
                         candidate.technician_id +
                         '">' +
                         "<span>" +
@@ -678,13 +911,13 @@ document.addEventListener("DOMContentLoaded", function () {
                 })
                 .join("");
 
-            leadOptions
+            leadOptionsEl
                 .querySelectorAll('input[type="radio"]')
                 .forEach(function (radio) {
                     radio.addEventListener("change", function () {
                         selectedLeadId = parseInt(radio.value, 10);
 
-                        leadOptions
+                        leadOptionsEl
                             .querySelectorAll("[data-lead-option]")
                             .forEach(function (option) {
                                 option.classList.toggle(
@@ -702,22 +935,63 @@ document.addEventListener("DOMContentLoaded", function () {
 
         function render(data) {
             payload = data;
+
             const project = data.project;
 
-            nameEl.textContent = project.name;
             refEl.href = project.url;
             refTextEl.textContent = project.reference_no || "No reference";
-            clientEl.textContent = project.client || "N/A";
-            startEl.textContent = project.start_date || "Not set";
-            endEl.textContent = project.end_date || "Not set";
+            nameEl.textContent = project.name;
+
+            clientEl.textContent = project.client || "";
+            clientWrap.classList.toggle("d-none", !project.client);
+
+            addressEl.textContent = project.address || "";
+            addressWrap.classList.toggle("d-none", !project.address);
+
+            // Always the project's full schedule, never the clicked day.
+            const ranges = project.ranges || [];
+            scheduleEl.textContent = ranges.length
+                ? ranges
+                      .map(function (range) {
+                          return range.label;
+                      })
+                      .join("  •  ")
+                : "No schedule set";
+
             statusEl.innerHTML =
                 '<span class="badge ' +
                 statusBadgeClass(project.status, project.status_label) +
                 '">' +
                 escapeHtml(project.status_label) +
                 "</span>";
-            leadEl.textContent = project.lead_technician || "None";
-            teamEl.innerHTML = technicianChips(project.technicians);
+
+            const technicians = project.technicians || [];
+            const lead = technicians.find(function (item) {
+                return item.is_lead;
+            });
+            const supporting = technicians.filter(function (item) {
+                return !item.is_lead;
+            });
+
+            leadEl.textContent = lead ? lead.name : "None assigned";
+            supportingEl.innerHTML = supporting.length
+                ? supporting
+                      .map(function (item) {
+                          return (
+                              '<span class="schedule-tech-chip">' +
+                              escapeHtml(item.name) +
+                              "</span>"
+                          );
+                      })
+                      .join("")
+                : '<span class="text-muted small">None</span>';
+
+            renderTasks(project.tasks);
+            resetRemovalUi();
+            setAlert(errorEl, "");
+            setAlert(successEl, "");
+
+            removeBtn.classList.toggle("d-none", Boolean(data.read_only));
 
             if (data.read_only) {
                 setAlert(
@@ -726,11 +1000,9 @@ document.addEventListener("DOMContentLoaded", function () {
                         project.status +
                         ", so its team can no longer be changed.",
                 );
-
-                return;
             }
 
-            removeBtn.classList.remove("d-none");
+            showState("project");
         }
 
         removeBtn.addEventListener("click", function () {
@@ -738,7 +1010,6 @@ document.addEventListener("DOMContentLoaded", function () {
                 return;
             }
 
-            // A non-lead can go straight away, provided someone remains.
             if (!payload.is_lead) {
                 if (payload.remaining_after_removal < 1) {
                     setAlert(
@@ -749,27 +1020,22 @@ document.addEventListener("DOMContentLoaded", function () {
                     return;
                 }
 
-                if (
-                    !window.confirm(
-                        "Remove " +
-                            selectedTechnician.name +
-                            " from " +
-                            payload.project.name +
-                            "?",
-                    )
-                ) {
-                    return;
-                }
-
                 submitRemoval(null);
 
                 return;
             }
 
-            // Leads need a replacement chosen first.
+            // Leads need a replacement picked first, inline in this panel.
             removeBtn.classList.add("d-none");
             confirmBtn.classList.remove("d-none");
+            cancelBtn.classList.remove("d-none");
             renderLeadOptions();
+        });
+
+        cancelBtn.addEventListener("click", function () {
+            resetRemovalUi();
+            removeBtn.classList.remove("d-none");
+            setAlert(errorEl, "");
         });
 
         confirmBtn.addEventListener("click", function () {
@@ -819,32 +1085,34 @@ document.addEventListener("DOMContentLoaded", function () {
 
                 setAlert(successEl, result.body.message);
 
-                // Refresh the calendar in place, then close.
+                // The technician is off this project, so it leaves their
+                // calendar and the panel drops back to its empty state.
                 loadCalendar().then(function () {
                     window.setTimeout(function () {
-                        if (window.bootstrap) {
-                            window.bootstrap.Modal.getOrCreateInstance(
-                                modal,
-                            ).hide();
-                        }
-                    }, 800);
+                        clearProject();
+                    }, 1200);
                 });
             });
         }
 
-        modal.addEventListener("hidden.bs.modal", reset);
+        function clearProject() {
+            projectId = null;
+            payload = null;
+            highlightAssignmentRow(null);
+            resetRemovalUi();
+            setAlert(errorEl, "");
+            setAlert(successEl, "");
+            showState(selectedTechnician ? "no-project" : "no-technician");
+        }
 
         return {
+            reset: clearProject,
             open: function (id) {
                 projectId = id;
                 payload = null;
-                reset();
-                nameEl.textContent = "Loading…";
-                teamEl.innerHTML = "";
-
-                if (window.bootstrap) {
-                    window.bootstrap.Modal.getOrCreateInstance(modal).show();
-                }
+                resetRemovalUi();
+                setAlert(errorEl, "");
+                setAlert(successEl, "");
 
                 request(
                     "/super-admin/technicians/" +
@@ -853,6 +1121,7 @@ document.addEventListener("DOMContentLoaded", function () {
                         id,
                 ).then(function (result) {
                     if (!result.ok) {
+                        showState("project");
                         nameEl.textContent = "Unavailable";
                         setAlert(
                             errorEl,
@@ -869,8 +1138,8 @@ document.addEventListener("DOMContentLoaded", function () {
         };
     }
 
-    const assignmentModal = assignmentModalEl
-        ? initAssignmentModal(assignmentModalEl)
+    const detailsPanel = detailsPanelEl
+        ? initDetailsPanel(detailsPanelEl)
         : null;
 
     // ---------------------------------------------------------------
@@ -1102,7 +1371,13 @@ document.addEventListener("DOMContentLoaded", function () {
 
                 setAlert(successEl, result.body.message);
 
+                // New assignments change the calendar and invalidate whatever
+                // the details panel was showing.
                 loadCalendar().then(function () {
+                    if (detailsPanel) {
+                        detailsPanel.reset();
+                    }
+
                     window.setTimeout(function () {
                         if (window.bootstrap) {
                             window.bootstrap.Modal.getOrCreateInstance(

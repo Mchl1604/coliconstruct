@@ -60,40 +60,37 @@ class TechnicianController extends Controller
         return response()->json($this->technicianPayload($technician->load(['account', 'skills'])));
     }
 
-    public function addSpecialties(Request $request, Technician $technician)
+    /**
+     * Replace a technician's specialties with the submitted set.
+     *
+     * The modal stages additions and removals locally and only calls this on
+     * save, so one sync applies both at once. sync() is also what makes
+     * duplicates impossible - the pivot ends up with exactly these ids.
+     *
+     * An empty list is allowed: it means "no specialties assigned".
+     */
+    public function syncSpecialties(Request $request, Technician $technician)
     {
         $validator = Validator::make($request->all(), [
-            'skill_ids' => ['required', 'array', 'min:1'],
+            'skill_ids' => ['present', 'array'],
             'skill_ids.*' => ['required', 'integer', 'exists:tbl_skills,skill_id'],
         ], [
-            'skill_ids.required' => 'Select at least one specialty to add.',
-            'skill_ids.min' => 'Select at least one specialty to add.',
+            'skill_ids.present' => 'No specialty selection was submitted.',
         ]);
 
         if ($validator->fails()) {
             return response()->json(['error' => $validator->errors()->first()], 422);
         }
 
-        // syncWithoutDetaching is what keeps duplicates out: re-adding an
-        // existing specialty is a no-op rather than a second pivot row.
-        $technician->skills()->syncWithoutDetaching($validator->validated()['skill_ids']);
+        $skillIds = collect($validator->validated()['skill_ids'])
+            ->map(fn ($skillId): int => (int) $skillId)
+            ->unique()
+            ->values()
+            ->all();
+
+        $technician->skills()->sync($skillIds);
 
         return response()->json([
-            'message' => 'Specialties updated.',
-            'technician' => $this->technicianPayload($technician->fresh(['account', 'skills'])),
-        ]);
-    }
-
-    public function removeSpecialty(Technician $technician, Skill $skill)
-    {
-        if (! $technician->skills()->where('tbl_skills.skill_id', $skill->skill_id)->exists()) {
-            return response()->json(['error' => 'That specialty is not assigned to this technician.'], 422);
-        }
-
-        $technician->skills()->detach($skill->skill_id);
-
-        return response()->json([
-            'message' => $this->sentence($skill->skill_name . ' removed'),
             'technician' => $this->technicianPayload($technician->fresh(['account', 'skills'])),
         ]);
     }
@@ -143,20 +140,73 @@ class TechnicianController extends Controller
             ];
         })->values();
 
+        $assignedProjects = $this->assignedProjects($technician);
+
         return response()->json([
             'technician' => $this->technicianPayload($technician->load(['account', 'skills'])),
             'events' => $events,
-            'assignmentCount' => $schedules->pluck('project_id')->unique()->count(),
+            'assignmentCount' => $assignedProjects->count(),
+            'projects' => $assignedProjects->all(),
         ]);
     }
 
     /**
-     * Everything the Project Assignment modal needs, including whether this
+     * Every non-archived project this technician is assigned to, including
+     * ones with no schedule yet, for the assignments table.
+     *
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function assignedProjects(Technician $technician): Collection
+    {
+        $projects = Project::query()
+            ->with(['clients', 'schedules', 'projectTechnicians.technician.account'])
+            ->where('is_archived', false)
+            ->whereHas('projectTechnicians', function ($query) use ($technician): void {
+                $query->where('technician_id', $technician->technician_id);
+            })
+            ->orderByDesc('project_id')
+            ->get();
+
+        // One grouped query rather than a count per project.
+        $taskCounts = Task::query()
+            ->whereIn('project_id', $projects->pluck('project_id'))
+            ->where('technician_id', $technician->technician_id)
+            ->selectRaw('project_id, count(*) as task_count')
+            ->groupBy('project_id')
+            ->pluck('task_count', 'project_id');
+
+        return $projects->map(function (Project $project) use ($technician, $taskCounts): array {
+            $lead = $this->leadAssignment($project);
+
+            return $this->projectPayload($project) + [
+                'is_lead_technician' => $lead
+                    && (int) $lead->technician_id === (int) $technician->technician_id,
+                'technician_task_count' => (int) ($taskCounts[$project->project_id] ?? 0),
+                'has_schedule' => $project->schedules->isNotEmpty(),
+            ];
+        })->values();
+    }
+
+    /**
+     * Everything the project details panel needs, including whether this
      * technician is the project's lead and who could replace them.
      */
     public function assignment(Technician $technician, Project $project)
     {
-        $project->load(['clients', 'schedules', 'projectTechnicians.technician.account']);
+        // Everything the details panel shows, eager loaded in one go. Tasks
+        // are scoped to the technician being viewed - the panel lists their
+        // work on this project, not the whole project's task board.
+        $project->load([
+            'clients',
+            'schedules',
+            'projectTechnicians.technician.account',
+            'tasks' => fn ($query) => $query
+                ->where('technician_id', $technician->technician_id)
+                ->orderByRaw('start_date is null')
+                ->orderBy('start_date')
+                ->orderBy('task_id'),
+            'tasks.technician.account',
+        ]);
 
         $assignment = $project->projectTechnicians
             ->firstWhere('technician_id', $technician->technician_id);
@@ -645,6 +695,7 @@ class TechnicianController extends Controller
             'reference_no' => $project->reference_no,
             'name' => $project->name,
             'client' => $this->clientName($project),
+            'address' => $project->address,
             'status' => $project->status,
             'status_label' => $this->statusLabel($project),
             'url' => route('super-admin.projects.show', $project->project_id),
@@ -656,7 +707,25 @@ class TechnicianController extends Controller
             'ranges' => $schedules->map(fn (Schedule $schedule): array => [
                 'start' => CarbonImmutable::parse($schedule->start_datetime)->toDateString(),
                 'end' => CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime)->toDateString(),
+                'label' => CarbonImmutable::parse($schedule->start_datetime)->format('F j, Y')
+                    . ' – '
+                    . CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime)->format('F j, Y'),
             ])->values()->all(),
+            'tasks' => $project->relationLoaded('tasks')
+                ? $project->tasks->map(fn (Task $task): array => [
+                    'task_id' => $task->task_id,
+                    'title' => $task->task_title,
+                    'description' => $task->task_description,
+                    'status' => $task->status,
+                    'status_label' => ucfirst((string) $task->status),
+                    'technician' => $task->technician?->name,
+                    'range_label' => $task->start_date && $task->due_date
+                        ? CarbonImmutable::parse($task->start_date)->format('F d, Y')
+                            . ' - '
+                            . CarbonImmutable::parse($task->due_date)->format('F d, Y')
+                        : 'No dates set',
+                ])->values()->all()
+                : [],
             'lead_technician' => $lead?->technician?->name,
             'technicians' => $project->projectTechnicians
                 ->map(fn (ProjectTechnician $assignment): ?array => $assignment->technician ? [

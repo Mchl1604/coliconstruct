@@ -524,107 +524,7 @@
     @push('scripts')
         <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
         <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
-        <script>
-            // A project's schedule can have gaps (July 10-15 and July 20-25).
-            // Tasks must sit inside ONE range, so the pickers enable only the
-            // days those ranges actually cover and the due date is pinned to
-            // the same range as the start date. The server re-checks this.
-            function describeRanges(ranges) {
-                return (ranges || []).map(function(range) {
-                    const format = { month: 'short', day: 'numeric', year: 'numeric' };
-                    return new Date(range.start + 'T00:00:00').toLocaleDateString(undefined, format) +
-                        ' – ' +
-                        new Date(range.end + 'T00:00:00').toLocaleDateString(undefined, format);
-                }).join('; ');
-            }
-
-            function enableSpecs(ranges) {
-                return (ranges || []).map(function(range) {
-                    return { from: range.start, to: range.end };
-                });
-            }
-
-            function rangeContaining(ranges, dateString) {
-                return (ranges || []).find(function(range) {
-                    return dateString >= range.start && dateString <= range.end;
-                }) || null;
-            }
-
-            function applyScheduleRanges(startInput, dueInput, ranges) {
-                if (!window.flatpickr || !startInput || !dueInput) {
-                    return;
-                }
-
-                [startInput, dueInput].forEach(function(input) {
-                    if (input._flatpickr) {
-                        input._flatpickr.destroy();
-                    }
-                });
-
-                if (!ranges || !ranges.length) {
-                    return;
-                }
-
-                const duePicker = window.flatpickr(dueInput, {
-                    dateFormat: 'Y-m-d',
-                    allowInput: false,
-                    enable: enableSpecs(ranges),
-                });
-
-                window.flatpickr(startInput, {
-                    dateFormat: 'Y-m-d',
-                    allowInput: false,
-                    enable: enableSpecs(ranges),
-                    onChange: function(selectedDates, dateStr) {
-                        const active = rangeContaining(ranges, dateStr);
-
-                        if (!active) {
-                            return;
-                        }
-
-                        // Confine the due date to the same range, so a task
-                        // can never straddle a gap.
-                        duePicker.set('enable', [{ from: dateStr, to: active.end }]);
-
-                        if (dueInput.value && (dueInput.value < dateStr || dueInput.value > active.end)) {
-                            duePicker.clear(false);
-                        }
-                    },
-                });
-
-                // Re-applying an existing start value narrows the due picker
-                // straight away when editing a saved task.
-                if (startInput.value) {
-                    const active = rangeContaining(ranges, startInput.value);
-
-                    if (active) {
-                        duePicker.set('enable', [{ from: startInput.value, to: active.end }]);
-                    }
-                }
-            }
-
-            // Per-task edit modals carry their project's ranges inline.
-            document.addEventListener('DOMContentLoaded', function() {
-                document.querySelectorAll('[data-task-date-row]').forEach(function(row) {
-                    const startInput = row.querySelector('[data-task-start]');
-                    const dueInput = row.querySelector('[data-task-due]');
-
-                    if (!startInput || !dueInput || startInput.hasAttribute('readonly')) {
-                        return;
-                    }
-
-                    let ranges = [];
-
-                    try {
-                        ranges = JSON.parse(row.dataset.scheduleRanges || '[]');
-                    } catch (error) {
-                        ranges = [];
-                    }
-
-                    applyScheduleRanges(startInput, dueInput, ranges);
-                });
-            });
-        </script>
+        <script src="/js/super-admin/taskDatePickers.js"></script>
         <script>
             $(function() {
                 const table = $('#tasksTable').DataTable({
@@ -718,16 +618,18 @@
                             return payload;
                         })
                         .then((data) => {
-                            applyScheduleRanges(startInput, dueInput, data.ranges || []);
+                            const ranges = data.ranges || [];
+
+                            window.taskDatePickers.applyScheduleRanges(startInput, dueInput, ranges);
 
                             const hint = document.getElementById('taskScheduleRangesHint');
 
                             if (hint) {
-                                hint.textContent = (data.ranges || []).length
-                                    ? 'Allowed: ' + describeRanges(data.ranges) +
-                                    ((data.ranges.length > 1) ?
-                                        '. A task cannot span the gap between two ranges.' : '.')
-                                    : '';
+                                hint.textContent = ranges.length ?
+                                    'Allowed: ' + window.taskDatePickers.describeRanges(ranges) +
+                                    (ranges.length > 1 ?
+                                        '. A task cannot span the gap between two ranges.' : '.') :
+                                    '';
                             }
 
                             if (!data.technicians.length) {

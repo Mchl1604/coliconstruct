@@ -150,6 +150,160 @@
     display: none;
 }
 
+/* ---- Split panel: calendar + always-visible project details ---- */
+
+.technician-split [data-details-panel] {
+    position: sticky;
+    top: 1rem;
+}
+
+@media (max-width: 1199.98px) {
+    .technician-split [data-details-panel] {
+        position: static;
+    }
+}
+
+.panel-reference {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: #2563eb;
+    text-decoration: none;
+}
+
+.panel-reference:hover {
+    color: #1d4ed8;
+    text-decoration: underline;
+}
+
+.panel-project-name {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #0f172a;
+    line-height: 1.3;
+    margin: 0.35rem 0 0.5rem;
+}
+
+.panel-meta {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.4rem;
+    font-size: 0.83rem;
+    color: #64748b;
+    margin-bottom: 0.2rem;
+}
+
+.panel-meta i {
+    margin-top: 0.15rem;
+    flex-shrink: 0;
+}
+
+.panel-divider {
+    margin: 1rem 0;
+    border-color: #e5e7eb;
+}
+
+.panel-section-heading {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #64748b;
+    margin-bottom: 0.6rem;
+}
+
+.panel-lead-row,
+.panel-support-row {
+    margin-bottom: 0.6rem;
+}
+
+.panel-role-label {
+    display: block;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #94a3b8;
+    margin-bottom: 0.2rem;
+}
+
+.panel-role-value {
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+/* ---- Task cards ---- */
+
+.panel-task-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.panel-task-card {
+    border: 1px solid #e5e7eb;
+    border-left: 3px solid #2563eb;
+    border-radius: 0.45rem;
+    background: #fff;
+    padding: 0.6rem 0.75rem;
+}
+
+.panel-task-range {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: #2563eb;
+}
+
+.panel-task-title {
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: #0f172a;
+    margin-top: 0.1rem;
+}
+
+.panel-task-description {
+    font-size: 0.82rem;
+    color: #475569;
+    margin-top: 0.15rem;
+}
+
+.panel-task-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+    margin-top: 0.4rem;
+}
+
+.panel-task-technician {
+    font-size: 0.75rem;
+    color: #64748b;
+}
+
+/* ---- Assignments table ---- */
+
+.technician-assignments-table tbody tr {
+    cursor: pointer;
+}
+
+.technician-assignments-table tbody tr.is-active {
+    background-color: #eff6ff;
+    box-shadow: inset 3px 0 0 #2563eb;
+}
+
+/* Quiet reminder that the modal is holding unsaved specialty edits. */
+.technician-pending-note {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #b45309;
+}
+
 /* ---- Lead replacement ---- */
 
 .technician-lead-panel {

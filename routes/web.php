@@ -55,8 +55,7 @@ Route::prefix('super-admin')
         //ROUTE FOR SUPER ADMIN TECHNICIANS PAGE
         Route::get('/technicians', [TechnicianController::class, 'index'])->name('technicians.index');
         Route::get('/technicians/{technician}', [TechnicianController::class, 'show'])->name('technicians.show');
-        Route::post('/technicians/{technician}/specialties', [TechnicianController::class, 'addSpecialties'])->name('technicians.specialties.store');
-        Route::delete('/technicians/{technician}/specialties/{skill}', [TechnicianController::class, 'removeSpecialty'])->name('technicians.specialties.destroy');
+        Route::put('/technicians/{technician}/specialties', [TechnicianController::class, 'syncSpecialties'])->name('technicians.specialties.sync');
         Route::get('/technicians/{technician}/calendar', [TechnicianController::class, 'calendar'])->name('technicians.calendar');
         Route::get('/technicians/{technician}/assignable-projects', [TechnicianController::class, 'assignableProjects'])->name('technicians.assignable');
         Route::post('/technicians/{technician}/projects', [TechnicianController::class, 'assignToProjects'])->name('technicians.projects.store');

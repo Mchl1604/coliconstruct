@@ -126,46 +126,68 @@ class TechnicianManagementTest extends TestCase
         $response->assertJsonPath('specialties.0.skill_name', 'Aircon Cleaning');
     }
 
-    public function test_it_adds_specialties_without_creating_duplicates(): void
+    /**
+     * The modal stages adds and removes, then saves the whole desired set in
+     * one call, so a single sync has to handle both directions at once.
+     */
+    public function test_it_syncs_specialties_in_one_call(): void
     {
         $technician = $this->technician('Ana Mendoza');
         $cleaning = Skill::create(['skill_name' => 'Aircon Cleaning']);
         $repair = Skill::create(['skill_name' => 'Aircon Repair']);
+        $ducting = Skill::create(['skill_name' => 'Ducting Installation']);
 
-        $technician->skills()->attach($cleaning->skill_id);
+        $technician->skills()->attach([$cleaning->skill_id, $repair->skill_id]);
 
-        // Re-sending an existing specialty alongside a new one must not
-        // create a second pivot row.
-        $response = $this->postJson(
-            route('super-admin.technicians.specialties.store', $technician->technician_id),
-            ['skill_ids' => [$cleaning->skill_id, $repair->skill_id]]
+        // Drop Aircon Repair and add Ducting Installation in one save.
+        $response = $this->putJson(
+            route('super-admin.technicians.specialties.sync', $technician->technician_id),
+            ['skill_ids' => [$cleaning->skill_id, $ducting->skill_id]]
         );
 
         $response->assertOk();
+
+        $assigned = DB::table('tbl_skill_map')
+            ->where('technician_id', $technician->technician_id)
+            ->pluck('skill_id')
+            ->sort()
+            ->values()
+            ->all();
+
+        $this->assertSame([$cleaning->skill_id, $ducting->skill_id], $assigned);
+    }
+
+    public function test_syncing_never_creates_duplicate_rows(): void
+    {
+        $technician = $this->technician('Ana Mendoza');
+        $cleaning = Skill::create(['skill_name' => 'Aircon Cleaning']);
+
+        $technician->skills()->attach($cleaning->skill_id);
+
+        // Same id twice, plus one it already has.
+        $this->putJson(
+            route('super-admin.technicians.specialties.sync', $technician->technician_id),
+            ['skill_ids' => [$cleaning->skill_id, $cleaning->skill_id]]
+        )->assertOk();
 
         $this->assertSame(
             1,
             DB::table('tbl_skill_map')
                 ->where('technician_id', $technician->technician_id)
-                ->where('skill_id', $cleaning->skill_id)
                 ->count()
-        );
-        $this->assertSame(
-            2,
-            DB::table('tbl_skill_map')->where('technician_id', $technician->technician_id)->count()
         );
     }
 
-    public function test_it_removes_a_specialty(): void
+    public function test_syncing_an_empty_list_clears_every_specialty(): void
     {
         $technician = $this->technician('Ana Mendoza');
         $skill = Skill::create(['skill_name' => 'Aircon Cleaning']);
         $technician->skills()->attach($skill->skill_id);
 
-        $response = $this->deleteJson(route('super-admin.technicians.specialties.destroy', [
-            $technician->technician_id,
-            $skill->skill_id,
-        ]));
+        $response = $this->putJson(
+            route('super-admin.technicians.specialties.sync', $technician->technician_id),
+            ['skill_ids' => []]
+        );
 
         $response->assertOk();
         $response->assertJsonCount(0, 'technician.specialties');
@@ -175,28 +197,17 @@ class TechnicianManagementTest extends TestCase
         );
     }
 
-    public function test_removing_a_specialty_the_technician_lacks_is_rejected(): void
-    {
-        $technician = $this->technician('Ana Mendoza');
-        $skill = Skill::create(['skill_name' => 'Aircon Cleaning']);
-
-        $this->deleteJson(route('super-admin.technicians.specialties.destroy', [
-            $technician->technician_id,
-            $skill->skill_id,
-        ]))->assertStatus(422);
-    }
-
-    public function test_specialty_endpoints_return_json_not_a_redirect(): void
+    public function test_syncing_an_unknown_specialty_is_rejected_as_json(): void
     {
         $technician = $this->technician('Ana Mendoza');
 
-        $response = $this->postJson(
-            route('super-admin.technicians.specialties.store', $technician->technician_id),
-            ['skill_ids' => []]
+        $response = $this->putJson(
+            route('super-admin.technicians.specialties.sync', $technician->technician_id),
+            ['skill_ids' => [99999]]
         );
 
         $response->assertStatus(422);
-        $this->assertSame('Select at least one specialty to add.', $response->json('error'));
+        $this->assertNotNull($response->json('error'));
     }
 
     // ------------------------------------------------------------------
@@ -220,6 +231,181 @@ class TechnicianManagementTest extends TestCase
         $response->assertJsonCount(1, 'events');
         $response->assertJsonPath('events.0.extendedProps.projectName', 'My Project');
         $response->assertJsonPath('assignmentCount', 1);
+    }
+
+    /**
+     * The details panel needs the project's COMPLETE schedule, its address,
+     * and its tasks - the clicked calendar day must never be what's shown.
+     */
+    public function test_the_assignment_payload_carries_everything_the_panel_shows(): void
+    {
+        $lead = $this->leadTechnician('Jose Garcia');
+        $ana = $this->technician('Ana Mendoza');
+
+        $project = $this->project('Ducting Installation', [$lead, $ana]);
+        $project->forceFill(['address' => 'Skybridge Offices, Pasay City'])->save();
+        $this->schedule($project, $this->day(5), $this->day(9));
+
+        Task::create([
+            'project_id' => $project->project_id,
+            'technician_id' => $ana->technician_id,
+            'task_title' => 'Mark hanger locations',
+            'task_description' => 'Mark hanger locations and drill supports.',
+            'start_date' => $this->day(5),
+            'due_date' => $this->day(6),
+            'status' => 'completed',
+        ]);
+
+        $response = $this->getJson(route('super-admin.technicians.assignment', [
+            $ana->technician_id,
+            $project->project_id,
+        ]));
+
+        $response->assertOk();
+        $response->assertJsonPath('project.address', 'Skybridge Offices, Pasay City');
+
+        // Whole range, both endpoints, regardless of which day was clicked.
+        $response->assertJsonPath('project.start_date', $this->day(5));
+        $response->assertJsonPath('project.end_date', $this->day(9));
+        $response->assertJsonPath('project.ranges.0.start', $this->day(5));
+        $response->assertJsonPath('project.ranges.0.end', $this->day(9));
+        $this->assertNotNull($response->json('project.ranges.0.label'));
+
+        // Lead vs supporting is what the panel splits on.
+        $technicians = collect($response->json('project.technicians'));
+        $this->assertTrue($technicians->firstWhere('name', 'Jose Garcia')['is_lead']);
+        $this->assertFalse($technicians->firstWhere('name', 'Ana Mendoza')['is_lead']);
+
+        $response->assertJsonCount(1, 'project.tasks');
+        $response->assertJsonPath('project.tasks.0.title', 'Mark hanger locations');
+        $response->assertJsonPath('project.tasks.0.status_label', 'Completed');
+        $response->assertJsonPath('project.tasks.0.technician', 'Ana Mendoza');
+        $this->assertStringContainsString(' - ', $response->json('project.tasks.0.range_label'));
+    }
+
+    /**
+     * The panel lists the selected technician's own work on the project,
+     * not every task on it.
+     */
+    public function test_the_panel_only_returns_tasks_for_the_selected_technician(): void
+    {
+        $lead = $this->leadTechnician('Jose Garcia');
+        $ana = $this->technician('Ana Mendoza');
+        $project = $this->project('Shared Project', [$lead, $ana]);
+        $this->schedule($project, $this->day(5), $this->day(6));
+
+        foreach ([[$ana, 'Ana Task'], [$lead, 'Jose Task']] as [$technician, $title]) {
+            Task::create([
+                'project_id' => $project->project_id,
+                'technician_id' => $technician->technician_id,
+                'task_title' => $title,
+                'task_description' => 'Description',
+                'start_date' => $this->day(5),
+                'due_date' => $this->day(6),
+                'status' => 'pending',
+            ]);
+        }
+
+        // An unassigned task belongs to nobody, so neither should see it.
+        Task::create([
+            'project_id' => $project->project_id,
+            'technician_id' => null,
+            'task_title' => 'Floating Task',
+            'task_description' => 'Description',
+            'status' => 'unassigned',
+        ]);
+
+        $anaResponse = $this->getJson(route('super-admin.technicians.assignment', [
+            $ana->technician_id,
+            $project->project_id,
+        ]));
+
+        $anaResponse->assertOk();
+        $anaResponse->assertJsonCount(1, 'project.tasks');
+        $anaResponse->assertJsonPath('project.tasks.0.title', 'Ana Task');
+
+        $leadResponse = $this->getJson(route('super-admin.technicians.assignment', [
+            $lead->technician_id,
+            $project->project_id,
+        ]));
+
+        $leadResponse->assertOk();
+        $leadResponse->assertJsonCount(1, 'project.tasks');
+        $leadResponse->assertJsonPath('project.tasks.0.title', 'Jose Task');
+    }
+
+    /**
+     * The assignments table lists every project the technician is on,
+     * including ones with no schedule that never reach the calendar.
+     */
+    public function test_the_calendar_endpoint_returns_the_assignments_table_rows(): void
+    {
+        $lead = $this->leadTechnician('Jose Garcia');
+        $ana = $this->technician('Ana Mendoza');
+
+        $leadOf = $this->project('Led Project', [$lead, $ana]);
+        $this->schedule($leadOf, $this->day(5), $this->day(6));
+
+        $unscheduled = $this->project('Unscheduled Project', [$lead]);
+
+        $elsewhere = $this->project('Someone Elses Project', [$ana]);
+        $this->schedule($elsewhere, $this->day(20), $this->day(21));
+
+        Task::create([
+            'project_id' => $leadOf->project_id,
+            'technician_id' => $lead->technician_id,
+            'task_title' => 'Lead Task',
+            'task_description' => 'Description',
+            'start_date' => $this->day(5),
+            'due_date' => $this->day(6),
+            'status' => 'pending',
+        ]);
+
+        $response = $this->getJson(route('super-admin.technicians.calendar', $lead->technician_id));
+
+        $response->assertOk();
+
+        $projects = collect($response->json('projects'));
+
+        $this->assertSame(2, $projects->count());
+        $this->assertSame(2, $response->json('assignmentCount'));
+        $this->assertNull($projects->firstWhere('name', 'Someone Elses Project'));
+
+        $led = $projects->firstWhere('name', 'Led Project');
+        $this->assertTrue($led['is_lead_technician']);
+        $this->assertTrue($led['has_schedule']);
+        $this->assertSame(1, $led['technician_task_count']);
+
+        // Listed even though it has no schedule, so it has no calendar event:
+        // the table shows two projects but the calendar only one.
+        $none = $projects->firstWhere('name', 'Unscheduled Project');
+        $this->assertFalse($none['has_schedule']);
+        $this->assertSame(0, $none['technician_task_count']);
+        $response->assertJsonCount(1, 'events');
+    }
+
+    /**
+     * A project scheduled in two blocks must report both, so the panel can
+     * show the complete schedule rather than a single span.
+     */
+    public function test_the_payload_reports_every_schedule_range(): void
+    {
+        $lead = $this->leadTechnician('Jose Garcia');
+        $ana = $this->technician('Ana Mendoza');
+        $project = $this->project('Split Project', [$lead, $ana]);
+
+        $this->schedule($project, $this->day(5), $this->day(6));
+        $this->schedule($project, $this->day(20), $this->day(22));
+
+        $response = $this->getJson(route('super-admin.technicians.assignment', [
+            $ana->technician_id,
+            $project->project_id,
+        ]));
+
+        $response->assertOk();
+        $response->assertJsonCount(2, 'project.ranges');
+        $response->assertJsonPath('project.ranges.0.start', $this->day(5));
+        $response->assertJsonPath('project.ranges.1.end', $this->day(22));
     }
 
     // ------------------------------------------------------------------

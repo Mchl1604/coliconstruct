@@ -8,6 +8,24 @@
         $scheduleStart = $project->schedules->min('start_datetime');
         $scheduleEnd = $project->schedules->max('end_datetime');
         $hasSchedule = $scheduleStart && $scheduleEnd;
+        // Each range on its own: a project can be scheduled Jul 10-15 and
+        // Jul 20-25, and a task must sit inside ONE of those. Using only the
+        // overall min/max would wrongly allow Jul 16-19.
+        $scheduleRanges = $project->schedules
+            ->map(
+                fn($schedule) => [
+                    'start' => \Carbon\Carbon::parse($schedule->start_datetime)->format('Y-m-d'),
+                    'end' => \Carbon\Carbon::parse($schedule->end_datetime ?? $schedule->start_datetime)->format('Y-m-d'),
+                ],
+            )
+            ->values();
+        $scheduleRangesLabel = $scheduleRanges
+            ->map(
+                fn($range) => \Carbon\Carbon::parse($range['start'])->format('M j, Y') .
+                    ' – ' .
+                    \Carbon\Carbon::parse($range['end'])->format('M j, Y'),
+            )
+            ->join('; ');
     @endphp
     <div class="container-fluid py-4">
 
@@ -1236,7 +1254,7 @@
                         </div>
 
                         <!-- Dates -->
-                        <div class="row">
+                        <div class="row" data-task-date-row data-schedule-ranges='@json($scheduleRanges)'>
 
                             <div class="col-md-6 mb-3">
 
@@ -1244,10 +1262,8 @@
                                     Start Date
                                 </label>
 
-                                <input type="date" id="taskStartDate" name="start_date" class="form-control"
-                                    min="{{ $scheduleStart ? \Carbon\Carbon::parse($scheduleStart)->format('Y-m-d') : '' }}"
-                                    max="{{ $scheduleEnd ? \Carbon\Carbon::parse($scheduleEnd)->format('Y-m-d') : '' }}"
-                                    required>
+                                <input type="text" id="taskStartDate" name="start_date" class="form-control"
+                                    data-task-start placeholder="Select start date" required>
 
                             </div>
 
@@ -1257,11 +1273,15 @@
                                     Due Date
                                 </label>
 
-                                <input type="date" id="taskDueDate" name="due_date" class="form-control"
-                                    min="{{ $scheduleStart ? \Carbon\Carbon::parse($scheduleStart)->format('Y-m-d') : '' }}"
-                                    max="{{ $scheduleEnd ? \Carbon\Carbon::parse($scheduleEnd)->format('Y-m-d') : '' }}"
-                                    required>
+                                <input type="text" id="taskDueDate" name="due_date" class="form-control"
+                                    data-task-due placeholder="Select due date" required>
 
+                            </div>
+
+                            <div class="col-12 mb-3">
+                                <div class="form-text">
+                                    Allowed: {{ $scheduleRangesLabel ?: 'No schedule set' }}@if ($scheduleRanges->count() > 1). A task cannot span the gap between two ranges.@endif
+                                </div>
                             </div>
 
                         </div>
@@ -1408,7 +1428,7 @@
 
                         </div>
 
-                        <div class="row">
+                        <div class="row" data-task-date-row data-schedule-ranges='@json($scheduleRanges)'>
 
                             {{-- Start Date --}}
                             <div class="col-md-6">
@@ -1419,10 +1439,9 @@
 
                                 </label>
 
-                                <input type="date" class="form-control" name="start_date"
-                                    value="{{ $task->start_date }}"
-                                    min="{{ $scheduleStart ? \Carbon\Carbon::parse($scheduleStart)->format('Y-m-d') : '' }}"
-                                    max="{{ $scheduleEnd ? \Carbon\Carbon::parse($scheduleEnd)->format('Y-m-d') : '' }}"
+                                <input type="text" class="form-control" name="start_date"
+                                    value="{{ $task->start_date }}" data-task-start
+                                    placeholder="Select start date"
                                     {{ $task->status == 'completed' ? 'readonly' : '' }}>
 
                             </div>
@@ -1436,12 +1455,17 @@
 
                                 </label>
 
-                                <input type="date" class="form-control" name="due_date"
-                                    value="{{ $task->due_date }}"
-                                    min="{{ $scheduleStart ? \Carbon\Carbon::parse($scheduleStart)->format('Y-m-d') : '' }}"
-                                    max="{{ $scheduleEnd ? \Carbon\Carbon::parse($scheduleEnd)->format('Y-m-d') : '' }}"
+                                <input type="text" class="form-control" name="due_date"
+                                    value="{{ $task->due_date }}" data-task-due
+                                    placeholder="Select due date"
                                     {{ $task->status == 'completed' ? 'readonly' : '' }}>
 
+                            </div>
+
+                            <div class="col-12">
+                                <div class="form-text">
+                                    Allowed: {{ $scheduleRangesLabel ?: 'No schedule set' }}@if ($scheduleRanges->count() > 1). A task cannot span the gap between two ranges.@endif
+                                </div>
                             </div>
 
                         </div>
@@ -1723,6 +1747,10 @@
 
 
     @push('scripts')
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+        <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+        {{-- Same range-aware task date pickers the Tasks page uses. --}}
+        <script src="/js/super-admin/taskDatePickers.js"></script>
         <script src="/js/super-admin/projectDetails.js"></script>
         <script>
             window.assignedTeamData = @json($assignedTeamLookup);
