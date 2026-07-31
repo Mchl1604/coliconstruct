@@ -20,9 +20,8 @@
             <div class="schedule-legend mb-3">
                 <span class="schedule-legend-item"><i class="schedule-dot" style="background:#f0ad4e"></i> Pending</span>
                 <span class="schedule-legend-item"><i class="schedule-dot" style="background:#0d6efd"></i> Ongoing</span>
+                <span class="schedule-legend-item"><i class="schedule-dot" style="background:#fd7e14"></i> Overdue</span>
                 <span class="schedule-legend-item"><i class="schedule-dot" style="background:#198754"></i> Completed</span>
-                <span class="schedule-legend-item"><i class="schedule-dot" style="background:#dc3545"></i> Cancelled</span>
-                <span class="schedule-legend-item"><i class="schedule-dot" style="background:#6c757d"></i> On Hold</span>
             </div>
 
             <div id="schedulesCalendar"></div>
@@ -66,21 +65,7 @@
                                     @endforelse
                                 </td>
                                 <td>
-                                    @if ($project->on_hold)
-                                        <span class="badge bg-secondary">On Hold</span>
-                                    @elseif ($project->status === 'not_yet_scheduled')
-                                        <span class="badge bg-info text-dark">Not Yet Scheduled</span>
-                                    @elseif ($project->status === 'pending')
-                                        <span class="badge bg-warning">Pending</span>
-                                    @elseif ($project->status === 'ongoing')
-                                        <span class="badge bg-primary">Ongoing</span>
-                                    @elseif ($project->status === 'completed')
-                                        <span class="badge bg-success">Completed</span>
-                                    @elseif ($project->status === 'cancelled')
-                                        <span class="badge bg-danger">Cancelled</span>
-                                    @elseif ($project->status === 'archived')
-                                        <span class="badge bg-dark">Archived</span>
-                                    @endif
+                                    <x-project-status-badge :project="$project" />
                                 </td>
                                 <td class="text-center">
                                     @if (in_array($project->status, ['completed', 'cancelled', 'archived'], true))

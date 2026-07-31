@@ -373,21 +373,12 @@ class ScheduleController extends Controller
         ];
     }
 
+    /**
+     * Delegates to the model so every screen agrees, including on Overdue.
+     */
     private function statusLabel(Project $project): string
     {
-        if ($project->on_hold) {
-            return 'On Hold';
-        }
-
-        return match ($project->status) {
-            'not_yet_scheduled' => 'Not Yet Scheduled',
-            'pending' => 'Pending',
-            'ongoing' => 'Ongoing',
-            'completed' => 'Completed',
-            'cancelled' => 'Cancelled',
-            'archived' => 'Archived',
-            default => ucfirst((string) $project->status),
-        };
+        return $project->statusLabel();
     }
 
     private function assertProjectSchedulable(Project $project): void
@@ -684,19 +675,15 @@ class ScheduleController extends Controller
      */
     private function buildCalendarEvents(Collection $projects): array
     {
-        $statusColors = [
-            'pending' => '#f0ad4e',
-            'ongoing' => '#0d6efd',
-            'completed' => '#198754',
-            'cancelled' => '#dc3545',
-        ];
-
         $events = [];
 
         foreach ($projects as $project) {
-            $color = $project->on_hold
-                ? '#6c757d'
-                : ($statusColors[$project->status] ?? '#0d6efd');
+            // Cancelled and on-hold work is kept off every calendar.
+            if (! $project->showsOnCalendar()) {
+                continue;
+            }
+
+            $color = $project->calendarColor();
 
             foreach ($project->schedules as $schedule) {
                 $start = CarbonImmutable::parse($schedule->start_datetime);
@@ -715,6 +702,7 @@ class ScheduleController extends Controller
                         'referenceNo' => $project->reference_no,
                         'projectName' => $project->name,
                         'status' => $project->status,
+                        'statusLabel' => $this->statusLabel($project),
                         'onHold' => $project->on_hold,
                         // Completed / cancelled / archived projects are
                         // historical records: their schedule can't be edited.

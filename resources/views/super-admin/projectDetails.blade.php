@@ -38,6 +38,108 @@
             </a>
         </div>
 
+        {{-- Overdue: the last scheduled day has passed but the project is
+             still open. Offer the only two ways out - extend the schedule, or
+             close it off properly. --}}
+        @if ($project->isOverdue())
+            <div class="alert alert-warning border-0 shadow-sm mb-4 overdue-banner" role="alert">
+                <div class="d-flex flex-wrap align-items-start gap-3">
+                    <div class="overdue-banner-icon">
+                        <i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i>
+                    </div>
+
+                    <div class="flex-grow-1">
+                        <h5 class="alert-heading mb-1">This project is overdue</h5>
+                        <p class="mb-2">
+                            Its last scheduled day was
+                            <strong>{{ $project->scheduleEndsOn()->format('F j, Y') }}</strong>
+                            ({{ $project->scheduleEndsOn()->diffForHumans() }}), but the project is still
+                            <strong>{{ $project->status }}</strong>.
+                            Add a new date range if the work is continuing, or mark the project complete.
+                        </p>
+
+                        <div class="d-flex flex-wrap gap-2">
+                            <a href="{{ route('super-admin.schedules.index', ['openSchedule' => $project->project_id]) }}"
+                                class="btn btn-sm btn-primary">
+                                <i class="bi bi-calendar-plus me-1" aria-hidden="true"></i>
+                                Add New Schedule
+                            </a>
+
+                            <button type="button" class="btn btn-sm btn-success" data-bs-toggle="modal"
+                                data-bs-target="#completeOverdueProjectModal">
+                                <i class="bi bi-check-circle me-1" aria-hidden="true"></i>
+                                Mark as Complete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {{-- Same fields as the Projects page completion modal, so both
+                 routes into completion collect identical information. --}}
+            <div class="modal fade" id="completeOverdueProjectModal" tabindex="-1"
+                aria-labelledby="completeOverdueProjectModalLabel" aria-hidden="true">
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <form method="POST"
+                            action="{{ route('super-admin.projects.complete', $project->project_id) }}"
+                            enctype="multipart/form-data">
+                            @csrf
+
+                            <div class="modal-header bg-success text-white">
+                                <h5 class="modal-title" id="completeOverdueProjectModalLabel">
+                                    <i class="bi bi-check-circle me-2"></i>
+                                    Complete Project &mdash; {{ $project->reference_no }}
+                                </h5>
+                                <button type="button" class="btn-close btn-close-white"
+                                    data-bs-dismiss="modal"></button>
+                            </div>
+
+                            <div class="modal-body">
+                                <p class="mb-3">
+                                    Mark <strong>{{ $project->reference_no }}</strong> as completed? The schedule,
+                                    technicians and task history stay on record, but the project becomes view only.
+                                </p>
+
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold">Completion Date</label>
+                                    <input type="date" class="form-control" name="completion_date"
+                                        value="{{ now()->format('Y-m-d') }}" required>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold">Completion Summary</label>
+                                    <textarea class="form-control" name="completion_summary" rows="3"
+                                        placeholder="Summarize the work that was completed..." required></textarea>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold">Completion Remarks</label>
+                                    <textarea class="form-control" name="completion_remarks" rows="2"
+                                        placeholder="Any additional remarks (optional)"></textarea>
+                                </div>
+
+                                <div class="mb-1">
+                                    <label class="form-label fw-semibold">Upload Completion Photos</label>
+                                    <input type="file" class="form-control" name="completion_photos[]"
+                                        accept=".jpg,.jpeg,.png" multiple>
+                                    <div class="form-text">JPG, JPEG, or PNG. You can select multiple photos.</div>
+                                </div>
+                            </div>
+
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                <button type="submit" class="btn btn-success">
+                                    <i class="bi bi-check-lg me-1"></i>
+                                    Confirm Completion
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        @endif
+
         <!-- Project Information -->
         <div class="card shadow-sm mb-4">
             <div class="card-body">

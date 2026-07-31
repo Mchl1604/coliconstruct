@@ -284,6 +284,38 @@ class TechnicianManagementTest extends TestCase
     }
 
     /**
+     * Cancelled work is not an assignment the technician still owes anything
+     * on, so it is out of both the table and the count beside the calendar.
+     */
+    public function test_cancelled_projects_are_excluded_from_the_assignments_table_and_count(): void
+    {
+        $ana = $this->technician('Ana Mendoza');
+        $lead = $this->leadTechnician('Jose Garcia');
+
+        $ongoing = $this->project('Ongoing Project', [$lead, $ana]);
+        $this->schedule($ongoing, $this->day(5), $this->day(6));
+
+        $cancelled = $this->project('Cancelled Project', [$lead, $ana], 'cancelled');
+        $this->schedule($cancelled, $this->day(10), $this->day(11));
+
+        $completed = $this->project('Completed Project', [$lead, $ana], 'completed');
+        $this->schedule($completed, $this->day(-10), $this->day(-9));
+
+        $response = $this->getJson(route('super-admin.technicians.calendar', $ana->technician_id));
+
+        $response->assertOk();
+
+        $names = collect($response->json('projects'))->pluck('name')->all();
+
+        $this->assertNotContains('Cancelled Project', $names);
+        $this->assertContains('Ongoing Project', $names);
+        // Completed work is history worth keeping on the list.
+        $this->assertContains('Completed Project', $names);
+
+        $this->assertSame(2, $response->json('assignmentCount'));
+    }
+
+    /**
      * The panel lists the selected technician's own work on the project,
      * not every task on it.
      */

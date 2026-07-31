@@ -152,11 +152,9 @@
                                 <span class="schedule-legend-item"><i class="schedule-dot"
                                         style="background:#0d6efd"></i> Ongoing</span>
                                 <span class="schedule-legend-item"><i class="schedule-dot"
+                                        style="background:#fd7e14"></i> Overdue</span>
+                                <span class="schedule-legend-item"><i class="schedule-dot"
                                         style="background:#198754"></i> Completed</span>
-                                <span class="schedule-legend-item"><i class="schedule-dot"
-                                        style="background:#dc3545"></i> Cancelled</span>
-                                <span class="schedule-legend-item"><i class="schedule-dot"
-                                        style="background:#6c757d"></i> On Hold</span>
                             </div>
 
                             <div id="technicianCalendar" class="d-none"></div>
@@ -323,8 +321,7 @@
                                     <th>Project</th>
                                     <th>Client</th>
                                     <th>Schedule</th>
-                                    <th>Role</th>
-                                    <th class="text-center">My Tasks</th>
+                                    <th class="text-center">Tasks</th>
                                     <th>Status</th>
                                 </tr>
                             </thead>

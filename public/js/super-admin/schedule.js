@@ -512,9 +512,15 @@ document.addEventListener("DOMContentLoaded", function () {
         return meta ? meta.getAttribute("content") : "";
     }
 
-    function statusBadgeClass(status, onHold) {
-        if (onHold) {
+    function statusBadgeClass(status, statusLabel) {
+        // The server decides the label, including "On Hold" and "Overdue",
+        // both of which win over the underlying status.
+        if (statusLabel === "On Hold") {
             return "bg-secondary";
+        }
+
+        if (statusLabel === "Overdue") {
+            return "badge-overdue";
         }
 
         return (
@@ -896,7 +902,7 @@ document.addEventListener("DOMContentLoaded", function () {
                         "</div>" +
                         "</div>" +
                         '<span class="badge ' +
-                        statusBadgeClass(project.status, project.on_hold) +
+                        statusBadgeClass(project.status, project.status_label) +
                         '">' +
                         escapeHtml(project.status_label) +
                         "</span>" +
@@ -1202,12 +1208,13 @@ document.addEventListener("DOMContentLoaded", function () {
             eventDidMount: function (info) {
                 const projectName = info.event.extendedProps.projectName || "";
                 const statusRaw = info.event.extendedProps.status || "";
-                const status = statusRaw
-                    ? statusRaw.charAt(0).toUpperCase() + statusRaw.slice(1)
-                    : "";
-                const holdSuffix = info.event.extendedProps.onHold
-                    ? " (On Hold)"
-                    : "";
+                // Prefer the server's label so overdue reads as "Overdue"
+                // rather than the raw "ongoing".
+                const status =
+                    info.event.extendedProps.statusLabel ||
+                    (statusRaw
+                        ? statusRaw.charAt(0).toUpperCase() + statusRaw.slice(1)
+                        : "");
                 const readOnly = Boolean(info.event.extendedProps.readOnly);
 
                 const tooltipParts = [info.event.title];
@@ -1217,7 +1224,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 }
 
                 if (status) {
-                    tooltipParts.push(status + holdSuffix);
+                    tooltipParts.push(status);
                 }
 
                 if (readOnly) {

@@ -40,6 +40,14 @@
                     <button type="button" class="nav-link" data-status-filter="ongoing">Ongoing</button>
                 </li>
                 <li class="nav-item">
+                    <button type="button" class="nav-link" data-status-filter="overdue">
+                        Overdue
+                        @if ($overdueCount > 0)
+                            <span class="badge badge-overdue ms-1">{{ $overdueCount }}</span>
+                        @endif
+                    </button>
+                </li>
+                <li class="nav-item">
 
                     <button type="button" class="nav-link" data-status-filter="completed">Completed</button>
                 </li>
@@ -69,7 +77,8 @@
 
                     <tbody>
                         @foreach ($projects as $project)
-                            <tr data-status="{{ $project->status }}">
+                            <tr data-status="{{ $project->status }}"
+                                data-overdue="{{ $project->isOverdue() ? '1' : '0' }}">
                                 <td>{{ $project->project_id }}</td>
                                 <td>{{ $project->reference_no }}</td>
                                 <td>{{ $project->clients->first()->fullname ?? 'N/A' }}</td>
@@ -79,19 +88,7 @@
                                 </td>
                                 <td>₱ {{ number_format($project->quotation, 2) }}</td>
                                 <td>
-                                    @if ($project->on_hold)
-                                        <span class="badge bg-secondary">On Hold</span>
-                                    @elseif ($project->status === 'not_yet_scheduled')
-                                        <span class="badge bg-info text-dark">Not Yet Scheduled</span>
-                                    @elseif ($project->status === 'pending')
-                                        <span class="badge bg-warning">Pending</span>
-                                    @elseif ($project->status === 'ongoing')
-                                        <span class="badge bg-primary">Ongoing</span>
-                                    @elseif ($project->status === 'completed')
-                                        <span class="badge bg-success">Completed</span>
-                                    @elseif ($project->status === 'cancelled')
-                                        <span class="badge bg-danger">Cancelled</span>
-                                    @endif
+                                    <x-project-status-badge :project="$project" />
                                 </td>
                                 <td class="text-center">
                                     @php
@@ -382,9 +379,20 @@
 
                             const rowNode = table.row(dataIndex).node();
                             const rowStatus = rowNode && rowNode.getAttribute('data-status');
+                            const isOverdue = rowNode && rowNode.getAttribute('data-overdue') === '1';
+
+                            if (status === 'overdue') {
+                                return isOverdue;
+                            }
 
                             if (status === 'pending') {
-                                return rowStatus === 'pending' || rowStatus === 'not_yet_scheduled';
+                                return !isOverdue && (rowStatus === 'pending' || rowStatus === 'not_yet_scheduled');
+                            }
+
+                            // Ongoing means "on track": overdue work has its
+                            // own tab so the two don't double-count.
+                            if (status === 'ongoing') {
+                                return rowStatus === 'ongoing' && !isOverdue;
                             }
 
                             return rowStatus === status;

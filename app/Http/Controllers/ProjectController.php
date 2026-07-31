@@ -27,16 +27,20 @@ class ProjectController extends Controller
 {
     public function index()
     {
+        $this->updateStatus(); // Call the function to update project statuses
+
+        // `schedules` is eager loaded because isOverdue() reads every range;
+        // without it the status column would fire a query per row.
         $projects = Project::query()
-            ->with(['clients', 'documents', 'schedule', 'projectTypes', 'projectTechnicians.technician'])
+            ->with(['clients', 'documents', 'schedule', 'schedules', 'projectTypes', 'projectTechnicians.technician'])
             ->where('is_archived', false)
             ->where('status', '!=', 'archived')
             ->orderBy('project_id', 'desc')
             ->get();
 
-        $this->updateStatus($projects); // Call the function to update project statuses
+        $overdueCount = $projects->filter->isOverdue()->count();
 
-        return view('super-admin.projects', compact('projects'));
+        return view('super-admin.projects', compact('projects', 'overdueCount'));
     }
 
     public function archivedIndex()
@@ -962,7 +966,7 @@ class ProjectController extends Controller
         $project->update(['status' => $status]);
     }
 
-    public function updateStatus($projects)
+    public function updateStatus($projects = null)
     {
         $projects = Project::all();
 

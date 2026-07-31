@@ -66,8 +66,14 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function statusBadgeClass(status, statusLabel) {
+        // The server decides the label, including "Overdue", which wins over
+        // the underlying status.
         if (statusLabel === "On Hold") {
             return "bg-secondary";
+        }
+
+        if (statusLabel === "Overdue") {
+            return "badge-overdue";
         }
 
         return (
@@ -571,6 +577,28 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     /**
+     * A project can be booked in several blocks, so list every range on its
+     * own line rather than collapsing them to one span.
+     */
+    function scheduleCell(project) {
+        const ranges = project.ranges || [];
+
+        if (!ranges.length) {
+            return '<span class="text-muted">No schedule set</span>';
+        }
+
+        return ranges
+            .map(function (range) {
+                return (
+                    "<div>" +
+                    escapeHtml(range.short_label || range.start + " - " + range.end) +
+                    "</div>"
+                );
+            })
+            .join("");
+    }
+
+    /**
      * Table of every project the technician is on, including ones with no
      * schedule yet (those never appear on the calendar). Clicking a row
      * opens the same details panel a calendar event would.
@@ -604,12 +632,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     escapeHtml(project.client || "—") +
                     "</td>" +
                     '<td class="small">' +
-                    escapeHtml(project.range_label) +
-                    "</td>" +
-                    "<td>" +
-                    (project.is_lead_technician
-                        ? '<span class="badge bg-primary">Lead</span>'
-                        : '<span class="badge bg-secondary">Supporting</span>') +
+                    scheduleCell(project) +
                     "</td>" +
                     '<td class="text-center">' +
                     project.technician_task_count +

@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -29,6 +31,20 @@ class Project extends Model
      * @var array<int, string>
      */
     public const ACTIVE_PROJECT_STATUSES = ['pending', 'ongoing'];
+
+    /**
+     * Statuses a project can be in and still go overdue. A finished or
+     * abandoned project can't be late, and a paused one is late on purpose.
+     *
+     * @var array<int, string>
+     */
+    public const OVERDUE_CANDIDATE_STATUSES = ['pending', 'ongoing'];
+
+    /**
+     * Orange, reserved for overdue. Bootstrap has no orange background
+     * utility, so `badge-overdue` is defined in superAdminNav.css.
+     */
+    public const OVERDUE_COLOR = '#fd7e14';
 
     protected $fillable = [
         'reference_no',
@@ -133,5 +149,133 @@ class Project extends Model
     public function isArchived(): bool
     {
         return $this->status === 'archived' || (bool) $this->is_archived;
+    }
+
+    /**
+     * The last day the project is scheduled for, across every date range.
+     */
+    public function scheduleEndsOn(): ?CarbonImmutable
+    {
+        $end = $this->schedules->max('end_datetime');
+
+        return $end ? CarbonImmutable::parse($end)->startOfDay() : null;
+    }
+
+    /**
+     * Overdue means the project should have finished by now: its last
+     * scheduled day has passed but it is still open.
+     *
+     * Derived, never stored - a project stops being overdue the moment its
+     * schedule is extended or it is completed, with nothing to migrate.
+     */
+    public function isOverdue(): bool
+    {
+        if ($this->isReadOnly() || $this->isArchived() || $this->on_hold) {
+            return false;
+        }
+
+        if (! in_array($this->status, self::OVERDUE_CANDIDATE_STATUSES, true)) {
+            return false;
+        }
+
+        $endsOn = $this->scheduleEndsOn();
+
+        return $endsOn !== null && $endsOn->lt(CarbonImmutable::today());
+    }
+
+    /**
+     * Overdue projects, resolved in SQL for lists and counts.
+     *
+     * "Has schedules, but none of them reach today" is the same thing as
+     * "the latest end date is in the past", without a subquery.
+     */
+    public function scopeOverdue(Builder $query): Builder
+    {
+        return $query
+            ->whereIn('status', self::OVERDUE_CANDIDATE_STATUSES)
+            ->where('is_archived', false)
+            ->where(function (Builder $holdQuery): void {
+                $holdQuery->where('on_hold', false)->orWhereNull('on_hold');
+            })
+            ->whereHas('schedules')
+            ->whereDoesntHave('schedules', function (Builder $scheduleQuery): void {
+                $scheduleQuery->whereDate('end_datetime', '>=', CarbonImmutable::today()->toDateString());
+            });
+    }
+
+    /**
+     * One place decides how a project's state reads, so the projects table,
+     * the tasks table, the calendars and the JSON payloads never disagree.
+     */
+    public function statusLabel(): string
+    {
+        if ($this->on_hold) {
+            return 'On Hold';
+        }
+
+        if ($this->isOverdue()) {
+            return 'Overdue';
+        }
+
+        return match ($this->status) {
+            'not_yet_scheduled' => 'Not Yet Scheduled',
+            'pending' => 'Pending',
+            'ongoing' => 'Ongoing',
+            'completed' => 'Completed',
+            'cancelled' => 'Cancelled',
+            'archived' => 'Archived',
+            default => ucfirst((string) $this->status),
+        };
+    }
+
+    /**
+     * Bootstrap background class matching statusLabel().
+     */
+    public function statusBadgeClass(): string
+    {
+        if ($this->on_hold) {
+            return 'bg-secondary';
+        }
+
+        if ($this->isOverdue()) {
+            return 'badge-overdue';
+        }
+
+        return match ($this->status) {
+            'not_yet_scheduled' => 'bg-info text-dark',
+            'pending' => 'bg-warning',
+            'ongoing' => 'bg-primary',
+            'completed' => 'bg-success',
+            'cancelled' => 'bg-danger',
+            'archived' => 'bg-dark',
+            default => 'bg-secondary',
+        };
+    }
+
+    /**
+     * Colour for this project's calendar events.
+     */
+    public function calendarColor(): string
+    {
+        if ($this->isOverdue()) {
+            return self::OVERDUE_COLOR;
+        }
+
+        return match ($this->status) {
+            'pending' => '#f0ad4e',
+            'ongoing' => '#0d6efd',
+            'completed' => '#198754',
+            default => '#0d6efd',
+        };
+    }
+
+    /**
+     * Cancelled and on-hold work is kept out of every calendar.
+     */
+    public function showsOnCalendar(): bool
+    {
+        return ! $this->isArchived()
+            && ! $this->on_hold
+            && $this->status !== 'cancelled';
     }
 }

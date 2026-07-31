@@ -105,16 +105,11 @@ class TechnicianController extends Controller
      */
     public function calendar(Technician $technician)
     {
-        $schedules = $this->technicianSchedules($technician);
+        // Cancelled and on-hold work is kept off every calendar.
+        $schedules = $this->technicianSchedules($technician)
+            ->filter(fn (Schedule $schedule): bool => $schedule->project?->showsOnCalendar() === true);
 
-        $statusColors = [
-            'pending' => '#f0ad4e',
-            'ongoing' => '#0d6efd',
-            'completed' => '#198754',
-            'cancelled' => '#dc3545',
-        ];
-
-        $events = $schedules->map(function (Schedule $schedule) use ($statusColors): array {
+        $events = $schedules->map(function (Schedule $schedule): array {
             $project = $schedule->project;
             $start = CarbonImmutable::parse($schedule->start_datetime);
             $end = CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime);
@@ -125,9 +120,7 @@ class TechnicianController extends Controller
                 'start' => $start->toDateString(),
                 // FullCalendar treats all-day end dates as exclusive.
                 'end' => $end->addDay()->toDateString(),
-                'color' => $project->on_hold
-                    ? '#6c757d'
-                    : ($statusColors[$project->status] ?? '#0d6efd'),
+                'color' => $project->calendarColor(),
                 'extendedProps' => [
                     'projectId' => $project->project_id,
                     'referenceNo' => $project->reference_no,
@@ -151,8 +144,11 @@ class TechnicianController extends Controller
     }
 
     /**
-     * Every non-archived project this technician is assigned to, including
-     * ones with no schedule yet, for the assignments table.
+     * Every project this technician is assigned to, including ones with no
+     * schedule yet, for the assignments table and its count.
+     *
+     * Archived and cancelled work is left out: it is not an assignment the
+     * technician still owes anything on.
      *
      * @return Collection<int, array<string, mixed>>
      */
@@ -161,6 +157,7 @@ class TechnicianController extends Controller
         $projects = Project::query()
             ->with(['clients', 'schedules', 'projectTechnicians.technician.account'])
             ->where('is_archived', false)
+            ->where('status', '!=', 'cancelled')
             ->whereHas('projectTechnicians', function ($query) use ($technician): void {
                 $query->where('technician_id', $technician->technician_id);
             })
@@ -669,7 +666,9 @@ class TechnicianController extends Controller
             ->whereHas('scheduleTechnicians.projectTechnician', function ($query) use ($technician): void {
                 $query->where('technician_id', $technician->technician_id);
             })
-            ->with(['project.clients'])
+            // project.schedules is needed because isOverdue() inspects every
+            // range; without it each event would fire its own query.
+            ->with(['project.clients', 'project.schedules'])
             ->orderBy('start_datetime')
             ->get();
     }
@@ -707,9 +706,14 @@ class TechnicianController extends Controller
             'ranges' => $schedules->map(fn (Schedule $schedule): array => [
                 'start' => CarbonImmutable::parse($schedule->start_datetime)->toDateString(),
                 'end' => CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime)->toDateString(),
+                // `label` reads long for the details panel, `short_label`
+                // fits a table cell where every range is listed.
                 'label' => CarbonImmutable::parse($schedule->start_datetime)->format('F j, Y')
                     . ' – '
                     . CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime)->format('F j, Y'),
+                'short_label' => CarbonImmutable::parse($schedule->start_datetime)->format('M j, Y')
+                    . ' - '
+                    . CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime)->format('M j, Y'),
             ])->values()->all(),
             'tasks' => $project->relationLoaded('tasks')
                 ? $project->tasks->map(fn (Task $task): array => [
@@ -784,20 +788,11 @@ class TechnicianController extends Controller
         return $client?->fullname ?: $client?->company_name;
     }
 
+    /**
+     * Delegates to the model so every screen agrees, including on Overdue.
+     */
     private function statusLabel(Project $project): string
     {
-        if ($project->on_hold) {
-            return 'On Hold';
-        }
-
-        return match ($project->status) {
-            'not_yet_scheduled' => 'Not Yet Scheduled',
-            'pending' => 'Pending',
-            'ongoing' => 'Ongoing',
-            'completed' => 'Completed',
-            'cancelled' => 'Cancelled',
-            'archived' => 'Archived',
-            default => ucfirst((string) $project->status),
-        };
+        return $project->statusLabel();
     }
 }

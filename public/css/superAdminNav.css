@@ -274,3 +274,21 @@
                 padding: 18px 12px;
             }
         }
+
+/* Overdue projects are orange everywhere: badges, legends, calendar events.
+   Bootstrap has no orange background utility, hence this class. */
+.badge-overdue {
+    background-color: #fd7e14;
+    color: #fff;
+}
+
+/* Overdue warning banner on the project details page. */
+.overdue-banner {
+    border-left: 4px solid #fd7e14 !important;
+}
+
+.overdue-banner-icon {
+    font-size: 1.6rem;
+    line-height: 1;
+    color: #fd7e14;
+}
