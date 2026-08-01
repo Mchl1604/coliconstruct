@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Http\Controllers\ReportController;
 use App\Models\Client;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
@@ -25,6 +26,14 @@ use Tests\TestCase;
 class ReportsPageTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // Every administrative route is behind `auth` and a role check.
+        $this->actingAsSuperAdmin();
+    }
 
     private function technician(string $name, string $role = 'technician'): Technician
     {
@@ -328,8 +337,9 @@ class ReportsPageTest extends TestCase
     // ------------------------------------------------------------------
 
     /**
-     * The Reports page posts to the existing Project Details endpoint, adding
-     * only the technician it collected alongside the project.
+     * The endpoint still honours an explicit technician, which is what a
+     * logged-in user will supply once authentication exists. Neither form
+     * sends one today.
      */
     public function test_creating_a_report_uses_the_existing_endpoint(): void
     {
@@ -353,7 +363,7 @@ class ReportsPageTest extends TestCase
     }
 
     /**
-     * Without an explicit technician - the Project Details form - the report
+     * What both forms do today: with no technician on the request, the report
      * is attributed to the project's lead rather than a hard-coded id.
      */
     public function test_omitting_the_technician_falls_back_to_the_project_lead(): void
@@ -396,7 +406,33 @@ class ReportsPageTest extends TestCase
     // System reports
     // ------------------------------------------------------------------
 
-    public function test_the_dashboard_returns_every_summary_group_and_chart(): void
+    /**
+     * The tab draws graphs only - the figures live in the PDF export now, so
+     * this endpoint carries nothing but chart data.
+     */
+    public function test_the_dashboard_returns_every_chart(): void
+    {
+        $ongoing = $this->project('Ongoing Project', 'ongoing', [], 500000);
+        $this->schedule($ongoing, $this->day(-2), $this->day(4));
+
+        $response = $this->getJson(route('super-admin.reports.system'));
+
+        $response->assertOk();
+
+        foreach (SystemReportService::CHART_KEYS as $chart) {
+            $this->assertIsArray($response->json('charts.'.$chart), "Missing {$chart} chart.");
+            $this->assertIsArray($response->json('charts.'.$chart.'.labels'));
+        }
+
+        // The summary cards are gone from the page.
+        $this->assertNull($response->json('summary'));
+    }
+
+    /**
+     * The summary figures no longer appear on screen, but the exported PDF
+     * still opens with them, so they have to stay correct.
+     */
+    public function test_the_export_summary_still_reports_every_group(): void
     {
         $lead = $this->technician('Jose Garcia', 'lead_technician');
         $ana = $this->technician('Ana Mendoza');
@@ -419,56 +455,164 @@ class ReportsPageTest extends TestCase
             'status' => 'completed',
         ]);
 
-        $response = $this->getJson(route('super-admin.reports.system', ['period' => 'monthly']));
-
-        $response->assertOk();
-        $response->assertJsonPath('period.key', 'monthly');
+        $service = app(SystemReportService::class);
+        $summary = $service->summary($service->resolvePeriod('monthly'));
 
         foreach (['projects', 'quotations', 'technicians', 'schedules', 'tasks'] as $group) {
-            $this->assertIsArray($response->json('summary.'.$group), "Missing {$group} summary.");
+            $this->assertIsArray($summary[$group] ?? null, "Missing {$group} summary.");
         }
 
         // The overdue project is counted, and reuses Project::overdue().
-        $response->assertJsonPath('summary.projects.overdue', 1);
-        $response->assertJsonPath('summary.quotations.total_approved', 2);
-        $response->assertJsonPath('summary.quotations.total_value', 750000);
-        $response->assertJsonPath('summary.technicians.total', 2);
-        $response->assertJsonPath('summary.technicians.assigned', 2);
-        $response->assertJsonPath('summary.technicians.utilization', 100);
-        $response->assertJsonPath('summary.tasks.completed', 1);
-
-        // Every chart the dashboard draws must be present.
-        foreach ([
-            'projectsOverTime', 'projectsByStatus', 'projectCompletionTrend',
-            'quotationValueOverTime', 'quotationCountOverTime', 'topClientsByValue',
-            'projectsPerTechnician', 'technicianUtilization', 'specialtyDistribution',
-            'schedulesOverTime', 'scheduleHealth',
-            'tasksByStatus', 'taskCompletionTrend', 'tasksByProject',
-        ] as $chart) {
-            $this->assertIsArray($response->json('charts.'.$chart), "Missing {$chart} chart.");
-            $this->assertIsArray($response->json('charts.'.$chart.'.labels'));
-        }
+        $this->assertSame(1, $summary['projects']['overdue']);
+        $this->assertSame(2, $summary['quotations']['total_approved']);
+        $this->assertSame(750000.0, $summary['quotations']['total_value']);
+        $this->assertSame(2, $summary['technicians']['total']);
+        $this->assertSame(2, $summary['technicians']['assigned']);
+        $this->assertSame(100.0, $summary['technicians']['utilization']);
+        $this->assertSame(1, $summary['tasks']['completed']);
     }
 
     /**
-     * The bucket size has to follow the period, otherwise a yearly view would
-     * try to plot 365 daily points.
+     * The export period keeps its own bucket sizes, otherwise a yearly report
+     * would try to plot 365 daily points.
      */
-    public function test_the_period_controls_the_chart_bucket(): void
+    public function test_the_export_period_controls_its_bucket(): void
     {
         $service = app(SystemReportService::class);
 
         $this->assertSame('day', $service->resolvePeriod('weekly')['bucket']);
         $this->assertSame('day', $service->resolvePeriod('monthly')['bucket']);
         $this->assertSame('month', $service->resolvePeriod('yearly')['bucket']);
+    }
 
-        $weekly = $this->getJson(route('super-admin.reports.system', ['period' => 'weekly']));
-        $weekly->assertOk();
-        $weekly->assertJsonCount(7, 'charts.projectsOverTime.labels');
+    /**
+     * Each chart's own toggle picks its granularity: monthly draws the current
+     * year month by month, yearly the last five whole years.
+     */
+    public function test_each_chart_granularity_sets_its_own_buckets(): void
+    {
+        $service = app(SystemReportService::class);
 
-        $yearly = $this->getJson(route('super-admin.reports.system', ['period' => 'yearly']));
+        $this->assertSame('month', $service->resolveGranularity('monthly')['bucket']);
+        $this->assertSame('year', $service->resolveGranularity('yearly')['bucket']);
+
+        $monthly = $this->getJson(route('super-admin.reports.system.chart', [
+            'chart' => 'completedProjects',
+        ]));
+        $monthly->assertOk();
+        $monthly->assertJsonCount(12, 'data.labels');
+
+        $yearly = $this->getJson(route('super-admin.reports.system.chart', [
+            'chart' => 'completedProjects',
+            'granularity' => 'yearly',
+        ]));
         $yearly->assertOk();
-        $yearly->assertJsonCount(12, 'charts.projectsOverTime.labels');
+        $yearly->assertJsonCount(5, 'data.labels');
+    }
+
+    /**
+     * The pie splits On Hold and Overdue out of the stored statuses they are
+     * hidden inside, so the slices read the way the rest of the app does.
+     */
+    public function test_the_current_breakdown_counts_derived_statuses(): void
+    {
+        $ongoing = $this->project('Ongoing Project', 'ongoing');
+        $this->schedule($ongoing, $this->day(-1), $this->day(5));
+
+        $late = $this->project('Late Project', 'ongoing');
+        $this->schedule($late, $this->day(-20), $this->day(-10));
+
+        $paused = $this->project('Paused Project', 'pending');
+        $paused->forceFill(['on_hold' => true])->save();
+
+        $this->project('Done Project', 'completed');
+
+        $response = $this->getJson(route('super-admin.reports.system.chart', [
+            'chart' => 'currentProjectBreakdown',
+        ]));
+
+        $response->assertOk();
+
+        $slices = array_combine(
+            $response->json('data.labels'),
+            $response->json('data.values')
+        );
+
+        $this->assertSame(1, $slices['Ongoing']);
+        $this->assertSame(1, $slices['Overdue']);
+        $this->assertSame(1, $slices['On Hold']);
+        $this->assertSame(1, $slices['Completed']);
+        // The overdue and paused projects were moved out of their stored
+        // status rather than counted twice.
+        $this->assertArrayNotHasKey('Pending', $slices);
+    }
+
+    /**
+     * "All" is the union of the statuses the filter offers, and each option
+     * narrows to just its own share of the money.
+     */
+    public function test_the_quotation_chart_filters_by_status(): void
+    {
+        $ongoing = $this->project('Ongoing Project', 'ongoing', [], 100000);
+        $this->schedule($ongoing, $this->day(-1), $this->day(5));
+
+        $late = $this->project('Late Project', 'ongoing', [], 200000);
+        $this->schedule($late, $this->day(-20), $this->day(-10));
+
+        $paused = $this->project('Paused Project', 'pending', [], 400000);
+        $paused->forceFill(['on_hold' => true])->save();
+
+        $this->project('Done Project', 'completed', [], 800000);
+
+        // Neither of these carries committed money, whatever their quotation.
+        $this->project('Dead Project', 'cancelled', [], 1000000);
+        $this->project('Filed Project', 'archived', [], 2000000, true);
+
+        $totalFor = function (string $status): float {
+            $response = $this->getJson(route('super-admin.reports.system.chart', [
+                'chart' => 'totalQuotation',
+                'quotation_status' => $status,
+            ]));
+
+            $response->assertOk();
+
+            return array_sum($response->json('data.values'));
+        };
+
+        $this->assertSame(100000.0, $totalFor('ongoing'));
+        $this->assertSame(200000.0, $totalFor('overdue'));
+        $this->assertSame(400000.0, $totalFor('on_hold'));
+        $this->assertSame(800000.0, $totalFor('completed'));
+        $this->assertSame(0.0, $totalFor('pending'));
+        $this->assertSame(1500000.0, $totalFor('all'));
+    }
+
+    /**
+     * A client holding several projects is ranked on their combined value.
+     */
+    public function test_top_clients_sum_each_client_s_projects(): void
+    {
+        foreach ([['Acme Holdings', 300000], ['Acme Holdings', 500000], ['Solo Corp', 600000]] as [$company, $quotation]) {
+            $project = $this->project($company.' Job '.$quotation, 'ongoing', [], $quotation);
+
+            $project->clients()->update(['company_name' => $company]);
+        }
+
+        $response = $this->getJson(route('super-admin.reports.system.chart', [
+            'chart' => 'topClients',
+        ]));
+
+        $response->assertOk();
+        // Acme's two projects outrank Solo Corp's single larger one.
+        $response->assertJsonPath('data.labels.0', 'Acme Holdings');
+        $response->assertJsonPath('data.values.0', 800000);
+        $response->assertJsonPath('data.labels.1', 'Solo Corp');
+    }
+
+    public function test_the_chart_endpoint_rejects_an_unknown_chart(): void
+    {
+        $this->getJson(route('super-admin.reports.system.chart', ['chart' => 'everything']))
+            ->assertStatus(422);
     }
 
     public function test_a_custom_period_uses_the_supplied_window(): void
@@ -497,7 +641,7 @@ class ReportsPageTest extends TestCase
         $project = $this->project('Some Project', 'ongoing', [$tech], 400000);
         $this->schedule($project, $this->day(-2), $this->day(3));
 
-        foreach (array_keys(\App\Http\Controllers\ReportController::EXPORT_TYPES) as $type) {
+        foreach (array_keys(ReportController::EXPORT_TYPES) as $type) {
             $response = $this->post(route('super-admin.reports.export'), [
                 'report_type' => $type,
                 'period' => 'monthly',
@@ -542,7 +686,7 @@ class ReportsPageTest extends TestCase
         $this->project('Some Project', 'ongoing', [], 100000);
 
         $png = 'data:image/png;base64,'
-            . 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==';
+            .'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==';
 
         $response = $this->post(route('super-admin.reports.export'), [
             'report_type' => 'projects',

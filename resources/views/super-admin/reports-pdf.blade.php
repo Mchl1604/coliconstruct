@@ -1,30 +1,23 @@
 @php
     // Titles for the rasterised charts the browser posted, in print order.
     $chartTitles = [
-        'projectsOverTime' => 'Projects Created Over Time',
-        'projectsByStatus' => 'Projects by Status',
-        'projectCompletionTrend' => 'Project Completion Trend',
-        'quotationValueOverTime' => 'Approved Quotation Value Over Time',
-        'quotationCountOverTime' => 'Approved Quotations Created',
-        'topClientsByValue' => 'Top Clients by Total Quotation Value',
-        'projectsPerTechnician' => 'Active Projects per Technician',
-        'technicianUtilization' => 'Technician Utilization',
-        'specialtyDistribution' => 'Specialty Distribution',
-        'schedulesOverTime' => 'Schedules Starting Over Time',
-        'scheduleHealth' => 'Schedule Health',
-        'taskCompletionTrend' => 'Task Completion Trend',
-        'tasksByStatus' => 'Tasks by Status',
-        'tasksByProject' => 'Task Distribution by Project',
+        'currentProjectBreakdown' => 'Current Project Breakdown',
+        'completedProjects' => 'Completed Projects',
+        'projectsByType' => 'Projects by Project Type',
+        'residentialVsCommercial' => 'Residential vs Commercial Projects',
+        'totalQuotation' => 'Total Quotation',
+        'topClients' => 'Top 10 Clients by Total Quotation',
     ];
 
     // Which charts belong to which report type, so a Project Report doesn't
-    // carry task graphs.
+    // carry quotation graphs. The technician, schedule and task reports have
+    // no graphs of their own; their tables carry the detail.
     $chartGroups = [
-        'projects' => ['projectsOverTime', 'projectsByStatus', 'projectCompletionTrend'],
-        'quotations' => ['quotationValueOverTime', 'quotationCountOverTime', 'topClientsByValue'],
-        'technicians' => ['projectsPerTechnician', 'technicianUtilization', 'specialtyDistribution'],
-        'schedules' => ['schedulesOverTime', 'scheduleHealth'],
-        'tasks' => ['taskCompletionTrend', 'tasksByStatus', 'tasksByProject'],
+        'projects' => ['currentProjectBreakdown', 'completedProjects', 'projectsByType', 'residentialVsCommercial'],
+        'quotations' => ['totalQuotation', 'topClients'],
+        'technicians' => [],
+        'schedules' => [],
+        'tasks' => [],
     ];
 
     $relevantChartKeys = $reportType === 'complete'

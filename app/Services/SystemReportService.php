@@ -6,8 +6,10 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\Technician;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use InvalidArgumentException;
 
 /**
  * Every figure on the System Reports tab, and the same figures again for the
@@ -26,6 +28,57 @@ class SystemReportService
     public const PERIOD_YEARLY = 'yearly';
 
     public const PERIOD_CUSTOM = 'custom';
+
+    /**
+     * The two granularities every dashboard chart can be switched between.
+     * Monthly draws the current year as twelve months; yearly draws the last
+     * few whole years. Charts with no time axis use the same span as their
+     * window, so the toggle always means the same thing.
+     */
+    public const GRANULARITY_MONTHLY = 'monthly';
+
+    public const GRANULARITY_YEARLY = 'yearly';
+
+    /** How many whole years the yearly view reaches back over, inclusive. */
+    private const YEARLY_SPAN = 5;
+
+    /**
+     * Every chart the System Reports tab draws.
+     *
+     * @var array<int, string>
+     */
+    public const CHART_KEYS = [
+        'currentProjectBreakdown',
+        'completedProjects',
+        'projectsByType',
+        'totalQuotation',
+        'residentialVsCommercial',
+        'topClients',
+    ];
+
+    /**
+     * The status filter on the Total Quotation chart. "all" is the union of
+     * the other options - cancelled, archived and unscheduled work carries no
+     * committed money, so none of them are ever counted.
+     *
+     * @var array<string, string>
+     */
+    public const QUOTATION_STATUSES = [
+        'all' => 'All Projects',
+        'on_hold' => 'On Hold',
+        'pending' => 'Pending',
+        'ongoing' => 'Ongoing',
+        'overdue' => 'Overdue',
+        'completed' => 'Completed',
+    ];
+
+    /**
+     * The stored statuses that "all" rolls up, before On Hold and Overdue are
+     * split back out of them.
+     *
+     * @var array<int, string>
+     */
+    private const QUOTATION_ALL_STATUSES = ['pending', 'ongoing', 'completed'];
 
     /**
      * Statuses that count as live work when judging technician utilisation.
@@ -66,7 +119,7 @@ class SystemReportService
 
                 return [
                     'key' => self::PERIOD_CUSTOM,
-                    'label' => $start->format('M j, Y') . ' - ' . $end->format('M j, Y'),
+                    'label' => $start->format('M j, Y').' - '.$end->format('M j, Y'),
                     'start' => $start,
                     'end' => $end,
                     // Long custom windows get monthly buckets, short ones daily.
@@ -75,7 +128,7 @@ class SystemReportService
             })(),
             self::PERIOD_WEEKLY => [
                 'key' => self::PERIOD_WEEKLY,
-                'label' => $today->startOfWeek()->format('M j') . ' - ' . $today->endOfWeek()->format('M j, Y'),
+                'label' => $today->startOfWeek()->format('M j').' - '.$today->endOfWeek()->format('M j, Y'),
                 'start' => $today->startOfWeek(),
                 'end' => $today->endOfWeek()->endOfDay(),
                 'bucket' => 'day',
@@ -88,6 +141,39 @@ class SystemReportService
                 'bucket' => 'day',
             ],
         };
+    }
+
+    /**
+     * The window a single chart covers, and the bucket its x-axis uses.
+     *
+     * Monthly is the current calendar year in twelve month-sized buckets;
+     * yearly reaches back over the last few whole years, one bucket each.
+     *
+     * @return array{key: string, label: string, start: CarbonImmutable, end: CarbonImmutable, bucket: string}
+     */
+    public function resolveGranularity(?string $granularity): array
+    {
+        $today = CarbonImmutable::today();
+
+        if ($granularity === self::GRANULARITY_YEARLY) {
+            $start = $today->startOfYear()->subYears(self::YEARLY_SPAN - 1);
+
+            return [
+                'key' => self::GRANULARITY_YEARLY,
+                'label' => $start->format('Y').' - '.$today->format('Y'),
+                'start' => $start,
+                'end' => $today->endOfYear()->endOfDay(),
+                'bucket' => 'year',
+            ];
+        }
+
+        return [
+            'key' => self::GRANULARITY_MONTHLY,
+            'label' => $today->format('Y'),
+            'start' => $today->startOfYear(),
+            'end' => $today->endOfYear()->endOfDay(),
+            'bucket' => 'month',
+        ];
     }
 
     /**
@@ -108,29 +194,45 @@ class SystemReportService
     }
 
     /**
-     * Chart.js-ready datasets for every module.
+     * Chart.js-ready datasets for every chart, each at its own granularity.
      *
-     * @param  array{start: CarbonImmutable, end: CarbonImmutable, bucket: string}  $period
+     * Every chart carries its own Monthly/Yearly toggle, so the caller passes
+     * the state of each one rather than a single period for the whole page.
+     *
+     * @param  array<string, string>  $granularities  chart key => monthly|yearly
      * @return array<string, array<string, mixed>>
      */
-    public function charts(array $period): array
+    public function charts(array $granularities = [], ?string $quotationStatus = null): array
     {
-        return [
-            'projectsOverTime' => $this->projectsOverTime($period),
-            'projectsByStatus' => $this->projectsByStatus(),
-            'projectCompletionTrend' => $this->projectCompletionTrend($period),
-            'quotationValueOverTime' => $this->quotationValueOverTime($period),
-            'quotationCountOverTime' => $this->quotationCountOverTime($period),
-            'topClientsByValue' => $this->topClientsByValue(),
-            'projectsPerTechnician' => $this->projectsPerTechnician(),
-            'technicianUtilization' => $this->technicianUtilizationChart(),
-            'specialtyDistribution' => $this->specialtyDistribution(),
-            'schedulesOverTime' => $this->schedulesOverTime($period),
-            'scheduleHealth' => $this->scheduleHealth(),
-            'tasksByStatus' => $this->tasksByStatus(),
-            'taskCompletionTrend' => $this->taskCompletionTrend($period),
-            'tasksByProject' => $this->tasksByProject(),
-        ];
+        $charts = [];
+
+        foreach (self::CHART_KEYS as $key) {
+            $charts[$key] = $this->chart($key, $granularities[$key] ?? null, $quotationStatus);
+        }
+
+        return $charts;
+    }
+
+    /**
+     * One chart, so flipping a single toggle doesn't recompute the page.
+     *
+     * @return array<string, mixed>
+     */
+    public function chart(string $key, ?string $granularity = null, ?string $quotationStatus = null): array
+    {
+        $period = $this->resolveGranularity($granularity);
+
+        return match ($key) {
+            // A snapshot of where the work stands right now, so it has no
+            // window and ignores the granularity entirely.
+            'currentProjectBreakdown' => $this->currentProjectBreakdown(),
+            'completedProjects' => $this->completedProjects($period),
+            'projectsByType' => $this->projectsByType($period),
+            'totalQuotation' => $this->totalQuotation($period, $quotationStatus ?? 'all'),
+            'residentialVsCommercial' => $this->residentialVsCommercial($period),
+            'topClients' => $this->topClients($period),
+            default => throw new InvalidArgumentException("Unknown chart [{$key}]."),
+        };
     }
 
     // ------------------------------------------------------------------
@@ -271,71 +373,121 @@ class SystemReportService
     // ------------------------------------------------------------------
 
     /**
-     * @param  array{start: CarbonImmutable, end: CarbonImmutable, bucket: string}  $period
+     * Where every project stands right now, using the same vocabulary the
+     * rest of the app shows: On Hold and Overdue are states in their own
+     * right, not variations of Pending or Ongoing.
+     *
      * @return array<string, mixed>
      */
-    private function projectsOverTime(array $period): array
+    private function currentProjectBreakdown(): array
     {
-        $rows = Project::query()
-            ->whereBetween('created_at', [$period['start'], $period['end']])
-            ->selectRaw($this->bucketExpression('created_at', $period['bucket']) . ' as bucket, count(*) as total')
+        $counts = Project::query()
+            ->selectRaw($this->currentStatusExpression().' as bucket, count(*) as total')
             ->groupBy('bucket')
             ->pluck('total', 'bucket');
 
-        return $this->bucketedSeries($period, $rows, 'Projects Created');
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function projectsByStatus(): array
-    {
-        $counts = Project::query()
+        // Overdue is derived from the schedule rather than stored, so it can't
+        // come out of the CASE above; those projects are moved here out of the
+        // Pending and Ongoing slices they were counted in.
+        $overdue = Project::overdue()
             ->selectRaw('status, count(*) as total')
             ->groupBy('status')
             ->pluck('total', 'status');
 
-        $labels = [
-            'not_yet_scheduled' => 'Not Yet Scheduled',
-            'pending' => 'Pending',
-            'ongoing' => 'Ongoing',
-            'completed' => 'Completed',
-            'cancelled' => 'Cancelled',
-            'archived' => 'Archived',
+        $counts = $counts->map(
+            fn ($total, $status) => (int) $total - (int) ($overdue[$status] ?? 0)
+        );
+
+        $counts['overdue'] = (int) $overdue->sum();
+
+        $slices = [
+            'not_yet_scheduled' => ['Not Yet Scheduled', '#0dcaf0'],
+            'pending' => ['Pending', '#f0ad4e'],
+            'ongoing' => ['Ongoing', '#0d6efd'],
+            'on_hold' => ['On Hold', '#6c757d'],
+            'overdue' => ['Overdue', Project::OVERDUE_COLOR],
+            'completed' => ['Completed', '#198754'],
+            'cancelled' => ['Cancelled', '#dc3545'],
+            'archived' => ['Archived', '#212529'],
         ];
 
-        $colors = [
-            'not_yet_scheduled' => '#0dcaf0',
-            'pending' => '#f0ad4e',
-            'ongoing' => '#0d6efd',
-            'completed' => '#198754',
-            'cancelled' => '#dc3545',
-            'archived' => '#212529',
-        ];
-
-        $present = collect($labels)->filter(fn ($label, $status) => ($counts[$status] ?? 0) > 0);
+        $present = collect($slices)->filter(fn ($slice, $status) => ($counts[$status] ?? 0) > 0);
 
         return [
-            'labels' => $present->values()->all(),
+            'labels' => $present->map(fn ($slice) => $slice[0])->values()->all(),
             'values' => $present->keys()->map(fn ($status) => (int) $counts[$status])->all(),
-            'colors' => $present->keys()->map(fn ($status) => $colors[$status])->all(),
+            'colors' => $present->map(fn ($slice) => $slice[1])->values()->all(),
         ];
     }
 
     /**
+     * Projects finished in each bucket of the window.
+     *
      * @param  array{start: CarbonImmutable, end: CarbonImmutable, bucket: string}  $period
      * @return array<string, mixed>
      */
-    private function projectCompletionTrend(array $period): array
+    private function completedProjects(array $period): array
     {
         $rows = Project::query()
             ->whereNotNull('completed_at')
             ->whereBetween('completed_at', [$period['start'], $period['end']])
-            ->selectRaw($this->bucketExpression('completed_at', $period['bucket']) . ' as bucket, count(*) as total')
+            ->selectRaw($this->bucketExpression('completed_at', $period['bucket']).' as bucket, count(*) as total')
             ->groupBy('bucket')
             ->pluck('total', 'bucket');
 
-        return $this->bucketedSeries($period, $rows, 'Projects Completed');
+        return $this->bucketedSeries($period, $rows, 'Completed Projects');
+    }
+
+    /**
+     * How many projects of each type were opened in the window. A project can
+     * carry several types, so it is counted once under each of them.
+     *
+     * @param  array{start: CarbonImmutable, end: CarbonImmutable}  $period
+     * @return array<string, mixed>
+     */
+    private function projectsByType(array $period): array
+    {
+        $rows = DB::table('tbl_project_type_map')
+            ->join('tbl_project_types', 'tbl_project_types.type_id', '=', 'tbl_project_type_map.type_id')
+            ->join('tbl_projects', 'tbl_projects.project_id', '=', 'tbl_project_type_map.project_id')
+            ->whereBetween('tbl_projects.created_at', [$period['start'], $period['end']])
+            ->selectRaw('tbl_project_types.type_name as type, count(distinct tbl_projects.project_id) as total')
+            ->groupBy('tbl_project_types.type_name')
+            ->orderByDesc('total')
+            ->get();
+
+        return [
+            'labels' => $rows->pluck('type')->all(),
+            'values' => $rows->pluck('total')->map(fn ($total) => (int) $total)->all(),
+            'label' => 'Projects',
+        ];
+    }
+
+    /**
+     * Residential against commercial work opened in the window, read from the
+     * client attached to each project.
+     *
+     * @param  array{start: CarbonImmutable, end: CarbonImmutable}  $period
+     * @return array<string, mixed>
+     */
+    private function residentialVsCommercial(array $period): array
+    {
+        $rows = DB::table('tbl_projects')
+            ->join('tbl_clients', 'tbl_clients.project_id', '=', 'tbl_projects.project_id')
+            ->whereBetween('tbl_projects.created_at', [$period['start'], $period['end']])
+            ->selectRaw('lower(tbl_clients.client_type) as type, count(distinct tbl_projects.project_id) as total')
+            ->groupBy('type')
+            ->pluck('total', 'type');
+
+        return [
+            'labels' => ['Residential', 'Commercial'],
+            'values' => [
+                (int) ($rows['residential'] ?? 0),
+                (int) ($rows['commercial'] ?? 0),
+            ],
+            'colors' => ['#2563eb', '#198754'],
+            'label' => 'Projects',
+        ];
     }
 
     // ------------------------------------------------------------------
@@ -343,253 +495,101 @@ class SystemReportService
     // ------------------------------------------------------------------
 
     /**
+     * Committed quotation value over the window, optionally narrowed to one
+     * project status.
+     *
      * @param  array{start: CarbonImmutable, end: CarbonImmutable, bucket: string}  $period
      * @return array<string, mixed>
      */
-    private function quotationValueOverTime(array $period): array
+    private function totalQuotation(array $period, string $status): array
     {
-        $rows = Project::query()
+        $query = Project::query()
             ->whereNotNull('quotation')
             ->where('quotation', '>', 0)
-            ->whereBetween('created_at', [$period['start'], $period['end']])
-            ->selectRaw($this->bucketExpression('created_at', $period['bucket']) . ' as bucket, sum(quotation) as total')
+            ->whereBetween('created_at', [$period['start'], $period['end']]);
+
+        $this->applyQuotationStatus($query, $status);
+
+        $rows = $query
+            ->selectRaw($this->bucketExpression('created_at', $period['bucket']).' as bucket, sum(quotation) as total')
             ->groupBy('bucket')
             ->pluck('total', 'bucket');
 
-        return $this->bucketedSeries($period, $rows, 'Quotation Value', true);
+        $label = $status === 'all'
+            ? 'Total Quotation'
+            : 'Total Quotation - '.(self::QUOTATION_STATUSES[$status] ?? ucfirst($status));
+
+        return $this->bucketedSeries($period, $rows, $label, true) + ['status' => $status];
     }
 
     /**
-     * @param  array{start: CarbonImmutable, end: CarbonImmutable, bucket: string}  $period
+     * The ten biggest clients in the window, by the summed quotation of every
+     * project they hold. Clients live on the project rather than in a table of
+     * their own, so the company name - or the person's name for a residential
+     * client - is what ties a client's projects together.
+     *
+     * @param  array{start: CarbonImmutable, end: CarbonImmutable}  $period
      * @return array<string, mixed>
      */
-    private function quotationCountOverTime(array $period): array
-    {
-        $rows = Project::query()
-            ->whereNotNull('quotation')
-            ->where('quotation', '>', 0)
-            ->whereBetween('created_at', [$period['start'], $period['end']])
-            ->selectRaw($this->bucketExpression('created_at', $period['bucket']) . ' as bucket, count(*) as total')
-            ->groupBy('bucket')
-            ->pluck('total', 'bucket');
-
-        return $this->bucketedSeries($period, $rows, 'Approved Quotations');
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function topClientsByValue(): array
+    private function topClients(array $period): array
     {
         $rows = DB::table('tbl_projects')
             ->join('tbl_clients', 'tbl_clients.project_id', '=', 'tbl_projects.project_id')
             ->whereNotNull('tbl_projects.quotation')
             ->where('tbl_projects.quotation', '>', 0)
+            ->whereBetween('tbl_projects.created_at', [$period['start'], $period['end']])
             ->selectRaw("
                 coalesce(nullif(tbl_clients.company_name, ''), tbl_clients.fullname) as client,
                 sum(tbl_projects.quotation) as total
             ")
             ->groupBy('client')
             ->orderByDesc('total')
-            ->limit(8)
+            ->limit(10)
             ->get();
 
         return [
             'labels' => $rows->pluck('client')->map(fn ($name) => $name ?: 'Unnamed client')->all(),
             'values' => $rows->pluck('total')->map(fn ($total) => (float) $total)->all(),
-        ];
-    }
-
-    // ------------------------------------------------------------------
-    // Technician charts
-    // ------------------------------------------------------------------
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function projectsPerTechnician(): array
-    {
-        $rows = DB::table('tbl_project_technicians')
-            ->join('tbl_projects', 'tbl_projects.project_id', '=', 'tbl_project_technicians.project_id')
-            ->join('tbl_technicians', 'tbl_technicians.technician_id', '=', 'tbl_project_technicians.technician_id')
-            ->join('users', 'users.id', '=', 'tbl_technicians.account_id')
-            ->whereIn('tbl_projects.status', self::ACTIVE_STATUSES)
-            ->where('tbl_projects.is_archived', false)
-            ->selectRaw('users.name as technician, count(distinct tbl_projects.project_id) as total')
-            ->groupBy('users.name')
-            ->orderByDesc('total')
-            ->limit(12)
-            ->get();
-
-        return [
-            'labels' => $rows->pluck('technician')->all(),
-            'values' => $rows->pluck('total')->map(fn ($total) => (int) $total)->all(),
+            'label' => 'Total Quotation',
         ];
     }
 
     /**
-     * @return array<string, mixed>
-     */
-    private function technicianUtilizationChart(): array
-    {
-        $total = $this->technicianCount();
-        $assigned = $this->assignedTechnicianIds()->count();
-
-        return [
-            'labels' => ['Assigned', 'Available'],
-            'values' => [$assigned, max($total - $assigned, 0)],
-            'colors' => ['#0d6efd', '#cbd5e1'],
-        ];
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function specialtyDistribution(): array
-    {
-        $rows = DB::table('tbl_skill_map')
-            ->join('tbl_skills', 'tbl_skills.skill_id', '=', 'tbl_skill_map.skill_id')
-            ->selectRaw('tbl_skills.skill_name as skill, count(*) as total')
-            ->groupBy('tbl_skills.skill_name')
-            ->orderByDesc('total')
-            ->get();
-
-        return [
-            'labels' => $rows->pluck('skill')->all(),
-            'values' => $rows->pluck('total')->map(fn ($total) => (int) $total)->all(),
-        ];
-    }
-
-    // ------------------------------------------------------------------
-    // Schedule charts
-    // ------------------------------------------------------------------
-
-    /**
-     * @param  array{start: CarbonImmutable, end: CarbonImmutable, bucket: string}  $period
-     * @return array<string, mixed>
-     */
-    private function schedulesOverTime(array $period): array
-    {
-        $rows = DB::table('tbl_schedule')
-            ->whereBetween('start_datetime', [$period['start'], $period['end']])
-            ->selectRaw($this->bucketExpression('start_datetime', $period['bucket']) . ' as bucket, count(*) as total')
-            ->groupBy('bucket')
-            ->pluck('total', 'bucket');
-
-        return $this->bucketedSeries($period, $rows, 'Schedules Starting');
-    }
-
-    /**
-     * Where the live projects stand relative to their own schedule.
+     * Narrow a project query to one of the statuses the quotation filter
+     * offers. On Hold and Overdue are derived rather than stored, so they are
+     * both added to and subtracted from the stored statuses they overlap.
      *
-     * @return array<string, mixed>
+     * @param  Builder<Project>  $query
      */
-    private function scheduleHealth(): array
+    private function applyQuotationStatus(Builder $query, string $status): void
     {
-        $today = CarbonImmutable::today()->toDateString();
+        // Nothing archived ever counts, whichever option is chosen.
+        $query->where('is_archived', false)->where('status', '!=', 'archived');
 
-        $active = DB::table('tbl_projects')
-            ->whereIn('status', self::ACTIVE_STATUSES)
-            ->where('is_archived', false)
-            ->whereExists(fn ($query) => $query->select(DB::raw(1))
-                ->from('tbl_schedule')
-                ->whereColumn('tbl_schedule.project_id', 'tbl_projects.project_id')
-                ->whereDate('tbl_schedule.start_datetime', '<=', $today)
-                ->whereDate('tbl_schedule.end_datetime', '>=', $today))
-            ->count();
+        match ($status) {
+            'on_hold' => $query
+                ->where('on_hold', true)
+                ->whereNotIn('status', Project::READ_ONLY_STATUSES),
 
-        $upcoming = DB::table('tbl_projects')
-            ->whereIn('status', self::ACTIVE_STATUSES)
-            ->where('is_archived', false)
-            ->whereExists(fn ($query) => $query->select(DB::raw(1))
-                ->from('tbl_schedule')
-                ->whereColumn('tbl_schedule.project_id', 'tbl_projects.project_id')
-                ->whereDate('tbl_schedule.start_datetime', '>', $today))
-            ->count();
+            'overdue' => $query->whereIn('project_id', $this->overdueProjectIds()),
 
-        $overdue = Project::overdue()->count();
+            'completed' => $query->where('status', 'completed'),
 
-        return [
-            'labels' => ['Active Now', 'Upcoming', 'Overdue'],
-            'values' => [(int) $active, (int) $upcoming, (int) $overdue],
-            'colors' => ['#0d6efd', '#f0ad4e', '#fd7e14'],
-        ];
-    }
+            'pending', 'ongoing' => $query
+                ->where('status', $status)
+                ->where(fn (Builder $hold) => $hold->where('on_hold', false)->orWhereNull('on_hold'))
+                ->whereNotIn('project_id', $this->overdueProjectIds()),
 
-    // ------------------------------------------------------------------
-    // Task charts
-    // ------------------------------------------------------------------
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function tasksByStatus(): array
-    {
-        $counts = Task::query()
-            ->selectRaw('status, count(*) as total')
-            ->groupBy('status')
-            ->pluck('total', 'status');
-
-        $labels = [
-            'unassigned' => 'Unassigned',
-            'pending' => 'Pending',
-            'ongoing' => 'In Progress',
-            'completed' => 'Completed',
-            'cancelled' => 'Cancelled',
-        ];
-
-        $colors = [
-            'unassigned' => '#f0ad4e',
-            'pending' => '#6c757d',
-            'ongoing' => '#0d6efd',
-            'completed' => '#198754',
-            'cancelled' => '#dc3545',
-        ];
-
-        $present = collect($labels)->filter(fn ($label, $status) => ($counts[$status] ?? 0) > 0);
-
-        return [
-            'labels' => $present->values()->all(),
-            'values' => $present->keys()->map(fn ($status) => (int) $counts[$status])->all(),
-            'colors' => $present->keys()->map(fn ($status) => $colors[$status])->all(),
-        ];
-    }
-
-    /**
-     * @param  array{start: CarbonImmutable, end: CarbonImmutable, bucket: string}  $period
-     * @return array<string, mixed>
-     */
-    private function taskCompletionTrend(array $period): array
-    {
-        // There is no completed_at column, so updated_at stands in as the
-        // moment a task was marked done.
-        $rows = Task::query()
-            ->where('status', 'completed')
-            ->whereBetween('updated_at', [$period['start'], $period['end']])
-            ->selectRaw($this->bucketExpression('updated_at', $period['bucket']) . ' as bucket, count(*) as total')
-            ->groupBy('bucket')
-            ->pluck('total', 'bucket');
-
-        return $this->bucketedSeries($period, $rows, 'Tasks Completed');
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function tasksByProject(): array
-    {
-        $rows = DB::table('tbl_tasks')
-            ->join('tbl_projects', 'tbl_projects.project_id', '=', 'tbl_tasks.project_id')
-            ->selectRaw('tbl_projects.name as project, count(*) as total')
-            ->groupBy('tbl_projects.name')
-            ->orderByDesc('total')
-            ->limit(10)
-            ->get();
-
-        return [
-            'labels' => $rows->pluck('project')->all(),
-            'values' => $rows->pluck('total')->map(fn ($total) => (int) $total)->all(),
-        ];
+            // "All" is the union of the options above: live, paused, late and
+            // finished work, which is every project carrying committed money.
+            default => $query->where(function (Builder $outer): void {
+                $outer
+                    ->whereIn('status', self::QUOTATION_ALL_STATUSES)
+                    ->orWhere(fn (Builder $hold) => $hold
+                        ->where('on_hold', true)
+                        ->whereNotIn('status', Project::READ_ONLY_STATUSES));
+            }),
+        };
     }
 
     // ------------------------------------------------------------------
@@ -699,8 +699,8 @@ class SystemReportService
             ->map(function (Project $project): array {
                 $ranges = $project->schedules
                     ->map(fn ($schedule) => CarbonImmutable::parse($schedule->start_datetime)->format('M j, Y')
-                        . ' - '
-                        . CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime)->format('M j, Y'))
+                        .' - '
+                        .CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime)->format('M j, Y'))
                     ->implode('; ');
 
                 return [
@@ -780,6 +780,32 @@ class SystemReportService
             ->pluck('tbl_project_technicians.technician_id');
     }
 
+    /**
+     * The projects Project::overdue() currently matches. Memoised because the
+     * quotation filter consults it for several of its options.
+     *
+     * @return Collection<int, int>
+     */
+    private function overdueProjectIds(): Collection
+    {
+        return $this->memo['overdueProjectIds'] ??= Project::overdue()->pluck('project_id');
+    }
+
+    /**
+     * A project's status as the app displays it, minus Overdue, which depends
+     * on the schedule and has to be resolved separately.
+     */
+    private function currentStatusExpression(): string
+    {
+        return "case
+            when is_archived = 1 or status = 'archived' then 'archived'
+            when status = 'completed' then 'completed'
+            when status = 'cancelled' then 'cancelled'
+            when on_hold = 1 then 'on_hold'
+            else status
+        end";
+    }
+
     private function technicianCount(): int
     {
         return $this->memo['technicianCount'] ??= Technician::query()
@@ -794,7 +820,7 @@ class SystemReportService
     private function averageProjectDurationDays(): float
     {
         $perProject = DB::table('tbl_schedule')
-            ->selectRaw('project_id, sum(' . $this->dayDiffExpression('end_datetime', 'start_datetime') . ' + 1) as days')
+            ->selectRaw('project_id, sum('.$this->dayDiffExpression('end_datetime', 'start_datetime').' + 1) as days')
             ->groupBy('project_id')
             ->pluck('days');
 
@@ -855,14 +881,18 @@ class SystemReportService
         $driver = DB::connection()->getDriverName();
 
         if ($driver === 'sqlite') {
-            return $bucket === 'month'
-                ? "strftime('%Y-%m', {$column})"
-                : "strftime('%Y-%m-%d', {$column})";
+            return match ($bucket) {
+                'year' => "strftime('%Y', {$column})",
+                'month' => "strftime('%Y-%m', {$column})",
+                default => "strftime('%Y-%m-%d', {$column})",
+            };
         }
 
-        return $bucket === 'month'
-            ? "date_format({$column}, '%Y-%m')"
-            : "date_format({$column}, '%Y-%m-%d')";
+        return match ($bucket) {
+            'year' => "date_format({$column}, '%Y')",
+            'month' => "date_format({$column}, '%Y-%m')",
+            default => "date_format({$column}, '%Y-%m-%d')",
+        };
     }
 
     /**
@@ -875,29 +905,35 @@ class SystemReportService
      */
     private function bucketedSeries(array $period, Collection $rows, string $label, bool $isMoney = false): array
     {
+        $bucket = $period['bucket'];
+
+        [$keyFormat, $labelFormat] = match ($bucket) {
+            'year' => ['Y', 'Y'],
+            'month' => ['Y-m', 'M Y'],
+            default => ['Y-m-d', 'M j'],
+        };
+
         $labels = [];
         $values = [];
-        $cursor = $period['bucket'] === 'month'
-            ? $period['start']->startOfMonth()
-            : $period['start']->startOfDay();
+        $cursor = match ($bucket) {
+            'year' => $period['start']->startOfYear(),
+            'month' => $period['start']->startOfMonth(),
+            default => $period['start']->startOfDay(),
+        };
         $end = $period['end'];
         $guard = 0;
 
         while ($cursor->lte($end) && $guard < 400) {
-            $key = $period['bucket'] === 'month'
-                ? $cursor->format('Y-m')
-                : $cursor->format('Y-m-d');
+            $labels[] = $cursor->format($labelFormat);
 
-            $labels[] = $period['bucket'] === 'month'
-                ? $cursor->format('M Y')
-                : $cursor->format('M j');
-
-            $raw = $rows[$key] ?? 0;
+            $raw = $rows[$cursor->format($keyFormat)] ?? 0;
             $values[] = $isMoney ? (float) $raw : (int) $raw;
 
-            $cursor = $period['bucket'] === 'month'
-                ? $cursor->addMonth()
-                : $cursor->addDay();
+            $cursor = match ($bucket) {
+                'year' => $cursor->addYear(),
+                'month' => $cursor->addMonth(),
+                default => $cursor->addDay(),
+            };
             $guard++;
         }
 

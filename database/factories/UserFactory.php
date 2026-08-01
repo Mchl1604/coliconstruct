@@ -24,8 +24,16 @@ class UserFactory extends Factory
      */
     public function definition(): array
     {
+        $first = fake()->firstName();
+        $last = fake()->lastName();
+
         return [
-            'name' => fake()->name(),
+            // user_code is unique and NOT NULL, so the factory has to supply
+            // one; the sequence keeps it distinct without a database lookup.
+            'user_code' => 'EMP-'.str_pad((string) fake()->unique()->numberBetween(1, 999999), 6, '0', STR_PAD_LEFT),
+            'name' => $first.' '.$last,
+            'first_name' => $first,
+            'last_name' => $last,
             'email' => fake()->unique()->safeEmail(),
             'email_verified_at' => now(),
             'password' => static::$password ??= Hash::make('password'),

@@ -19,8 +19,8 @@ href="https://cdn.datatables.net/2.3.8/css/dataTables.dataTables.css">
 <body>
     @php
         $user = auth()->user();
-        $displayName = $user?->name ?? 'Michael Capanayan';
-        $displayRole = $user?->role ?? 'Admin';
+        $displayName = $user?->fullName() ?? 'Guest';
+        $displayRole = $user?->roleLabel() ?? '';
         $adminNavItems = [
             [
     'label' => 'Dashboard',
@@ -67,7 +67,7 @@ href="https://cdn.datatables.net/2.3.8/css/dataTables.dataTables.css">
 [
     'label' => 'Configuration',
     'icon' => 'bi-sliders',
-    'url' => '#',
+    'url' => route('super-admin.configuration.index'),
     'active' => request()->routeIs('super-admin.configuration.*'),
 ],
         ];
@@ -94,10 +94,15 @@ href="https://cdn.datatables.net/2.3.8/css/dataTables.dataTables.css">
             </nav>
 
             <div class="admin-sidebar-footer">
-                <a href="{{ route('landing.home') }}" class="admin-sidebar-link">
-                    <i class="bi bi-box-arrow-right" aria-hidden="true"></i>
-                    <span>Logout</span>
-                </a>
+                {{-- Signing out changes state, so it is a POST rather than a
+                     link anything can follow. --}}
+                <form method="POST" action="{{ route('auth.logout') }}">
+                    @csrf
+                    <button type="submit" class="admin-sidebar-link admin-sidebar-logout">
+                        <i class="bi bi-box-arrow-right" aria-hidden="true"></i>
+                        <span>Logout</span>
+                    </button>
+                </form>
             </div>
         </aside>
 

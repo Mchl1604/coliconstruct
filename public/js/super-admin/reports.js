@@ -1,6 +1,5 @@
 document.addEventListener("DOMContentLoaded", function () {
     const routes = window.reportRoutes || {};
-    const projectTechnicians = window.reportProjectTechnicians || {};
 
     function escapeHtml(value) {
         return String(value == null ? "" : value).replace(
@@ -397,9 +396,6 @@ document.addEventListener("DOMContentLoaded", function () {
         const form = createModalEl.querySelector("[data-create-report-form]");
         const projectSelect = createModalEl.querySelector("[data-create-project]");
         const fieldsWrap = createModalEl.querySelector("[data-create-fields]");
-        const technicianSelect = createModalEl.querySelector(
-            "[data-create-technician]",
-        );
         const imagesInput = createModalEl.querySelector("[data-create-images]");
         const previewEl = createModalEl.querySelector("[data-create-preview]");
         const submitBtn = createModalEl.querySelector("[data-create-submit]");
@@ -418,33 +414,10 @@ document.addEventListener("DOMContentLoaded", function () {
                 return;
             }
 
-            // Same endpoint the Project Details form posts to.
+            // Same endpoint the Project Details form posts to. It attributes
+            // the report on its own, so the form no longer asks who filed it.
             form.action =
                 routes.projectBase + "/" + projectId + "/reports";
-
-            const technicians = projectTechnicians[projectId] || [];
-
-            technicianSelect.innerHTML =
-                '<option value="">Project lead technician</option>' +
-                technicians
-                    .map(function (technician) {
-                        return (
-                            '<option value="' +
-                            technician.technician_id +
-                            '">' +
-                            escapeHtml(technician.name) +
-                            (technician.is_lead ? " (Lead)" : "") +
-                            "</option>"
-                        );
-                    })
-                    .join("");
-
-            if (!technicians.length) {
-                setAlert(
-                    errorEl,
-                    "This project has no assigned technicians yet, so the report will be filed without one.",
-                );
-            }
 
             fieldsWrap.classList.remove("d-none");
             submitBtn.disabled = false;
@@ -499,14 +472,11 @@ document.addEventListener("DOMContentLoaded", function () {
     // Tab 2 - system reports
     // ---------------------------------------------------------------
 
-    const periodButtons = document.querySelectorAll("[data-period]");
-    const periodLabelEl = document.querySelector("[data-period-label]");
     const systemLoading = document.querySelector("[data-system-loading]");
     const systemError = document.querySelector("[data-system-error]");
     const chartCanvases = document.querySelectorAll("[data-chart]");
 
     const chartInstances = {};
-    let activePeriod = "monthly";
     let systemRequestToken = 0;
     let systemLoaded = false;
 
@@ -523,94 +493,6 @@ document.addEventListener("DOMContentLoaded", function () {
         "#6c757d",
     ];
 
-    /**
-     * Card layouts: label, the key in the payload, how to format it, and an
-     * optional emphasis class.
-     */
-    const summaryLayout = {
-        projects: [
-            ["Total Projects", "total", "number", "is-accent"],
-            ["Pending", "pending", "number"],
-            ["Ongoing", "ongoing", "number"],
-            ["Completed", "completed", "number", "is-success"],
-            ["Cancelled", "cancelled", "number", "is-danger"],
-            ["Archived", "archived", "number"],
-            ["Overdue", "overdue", "number", "is-warning"],
-        ],
-        quotations: [
-            ["Total Approved Quotations", "total_approved", "number", "is-accent"],
-            ["Total Quotation Value", "total_value", "money", "is-success"],
-            ["Average Quotation Value", "average_value", "money"],
-            ["Approved This Period", "created_in_period", "number"],
-            ["Value This Period", "value_in_period", "money"],
-        ],
-        technicians: [
-            ["Total Technicians", "total", "number", "is-accent"],
-            ["Currently Assigned", "assigned", "number"],
-            ["Available", "available", "number", "is-success"],
-            ["Utilization Rate", "utilization", "percent"],
-        ],
-        schedules: [
-            ["Total Scheduled Projects", "scheduled_projects", "number", "is-accent"],
-            ["Active Schedules", "active_schedules", "number"],
-            ["Overdue Projects", "overdue_projects", "number", "is-warning"],
-            ["Avg Project Duration", "average_duration_days", "days"],
-            ["Schedule Extensions", "extensions", "number"],
-        ],
-        tasks: [
-            ["Total Tasks", "total", "number", "is-accent"],
-            ["Pending", "pending", "number"],
-            ["In Progress", "ongoing", "number"],
-            ["Completed", "completed", "number", "is-success"],
-            ["Avg Completion Time", "average_completion_days", "days"],
-        ],
-    };
-
-    function formatStat(value, format) {
-        if (format === "money") {
-            return pesos.format(value || 0);
-        }
-
-        if (format === "percent") {
-            return (value || 0) + "%";
-        }
-
-        if (format === "days") {
-            const days = value || 0;
-
-            return days + (days === 1 ? " day" : " days");
-        }
-
-        return numbers.format(value || 0);
-    }
-
-    function renderSummary(summary) {
-        Object.keys(summaryLayout).forEach(function (key) {
-            const target = document.querySelector('[data-summary="' + key + '"]');
-            const data = (summary || {})[key];
-
-            if (!target || !data) {
-                return;
-            }
-
-            target.innerHTML = summaryLayout[key]
-                .map(function (row) {
-                    const [label, field, format, accent] = row;
-
-                    return (
-                        "<dt>" +
-                        escapeHtml(label) +
-                        "</dt><dd class='" +
-                        (accent || "") +
-                        "'>" +
-                        escapeHtml(formatStat(data[field], format)) +
-                        "</dd>"
-                    );
-                })
-                .join("");
-        });
-    }
-
     function isEmptySeries(data) {
         if (!data || !data.values || !data.values.length) {
             return true;
@@ -624,6 +506,9 @@ document.addEventListener("DOMContentLoaded", function () {
     function buildConfig(canvas, data) {
         const type = canvas.dataset.chartType;
         const isMoney = canvas.dataset.chartMoney === "1";
+        // Categorical charts colour each bar separately; a time series keeps
+        // one colour so the eye reads it as a single trend.
+        const categorical = canvas.dataset.chartCategorical === "1";
         const title = canvas.dataset.chartTitle || "";
         const labels = data.labels || [];
         const values = data.values || [];
@@ -647,9 +532,9 @@ document.addEventListener("DOMContentLoaded", function () {
             );
         };
 
-        if (type === "doughnut") {
+        if (type === "doughnut" || type === "pie") {
             return {
-                type: "doughnut",
+                type: type,
                 data: {
                     labels: labels,
                     datasets: [
@@ -711,9 +596,12 @@ document.addEventListener("DOMContentLoaded", function () {
                         backgroundColor:
                             type === "line"
                                 ? "rgba(37, 99, 235, 0.15)"
-                                : labels.map(function (label, index) {
-                                      return palette[index % palette.length];
-                                  }),
+                                : data.colors ||
+                                  (categorical
+                                      ? labels.map(function (label, index) {
+                                            return palette[index % palette.length];
+                                        })
+                                      : "#2563eb"),
                         borderColor: type === "line" ? "#2563eb" : "transparent",
                         borderWidth: type === "line" ? 2 : 0,
                         fill: type === "line",
@@ -749,36 +637,100 @@ document.addEventListener("DOMContentLoaded", function () {
         };
     }
 
+    function renderChart(key, data) {
+        const canvas = document.querySelector('[data-chart="' + key + '"]');
+
+        if (!canvas) {
+            return;
+        }
+
+        const emptyEl = document.querySelector('[data-chart-empty="' + key + '"]');
+
+        if (chartInstances[key]) {
+            chartInstances[key].destroy();
+            delete chartInstances[key];
+        }
+
+        const empty = isEmptySeries(data);
+
+        if (emptyEl) {
+            emptyEl.classList.toggle("d-none", !empty);
+        }
+
+        canvas.classList.toggle("d-none", empty);
+
+        if (empty || !window.Chart) {
+            return;
+        }
+
+        chartInstances[key] = new window.Chart(canvas, buildConfig(canvas, data));
+    }
+
     function renderCharts(charts) {
         chartCanvases.forEach(function (canvas) {
-            const key = canvas.dataset.chart;
-            const data = (charts || {})[key];
-            const emptyEl = document.querySelector(
-                '[data-chart-empty="' + key + '"]',
-            );
-
-            if (chartInstances[key]) {
-                chartInstances[key].destroy();
-                delete chartInstances[key];
-            }
-
-            const empty = isEmptySeries(data);
-
-            if (emptyEl) {
-                emptyEl.classList.toggle("d-none", !empty);
-            }
-
-            canvas.classList.toggle("d-none", empty);
-
-            if (empty || !window.Chart) {
-                return;
-            }
-
-            chartInstances[key] = new window.Chart(
-                canvas,
-                buildConfig(canvas, data),
-            );
+            renderChart(canvas.dataset.chart, (charts || {})[canvas.dataset.chart]);
         });
+    }
+
+    function setChartLoading(key, loading) {
+        const spinner = document.querySelector('[data-chart-loading="' + key + '"]');
+
+        if (spinner) {
+            spinner.classList.toggle("d-none", !loading);
+        }
+    }
+
+    /**
+     * The state of every chart's own toggles, sent with the page-level request
+     * and with each single-chart refresh so a reload never loses a selection.
+     */
+    const chartGranularities = {};
+    let quotationStatus = "all";
+
+    function chartParams(key) {
+        const params = new URLSearchParams();
+
+        params.set("chart", key);
+
+        if (chartGranularities[key]) {
+            params.set("granularity", chartGranularities[key]);
+        }
+
+        params.set("quotation_status", quotationStatus);
+
+        return params;
+    }
+
+    // Each chart tracks its own in-flight request, so a slow one can never
+    // overwrite a newer render of a different chart.
+    const chartTokens = {};
+
+    function loadChart(key) {
+        const token = (chartTokens[key] = (chartTokens[key] || 0) + 1);
+
+        setChartLoading(key, true);
+        setAlert(systemError, "");
+
+        requestJson(routes.systemChart + "?" + chartParams(key).toString()).then(
+            function (result) {
+                if (token !== chartTokens[key]) {
+                    return;
+                }
+
+                setChartLoading(key, false);
+
+                if (!result.ok) {
+                    setAlert(
+                        systemError,
+                        result.body.error || "Could not load this graph.",
+                    );
+
+                    return;
+                }
+
+                renderChart(key, result.body.data);
+            },
+        );
     }
 
     function loadSystemReports() {
@@ -787,40 +739,74 @@ document.addEventListener("DOMContentLoaded", function () {
         systemLoading.classList.remove("d-none");
         setAlert(systemError, "");
 
-        requestJson(
-            routes.systemReports + "?period=" + encodeURIComponent(activePeriod),
-        ).then(function (result) {
-            if (token !== systemRequestToken) {
-                return;
-            }
+        const params = new URLSearchParams();
+        params.set("quotation_status", quotationStatus);
 
-            systemLoading.classList.add("d-none");
-
-            if (!result.ok) {
-                setAlert(
-                    systemError,
-                    result.body.error || "Could not load the dashboard.",
-                );
-
-                return;
-            }
-
-            periodLabelEl.textContent = result.body.period.label;
-            renderSummary(result.body.summary);
-            renderCharts(result.body.charts);
-            systemLoaded = true;
+        Object.keys(chartGranularities).forEach(function (key) {
+            params.set("granularities[" + key + "]", chartGranularities[key]);
         });
+
+        requestJson(routes.systemReports + "?" + params.toString()).then(
+            function (result) {
+                if (token !== systemRequestToken) {
+                    return;
+                }
+
+                systemLoading.classList.add("d-none");
+
+                if (!result.ok) {
+                    setAlert(
+                        systemError,
+                        result.body.error || "Could not load the dashboard.",
+                    );
+
+                    return;
+                }
+
+                renderCharts(result.body.charts);
+                systemLoaded = true;
+            },
+        );
     }
 
-    periodButtons.forEach(function (button) {
-        button.addEventListener("click", function () {
-            periodButtons.forEach(function (item) {
-                item.classList.remove("active");
-            });
+    // Per-chart Monthly/Yearly toggles.
+    document
+        .querySelectorAll("[data-chart-granularity]")
+        .forEach(function (button) {
+            const key = button.dataset.chartTarget;
 
-            button.classList.add("active");
-            activePeriod = button.dataset.period;
-            loadSystemReports();
+            if (button.classList.contains("active")) {
+                chartGranularities[key] = button.dataset.chartGranularity;
+            }
+
+            button.addEventListener("click", function () {
+                if (chartGranularities[key] === button.dataset.chartGranularity) {
+                    return;
+                }
+
+                document
+                    .querySelectorAll(
+                        '[data-chart-granularity][data-chart-target="' + key + '"]',
+                    )
+                    .forEach(function (sibling) {
+                        sibling.classList.remove("active");
+                    });
+
+                button.classList.add("active");
+                chartGranularities[key] = button.dataset.chartGranularity;
+                loadChart(key);
+            });
+        });
+
+    // The Total Quotation status filter.
+    document.querySelectorAll("[data-chart-status]").forEach(function (select) {
+        const key = select.dataset.chartStatus;
+
+        quotationStatus = select.value;
+
+        select.addEventListener("change", function () {
+            quotationStatus = select.value;
+            loadChart(key);
         });
     });
 

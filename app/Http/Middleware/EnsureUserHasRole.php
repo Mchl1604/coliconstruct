@@ -1,0 +1,53 @@
+<?php
+
+namespace App\Http\Middleware;
+
+use App\Support\PortalHome;
+use Closure;
+use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\Response;
+
+/**
+ * Restricts a route group to the roles that own it.
+ *
+ * Used as `role:super_admin,admin`. A signed-in user who reaches the wrong
+ * portal is sent to their own rather than shown a 403 - being in the wrong
+ * place is a navigation mistake, not an attack.
+ */
+class EnsureUserHasRole
+{
+    /**
+     * @param  Closure(Request): (Response)  $next
+     */
+    public function handle(Request $request, Closure $next, string ...$roles): Response
+    {
+        $user = $request->user();
+
+        if (! $user) {
+            return redirect()->guest(route('auth.login'));
+        }
+
+        // A deactivated or archived account is turned away mid-session too,
+        // not only at the door: an administrator may have just locked it.
+        if (! $user->canLogin()) {
+            auth()->logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+
+            return redirect()
+                ->route('auth.login')
+                ->with('error', 'That account is no longer active.');
+        }
+
+        if (in_array($user->role, $roles, true)) {
+            return $next($request);
+        }
+
+        // An API-shaped request gets a status code; a page gets sent home.
+        if ($request->expectsJson()) {
+            abort(403, 'This area is not available to your account.');
+        }
+
+        return redirect(PortalHome::url($user));
+    }
+}

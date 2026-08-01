@@ -20,6 +20,14 @@ class ScheduleCalendarAssignTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // Every administrative route is behind `auth` and a role check.
+        $this->actingAsSuperAdmin();
+    }
+
     private function createTechnician(string $name): Technician
     {
         $user = User::factory()->create([

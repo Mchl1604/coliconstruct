@@ -41,6 +41,16 @@ class ReportController extends Controller
     ];
 
     /**
+     * The granularities a dashboard chart can be switched between.
+     *
+     * @var array<int, string>
+     */
+    private const GRANULARITIES = [
+        SystemReportService::GRANULARITY_MONTHLY,
+        SystemReportService::GRANULARITY_YEARLY,
+    ];
+
+    /**
      * Export sections, keyed by the value the dialog submits.
      *
      * @var array<string, string>
@@ -72,43 +82,8 @@ class ReportController extends Controller
             'reportableProjects' => $reportableProjects,
             'reportTypes' => TechnicianReport::TYPES,
             'exportTypes' => self::EXPORT_TYPES,
-            // Lets the Create Report form offer the right technicians the
-            // moment a project is picked, with no extra request.
-            'projectTechnicians' => $this->projectTechnicianMap($reportableProjects),
+            'quotationStatuses' => SystemReportService::QUOTATION_STATUSES,
         ]);
-    }
-
-    /**
-     * project_id => the technicians assigned to it, lead first.
-     *
-     * @param  \Illuminate\Support\Collection<int, Project>  $projects
-     * @return array<int, array<int, array<string, mixed>>>
-     */
-    private function projectTechnicianMap($projects): array
-    {
-        if ($projects->isEmpty()) {
-            return [];
-        }
-
-        // One query for every assignment rather than one per project.
-        $assignments = \App\Models\ProjectTechnician::query()
-            ->with('technician.account')
-            ->whereIn('project_id', $projects->pluck('project_id'))
-            ->get();
-
-        return $assignments
-            ->groupBy('project_id')
-            ->map(fn ($group) => $group
-                ->filter(fn ($assignment) => $assignment->technician !== null)
-                ->map(fn ($assignment): array => [
-                    'technician_id' => $assignment->technician->technician_id,
-                    'name' => $assignment->technician->name,
-                    'is_lead' => optional($assignment->technician->account)->role === 'lead_technician',
-                ])
-                ->sortByDesc('is_lead')
-                ->values()
-                ->all())
-            ->all();
     }
 
     // ------------------------------------------------------------------
@@ -160,7 +135,7 @@ class ReportController extends Controller
         }
 
         if (! empty($filters['search'])) {
-            $term = '%' . $filters['search'] . '%';
+            $term = '%'.$filters['search'].'%';
 
             $query->where(function ($outer) use ($term): void {
                 $outer->where('report_title', 'like', $term)
@@ -196,7 +171,7 @@ class ReportController extends Controller
             'images' => $report->images
                 ->map(fn ($image): array => [
                     'id' => $image->id,
-                    'url' => asset('storage/' . $image->image_path),
+                    'url' => asset('storage/'.$image->image_path),
                 ])
                 ->all(),
         ]);
@@ -230,14 +205,16 @@ class ReportController extends Controller
     // ------------------------------------------------------------------
 
     /**
-     * Summary cards and every chart dataset for the chosen period.
+     * Every chart at once, each at whichever granularity the page currently
+     * has it switched to. One request when the tab is opened; after that a
+     * toggle only refetches its own chart.
      */
     public function systemReports(Request $request, SystemReportService $reports)
     {
         $validator = Validator::make($request->all(), [
-            'period' => ['nullable', 'string'],
-            'start_date' => ['nullable', 'date'],
-            'end_date' => ['nullable', 'date'],
+            'granularities' => ['nullable', 'array'],
+            'granularities.*' => ['nullable', 'string', 'in:'.implode(',', self::GRANULARITIES)],
+            'quotation_status' => ['nullable', 'string', 'in:'.implode(',', array_keys(SystemReportService::QUOTATION_STATUSES))],
         ]);
 
         if ($validator->fails()) {
@@ -246,21 +223,39 @@ class ReportController extends Controller
 
         $filters = $validator->validated();
 
-        $period = $reports->resolvePeriod(
-            $filters['period'] ?? SystemReportService::PERIOD_MONTHLY,
-            $filters['start_date'] ?? null,
-            $filters['end_date'] ?? null
-        );
+        return response()->json([
+            'charts' => $reports->charts(
+                $filters['granularities'] ?? [],
+                $filters['quotation_status'] ?? null
+            ),
+        ]);
+    }
+
+    /**
+     * One chart, so flipping its Monthly/Yearly toggle - or the quotation
+     * status filter - costs a single query set rather than the whole page.
+     */
+    public function systemChart(Request $request, SystemReportService $reports)
+    {
+        $validator = Validator::make($request->all(), [
+            'chart' => ['required', 'string', 'in:'.implode(',', SystemReportService::CHART_KEYS)],
+            'granularity' => ['nullable', 'string', 'in:'.implode(',', self::GRANULARITIES)],
+            'quotation_status' => ['nullable', 'string', 'in:'.implode(',', array_keys(SystemReportService::QUOTATION_STATUSES))],
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['error' => $validator->errors()->first()], 422);
+        }
+
+        $input = $validator->validated();
 
         return response()->json([
-            'period' => [
-                'key' => $period['key'],
-                'label' => $period['label'],
-                'start' => $period['start']->toDateString(),
-                'end' => $period['end']->toDateString(),
-            ],
-            'summary' => $reports->summary($period),
-            'charts' => $reports->charts($period),
+            'chart' => $input['chart'],
+            'data' => $reports->chart(
+                $input['chart'],
+                $input['granularity'] ?? null,
+                $input['quotation_status'] ?? null
+            ),
         ]);
     }
 
@@ -278,7 +273,7 @@ class ReportController extends Controller
     public function export(Request $request, SystemReportService $reports)
     {
         $validator = Validator::make($request->all(), [
-            'report_type' => ['required', 'string', 'in:' . implode(',', array_keys(self::EXPORT_TYPES))],
+            'report_type' => ['required', 'string', 'in:'.implode(',', array_keys(self::EXPORT_TYPES))],
             'period' => ['required', 'string', 'in:weekly,monthly,yearly,custom'],
             'start_date' => ['nullable', 'required_if:period,custom', 'date'],
             'end_date' => ['nullable', 'required_if:period,custom', 'date', 'after_or_equal:start_date'],
@@ -397,6 +392,6 @@ class ReportController extends Controller
             return null;
         }
 
-        return 'data:image/png;base64,' . base64_encode((string) file_get_contents($path));
+        return 'data:image/png;base64,'.base64_encode((string) file_get_contents($path));
     }
 }

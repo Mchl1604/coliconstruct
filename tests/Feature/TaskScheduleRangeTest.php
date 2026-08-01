@@ -10,8 +10,8 @@ use App\Models\Task;
 use App\Models\Technician;
 use App\Models\User;
 use Carbon\CarbonImmutable;
-use Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
 
 /**
  * A project's schedule can have gaps - July 10-15 and July 20-25, say.
@@ -29,6 +29,9 @@ class TaskScheduleRangeTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+
+        // Every administrative route is behind `auth` and a role check.
+        $this->actingAsSuperAdmin();
 
         $user = User::factory()->create([
             'name' => 'Ana Mendoza',

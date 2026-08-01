@@ -157,23 +157,14 @@
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
                 <div>
                     <h5 class="fw-bold mb-0">System Reports</h5>
-                    <span class="text-secondary small" data-period-label></span>
+                    <span class="text-secondary small">Each graph sets its own period.</span>
                 </div>
 
-                <div class="d-flex align-items-center gap-2 flex-wrap">
-                    <div class="btn-group" role="group" aria-label="Reporting period">
-                        <button type="button" class="btn btn-sm btn-outline-primary" data-period="weekly">Weekly</button>
-                        <button type="button" class="btn btn-sm btn-outline-primary active"
-                            data-period="monthly">Monthly</button>
-                        <button type="button" class="btn btn-sm btn-outline-primary" data-period="yearly">Yearly</button>
-                    </div>
-
-                    <button type="button" class="btn btn-success" data-bs-toggle="modal"
-                        data-bs-target="#exportReportModal">
-                        <i class="bi bi-file-earmark-arrow-down me-1" aria-hidden="true"></i>
-                        Export Report
-                    </button>
-                </div>
+                <button type="button" class="btn btn-success" data-bs-toggle="modal"
+                    data-bs-target="#exportReportModal">
+                    <i class="bi bi-file-earmark-arrow-down me-1" aria-hidden="true"></i>
+                    Export Report
+                </button>
             </div>
 
             <div class="text-secondary small py-3 d-none" data-system-loading>
@@ -183,80 +174,123 @@
 
             <div class="alert alert-danger d-none" role="alert" data-system-error></div>
 
-            {{-- Summary cards --}}
-            <div class="row g-3 mb-4" data-summary-cards>
-                @foreach ([
-        ['key' => 'projects', 'title' => 'Projects', 'icon' => 'bi-folder2-open'],
-        ['key' => 'quotations', 'title' => 'Quotations', 'icon' => 'bi-cash-coin'],
-        ['key' => 'technicians', 'title' => 'Technicians', 'icon' => 'bi-tools'],
-        ['key' => 'schedules', 'title' => 'Schedules', 'icon' => 'bi-calendar-event'],
-        ['key' => 'tasks', 'title' => 'Tasks', 'icon' => 'bi-list-task'],
-    ] as $card)
-                    <div class="col-12 col-md-6 col-xl-4">
+            {{-- Charts. Each one carries its own Monthly/Yearly toggle:
+                 Monthly draws the current year month by month, Yearly the last
+                 five years. Charts with no time axis use the same window. --}}
+            @php
+                $systemCharts = [
+                    [
+                        'id' => 'currentProjectBreakdown',
+                        'title' => 'Current Project Breakdown',
+                        'subtitle' => 'Every project as it stands today',
+                        'type' => 'pie',
+                        'col' => 'col-12 col-xl-5',
+                        'categorical' => true,
+                    ],
+                    [
+                        'id' => 'completedProjects',
+                        'title' => 'Completed Projects',
+                        'type' => 'bar',
+                        'col' => 'col-12 col-xl-7',
+                        'granularity' => true,
+                    ],
+                    [
+                        'id' => 'projectsByType',
+                        'title' => 'Projects by Project Type',
+                        'type' => 'bar',
+                        'col' => 'col-12 col-xl-6',
+                        'granularity' => true,
+                        'categorical' => true,
+                    ],
+                    [
+                        'id' => 'residentialVsCommercial',
+                        'title' => 'Residential vs Commercial Projects',
+                        'type' => 'bar',
+                        'col' => 'col-12 col-xl-6',
+                        'granularity' => true,
+                        'categorical' => true,
+                    ],
+                    [
+                        'id' => 'totalQuotation',
+                        'title' => 'Total Quotation',
+                        'type' => 'line',
+                        'col' => 'col-12',
+                        'granularity' => true,
+                        'money' => true,
+                        'statusFilter' => true,
+                    ],
+                    [
+                        'id' => 'topClients',
+                        'title' => 'Top 10 Clients by Total Quotation',
+                        'subtitle' => 'A client\'s projects are summed together',
+                        'type' => 'horizontalBar',
+                        'col' => 'col-12',
+                        'granularity' => true,
+                        'money' => true,
+                        'categorical' => true,
+                        'tall' => true,
+                    ],
+                ];
+            @endphp
+
+            <div class="row g-3 mb-4">
+                @foreach ($systemCharts as $chart)
+                    <div class="{{ $chart['col'] }}">
                         <div class="card shadow-sm border-0 rounded-2 h-100">
                             <div class="card-body p-3">
-                                <div class="report-card-heading">
-                                    <i class="bi {{ $card['icon'] }}" aria-hidden="true"></i>
-                                    {{ $card['title'] }}
+
+                                <div class="report-chart-header">
+                                    <div>
+                                        <h6 class="report-chart-title mb-0">{{ $chart['title'] }}</h6>
+                                        @if (! empty($chart['subtitle']))
+                                            <span class="report-chart-subtitle">{{ $chart['subtitle'] }}</span>
+                                        @endif
+                                    </div>
+
+                                    <div class="report-chart-controls">
+                                        <span class="spinner-border spinner-border-sm text-secondary d-none"
+                                            role="status" aria-hidden="true"
+                                            data-chart-loading="{{ $chart['id'] }}"></span>
+
+                                        @if (! empty($chart['statusFilter']))
+                                            <select class="form-select form-select-sm report-chart-select"
+                                                aria-label="Project status" data-chart-status="{{ $chart['id'] }}">
+                                                @foreach ($quotationStatuses as $value => $label)
+                                                    <option value="{{ $value }}">{{ $label }}</option>
+                                                @endforeach
+                                            </select>
+                                        @endif
+
+                                        @if (! empty($chart['granularity']))
+                                            <div class="btn-group btn-group-sm" role="group"
+                                                aria-label="{{ $chart['title'] }} granularity">
+                                                <button type="button" class="btn btn-outline-primary active"
+                                                    data-chart-granularity="monthly"
+                                                    data-chart-target="{{ $chart['id'] }}">Monthly</button>
+                                                <button type="button" class="btn btn-outline-primary"
+                                                    data-chart-granularity="yearly"
+                                                    data-chart-target="{{ $chart['id'] }}">Yearly</button>
+                                            </div>
+                                        @endif
+                                    </div>
                                 </div>
-                                <dl class="report-stat-list mb-0" data-summary="{{ $card['key'] }}"></dl>
+
+                                <div class="report-chart-wrap @if (! empty($chart['tall'])) is-tall @endif">
+                                    <canvas data-chart="{{ $chart['id'] }}"
+                                        data-chart-type="{{ $chart['type'] }}"
+                                        data-chart-title="{{ $chart['title'] }}"
+                                        @if (! empty($chart['money'])) data-chart-money="1" @endif
+                                        @if (! empty($chart['categorical'])) data-chart-categorical="1" @endif></canvas>
+                                </div>
+
+                                <div class="schedule-empty-state mt-2 d-none" data-chart-empty="{{ $chart['id'] }}">
+                                    No data for this period.
+                                </div>
                             </div>
                         </div>
                     </div>
                 @endforeach
             </div>
-
-            {{-- Charts --}}
-            @foreach ([
-        ['title' => 'Projects', 'charts' => [
-            ['id' => 'projectsOverTime', 'title' => 'Projects Created Over Time', 'type' => 'line', 'col' => 'col-12 col-xl-8'],
-            ['id' => 'projectsByStatus', 'title' => 'Projects by Status', 'type' => 'doughnut', 'col' => 'col-12 col-xl-4'],
-            ['id' => 'projectCompletionTrend', 'title' => 'Project Completion Trend', 'type' => 'bar', 'col' => 'col-12'],
-        ]],
-        ['title' => 'Quotations', 'charts' => [
-            ['id' => 'quotationValueOverTime', 'title' => 'Approved Quotation Value Over Time', 'type' => 'line', 'col' => 'col-12 col-xl-7', 'money' => true],
-            ['id' => 'quotationCountOverTime', 'title' => 'Approved Quotations Created', 'type' => 'bar', 'col' => 'col-12 col-xl-5'],
-            ['id' => 'topClientsByValue', 'title' => 'Top Clients by Total Quotation Value', 'type' => 'horizontalBar', 'col' => 'col-12', 'money' => true],
-        ]],
-        ['title' => 'Technicians', 'charts' => [
-            ['id' => 'projectsPerTechnician', 'title' => 'Active Projects per Technician', 'type' => 'bar', 'col' => 'col-12 col-xl-7'],
-            ['id' => 'technicianUtilization', 'title' => 'Technician Utilization', 'type' => 'doughnut', 'col' => 'col-12 col-xl-5'],
-            ['id' => 'specialtyDistribution', 'title' => 'Specialty Distribution', 'type' => 'bar', 'col' => 'col-12'],
-        ]],
-        ['title' => 'Schedules', 'charts' => [
-            ['id' => 'schedulesOverTime', 'title' => 'Schedules Starting Over Time', 'type' => 'bar', 'col' => 'col-12 col-xl-7'],
-            ['id' => 'scheduleHealth', 'title' => 'Schedule Health', 'type' => 'doughnut', 'col' => 'col-12 col-xl-5'],
-        ]],
-        ['title' => 'Tasks', 'charts' => [
-            ['id' => 'taskCompletionTrend', 'title' => 'Task Completion Trend', 'type' => 'line', 'col' => 'col-12 col-xl-7'],
-            ['id' => 'tasksByStatus', 'title' => 'Tasks by Status', 'type' => 'doughnut', 'col' => 'col-12 col-xl-5'],
-            ['id' => 'tasksByProject', 'title' => 'Task Distribution by Project', 'type' => 'horizontalBar', 'col' => 'col-12'],
-        ]],
-    ] as $section)
-                <div class="report-section-title">{{ $section['title'] }}</div>
-
-                <div class="row g-3 mb-4">
-                    @foreach ($section['charts'] as $chart)
-                        <div class="{{ $chart['col'] }}">
-                            <div class="card shadow-sm border-0 rounded-2 h-100">
-                                <div class="card-body p-3">
-                                    <h6 class="report-chart-title">{{ $chart['title'] }}</h6>
-                                    <div class="report-chart-wrap">
-                                        <canvas data-chart="{{ $chart['id'] }}"
-                                            data-chart-type="{{ $chart['type'] }}"
-                                            data-chart-title="{{ $chart['title'] }}"
-                                            @if (! empty($chart['money'])) data-chart-money="1" @endif></canvas>
-                                    </div>
-                                    <div class="schedule-empty-state mt-2 d-none"
-                                        data-chart-empty="{{ $chart['id'] }}">
-                                        No data for this period.
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    @endforeach
-                </div>
-            @endforeach
         </div>
     </div>
 
@@ -323,16 +357,6 @@
                                 <label class="form-label fw-semibold">Report Description</label>
                                 <textarea class="form-control" name="report_description" rows="5"
                                     placeholder="Describe the work completed or incident..." required></textarea>
-                            </div>
-
-                            <div class="mb-3">
-                                <label class="form-label fw-semibold">Submitted By</label>
-                                <select class="form-select" name="technician_id" data-create-technician>
-                                    <option value="">Project lead technician</option>
-                                </select>
-                                <div class="form-text">
-                                    Defaults to the project's lead technician.
-                                </div>
                             </div>
 
                             <div class="mb-3">
@@ -526,11 +550,11 @@
             window.reportRoutes = {
                 technicianReports: @json(route('super-admin.reports.technician')),
                 systemReports: @json(route('super-admin.reports.system')),
+                systemChart: @json(route('super-admin.reports.system.chart')),
                 export: @json(route('super-admin.reports.export')),
                 reportBase: @json(url('super-admin/reports/technician-reports')),
                 projectBase: @json(url('super-admin/projects')),
             };
-            window.reportProjectTechnicians = @json($projectTechnicians);
         </script>
         <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>

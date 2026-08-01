@@ -23,6 +23,14 @@ class TechnicianManagementTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // Every administrative route is behind `auth` and a role check.
+        $this->actingAsSuperAdmin();
+    }
+
     private function technician(string $name, string $role = 'technician'): Technician
     {
         $user = User::factory()->create([

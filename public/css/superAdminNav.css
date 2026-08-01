@@ -114,6 +114,18 @@
             color: #ffffff;
         }
 
+        /* Logout is a form button, so it needs the anchor's look without a
+           button's default chrome. */
+        .admin-sidebar-logout {
+            width: 100%;
+            border: 0;
+            background: transparent;
+            padding: 0;
+            text-align: left;
+            cursor: pointer;
+            font: inherit;
+        }
+
         .admin-sidebar-footer {
             margin-top: auto;
             border-top: 1px solid var(--admin-sidebar-border);

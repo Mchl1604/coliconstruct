@@ -1,65 +1,25 @@
-/* ---- Summary cards ---- */
+/* ---- Charts ---- */
 
-.report-card-heading {
+/* Title on the left, the chart's own controls on the right, wrapping onto a
+   second line rather than squeezing the toggle on a narrow screen. */
+.report-chart-header {
     display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    font-size: 0.78rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: #64748b;
+    align-items: flex-start;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.5rem;
     margin-bottom: 0.75rem;
 }
 
-.report-stat-list {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    row-gap: 0.4rem;
-    column-gap: 0.75rem;
-    margin: 0;
+.report-chart-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
 }
 
-.report-stat-list dt {
-    font-size: 0.82rem;
-    font-weight: 500;
-    color: #64748b;
-}
-
-.report-stat-list dd {
-    margin: 0;
-    text-align: right;
-    font-size: 0.9rem;
-    font-weight: 700;
-    color: #0f172a;
-}
-
-/* Figures that deserve emphasis get their own colour. */
-.report-stat-list dd.is-accent {
-    color: #2563eb;
-}
-
-.report-stat-list dd.is-warning {
-    color: #fd7e14;
-}
-
-.report-stat-list dd.is-success {
-    color: #198754;
-}
-
-.report-stat-list dd.is-danger {
-    color: #dc3545;
-}
-
-/* ---- Charts ---- */
-
-.report-section-title {
-    font-size: 0.8rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: #94a3b8;
-    margin-bottom: 0.6rem;
+.report-chart-select {
+    width: auto;
+    min-width: 9.5rem;
 }
 
 .report-chart-title {
@@ -69,10 +29,21 @@
     margin-bottom: 0.75rem;
 }
 
+.report-chart-subtitle {
+    display: block;
+    font-size: 0.75rem;
+    color: #94a3b8;
+}
+
 /* A fixed height keeps Chart.js from growing without bound on redraw. */
 .report-chart-wrap {
     position: relative;
     height: 260px;
+}
+
+/* Ten horizontal bars need the extra room to stay legible. */
+.report-chart-wrap.is-tall {
+    height: 380px;
 }
 
 .report-chart-wrap canvas {
