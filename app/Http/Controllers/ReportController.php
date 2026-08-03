@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ActivityLog;
 use App\Models\Project;
 use App\Models\TechnicianReport;
+use App\Services\ActivityLogger;
 use App\Services\SystemReportService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\CarbonImmutable;
@@ -19,6 +21,8 @@ use Illuminate\Support\Facades\Validator;
  */
 class ReportController extends Controller
 {
+    public function __construct(private readonly ActivityLogger $activityLogger) {}
+
     /**
      * Statuses that may still receive a technician report. On-hold projects
      * keep their pending/ongoing status, so they are included: work paused
@@ -320,6 +324,16 @@ class ReportController extends Controller
             '%s-%s.pdf',
             str_replace('_', '-', $reportType),
             CarbonImmutable::now()->format('Ymd-His')
+        );
+
+        $this->activityLogger->record(
+            ActivityLog::REPORT_EXPORTED,
+            null,
+            sprintf(
+                'Exported the %s as PDF for %s.',
+                self::EXPORT_TYPES[$reportType],
+                $period['label'] ?? 'the selected period'
+            )
         );
 
         return $pdf->download($fileName);

@@ -238,3 +238,79 @@
     font-size: 2.6rem;
     color: #cbd5e1;
 }
+
+/* ---- Activity Logs ---- */
+
+/* The trail is read by scrolling, so the headings stay put. */
+.config-log-table {
+    max-height: 32rem;
+    overflow-y: auto;
+}
+
+.config-log-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+}
+
+/* A sortable heading is a button so it works from the keyboard; it should
+   still read as a table heading. */
+.config-sort {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    border: 0;
+    background: none;
+    padding: 0;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+}
+
+.config-sort i {
+    font-size: 0.65rem;
+    opacity: 0;
+    transition: transform 0.12s ease, opacity 0.12s ease;
+}
+
+.config-sort:hover i {
+    opacity: 0.45;
+}
+
+.config-sort.is-active i {
+    opacity: 1;
+}
+
+.config-sort.is-ascending i {
+    transform: rotate(180deg);
+}
+
+.config-log-dates {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.85rem;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.5rem;
+    background: #f8fafc;
+}
+
+.config-log-dates input {
+    max-width: 11rem;
+}
+
+/* Details can run long; let them wrap rather than stretch the table. */
+.config-log-details {
+    min-width: 18rem;
+    max-width: 32rem;
+    white-space: normal;
+}
+
+/* Lead Technician has no Bootstrap background of its own. Purple, to sit
+   between the administrators' red and blue and the technicians' green. */
+.badge-role-lead {
+    background-color: #7c3aed;
+    color: #fff;
+}

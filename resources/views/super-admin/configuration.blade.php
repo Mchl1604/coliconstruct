@@ -182,16 +182,127 @@
 
         {{-- ==================== TAB 2: ACTIVITY LOGS ==================== --}}
         <div class="tab-pane fade" id="activityLogsPane" role="tabpanel" aria-labelledby="activityLogsTab">
+
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                <div>
+                    <h5 class="fw-bold mb-0">Activity Logs</h5>
+                    <span class="text-secondary small">
+                        Every recorded action across the system, newest first.
+                        @if (! auth()->user()?->isSuperAdmin())
+                            Entries by a Super Admin or another Admin are not shown.
+                        @endif
+                    </span>
+                </div>
+            </div>
+
             <div class="card shadow-sm border-0 rounded-2">
-                <div class="card-body p-5 text-center">
-                    <i class="bi bi-clock-history config-placeholder-icon" aria-hidden="true"></i>
-                    <h5 class="fw-bold mt-3 mb-1">Activity Logs</h5>
-                    <p class="text-secondary mb-0">
-                        Activity Logs module will be implemented in a future update.
-                    </p>
-                    <p class="text-secondary small mt-2 mb-0">
-                        Entries are already being recorded for every administrative action.
-                    </p>
+                <div class="card-body p-3">
+                    <div class="config-table-header">
+                        <div>
+                            <h6 class="config-table-title mb-0">
+                                <i class="bi bi-clock-history me-1" aria-hidden="true"></i>
+                                Audit Trail
+                            </h6>
+                            <span class="text-secondary small" data-log-count></span>
+                        </div>
+
+                        <div class="config-table-controls">
+                            <input type="search" class="form-control form-control-sm config-search"
+                                placeholder="Search name, action or details&hellip;" aria-label="Search activity logs"
+                                data-log-search>
+
+                            <select class="form-select form-select-sm config-filter" aria-label="Filter by role"
+                                data-log-role>
+                                <option value="all">All Roles</option>
+                                @foreach ($logRoles as $value => $label)
+                                    <option value="{{ $value }}">{{ $label }}</option>
+                                @endforeach
+                            </select>
+
+                            <select class="form-select form-select-sm config-filter" aria-label="Filter by module"
+                                data-log-module>
+                                <option value="all">All Modules</option>
+                                @foreach ($logModules as $module)
+                                    <option value="{{ $module }}">{{ $module }}</option>
+                                @endforeach
+                            </select>
+
+                            <select class="form-select form-select-sm config-filter" aria-label="Filter by date"
+                                data-log-range>
+                                <option value="all">All Time</option>
+                                <option value="today">Today</option>
+                                <option value="week">Last 7 Days</option>
+                                <option value="month">Last 30 Days</option>
+                                <option value="custom">Custom Range</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    {{-- Only meaningful once Custom Range is chosen, so it stays
+                         out of the way until then. --}}
+                    <div class="config-log-dates d-none" data-log-custom-range>
+                        <label class="form-label small fw-semibold mb-0" for="logFrom">From</label>
+                        <input type="date" class="form-control form-control-sm" id="logFrom" data-log-from>
+
+                        <label class="form-label small fw-semibold mb-0" for="logTo">To</label>
+                        <input type="date" class="form-control form-control-sm" id="logTo" data-log-to>
+                    </div>
+
+                    <div class="table-responsive config-log-table">
+                        <table class="table table-hover table-striped align-middle mb-0">
+                            <thead class="table-info">
+                                <tr>
+                                    <th>Log ID</th>
+                                    {{-- Every sortable heading is a button, so the
+                                         column can be reordered from the keyboard
+                                         as well as the mouse. --}}
+                                    <th>
+                                        <button type="button" class="config-sort is-active" data-log-sort="date">
+                                            Date &amp; Time
+                                            <i class="bi bi-caret-down-fill" aria-hidden="true"></i>
+                                        </button>
+                                    </th>
+                                    <th>
+                                        <button type="button" class="config-sort" data-log-sort="name">
+                                            Name
+                                            <i class="bi bi-caret-down-fill" aria-hidden="true"></i>
+                                        </button>
+                                    </th>
+                                    <th>
+                                        <button type="button" class="config-sort" data-log-sort="role">
+                                            Role
+                                            <i class="bi bi-caret-down-fill" aria-hidden="true"></i>
+                                        </button>
+                                    </th>
+                                    <th>
+                                        <button type="button" class="config-sort" data-log-sort="module">
+                                            Module
+                                            <i class="bi bi-caret-down-fill" aria-hidden="true"></i>
+                                        </button>
+                                    </th>
+                                    <th>
+                                        <button type="button" class="config-sort" data-log-sort="action">
+                                            Action
+                                            <i class="bi bi-caret-down-fill" aria-hidden="true"></i>
+                                        </button>
+                                    </th>
+                                    <th>Details</th>
+                                </tr>
+                            </thead>
+                            <tbody data-log-body></tbody>
+                        </table>
+                    </div>
+
+                    <div class="text-secondary small py-3 px-1" data-log-loading>
+                        <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                        Loading activity logs&hellip;
+                    </div>
+
+                    <div class="schedule-empty-state mt-2 d-none" data-log-empty>
+                        No activity logs found.
+                    </div>
+
+                    <nav class="config-pagination d-none" aria-label="Activity log pages" data-log-pagination></nav>
                 </div>
             </div>
         </div>
@@ -538,6 +649,7 @@
                 storeEmployee: @json(route('super-admin.configuration.users.employees.store')),
                 storeClient: @json(route('super-admin.configuration.users.clients.store')),
                 userBase: @json(url('super-admin/configuration/users')),
+                activityLogs: @json(route('super-admin.configuration.activity-logs')),
             };
             window.configurationOptions = {
                 technicianRoles: @json($technicianRoles),

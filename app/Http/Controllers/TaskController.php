@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ActivityLog;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskImage;
+use App\Services\ActivityLogger;
 use App\Services\TaskScheduleRules;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -14,7 +16,10 @@ use Illuminate\Support\Facades\Validator;
 
 class TaskController extends Controller
 {
-    public function __construct(private TaskScheduleRules $scheduleRules) {}
+    public function __construct(
+        private TaskScheduleRules $scheduleRules,
+        private readonly ActivityLogger $activityLogger,
+    ) {}
 
     /**
      * Tasks page: one card per project, each holding that project's board,
@@ -179,7 +184,7 @@ class TaskController extends Controller
 
         try {
 
-            Task::create([
+            $task = Task::create([
                 'project_id' => $projectId,
                 'technician_id' => $validated['technician_id'],
                 'task_title' => $validated['task_title'],
@@ -190,6 +195,13 @@ class TaskController extends Controller
             ]);
 
             DB::commit();
+
+            $this->activityLogger->record(
+                ActivityLog::TASK_CREATED,
+                null,
+                sprintf("Created task '%s' on %s.", $task->task_title, $project->reference_no),
+                $task
+            );
 
             return redirect()
                 ->back()
@@ -240,11 +252,32 @@ class TaskController extends Controller
             $validated['status'] = 'pending';
         }
 
+        // Read before the write, so the log can tell an edit from a handover.
+        $before = $task->technician_id;
+
         DB::beginTransaction();
 
         try {
             $task->update($validated);
+
+            // Moving a task to a different technician is a different event from
+            // editing its wording or its dates, so it is recorded as one.
+            $reassigned = (int) $before !== (int) $task->technician_id;
+
             DB::commit();
+
+            $this->activityLogger->record(
+                $reassigned ? ActivityLog::TASK_REASSIGNED : ActivityLog::TASK_UPDATED,
+                null,
+                sprintf(
+                    $reassigned
+                        ? "Reassigned task '%s' to %s."
+                        : "Updated task '%s'. Assigned to %s.",
+                    $task->task_title,
+                    $task->fresh('technician')->technician?->name ?? 'nobody'
+                ),
+                $task
+            );
 
             return back()->with('success', 'Task updated successfully.');
         } catch (\Exception $e) {
@@ -310,6 +343,24 @@ class TaskController extends Controller
             DB::rollBack();
 
             return back()->with('error', $e->getMessage());
+        }
+
+        $this->activityLogger->record(
+            ActivityLog::TASK_COMPLETED,
+            null,
+            sprintf("Marked task '%s' as completed.", $task->task_title),
+            $task
+        );
+
+        $photos = count($request->file('images') ?? []);
+
+        if ($photos > 0) {
+            $this->activityLogger->record(
+                ActivityLog::TASK_IMAGE_UPLOADED,
+                null,
+                sprintf('Uploaded %d completion photo(s) for %s.', $photos, $task->task_title),
+                $task
+            );
         }
 
         return back()->with(

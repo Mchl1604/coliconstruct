@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
 use App\Models\User;
+use App\Services\ActivityLogger;
 use App\Services\CredentialDelivery;
 use App\Services\UserAccountService;
 use App\Support\PortalHome;
@@ -30,6 +32,8 @@ class AuthController extends Controller
 
     /** How long a lockout lasts, in seconds. */
     private const LOCKOUT_SECONDS = 60;
+
+    public function __construct(private readonly ActivityLogger $activityLogger) {}
 
     public function showLogin()
     {
@@ -88,6 +92,16 @@ class AuthController extends Controller
         if (! $attempted) {
             RateLimiter::hit($this->throttleKey($request), self::LOCKOUT_SECONDS);
 
+            // Recorded whether or not the address exists: a run of failures
+            // against an address that has no account is exactly the pattern an
+            // audit trail should show.
+            $this->activityLogger->recordAnonymous(
+                ActivityLog::LOGIN_FAILED,
+                $account?->fullName() ?? $credentials['email'],
+                $account,
+                sprintf('Failed sign-in attempt for %s.', $credentials['email'])
+            );
+
             // Deactivated, archived, wrong password, unusable hash: one message
             // for all of them, so nothing here tells a stranger which addresses
             // exist and which are merely switched off.
@@ -103,6 +117,12 @@ class AuthController extends Controller
 
         $user = Auth::user();
         $user->forceFill(['last_login_at' => now()])->save();
+
+        $this->activityLogger->record(
+            ActivityLog::LOGIN,
+            $user,
+            sprintf('%s signed in.', $user->fullName())
+        );
 
         if ($user->must_change_password) {
             return redirect()->route('auth.password.change');
@@ -158,6 +178,18 @@ class AuthController extends Controller
 
     public function logout(Request $request)
     {
+        $user = $request->user();
+
+        // Recorded before the session goes, while there is still an actor to
+        // name.
+        if ($user) {
+            $this->activityLogger->record(
+                ActivityLog::LOGOUT,
+                $user,
+                sprintf('%s signed out.', $user->fullName())
+            );
+        }
+
         Auth::logout();
 
         $request->session()->invalidate();
@@ -212,6 +244,12 @@ class AuthController extends Controller
             'must_change_password' => false,
         ])->save();
 
+        $this->activityLogger->record(
+            ActivityLog::PASSWORD_CHANGED,
+            $user,
+            sprintf('%s changed their own password.', $user->fullName())
+        );
+
         return redirect(PortalHome::url($user))
             ->with('success', 'Your password has been updated.');
     }
@@ -253,6 +291,18 @@ class AuthController extends Controller
 
         Password::sendResetLink($request->only('email'));
 
+        // Recorded against the account when there is one, and against the
+        // address alone when there is not - a stream of requests for addresses
+        // that do not exist is worth being able to see.
+        $account = User::where('email', $request->string('email'))->first();
+
+        $this->activityLogger->recordAnonymous(
+            ActivityLog::PASSWORD_RESET_REQUESTED,
+            $account?->fullName() ?? $request->string('email')->toString(),
+            $account,
+            sprintf('A password reset link was requested for %s.', $request->string('email'))
+        );
+
         return back()->with(
             'success',
             'If that address has an account, a reset link is on its way. The link expires in 60 minutes.'
@@ -281,9 +331,11 @@ class AuthController extends Controller
             'password.min' => 'The new password must be at least 8 characters.',
         ]);
 
+        $reset = null;
+
         $status = Password::reset(
             $request->only('email', 'password', 'password_confirmation', 'token'),
-            function (User $user, string $password): void {
+            function (User $user, string $password) use (&$reset): void {
                 // Whatever the account was opened with, this is now the user's
                 // own - so the forced first change no longer applies.
                 $user->forceFill([
@@ -291,6 +343,8 @@ class AuthController extends Controller
                     'must_change_password' => false,
                     'remember_token' => Str::random(60),
                 ])->save();
+
+                $reset = $user;
             }
         );
 
@@ -299,6 +353,13 @@ class AuthController extends Controller
                 'email' => 'That reset link is no longer valid. Ask for a new one.',
             ]);
         }
+
+        $this->activityLogger->recordAnonymous(
+            ActivityLog::PASSWORD_RESET_COMPLETED,
+            $reset?->fullName() ?? $request->string('email')->toString(),
+            $reset,
+            sprintf('%s reset their password from an emailed link.', $reset?->fullName() ?? 'An account holder')
+        );
 
         return redirect()
             ->route('auth.login')

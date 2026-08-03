@@ -234,6 +234,16 @@ document.addEventListener("DOMContentLoaded", function () {
                 }
             });
 
+            if (config.extraParams) {
+                const extra = config.extraParams();
+
+                Object.keys(extra).forEach(function (key) {
+                    if (extra[key] !== null && extra[key] !== "") {
+                        query.set(key, extra[key]);
+                    }
+                });
+            }
+
             return query;
         }
 
@@ -293,7 +303,8 @@ document.addEventListener("DOMContentLoaded", function () {
                         body.innerHTML = "";
                         setAlert(
                             pageError,
-                            result.body.error || "Could not load accounts.",
+                            result.body.error ||
+                                "Could not load " + (config.noun || "accounts") + ".",
                         );
                         renderPagination(null);
 
@@ -310,8 +321,12 @@ document.addEventListener("DOMContentLoaded", function () {
                     const meta = result.body.meta || {};
 
                     if (count) {
+                        const noun = config.noun || "accounts";
+
                         count.textContent =
-                            meta.total + (meta.total === 1 ? " account" : " accounts");
+                            meta.total +
+                            " " +
+                            (meta.total === 1 ? (config.singular || "account") : noun);
                     }
 
                     renderPagination(meta);
@@ -486,6 +501,9 @@ document.addEventListener("DOMContentLoaded", function () {
         ["[data-employee-role]", "role"],
         ["[data-employee-status]", "status"],
         ["[data-client-status]", "status"],
+        ["[data-log-role]", "role"],
+        ["[data-log-module]", "module"],
+        ["[data-log-range]", "range"],
     ].forEach(function (pair) {
         const element = document.querySelector(pair[0]);
 
@@ -493,6 +511,150 @@ document.addEventListener("DOMContentLoaded", function () {
             element.dataset.filterKey = pair[1];
         }
     });
+
+    // ---------------------------------------------------------------
+    // Activity Logs
+    // ---------------------------------------------------------------
+
+    const logRange = document.querySelector("[data-log-range]");
+    const logCustom = document.querySelector("[data-log-custom-range]");
+    const logFrom = document.querySelector("[data-log-from]");
+    const logTo = document.querySelector("[data-log-to]");
+    const logSorts = document.querySelectorAll("[data-log-sort]");
+
+    // Newest first, which is what an audit trail is read in.
+    let logSort = "date";
+    let logDirection = "desc";
+
+    const activityLogTable = document.querySelector("[data-log-body]")
+        ? createTable({
+              url: routes.activityLogs,
+              bodySelector: "[data-log-body]",
+              loadingSelector: "[data-log-loading]",
+              emptySelector: "[data-log-empty]",
+              countSelector: "[data-log-count]",
+              paginationSelector: "[data-log-pagination]",
+              searchSelector: "[data-log-search]",
+              noun: "entries",
+              singular: "entry",
+              filterSelectors: [
+                  "[data-log-role]",
+                  "[data-log-module]",
+                  "[data-log-range]",
+              ],
+              extraParams: function () {
+                  const extra = { sort: logSort, direction: logDirection };
+
+                  // Only meaningful for a custom window; sending them
+                  // otherwise would just be noise in the query string.
+                  if (logRange && logRange.value === "custom") {
+                      extra.from = logFrom ? logFrom.value : "";
+                      extra.to = logTo ? logTo.value : "";
+                  }
+
+                  return extra;
+              },
+              renderRow: function (row) {
+                  return (
+                      "<tr>" +
+                      '<td class="config-code-cell">#' +
+                      row.id +
+                      "</td>" +
+                      "<td>" +
+                      escapeHtml(row.logged_at) +
+                      "</td>" +
+                      '<td class="fw-semibold">' +
+                      escapeHtml(row.actor_name) +
+                      "</td>" +
+                      '<td><span class="badge ' +
+                      row.role_badge_class +
+                      '">' +
+                      escapeHtml(row.role_label) +
+                      "</span></td>" +
+                      "<td>" +
+                      escapeHtml(row.module) +
+                      "</td>" +
+                      "<td>" +
+                      escapeHtml(row.action) +
+                      "</td>" +
+                      '<td class="config-log-details">' +
+                      escapeHtml(row.description) +
+                      "</td>" +
+                      "</tr>"
+                  );
+              },
+          })
+        : null;
+
+    if (activityLogTable) {
+        // The date inputs are part of the filter, but only once the range is
+        // set to Custom.
+        if (logRange && logCustom) {
+            logRange.addEventListener("change", function () {
+                const custom = logRange.value === "custom";
+
+                logCustom.classList.toggle("d-none", !custom);
+
+                // A half-filled custom range would return everything, so the
+                // reload waits until both ends are given.
+                if (custom && (!logFrom.value || !logTo.value)) {
+                    return;
+                }
+
+                activityLogTable.reset();
+            });
+        }
+
+        [logFrom, logTo].forEach(function (input) {
+            if (!input) {
+                return;
+            }
+
+            input.addEventListener("change", function () {
+                if (logFrom.value && logTo.value) {
+                    activityLogTable.reset();
+                }
+            });
+        });
+
+        logSorts.forEach(function (button) {
+            button.addEventListener("click", function () {
+                const column = button.dataset.logSort;
+
+                // Clicking the active column flips it; a new column starts
+                // descending, which is the useful default for all of them.
+                logDirection =
+                    logSort === column && logDirection === "desc" ? "asc" : "desc";
+                logSort = column;
+
+                logSorts.forEach(function (other) {
+                    other.classList.toggle("is-active", other === button);
+                    other.classList.toggle(
+                        "is-ascending",
+                        other === button && logDirection === "asc",
+                    );
+                });
+
+                activityLogTable.reset();
+            });
+        });
+
+        // Loaded when the tab is first opened rather than on page load: the
+        // audit trail is the second tab, and most visits never reach it.
+        const logsTab = document.querySelector("#activityLogsTab");
+        let logsLoaded = false;
+
+        if (logsTab) {
+            logsTab.addEventListener("shown.bs.tab", function () {
+                if (logsLoaded) {
+                    return;
+                }
+
+                logsLoaded = true;
+                activityLogTable.load();
+            });
+        }
+    }
 
     // ---------------------------------------------------------------
     // Add / edit user form

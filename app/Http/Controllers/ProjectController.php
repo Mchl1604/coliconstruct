@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreProjectRequest;
+use App\Models\ActivityLog;
 use App\Models\Client;
 use App\Models\Document;
 use App\Models\Project;
@@ -14,6 +15,7 @@ use App\Models\ScheduleTechnician;
 use App\Models\Task;
 use App\Models\Technician;
 use App\Models\TechnicianReport;
+use App\Services\ActivityLogger;
 use App\Services\ProjectCompletion;
 use App\Services\TechnicianAvailabilityService;
 use Carbon\Carbon;
@@ -27,6 +29,8 @@ use Throwable;
 
 class ProjectController extends Controller
 {
+    public function __construct(private readonly ActivityLogger $activityLogger) {}
+
     public function index()
     {
         $this->updateStatus(); // Call the function to update project statuses
@@ -92,10 +96,11 @@ class ProjectController extends Controller
     public function store(StoreProjectRequest $request)
     {
         $validated = $request->validated();
+        $created = null;
 
         try {
 
-            DB::transaction(function () use ($validated, $request): void {
+            DB::transaction(function () use ($validated, $request, &$created): void {
 
                 $project = Project::create([
                     'name' => $this->resolveProjectName($validated),
@@ -184,7 +189,29 @@ class ProjectController extends Controller
                         'contract'
                     );
                 }
+
+                $created = $project;
             });
+
+            // Every entry below is written after its transaction commits, so a
+            // rolled-back action leaves nothing claiming it happened.
+            $this->activityLogger->record(
+                ActivityLog::PROJECT_CREATED,
+                null,
+                sprintf("Created project '%s' for %s.", $created->reference_no, $created->name),
+                $created
+            );
+
+            $this->activityLogger->record(
+                ActivityLog::LEAD_TECHNICIAN_ASSIGNED,
+                null,
+                sprintf(
+                    "Assigned a lead technician and %d supporting technician(s) to '%s'.",
+                    count($validated['technicians']),
+                    $created->reference_no
+                ),
+                $created
+            );
 
             return redirect()
                 ->route('super-admin.projects')
@@ -604,6 +631,13 @@ class ProjectController extends Controller
                 }
             });
 
+            $this->activityLogger->record(
+                ActivityLog::PROJECT_UPDATED,
+                null,
+                sprintf("Updated the details of project '%s'.", $project->reference_no),
+                $project
+            );
+
             return redirect()
                 ->route('super-admin.projects.show', $id)
                 ->with('success', 'Project updated successfully.');
@@ -687,6 +721,13 @@ class ProjectController extends Controller
                 $this->releaseScheduleAndTechnicians($project);
             });
 
+            $this->activityLogger->record(
+                ActivityLog::PROJECT_PUT_ON_HOLD,
+                null,
+                sprintf("Put project '%s' on hold, releasing its schedule and technicians.", $project->reference_no),
+                $project
+            );
+
             return redirect()
                 ->route('super-admin.projects', $id)
                 ->with('success', 'Project has been put on hold. Its schedule and technicians were released.');
@@ -708,6 +749,13 @@ class ProjectController extends Controller
         }
 
         $project->update(['on_hold' => false]);
+
+        $this->activityLogger->record(
+            ActivityLog::PROJECT_RESUMED,
+            null,
+            sprintf("Resumed project '%s'.", $project->reference_no),
+            $project
+        );
 
         return redirect()
             ->route('super-admin.projects', $id)
@@ -777,6 +825,13 @@ class ProjectController extends Controller
                 // auditing and reporting.
             });
 
+            $this->activityLogger->record(
+                ActivityLog::PROJECT_COMPLETED,
+                null,
+                sprintf("Marked project '%s' as completed.", $project->reference_no),
+                $project
+            );
+
             return redirect()
                 ->route('super-admin.projects')
                 ->with('success', 'Project marked as completed.');
@@ -830,6 +885,13 @@ class ProjectController extends Controller
                 // ignores cancelled projects entirely.
             });
 
+            $this->activityLogger->record(
+                ActivityLog::PROJECT_CANCELLED,
+                null,
+                sprintf("Cancelled project '%s'.", $project->reference_no),
+                $project
+            );
+
             return redirect()
                 ->route('super-admin.projects.show', $id)
                 ->with('success', 'Project has been cancelled.');
@@ -866,6 +928,13 @@ class ProjectController extends Controller
 
                 $this->releaseScheduleAndTechnicians($project);
             });
+
+            $this->activityLogger->record(
+                ActivityLog::PROJECT_ARCHIVED,
+                null,
+                sprintf("Archived project '%s'.", $project->reference_no),
+                $project
+            );
 
             return redirect()
                 ->route('super-admin.projects')
@@ -904,6 +973,13 @@ class ProjectController extends Controller
                 // but this guarantees a clean slate either way.
                 $this->releaseScheduleAndTechnicians($project);
             });
+
+            $this->activityLogger->record(
+                ActivityLog::PROJECT_RESTORED,
+                null,
+                sprintf("Restored project '%s' from the archive.", $project->reference_no),
+                $project
+            );
 
             return redirect()
                 ->route('super-admin.projects')
@@ -1114,6 +1190,18 @@ class ProjectController extends Controller
                 ]);
             });
         });
+
+        $this->activityLogger->record(
+            ActivityLog::TECHNICIAN_ASSIGNED,
+            null,
+            sprintf(
+                "Updated the assigned team on '%s': %d technician(s), %d newly added.",
+                $project->reference_no,
+                $technicianIds->count(),
+                $newlyAddedIds->count()
+            ),
+            $project
+        );
 
         return back()->with('success', 'Assigned team updated.');
     }

@@ -106,7 +106,8 @@ class ConfigurationUserManagementTest extends TestCase
         $response->assertOk();
         $response->assertSee('User Management');
         $response->assertSee('Add New User');
-        $response->assertSee('Activity Logs module will be implemented in a future update.');
+        $response->assertSee('Activity Logs');
+        $response->assertSee('Audit Trail');
         $response->assertSee('System Settings module will be implemented in a future update.');
     }
 

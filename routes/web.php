@@ -112,6 +112,9 @@ Route::prefix('super-admin')
             Route::get('/users/clients', [ConfigurationController::class, 'clients'])->name('users.clients');
             Route::get('/users/generated-password', [ConfigurationController::class, 'generatePassword'])->name('users.password');
 
+            // Activity Logs.
+            Route::get('/activity-logs', [ConfigurationController::class, 'activityLogs'])->name('activity-logs');
+
             // Creation.
             Route::post('/users/employees', [ConfigurationController::class, 'storeEmployee'])->name('users.employees.store');
             Route::post('/users/clients', [ConfigurationController::class, 'storeClient'])->name('users.clients.store');

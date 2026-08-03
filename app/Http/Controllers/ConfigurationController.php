@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ActivityLog;
 use App\Models\Skill;
 use App\Models\User;
 use App\Services\CredentialDelivery;
@@ -32,6 +33,21 @@ class ConfigurationController extends Controller
     private const PER_PAGE = 10;
 
     /**
+     * The columns the Activity Logs table may be sorted by, mapped from the
+     * name the interface uses. An allow-list, so no request can order by an
+     * arbitrary column.
+     *
+     * @var array<string, string>
+     */
+    private const LOG_SORTS = [
+        'date' => 'created_at',
+        'name' => 'actor_name',
+        'role' => 'actor_role',
+        'module' => 'module',
+        'action' => 'action',
+    ];
+
+    /**
      * A contact number as this system accepts it: digits, with the spacing,
      * dashes, brackets and leading + people actually type. Between 7 and 15
      * digits covers local and international numbers alike (ITU E.164 caps at
@@ -56,6 +72,10 @@ class ConfigurationController extends Controller
                 ->mapWithKeys(fn (string $role): array => [$role => User::ROLES[$role]])
                 ->all(),
             'technicianRoles' => User::TECHNICIAN_ROLES,
+            // The Activity Logs filters. Every role, not only the employee
+            // ones, because a client's own actions are logged too.
+            'logRoles' => User::ROLES,
+            'logModules' => ActivityLog::MODULES,
             'skills' => Skill::query()->orderBy('skill_name')->get(['skill_id', 'skill_name']),
             // Whether the interface may promise that credentials were emailed.
             'mailEnabled' => $this->credentials->isDeliverable(),
@@ -143,6 +163,70 @@ class ConfigurationController extends Controller
         return response()->json([
             'rows' => collect($page->items())
                 ->map(fn (User $user): array => $this->clientRow($user))
+                ->all(),
+            'meta' => $this->paginationMeta($page),
+        ]);
+    }
+
+    /**
+     * The audit trail: searched, filtered, sorted and paginated in SQL.
+     *
+     * Every narrowing happens in the database. The table grows without bound,
+     * so nothing here may load more than one page into memory.
+     */
+    public function activityLogs(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'search' => ['nullable', 'string', 'max:255'],
+            'role' => ['nullable', 'string', Rule::in(array_merge(['all'], array_keys(User::ROLES)))],
+            'module' => ['nullable', 'string', Rule::in(array_merge(['all'], ActivityLog::MODULES))],
+            'range' => ['nullable', 'string', Rule::in(['all', 'today', 'week', 'month', 'custom'])],
+            'from' => ['nullable', 'date'],
+            'to' => ['nullable', 'date'],
+            'sort' => ['nullable', 'string', Rule::in(array_keys(self::LOG_SORTS))],
+            'direction' => ['nullable', 'string', Rule::in(['asc', 'desc'])],
+            'page' => ['nullable', 'integer', 'min:1'],
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['error' => $validator->errors()->first()], 422);
+        }
+
+        $filters = $validator->validated();
+
+        $query = ActivityLog::query()
+            // Who may read whose trail is decided in one place, on the model.
+            ->visibleTo($request->user())
+            ->withinRange(
+                $filters['range'] ?? null,
+                $filters['from'] ?? null,
+                $filters['to'] ?? null
+            )
+            ->when(
+                ! empty($filters['role']) && $filters['role'] !== 'all',
+                fn (Builder $q) => $q->where('actor_role', $filters['role'])
+            )
+            ->when(
+                ! empty($filters['module']) && $filters['module'] !== 'all',
+                fn (Builder $q) => $q->where('module', $filters['module'])
+            );
+
+        $this->applySearch($query, $filters['search'] ?? null, ['actor_name', 'action', 'description']);
+
+        // Newest first unless asked otherwise, and always with the id as a
+        // tie-breaker so paging cannot show the same row twice.
+        $column = self::LOG_SORTS[$filters['sort'] ?? 'date'];
+        $direction = $filters['direction'] ?? 'desc';
+
+        $page = $query
+            ->orderBy($column, $direction)
+            ->orderByDesc('activity_log_id')
+            ->paginate(self::PER_PAGE)
+            ->withQueryString();
+
+        return response()->json([
+            'rows' => collect($page->items())
+                ->map(fn (ActivityLog $log): array => $this->activityLogRow($log))
                 ->all(),
             'meta' => $this->paginationMeta($page),
         ]);
@@ -588,6 +672,36 @@ class ConfigurationController extends Controller
 
     /**
      * @param  LengthAwarePaginator<int, User>  $page
+     * @return array<string, mixed>
+     */
+    /**
+     * One row of the audit trail.
+     *
+     * Read entirely from the snapshot columns rather than the actor relation:
+     * an entry has to keep naming who it was at the time, even after that
+     * account is renamed, promoted or removed.
+     *
+     * @return array<string, mixed>
+     */
+    private function activityLogRow(ActivityLog $log): array
+    {
+        return [
+            'id' => $log->activity_log_id,
+            'logged_at' => $log->created_at?->format('M j, Y g:i A'),
+            'logged_at_iso' => $log->created_at?->toIso8601String(),
+            'actor_name' => $log->actor_name,
+            'role_label' => $log->actorRoleLabel(),
+            'role_badge_class' => $log->actorRoleBadgeClass(),
+            'module' => $log->module ?? ActivityLog::moduleFor($log->action),
+            'action' => $log->action,
+            'description' => $log->description,
+            'ip_address' => $log->ip_address,
+            'browser' => $log->browser,
+            'operating_system' => $log->operating_system,
+        ];
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function paginationMeta($page): array

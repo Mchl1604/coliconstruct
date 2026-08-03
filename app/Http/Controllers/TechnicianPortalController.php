@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ActivityLog;
 use App\Models\Project;
 use App\Models\ProjectCompletionPhoto;
 use App\Models\ProjectTechnician;
@@ -13,6 +14,7 @@ use App\Models\TechnicianReport;
 use App\Models\TechnicianReportImage;
 use App\Policies\ProjectPolicy;
 use App\Policies\TaskPolicy;
+use App\Services\ActivityLogger;
 use App\Services\ProjectCompletion;
 use App\Services\TaskScheduleRules;
 use Carbon\CarbonImmutable;
@@ -60,6 +62,7 @@ class TechnicianPortalController extends Controller
     public function __construct(
         private TaskScheduleRules $scheduleRules,
         private ProjectPolicy $projectPolicy,
+        private readonly ActivityLogger $activityLogger,
     ) {}
 
     // ------------------------------------------------------------------
@@ -399,6 +402,13 @@ class TechnicianPortalController extends Controller
             'status' => 'pending',
         ]);
 
+        $this->activityLogger->record(
+            ActivityLog::TASK_CREATED,
+            null,
+            sprintf("Created task '%s' on %s.", $task->task_title, $project->reference_no),
+            $task
+        );
+
         return $this->succeeded($request, 'Task created.', fn (): array => [
             'task' => $this->taskPayload(
                 $task->load(['technician.account', 'images', 'completedBy']),
@@ -444,6 +454,13 @@ class TechnicianPortalController extends Controller
         }
 
         $task->update($validated);
+
+        $this->activityLogger->record(
+            ActivityLog::TASK_UPDATED,
+            null,
+            sprintf("Updated task '%s'.", $task->task_title),
+            $task
+        );
 
         return $this->succeeded($request, 'Task updated.', fn (): array => [
             'task' => $this->taskPayload(
@@ -499,6 +516,13 @@ class TechnicianPortalController extends Controller
             return $this->failed($request, $e->getMessage());
         }
 
+        $this->activityLogger->record(
+            ActivityLog::TASK_COMPLETED,
+            null,
+            sprintf("Marked task '%s' as completed.", $task->task_title),
+            $task
+        );
+
         return $this->succeeded($request, 'Task marked as completed.', fn (): array => [
             'task' => $this->taskPayload(
                 $task->fresh(['technician.account', 'images', 'completedBy']),
@@ -530,6 +554,13 @@ class TechnicianPortalController extends Controller
         } catch (Throwable $e) {
             return $this->failed($request, $e->getMessage());
         }
+
+        $this->activityLogger->record(
+            ActivityLog::TASK_ARCHIVED,
+            null,
+            sprintf("Deleted task '%s'.", $task->task_title),
+            $task
+        );
 
         return $this->succeeded($request, 'Task deleted.');
     }
@@ -606,6 +637,13 @@ class TechnicianPortalController extends Controller
         } catch (Throwable $e) {
             return $this->failed($request, $e->getMessage());
         }
+
+        $this->activityLogger->record(
+            ActivityLog::REPORT_GENERATED,
+            null,
+            sprintf('Filed a %s on %s.', strtolower($report->typeLabel()), $project->reference_no),
+            $report
+        );
 
         return $this->succeeded($request, 'Report submitted.', fn (): array => [
             'report' => $this->reportPayload($report->load(['project', 'images'])),
