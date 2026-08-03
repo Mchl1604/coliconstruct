@@ -1,94 +1,78 @@
 @extends('layouts.portalNav')
 
-@section('title', 'My Tasks')
+@section('title', 'Tasks')
 
 @push('styles')
+    <link href="/css/super-admin/projects.css" rel="stylesheet">
+    <link href="/css/super-admin/schedule.css" rel="stylesheet">
+    <link href="/css/super-admin/technicians.css" rel="stylesheet">
     <link href="/css/taskModal.css" rel="stylesheet">
 @endpush
 
 @section('content')
+    @php
+        $totalTasks = $tasksByProject->flatten()->count();
+    @endphp
+
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
         <div>
-            <h4 class="fw-bold mb-1">My Tasks</h4>
-            <p class="text-secondary small mb-0">Work assigned to you, most urgent first.</p>
+            <h4 class="fw-bold mb-1">Tasks</h4>
+            <p class="text-secondary small mb-0">
+                The whole task board for every project you lead, grouped by project.
+            </p>
         </div>
 
-        <span class="badge bg-secondary">{{ $tasks->count() }} tasks</span>
+        <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-secondary">
+                {{ $totalTasks }} {{ \Illuminate\Support\Str::plural('task', $totalTasks) }}
+            </span>
+
+            @if ($creatableProjects->isNotEmpty())
+                <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal"
+                    data-bs-target="#addTaskModal">
+                    <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
+                    New Task
+                </button>
+            @endif
+        </div>
     </div>
 
-    <div class="card shadow-sm border-0 rounded-2">
-        <div class="card-body p-2">
-            <div class="table-responsive">
-                <table class="table table-hover table-striped align-middle mb-0">
-                    <thead class="table-info">
-                        <tr>
-                            <th>Task</th>
-                            <th>Project</th>
-                            <th>Start Date</th>
-                            <th>Due Date</th>
-                            <th>Status</th>
-                            <th class="text-center">Action</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @forelse ($tasks as $task)
-                            @php
-                                $due = $task->due_date ? \Carbon\CarbonImmutable::parse($task->due_date) : null;
-                                // A task only reads as late while it is still open.
-                                $isLate = $due && $due->lt($today) && ! in_array($task->status, ['completed', 'cancelled'], true);
-
-                                $badge = match ($task->status) {
-                                    'completed' => 'bg-success',
-                                    'ongoing' => 'bg-primary',
-                                    'cancelled' => 'bg-danger',
-                                    'unassigned' => 'bg-warning text-dark',
-                                    default => 'bg-secondary',
-                                };
-                            @endphp
-                            <tr>
-                                <td class="fw-semibold">
-                                    {{ $task->task_title }}
-                                    <div class="small text-muted fw-normal">{{ $task->task_description }}</div>
-                                </td>
-                                <td>{{ $task->project?->name ?? '—' }}</td>
-                                <td>{{ $task->start_date ? \Carbon\CarbonImmutable::parse($task->start_date)->format('M j, Y') : '—' }}</td>
-                                <td>
-                                    {{ $due?->format('M j, Y') ?? '—' }}
-                                    @if ($isLate)
-                                        <span class="badge badge-overdue ms-1">Overdue</span>
-                                    @endif
-                                </td>
-                                <td><span class="badge {{ $badge }}">{{ ucfirst($task->status) }}</span></td>
-                                <td class="text-center">
-                                    <button type="button" class="btn btn-sm btn-primary py-1 px-2"
-                                        data-bs-toggle="modal" data-bs-target="#taskModal{{ $task->task_id }}"
-                                        title="View task">
-                                        <i class="bi bi-eye" aria-hidden="true"></i>
-                                    </button>
-                                </td>
-                            </tr>
-                        @empty
-                            <tr>
-                                <td colspan="6" class="text-secondary text-center py-4">
-                                    You have no tasks assigned.
-                                </td>
-                            </tr>
-                        @endforelse
-                    </tbody>
-                </table>
+    <div class="card shadow-sm border-0 rounded-2 mb-3">
+        <div class="card-body p-3">
+            <div class="d-flex align-items-center gap-2" style="max-width: 420px;">
+                <label for="taskProjectFilter" class="fw-semibold small text-nowrap mb-0">Project:</label>
+                <select id="taskProjectFilter" class="form-select form-select-sm" data-project-filter>
+                    <option value="all">All Projects</option>
+                    @foreach ($projects as $project)
+                        <option value="{{ $project->project_id }}">
+                            {{ $project->reference_no }} &mdash; {{ $project->name }}
+                        </option>
+                    @endforeach
+                </select>
             </div>
         </div>
     </div>
 
-    {{-- The same dialog the Super Admin portal opens, always view only here:
-         a technician reads their work, they do not reassign it. --}}
-    @foreach ($tasks as $task)
-        <x-task-details-modal :task="$task"
-            :schedule-ranges="$task->project
-                ? $task->project->schedules->map(fn($schedule) => [
-                    'start' => \Carbon\Carbon::parse($schedule->start_datetime)->format('Y-m-d'),
-                    'end' => \Carbon\Carbon::parse($schedule->end_datetime ?? $schedule->start_datetime)->format('Y-m-d'),
-                ])->values()
-                : collect()" />
-    @endforeach
+    <x-task-board :projects="$projects" :tasks-by-project="$tasksByProject"
+        :technicians-by-project="$techniciansByProject" :ranges-by-project="$rangesByProject"
+        :active-task-counts="$technicianActiveTaskCounts" :manageable="$manageable"
+        :viewer-technician-id="$technicianId" update-route="technician.lead.tasks.update"
+        complete-route="technician.lead.tasks.complete" delete-route="technician.lead.tasks.destroy"
+        update-method="POST" complete-method="POST"
+        empty-message="You are not assigned to any projects yet, so there is no task board to show." />
+
+    @if ($creatableProjects->isNotEmpty())
+        <x-task-create-modal :projects="$creatableProjects"
+            :form-data-url="route('technician.lead.projects.task-form-data', ['project' => '__ID__'])"
+            :store-url="route('technician.lead.tasks.store', ['project' => '__ID__'])" />
+    @endif
+
+    @push('scripts')
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+        <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+        <script src="/js/super-admin/taskDatePickers.js"></script>
+        <script src="/js/imagePreview.js"></script>
+        <script src="/js/taskBoard.js"></script>
+        <script src="/js/taskCreate.js"></script>
+    @endpush
 @endsection
