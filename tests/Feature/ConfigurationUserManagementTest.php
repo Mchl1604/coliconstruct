@@ -573,6 +573,107 @@ class ConfigurationUserManagementTest extends TestCase
         ]);
     }
 
+    /**
+     * The same action serves the employee table, and is logged as an employee
+     * reset rather than borrowing the client wording.
+     */
+    public function test_an_employee_password_can_be_reset(): void
+    {
+        $employee = $this->makeEmployee('lead_technician', ['password' => 'the-old-password']);
+
+        $response = $this->putJson(route('super-admin.configuration.users.password.reset', $employee));
+
+        $response->assertOk();
+
+        $password = $response->json('password');
+        $employee->refresh();
+
+        $this->assertNotEmpty($password);
+        $this->assertTrue(Hash::check($password, $employee->password));
+        $this->assertFalse(Hash::check('the-old-password', $employee->password));
+        $this->assertTrue($employee->must_change_password);
+
+        $this->assertDatabaseHas('tbl_activity_logs', [
+            'action' => ActivityLog::EMPLOYEE_PASSWORD_RESET,
+            'subject_id' => $employee->id,
+        ]);
+    }
+
+    /**
+     * An Admin shares this page with the Super Admin, so the reset has to be
+     * available to them too.
+     */
+    public function test_an_admin_may_reset_another_employees_password(): void
+    {
+        $admin = $this->makeEmployee('admin');
+        $technician = $this->makeEmployee('technician', ['password' => 'the-old-password']);
+
+        $this->actingAs($admin);
+
+        $this->putJson(route('super-admin.configuration.users.password.reset', $technician))
+            ->assertOk();
+
+        $this->assertFalse(Hash::check('the-old-password', $technician->refresh()->password));
+    }
+
+    /**
+     * A reset hands the new password straight back to whoever asked for it, so
+     * letting an Admin reset the owner's account would be a takeover.
+     */
+    public function test_an_admin_cannot_reset_a_super_admins_password(): void
+    {
+        $admin = $this->makeEmployee('admin');
+        $owner = $this->makeEmployee('super_admin', ['password' => 'the-old-password']);
+
+        $this->actingAs($admin);
+
+        $response = $this->putJson(route('super-admin.configuration.users.password.reset', $owner));
+
+        $response->assertStatus(422);
+        $response->assertJsonPath('error', "A Super Admin's password can only be reset by another Super Admin.");
+
+        $this->assertTrue(Hash::check('the-old-password', $owner->refresh()->password));
+    }
+
+    public function test_a_super_admin_may_reset_another_super_admins_password(): void
+    {
+        $owner = $this->makeEmployee('super_admin', ['password' => 'the-old-password']);
+
+        $this->putJson(route('super-admin.configuration.users.password.reset', $owner))
+            ->assertOk();
+
+        $this->assertFalse(Hash::check('the-old-password', $owner->refresh()->password));
+    }
+
+    /**
+     * Resetting your own password from here would flag your own account as
+     * needing a change mid-session. The password change page is the way.
+     */
+    public function test_an_administrator_cannot_reset_their_own_password(): void
+    {
+        $admin = $this->makeEmployee('admin', ['password' => 'the-old-password']);
+
+        $this->actingAs($admin);
+
+        $response = $this->putJson(route('super-admin.configuration.users.password.reset', $admin));
+
+        $response->assertStatus(422);
+        $this->assertTrue(Hash::check('the-old-password', $admin->refresh()->password));
+    }
+
+    public function test_an_archived_employee_cannot_have_their_password_reset(): void
+    {
+        $employee = $this->makeEmployee('technician', [
+            'password' => 'the-old-password',
+            'is_archived' => true,
+        ]);
+
+        $response = $this->putJson(route('super-admin.configuration.users.password.reset', $employee));
+
+        $response->assertStatus(422);
+        $this->assertTrue(Hash::check('the-old-password', $employee->refresh()->password));
+    }
+
     public function test_generated_passwords_are_alphanumeric_strong_and_never_repeat(): void
     {
         $passwords = collect(range(1, 12))->map(function (): string {

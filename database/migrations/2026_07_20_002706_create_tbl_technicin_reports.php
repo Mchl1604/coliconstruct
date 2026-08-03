@@ -12,27 +12,31 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('tbl_technician_reports', function (Blueprint $table) {
-    $table->id();
+            $table->id();
 
-    $table->unsignedBigInteger('project_id');
+            $table->unsignedBigInteger('project_id');
 
-$table->foreign('project_id')
-    ->references('project_id')
-    ->on('tbl_projects')
-    ->onDelete('cascade');
+            $table->foreign('project_id')
+                ->references('project_id')
+                ->on('tbl_projects')
+                ->onDelete('cascade');
 
-    $table->unsignedBigInteger('technician_id');
-$table->foreign('technician_id')
-    ->references('id')
-    ->on('users')
-    ->onDelete('cascade');
+            // A tbl_technicians id, not a users id - TechnicianReport::technician()
+            // and every form that writes this column agree on that. Corrected here
+            // so a fresh database is right from the start; databases created before
+            // the fix are repaired by the later repointing migration.
+            $table->unsignedBigInteger('technician_id');
+            $table->foreign('technician_id')
+                ->references('technician_id')
+                ->on('tbl_technicians')
+                ->onDelete('cascade');
 
-    $table->string('report_title')->nullable();
-    $table->text('report_description');
-    $table->date('report_date');
+            $table->string('report_title')->nullable();
+            $table->text('report_description');
+            $table->date('report_date');
 
-    $table->timestamps();
-});
+            $table->timestamps();
+        });
     }
 
     /**

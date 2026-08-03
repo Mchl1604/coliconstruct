@@ -1074,117 +1074,12 @@ document.addEventListener("DOMContentLoaded", function () {
 
     const dateModal = dateModalEl ? initDateModal(dateModalEl) : null;
 
-    function initMonthYearJump(calendar, titleEl, anchorEl) {
-        const monthNames = [
-            "January",
-            "February",
-            "March",
-            "April",
-            "May",
-            "June",
-            "July",
-            "August",
-            "September",
-            "October",
-            "November",
-            "December",
-        ];
-
-        const panel = document.createElement("div");
-        panel.className = "schedule-calendar-jump";
-        panel.innerHTML =
-            "<select data-jump-month></select><select data-jump-year></select>";
-        anchorEl.appendChild(panel);
-
-        const monthSelect = panel.querySelector("[data-jump-month]");
-        const yearSelect = panel.querySelector("[data-jump-year]");
-
-        monthNames.forEach(function (name, index) {
-            const option = document.createElement("option");
-            option.value = String(index);
-            option.textContent = name;
-            monthSelect.appendChild(option);
-        });
-
-        function populateYears(centerYear) {
-            yearSelect.innerHTML = "";
-
-            for (let year = centerYear - 6; year <= centerYear + 6; year++) {
-                const option = document.createElement("option");
-                option.value = String(year);
-                option.textContent = String(year);
-                yearSelect.appendChild(option);
-            }
-        }
-
-        function syncToDate(date) {
-            monthSelect.value = String(date.getMonth());
-
-            if (
-                !yearSelect.querySelector(
-                    'option[value="' + date.getFullYear() + '"]',
-                )
-            ) {
-                populateYears(date.getFullYear());
-            }
-
-            yearSelect.value = String(date.getFullYear());
-        }
-
-        function closePanel() {
-            panel.classList.remove("is-open");
-        }
-
-        function openPanel() {
-            syncToDate(calendar.getDate());
-            panel.classList.add("is-open");
-        }
-
-        titleEl.addEventListener("click", function (event) {
-            event.stopPropagation();
-
-            if (panel.classList.contains("is-open")) {
-                closePanel();
-            } else {
-                openPanel();
-            }
-        });
-
-        panel.addEventListener("click", function (event) {
-            event.stopPropagation();
-        });
-
-        document.addEventListener("click", closePanel);
-
-        function jumpToSelection() {
-            const year = parseInt(yearSelect.value, 10);
-            const month = parseInt(monthSelect.value, 10);
-
-            calendar.gotoDate(new Date(year, month, 1));
-            closePanel();
-        }
-
-        monthSelect.addEventListener("change", jumpToSelection);
-        yearSelect.addEventListener("change", jumpToSelection);
-
-        calendar.on("datesSet", function () {
-            syncToDate(calendar.getDate());
-        });
-
-        populateYears(calendar.getDate().getFullYear());
-        syncToDate(calendar.getDate());
-    }
-
     const calendarEl = document.getElementById("schedulesCalendar");
 
     if (calendarEl && window.FullCalendar) {
         const calendar = new window.FullCalendar.Calendar(calendarEl, {
             initialView: "dayGridMonth",
-            headerToolbar: {
-                left: "prev",
-                center: "title",
-                right: "next",
-            },
+            headerToolbar: window.calendarHeader.toolbar(),
             height: "auto",
             dayMaxEvents: true,
             events: calendarEvents,
@@ -1252,16 +1147,6 @@ document.addEventListener("DOMContentLoaded", function () {
         });
 
         calendar.render();
-
-        const titleEl = calendarEl.querySelector(".fc-toolbar-title");
-        const titleChunk = titleEl
-            ? titleEl.closest(".fc-toolbar-chunk")
-            : null;
-
-        if (titleEl && titleChunk) {
-            titleEl.classList.add("schedule-calendar-title");
-            titleChunk.classList.add("schedule-calendar-jump-anchor");
-            initMonthYearJump(calendar, titleEl, titleChunk);
-        }
+        window.calendarHeader.attach(calendar, calendarEl);
     }
 });

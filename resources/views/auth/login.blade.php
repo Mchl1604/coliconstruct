@@ -41,8 +41,5 @@
             Don't have an account?
             <a href="{{ route('auth.register') }}" class="text-decoration-none">Register here</a>
         </div>
-        <div class="text-muted small mt-2">
-            Staff accounts are created by your administrator.
-        </div>
     </form>
 @endsection

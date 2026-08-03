@@ -533,7 +533,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
         calendar = new window.FullCalendar.Calendar(calendarEl, {
             initialView: "dayGridMonth",
-            headerToolbar: { left: "prev,next today", center: "title", right: "" },
+            headerToolbar: window.calendarHeader.toolbar(),
             height: "auto",
             dayMaxEvents: true,
             eventDisplay: "block",
@@ -572,6 +572,7 @@ document.addEventListener("DOMContentLoaded", function () {
         });
 
         calendar.render();
+        window.calendarHeader.attach(calendar, calendarEl);
 
         return calendar;
     }

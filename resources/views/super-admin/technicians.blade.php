@@ -4,6 +4,7 @@
     <link href="/css/super-admin/projects.css" rel="stylesheet">
     <link href="/css/super-admin/schedule.css" rel="stylesheet">
     <link href="/css/super-admin/technicians.css" rel="stylesheet">
+    <link href="/css/calendar.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.css">
 @endpush
 
@@ -157,7 +158,7 @@
                                         style="background:#198754"></i> Completed</span>
                             </div>
 
-                            <div id="technicianCalendar" class="d-none"></div>
+                            <div id="technicianCalendar" class="calendar-standard d-none"></div>
 
                             <div class="schedule-empty-state" data-calendar-placeholder>
                                 Please select a technician to view their schedule.
@@ -478,6 +479,7 @@
                 ])->values());
         </script>
         <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
+        <script src="/js/calendarHeader.js"></script>
         <script src="/js/super-admin/technicians.js"></script>
     @endpush
 @endsection

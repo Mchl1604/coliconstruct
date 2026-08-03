@@ -440,3 +440,56 @@
 #technicianCalendar .fc-event:hover {
     filter: brightness(0.93);
 }
+
+/* ---- Completion details inside a schedule panel task card ---- */
+
+/* Same green treatment the task dialog gives the completion record, scaled
+   down for the panel's narrower cards. */
+.panel-task-completion {
+    margin-top: 0.55rem;
+    border: 1px solid #bbf7d0;
+    border-left: 3px solid #198754;
+    border-radius: 0.4rem;
+    background: #f2fcf5;
+    padding: 0.5rem 0.6rem;
+}
+
+.panel-task-completion .panel-task-description {
+    color: #14532d;
+    margin-top: 0;
+}
+
+.panel-task-completion-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #15803d;
+    margin-bottom: 0.2rem;
+}
+
+.panel-task-images {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.45rem;
+}
+
+.panel-task-images img {
+    width: 62px;
+    height: 62px;
+    object-fit: cover;
+    border-radius: 0.4rem;
+    border: 1px solid #e5e7eb;
+}
+
+/* Closed by somebody other than the technician holding the task. */
+.panel-task-onbehalf {
+    font-size: 0.78rem;
+    color: #0b4f80;
+    background: #eaf5ff;
+    border: 1px solid #a7d8ff;
+    border-radius: 0.3rem;
+    padding: 0.3rem 0.45rem;
+    margin-bottom: 0.35rem;
+}

@@ -5,8 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\Technician;
-use App\Models\TechnicianReport;
 use Carbon\CarbonImmutable;
+use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 
 /**
@@ -27,8 +27,12 @@ class TechnicianPortalController extends Controller
      */
     private const HIDDEN_STATUSES = ['cancelled', 'archived'];
 
-    public function schedule()
+    public function schedule(Request $request)
     {
+        if ($this->isLead($request)) {
+            return app(LeadTechnicianController::class)->schedule($request);
+        }
+
         $technician = $this->technician();
         $projects = $this->assignedProjects($technician);
 
@@ -58,8 +62,12 @@ class TechnicianPortalController extends Controller
         ]);
     }
 
-    public function projects()
+    public function projects(Request $request)
     {
+        if ($this->isLead($request)) {
+            return app(LeadTechnicianController::class)->projects($request);
+        }
+
         $technician = $this->technician();
         $projects = $this->assignedProjects($technician);
 
@@ -77,12 +85,19 @@ class TechnicianPortalController extends Controller
         ]);
     }
 
-    public function tasks()
+    public function tasks(Request $request)
     {
+        if ($this->isLead($request)) {
+            return app(LeadTechnicianController::class)->tasks($request);
+        }
+
         $technician = $this->technician();
 
+        // `images` and the technician's account are what the view-only task
+        // dialog reads, so a finished task can show what was submitted when
+        // it was closed.
         $tasks = Task::query()
-            ->with('project')
+            ->with(['project.schedules', 'technician.account', 'images', 'completedBy'])
             ->where('technician_id', $technician->technician_id)
             ->orderByRaw("case when status = 'ongoing' then 0 when status = 'pending' then 1 else 2 end")
             ->orderBy('due_date')
@@ -97,18 +112,9 @@ class TechnicianPortalController extends Controller
     /**
      * Lead technicians only - the route group enforces that.
      */
-    public function reports()
+    public function reports(Request $request)
     {
-        $technician = $this->technician();
-
-        $reports = TechnicianReport::query()
-            ->with(['project', 'images'])
-            ->where('technician_id', $technician->technician_id)
-            ->orderByDesc('report_date')
-            ->orderByDesc('id')
-            ->get();
-
-        return view('technician.reports', ['reports' => $reports]);
+        return app(LeadTechnicianController::class)->reports($request);
     }
 
     // ------------------------------------------------------------------
@@ -116,20 +122,20 @@ class TechnicianPortalController extends Controller
     // ------------------------------------------------------------------
 
     /**
+     * A lead gets the fuller portal at the same four URLs, so each page hands
+     * off rather than branching inside its own view.
+     */
+    private function isLead(Request $request): bool
+    {
+        return $request->user()->isLeadTechnician();
+    }
+
+    /**
      * The signed-in account's technician record.
-     *
-     * Configuration creates one alongside every technician account, but an
-     * account whose role was granted directly in the database might not have
-     * one yet, so it is created on demand rather than failing the page.
      */
     private function technician(): Technician
     {
-        $user = request()->user();
-
-        return Technician::firstOrCreate(
-            ['account_id' => $user->id],
-            ['role' => $user->role]
-        );
+        return request()->user()->technicianRecord();
     }
 
     /**

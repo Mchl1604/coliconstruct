@@ -320,6 +320,80 @@ class OverdueProjectTest extends TestCase
         $this->assertSame(2, $response->json('assignmentCount'));
     }
 
+    /**
+     * A completed project must not stay booked. Dates past the completion date
+     * are released, so it stops occupying the calendar and its technicians
+     * stop reading as busy.
+     */
+    public function test_completing_a_project_releases_its_future_dates(): void
+    {
+        $project = $this->project('Finished Early');
+        $this->schedule($project, $this->day(-2), $this->day(4));
+        $future = $this->schedule($project, $this->day(20), $this->day(25));
+
+        $this->post(route('super-admin.projects.complete', $project->project_id), [
+            'completion_date' => CarbonImmutable::today()->toDateString(),
+            'completion_summary' => 'Work finished ahead of schedule.',
+        ])->assertRedirect();
+
+        $project->refresh();
+        $this->assertSame('completed', $project->status);
+
+        // The range wholly ahead is gone; the one already running is kept but
+        // cut short at the completion date.
+        $this->assertDatabaseMissing('tbl_schedule', ['schedule_id' => $future->schedule_id]);
+        $this->assertSame(1, $project->schedules()->count());
+        $this->assertSame(
+            CarbonImmutable::today()->toDateString(),
+            CarbonImmutable::parse($project->schedules->first()->end_datetime)->toDateString()
+        );
+    }
+
+    /**
+     * Releasing those dates must also let go of the technicians booked on
+     * them, which is the whole point of clearing the calendar.
+     */
+    public function test_releasing_dates_frees_the_technicians_booked_on_them(): void
+    {
+        $project = $this->project('Finished Early');
+        $future = $this->schedule($project, $this->day(20), $this->day(25));
+
+        $this->assertDatabaseHas('tbl_schedule_technicians', [
+            'schedule_id' => $future->schedule_id,
+        ]);
+
+        $this->post(route('super-admin.projects.complete', $project->project_id), [
+            'completion_date' => CarbonImmutable::today()->toDateString(),
+            'completion_summary' => 'Done.',
+        ])->assertRedirect();
+
+        $this->assertDatabaseMissing('tbl_schedule_technicians', [
+            'schedule_id' => $future->schedule_id,
+        ]);
+    }
+
+    /**
+     * A project that ran to plan keeps every day it was booked for - nothing
+     * is in the future to release.
+     */
+    public function test_completing_on_time_leaves_past_dates_alone(): void
+    {
+        $project = $this->project('Finished On Time');
+        $this->schedule($project, $this->day(-10), $this->day(-1));
+
+        $this->post(route('super-admin.projects.complete', $project->project_id), [
+            'completion_date' => CarbonImmutable::today()->toDateString(),
+            'completion_summary' => 'Done.',
+        ])->assertRedirect();
+
+        $project->refresh();
+        $this->assertSame(1, $project->schedules()->count());
+        $this->assertSame(
+            $this->day(-1),
+            CarbonImmutable::parse($project->schedules->first()->end_datetime)->toDateString()
+        );
+    }
+
     public function test_extending_the_schedule_clears_the_overdue_state(): void
     {
         $project = $this->project('Late Project');

@@ -4,79 +4,82 @@ namespace App\Http\Controllers;
 
 use App\Models\Project;
 use App\Models\Task;
-use App\Models\Schedule;
+use App\Models\TaskImage;
+use App\Services\TaskScheduleRules;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 
 class TaskController extends Controller
 {
+    public function __construct(private TaskScheduleRules $scheduleRules) {}
+
     /**
-     * Tasks page: shows tasks across all projects with a project filter
-     * dropdown, and an Add Task modal that lets you pick the project first.
+     * Tasks page: one card per project, each holding that project's board,
+     * with a filter above them and a single Add Task dialog that picks the
+     * project first. Same layout the technician portal uses.
      */
     public function index(Request $request)
     {
-        // Only live work belongs on this page: a task is listed when its
-        // project is pending or ongoing. Not-yet-scheduled, on-hold,
-        // completed, cancelled and archived projects are all left out.
-        $tasks = Task::with([
-            'project.projectTechnicians.technician.account',
-            'project.schedules',
-            'technician',
-            'images',
-        ])
-            ->whereHas('project', function ($query): void {
-                $query->whereIn('status', Project::ACTIVE_PROJECT_STATUSES)
-                    ->where('is_archived', false);
-            })
-            ->orderBy('project_id')
-            ->orderBy('start_date')
+        // Only live work belongs on this page: a project is listed when it is
+        // pending or ongoing. Not-yet-scheduled, on-hold, completed, cancelled
+        // and archived projects are all left out.
+        $projects = Project::query()
+            ->with(['schedules', 'projectTechnicians.technician.account'])
+            ->whereIn('status', Project::ACTIVE_PROJECT_STATUSES)
+            ->where('is_archived', false)
+            ->orderBy('name')
             ->get();
 
-        $projects = Project::query()
-            ->orderBy('name')
-            ->get(['project_id', 'name', 'reference_no', 'status', 'on_hold', 'is_archived']);
+        $tasksByProject = Task::query()
+            ->with(['technician', 'images', 'completedBy'])
+            ->whereIn('project_id', $projects->pluck('project_id'))
+            ->orderByRaw("case when status = 'ongoing' then 0 when status = 'pending' then 1 when status = 'unassigned' then 2 else 3 end")
+            ->orderByRaw('due_date is null')
+            ->orderBy('due_date')
+            ->get()
+            ->groupBy('project_id');
 
-        // Only projects that can actually receive new tasks are selectable in
-        // the Add Task modal: completed, cancelled and archived are excluded.
-        $schedulableProjects = $projects->filter(function (Project $project) {
-            return ! $project->isReadOnly() && ! $project->isArchived();
-        })->values();
+        $techniciansByProject = $projects->mapWithKeys(fn (Project $project): array => [
+            $project->project_id => $project->projectTechnicians->pluck('technician')->filter()->values(),
+        ]);
 
-        // The filter offers every pending/ongoing project - the same set the
-        // table can show - whether or not it currently has any tasks. Picking
-        // one with no tasks is a valid, informative result.
-        $filterProjects = $projects
-            ->filter(function (Project $project): bool {
-                return in_array($project->status, Project::ACTIVE_PROJECT_STATUSES, true)
-                    && ! $project->isArchived();
-            })
-            ->values();
+        $rangesByProject = $projects->mapWithKeys(fn (Project $project): array => [
+            $project->project_id => collect($this->scheduleRules->ranges($project->project_id)),
+        ]);
 
-        // Active task counts for every technician that shows up on any
-        // project involved, used by the Assign To cards in both the Add
-        // Task and per-task Edit Task modals.
-        $allTechnicianIds = $tasks
-            ->pluck('project.projectTechnicians')
-            ->filter()
-            ->flatten()
-            ->pluck('technician_id')
-            ->filter()
-            ->unique()
-            ->values();
+        // An administrator runs every board; only a locked project is off
+        // limits, and none of those are listed here anyway.
+        $manageable = $projects->mapWithKeys(fn (Project $project): array => [
+            $project->project_id => ! $project->isReadOnly() && ! $project->isArchived(),
+        ]);
 
         $technicianActiveTaskCounts = Task::query()
-            ->whereIn('technician_id', $allTechnicianIds)
+            ->whereIn('technician_id', $techniciansByProject->flatten()->pluck('technician_id')->unique())
             ->whereIn('status', ['pending', 'ongoing'])
             ->selectRaw('technician_id, count(*) as active_count')
             ->groupBy('technician_id')
             ->pluck('active_count', 'technician_id');
 
+        // Only projects that can actually receive new tasks are selectable in
+        // the Add Task modal: completed, cancelled and archived are excluded.
+        // A not-yet-scheduled project stays on the list and the form-data
+        // endpoint explains why it cannot take a task, which reads better than
+        // the project simply not being there.
+        $schedulableProjects = Project::query()
+            ->orderBy('name')
+            ->get(['project_id', 'name', 'reference_no', 'status', 'on_hold', 'is_archived'])
+            ->filter(fn (Project $project): bool => ! $project->isReadOnly() && ! $project->isArchived())
+            ->values();
+
         return view('super-admin.tasks', compact(
-            'tasks',
-            'filterProjects',
+            'projects',
+            'tasksByProject',
+            'techniciansByProject',
+            'rangesByProject',
+            'manageable',
             'schedulableProjects',
             'technicianActiveTaskCounts'
         ));
@@ -93,7 +96,7 @@ class TaskController extends Controller
 
         if ($project->isReadOnly()) {
             return response()->json([
-                'error' => 'This project is ' . $project->status . ' and no longer accepts new tasks.',
+                'error' => 'This project is '.$project->status.' and no longer accepts new tasks.',
             ], 422);
         }
 
@@ -149,7 +152,7 @@ class TaskController extends Controller
         if ($project->isReadOnly()) {
             return redirect()
                 ->back()
-                ->with('error', 'This project is ' . $project->status . ' and no longer accepts new tasks.');
+                ->with('error', 'This project is '.$project->status.' and no longer accepts new tasks.');
         }
 
         $ranges = $this->scheduleRanges($projectId);
@@ -208,7 +211,7 @@ class TaskController extends Controller
         $project = Project::findOrFail($task->project_id);
 
         if ($project->isReadOnly()) {
-            return back()->with('error', 'This project is ' . $project->status . ' and its tasks can no longer be edited.');
+            return back()->with('error', 'This project is '.$project->status.' and its tasks can no longer be edited.');
         }
 
         if ($task->status == 'completed') {
@@ -242,20 +245,30 @@ class TaskController extends Controller
         try {
             $task->update($validated);
             DB::commit();
+
             return back()->with('success', 'Task updated successfully.');
         } catch (\Exception $e) {
             DB::rollBack();
+
             return back()->with('error', $e->getMessage());
         }
     }
 
-    public function complete($taskId)
+    /**
+     * Close a task off, with an account of what was done where there is one.
+     *
+     * An administrator closing somebody else's task did not do the work, so
+     * the notes and photos are optional for them; the completion panel then
+     * says who closed it rather than showing an empty record. Closing your own
+     * task still asks for the account, exactly as the technician portal does.
+     */
+    public function complete(Request $request, $taskId)
     {
         $task = Task::findOrFail($taskId);
         $project = Project::findOrFail($task->project_id);
 
         if ($project->isReadOnly()) {
-            return back()->with('error', 'This project is ' . $project->status . ' and its tasks can no longer be edited.');
+            return back()->with('error', 'This project is '.$project->status.' and its tasks can no longer be edited.');
         }
 
         if ($task->status === 'completed') {
@@ -265,9 +278,39 @@ class TaskController extends Controller
             );
         }
 
-        $task->update([
-            'status' => 'completed',
+        $mustDescribe = $task->isAssignedTo($request->user());
+
+        $validated = $request->validate([
+            'completion_notes' => [$mustDescribe ? 'required' : 'nullable', 'string'],
+            'images' => ['nullable', 'array'],
+            'images.*' => ['nullable', 'image', 'mimes:jpg,jpeg,png', 'max:5120'],
+        ], [
+            'completion_notes.required' => 'Describe what was done before completing the task.',
         ]);
+
+        DB::beginTransaction();
+
+        try {
+            $task->update([
+                'status' => 'completed',
+                'completion_notes' => $validated['completion_notes'] ?? null,
+                'completed_at' => now(),
+                'completed_by' => $request->user()?->id,
+            ]);
+
+            foreach ($request->file('images') ?? [] as $image) {
+                TaskImage::create([
+                    'task_id' => $task->task_id,
+                    'image_path' => $image->store('task-completions', 'public'),
+                ]);
+            }
+
+            DB::commit();
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return back()->with('error', $e->getMessage());
+        }
 
         return back()->with(
             'success',
@@ -281,12 +324,18 @@ class TaskController extends Controller
         $project = Project::findOrFail($task->project_id);
 
         if ($project->isReadOnly()) {
-            return back()->with('error', 'This project is ' . $project->status . ' and its tasks can no longer be edited.');
+            return back()->with('error', 'This project is '.$project->status.' and its tasks can no longer be edited.');
         }
 
         DB::beginTransaction();
 
         try {
+            // The completion photos go with the task rather than being left
+            // orphaned on disk.
+            foreach ($task->images as $image) {
+                Storage::disk('public')->delete($image->image_path);
+                $image->delete();
+            }
 
             $task->delete();
 
@@ -310,61 +359,11 @@ class TaskController extends Controller
     /**
      * Every date range on a project's schedule, as 'Y-m-d' pairs.
      *
-     * A project can have several ranges with gaps between them (July 10-15
-     * and July 20-25, say). Checking only the earliest start and the latest
-     * end would wrongly accept July 16-19, so callers must test the ranges
-     * individually.
-     *
      * @return array<int, array{start: string, end: string}>
      */
     private function scheduleRanges(int $projectId): array
     {
-        return Schedule::query()
-            ->where('project_id', $projectId)
-            ->orderBy('start_datetime')
-            ->get(['start_datetime', 'end_datetime'])
-            ->map(fn (Schedule $schedule): array => [
-                'start' => Carbon::parse($schedule->start_datetime)->format('Y-m-d'),
-                'end' => Carbon::parse($schedule->end_datetime ?? $schedule->start_datetime)->format('Y-m-d'),
-            ])
-            ->values()
-            ->all();
-    }
-
-    /**
-     * A task must sit entirely inside ONE of the project's date ranges - it
-     * cannot straddle the gap between two of them. This mirrors the rule
-     * ScheduleController uses when it re-checks tasks after a reschedule.
-     *
-     * @param  array<int, array{start: string, end: string}>  $ranges
-     */
-    private function rangeCovering(array $ranges, ?string $startDate, ?string $dueDate): ?array
-    {
-        if (! $startDate || ! $dueDate) {
-            return null;
-        }
-
-        foreach ($ranges as $range) {
-            if ($startDate >= $range['start'] && $dueDate <= $range['end']) {
-                return $range;
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * Human-readable list of the allowed windows, for validation messages.
-     *
-     * @param  array<int, array{start: string, end: string}>  $ranges
-     */
-    private function describeRanges(array $ranges): string
-    {
-        return collect($ranges)
-            ->map(fn (array $range): string => Carbon::parse($range['start'])->format('M j, Y')
-                . ' - '
-                . Carbon::parse($range['end'])->format('M j, Y'))
-            ->join('; ');
+        return $this->scheduleRules->ranges($projectId);
     }
 
     /**
@@ -374,29 +373,6 @@ class TaskController extends Controller
      */
     private function attachRangeRule(\Illuminate\Validation\Validator $validator, array $ranges): void
     {
-        $validator->after(function ($validator) use ($ranges): void {
-            if ($validator->errors()->hasAny(['start_date', 'due_date'])) {
-                return;
-            }
-
-            $data = $validator->getData();
-            $covering = $this->rangeCovering(
-                $ranges,
-                $data['start_date'] ?? null,
-                $data['due_date'] ?? null
-            );
-
-            if ($covering) {
-                return;
-            }
-
-            $message = count($ranges) === 1
-                ? 'The task dates must fall inside the project schedule (' . $this->describeRanges($ranges) . ').'
-                : 'The task dates must fall inside a single one of the project\'s schedule ranges ('
-                    . $this->describeRanges($ranges) . '). A task cannot span the gap between two ranges.';
-
-            $validator->errors()->add('start_date', $message);
-            $validator->errors()->add('due_date', $message);
-        });
+        $this->scheduleRules->attach($validator, $ranges);
     }
 }

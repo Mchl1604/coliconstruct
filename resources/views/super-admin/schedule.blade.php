@@ -2,6 +2,7 @@
 
 @push('styles')
     <link href="/css/super-admin/schedule.css" rel="stylesheet">
+    <link href="/css/calendar.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.css">
 @endpush
@@ -24,7 +25,7 @@
                 <span class="schedule-legend-item"><i class="schedule-dot" style="background:#198754"></i> Completed</span>
             </div>
 
-            <div id="schedulesCalendar"></div>
+            <div id="schedulesCalendar" class="calendar-standard"></div>
         </div>
     </div>
 
@@ -357,6 +358,7 @@
         </script>
         <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
         <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
+        <script src="/js/calendarHeader.js"></script>
         <script src="/js/super-admin/schedule.js"></script>
         <script>
             document.addEventListener('DOMContentLoaded', function() {

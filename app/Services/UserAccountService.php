@@ -300,6 +300,11 @@ class UserAccountService
     public function resetPassword(User $user): string
     {
         $this->guardEditable($user);
+        $this->guardNotSelf(
+            $user,
+            'You cannot reset your own password here. Use the password change page instead.'
+        );
+        $this->guardMayResetPassword($user);
 
         $password = $this->generateTemporaryPassword();
 
@@ -307,7 +312,10 @@ class UserAccountService
         $user->must_change_password = true;
         $user->save();
 
-        $this->activityLogger->record(ActivityLog::CLIENT_PASSWORD_RESET, $user);
+        $this->activityLogger->record(
+            $user->isClient() ? ActivityLog::CLIENT_PASSWORD_RESET : ActivityLog::EMPLOYEE_PASSWORD_RESET,
+            $user
+        );
 
         return $password;
     }
@@ -430,6 +438,25 @@ class UserAccountService
         if (auth()->id() !== null && auth()->id() === $user->id) {
             throw new RuntimeException($message);
         }
+    }
+
+    /**
+     * Only a Super Admin may reset a Super Admin's password.
+     *
+     * A reset hands the new password straight back to whoever asked for it, so
+     * without this an Admin could take the system owner's account: reset it,
+     * read the value off the screen, and sign in as them. Every other role is
+     * fair game for either administrator.
+     */
+    private function guardMayResetPassword(User $user): void
+    {
+        $actor = auth()->user();
+
+        if ($actor === null || ! $user->isSuperAdmin() || $actor->isSuperAdmin()) {
+            return;
+        }
+
+        throw new RuntimeException("A Super Admin's password can only be reset by another Super Admin.");
     }
 
     /**

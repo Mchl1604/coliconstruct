@@ -394,6 +394,13 @@ document.addEventListener("DOMContentLoaded", function () {
                 "</td>" +
                 '<td class="text-center"><div class="config-row-actions">' +
                 actionButton("edit", row.id, "bi-pencil", "Edit employee", "primary") +
+                actionButton(
+                    "reset-password",
+                    row.id,
+                    "bi-key",
+                    "Reset password",
+                    "secondary",
+                ) +
                 (row.is_active
                     ? actionButton(
                           "deactivate",

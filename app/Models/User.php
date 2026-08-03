@@ -81,6 +81,8 @@ class User extends Authenticatable
 
     public const ROLE_SUPER_ADMIN = 'super_admin';
 
+    public const ROLE_LEAD_TECHNICIAN = 'lead_technician';
+
     /**
      * Roles that carry a technician record, and therefore specialties.
      *
@@ -216,6 +218,39 @@ class User extends Authenticatable
     public function needsTechnicianRecord(): bool
     {
         return in_array($this->role, self::TECHNICIAN_ROLES, true);
+    }
+
+    public function isLeadTechnician(): bool
+    {
+        return $this->role === self::ROLE_LEAD_TECHNICIAN;
+    }
+
+    /**
+     * The technician record's id, or null for an account that has none.
+     *
+     * Every authorization check in the technician portal is anchored to this,
+     * so a null here means "owns no technician work" rather than an error.
+     */
+    public function technicianId(): ?int
+    {
+        $technicianId = $this->technician()->value('technician_id');
+
+        return $technicianId === null ? null : (int) $technicianId;
+    }
+
+    /**
+     * This account's technician record, created on demand.
+     *
+     * Configuration makes one alongside every technician account, but a role
+     * granted directly in the database would not have one, so the portal
+     * creates it rather than failing the page.
+     */
+    public function technicianRecord(): Technician
+    {
+        return Technician::firstOrCreate(
+            ['account_id' => $this->id],
+            ['role' => $this->role]
+        );
     }
 
     // ------------------------------------------------------------------

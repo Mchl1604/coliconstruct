@@ -19,6 +19,9 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
     <link href="/css/theme.css" rel="stylesheet">
     <link href="/css/superAdminNav.css" rel="stylesheet">
+    {{-- Same DataTables build the Super Admin shell loads, so a table looks
+         and behaves identically in either portal. --}}
+    <link rel="stylesheet" href="https://cdn.datatables.net/2.3.8/css/dataTables.dataTables.css">
     @stack('styles')
 </head>
 
@@ -27,11 +30,14 @@
         $user = auth()->user();
 
         $portalNavItems = match ($user?->role) {
+            // A lead runs the whole task board and the report log for their
+            // projects, not just their own slice of them, so those two lose
+            // the "My".
             'lead_technician' => [
                 ['label' => 'My Schedule', 'icon' => 'bi-calendar-event', 'route' => 'technician.schedule'],
                 ['label' => 'My Projects', 'icon' => 'bi-folder2-open', 'route' => 'technician.projects'],
-                ['label' => 'My Tasks', 'icon' => 'bi-list-task', 'route' => 'technician.tasks'],
-                ['label' => 'My Reports', 'icon' => 'bi-file-earmark-text', 'route' => 'technician.reports'],
+                ['label' => 'Tasks', 'icon' => 'bi-list-task', 'route' => 'technician.tasks'],
+                ['label' => 'Reports', 'icon' => 'bi-file-earmark-text', 'route' => 'technician.reports'],
             ],
             'technician' => [
                 ['label' => 'My Schedule', 'icon' => 'bi-calendar-event', 'route' => 'technician.schedule'],
@@ -118,7 +124,13 @@
         </div>
     @endif
 
+    {{-- The toasts an AJAX action raises are appended here. --}}
+    <div class="toast-container position-fixed top-0 end-0 p-3" data-toast-container></div>
+
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.datatables.net/2.3.8/js/dataTables.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="/js/technician/portal.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function () {
             document.querySelectorAll('.toast').forEach(function (toastEl) {

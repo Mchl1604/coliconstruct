@@ -26,6 +26,8 @@ class ActivityLog extends Model
 
     public const EMPLOYEE_UPDATED = 'Employee Updated';
 
+    public const EMPLOYEE_PASSWORD_RESET = 'Employee Password Reset';
+
     public const EMPLOYEE_ACTIVATED = 'Employee Activated';
 
     public const EMPLOYEE_DEACTIVATED = 'Employee Deactivated';

@@ -2,6 +2,10 @@
 
 @section('title', 'My Tasks')
 
+@push('styles')
+    <link href="/css/taskModal.css" rel="stylesheet">
+@endpush
+
 @section('content')
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
         <div>
@@ -23,6 +27,7 @@
                             <th>Start Date</th>
                             <th>Due Date</th>
                             <th>Status</th>
+                            <th class="text-center">Action</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -54,10 +59,17 @@
                                     @endif
                                 </td>
                                 <td><span class="badge {{ $badge }}">{{ ucfirst($task->status) }}</span></td>
+                                <td class="text-center">
+                                    <button type="button" class="btn btn-sm btn-primary py-1 px-2"
+                                        data-bs-toggle="modal" data-bs-target="#taskModal{{ $task->task_id }}"
+                                        title="View task">
+                                        <i class="bi bi-eye" aria-hidden="true"></i>
+                                    </button>
+                                </td>
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="5" class="text-secondary text-center py-4">
+                                <td colspan="6" class="text-secondary text-center py-4">
                                     You have no tasks assigned.
                                 </td>
                             </tr>
@@ -67,4 +79,16 @@
             </div>
         </div>
     </div>
+
+    {{-- The same dialog the Super Admin portal opens, always view only here:
+         a technician reads their work, they do not reassign it. --}}
+    @foreach ($tasks as $task)
+        <x-task-details-modal :task="$task"
+            :schedule-ranges="$task->project
+                ? $task->project->schedules->map(fn($schedule) => [
+                    'start' => \Carbon\Carbon::parse($schedule->start_datetime)->format('Y-m-d'),
+                    'end' => \Carbon\Carbon::parse($schedule->end_datetime ?? $schedule->start_datetime)->format('Y-m-d'),
+                ])->values()
+                : collect()" />
+    @endforeach
 @endsection

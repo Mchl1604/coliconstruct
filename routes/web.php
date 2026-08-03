@@ -3,6 +3,7 @@
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\ClientPortalController;
 use App\Http\Controllers\ConfigurationController;
+use App\Http\Controllers\LeadTechnicianController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\ScheduleController;
@@ -121,8 +122,10 @@ Route::prefix('super-admin')
         });
     });
 
-// Technician portal. Both technician roles share it; My Reports is the one
-// page a lead has and a technician does not.
+// Technician portal. A plain technician gets the four read-only pages below.
+// A lead gets the same four routes, but LeadTechnicianController answers them
+// with the richer portal - calendar, DataTables, and the task board they run -
+// so both roles keep one set of URLs and one sidebar.
 Route::prefix('technician')
     ->name('technician.')
     ->middleware(['auth', 'password.changed', 'role:technician,lead_technician'])
@@ -134,6 +137,32 @@ Route::prefix('technician')
         Route::get('/reports', [TechnicianPortalController::class, 'reports'])
             ->middleware('role:lead_technician')
             ->name('reports');
+
+        // Lead-only actions. Each one is additionally gated by ProjectPolicy /
+        // TaskPolicy, so the middleware here is the outer fence rather than
+        // the whole of the permission model.
+        Route::middleware('role:lead_technician')
+            ->name('lead.')
+            ->group(function () {
+                Route::get('/projects/{project}', [LeadTechnicianController::class, 'showProject'])
+                    ->name('projects.show');
+                Route::get('/projects/{project}/details', [LeadTechnicianController::class, 'projectDetails'])
+                    ->name('projects.details');
+                Route::post('/projects/{project}/complete', [LeadTechnicianController::class, 'completeProject'])
+                    ->name('projects.complete');
+                Route::get('/projects/{project}/task-form-data', [LeadTechnicianController::class, 'taskFormData'])
+                    ->name('projects.task-form-data');
+                Route::post('/projects/{project}/tasks', [LeadTechnicianController::class, 'storeTask'])
+                    ->name('tasks.store');
+                Route::post('/projects/{project}/reports', [LeadTechnicianController::class, 'storeReport'])
+                    ->name('reports.store');
+                Route::post('/tasks/{task}', [LeadTechnicianController::class, 'updateTask'])
+                    ->name('tasks.update');
+                Route::post('/tasks/{task}/complete', [LeadTechnicianController::class, 'completeTask'])
+                    ->name('tasks.complete');
+                Route::delete('/tasks/{task}', [LeadTechnicianController::class, 'destroyTask'])
+                    ->name('tasks.destroy');
+            });
     });
 
 // Client portal

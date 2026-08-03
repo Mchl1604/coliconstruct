@@ -389,12 +389,13 @@ class AuthenticationTest extends TestCase
         $lead = $this->account('lead_technician', ['email' => 'lead@example.test']);
         $this->actingAs($lead);
 
+        // A lead runs the whole board, so those two links lose the "My".
         $leadPage = $this->get(route('technician.schedule'));
         $leadPage->assertOk();
         $leadPage->assertSee('My Schedule');
         $leadPage->assertSee('My Projects');
-        $leadPage->assertSee('My Tasks');
-        $leadPage->assertSee('My Reports');
+        $leadPage->assertSee('>Tasks<', false);
+        $leadPage->assertSee('>Reports<', false);
 
         $this->post(route('auth.logout'));
 

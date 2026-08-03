@@ -3,6 +3,9 @@
 @section('content')
     @push('styles')
         <link rel="stylesheet" href="/css/super-admin/projectDetails.css">
+        {{-- The Assign To picker cards, shared with the Tasks page and the
+             technician portal. --}}
+        <link rel="stylesheet" href="/css/taskModal.css">
     @endpush
     @php
         $scheduleStart = $project->schedules->min('start_datetime');
@@ -147,7 +150,7 @@
                     <div>
                         <div class="d-flex align-items-center mb-2">
                             <h2 class="fw-bold mb-0">
-                                {{ $project->clients->first()->fullname ?? 'N/A' }}
+                                {{ $project->clients->first()?->fullname ?? 'N/A' }}
                             </h2>
 
                             @unless ($isReadOnly)
@@ -191,7 +194,7 @@
                             @if (strtolower($client?->client_type ?? '') === 'commercial')
                                 <span class="ms-3">
                                     Company:
-                                    {{ $project->clients->first()->company_name ?? 'N/A' }}
+                                    {{ $project->clients->first()?->company_name ?? 'N/A' }}
                                 </span>
                             @endif
                         </div>
@@ -350,7 +353,7 @@
                         </button>
                     @endif
 
-                    @if ($project->clients->first()->client_type === 'Commercial')
+                    @if ($project->clients->first()?->client_type === 'Commercial')
                         @if ($contractDocument)
                             <a href="{{ asset($contractDocument->document_path) }}" class="btn btn-outline-success"
                                 target="_blank" rel="noopener noreferrer">
@@ -728,31 +731,35 @@
 
                                                 <div class="d-flex justify-content-start gap-2">
 
-                                                    {{-- View / Edit --}}
-                                                    <button class="btn btn-sm btn-primary" data-bs-toggle="modal"
-                                                        data-bs-target="#taskModal{{ $task->task_id }}">
-
-                                                        <i class="bi bi-eye"></i>
-
+                                                    {{-- View / Edit. A completed task keeps the eye
+                                                         but opens view only, showing what was
+                                                         submitted on completion. --}}
+                                                    <button type="button" class="btn btn-sm btn-primary"
+                                                        data-bs-toggle="modal"
+                                                        data-bs-target="#taskModal{{ $task->task_id }}"
+                                                        title="{{ $task->isCompleted() || $isReadOnly ? 'View task' : 'View / edit task' }}">
+                                                        <i class="bi bi-eye" aria-hidden="true"></i>
                                                     </button>
 
-                                                    {{-- Complete --}}
-                                                    @if ($task->status != 'completed' && $task->status != 'unassigned')
-                                                        <button class="btn btn-sm btn-success" data-bs-toggle="modal"
-                                                            data-bs-target="#completeTaskModal{{ $task->task_id }}">
+                                                    {{-- A locked project's task history is a record,
+                                                         so completing and deleting both drop away. --}}
+                                                    @unless ($isReadOnly)
+                                                        @if ($task->status != 'completed' && $task->status != 'unassigned')
+                                                            <button type="button" class="btn btn-sm btn-success"
+                                                                data-bs-toggle="modal"
+                                                                data-bs-target="#completeTaskModal{{ $task->task_id }}"
+                                                                title="Mark as completed">
+                                                                <i class="bi bi-check-lg" aria-hidden="true"></i>
+                                                            </button>
+                                                        @endif
 
-                                                            <i class="bi bi-check-lg"></i>
-
+                                                        <button type="button" class="btn btn-sm btn-danger"
+                                                            data-bs-toggle="modal"
+                                                            data-bs-target="#deleteTaskModal{{ $task->task_id }}"
+                                                            title="Delete task">
+                                                            <i class="bi bi-trash" aria-hidden="true"></i>
                                                         </button>
-                                                    @endif
-
-                                                    {{-- Delete --}}
-                                                    <button class="btn btn-sm btn-danger" data-bs-toggle="modal"
-                                                        data-bs-target="#deleteTaskModal{{ $task->task_id }}">
-
-                                                        <i class="bi bi-trash"></i>
-
-                                                    </button>
+                                                    @endunless
 
                                                 </div>
 
@@ -877,29 +884,29 @@
                             <div class="col-md-5">
                                 <label class="form-label">First Name</label>
                                 <input type="text" class="form-control" name="first_name"
-                                    value="{{ $project->clients->first()->firstname ?? '' }}">
+                                    value="{{ $project->clients->first()?->firstname ?? '' }}">
                             </div>
 
                             <div class="col-md-2">
                                 <label class="form-label">Middle Initial</label>
                                 <input type="text" maxlength="1" class="form-control text-center"
-                                    name="middle_initial" value="{{ $project->clients->first()->middlename ?? '' }}">
+                                    name="middle_initial" value="{{ $project->clients->first()?->middlename ?? '' }}">
                             </div>
 
                             <div class="col-md-5">
                                 <label class="form-label">Last Name</label>
                                 <input type="text" class="form-control" name="last_name"
-                                    value="{{ $project->clients->first()->surname ?? '' }}">
+                                    value="{{ $project->clients->first()?->surname ?? '' }}">
                             </div>
 
                         </div>
 
-                        @if ($project->clients->first()->client_type === 'Commercial')
+                        @if ($project->clients->first()?->client_type === 'Commercial')
                             <div class="mt-3">
                                 <label class="form-label">Company Name</label>
 
                                 <input type="text" class="form-control" name="company_name"
-                                    value="{{ $project->clients->first()->company_name ?? '' }}">
+                                    value="{{ $project->clients->first()?->company_name ?? '' }}">
                             </div>
                         @endif
 
@@ -920,7 +927,7 @@
                                 </label>
 
                                 <input type="text" class="form-control" name="contact_number"
-                                    value="{{ $project->clients->first()->contact_number ?? '' }}">
+                                    value="{{ $project->clients->first()?->contact_number ?? '' }}">
                             </div>
 
                             <div class="col-md-6">
@@ -929,7 +936,7 @@
                                 </label>
 
                                 <input type="email" class="form-control" name="email_address"
-                                    value="{{ $project->clients->first()->email_address ?? '' }}">
+                                    value="{{ $project->clients->first()?->email_address ?? '' }}">
                             </div>
 
                         </div>
@@ -1074,7 +1081,7 @@
 
                             </div>
 
-                            @if ($project->clients->first()->client_type === 'Commercial')
+                            @if ($project->clients->first()?->client_type === 'Commercial')
                                 <div class="col-md-4">
 
                                     <div class="border rounded p-3 h-100">
@@ -1394,50 +1401,35 @@
                             Assign To
                         </label>
 
-                        <div class="row g-3">
+                        {{-- The same picker cards the Tasks page and the technician
+                             portal use, so an assignee is chosen the same way
+                             everywhere. --}}
+                        <div class="task-assign-row">
 
                             @foreach ($project->projectTechnicians as $projectTechnician)
                                 @php
                                     $technician = $projectTechnician->technician;
+                                    $activeCount = $technicianActiveTaskCounts[$technician->technician_id] ?? 0;
                                 @endphp
 
-                                <div class="col-md-4">
+                                <label>
+                                    <input type="radio" class="btn-check" name="technician_id"
+                                        value="{{ $technician->technician_id }}" required>
 
-                                    <label class="w-100">
-
-                                        <input type="radio" class="btn-check" name="technician_id"
-                                            value="{{ $technician->technician_id }}" required>
-
-                                        <div class="card technician-card h-100">
-
-                                            <div class="card-body text-center">
-
-                                                <div class="display-5 text-primary mb-2">
-
-                                                    <i class="bi bi-person-circle"></i>
-
-                                                </div>
-
-                                                <h6 class="fw-bold mb-1">
-
-                                                    {{ $technician->name }}
-
-                                                </h6>
-
-                                                <small class="text-muted">
-
-                                                    {{ $technicianActiveTaskCounts[$technician->technician_id] ?? 0 }}
-                                                    Active Task{{ ($technicianActiveTaskCounts[$technician->technician_id] ?? 0) == 1 ? '' : 's' }}
-
-                                                </small>
-
-                                            </div>
-
+                                    <div class="task-assign-card">
+                                        <div class="task-assign-avatar">
+                                            <i class="bi bi-person-fill" aria-hidden="true"></i>
                                         </div>
-
-                                    </label>
-
-                                </div>
+                                        <div class="task-assign-name">{{ $technician->name }}</div>
+                                        <div class="task-assign-count">
+                                            {{ $activeCount }}
+                                            Active Task{{ $activeCount == 1 ? '' : 's' }}
+                                        </div>
+                                        @if (optional($technician->account)->role === 'lead_technician')
+                                            <span class="badge bg-primary task-assign-lead">Lead</span>
+                                        @endif
+                                    </div>
+                                </label>
                             @endforeach
 
                         </div>
@@ -1470,382 +1462,27 @@
 
     </div>
 
+    @php
+        $projectTechnicianModels = $project->projectTechnicians->pluck('technician')->filter()->values();
+    @endphp
+
     @foreach ($tasks as $task)
-        <div class="modal fade" id="taskModal{{ $task->task_id }}" tabindex="-1">
-            <div class="modal-dialog modal-xl">
-                <div class="modal-content">
-
-                    <div
-                        class="modal-header
-                    {{ $task->status == 'completed' ? 'bg-success' : 'bg-primary' }}
-                    text-white">
-
-                        <h5 class="modal-title">
-
-                            <i class="bi bi-list-task me-2"></i>
-
-                            {{ $task->status == 'completed' ? 'View Task' : 'Edit Task' }}
-
-                        </h5>
-
-                        <button class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-
-                    </div>
-
-                    <div class="modal-body">
-                        @if ($task->status != 'completed')
-                            <form action="{{ route('super-admin.tasks.update', $task->task_id) }}" method="POST">
-                            @else
-                                <form action="javascript:void(0);">
-                        @endif
-
-                        @csrf
-                        @method('PUT')
-
-                        {{-- Task Title --}}
-                        <div class="mb-3">
-
-                            <label class="form-label fw-semibold">
-
-                                Task Title
-
-                            </label>
-
-                            <input type="text" class="form-control" name="task_title"
-                                value="{{ $task->task_title }}" {{ $task->status == 'completed' ? 'readonly' : '' }}>
-
-                        </div>
-
-                        {{-- Description --}}
-                        <div class="mb-3">
-
-                            <label class="form-label fw-semibold">
-
-                                Description
-
-                            </label>
-
-                            <textarea class="form-control" rows="4" name="task_description"
-                                {{ $task->status == 'completed' ? 'readonly' : '' }}>{{ $task->task_description }}</textarea>
-
-                        </div>
-
-                        <div class="row" data-task-date-row data-schedule-ranges='@json($scheduleRanges)'>
-
-                            {{-- Start Date --}}
-                            <div class="col-md-6">
-
-                                <label class="form-label">
-
-                                    Start Date
-
-                                </label>
-
-                                <input type="text" class="form-control" name="start_date"
-                                    value="{{ $task->start_date }}" data-task-start
-                                    placeholder="Select start date"
-                                    {{ $task->status == 'completed' ? 'readonly' : '' }}>
-
-                            </div>
-
-                            {{-- Due Date --}}
-                            <div class="col-md-6">
-
-                                <label class="form-label">
-
-                                    Due Date
-
-                                </label>
-
-                                <input type="text" class="form-control" name="due_date"
-                                    value="{{ $task->due_date }}" data-task-due
-                                    placeholder="Select due date"
-                                    {{ $task->status == 'completed' ? 'readonly' : '' }}>
-
-                            </div>
-
-                            <div class="col-12">
-                                <div class="form-text">
-                                    Allowed: {{ $scheduleRangesLabel ?: 'No schedule set' }}@if ($scheduleRanges->count() > 1). A task cannot span the gap between two ranges.@endif
-                                </div>
-                            </div>
-
-                        </div>
-
-                        <hr>
-
-                        <label class="form-label fw-bold">
-
-                            Assign Technician
-
-                        </label>
-
-                        <div class="row g-3">
-
-                            @foreach ($project->projectTechnicians as $projectTechnician)
-                                @php
-                                    $technician = $projectTechnician->technician;
-                                @endphp
-
-                                <div class="col-md-4">
-
-                                    <label class="w-100">
-
-                                        <input type="radio" class="btn-check" name="technician_id"
-                                            value="{{ $technician->technician_id }}"
-                                            {{ $task->technician_id == $technician->technician_id ? 'checked' : '' }}
-                                            {{ $task->status == 'completed' ? 'disabled' : '' }}>
-
-                                        <div class="card technician-card h-100">
-
-                                            <div class="card-body text-center">
-
-                                                <div class="display-5 text-primary">
-
-                                                    <i class="bi bi-person-circle"></i>
-
-                                                </div>
-
-                                                <h6 class="fw-bold mt-2">
-
-                                                    {{ $technician->name }}
-
-                                                </h6>
-
-                                                <small class="text-muted">
-
-                                                    {{ $technician->tasks_count ?? 0 }}
-
-                                                    Active Tasks
-
-                                                </small>
-
-                                            </div>
-
-                                        </div>
-
-                                    </label>
-
-                                </div>
-                            @endforeach
-
-                        </div>
-                        @if ($task->status == 'completed')
-                            <hr>
-
-                            <h6 class="fw-bold mb-3">
-                                <i class="bi bi-images me-2"></i>
-                                Completion Images
-                            </h6>
-
-                            @if ($task->images->count())
-                                <div class="row g-3">
-
-                                    @foreach ($task->images as $image)
-                                        <div class="col-lg-4 col-md-6">
-
-                                            <a href="{{ asset('storage/' . $image->image_path) }}" target="_blank">
-
-                                                <img src="{{ asset('storage/' . $image->image_path) }}"
-                                                    class="img-fluid rounded border shadow-sm"
-                                                    style="height:200px;width:100%;object-fit:cover;">
-
-                                            </a>
-
-                                        </div>
-                                    @endforeach
-
-                                </div>
-                            @else
-                                <div class="alert alert-warning mb-0">
-
-                                    <i class="bi bi-exclamation-circle me-2"></i>
-
-                                    <strong>No image available.</strong>
-
-                                    This task was marked as completed without any uploaded completion images.
-
-                                </div>
-                            @endif
-                        @endif
-
-                    </div>
-
-                    <div class="modal-footer">
-
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-
-                            Close
-
-                        </button>
-
-                        @if ($task->status != 'completed')
-                            <button class="btn btn-primary">
-
-                                <i class="bi bi-save me-1"></i>
-
-                                Save Changes
-
-                            </button>
-                        @else
-                        @endif
-
-                    </div>
-
-                </div>
-
-                </form>
-
-            </div>
-
-        </div>
-        <div class="modal fade" id="completeTaskModal{{ $task->task_id }}" tabindex="-1">
-
-            <div class="modal-dialog modal-dialog-centered">
-
-
-
-                <div class="modal-content">
-
-                    <div class="modal-header bg-success text-white">
-
-                        <h5 class="modal-title">
-
-                            <i class="bi bi-check-circle me-2"></i>
-
-                            Complete Task
-
-                        </h5>
-
-                        <button class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-
-                    </div>
-
-                    <div class="modal-body">
-                        <form action="{{ route('super-admin.tasks.complete', $task->task_id) }}" method="POST">
-
-                            @csrf
-                            @method('PATCH')
-
-                            <p class="mb-1">
-
-                                Are you sure you want to mark
-
-                            </p>
-
-                            <h5 class="fw-bold">
-
-                                "{{ $task->task_title }}"
-
-                            </h5>
-
-                            <p class="text-muted mb-0">
-
-                                as completed?
-
-                            </p>
-
-                    </div>
-
-                    <div class="modal-footer">
-
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-
-                            Cancel
-
-                        </button>
-
-                        <button type="submit" class="btn btn-success">
-
-                            <i class="bi bi-check-lg me-1"></i>
-
-                            Mark as Completed
-
-                        </button>
-
-                    </div>
-
-                </div>
-
-                </form>
-
-            </div>
-
-        </div>
-        <div class="modal fade" id="deleteTaskModal{{ $task->task_id }}" tabindex="-1">
-
-            <div class="modal-dialog modal-dialog-centered">
-
-
-
-                <div class="modal-content">
-
-                    <div class="modal-header bg-danger text-white">
-
-                        <h5 class="modal-title">
-
-                            <i class="bi bi-trash me-2"></i>
-
-                            Delete Task
-
-                        </h5>
-
-                        <button class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-
-                    </div>
-
-                    <div class="modal-body">
-                        <form action="{{ route('super-admin.tasks.destroy', $task->task_id) }}" method="POST">
-
-                            @csrf
-                            @method('DELETE')
-
-                            <p class="mb-1">
-
-                                This will permanently delete
-
-                            </p>
-
-                            <h5 class="fw-bold">
-
-                                "{{ $task->task_title }}"
-
-                            </h5>
-
-                            <p class="text-danger mb-0">
-
-                                This action cannot be undone.
-
-                            </p>
-
-                    </div>
-
-                    <div class="modal-footer">
-
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-
-                            Cancel
-
-                        </button>
-
-                        <button type="submit" class="btn btn-danger">
-
-                            <i class="bi bi-trash me-1"></i>
-
-                            Delete Task
-
-                        </button>
-
-                    </div>
-
-                </div>
-
-                </form>
-
-            </div>
-
-        </div>
+        {{-- Shared with the Tasks page and the technician portal. --}}
+        <x-task-details-modal :task="$task" :technicians="$projectTechnicianModels"
+            :active-task-counts="$technicianActiveTaskCounts" :schedule-ranges="$scheduleRanges"
+            :update-action="$isReadOnly ? null : route('super-admin.tasks.update', $task->task_id)" />
+
+        @unless ($isReadOnly)
+            @if ($task->status != 'completed' && $task->status != 'unassigned')
+                <x-task-complete-modal :task="$task"
+                    :action="route('super-admin.tasks.complete', $task->task_id)" />
+            @endif
+
+            <x-task-delete-modal :task="$task"
+                :action="route('super-admin.tasks.destroy', $task->task_id)" />
+        @endunless
     @endforeach
+
 
 
     @push('scripts')
@@ -1853,6 +1490,7 @@
         <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
         {{-- Same range-aware task date pickers the Tasks page uses. --}}
         <script src="/js/super-admin/taskDatePickers.js"></script>
+        <script src="/js/imagePreview.js"></script>
         <script src="/js/super-admin/projectDetails.js"></script>
         <script>
             window.assignedTeamData = @json($assignedTeamLookup);

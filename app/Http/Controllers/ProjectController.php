@@ -11,17 +11,19 @@ use App\Models\ProjectTechnician;
 use App\Models\ProjectType;
 use App\Models\Schedule;
 use App\Models\ScheduleTechnician;
+use App\Models\Task;
 use App\Models\Technician;
+use App\Models\TechnicianReport;
+use App\Services\ProjectCompletion;
 use App\Services\TechnicianAvailabilityService;
+use Carbon\Carbon;
 use Carbon\CarbonImmutable;
+use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use Throwable;
-use App\Models\TechnicianReport;
-use App\Models\Task;
-use Illuminate\Http\Request;
 
 class ProjectController extends Controller
 {
@@ -125,8 +127,7 @@ class ProjectController extends Controller
 
                 $projectTypeIds = ProjectType::query()
                     ->get()
-                    ->filter(fn(ProjectType $projectType) =>
-                    in_array($projectType->type_name, $validated['project_types'], true))
+                    ->filter(fn (ProjectType $projectType) => in_array($projectType->type_name, $validated['project_types'], true))
                     ->pluck('type_id')
                     ->all();
 
@@ -136,7 +137,7 @@ class ProjectController extends Controller
                     $validated['lead_tech'],
                     ...$validated['technicians'],
                 ])
-                    ->map(fn($id) => (int) $id)
+                    ->map(fn ($id) => (int) $id)
                     ->unique()
                     ->values();
 
@@ -192,7 +193,7 @@ class ProjectController extends Controller
 
             return redirect()
                 ->route('super-admin.projects')
-                ->with(session()->flash('error', 'An error occurred while creating the project: ' . $e->getMessage()));
+                ->with(session()->flash('error', 'An error occurred while creating the project: '.$e->getMessage()));
         }
     }
 
@@ -276,11 +277,13 @@ class ProjectController extends Controller
             $validated['surname'],
         ])->filter()->implode(' '));
     }
+
     private function inputCompanyName(array $validated): ?string
     {
         if ($validated['client_type'] === 'Commercial' && filled($validated['company_name'] ?? null)) {
             return $validated['company_name'] ?? null;
         }
+
         return null;
     }
 
@@ -295,18 +298,18 @@ class ProjectController extends Controller
             return;
         }
 
-        $directory = public_path('uploads/' . $folder);
+        $directory = public_path('uploads/'.$folder);
 
         File::ensureDirectoryExists($directory);
 
-        $fileName = Str::uuid()->toString() . '.' . $uploadedFile->getClientOriginalExtension();
+        $fileName = Str::uuid()->toString().'.'.$uploadedFile->getClientOriginalExtension();
         $uploadedFile->move($directory, $fileName);
 
         Document::create([
             'project_id' => $projectId,
             'document_type' => $folder,
             'document_name' => $fileName,
-            'document_path' => 'uploads/' . $folder . '/' . $fileName,
+            'document_path' => 'uploads/'.$folder.'/'.$fileName,
             'uploaded_at' => now(),
         ]);
     }
@@ -326,20 +329,20 @@ class ProjectController extends Controller
 
                             $q->whereIn('status', [
                                 'pending',
-                                'ongoing'
+                                'ongoing',
                             ]);
-                        }
+                        },
                     ]);
-            }
+            },
 
         ])->findOrFail($id);
         $sortedProjectTechnicians = $project->projectTechnicians
-        ->sortByDesc(function ($projectTechnician) {
-            return optional($projectTechnician->technician?->account)->role === 'lead_technician' ? 1 : 0;
-        })
-        ->values();
+            ->sortByDesc(function ($projectTechnician) {
+                return optional($projectTechnician->technician?->account)->role === 'lead_technician' ? 1 : 0;
+            })
+            ->values();
 
-    $project->setRelation('projectTechnicians', $sortedProjectTechnicians);
+        $project->setRelation('projectTechnicians', $sortedProjectTechnicians);
         $schedule = $project->schedule;
 
         $assignedTechnicianIds = $project->projectTechnicians
@@ -395,12 +398,12 @@ class ProjectController extends Controller
 
         $currentTeamTechnicianIds = $project->projectTechnicians
             ->pluck('technician_id')
-            ->reject(fn($technicianId) => $technicianId === $currentLeadTechnicianId)
+            ->reject(fn ($technicianId) => $technicianId === $currentLeadTechnicianId)
             ->values();
 
         $leadTechnicianOptionsQuery = Technician::with('account')
-            ->whereHas('account', fn($query) => $query->where('role', 'lead_technician'))
-            ->whereNotIn('technician_id', $assignedTechnicianIds->reject(fn($id) => $id === $currentLeadTechnicianId));
+            ->whereHas('account', fn ($query) => $query->where('role', 'lead_technician'))
+            ->whereNotIn('technician_id', $assignedTechnicianIds->reject(fn ($id) => $id === $currentLeadTechnicianId));
 
         $leadTechnicianOptionsQuery = $applyAvailabilityFilter($leadTechnicianOptionsQuery);
 
@@ -425,7 +428,7 @@ class ProjectController extends Controller
             ->concat($project->projectTechnicians->pluck('technician')->filter())
             ->concat($leadTechnicianOptions)
             ->unique('technician_id')
-            ->map(fn(Technician $technician) => [
+            ->map(fn (Technician $technician) => [
                 'id' => $technician->technician_id,
                 'name' => $technician->name,
                 'role' => optional($technician->account)->role,
@@ -440,7 +443,7 @@ class ProjectController extends Controller
         $reports = TechnicianReport::with('images')
             ->where('project_id', $id);
 
-        $tasks = Task::with(['technician', 'images'])
+        $tasks = Task::with(['technician', 'images', 'completedBy'])
             ->where('project_id', $id)
             ->latest()
             ->get();
@@ -476,7 +479,7 @@ class ProjectController extends Controller
             'assignedTeamLookup',
             'technicianActiveTaskCounts'
         ));
-    
+
     }
 
     public function previewDocument(int $id, string $type)
@@ -515,7 +518,6 @@ class ProjectController extends Controller
         ));
     }
 
-
     public function update(Request $request, int $id)
     {
         $project = Project::findOrFail($id);
@@ -523,7 +525,7 @@ class ProjectController extends Controller
         if ($project->isReadOnly()) {
             return redirect()
                 ->route('super-admin.projects.show', $id)
-                ->with('error', 'This project is ' . $project->status . ' and can no longer be edited.');
+                ->with('error', 'This project is '.$project->status.' and can no longer be edited.');
         }
 
         $validated = $request->validate([
@@ -605,7 +607,7 @@ class ProjectController extends Controller
             return redirect()
                 ->route('super-admin.projects.show', $id)
                 ->with('success', 'Project updated successfully.');
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
 
             return redirect()
                 ->route('super-admin.projects.show', $id)
@@ -619,7 +621,7 @@ class ProjectController extends Controller
             return;
         }
 
-        $directory = public_path('uploads/' . $documentType);
+        $directory = public_path('uploads/'.$documentType);
 
         File::ensureDirectoryExists($directory);
 
@@ -635,13 +637,13 @@ class ProjectController extends Controller
         }
 
         // Store new file
-        $fileName = Str::uuid() . '.' . $uploadedFile->getClientOriginalExtension();
+        $fileName = Str::uuid().'.'.$uploadedFile->getClientOriginalExtension();
 
         $uploadedFile->move($directory, $fileName);
 
         $data = [
             'document_name' => $fileName,
-            'document_path' => 'uploads/' . $documentType . '/' . $fileName,
+            'document_path' => 'uploads/'.$documentType.'/'.$fileName,
             'uploaded_at' => now(),
         ];
 
@@ -666,7 +668,7 @@ class ProjectController extends Controller
         if ($project->isReadOnly()) {
             return redirect()
                 ->route('super-admin.projects', $id)
-                ->with('error', 'This project is ' . $project->status . ' and cannot be put on hold.');
+                ->with('error', 'This project is '.$project->status.' and cannot be put on hold.');
         }
 
         if ($project->status === 'not_yet_scheduled') {
@@ -691,7 +693,7 @@ class ProjectController extends Controller
         } catch (Throwable $e) {
             return redirect()
                 ->route('super-admin.projects', $id)
-                ->with('error', 'An error occurred while putting the project on hold: ' . $e->getMessage());
+                ->with('error', 'An error occurred while putting the project on hold: '.$e->getMessage());
         }
     }
 
@@ -702,7 +704,7 @@ class ProjectController extends Controller
         if ($project->isReadOnly()) {
             return redirect()
                 ->route('super-admin.projects', $id)
-                ->with('error', 'This project is ' . $project->status . ' and cannot be resumed.');
+                ->with('error', 'This project is '.$project->status.' and cannot be resumed.');
         }
 
         $project->update(['on_hold' => false]);
@@ -725,7 +727,7 @@ class ProjectController extends Controller
         if ($project->isReadOnly()) {
             return redirect()
                 ->route('super-admin.projects')
-                ->with('error', 'This project is already ' . $project->status . ' and cannot be completed.');
+                ->with('error', 'This project is already '.$project->status.' and cannot be completed.');
         }
 
         $validated = $request->validate([
@@ -751,19 +753,28 @@ class ProjectController extends Controller
                     File::ensureDirectoryExists($directory);
 
                     foreach ($request->file('completion_photos') as $photo) {
-                        $fileName = Str::uuid()->toString() . '.' . $photo->getClientOriginalExtension();
+                        $fileName = Str::uuid()->toString().'.'.$photo->getClientOriginalExtension();
                         $photo->move($directory, $fileName);
 
                         ProjectCompletionPhoto::create([
                             'project_id' => $project->project_id,
-                            'photo_path' => 'uploads/completion/' . $fileName,
+                            'photo_path' => 'uploads/completion/'.$fileName,
                             'uploaded_at' => now(),
                         ]);
                     }
                 }
 
-                // Everything else (schedule, technicians, task history) is
-                // intentionally left untouched for auditing/reporting.
+                // Dates booked past the completion date are released: the work
+                // is done, so the project must stop reading as booked and its
+                // technicians must stop reading as busy.
+                app(ProjectCompletion::class)->releaseFutureSchedules(
+                    $project,
+                    CarbonImmutable::parse($validated['completion_date'])
+                );
+
+                // Everything else (technicians, task history, and the days
+                // already worked) is intentionally left untouched for
+                // auditing and reporting.
             });
 
             return redirect()
@@ -772,7 +783,7 @@ class ProjectController extends Controller
         } catch (Throwable $e) {
             return redirect()
                 ->route('super-admin.projects')
-                ->with('error', 'An error occurred while completing the project: ' . $e->getMessage());
+                ->with('error', 'An error occurred while completing the project: '.$e->getMessage());
         }
     }
 
@@ -794,7 +805,7 @@ class ProjectController extends Controller
         if ($project->isCancelled() || $project->isArchived()) {
             return redirect()
                 ->route('super-admin.projects.show', $id)
-                ->with('error', 'This project is already ' . $project->status . '.');
+                ->with('error', 'This project is already '.$project->status.'.');
         }
 
         $validated = $request->validate([
@@ -825,7 +836,7 @@ class ProjectController extends Controller
         } catch (Throwable $e) {
             return redirect()
                 ->route('super-admin.projects.show', $id)
-                ->with('error', 'An error occurred while cancelling the project: ' . $e->getMessage());
+                ->with('error', 'An error occurred while cancelling the project: '.$e->getMessage());
         }
     }
 
@@ -862,7 +873,7 @@ class ProjectController extends Controller
         } catch (Throwable $e) {
             return redirect()
                 ->route('super-admin.projects')
-                ->with('error', 'An error occurred while archiving the project: ' . $e->getMessage());
+                ->with('error', 'An error occurred while archiving the project: '.$e->getMessage());
         }
     }
 
@@ -900,7 +911,7 @@ class ProjectController extends Controller
         } catch (Throwable $e) {
             return redirect()
                 ->route('super-admin.projects.archived')
-                ->with('error', 'An error occurred while restoring the project: ' . $e->getMessage());
+                ->with('error', 'An error occurred while restoring the project: '.$e->getMessage());
         }
     }
 
@@ -959,7 +970,7 @@ class ProjectController extends Controller
             return;
         }
 
-        $status = now()->gte(\Carbon\Carbon::parse($firstSchedule->start_datetime))
+        $status = now()->gte(Carbon::parse($firstSchedule->start_datetime))
             ? 'ongoing'
             : 'pending';
 
@@ -982,7 +993,7 @@ class ProjectController extends Controller
                 ->orderBy('start_datetime', 'asc')
                 ->first();
 
-            if (!$firstSchedule) {
+            if (! $firstSchedule) {
                 continue;
             }
 
@@ -993,9 +1004,9 @@ class ProjectController extends Controller
                     break;
 
                 case 'pending':
-                    if (now()->gte(\Carbon\Carbon::parse($firstSchedule->start_datetime))) {
+                    if (now()->gte(Carbon::parse($firstSchedule->start_datetime))) {
                         $project->update([
-                            'status' => 'ongoing'
+                            'status' => 'ongoing',
                         ]);
                     }
                     break;
@@ -1011,99 +1022,99 @@ class ProjectController extends Controller
         }
     }
 
-   public function updateAssignedTeam(Request $request, int $id)
-{
-    $project = Project::with(['schedules', 'projectTechnicians'])->findOrFail($id);
+    public function updateAssignedTeam(Request $request, int $id)
+    {
+        $project = Project::with(['schedules', 'projectTechnicians'])->findOrFail($id);
 
-    if ($project->isReadOnly()) {
-        return back()->with('error', 'This project is ' . $project->status . ' and its team can no longer be edited.');
-    }
-
-    $validated = $request->validate([
-        'lead_tech' => ['required', 'integer', 'exists:tbl_technicians,technician_id'],
-        'technicians' => ['nullable', 'array'],
-        'technicians.*' => ['integer', 'exists:tbl_technicians,technician_id'],
-    ], [
-        'lead_tech.required' => 'A lead technician is required.',
-    ]);
-
-    $technicianIds = collect([
-        $validated['lead_tech'],
-        ...($validated['technicians'] ?? []),
-    ])
-        ->map(fn ($technicianId) => (int) $technicianId)
-        ->unique()
-        ->values();
-
-    $currentlyAssignedIds = $project->projectTechnicians->pluck('technician_id');
-    $newlyAddedIds = $technicianIds->diff($currentlyAssignedIds)->values();
-
-    // Every one of the project's date ranges has to be checked, not just the
-    // first one, and every day inside each range - a technician who is free on
-    // the endpoints but booked mid-range must still be rejected.
-    $ranges = $project->schedules
-        ->map(fn ($schedule): array => [
-            'start' => CarbonImmutable::parse($schedule->start_datetime)->startOfDay(),
-            'end' => CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime)->startOfDay(),
-        ])
-        ->all();
-
-    if ($ranges !== [] && $newlyAddedIds->isNotEmpty()) {
-        $availability = app(TechnicianAvailabilityService::class);
-
-        $conflicts = $availability->findConflicts(
-            $newlyAddedIds,
-            $ranges,
-            $project->project_id
-        );
-
-        if ($conflicts->isNotEmpty()) {
-            return back()->with('error', $availability->conflictMessage($conflicts));
+        if ($project->isReadOnly()) {
+            return back()->with('error', 'This project is '.$project->status.' and its team can no longer be edited.');
         }
-    }
 
-    DB::transaction(function () use ($project, $technicianIds): void {
-        $projectTechniciansToRemove = DB::table('tbl_project_technicians')
-            ->select('project_technician_id', 'technician_id')
-            ->where('project_id', '=', $project->project_id)
-            ->whereNotIn('technician_id', $technicianIds->toArray())
-            ->get();
-
-        if ($projectTechniciansToRemove->isNotEmpty()) {
-
-    $projectTechnicianIds = $projectTechniciansToRemove
-        ->pluck('project_technician_id')
-        ->toArray();
-
-    $removedTechnicianIds = $projectTechniciansToRemove
-        ->pluck('technician_id')
-        ->toArray();
-
-    DB::table('tbl_schedule_technicians')
-        ->whereIn('project_technician_id', $projectTechnicianIds)
-        ->delete();
-
-    DB::table('tbl_project_technicians')
-        ->whereIn('project_technician_id', $projectTechnicianIds)
-        ->delete();
-
-    Task::where('project_id', $project->project_id)
-        ->whereIn('technician_id', $removedTechnicianIds)
-        ->where('status', '!=', 'completed') // don't touch finished work
-        ->update([
-            'technician_id' => null,
-            'status' => 'unassigned',
+        $validated = $request->validate([
+            'lead_tech' => ['required', 'integer', 'exists:tbl_technicians,technician_id'],
+            'technicians' => ['nullable', 'array'],
+            'technicians.*' => ['integer', 'exists:tbl_technicians,technician_id'],
+        ], [
+            'lead_tech.required' => 'A lead technician is required.',
         ]);
-}
 
-        $technicianIds->each(function (int $technicianId) use ($project): void {
-            ProjectTechnician::firstOrCreate([
-                'project_id' => $project->project_id,
-                'technician_id' => $technicianId,
-            ]);
+        $technicianIds = collect([
+            $validated['lead_tech'],
+            ...($validated['technicians'] ?? []),
+        ])
+            ->map(fn ($technicianId) => (int) $technicianId)
+            ->unique()
+            ->values();
+
+        $currentlyAssignedIds = $project->projectTechnicians->pluck('technician_id');
+        $newlyAddedIds = $technicianIds->diff($currentlyAssignedIds)->values();
+
+        // Every one of the project's date ranges has to be checked, not just the
+        // first one, and every day inside each range - a technician who is free on
+        // the endpoints but booked mid-range must still be rejected.
+        $ranges = $project->schedules
+            ->map(fn ($schedule): array => [
+                'start' => CarbonImmutable::parse($schedule->start_datetime)->startOfDay(),
+                'end' => CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime)->startOfDay(),
+            ])
+            ->all();
+
+        if ($ranges !== [] && $newlyAddedIds->isNotEmpty()) {
+            $availability = app(TechnicianAvailabilityService::class);
+
+            $conflicts = $availability->findConflicts(
+                $newlyAddedIds,
+                $ranges,
+                $project->project_id
+            );
+
+            if ($conflicts->isNotEmpty()) {
+                return back()->with('error', $availability->conflictMessage($conflicts));
+            }
+        }
+
+        DB::transaction(function () use ($project, $technicianIds): void {
+            $projectTechniciansToRemove = DB::table('tbl_project_technicians')
+                ->select('project_technician_id', 'technician_id')
+                ->where('project_id', '=', $project->project_id)
+                ->whereNotIn('technician_id', $technicianIds->toArray())
+                ->get();
+
+            if ($projectTechniciansToRemove->isNotEmpty()) {
+
+                $projectTechnicianIds = $projectTechniciansToRemove
+                    ->pluck('project_technician_id')
+                    ->toArray();
+
+                $removedTechnicianIds = $projectTechniciansToRemove
+                    ->pluck('technician_id')
+                    ->toArray();
+
+                DB::table('tbl_schedule_technicians')
+                    ->whereIn('project_technician_id', $projectTechnicianIds)
+                    ->delete();
+
+                DB::table('tbl_project_technicians')
+                    ->whereIn('project_technician_id', $projectTechnicianIds)
+                    ->delete();
+
+                Task::where('project_id', $project->project_id)
+                    ->whereIn('technician_id', $removedTechnicianIds)
+                    ->where('status', '!=', 'completed') // don't touch finished work
+                    ->update([
+                        'technician_id' => null,
+                        'status' => 'unassigned',
+                    ]);
+            }
+
+            $technicianIds->each(function (int $technicianId) use ($project): void {
+                ProjectTechnician::firstOrCreate([
+                    'project_id' => $project->project_id,
+                    'technician_id' => $technicianId,
+                ]);
+            });
         });
-    });
 
-    return back()->with('success', 'Assigned team updated.');
-}
+        return back()->with('success', 'Assigned team updated.');
+    }
 }

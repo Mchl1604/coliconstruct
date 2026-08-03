@@ -1,0 +1,90 @@
+/**
+ * The shared calendar header: a round arrow either side of a clickable title
+ * that opens a month/year jump.
+ *
+ * Put `calendar-standard` on the FullCalendar container and pair it with
+ * calendarHeader.js. Lifted out of the Super Admin schedules page, which was
+ * the only calendar wearing it.
+ */
+
+.calendar-standard .fc-toolbar.fc-header-toolbar {
+    margin-bottom: 1rem;
+}
+
+.calendar-standard .fc-toolbar-chunk {
+    display: flex;
+    align-items: center;
+}
+
+.calendar-standard .fc-prev-button,
+.calendar-standard .fc-next-button {
+    background: #fff;
+    border: 1px solid #d1d5db;
+    color: #374151;
+    width: 2.1rem;
+    height: 2.1rem;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: none;
+    padding: 0;
+}
+
+.calendar-standard .fc-prev-button:hover,
+.calendar-standard .fc-next-button:hover {
+    background: #f3f4f6;
+    color: #111827;
+    border-color: #9ca3af;
+}
+
+.calendar-standard .fc-prev-button:focus,
+.calendar-standard .fc-next-button:focus {
+    box-shadow: 0 0 0 0.2rem rgba(37, 99, 235, 0.2);
+}
+
+.calendar-jump-anchor {
+    position: relative;
+}
+
+.calendar-title {
+    cursor: pointer;
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: #1f2937;
+    padding: 0.2rem 0.6rem;
+    border-radius: 0.4rem;
+}
+
+.calendar-title:hover {
+    background: #f3f4f6;
+}
+
+.calendar-jump {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    margin-top: 0.4rem;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.5rem;
+    box-shadow: 0 10px 25px rgba(15, 23, 42, 0.12);
+    padding: 0.5rem;
+    gap: 0.4rem;
+    z-index: 20;
+}
+
+.calendar-jump.is-open {
+    display: flex;
+}
+
+.calendar-jump select {
+    font-size: 0.85rem;
+    border: 1px solid #d1d5db;
+    border-radius: 0.35rem;
+    padding: 0.25rem 0.4rem;
+    background: #fff;
+    color: #1f2937;
+}

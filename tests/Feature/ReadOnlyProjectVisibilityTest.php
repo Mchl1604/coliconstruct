@@ -216,8 +216,8 @@ class ReadOnlyProjectVisibilityTest extends TestCase
     }
 
     /**
-     * The filter lists every pending/ongoing project, including ones with no
-     * tasks yet - the same set the table is allowed to show.
+     * The board shows a card for every pending/ongoing project, including ones
+     * with no tasks yet, and the filter above it lists exactly those.
      */
     public function test_the_filter_dropdown_offers_every_pending_or_ongoing_project(): void
     {
@@ -236,7 +236,7 @@ class ReadOnlyProjectVisibilityTest extends TestCase
         $response = $this->get(route('super-admin.tasks.index'));
         $response->assertOk();
 
-        $filterIds = $response->viewData('filterProjects')->pluck('project_id')->all();
+        $filterIds = $response->viewData('projects')->pluck('project_id')->all();
 
         // Listed whether or not they have tasks.
         $this->assertContains($ongoingWithTask->project_id, $filterIds);
@@ -276,7 +276,11 @@ class ReadOnlyProjectVisibilityTest extends TestCase
      */
     public function test_empty_task_table_renders_no_placeholder_row(): void
     {
-        // Tasks exist, but every one of them is filtered out.
+        // A listed project with nothing on its board still renders its card,
+        // and that card's table body has to come back empty.
+        $this->createProject('Ongoing No Tasks', 'ongoing');
+
+        // Tasks exist elsewhere, but every one of them is filtered out.
         $cancelled = $this->createProject('Cancelled Project', 'cancelled');
         $this->addTask($cancelled, 'Hidden Cancelled Task');
 
@@ -290,8 +294,13 @@ class ReadOnlyProjectVisibilityTest extends TestCase
         $this->assertStringNotContainsString('colspan', $tbody);
         $this->assertStringNotContainsString('<tr', $tbody);
 
-        // The message is configured on the DataTable instead.
-        $this->assertStringContainsString('emptyTable', $html);
+        // The message is configured on the DataTable instead, in the script
+        // that builds every card's table.
+        $this->assertStringContainsString('/js/taskBoard.js', $html);
+        $this->assertStringContainsString(
+            'emptyTable',
+            (string) file_get_contents(public_path('js/taskBoard.js'))
+        );
     }
 
     /**
@@ -299,11 +308,36 @@ class ReadOnlyProjectVisibilityTest extends TestCase
      */
     private function tasksTableBody(string $html): ?string
     {
-        if (! preg_match('/<table[^>]*id="tasksTable".*?<tbody>(.*?)<\/tbody>/s', $html, $matches)) {
+        if (! preg_match('/<table[^>]*data-project-tasks-table.*?<tbody>(.*?)<\/tbody>/s', $html, $matches)) {
             return null;
         }
 
         return $matches[1];
+    }
+
+    /**
+     * The Super Admin board is the technician portal's, card for card: a
+     * project card each, one filter, and a single Add Task dialog.
+     */
+    public function test_the_tasks_page_uses_the_shared_project_card_board(): void
+    {
+        $ongoing = $this->createProject('Ongoing Project', 'ongoing');
+        $this->addTask($ongoing, 'Some Ongoing Task');
+
+        $response = $this->get(route('super-admin.tasks.index'));
+
+        $response->assertOk();
+        $response->assertSee('data-task-board', false);
+        $response->assertSee('data-project-card', false);
+        $response->assertSee('data-project-filter', false);
+        $response->assertSee('All Projects');
+
+        $this->assertSame(1, substr_count($response->getContent(), 'data-task-create-modal'));
+        $response->assertSee('Choose the project first');
+
+        // Every row action the board offers.
+        $response->assertSee('Delete task');
+        $response->assertSee('View / edit task');
     }
 
     public function test_tasks_page_shows_the_project_status(): void
