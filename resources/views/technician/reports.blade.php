@@ -39,7 +39,7 @@
     <div class="card shadow-sm border-0 rounded-2">
         <div class="card-body p-2">
             <div class="table-responsive">
-                <table id="leadReportsTable" class="table table-hover table-striped align-middle mb-0">
+                <table id="portalReportsTable" class="table table-hover table-striped align-middle mb-0">
                     <thead class="table-info">
                         <tr>
                             <th>Report ID</th>
@@ -124,20 +124,20 @@
         </div>
     </div>
 
-    @include('technician.lead.partials.report-form-modal', [
+    @include('technician.partials.report-form-modal', [
         'projects' => $reportableProjects,
         'reportTypes' => $reportTypes,
     ])
 
     @push('scripts')
         <script>
-            window.leadReports = @json($reportPayloads);
+            window.portalReports = @json($reportPayloads);
 
-            window.leadRoutes = {
-                storeReport: @json(route('technician.lead.reports.store', ['project' => '__ID__'])),
+            window.portalRoutes = {
+                storeReport: @json(route('technician.reports.store', ['project' => '__ID__'])),
             };
         </script>
-        <script src="/js/technician/leadModals.js"></script>
-        <script src="/js/technician/leadReports.js"></script>
+        <script src="/js/technician/modals.js"></script>
+        <script src="/js/technician/reports.js"></script>
     @endpush
 @endsection

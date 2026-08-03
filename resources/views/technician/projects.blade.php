@@ -23,7 +23,7 @@
                  derived rather than stored, so it gets its own tab and is
                  taken out of Pending and Ongoing. --}}
             <ul class="nav nav-tabs projects-status-tabs mb-3 px-1"
-                data-project-status-tabs="leadProjectsTable">
+                data-project-status-tabs="portalProjectsTable">
                 <li class="nav-item">
                     <button type="button" class="nav-link active" data-status-filter="all">All</button>
                 </li>
@@ -50,7 +50,7 @@
             </ul>
 
             <div class="table-responsive">
-                <table id="leadProjectsTable" class="table table-hover table-striped align-middle mb-0">
+                <table id="portalProjectsTable" class="table table-hover table-striped align-middle mb-0">
                     <thead class="table-info">
                         <tr>
                             <th>Reference No.</th>
@@ -90,12 +90,12 @@
                                 <td class="text-center">
                                     <div class="projects-action-buttons">
                                         <a class="btn btn-sm btn-primary py-1 px-2"
-                                            href="{{ route('technician.lead.projects.show', $project->project_id) }}"
+                                            href="{{ route('technician.projects.show', $project->project_id) }}"
                                             title="View project">
                                             <i class="bi bi-eye" aria-hidden="true"></i>
                                         </a>
 
-                                        @if (in_array($project->status, ['pending', 'ongoing'], true) && ! $project->on_hold)
+                                        @if ($canCloseProjects && in_array($project->status, ['pending', 'ongoing'], true) && ! $project->on_hold)
                                             <button type="button" class="btn btn-sm btn-success py-1 px-2"
                                                 data-complete-project="{{ $project->project_id }}"
                                                 data-project-reference="{{ $project->reference_no }}"
@@ -155,7 +155,7 @@
                             project view only and releases any dates still booked ahead.
                         </p>
 
-                        @include('technician.lead.partials.completion-fields', ['suffix' => 'List'])
+                        @include('technician.partials.completion-fields', ['suffix' => 'List'])
                     </div>
 
                     <div class="alert alert-danger mt-3 mb-0 d-none" role="alert" data-complete-project-error></div>
@@ -176,13 +176,13 @@
 
     @push('scripts')
         <script>
-            window.leadRoutes = {
-                projectDetails: @json(route('technician.lead.projects.details', ['project' => '__ID__'])),
-                completeProject: @json(route('technician.lead.projects.complete', ['project' => '__ID__'])),
+            window.portalRoutes = {
+                projectDetails: @json(route('technician.projects.details', ['project' => '__ID__'])),
+                completeProject: @json(route('technician.projects.complete', ['project' => '__ID__'])),
             };
         </script>
         <script src="/js/imagePreview.js"></script>
         <script src="/js/projectStatusTabs.js"></script>
-        <script src="/js/technician/leadProjects.js"></script>
+        <script src="/js/technician/projects.js"></script>
     @endpush
 @endsection

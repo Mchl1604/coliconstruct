@@ -8,7 +8,7 @@
 document.addEventListener("DOMContentLoaded", function () {
     const portal = window.portal;
 
-    portal.dataTable("#leadProjectsTable", "projects", {
+    portal.dataTable("#portalProjectsTable", "projects", {
         order: [[0, "desc"]],
         columnDefs: [{ targets: -1, orderable: false }],
     });
@@ -67,7 +67,7 @@ document.addEventListener("DOMContentLoaded", function () {
         window.bootstrap.Modal.getOrCreateInstance(completeEl).show();
 
         portal
-            .request(window.leadRoutes.projectDetails.replace("__ID__", projectId))
+            .request(window.portalRoutes.projectDetails.replace("__ID__", projectId))
             .then(function (body) {
                 showBlockers(body.completion_blockers || []);
             })
@@ -84,7 +84,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
         portal
             .request(
-                window.leadRoutes.completeProject.replace("__ID__", projectId),
+                window.portalRoutes.completeProject.replace("__ID__", projectId),
                 { method: "POST", body: new FormData(completeForm) },
             )
             .then(function (body) {

@@ -26,7 +26,7 @@ use Tests\TestCase;
  * technician who is not on the project, and anything that edits the project
  * record itself are all out of reach.
  */
-class LeadTechnicianPortalTest extends TestCase
+class TechnicianPortalTest extends TestCase
 {
     use RefreshDatabase;
 
@@ -156,20 +156,20 @@ class LeadTechnicianPortalTest extends TestCase
     // Pages
     // ------------------------------------------------------------------
 
-    public function test_a_lead_gets_the_calendar_schedule_and_a_technician_keeps_the_list(): void
+    /**
+     * Both roles get the same portal. What differs is what may be done on it,
+     * not which pages exist.
+     */
+    public function test_both_technician_roles_get_the_calendar_schedule(): void
     {
-        $this->actingAs($this->leadAccount);
-        $leadPage = $this->get(route('technician.schedule'));
+        foreach ([$this->leadAccount, $this->mate->account] as $account) {
+            $this->actingAs($account);
+            $page = $this->get(route('technician.schedule'));
 
-        $leadPage->assertOk();
-        $leadPage->assertSee('technicianCalendar', false);
-        $leadPage->assertSee('Assigned Tasks');
-
-        $this->actingAs($this->mate->account);
-        $technicianPage = $this->get(route('technician.schedule'));
-
-        $technicianPage->assertOk();
-        $technicianPage->assertDontSee('technicianCalendar', false);
+            $page->assertOk();
+            $page->assertSee('technicianCalendar', false);
+            $page->assertSee('Assigned Tasks');
+        }
     }
 
     /**
@@ -266,7 +266,7 @@ class LeadTechnicianPortalTest extends TestCase
         $this->task($this->mate, 'Mate task');
 
         $this->actingAs($this->leadAccount);
-        $response = $this->get(route('technician.lead.projects.show', $this->project));
+        $response = $this->get(route('technician.projects.show', $this->project));
 
         $response->assertOk();
         $response->assertSee('Project Details');
@@ -290,7 +290,7 @@ class LeadTechnicianPortalTest extends TestCase
 
         $this->actingAs($this->leadAccount);
 
-        $this->get(route('technician.lead.projects.show', $other))->assertForbidden();
+        $this->get(route('technician.projects.show', $other))->assertForbidden();
     }
 
     /**
@@ -310,7 +310,7 @@ class LeadTechnicianPortalTest extends TestCase
 
         foreach ([
             route('technician.tasks'),
-            route('technician.lead.projects.show', $this->project),
+            route('technician.projects.show', $this->project),
         ] as $url) {
             $response = $this->get($url);
 
@@ -361,7 +361,7 @@ class LeadTechnicianPortalTest extends TestCase
         $this->task($this->lead, 'Lead task');
 
         $this->actingAs($this->leadAccount);
-        $response = $this->getJson(route('technician.lead.projects.details', $this->project));
+        $response = $this->getJson(route('technician.projects.details', $this->project));
 
         $response->assertOk();
         $response->assertJsonCount(2, 'tasks');
@@ -378,7 +378,7 @@ class LeadTechnicianPortalTest extends TestCase
 
         $this->actingAs($this->leadAccount);
         $response = $this->getJson(
-            route('technician.lead.projects.details', $this->project).'?mine_only=1'
+            route('technician.projects.details', $this->project).'?mine_only=1'
         );
 
         $response->assertOk();
@@ -404,7 +404,7 @@ class LeadTechnicianPortalTest extends TestCase
         $this->actingAs($this->leadAccount);
 
         $response = $this->getJson(
-            route('technician.lead.projects.details', $this->project).'?mine_only=1'
+            route('technician.projects.details', $this->project).'?mine_only=1'
         );
 
         $response->assertOk();
@@ -422,21 +422,92 @@ class LeadTechnicianPortalTest extends TestCase
 
         $this->actingAs($this->leadAccount);
 
-        $this->getJson(route('technician.lead.projects.details', $other))
+        $this->getJson(route('technician.projects.details', $other))
             ->assertForbidden();
     }
 
-    public function test_a_plain_technician_cannot_reach_the_lead_endpoints(): void
+    /**
+     * A technician reads their own project - that is the whole portal for
+     * them - but every action that changes it stays with the lead.
+     */
+    public function test_a_plain_technician_reads_a_project_but_cannot_act_on_it(): void
     {
+        $task = $this->task($this->mate, 'Mate task');
+
         $this->actingAs($this->mate->account);
 
-        $this->getJson(route('technician.lead.projects.details', $this->project))
-            ->assertForbidden();
+        // Reading is fine: the page, and the payload behind the schedule panel.
+        $this->get(route('technician.projects.show', $this->project))->assertOk();
+        $this->getJson(route('technician.projects.details', $this->project))->assertOk();
 
-        $this->postJson(
-            route('technician.lead.tasks.store', $this->project),
-            $this->taskPayload()
-        )->assertForbidden();
+        // Everything that writes is out of reach.
+        $this->postJson(route('technician.tasks.store', $this->project), $this->taskPayload())
+            ->assertForbidden();
+        $this->postJson(route('technician.tasks.update', $task), $this->taskPayload())
+            ->assertForbidden();
+        $this->deleteJson(route('technician.tasks.destroy', $task))
+            ->assertForbidden();
+        $this->postJson(route('technician.projects.complete', $this->project), [])
+            ->assertForbidden();
+        $this->postJson(route('technician.reports.store', $this->project), [])
+            ->assertForbidden();
+        $this->get(route('technician.reports'))
+            ->assertRedirect(route('technician.schedule'));
+    }
+
+    /**
+     * The one thing a technician may do: close their own task.
+     */
+    public function test_a_plain_technician_can_complete_their_own_task(): void
+    {
+        $mine = $this->task($this->mate, 'Mine to finish');
+        $theirs = $this->task($this->lead, 'Not mine');
+
+        $this->actingAs($this->mate->account);
+
+        $this->post(route('technician.tasks.complete', $mine), [
+            'completion_notes' => 'Fitted and tested.',
+        ])->assertRedirect();
+
+        $this->assertSame('completed', $mine->refresh()->status);
+
+        $this->postJson(route('technician.tasks.complete', $theirs), [
+            'completion_notes' => 'Not mine to close.',
+        ])->assertForbidden();
+
+        $this->assertSame('pending', $theirs->refresh()->status);
+    }
+
+    /**
+     * The pages render without any of the lead's controls.
+     */
+    public function test_a_plain_technician_sees_a_view_only_portal(): void
+    {
+        $this->task($this->mate, 'Mate task');
+
+        $this->actingAs($this->mate->account);
+
+        $tasks = $this->get(route('technician.tasks'));
+        $tasks->assertOk();
+        $tasks->assertSee('Mate task');
+        $tasks->assertSee('data-project-card', false);
+        $tasks->assertDontSee('New Task');
+        $tasks->assertDontSee('data-task-create-modal', false);
+        $tasks->assertDontSee('Delete task');
+        $tasks->assertDontSee('View / edit task');
+        // Their own task still offers the one action they have.
+        $tasks->assertSee('Mark as completed');
+
+        $projects = $this->get(route('technician.projects'));
+        $projects->assertOk();
+        $projects->assertSee('data-status-filter="all"', false);
+        $projects->assertDontSee('Complete project');
+
+        $details = $this->get(route('technician.projects.show', $this->project));
+        $details->assertOk();
+        $details->assertDontSee('Complete Project');
+        $details->assertDontSee('Assign New Task');
+        $details->assertDontSee('Add Report');
     }
 
     // ------------------------------------------------------------------
@@ -448,7 +519,7 @@ class LeadTechnicianPortalTest extends TestCase
         $this->actingAs($this->leadAccount);
 
         $response = $this->postJson(
-            route('technician.lead.tasks.store', $this->project),
+            route('technician.tasks.store', $this->project),
             $this->taskPayload()
         );
 
@@ -467,10 +538,10 @@ class LeadTechnicianPortalTest extends TestCase
     {
         $this->actingAs($this->leadAccount);
 
-        $response = $this->from(route('technician.lead.projects.show', $this->project))
-            ->post(route('technician.lead.tasks.store', $this->project), $this->taskPayload());
+        $response = $this->from(route('technician.projects.show', $this->project))
+            ->post(route('technician.tasks.store', $this->project), $this->taskPayload());
 
-        $response->assertRedirect(route('technician.lead.projects.show', $this->project));
+        $response->assertRedirect(route('technician.projects.show', $this->project));
         $response->assertSessionHas('success');
 
         $this->assertSame(1, Task::count());
@@ -483,7 +554,7 @@ class LeadTechnicianPortalTest extends TestCase
         $this->actingAs($this->leadAccount);
 
         $response = $this->from(route('technician.tasks'))
-            ->post(route('technician.lead.tasks.update', $task), $this->taskPayload([
+            ->post(route('technician.tasks.update', $task), $this->taskPayload([
                 'task_title' => 'Renamed task',
             ]));
 
@@ -504,7 +575,7 @@ class LeadTechnicianPortalTest extends TestCase
         $this->actingAs($this->leadAccount);
 
         $this->postJson(
-            route('technician.lead.tasks.store', $this->project),
+            route('technician.tasks.store', $this->project),
             $this->taskPayload(['technician_id' => $outsider->technician_id])
         )->assertStatus(422);
 
@@ -520,7 +591,7 @@ class LeadTechnicianPortalTest extends TestCase
         $this->actingAs($this->leadAccount);
 
         $this->postJson(
-            route('technician.lead.tasks.store', $this->project),
+            route('technician.tasks.store', $this->project),
             $this->taskPayload(['start_date' => $this->day(25), 'due_date' => $this->day(26)])
         )->assertStatus(422);
 
@@ -532,12 +603,12 @@ class LeadTechnicianPortalTest extends TestCase
         $this->actingAs($this->leadAccount);
 
         $this->postJson(
-            route('technician.lead.tasks.store', $this->project),
+            route('technician.tasks.store', $this->project),
             $this->taskPayload()
         )->assertCreated();
 
         $this->postJson(
-            route('technician.lead.tasks.store', $this->project),
+            route('technician.tasks.store', $this->project),
             $this->taskPayload()
         )->assertStatus(422);
 
@@ -551,7 +622,7 @@ class LeadTechnicianPortalTest extends TestCase
         $this->actingAs($this->leadAccount);
 
         $this->postJson(
-            route('technician.lead.tasks.store', $this->project),
+            route('technician.tasks.store', $this->project),
             $this->taskPayload()
         )->assertForbidden();
     }
@@ -573,7 +644,7 @@ class LeadTechnicianPortalTest extends TestCase
         $this->actingAs($this->leadAccount);
 
         $response = $this->from(route('technician.tasks'))
-            ->post(route('technician.lead.tasks.complete', $task), [
+            ->post(route('technician.tasks.complete', $task), [
                 'completion_notes' => 'Unit mounted and tested.',
                 'images' => [UploadedFile::fake()->image('done.jpg')],
             ]);
@@ -595,7 +666,7 @@ class LeadTechnicianPortalTest extends TestCase
 
         $this->actingAs($this->leadAccount);
 
-        $this->post(route('technician.lead.tasks.complete', $task), [
+        $this->post(route('technician.tasks.complete', $task), [
             'completion_notes' => 'Nothing to photograph.',
         ])->assertRedirect();
 
@@ -612,7 +683,7 @@ class LeadTechnicianPortalTest extends TestCase
 
         $this->actingAs($this->leadAccount);
 
-        $response = $this->postJson(route('technician.lead.tasks.complete', $task), [
+        $response = $this->postJson(route('technician.tasks.complete', $task), [
             'completion_notes' => 'Closed from the schedule panel.',
         ]);
 
@@ -627,7 +698,7 @@ class LeadTechnicianPortalTest extends TestCase
 
         $this->actingAs($this->leadAccount);
 
-        $this->postJson(route('technician.lead.tasks.complete', $task), [])
+        $this->postJson(route('technician.tasks.complete', $task), [])
             ->assertStatus(422);
 
         $this->assertSame('pending', $task->refresh()->status);
@@ -644,7 +715,7 @@ class LeadTechnicianPortalTest extends TestCase
 
         $this->actingAs($this->leadAccount);
 
-        $this->postJson(route('technician.lead.tasks.complete', $task), [])
+        $this->postJson(route('technician.tasks.complete', $task), [])
             ->assertOk();
 
         $task->refresh();
@@ -665,7 +736,7 @@ class LeadTechnicianPortalTest extends TestCase
 
         $this->actingAs($this->leadAccount);
 
-        $this->postJson(route('technician.lead.tasks.complete', $task), [])
+        $this->postJson(route('technician.tasks.complete', $task), [])
             ->assertStatus(422);
 
         $this->assertSame('pending', $task->refresh()->status);
@@ -686,7 +757,7 @@ class LeadTechnicianPortalTest extends TestCase
 
         $this->actingAs($this->leadAccount);
 
-        $this->postJson(route('technician.lead.tasks.complete', $task), [])
+        $this->postJson(route('technician.tasks.complete', $task), [])
             ->assertForbidden();
 
         $this->assertSame('pending', $task->refresh()->status);
@@ -703,7 +774,7 @@ class LeadTechnicianPortalTest extends TestCase
         $this->actingAs($this->leadAccount);
 
         $this->from(route('technician.tasks'))
-            ->delete(route('technician.lead.tasks.destroy', $task))
+            ->delete(route('technician.tasks.destroy', $task))
             ->assertRedirect(route('technician.tasks'))
             ->assertSessionHas('success');
 
@@ -725,7 +796,7 @@ class LeadTechnicianPortalTest extends TestCase
 
         $this->actingAs($this->leadAccount);
 
-        $this->delete(route('technician.lead.tasks.destroy', $task))->assertRedirect();
+        $this->delete(route('technician.tasks.destroy', $task))->assertRedirect();
 
         $this->assertSame(0, Task::count());
         $this->assertDatabaseCount('tbl_task_images', 0);
@@ -747,7 +818,7 @@ class LeadTechnicianPortalTest extends TestCase
 
         $this->actingAs($this->leadAccount);
 
-        $this->deleteJson(route('technician.lead.tasks.destroy', $task))->assertForbidden();
+        $this->deleteJson(route('technician.tasks.destroy', $task))->assertForbidden();
 
         $this->assertSame(1, Task::count());
     }
@@ -758,7 +829,7 @@ class LeadTechnicianPortalTest extends TestCase
 
         $this->actingAs($this->mate->account);
 
-        $this->deleteJson(route('technician.lead.tasks.destroy', $task))->assertForbidden();
+        $this->deleteJson(route('technician.tasks.destroy', $task))->assertForbidden();
 
         $this->assertSame(1, Task::count());
     }
@@ -773,7 +844,7 @@ class LeadTechnicianPortalTest extends TestCase
 
         $this->actingAs($this->leadAccount);
 
-        $response = $this->post(route('technician.lead.reports.store', $this->project), [
+        $response = $this->post(route('technician.reports.store', $this->project), [
             'report_type' => 'incident',
             'report_title' => 'Cable damaged',
             'report_description' => 'Found a damaged run behind the riser.',
@@ -812,7 +883,7 @@ class LeadTechnicianPortalTest extends TestCase
 
         $this->actingAs($account);
 
-        $this->postJson(route('technician.lead.reports.store', $this->project), [
+        $this->postJson(route('technician.reports.store', $this->project), [
             'report_type' => 'progress',
             'report_title' => 'Filed from a high id',
             'report_description' => 'Description',
@@ -827,7 +898,7 @@ class LeadTechnicianPortalTest extends TestCase
 
         $this->actingAs($this->leadAccount);
 
-        $this->postJson(route('technician.lead.reports.store', $this->project), [
+        $this->postJson(route('technician.reports.store', $this->project), [
             'report_type' => 'progress',
             'report_title' => 'Too late',
             'report_description' => 'Description',
@@ -847,7 +918,7 @@ class LeadTechnicianPortalTest extends TestCase
         $this->actingAs($this->leadAccount);
 
         $response = $this->postJson(
-            route('technician.lead.projects.complete', $this->project),
+            route('technician.projects.complete', $this->project),
             []
         );
 
@@ -891,7 +962,7 @@ class LeadTechnicianPortalTest extends TestCase
         $this->actingAs($this->leadAccount);
 
         $this->post(
-            route('technician.lead.projects.complete', $this->project),
+            route('technician.projects.complete', $this->project),
             $this->completionPayload()
         )->assertRedirect();
 
@@ -912,7 +983,7 @@ class LeadTechnicianPortalTest extends TestCase
         $this->actingAs($this->leadAccount);
 
         $this->post(
-            route('technician.lead.projects.complete', $this->project),
+            route('technician.projects.complete', $this->project),
             $this->completionPayload()
         )->assertRedirect();
 
@@ -943,7 +1014,7 @@ class LeadTechnicianPortalTest extends TestCase
         $this->actingAs($this->leadAccount);
 
         $response = $this->postJson(
-            route('technician.lead.projects.complete', $this->project),
+            route('technician.projects.complete', $this->project),
             $this->completionPayload(['completion_photos' => []])
         );
 
@@ -961,7 +1032,7 @@ class LeadTechnicianPortalTest extends TestCase
         $this->actingAs($this->leadAccount);
 
         $this->postJson(
-            route('technician.lead.projects.complete', $this->project),
+            route('technician.projects.complete', $this->project),
             $this->completionPayload(['completion_summary' => ''])
         )->assertStatus(422);
 
@@ -976,7 +1047,7 @@ class LeadTechnicianPortalTest extends TestCase
         $this->actingAs($this->leadAccount);
 
         $response = $this->postJson(
-            route('technician.lead.projects.complete', $this->project),
+            route('technician.projects.complete', $this->project),
             []
         );
 
@@ -996,7 +1067,7 @@ class LeadTechnicianPortalTest extends TestCase
         $this->actingAs($this->leadAccount);
 
         $this->post(
-            route('technician.lead.projects.complete', $this->project),
+            route('technician.projects.complete', $this->project),
             $this->completionPayload(['completion_remarks' => 'Client walked the site.'])
         )->assertRedirect();
 
@@ -1013,7 +1084,7 @@ class LeadTechnicianPortalTest extends TestCase
 
         $this->actingAs($this->leadAccount);
 
-        $this->postJson(route('technician.lead.projects.complete', $other), [])
+        $this->postJson(route('technician.projects.complete', $other), [])
             ->assertForbidden();
     }
 

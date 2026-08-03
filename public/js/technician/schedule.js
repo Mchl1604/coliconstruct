@@ -183,7 +183,7 @@ document.addEventListener("DOMContentLoaded", function () {
         portal.setAlert(errorEl, "");
         setState("loading");
 
-        const url = window.leadRoutes.projectDetails.replace("__ID__", projectId);
+        const url = window.portalRoutes.projectDetails.replace("__ID__", projectId);
 
         portal
             .request(url + "?mine_only=1")
@@ -201,11 +201,11 @@ document.addEventListener("DOMContentLoaded", function () {
     tasksEl.addEventListener("click", function (event) {
         const button = event.target.closest("[data-complete-task]");
 
-        if (!button || !window.leadModals || !window.leadModals.completeTask) {
+        if (!button || !window.portalModals || !window.portalModals.completeTask) {
             return;
         }
 
-        window.leadModals.completeTask.open({
+        window.portalModals.completeTask.open({
             taskId: button.getAttribute("data-complete-task"),
             title: button.getAttribute("data-task-title"),
             onSuccess: function () {
@@ -226,7 +226,7 @@ document.addEventListener("DOMContentLoaded", function () {
         height: "auto",
         dayMaxEvents: true,
         eventDisplay: "block",
-        events: window.leadScheduleEvents || [],
+        events: window.portalScheduleEvents || [],
         eventDidMount: function (info) {
             const props = info.event.extendedProps;
 

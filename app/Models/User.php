@@ -226,6 +226,32 @@ class User extends Authenticatable
     }
 
     /**
+     * Whether the stored password is something Hash::check can ever match.
+     *
+     * A row whose password column holds anything other than a real hash - a
+     * placeholder from a seed file, a truncated import, a value written
+     * straight to the database - can never authenticate. The failure looks
+     * exactly like a wrong password, so it is worth being able to name.
+     */
+    public function hasUsablePassword(): bool
+    {
+        return filled($this->password) && password_get_info($this->password)['algo'] !== null;
+    }
+
+    /**
+     * Accounts that can never sign in because their stored password is not a
+     * hash. Should always be empty; `users:repair-passwords` fixes any that
+     * are not.
+     */
+    public function scopeWithUnusablePassword(Builder $query): Builder
+    {
+        // Every supported hash starts with a $algo$ prefix and is far longer
+        // than this; anything shorter cannot be one. `length` rather than
+        // `char_length` so the check works on SQLite as well as MySQL.
+        return $query->whereRaw('length(password) < 50');
+    }
+
+    /**
      * The technician record's id, or null for an account that has none.
      *
      * Every authorization check in the technician portal is anchored to this,

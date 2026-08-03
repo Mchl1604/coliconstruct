@@ -1,7 +1,7 @@
 {{--
     Completing a task: what was done, and a photo of it.
 
-    One instance per page, driven by leadModals.js - the schedule panel, the
+    One instance per page, driven by modals.js - the schedule panel, the
     project view and the task board all open this same dialog rather than each
     stamping out a copy per task.
 --}}

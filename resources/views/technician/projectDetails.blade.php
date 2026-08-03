@@ -21,7 +21,13 @@
             default => 'bi bi-person',
         };
 
-        $canComplete = $completionBlockers === [] && in_array($project->status, ['pending', 'ongoing'], true);
+        // Closing a project is a lead's call. A technician reads this page and
+        // completes their own tasks on it, nothing more.
+        $canCloseProject = $canCloseProjects
+            && in_array($project->status, ['pending', 'ongoing'], true)
+            && ! $project->on_hold;
+
+        $canComplete = $canCloseProject && $completionBlockers === [];
     @endphp
 
     <div class="container-fluid py-2">
@@ -30,7 +36,7 @@
             <h2 class="fw-bold mb-0">Project Details</h2>
 
             <div class="d-flex gap-2">
-                @if (in_array($project->status, ['pending', 'ongoing'], true) && ! $project->on_hold)
+                @if ($canCloseProject)
                     <button type="button" class="btn btn-success" data-bs-toggle="modal"
                         data-bs-target="#completeProjectModal">
                         <i class="bi bi-check-circle me-1" aria-hidden="true"></i>
@@ -294,7 +300,7 @@
                     <div class="tab-pane fade show active" id="reports" role="tabpanel">
                         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
                             <form method="GET"
-                                action="{{ route('technician.lead.projects.show', $project->project_id) }}">
+                                action="{{ route('technician.projects.show', $project->project_id) }}">
                                 <select class="form-select" name="report_type" onchange="this.form.submit()">
                                     <option value="" @selected(request('report_type') == '')>All Reports</option>
                                     @foreach ($reportTypes as $value => $label)
@@ -469,17 +475,17 @@
         <x-task-details-modal :task="$task"
             :technicians="$canManageTasks ? $technicians : collect()"
             :active-task-counts="$technicianActiveTaskCounts" :schedule-ranges="$scheduleRanges"
-            :update-action="$canManageTasks ? route('technician.lead.tasks.update', $task->task_id) : null"
+            :update-action="$canManageTasks ? route('technician.tasks.update', $task->task_id) : null"
             update-method="POST" />
 
         @can('complete', $task)
             <x-task-complete-modal :task="$task"
-                :action="route('technician.lead.tasks.complete', $task->task_id)" method="POST" />
+                :action="route('technician.tasks.complete', $task->task_id)" method="POST" />
         @endcan
 
         @can('delete', $task)
             <x-task-delete-modal :task="$task"
-                :action="route('technician.lead.tasks.destroy', $task->task_id)" />
+                :action="route('technician.tasks.destroy', $task->task_id)" />
         @endcan
     @endforeach
 
@@ -488,7 +494,7 @@
         <div class="modal fade" id="addTaskModal" tabindex="-1" aria-hidden="true">
             <div class="modal-dialog modal-xl modal-dialog-scrollable">
                 <form class="modal-content"
-                    action="{{ route('technician.lead.tasks.store', $project->project_id) }}" method="POST">
+                    action="{{ route('technician.tasks.store', $project->project_id) }}" method="POST">
                     @csrf
 
                     <div class="modal-header bg-primary text-white">
@@ -585,7 +591,7 @@
         <div class="modal fade" id="addReportModal" tabindex="-1" aria-hidden="true">
             <div class="modal-dialog modal-lg modal-dialog-scrollable">
                 <form class="modal-content"
-                    action="{{ route('technician.lead.reports.store', $project->project_id) }}" method="POST"
+                    action="{{ route('technician.reports.store', $project->project_id) }}" method="POST"
                     enctype="multipart/form-data">
                     @csrf
 
@@ -645,11 +651,11 @@
     @endif
 
     {{-- ============================ COMPLETE PROJECT ============================ --}}
-    @if (in_array($project->status, ['pending', 'ongoing'], true) && ! $project->on_hold)
+    @if ($canCloseProject)
         <div class="modal fade" id="completeProjectModal" tabindex="-1" aria-hidden="true">
             <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
                 <form class="modal-content"
-                    action="{{ route('technician.lead.projects.complete', $project->project_id) }}" method="POST"
+                    action="{{ route('technician.projects.complete', $project->project_id) }}" method="POST"
                     enctype="multipart/form-data">
                     @csrf
 
@@ -672,7 +678,7 @@
                                 project view only and releases any dates still booked ahead.
                             </p>
 
-                            @include('technician.lead.partials.completion-fields', ['suffix' => 'Details'])
+                            @include('technician.partials.completion-fields', ['suffix' => 'Details'])
                         @else
                             <div class="alert alert-warning mb-0">
                                 <p class="fw-semibold mb-2">

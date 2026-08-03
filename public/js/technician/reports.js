@@ -7,9 +7,9 @@
  */
 document.addEventListener("DOMContentLoaded", function () {
     const portal = window.portal;
-    const reports = window.leadReports || {};
+    const reports = window.portalReports || {};
 
-    const table = portal.dataTable("#leadReportsTable", "reports", {
+    const table = portal.dataTable("#portalReportsTable", "reports", {
         order: [[3, "desc"]],
         columnDefs: [
             // Date Submitted carries a `data-order` timestamp, which
@@ -119,7 +119,7 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     submitButton.addEventListener("click", function () {
-        window.leadModals.reportForm.open({
+        window.portalModals.reportForm.open({
             onSuccess: function (report) {
                 reports[report.id] = report;
 

@@ -22,15 +22,12 @@
                 value="{{ old('email') }}" required autofocus autocomplete="username">
         </div>
 
-        <div class="mb-3 text-start">
-            <label class="form-label" for="password">Password</label>
-            <input type="password" id="password" name="password" class="form-control" placeholder="••••••••"
-                required autocomplete="current-password">
-        </div>
+        <x-password-input name="password" label="Password" placeholder="••••••••" />
 
-        <div class="form-check text-start mb-4">
-            <input class="form-check-input" type="checkbox" id="remember" name="remember" value="1">
-            <label class="form-check-label small" for="remember">Keep me signed in</label>
+        <div class="text-start mb-4">
+            <a href="{{ route('auth.password.request') }}" class="small text-decoration-none">
+                Forgot password?
+            </a>
         </div>
 
         <div class="d-grid mb-3">

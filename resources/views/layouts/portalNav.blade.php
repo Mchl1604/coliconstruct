@@ -30,9 +30,10 @@
         $user = auth()->user();
 
         $portalNavItems = match ($user?->role) {
-            // A lead runs the whole task board and the report log for their
-            // projects, not just their own slice of them, so those two lose
-            // the "My".
+            // Both technician roles get the same pages; Tasks shows the whole
+            // board for their projects rather than only their own slice, so it
+            // loses the "My". Reports is the one page a lead has and a
+            // technician does not.
             'lead_technician' => [
                 ['label' => 'My Schedule', 'icon' => 'bi-calendar-event', 'route' => 'technician.schedule'],
                 ['label' => 'My Projects', 'icon' => 'bi-folder2-open', 'route' => 'technician.projects'],
@@ -42,7 +43,7 @@
             'technician' => [
                 ['label' => 'My Schedule', 'icon' => 'bi-calendar-event', 'route' => 'technician.schedule'],
                 ['label' => 'My Projects', 'icon' => 'bi-folder2-open', 'route' => 'technician.projects'],
-                ['label' => 'My Tasks', 'icon' => 'bi-list-task', 'route' => 'technician.tasks'],
+                ['label' => 'Tasks', 'icon' => 'bi-list-task', 'route' => 'technician.tasks'],
             ],
             'client' => [
                 ['label' => 'My Projects', 'icon' => 'bi-folder2-open', 'route' => 'client.dashboard'],

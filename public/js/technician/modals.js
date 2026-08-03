@@ -15,7 +15,7 @@
     const portal = global.portal;
 
     function route(name, id) {
-        const template = (global.leadRoutes || {})[name];
+        const template = (global.portalRoutes || {})[name];
 
         return template ? template.replace("__ID__", id) : null;
     }
@@ -194,7 +194,7 @@
     }
 
     document.addEventListener("DOMContentLoaded", function () {
-        global.leadModals = {
+        global.portalModals = {
             completeTask: completeTaskDialog(),
             reportForm: reportFormDialog(),
         };

@@ -389,7 +389,8 @@ class AuthenticationTest extends TestCase
         $lead = $this->account('lead_technician', ['email' => 'lead@example.test']);
         $this->actingAs($lead);
 
-        // A lead runs the whole board, so those two links lose the "My".
+        // Tasks shows the whole board for the projects you are on rather than
+        // only your own slice, so it loses the "My".
         $leadPage = $this->get(route('technician.schedule'));
         $leadPage->assertOk();
         $leadPage->assertSee('My Schedule');
@@ -401,13 +402,13 @@ class AuthenticationTest extends TestCase
 
         $this->actingAs($this->account('technician', ['email' => 'tech@example.test']));
 
+        // A technician gets the same sidebar bar Reports.
         $techPage = $this->get(route('technician.schedule'));
         $techPage->assertOk();
         $techPage->assertSee('My Schedule');
         $techPage->assertSee('My Projects');
-        $techPage->assertSee('My Tasks');
-        // A technician has no reports page, so the link is not drawn.
-        $techPage->assertDontSee('My Reports');
+        $techPage->assertSee('>Tasks<', false);
+        $techPage->assertDontSee('>Reports<', false);
     }
 
     public function test_the_admin_sidebar_matches_the_super_admin_one(): void

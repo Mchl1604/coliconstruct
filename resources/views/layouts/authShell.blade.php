@@ -43,6 +43,8 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    {{-- The show/hide eye, and the live "do these two match" indication. --}}
+    <script src="/js/passwordField.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function () {
             document.querySelectorAll('.toast').forEach(function (toastEl) {

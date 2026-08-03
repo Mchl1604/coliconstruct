@@ -18,7 +18,7 @@
         <div>
             <h4 class="fw-bold mb-1">Tasks</h4>
             <p class="text-secondary small mb-0">
-                The whole task board for every project you lead, grouped by project.
+                The whole task board for every project you are on, grouped by project.
             </p>
         </div>
 
@@ -56,15 +56,15 @@
     <x-task-board :projects="$projects" :tasks-by-project="$tasksByProject"
         :technicians-by-project="$techniciansByProject" :ranges-by-project="$rangesByProject"
         :active-task-counts="$technicianActiveTaskCounts" :manageable="$manageable"
-        :viewer-technician-id="$technicianId" update-route="technician.lead.tasks.update"
-        complete-route="technician.lead.tasks.complete" delete-route="technician.lead.tasks.destroy"
+        :viewer-technician-id="$technicianId" update-route="technician.tasks.update"
+        complete-route="technician.tasks.complete" delete-route="technician.tasks.destroy"
         update-method="POST" complete-method="POST"
         empty-message="You are not assigned to any projects yet, so there is no task board to show." />
 
     @if ($creatableProjects->isNotEmpty())
         <x-task-create-modal :projects="$creatableProjects"
-            :form-data-url="route('technician.lead.projects.task-form-data', ['project' => '__ID__'])"
-            :store-url="route('technician.lead.tasks.store', ['project' => '__ID__'])" />
+            :form-data-url="route('technician.projects.task-form-data', ['project' => '__ID__'])"
+            :store-url="route('technician.tasks.store', ['project' => '__ID__'])" />
     @endif
 
     @push('scripts')

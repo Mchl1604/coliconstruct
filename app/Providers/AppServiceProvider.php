@@ -6,6 +6,7 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Policies\ProjectPolicy;
 use App\Policies\TaskPolicy;
+use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 
@@ -28,5 +29,12 @@ class AppServiceProvider extends ServiceProvider
         // greppable from one place.
         Gate::policy(Project::class, ProjectPolicy::class);
         Gate::policy(Task::class, TaskPolicy::class);
+
+        // The reset notification builds its own link, and would otherwise look
+        // for a route called `password.reset`. This app names it `auth.*`.
+        ResetPassword::createUrlUsing(fn (object $notifiable, string $token): string => route(
+            'auth.password.reset',
+            ['token' => $token, 'email' => $notifiable->getEmailForPasswordReset()]
+        ));
     }
 }

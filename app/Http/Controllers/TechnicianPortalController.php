@@ -29,19 +29,25 @@ use Illuminate\Validation\Rules\Exists;
 use Throwable;
 
 /**
- * The lead technician portal.
+ * The technician portal, shared by both technician roles.
  *
- * A lead sees the same four pages a technician does, laid out the way the
- * Super Admin portal lays its own out: a calendar beside a detail panel, and
- * DataTables everywhere else. What differs is reach - a lead runs the task
- * board and files reports for the projects they are on, and nothing beyond
- * them.
+ * One set of pages serves them: a calendar beside a detail panel, and
+ * DataTables everywhere else, laid out the way the Super Admin portal lays its
+ * own out. What differs is reach, not layout.
  *
- * Every query is anchored to the signed-in account's technician record, and
- * every action is gated by ProjectPolicy / TaskPolicy rather than by an
- * inline role check, so there is one place to read the rules from.
+ *   - A technician reads their assignments and completes their own tasks.
+ *     Nothing else on these pages is theirs to touch.
+ *   - A lead additionally runs the task board, files reports and closes
+ *     projects, and gets a Reports page of their own.
+ *
+ * That difference is decided by ProjectPolicy / TaskPolicy, which the views
+ * consult, rather than by giving the two roles separate screens - so there is
+ * one place to read the rules from and one page to keep working.
+ *
+ * Every query is anchored to the signed-in account's technician record, so a
+ * technician can only ever reach their own work.
  */
-class LeadTechnicianController extends Controller
+class TechnicianPortalController extends Controller
 {
     /**
      * Statuses that keep a project off the portal entirely: finished and
@@ -78,7 +84,7 @@ class LeadTechnicianController extends Controller
 
         $today = CarbonImmutable::today();
 
-        return view('technician.lead.schedule', [
+        return view('technician.schedule', [
             'events' => $events,
             'activeCount' => $this->countProjects(
                 $projects,
@@ -106,9 +112,11 @@ class LeadTechnicianController extends Controller
         // Completion blockers are deliberately not rendered here: the view
         // modal can complete a task, which changes them, so the confirmation
         // dialog fetches them when it opens instead.
-        return view('technician.lead.projects', [
+        return view('technician.projects', [
             'projects' => $projects,
             'overdueCount' => $projects->filter->isOverdue()->count(),
+            // Closing a project is a lead's call; a technician only reads.
+            'canCloseProjects' => $request->user()->isLeadTechnician(),
         ]);
     }
 
@@ -171,7 +179,7 @@ class LeadTechnicianController extends Controller
 
         $user = $request->user();
 
-        return view('technician.lead.projectDetails', [
+        return view('technician.projectDetails', [
             'project' => $project,
             'tasks' => $tasks,
             'reports' => $reports,
@@ -181,6 +189,7 @@ class LeadTechnicianController extends Controller
             'scheduleRanges' => collect($this->scheduleRules->ranges($project->project_id)),
             'canManageTasks' => $this->projectPolicy->manageTasks($user, $project),
             'canSubmitReport' => $this->projectPolicy->submitReport($user, $project),
+            'canCloseProjects' => $user->isLeadTechnician(),
             'completionBlockers' => $this->projectPolicy->blockersFor($project),
             'reportTypes' => TechnicianReport::TYPES,
         ]);
@@ -230,7 +239,7 @@ class LeadTechnicianController extends Controller
             $project->project_id => $this->projectPolicy->manageTasks($user, $project),
         ]);
 
-        return view('technician.lead.tasks', [
+        return view('technician.tasks', [
             'projects' => $projects,
             'tasksByProject' => $tasks,
             'techniciansByProject' => $techniciansByProject,
@@ -260,7 +269,7 @@ class LeadTechnicianController extends Controller
             ->orderByDesc('id')
             ->get();
 
-        return view('technician.lead.reports', [
+        return view('technician.reports', [
             'reports' => $reports,
             // The viewer reads from this rather than re-fetching a report it
             // has already been handed.

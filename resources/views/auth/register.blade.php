@@ -35,17 +35,15 @@
                 autocomplete="tel">
         </div>
 
-        <div class="mb-3 text-start">
-            <label class="form-label" for="password">Password</label>
-            <input type="password" id="password" name="password" class="form-control" placeholder="••••••••"
-                minlength="8" maxlength="72" required autocomplete="new-password">
-            <div class="form-text">At least 8 characters.</div>
-        </div>
+        <x-password-input name="password" label="Password" placeholder="••••••••"
+            autocomplete="new-password" minlength="8" role="new" />
 
-        <div class="mb-4 text-start">
-            <label class="form-label" for="password_confirmation">Confirm Password</label>
-            <input type="password" id="password_confirmation" name="password_confirmation" class="form-control"
-                placeholder="••••••••" minlength="8" maxlength="72" required autocomplete="new-password">
+        <x-password-input name="password_confirmation" label="Confirm Password" placeholder="••••••••"
+            autocomplete="new-password" minlength="8" role="confirm" />
+
+        {{-- Turns green the moment the two agree, red while they do not. --}}
+        <div class="text-start mb-4">
+            <span class="form-text text-muted" data-password-match>At least 8 characters.</span>
         </div>
 
         <div class="d-grid mb-3">

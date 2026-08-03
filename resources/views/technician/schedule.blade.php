@@ -153,19 +153,19 @@
         </div>
     </div>
 
-    @include('technician.lead.partials.complete-task-modal')
+    @include('technician.partials.complete-task-modal')
 
     @push('scripts')
         <script>
-            window.leadScheduleEvents = @json($events);
-            window.leadRoutes = {
-                projectDetails: @json(route('technician.lead.projects.details', ['project' => '__ID__'])),
-                completeTask: @json(route('technician.lead.tasks.complete', ['task' => '__ID__'])),
+            window.portalScheduleEvents = @json($events);
+            window.portalRoutes = {
+                projectDetails: @json(route('technician.projects.details', ['project' => '__ID__'])),
+                completeTask: @json(route('technician.tasks.complete', ['task' => '__ID__'])),
             };
         </script>
         <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
-        <script src="/js/technician/leadModals.js"></script>
+        <script src="/js/technician/modals.js"></script>
         <script src="/js/calendarHeader.js"></script>
-        <script src="/js/technician/leadSchedule.js"></script>
+        <script src="/js/technician/schedule.js"></script>
     @endpush
 @endsection

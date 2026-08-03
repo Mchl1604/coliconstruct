@@ -3,7 +3,6 @@
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\ClientPortalController;
 use App\Http\Controllers\ConfigurationController;
-use App\Http\Controllers\LeadTechnicianController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\ScheduleController;
@@ -27,6 +26,13 @@ Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth')->n
 // account is created by an admin or super admin in Configuration.
 Route::get('/register', [AuthController::class, 'showRegister'])->name('auth.register');
 Route::post('/register', [AuthController::class, 'register'])->name('auth.register.store');
+
+// Forgotten password. Open to guests by definition - somebody who cannot sign
+// in is exactly who needs it.
+Route::get('/forgot-password', [AuthController::class, 'showForgotPassword'])->name('auth.password.request');
+Route::post('/forgot-password', [AuthController::class, 'sendResetLink'])->name('auth.password.email');
+Route::get('/reset-password/{token}', [AuthController::class, 'showResetPassword'])->name('auth.password.reset');
+Route::post('/reset-password', [AuthController::class, 'resetPassword'])->name('auth.password.store');
 
 // The forced first password change. Sits inside `auth` but outside
 // `password.changed`, which is the middleware that redirects here.
@@ -122,10 +128,13 @@ Route::prefix('super-admin')
         });
     });
 
-// Technician portal. A plain technician gets the four read-only pages below.
-// A lead gets the same four routes, but LeadTechnicianController answers them
-// with the richer portal - calendar, DataTables, and the task board they run -
-// so both roles keep one set of URLs and one sidebar.
+// Technician portal. Both technician roles share every page here: the same
+// calendar, the same DataTables, the same task board. What differs is reach,
+// and that is decided by ProjectPolicy / TaskPolicy inside the pages rather
+// than by giving the two roles separate screens.
+//
+// A plain technician reads everything and completes their own tasks. A lead
+// additionally runs the task board, files reports and closes projects.
 Route::prefix('technician')
     ->name('technician.')
     ->middleware(['auth', 'password.changed', 'role:technician,lead_technician'])
@@ -134,35 +143,36 @@ Route::prefix('technician')
         Route::get('/projects', [TechnicianPortalController::class, 'projects'])->name('projects');
         Route::get('/tasks', [TechnicianPortalController::class, 'tasks'])->name('tasks');
 
-        Route::get('/reports', [TechnicianPortalController::class, 'reports'])
-            ->middleware('role:lead_technician')
-            ->name('reports');
+        // Reading a project, and closing your own task. Each is gated by a
+        // policy: you only ever see a project you are assigned to, and you
+        // only complete a task that is yours (or, for a lead, one on a project
+        // they run).
+        Route::get('/projects/{project}', [TechnicianPortalController::class, 'showProject'])
+            ->name('projects.show');
+        Route::get('/projects/{project}/details', [TechnicianPortalController::class, 'projectDetails'])
+            ->name('projects.details');
+        Route::post('/tasks/{task}/complete', [TechnicianPortalController::class, 'completeTask'])
+            ->name('tasks.complete');
 
-        // Lead-only actions. Each one is additionally gated by ProjectPolicy /
-        // TaskPolicy, so the middleware here is the outer fence rather than
-        // the whole of the permission model.
-        Route::middleware('role:lead_technician')
-            ->name('lead.')
-            ->group(function () {
-                Route::get('/projects/{project}', [LeadTechnicianController::class, 'showProject'])
-                    ->name('projects.show');
-                Route::get('/projects/{project}/details', [LeadTechnicianController::class, 'projectDetails'])
-                    ->name('projects.details');
-                Route::post('/projects/{project}/complete', [LeadTechnicianController::class, 'completeProject'])
-                    ->name('projects.complete');
-                Route::get('/projects/{project}/task-form-data', [LeadTechnicianController::class, 'taskFormData'])
-                    ->name('projects.task-form-data');
-                Route::post('/projects/{project}/tasks', [LeadTechnicianController::class, 'storeTask'])
-                    ->name('tasks.store');
-                Route::post('/projects/{project}/reports', [LeadTechnicianController::class, 'storeReport'])
-                    ->name('reports.store');
-                Route::post('/tasks/{task}', [LeadTechnicianController::class, 'updateTask'])
-                    ->name('tasks.update');
-                Route::post('/tasks/{task}/complete', [LeadTechnicianController::class, 'completeTask'])
-                    ->name('tasks.complete');
-                Route::delete('/tasks/{task}', [LeadTechnicianController::class, 'destroyTask'])
-                    ->name('tasks.destroy');
-            });
+        // Lead-only. Each one is additionally gated by a policy, so the
+        // middleware here is the outer fence rather than the whole of the
+        // permission model.
+        Route::middleware('role:lead_technician')->group(function () {
+            Route::get('/reports', [TechnicianPortalController::class, 'reports'])->name('reports');
+
+            Route::post('/projects/{project}/complete', [TechnicianPortalController::class, 'completeProject'])
+                ->name('projects.complete');
+            Route::get('/projects/{project}/task-form-data', [TechnicianPortalController::class, 'taskFormData'])
+                ->name('projects.task-form-data');
+            Route::post('/projects/{project}/tasks', [TechnicianPortalController::class, 'storeTask'])
+                ->name('tasks.store');
+            Route::post('/projects/{project}/reports', [TechnicianPortalController::class, 'storeReport'])
+                ->name('reports.store');
+            Route::post('/tasks/{task}', [TechnicianPortalController::class, 'updateTask'])
+                ->name('tasks.update');
+            Route::delete('/tasks/{task}', [TechnicianPortalController::class, 'destroyTask'])
+                ->name('tasks.destroy');
+        });
     });
 
 // Client portal

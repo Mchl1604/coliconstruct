@@ -18,23 +18,17 @@
     <form method="POST" action="{{ route('auth.password.update') }}">
         @csrf
 
-        <div class="mb-3 text-start">
-            <label class="form-label" for="current_password">Temporary Password</label>
-            <input type="password" id="current_password" name="current_password" class="form-control"
-                required autofocus autocomplete="current-password">
-        </div>
+        <x-password-input name="current_password" label="Temporary Password" autofocus />
 
-        <div class="mb-3 text-start">
-            <label class="form-label" for="password">New Password</label>
-            <input type="password" id="password" name="password" class="form-control" minlength="8"
-                maxlength="72" required autocomplete="new-password">
-            <div class="form-text">At least 8 characters.</div>
-        </div>
+        <x-password-input name="password" label="New Password" autocomplete="new-password"
+            minlength="8" role="new" />
 
-        <div class="mb-4 text-start">
-            <label class="form-label" for="password_confirmation">Confirm New Password</label>
-            <input type="password" id="password_confirmation" name="password_confirmation" class="form-control"
-                minlength="8" maxlength="72" required autocomplete="new-password">
+        <x-password-input name="password_confirmation" label="Confirm New Password"
+            autocomplete="new-password" minlength="8" role="confirm" />
+
+        {{-- Turns green the moment the two agree, red while they do not. --}}
+        <div class="text-start mb-4">
+            <span class="form-text text-muted" data-password-match>At least 8 characters.</span>
         </div>
 
         <div class="d-grid mb-3">

@@ -3,12 +3,17 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Models\User;
+use App\Services\CredentialDelivery;
 use App\Services\UserAccountService;
 use App\Support\PortalHome;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -51,7 +56,28 @@ class AuthController extends Controller
 
         $this->ensureIsNotRateLimited($request);
 
-        $attempted = Auth::attempt($credentials, $request->boolean('remember'));
+        $account = User::where('email', $credentials['email'])->first();
+
+        // A stored value that is not a hash - a placeholder from a seed file,
+        // a truncated import - makes the bcrypt hasher *throw* rather than
+        // return false, so the attempt is headed off here. Such an account can
+        // never sign in however correct the password is, which is exactly what
+        // it looks like from the outside; the reason is logged so it is
+        // findable, and `users:repair-passwords` fixes it.
+        $unusable = $account && ! $account->hasUsablePassword();
+
+        if ($unusable) {
+            Log::warning('Sign-in impossible: the stored password is not a hash.', [
+                'user_id' => $account->id,
+                'email' => $account->email,
+                'fix' => 'php artisan users:repair-passwords',
+            ]);
+        }
+
+        // No "keep me signed in": a session that outlives the browser is a
+        // liability on shared machines, and this is a work system. Somebody
+        // locked out uses the reset link instead.
+        $attempted = ! $unusable && Auth::attempt($credentials);
 
         // The credentials matched; now check the account is allowed in at all.
         if ($attempted && ! Auth::user()->canLogin()) {
@@ -62,6 +88,9 @@ class AuthController extends Controller
         if (! $attempted) {
             RateLimiter::hit($this->throttleKey($request), self::LOCKOUT_SECONDS);
 
+            // Deactivated, archived, wrong password, unusable hash: one message
+            // for all of them, so nothing here tells a stranger which addresses
+            // exist and which are merely switched off.
             throw ValidationException::withMessages([
                 'email' => 'Those credentials do not match our records.',
             ]);
@@ -185,6 +214,95 @@ class AuthController extends Controller
 
         return redirect(PortalHome::url($user))
             ->with('success', 'Your password has been updated.');
+    }
+
+    // ------------------------------------------------------------------
+    // Forgotten password
+    // ------------------------------------------------------------------
+
+    public function showForgotPassword(CredentialDelivery $credentials)
+    {
+        if (Auth::check()) {
+            return redirect(PortalHome::url(Auth::user()));
+        }
+
+        // Without a real mailer there is nowhere to send a link, so the page
+        // says so rather than pretending one is on its way.
+        return view('auth.forgot-password', [
+            'mailEnabled' => $credentials->isDeliverable(),
+        ]);
+    }
+
+    /**
+     * Email a reset link.
+     *
+     * The answer is the same whether or not the address is on file: telling a
+     * stranger which addresses exist is the one thing this page must not do.
+     */
+    public function sendResetLink(Request $request, CredentialDelivery $credentials)
+    {
+        $request->validate(['email' => ['required', 'string', 'email']]);
+
+        if (! $credentials->isDeliverable()) {
+            return back()->with(
+                'error',
+                'Email is not configured on this system, so a reset link cannot be sent. '
+                    .'Ask an administrator to reset your password from Configuration.'
+            );
+        }
+
+        Password::sendResetLink($request->only('email'));
+
+        return back()->with(
+            'success',
+            'If that address has an account, a reset link is on its way. The link expires in 60 minutes.'
+        );
+    }
+
+    public function showResetPassword(Request $request, string $token)
+    {
+        return view('auth.reset-password', [
+            'token' => $token,
+            'email' => $request->string('email')->toString(),
+        ]);
+    }
+
+    /**
+     * Set the new password against a link's token.
+     */
+    public function resetPassword(Request $request)
+    {
+        $request->validate([
+            'token' => ['required', 'string'],
+            'email' => ['required', 'string', 'email'],
+            'password' => ['required', 'string', 'min:8', 'max:72', 'confirmed'],
+        ], [
+            'password.confirmed' => 'The two passwords do not match.',
+            'password.min' => 'The new password must be at least 8 characters.',
+        ]);
+
+        $status = Password::reset(
+            $request->only('email', 'password', 'password_confirmation', 'token'),
+            function (User $user, string $password): void {
+                // Whatever the account was opened with, this is now the user's
+                // own - so the forced first change no longer applies.
+                $user->forceFill([
+                    'password' => $password,
+                    'must_change_password' => false,
+                    'remember_token' => Str::random(60),
+                ])->save();
+            }
+        );
+
+        if ($status !== Password::PASSWORD_RESET) {
+            throw ValidationException::withMessages([
+                'email' => 'That reset link is no longer valid. Ask for a new one.',
+            ]);
+        }
+
+        return redirect()
+            ->route('auth.login')
+            ->with('success', 'Your password has been reset. Sign in with it now.');
     }
 
     // ------------------------------------------------------------------
