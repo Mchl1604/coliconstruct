@@ -6,6 +6,8 @@
     <link href="/css/super-admin/projects.css" rel="stylesheet">
     <link href="/css/super-admin/schedule.css" rel="stylesheet">
     <link href="/css/super-admin/technicians.css" rel="stylesheet">
+    {{-- The report viewer is the Super Admin one, so it wears its styles. --}}
+    <link href="/css/super-admin/reports.css" rel="stylesheet">
 @endpush
 
 @section('content')
@@ -43,10 +45,11 @@
                     <thead class="table-info">
                         <tr>
                             <th>Report ID</th>
-                            <th>Project</th>
-                            <th>Report Title</th>
+                            <th>Reference No.</th>
+                            <th>Client</th>
+                            <th>Report Type</th>
+                            <th>Submitted By</th>
                             <th>Date Submitted</th>
-                            <th>Type</th>
                             <th class="text-center">Action</th>
                         </tr>
                     </thead>
@@ -56,34 +59,29 @@
                              cells than the header, which DataTables cannot parse. Its
                              own emptyTable message covers it. --}}
                         @foreach ($reports as $report)
+                            @php
+                                $reportClient = $report->project?->clients->first();
+                            @endphp
+
                             <tr>
                                 <td>#{{ $report->id }}</td>
-                                <td>
-                                    <div class="fw-semibold">{{ $report->project?->name ?? 'Project removed' }}</div>
-                                    <small class="text-muted">{{ $report->project?->reference_no ?? '—' }}</small>
-                                </td>
-                                <td>{{ $report->report_title }}</td>
-                                <td data-order="{{ $report->report_date?->timestamp ?? 0 }}">
-                                    {{ $report->report_date?->format('M j, Y') ?? '—' }}
+                                <td>{{ $report->project?->reference_no ?? '—' }}</td>
+                                <td class="fw-semibold">
+                                    {{ $reportClient?->company_name ?: ($reportClient?->fullname ?: '—') }}
+                                    <div class="small text-muted fw-normal">{{ $report->report_title }}</div>
                                 </td>
                                 <td>
                                     <span class="badge {{ $report->typeBadgeClass() }}">{{ $report->typeLabel() }}</span>
                                 </td>
+                                <td>{{ $report->submitterName() }}</td>
+                                <td data-order="{{ $report->report_date?->timestamp ?? 0 }}">
+                                    {{ $report->report_date?->format('M j, Y') ?? '—' }}
+                                </td>
                                 <td class="text-center">
-                                    <div class="d-flex justify-content-center gap-2">
-                                        <button type="button" class="btn btn-sm btn-primary py-1 px-2"
-                                            data-view-report="{{ $report->id }}" title="View report">
-                                            <i class="bi bi-eye" aria-hidden="true"></i>
-                                        </button>
-
-                                        @if ($report->images->isNotEmpty())
-                                            <a class="btn btn-sm btn-outline-secondary py-1 px-2"
-                                                href="{{ asset('storage/' . $report->images->first()->image_path) }}"
-                                                download title="Download attachment">
-                                                <i class="bi bi-download" aria-hidden="true"></i>
-                                            </a>
-                                        @endif
-                                    </div>
+                                    <button type="button" class="btn btn-sm btn-primary py-1 px-2"
+                                        data-view-report="{{ $report->id }}" title="View report">
+                                        <i class="bi bi-eye" aria-hidden="true"></i>
+                                    </button>
                                 </td>
                             </tr>
                         @endforeach
@@ -98,20 +96,49 @@
         <div class="modal-dialog modal-lg modal-dialog-scrollable">
             <div class="modal-content">
 
+                {{-- The Super Admin report viewer, cell for cell, so a report
+                     reads the same whoever opens it. --}}
                 <div class="modal-header align-items-start">
                     <div class="schedule-modal-heading">
-                        <span class="schedule-modal-eyebrow" data-report-view-project></span>
+                        <span class="schedule-modal-eyebrow" data-report-view-type-eyebrow>Report</span>
                         <h5 class="modal-title mb-1" data-report-view-title>&nbsp;</h5>
-                        <span class="technician-meta" data-report-view-meta></span>
+                        <span class="schedule-modal-ref" data-report-view-project></span>
                     </div>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
 
                 <div class="modal-body">
-                    <p class="mb-3" data-report-view-description></p>
+                    <div class="schedule-section-heading">
+                        <span><i class="bi bi-info-circle me-1" aria-hidden="true"></i> Report Information</span>
+                    </div>
+
+                    <div class="row g-3 mb-4">
+                        <div class="col-sm-6">
+                            <div class="technician-field-label">Client</div>
+                            <div class="technician-field-value" data-report-view-client></div>
+                        </div>
+                        <div class="col-sm-6">
+                            <div class="technician-field-label">Report Type</div>
+                            <div data-report-view-type></div>
+                        </div>
+                        <div class="col-sm-6">
+                            <div class="technician-field-label">Submitted By</div>
+                            <div class="technician-field-value" data-report-view-submitted-by></div>
+                        </div>
+                        <div class="col-sm-6">
+                            <div class="technician-field-label">Date Submitted</div>
+                            <div class="technician-field-value" data-report-view-date></div>
+                        </div>
+                    </div>
+
+                    <div class="schedule-section-heading">
+                        <span><i class="bi bi-card-text me-1" aria-hidden="true"></i> Report Details</span>
+                    </div>
+
+                    <div class="report-description mb-4" data-report-view-description></div>
 
                     <div class="schedule-section-heading d-none" data-report-view-images-heading>
-                        <span><i class="bi bi-images me-1" aria-hidden="true"></i> Attachments</span>
+                        <span><i class="bi bi-images me-1" aria-hidden="true"></i> Report Images</span>
                     </div>
 
                     <div class="row g-3" data-report-view-images></div>

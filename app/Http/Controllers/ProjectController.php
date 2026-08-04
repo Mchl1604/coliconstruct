@@ -24,10 +24,12 @@ use App\Services\TechnicianAvailabilityService;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
+use RuntimeException;
 use Throwable;
 
 class ProjectController extends Controller
@@ -199,6 +201,13 @@ class ProjectController extends Controller
                 $created = $project;
             });
 
+            // The closure always sets this or throws, so reaching here without
+            // it is impossible - but saying so narrows the type for everything
+            // below, which all reads the project's fields.
+            if (! $created instanceof Project) {
+                throw new RuntimeException('The project was not created.');
+            }
+
             // Every entry below is written after its transaction commits, so a
             // rolled-back action leaves nothing claiming it happened.
             $this->activityLogger->record(
@@ -338,7 +347,7 @@ class ProjectController extends Controller
         return sprintf('PRJ-%s-%s', now()->format('Ymd'), str_pad((string) $projectId, 5, '0', STR_PAD_LEFT));
     }
 
-    private function storeDocument($uploadedFile, int $projectId, string $folder): void
+    private function storeDocument(?UploadedFile $uploadedFile, int $projectId, string $folder): void
     {
         if (! $uploadedFile) {
             return;
@@ -603,7 +612,7 @@ class ProjectController extends Controller
         }
     }
 
-    private function replaceDocument($uploadedFile, int $projectId, string $documentType): void
+    private function replaceDocument(?UploadedFile $uploadedFile, int $projectId, string $documentType): void
     {
         if (! $uploadedFile) {
             return;

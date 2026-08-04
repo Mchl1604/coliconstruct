@@ -118,7 +118,7 @@ class ReportController extends Controller
         $filters = $validator->validated();
 
         $query = TechnicianReport::query()
-            ->with(['project', 'technician.account', 'images'])
+            ->with(['project.clients', 'technician.account', 'submitter', 'images'])
             ->when(! empty($filters['project_id']), fn ($q) => $q->where('project_id', $filters['project_id']))
             ->when(
                 ! empty($filters['report_type']) && $filters['report_type'] !== 'all',
@@ -353,15 +353,29 @@ class ReportController extends Controller
             'project_id' => $report->project_id,
             'reference_no' => $report->project?->reference_no ?? '—',
             'project_name' => $report->project?->name ?? 'Project removed',
+            'client' => $this->clientNameFor($report),
             'report_title' => $report->report_title,
             'report_type' => $report->report_type,
             'type_label' => $report->typeLabel(),
             'type_badge_class' => $report->typeBadgeClass(),
-            'submitted_by' => $report->technician?->name ?? 'Unknown',
+            'type_accent_class' => $report->typeAccentClass(),
+            'submitted_by' => $report->submitterName(),
             'report_date' => $report->report_date?->toDateString(),
             'report_date_label' => $report->report_date?->format('M j, Y') ?? '—',
             'image_count' => $report->images->count(),
         ];
+    }
+
+    /**
+     * The client a report's project belongs to: the company where there is
+     * one, otherwise the person.
+     */
+    private function clientNameFor(TechnicianReport $report): string
+    {
+        $client = $report->project?->clients->first();
+
+        return $client?->company_name
+            ?: ($client?->fullname ?: '—');
     }
 
     private function isReportable(Project $project): bool

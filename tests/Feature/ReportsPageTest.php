@@ -363,8 +363,8 @@ class ReportsPageTest extends TestCase
     }
 
     /**
-     * What both forms do today: with no technician on the request, the report
-     * is attributed to the project's lead rather than a hard-coded id.
+     * technician_id answers "which technician is this report about", and still
+     * falls back to the project's lead when the form does not say.
      */
     public function test_omitting_the_technician_falls_back_to_the_project_lead(): void
     {
@@ -381,6 +381,115 @@ class ReportsPageTest extends TestCase
         $report = TechnicianReport::where('report_title', 'Legacy Path')->first();
 
         $this->assertSame($lead->technician_id, $report->technician_id);
+    }
+
+    /**
+     * An administrator has no technician record, so a report they file used to
+     * be credited to the project's lead - somebody who had nothing to do with
+     * it. It is now attributed to whoever actually submitted it.
+     */
+    public function test_a_report_filed_by_an_administrator_is_credited_to_them(): void
+    {
+        $lead = $this->technician('Jose Garcia', 'lead_technician');
+        $project = $this->project('Some Project', 'ongoing', [$lead]);
+
+        $this->post(route('super-admin.technician.reports.store', $project->project_id), [
+            'report_type' => 'progress',
+            'report_title' => 'Filed By The Owner',
+            'report_description' => 'Work done today.',
+        ])->assertSessionHasNoErrors();
+
+        $report = TechnicianReport::where('report_title', 'Filed By The Owner')->first();
+        $actor = auth()->user();
+
+        $this->assertSame($actor->id, (int) $report->submitted_by);
+        $this->assertSame($actor->fullName(), $report->submitterName());
+        $this->assertNotSame('Jose Garcia', $report->submitterName());
+    }
+
+    /**
+     * Reports written before that column existed have nobody recorded, and
+     * fall back to the technician - which is who filed them.
+     */
+    public function test_an_older_report_still_credits_its_technician(): void
+    {
+        $ana = $this->technician('Ana Mendoza');
+        $project = $this->project('Some Project', 'ongoing', [$ana]);
+
+        $report = TechnicianReport::create([
+            'project_id' => $project->project_id,
+            'technician_id' => $ana->technician_id,
+            'report_type' => 'progress',
+            'report_title' => 'Before The Column',
+            'report_description' => 'Work done today.',
+            'report_date' => now()->toDateString(),
+        ]);
+
+        $this->assertNull($report->submitted_by);
+        $this->assertSame('Ana Mendoza', $report->fresh()->submitterName());
+    }
+
+    /**
+     * The table reads Report ID, Reference No., Client, Report Type,
+     * Submitted By, Date Submitted - so the row payload has to carry the
+     * client and the accent the viewer is tinted with.
+     */
+    public function test_each_row_carries_the_columns_the_table_shows(): void
+    {
+        $lead = $this->technician('Jose Garcia', 'lead_technician');
+        $project = $this->project('Some Project', 'ongoing', [$lead]);
+
+        $this->post(route('super-admin.technician.reports.store', $project->project_id), [
+            'report_type' => 'incident',
+            'report_title' => 'Cable damaged',
+            'report_description' => 'Found a damaged run.',
+        ])->assertSessionHasNoErrors();
+
+        $row = collect($this->getJson(route('super-admin.reports.technician'))->json('reports'))
+            ->firstWhere('report_title', 'Cable damaged');
+
+        $this->assertSame($project->reference_no, $row['reference_no']);
+        $this->assertNotSame('', $row['client']);
+        $this->assertSame('Incident Report', $row['type_label']);
+        $this->assertSame(auth()->user()->fullName(), $row['submitted_by']);
+        $this->assertNotNull($row['report_date_label']);
+        // Incidents tint the viewer green, progress reports blue.
+        $this->assertSame('report-accent-incident', $row['type_accent_class']);
+    }
+
+    public function test_a_progress_report_carries_the_other_accent(): void
+    {
+        $lead = $this->technician('Jose Garcia', 'lead_technician');
+        $project = $this->project('Some Project', 'ongoing', [$lead]);
+
+        $this->post(route('super-admin.technician.reports.store', $project->project_id), [
+            'report_type' => 'progress',
+            'report_title' => 'Wiring pulled',
+            'report_description' => 'First floor complete.',
+        ]);
+
+        $row = collect($this->getJson(route('super-admin.reports.technician'))->json('reports'))
+            ->firstWhere('report_title', 'Wiring pulled');
+
+        $this->assertSame('report-accent-progress', $row['type_accent_class']);
+    }
+
+    public function test_the_list_shows_who_submitted_each_report(): void
+    {
+        $lead = $this->technician('Jose Garcia', 'lead_technician');
+        $project = $this->project('Some Project', 'ongoing', [$lead]);
+
+        $this->post(route('super-admin.technician.reports.store', $project->project_id), [
+            'report_type' => 'progress',
+            'report_title' => 'Filed By The Owner',
+            'report_description' => 'Work done today.',
+        ]);
+
+        $response = $this->getJson(route('super-admin.reports.technician'));
+
+        $row = collect($response->json('reports'))->firstWhere('report_title', 'Filed By The Owner');
+
+        $this->assertSame(auth()->user()->fullName(), $row['submitted_by']);
     }
 
     public function test_a_closed_project_cannot_receive_a_report(): void

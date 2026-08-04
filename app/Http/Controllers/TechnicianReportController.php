@@ -53,6 +53,10 @@ class TechnicianReportController extends Controller
                 'project_id' => $project->project_id,
                 'technician_id' => $request->input('technician_id')
                     ?? $this->defaultTechnicianId($project),
+                // Who actually filed it. An administrator has no technician
+                // record, so without this the report would be credited to the
+                // project's lead - somebody who had nothing to do with it.
+                'submitted_by' => $request->user()?->id,
                 'report_type' => $request->report_type,
                 'report_title' => $request->report_title,
                 'report_description' => $request->report_description,

@@ -103,3 +103,39 @@
     color: #64748b;
     font-size: 0.85rem;
 }
+
+/* ---- Report viewer: tinted by report type ---- */
+
+/*
+ * The same two accents in both portals, so a report looks the same whoever
+ * opens it. The tint is on the header and a left edge rather than the whole
+ * dialog, which would fight the text.
+ */
+.report-accent-progress .modal-header,
+.report-accent-incident .modal-header {
+    border-bottom-width: 0;
+}
+
+.report-accent-progress {
+    border-left: 5px solid #2d8de1;
+}
+
+.report-accent-progress .modal-header {
+    background: #eaf4fd;
+}
+
+.report-accent-progress .schedule-modal-eyebrow {
+    color: #1b5688;
+}
+
+.report-accent-incident {
+    border-left: 5px solid #15803d;
+}
+
+.report-accent-incident .modal-header {
+    background: #eafaf0;
+}
+
+.report-accent-incident .schedule-modal-eyebrow {
+    color: #14532d;
+}

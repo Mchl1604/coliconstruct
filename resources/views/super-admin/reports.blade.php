@@ -127,8 +127,8 @@
                             <thead class="table-info">
                                 <tr>
                                     <th>Report ID</th>
-                                    <th>Project No.</th>
-                                    <th>Project Name</th>
+                                    <th>Reference No.</th>
+                                    <th>Client</th>
                                     <th>Report Type</th>
                                     <th>Submitted By</th>
                                     <th>Date Submitted</th>
@@ -407,22 +407,18 @@
 
                     <div class="row g-3 mb-4">
                         <div class="col-sm-6">
-                            <div class="technician-field-label">Project</div>
-                            <div class="technician-field-value" data-view-project></div>
-                        </div>
-                        <div class="col-sm-6">
                             <div class="technician-field-label">Client</div>
                             <div class="technician-field-value" data-view-client></div>
                         </div>
-                        <div class="col-sm-4">
+                        <div class="col-sm-6">
                             <div class="technician-field-label">Report Type</div>
                             <div data-view-type></div>
                         </div>
-                        <div class="col-sm-4">
+                        <div class="col-sm-6">
                             <div class="technician-field-label">Submitted By</div>
                             <div class="technician-field-value" data-view-submitted-by></div>
                         </div>
-                        <div class="col-sm-4">
+                        <div class="col-sm-6">
                             <div class="technician-field-label">Date Submitted</div>
                             <div class="technician-field-value" data-view-date></div>
                         </div>

@@ -860,6 +860,45 @@ class TechnicianPortalTest extends TestCase
         $this->assertSame($this->lead->technician_id, $report->technician_id);
         $this->assertSame('incident', $report->report_type);
         $this->assertCount(1, $report->images);
+        // The account that filed it is recorded alongside the technician.
+        $this->assertSame($this->leadAccount->id, (int) $report->submitted_by);
+        $this->assertSame($this->leadAccount->fullName(), $report->fresh()->submitterName());
+    }
+
+    /**
+     * The Reports table adds the new row without a page load, and its Date
+     * column sorts on a data-order attribute - so the payload has to carry the
+     * sort key as well as the label, or the added row sorts by nothing.
+     */
+    public function test_a_submitted_report_carries_the_tables_sort_key(): void
+    {
+        Storage::fake('public');
+
+        $this->actingAs($this->leadAccount);
+
+        $response = $this->postJson(route('technician.reports.store', $this->project), [
+            'report_type' => 'progress',
+            'report_title' => 'Wiring pulled',
+            'report_description' => 'First floor complete.',
+        ]);
+
+        $response->assertCreated();
+
+        $report = $response->json('report');
+
+        $this->assertArrayHasKey('date_order', $report);
+        $this->assertSame(
+            TechnicianReport::first()->report_date->timestamp,
+            $report['date_order']
+        );
+        $this->assertNotSame('', $report['date_label']);
+
+        // The lead's table shows the same columns as the Super Admin's, and
+        // its viewer is tinted by type the same way.
+        $this->assertArrayHasKey('client', $report);
+        $this->assertArrayHasKey('reference_no', $report);
+        $this->assertArrayHasKey('submitted_by', $report);
+        $this->assertSame('report-accent-progress', $report['type_accent_class']);
     }
 
     /**

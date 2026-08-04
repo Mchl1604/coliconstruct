@@ -330,7 +330,7 @@
                                         </span>
                                         <h5 class="mt-2 mb-0">{{ $report->report_title }}</h5>
                                         <small class="text-muted">
-                                            by {{ $report->technician?->name ?? 'Unknown' }}
+                                            by {{ $report->submitterName() }}
                                         </small>
                                     </div>
 

@@ -143,7 +143,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     escapeHtml(report.reference_no) +
                     "</td>" +
                     '<td class="fw-semibold">' +
-                    escapeHtml(report.project_name) +
+                    escapeHtml(report.client) +
                     "<div class='small text-muted fw-normal'>" +
                     escapeHtml(report.report_title) +
                     "</div></td>" +
@@ -278,8 +278,8 @@ document.addEventListener("DOMContentLoaded", function () {
         const eyebrowEl = modal.querySelector("[data-view-type-eyebrow]");
         const linkEl = modal.querySelector("[data-view-project-link]");
         const linkRefEl = modal.querySelector("[data-view-project-ref]");
-        const projectEl = modal.querySelector("[data-view-project]");
         const clientEl = modal.querySelector("[data-view-client]");
+        const contentEl = modal.querySelector(".modal-content");
         const typeEl = modal.querySelector("[data-view-type]");
         const submittedByEl = modal.querySelector("[data-view-submitted-by]");
         const dateEl = modal.querySelector("[data-view-date]");
@@ -301,7 +301,16 @@ document.addEventListener("DOMContentLoaded", function () {
             titleEl.textContent = report.report_title;
             eyebrowEl.textContent = report.type_label;
 
-            projectEl.textContent = report.project_name;
+            // The viewer is tinted by report type, so which kind of report
+            // this is registers before a word of it is read.
+            contentEl.classList.remove(
+                "report-accent-progress",
+                "report-accent-incident",
+            );
+            contentEl.classList.add(
+                report.type_accent_class || "report-accent-progress",
+            );
+
             clientEl.textContent = report.client || "—";
             typeEl.innerHTML =
                 '<span class="badge ' +

@@ -163,7 +163,7 @@ class TechnicianPortalController extends Controller
             ->get();
 
         $reports = TechnicianReport::query()
-            ->with(['images', 'technician.account'])
+            ->with(['images', 'technician.account', 'submitter', 'project.clients'])
             ->where('project_id', $project->project_id)
             ->when(
                 $request->filled('report_type'),
@@ -268,7 +268,7 @@ class TechnicianPortalController extends Controller
         $technician = $this->technician($request);
 
         $reports = TechnicianReport::query()
-            ->with(['project', 'images'])
+            ->with(['project.clients', 'images', 'technician.account', 'submitter'])
             ->where('technician_id', $technician->technician_id)
             ->orderByDesc('report_date')
             ->orderByDesc('id')
@@ -322,7 +322,7 @@ class TechnicianPortalController extends Controller
         ]);
 
         $reports = TechnicianReport::query()
-            ->with(['images', 'technician.account'])
+            ->with(['images', 'technician.account', 'submitter', 'project.clients'])
             ->where('project_id', $project->project_id)
             ->orderByDesc('report_date')
             ->orderByDesc('id')
@@ -629,6 +629,7 @@ class TechnicianPortalController extends Controller
                 $report = TechnicianReport::create([
                     'project_id' => $project->project_id,
                     'technician_id' => $technician->technician_id,
+                    'submitted_by' => $request->user()->id,
                     'report_type' => $validated['report_type'],
                     'report_title' => $validated['report_title'],
                     'report_description' => $validated['report_description'],
@@ -1004,10 +1005,12 @@ class TechnicianPortalController extends Controller
             'reference_no' => $report->project?->reference_no ?? '—',
             'title' => $report->report_title,
             'description' => $report->report_description,
+            'client' => $this->reportClientName($report),
             'type' => $report->report_type,
             'type_label' => $report->typeLabel(),
             'type_badge_class' => $report->typeBadgeClass(),
-            'submitted_by' => $report->technician?->name,
+            'type_accent_class' => $report->typeAccentClass(),
+            'submitted_by' => $report->submitterName(),
             'date' => $report->report_date?->toDateString(),
             'date_label' => $report->report_date?->format('M j, Y') ?? '—',
             // The sort key the table's Date column reads, matching the
@@ -1024,5 +1027,21 @@ class TechnicianPortalController extends Controller
         $client = $project->clients->first();
 
         return $client?->company_name ?: $client?->fullname;
+    }
+
+    /**
+     * The client a report's project belongs to, for the reports table.
+     */
+    private function reportClientName(TechnicianReport $report): string
+    {
+        $project = $report->project;
+
+        if (! $project) {
+            return '—';
+        }
+
+        $project->loadMissing('clients');
+
+        return $this->clientName($project) ?: '—';
     }
 }

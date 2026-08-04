@@ -10,11 +10,12 @@ document.addEventListener("DOMContentLoaded", function () {
     const reports = window.portalReports || {};
 
     const table = portal.dataTable("#portalReportsTable", "reports", {
-        order: [[3, "desc"]],
+        // Date Submitted, now the sixth column.
+        order: [[5, "desc"]],
         columnDefs: [
             // Date Submitted carries a `data-order` timestamp, which
             // DataTables reads as numeric and then right-aligns on its own.
-            { targets: 3, className: "text-start" },
+            { targets: 5, className: "text-start" },
             { targets: -1, orderable: false },
         ],
     });
@@ -30,12 +31,35 @@ document.addEventListener("DOMContentLoaded", function () {
     );
 
     function show(report) {
-        viewEl.querySelector("[data-report-view-project]").textContent =
-            report.reference_no + " — " + report.project_name;
+        const content = viewEl.querySelector(".modal-content");
+
+        // Tinted by report type, matching the Super Admin viewer.
+        content.classList.remove(
+            "report-accent-progress",
+            "report-accent-incident",
+        );
+        content.classList.add(
+            report.type_accent_class || "report-accent-progress",
+        );
+
+        viewEl.querySelector("[data-report-view-type-eyebrow]").textContent =
+            report.type_label;
         viewEl.querySelector("[data-report-view-title]").textContent =
             report.title;
-        viewEl.querySelector("[data-report-view-meta]").textContent =
-            report.type_label + " · " + report.date_label;
+        viewEl.querySelector("[data-report-view-project]").textContent =
+            report.reference_no;
+        viewEl.querySelector("[data-report-view-client]").textContent =
+            report.client || "—";
+        viewEl.querySelector("[data-report-view-type]").innerHTML =
+            '<span class="badge ' +
+            report.type_badge_class +
+            '">' +
+            portal.escapeHtml(report.type_label) +
+            "</span>";
+        viewEl.querySelector("[data-report-view-submitted-by]").textContent =
+            report.submitted_by || "—";
+        viewEl.querySelector("[data-report-view-date]").textContent =
+            report.date_label;
         viewEl.querySelector("[data-report-view-description]").textContent =
             report.description;
 
@@ -91,42 +115,38 @@ document.addEventListener("DOMContentLoaded", function () {
      * a node lets it read the attribute exactly as it does for the rest.
      */
     function rowFor(report) {
-        const download = report.images.length
-            ? '<a class="btn btn-sm btn-outline-secondary py-1 px-2" href="' +
-              report.images[0].url +
-              '" download title="Download attachment"><i class="bi bi-download"></i></a>'
-            : "";
-
         const row = document.createElement("tr");
 
         row.innerHTML =
             "<td>#" +
             portal.escapeHtml(report.id) +
             "</td>" +
-            '<td><div class="fw-semibold">' +
-            portal.escapeHtml(report.project_name) +
-            '</div><small class="text-muted">' +
-            portal.escapeHtml(report.reference_no) +
-            "</small></td>" +
             "<td>" +
+            portal.escapeHtml(report.reference_no) +
+            "</td>" +
+            '<td class="fw-semibold">' +
+            portal.escapeHtml(report.client) +
+            '<div class="small text-muted fw-normal">' +
             portal.escapeHtml(report.title) +
+            "</div></td>" +
+            '<td><span class="badge ' +
+            report.type_badge_class +
+            '">' +
+            portal.escapeHtml(report.type_label) +
+            "</span></td>" +
+            "<td>" +
+            portal.escapeHtml(report.submitted_by) +
             "</td>" +
             '<td data-order="' +
             portal.escapeHtml(report.date_order) +
             '">' +
             portal.escapeHtml(report.date_label) +
             "</td>" +
-            '<td><span class="badge ' +
-            report.type_badge_class +
-            '">' +
-            portal.escapeHtml(report.type_label) +
-            "</span></td>" +
-            '<td class="text-center"><div class="d-flex justify-content-center gap-2">' +
+            '<td class="text-center">' +
             '<button type="button" class="btn btn-sm btn-primary py-1 px-2" data-view-report="' +
             portal.escapeHtml(report.id) +
             '" title="View report"><i class="bi bi-eye"></i></button>' +
-            download +
-            "</div></td>";
+            "</td>";
 
         return row;
     }
