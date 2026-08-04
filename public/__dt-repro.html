@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>DataTables row.add repro</title>
+    <link rel="stylesheet" href="https://cdn.datatables.net/2.3.8/css/dataTables.dataTables.css">
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.datatables.net/2.3.8/js/dataTables.js"></script>
+</head>
+<body>
+
+<table id="portalReportsTable">
+    <thead>
+        <tr>
+            <th>Report ID</th>
+            <th>Project</th>
+            <th>Report Title</th>
+            <th>Date Submitted</th>
+            <th>Type</th>
+            <th class="text-center">Action</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td>#1</td>
+            <td><div>Project A</div><small>PRJ-1</small></td>
+            <td>First</td>
+            <td data-order="1700000000">Nov 14, 2023</td>
+            <td><span class="badge">Progress Report</span></td>
+            <td class="text-center"><div><button>view</button></div></td>
+        </tr>
+        <tr>
+            <td>#2</td>
+            <td><div>Project B</div><small>PRJ-2</small></td>
+            <td>Second</td>
+            <td data-order="1700100000">Nov 15, 2023</td>
+            <td><span class="badge">Incident Report</span></td>
+            <td class="text-center"><div><button>view</button></div></td>
+        </tr>
+        <tr>
+            <td>#3</td>
+            <td><div>Project C</div><small>PRJ-3</small></td>
+            <td>Third</td>
+            <td data-order="1700200000">Nov 16, 2023</td>
+            <td><span class="badge">Progress Report</span></td>
+            <td class="text-center"><div><button>view</button></div></td>
+        </tr>
+    </tbody>
+</table>
+
+<pre id="out"></pre>
+
+<script>
+const log = [];
+const originalAlert = window.alert;
+window.alert = function (message) { log.push('ALERT: ' + message); };
+
+// Exactly the options the portal wrapper produces.
+const table = jQuery('#portalReportsTable').DataTable({
+    responsive: true,
+    autoWidth: false,
+    pageLength: 10,
+    lengthMenu: [10, 25, 50, 100],
+    info: false,
+    language: {
+        search: '',
+        searchPlaceholder: 'Search reports...',
+        emptyTable: 'No reports found.',
+        zeroRecords: 'No reports match your search.',
+    },
+    order: [[3, 'desc']],
+    columnDefs: [
+        { targets: 3, className: 'text-start' },
+        { targets: -1, orderable: false },
+    ],
+});
+
+try {
+    table.row.add([
+        '#4',
+        '<div class="fw-semibold">Project D</div><small class="text-muted">PRJ-4</small>',
+        'Fourth',
+        'Nov 17, 2023',
+        '<span class="badge bg-primary">Progress Report</span>',
+        '<div class="d-flex"><button>view</button></div>',
+    ]).draw(false);
+    log.push('row.add OK, rows now: ' + table.rows().count());
+} catch (e) {
+    log.push('THREW: ' + e.message);
+}
+
+window.__result = log;
+document.getElementById('out').textContent = log.join('\n') || '(no warnings)';
+window.alert = originalAlert;
+</script>
+
+</body>
+</html>

@@ -73,6 +73,8 @@
         <script src="/js/super-admin/taskDatePickers.js"></script>
         <script src="/js/imagePreview.js"></script>
         <script src="/js/taskBoard.js"></script>
+        {{-- Lets a task notification land on the task itself. --}}
+        <script src="/js/openTaskFromQuery.js"></script>
         <script src="/js/taskCreate.js"></script>
     @endpush
 @endsection

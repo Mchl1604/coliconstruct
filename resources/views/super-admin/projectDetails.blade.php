@@ -1155,17 +1155,41 @@
                                 Lead Technician <span class="text-danger">*</span>
                             </label>
 
+                            @php
+                                // Same three buckets the technician picker uses: skills
+                                // that match the project types first, then everyone else
+                                // who is free, then the booked ones - shown so the
+                                // scheduler knows why, but not choosable.
+                                $leadGroups = [
+                                    'Suggested — matches this project' => $leadTechnicianOptions->where('suggested', true),
+                                    'Other available' => $leadTechnicianOptions->where('suggested', false)->where('available', true),
+                                    'Unavailable for these dates' => $leadTechnicianOptions->where('available', false),
+                                ];
+                            @endphp
+
                             <select class="form-select" id="editLeadTech" name="lead_tech" required
                                 data-lead-tech-select>
                                 <option value="" disabled {{ $currentLeadTechnicianId ? '' : 'selected' }}>
                                     Select lead technician
                                 </option>
 
-                                @foreach ($leadTechnicianOptions as $technician)
-                                    <option value="{{ $technician->technician_id }}"
-                                        {{ (string) $technician->technician_id === (string) $currentLeadTechnicianId ? 'selected' : '' }}>
-                                        {{ $technician->name }}
-                                    </option>
+                                @foreach ($leadGroups as $groupLabel => $groupOptions)
+                                    @continue($groupOptions->isEmpty())
+
+                                    <optgroup label="{{ $groupLabel }}">
+                                        @foreach ($groupOptions as $candidate)
+                                            <option value="{{ $candidate['id'] }}"
+                                                @disabled(!$candidate['selectable'])
+                                                {{ (string) $candidate['id'] === (string) $currentLeadTechnicianId ? 'selected' : '' }}>
+                                                {{ $candidate['name'] }}@if ($candidate['matched_skills'])
+                                                    — {{ implode(', ', $candidate['matched_skills']) }}
+                                                @endif
+                                                @if (!$candidate['available'])
+                                                    ({{ $candidate['reason'] }})
+                                                @endif
+                                            </option>
+                                        @endforeach
+                                    </optgroup>
                                 @endforeach
                             </select>
 
@@ -1180,12 +1204,16 @@
 
                         <div class="technician-picker" data-technician-picker>
                             <div class="dropdown w-100">
+                                {{-- Closing only on an outside click keeps the menu up while
+                                     the unavailable section is expanded. --}}
                                 <button type="button" class="form-select technician-dropdown-toggle text-start"
-                                    data-bs-toggle="dropdown" aria-expanded="false" data-technician-dropdown-button>
+                                    data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false"
+                                    data-technician-dropdown-button>
                                     Select technicians
                                 </button>
 
-                                <ul class="dropdown-menu w-100" data-technician-dropdown-menu></ul>
+                                <ul class="dropdown-menu w-100 technician-dropdown-menu"
+                                    data-technician-dropdown-menu></ul>
                             </div>
 
                             <div class="technician-selected-list mt-3" data-technician-selected-list></div>

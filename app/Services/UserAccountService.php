@@ -29,7 +29,10 @@ class UserAccountService
     /** Length of a generated temporary password. */
     private const TEMPORARY_PASSWORD_LENGTH = 14;
 
-    public function __construct(private readonly ActivityLogger $activityLogger) {}
+    public function __construct(
+        private readonly ActivityLogger $activityLogger,
+        private readonly NotificationService $notifications
+    ) {}
 
     // ------------------------------------------------------------------
     // Creation
@@ -71,6 +74,7 @@ class UserAccountService
         });
 
         $this->activityLogger->record(ActivityLog::EMPLOYEE_CREATED, $user);
+        $this->notifications->employeeAccountCreated($user);
 
         return ['user' => $user, 'password' => $password];
     }
@@ -109,6 +113,7 @@ class UserAccountService
         });
 
         $this->activityLogger->record(ActivityLog::CLIENT_CREATED, $user);
+        $this->notifications->clientAccountRegistered($user);
 
         return ['user' => $user, 'password' => $password];
     }
@@ -157,6 +162,8 @@ class UserAccountService
                 $user->user_code
             )
         );
+
+        $this->notifications->clientAccountRegistered($user);
 
         return $user;
     }
@@ -263,6 +270,8 @@ class UserAccountService
             $user
         );
 
+        $this->notifications->accountStatusChanged($user, $active);
+
         return $user;
     }
 
@@ -290,6 +299,8 @@ class UserAccountService
             $user
         );
 
+        $this->notifications->accountArchived($user);
+
         return $user;
     }
 
@@ -316,6 +327,8 @@ class UserAccountService
             $user->isClient() ? ActivityLog::CLIENT_PASSWORD_RESET : ActivityLog::EMPLOYEE_PASSWORD_RESET,
             $user
         );
+
+        $this->notifications->accountPasswordReset($user);
 
         return $password;
     }

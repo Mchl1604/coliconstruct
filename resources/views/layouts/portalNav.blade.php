@@ -1,10 +1,12 @@
 {{--
-    The shell for every non-administrative portal.
+    The shell for the technician portal.
 
-    One layout serves the technician, lead technician and client sidebars: the
-    chrome is identical, only the navigation differs, and that is derived from
-    the signed-in role rather than passed in by each page. A technician cannot
-    be shown a lead's link by a view that forgot to check.
+    One layout serves both technician roles: the chrome is identical, only the
+    navigation differs, and that is derived from the signed-in role rather than
+    passed in by each page. A technician cannot be shown a lead's link by a
+    view that forgot to check.
+
+    Clients do not come through here - the public website is their portal.
 --}}
 <!DOCTYPE html>
 <html lang="en">
@@ -19,6 +21,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
     <link href="/css/theme.css" rel="stylesheet">
     <link href="/css/superAdminNav.css" rel="stylesheet">
+    <link href="/css/notifications.css" rel="stylesheet">
     {{-- Same DataTables build the Super Admin shell loads, so a table looks
          and behaves identically in either portal. --}}
     <link rel="stylesheet" href="https://cdn.datatables.net/2.3.8/css/dataTables.dataTables.css">
@@ -45,9 +48,7 @@
                 ['label' => 'My Projects', 'icon' => 'bi-folder2-open', 'route' => 'technician.projects'],
                 ['label' => 'Tasks', 'icon' => 'bi-list-task', 'route' => 'technician.tasks'],
             ],
-            'client' => [
-                ['label' => 'My Projects', 'icon' => 'bi-folder2-open', 'route' => 'client.dashboard'],
-            ],
+            // A client has no portal here: the public website is theirs.
             default => [],
         };
     @endphp
@@ -93,6 +94,8 @@
                     <i class="bi bi-list" aria-hidden="true"></i>
                 </button>
 
+                <x-notification-bell />
+
                 <div class="admin-user-menu" role="group" aria-label="Signed in as">
                     <span>
                         <span class="admin-user-name">{{ $user?->fullName() }}</span>
@@ -132,6 +135,13 @@
     <script src="https://cdn.datatables.net/2.3.8/js/dataTables.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="/js/technician/portal.js"></script>
+    <script>
+        window.notificationRoutes = @json([
+            'feed' => route('notifications.feed'),
+            'readAll' => route('notifications.read-all'),
+        ]);
+    </script>
+    <script src="/js/notifications.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function () {
             document.querySelectorAll('.toast').forEach(function (toastEl) {

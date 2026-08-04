@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\ActivityLog;
 use App\Models\Skill;
+use App\Models\SystemContent;
 use App\Models\User;
 use App\Services\CredentialDelivery;
 use App\Services\UserAccountService;
@@ -76,6 +77,7 @@ class ConfigurationController extends Controller
             // ones, because a client's own actions are logged too.
             'logRoles' => User::ROLES,
             'logModules' => ActivityLog::MODULES,
+            'contentSections' => SystemContent::SECTIONS,
             'skills' => Skill::query()->orderBy('skill_name')->get(['skill_id', 'skill_name']),
             // Whether the interface may promise that credentials were emailed.
             'mailEnabled' => $this->credentials->isDeliverable(),

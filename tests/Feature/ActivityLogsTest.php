@@ -250,7 +250,7 @@ class ActivityLogsTest extends TestCase
         $this->actingAs($this->account('client', 'client@example.test'));
 
         $this->get(route('super-admin.configuration.activity-logs'))
-            ->assertRedirect(route('client.dashboard'));
+            ->assertRedirect(route('landing.home'));
     }
 
     // ------------------------------------------------------------------

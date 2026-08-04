@@ -1,21 +1,30 @@
 <?php
 
 use App\Http\Controllers\Auth\AuthController;
-use App\Http\Controllers\ClientPortalController;
 use App\Http\Controllers\ConfigurationController;
+use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ProjectController;
+use App\Http\Controllers\PublicSiteController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\ScheduleController;
+use App\Http\Controllers\SystemContentController;
 use App\Http\Controllers\TaskController;
 use App\Http\Controllers\TechnicianController;
 use App\Http\Controllers\TechnicianPortalController;
 use App\Http\Controllers\TechnicianReportController;
 use Illuminate\Support\Facades\Route;
 
-// Public routes
-Route::get('/', function () {
-    return view('landing.home');
-})->name('landing.home');
+// The public website. Every page here is readable by anyone; My Projects is
+// the exception in content rather than in access - a guest reaches it and is
+// invited to sign in.
+Route::get('/', [PublicSiteController::class, 'home'])->name('landing.home');
+Route::get('/about', [PublicSiteController::class, 'about'])->name('public.about');
+Route::get('/contact', [PublicSiteController::class, 'contact'])->name('public.contact');
+Route::get('/my-projects', [PublicSiteController::class, 'myProjects'])->name('public.projects');
+Route::get('/my-projects/{project}', [PublicSiteController::class, 'projectDetails'])
+    ->whereNumber('project')
+    ->name('public.projects.show');
 
 // Authentication
 Route::get('/login', [AuthController::class, 'showLogin'])->name('auth.login');
@@ -40,6 +49,27 @@ Route::middleware('auth')->group(function () {
     Route::get('/password/change', [AuthController::class, 'showPasswordChange'])->name('auth.password.change');
     Route::post('/password/change', [AuthController::class, 'updatePassword'])->name('auth.password.update');
 });
+
+// The signed-in account's own details, reachable from every header.
+Route::middleware(['auth', 'password.changed'])
+    ->get('/profile', [ProfileController::class, 'edit'])
+    ->name('profile.edit');
+
+// Notifications. Shared by every portal rather than duplicated per role: a
+// notification is addressed to a person, and "mine" is the whole of the
+// visibility rule, so one set of routes serves all of them.
+Route::middleware(['auth', 'password.changed'])
+    ->prefix('notifications')
+    ->name('notifications.')
+    ->group(function () {
+        Route::get('/', [NotificationController::class, 'index'])->name('index');
+        Route::get('/feed', [NotificationController::class, 'feed'])->name('feed');
+        Route::get('/list', [NotificationController::class, 'list'])->name('list');
+        Route::get('/{notification}/open', [NotificationController::class, 'open'])->name('open');
+        Route::put('/{notification}/read', [NotificationController::class, 'markAsRead'])->name('read');
+        Route::put('/read-all', [NotificationController::class, 'markAllAsRead'])->name('read-all');
+        Route::delete('/{notification}', [NotificationController::class, 'destroy'])->name('destroy');
+    });
 
 // Super Admin routes. Admin shares this portal entirely - same sidebar, same
 // pages - so both roles are admitted here.
@@ -115,6 +145,16 @@ Route::prefix('super-admin')
             // Activity Logs.
             Route::get('/activity-logs', [ConfigurationController::class, 'activityLogs'])->name('activity-logs');
 
+            // System Contents: the public website's text and images. Admin
+            // reaches this prefix but not these endpoints - the controller
+            // turns anyone who is not a Super Admin away.
+            Route::prefix('contents')->name('contents.')->group(function () {
+                Route::get('/{section}', [SystemContentController::class, 'show'])->name('show');
+                Route::put('/{section}', [SystemContentController::class, 'update'])->name('update');
+                Route::post('/images/{key}', [SystemContentController::class, 'storeImage'])->name('images.store');
+                Route::delete('/images/{key}', [SystemContentController::class, 'destroyImage'])->name('images.destroy');
+            });
+
             // Creation.
             Route::post('/users/employees', [ConfigurationController::class, 'storeEmployee'])->name('users.employees.store');
             Route::post('/users/clients', [ConfigurationController::class, 'storeClient'])->name('users.clients.store');
@@ -178,10 +218,6 @@ Route::prefix('technician')
         });
     });
 
-// Client portal
-Route::prefix('client')
-    ->name('client.')
-    ->middleware(['auth', 'password.changed', 'role:client'])
-    ->group(function () {
-        Route::get('/dashboard', [ClientPortalController::class, 'dashboard'])->name('dashboard');
-    });
+// A client has no portal of their own. Signing in lands them on the public
+// website, and My Projects there shows the work booked under their email -
+// see PublicSiteController.

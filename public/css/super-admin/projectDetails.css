@@ -56,3 +56,87 @@
     color: #9ca3af;
     font-size: 0.9rem;
 }
+
+/* ---- Assigned-team picker: suggestions and blocked technicians ---- */
+
+.technician-dropdown-menu {
+    max-height: 320px;
+    overflow-y: auto;
+}
+
+.technician-dropdown-menu .dropdown-header {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #64748b;
+}
+
+.technician-option {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    white-space: normal;
+}
+
+.technician-option-name {
+    font-weight: 600;
+    color: #0f172a;
+}
+
+.technician-option-skills {
+    font-size: 0.78rem;
+    color: #15803d;
+}
+
+.technician-option-reason {
+    font-size: 0.78rem;
+    color: #b45309;
+}
+
+/* Booked technicians are listed for context only - no pointer, no hover. */
+.technician-option.is-disabled {
+    padding: 0.25rem 1rem;
+    cursor: default;
+    opacity: 0.75;
+}
+
+.technician-option.is-disabled .technician-option-name {
+    color: #64748b;
+    font-weight: 500;
+}
+
+.technician-blocked-wrap {
+    padding: 0.25rem 1rem 0.5rem;
+}
+
+.schedule-blocked-toggle {
+    background: none;
+    border: 0;
+    padding: 0;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #64748b;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.schedule-blocked-toggle:hover {
+    color: #334155;
+}
+
+.schedule-blocked-toggle i {
+    transition: transform 0.15s ease;
+}
+
+.schedule-blocked-toggle.is-open i {
+    transform: rotate(90deg);
+}
+
+.schedule-blocked-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin-top: 0.4rem;
+}

@@ -1,10 +1,15 @@
 <?php
+
 namespace App\Http\Controllers;
+
+use App\Models\ActivityLog;
 use App\Models\Project;
 use App\Models\Schedule;
 use App\Models\ScheduleTechnician;
 use App\Models\Task;
 use App\Models\Technician;
+use App\Services\ActivityLogger;
+use App\Services\NotificationService;
 use App\Services\TechnicianAvailabilityService;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
@@ -13,7 +18,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use RuntimeException;
 use Throwable;
-
 
 class ScheduleController extends Controller
 {
@@ -35,6 +39,11 @@ class ScheduleController extends Controller
      * @var array<int, string>
      */
     private const SCHEDULABLE_STATUSES = ['not_yet_scheduled', 'pending', 'ongoing'];
+
+    public function __construct(
+        private readonly ActivityLogger $activityLogger,
+        private readonly NotificationService $notifications
+    ) {}
 
     public function index()
     {
@@ -118,8 +127,8 @@ class ScheduleController extends Controller
                         'start' => CarbonImmutable::parse($schedule->start_datetime)->toDateString(),
                         'end' => CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime)->toDateString(),
                         'label' => CarbonImmutable::parse($schedule->start_datetime)->format('M j, Y')
-                            . ' - '
-                            . CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime)->format('M j, Y'),
+                            .' - '
+                            .CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime)->format('M j, Y'),
                     ])->all(),
                 ];
             })->values(),
@@ -233,8 +242,8 @@ class ScheduleController extends Controller
                 $blocked[] = $this->projectPayload(
                     $project,
                     implode(', ', array_keys($unavailableNames))
-                        . (count($unavailableNames) === 1 ? ' is' : ' are')
-                        . ' booked on another project during these dates.'
+                        .(count($unavailableNames) === 1 ? ' is' : ' are')
+                        .' booked on another project during these dates.'
                 );
 
                 continue;
@@ -344,6 +353,24 @@ class ScheduleController extends Controller
                     });
 
                     $this->promoteStatusAfterScheduling($project);
+
+                    // Queued inside the transaction but only written once it
+                    // commits, so a later project failing takes this with it.
+                    $this->activityLogger->record(
+                        ActivityLog::PROJECT_RESCHEDULED,
+                        null,
+                        sprintf(
+                            "Scheduled '%s' for %s from the calendar.",
+                            $project->reference_no ?? $project->name,
+                            $this->describeRange($start, $end)
+                        ),
+                        $project
+                    );
+
+                    $this->notifications->projectScheduled(
+                        $project,
+                        $this->describeRange($start, $end)
+                    );
                 }
             });
         } catch (Throwable $e) {
@@ -352,9 +379,41 @@ class ScheduleController extends Controller
 
         return response()->json([
             'message' => $projects->count() === 1
-                ? $projects->first()->name . ' has been scheduled.'
-                : $projects->count() . ' projects have been scheduled.',
+                ? $projects->first()->name.' has been scheduled.'
+                : $projects->count().' projects have been scheduled.',
         ]);
+    }
+
+    /**
+     * "Aug 9, 2026 - Aug 12, 2026", or a single date when the range is one day.
+     */
+    private function describeRange(CarbonImmutable $start, CarbonImmutable $end): string
+    {
+        $from = $start->format('M j, Y');
+        $to = $end->format('M j, Y');
+
+        return $from === $to ? $from : $from.' - '.$to;
+    }
+
+    /**
+     * Every range a project holds, for the before/after halves of a
+     * reschedule log entry.
+     *
+     * @param  Collection<int, Schedule>  $schedules
+     */
+    private function describeSchedules(Collection $schedules): string
+    {
+        if ($schedules->isEmpty()) {
+            return 'no dates';
+        }
+
+        return $schedules
+            ->sortBy('start_datetime')
+            ->map(fn (Schedule $schedule): string => $this->describeRange(
+                CarbonImmutable::parse($schedule->start_datetime),
+                CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime)
+            ))
+            ->implode('; ');
     }
 
     /**
@@ -405,7 +464,7 @@ class ScheduleController extends Controller
         }
 
         if ($project->on_hold) {
-            throw new RuntimeException($project->name . ' is on hold and cannot be scheduled.');
+            throw new RuntimeException($project->name.' is on hold and cannot be scheduled.');
         }
 
         if (! in_array($project->status, self::SCHEDULABLE_STATUSES, true)) {
@@ -427,7 +486,7 @@ class ScheduleController extends Controller
         });
 
         if ($overlaps) {
-            throw new RuntimeException($project->name . ' already has a schedule covering these dates.');
+            throw new RuntimeException($project->name.' already has a schedule covering these dates.');
         }
     }
 
@@ -457,7 +516,7 @@ class ScheduleController extends Controller
         if ($project->isReadOnly()) {
             return redirect()
                 ->route('super-admin.schedules.index')
-                ->with('error', 'This project is ' . $project->status . ' and its schedule can no longer be changed.');
+                ->with('error', 'This project is '.$project->status.' and its schedule can no longer be changed.');
         }
 
         $validated = $request->validate([
@@ -469,6 +528,9 @@ class ScheduleController extends Controller
             'ranges.required' => 'At least one date range is required.',
             'ranges.min' => 'At least one date range is required.',
         ]);
+
+        // Read before anything moves, so the log can say what it changed from.
+        $rangesBefore = $this->describeSchedules($project->schedules);
 
         try {
             DB::transaction(function () use ($validated, $project): void {
@@ -525,6 +587,25 @@ class ScheduleController extends Controller
                 $this->syncTaskDatesWithSchedule($project, $ranges);
                 $this->promoteStatusAfterScheduling($project);
             });
+
+            $rangesAfter = $this->describeSchedules($project->schedules()->orderBy('start_datetime')->get());
+
+            $this->activityLogger->record(
+                ActivityLog::PROJECT_RESCHEDULED,
+                null,
+                sprintf(
+                    "Changed the date ranges on '%s' from %s to %s.",
+                    $project->reference_no ?? $project->name,
+                    $rangesBefore,
+                    $rangesAfter
+                ),
+                $project
+            );
+
+            // Only worth telling anybody about when the dates actually moved.
+            if ($rangesAfter !== $rangesBefore) {
+                $this->notifications->projectScheduleChanged($project, $rangesAfter);
+            }
 
             return redirect()
                 ->route('super-admin.schedules.index')
@@ -683,7 +764,7 @@ class ScheduleController extends Controller
      * Title is kept to the reference number only to avoid cluttered bars;
      * the project name is passed separately for the hover tooltip.
      *
-     * @param  \Illuminate\Support\Collection<int, Project>  $projects
+     * @param  Collection<int, Project>  $projects
      * @return array<int, array<string, mixed>>
      */
     private function buildCalendarEvents(Collection $projects): array

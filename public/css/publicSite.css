@@ -1,0 +1,904 @@
+/* ---- The public website ---- */
+
+/*
+ * The palette comes from the logo: its blue, its deeper blue and its yellow,
+ * on white. Everything below refers to these variables rather than repeating
+ * hex codes, so re-branding is a change in one place.
+ */
+:root {
+    --brand-blue: #2d8de1;
+    --brand-blue-deep: #2370b4;
+    --brand-blue-dark: #1b5688;
+    --brand-blue-soft: #eaf4fd;
+    --brand-blue-tint: #f4f9fe;
+    --brand-blue-line: #7cc0f4;
+    --brand-yellow: #f9ee3c;
+    --brand-yellow-soft: #fefbdc;
+    --brand-yellow-deep: #d9cc17;
+    --brand-ink: #1b3a52;
+}
+
+.public-body {
+    background: #ffffff;
+    color: #1e293b;
+}
+
+.text-brand-blue {
+    color: var(--brand-blue-deep) !important;
+}
+
+/* ---- Buttons ---- */
+
+/* The yellow call to action, for use against blue. */
+.btn-brand-yellow {
+    background: var(--brand-yellow);
+    border: 1px solid var(--brand-yellow);
+    color: var(--brand-ink);
+    font-weight: 700;
+}
+
+.btn-brand-yellow:hover,
+.btn-brand-yellow:focus {
+    background: var(--brand-yellow-deep);
+    border-color: var(--brand-yellow-deep);
+    color: var(--brand-ink);
+}
+
+.btn-brand-blue {
+    background: var(--brand-blue);
+    border: 1px solid var(--brand-blue);
+    color: #fff;
+    font-weight: 600;
+}
+
+.btn-brand-blue:hover,
+.btn-brand-blue:focus {
+    background: var(--brand-blue-deep);
+    border-color: var(--brand-blue-deep);
+    color: #fff;
+}
+
+.btn-outline-brand-blue {
+    background: transparent;
+    border: 1px solid var(--brand-blue);
+    color: var(--brand-blue-deep);
+    font-weight: 600;
+}
+
+.btn-outline-brand-blue:hover,
+.btn-outline-brand-blue:focus {
+    background: var(--brand-blue);
+    color: #fff;
+}
+
+/* ---- Header ---- */
+
+.public-navbar {
+    background: #ffffff;
+    /* A deep blue rule under the header. */
+    border-bottom: 3px solid var(--brand-blue-deep);
+    box-shadow: 0 1px 6px rgba(27, 86, 136, .08);
+    padding-block: .6rem;
+}
+
+.public-brand-logo {
+    height: 42px;
+    width: auto;
+    object-fit: contain;
+}
+
+/* Stands in for the logo before one is uploaded, so the header keeps its
+   shape instead of jumping when branding is set. */
+.public-brand-placeholder {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    background: var(--brand-blue);
+    color: #fff;
+    font-weight: 700;
+    font-size: 1.2rem;
+}
+
+.public-brand-name {
+    font-weight: 700;
+    color: var(--brand-blue-dark);
+}
+
+.public-navbar .nav-link {
+    font-weight: 500;
+    color: #475569;
+    padding-inline: 1rem;
+}
+
+.public-navbar .nav-link:hover {
+    color: var(--brand-blue-deep);
+}
+
+.public-navbar .nav-link.active {
+    color: var(--brand-blue-deep);
+    font-weight: 600;
+}
+
+/* The bell is centred in the topbar of the portals; here it sits inline. */
+.public-nav-actions .notification-bell {
+    margin-left: 0;
+}
+
+/* ---- Hero ---- */
+
+.public-hero {
+    position: relative;
+    display: flex;
+    align-items: center;
+    min-height: 520px;
+    padding-block: 5rem;
+    background: linear-gradient(135deg, var(--brand-blue-dark) 0%, var(--brand-blue) 100%);
+    background-size: cover;
+    background-position: center;
+    color: #fff;
+    overflow: hidden;
+}
+
+/* Keeps the heading legible over any uploaded photograph. */
+.public-hero::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(100deg, rgba(27, 86, 136, .92) 0%, rgba(45, 141, 225, .72) 100%);
+}
+
+.public-hero > .container {
+    position: relative;
+}
+
+.public-hero-heading {
+    font-size: clamp(2rem, 4vw, 3.25rem);
+    font-weight: 800;
+    line-height: 1.15;
+    max-width: 18ch;
+}
+
+/* A pale blue underline tying the hero to the logo. */
+.public-hero-heading::after {
+    content: "";
+    display: block;
+    width: 5rem;
+    height: 5px;
+    border-radius: 999px;
+    background: var(--brand-blue-line);
+    margin-top: 1.1rem;
+}
+
+.public-hero-description {
+    font-size: 1.05rem;
+    color: rgba(255, 255, 255, .9);
+    max-width: 52ch;
+    margin-top: 1.1rem;
+}
+
+/* ---- Sections ---- */
+
+.public-section {
+    padding-block: 4.5rem;
+}
+
+.public-section-tinted {
+    background: var(--brand-blue-tint);
+}
+
+.public-section-heading {
+    font-size: clamp(1.5rem, 2.5vw, 2.1rem);
+    font-weight: 700;
+    color: var(--brand-blue-dark);
+}
+
+/* A short blue rule under centred section headings. */
+.text-center > .public-section-heading::after {
+    content: "";
+    display: block;
+    width: 3.5rem;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--brand-blue-deep);
+    margin: .75rem auto 0;
+}
+
+.public-section-intro {
+    color: #64748b;
+    max-width: 60ch;
+}
+
+.public-eyebrow {
+    font-size: .75rem;
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--brand-blue-deep);
+}
+
+/* On blue panels the eyebrow turns yellow instead. */
+.public-hero .public-eyebrow,
+.public-page-banner .public-eyebrow,
+.public-promo .public-eyebrow {
+    color: var(--brand-yellow);
+}
+
+/* ---- Service cards ---- */
+
+.public-service-card {
+    height: 100%;
+    padding: 1.6rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 1rem;
+    background: #fff;
+    transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+}
+
+.public-service-card:hover {
+    transform: translateY(-4px);
+    border-color: var(--brand-blue);
+    box-shadow: 0 12px 28px rgba(45, 141, 225, .18);
+}
+
+.public-service-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 3rem;
+    height: 3rem;
+    border-radius: .9rem;
+    background: var(--brand-blue-soft);
+    color: var(--brand-blue-deep);
+    font-size: 1.35rem;
+    margin-bottom: 1rem;
+}
+
+/* Alternate cards wear the yellow, so a grid reads as both brand colours
+   rather than a wall of blue. */
+.public-alt-accent .public-service-icon {
+    background: var(--brand-yellow-soft);
+    color: #8a7f06;
+}
+
+.public-alt-accent:hover {
+    border-color: var(--brand-yellow-deep);
+    box-shadow: 0 12px 28px rgba(217, 204, 23, .22);
+}
+
+.public-service-title {
+    font-weight: 700;
+    color: var(--brand-blue-dark);
+    margin-bottom: .35rem;
+}
+
+.public-service-text {
+    color: #64748b;
+    font-size: .92rem;
+    margin-bottom: 0;
+}
+
+/* ---- Mission / vision / values ---- */
+
+.public-pillar {
+    height: 100%;
+    padding: 1.75rem;
+    border-radius: 1rem;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-top: 4px solid var(--brand-blue);
+}
+
+.public-pillar-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: 50%;
+    background: var(--brand-blue);
+    color: #fff;
+    font-size: 1.2rem;
+    margin-bottom: .9rem;
+}
+
+/* Vision keeps the yellow icon; its edge stays blue like the rest. */
+.public-pillar-yellow {
+    border-top-color: var(--brand-blue-deep);
+}
+
+.public-pillar-yellow .public-pillar-icon {
+    background: var(--brand-yellow);
+    color: var(--brand-ink);
+}
+
+.public-prewrap {
+    white-space: pre-line;
+}
+
+/* ---- Media ---- */
+
+.public-figure {
+    border-radius: 1rem;
+    overflow: hidden;
+    background: #f1f5f9;
+}
+
+.public-figure img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+/* Holds the space an image would take, so a page with nothing uploaded still
+   reads as a designed layout rather than a gap. */
+.public-image-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: .4rem;
+    min-height: 220px;
+    border: 1px dashed var(--brand-blue);
+    border-radius: 1rem;
+    background: var(--brand-blue-tint);
+    color: #7ba9cf;
+    font-size: .85rem;
+    text-align: center;
+    padding: 1rem;
+}
+
+.public-gallery-item {
+    aspect-ratio: 4 / 3;
+}
+
+/* ---- Banner strip ---- */
+
+.public-promo {
+    position: relative;
+    border-radius: 1.25rem;
+    overflow: hidden;
+    background: linear-gradient(120deg, var(--brand-blue) 0%, var(--brand-blue-dark) 100%);
+    background-size: cover;
+    background-position: center;
+    color: #fff;
+    padding: 3rem;
+    border-left: 6px solid var(--brand-blue-deep);
+}
+
+.public-promo::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(120deg, rgba(45, 141, 225, .92) 0%, rgba(27, 86, 136, .9) 100%);
+}
+
+.public-promo > * {
+    position: relative;
+}
+
+/* ---- Page banner ---- */
+
+.public-page-banner {
+    position: relative;
+    padding-block: 4.5rem;
+    background: linear-gradient(135deg, var(--brand-blue-dark) 0%, var(--brand-blue) 100%);
+    background-size: cover;
+    background-position: center;
+    color: #fff;
+    border-bottom: 4px solid var(--brand-blue-deep);
+}
+
+.public-page-banner::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(100deg, rgba(27, 86, 136, .9) 0%, rgba(45, 141, 225, .74) 100%);
+}
+
+.public-page-banner > .container {
+    position: relative;
+}
+
+/* ---- Contact ---- */
+
+.public-contact-card {
+    display: flex;
+    gap: 1rem;
+    padding: 1.35rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 1rem;
+    background: #fff;
+    height: 100%;
+    border-bottom: 3px solid var(--brand-blue);
+}
+
+.public-contact-icon {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: .8rem;
+    background: var(--brand-blue-soft);
+    color: var(--brand-blue-deep);
+    font-size: 1.15rem;
+}
+
+.public-map {
+    width: 100%;
+    height: 380px;
+    border: 0;
+    border-radius: 1rem;
+}
+
+/* ---- Project cards (Figure 11) ---- */
+
+.project-card {
+    height: 100%;
+    border: 1px solid #e5e7eb;
+    border-radius: .6rem;
+    background: #fff;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 1px 3px rgba(27, 86, 136, .08);
+    transition: transform .18s ease, box-shadow .18s ease;
+}
+
+.project-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 12px 24px rgba(27, 86, 136, .14);
+}
+
+.project-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+    padding: .85rem 1.1rem;
+    color: #fff;
+}
+
+.project-card-reference {
+    font-size: .82rem;
+    font-weight: 700;
+}
+
+.project-card-status {
+    background: #fff;
+    color: var(--brand-blue-dark);
+    border-radius: 999px;
+    padding: .2rem .7rem;
+    font-size: .74rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+/* The status colours of the wireframe: grey pending, teal scheduled, blue in
+   progress, green complete, red cancelled. */
+.project-card-header-pending {
+    background: linear-gradient(100deg, #475569 0%, #64748b 100%);
+}
+
+.project-card-header-scheduled {
+    background: linear-gradient(100deg, #0891b2 0%, #06b6d4 100%);
+}
+
+.project-card-header-progress {
+    background: linear-gradient(100deg, var(--brand-blue-deep) 0%, var(--brand-blue) 100%);
+}
+
+.project-card-header-complete {
+    background: linear-gradient(100deg, #15803d 0%, #22c55e 100%);
+}
+
+.project-card-header-cancelled {
+    background: linear-gradient(100deg, #b91c1c 0%, #ef4444 100%);
+}
+
+.project-card-header-hold {
+    background: linear-gradient(100deg, #92400e 0%, #d97706 100%);
+}
+
+.project-card-body {
+    padding: 1.1rem;
+    flex: 1 1 auto;
+}
+
+.project-card-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--brand-blue-dark);
+    margin-bottom: .6rem;
+}
+
+.project-card-meta {
+    font-size: .87rem;
+    color: #475569;
+    margin-bottom: .25rem;
+}
+
+.project-card-meta strong {
+    color: var(--brand-blue-dark);
+}
+
+.project-card-description {
+    font-size: .87rem;
+    color: #64748b;
+    margin-top: .8rem;
+    margin-bottom: 0;
+}
+
+.project-card-progress {
+    height: .4rem;
+    border-radius: 999px;
+    background: #e2e8f0;
+    overflow: hidden;
+    margin-top: .9rem;
+}
+
+.project-card-progress span {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    background: var(--brand-blue);
+}
+
+.project-card-progress-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: .76rem;
+    color: #64748b;
+    margin-top: .3rem;
+}
+
+.project-card-footer {
+    padding: .8rem 1.1rem;
+    border-top: 1px solid #eef2f7;
+}
+
+.project-card-footer a {
+    font-size: .9rem;
+    font-weight: 600;
+    color: var(--brand-blue-deep);
+    text-decoration: none;
+}
+
+.project-card-footer a:hover {
+    text-decoration: underline;
+}
+
+.public-empty-state {
+    border: 1px dashed var(--brand-blue);
+    border-radius: 1rem;
+    background: var(--brand-blue-tint);
+    padding: 3.5rem 1.5rem;
+    text-align: center;
+    color: #5b7f9e;
+}
+
+/* ---- Client project details ---- */
+
+/* The Super Admin card, restated in the brand colours. */
+.client-card {
+    border: 1px solid #e5e7eb;
+    border-radius: .75rem;
+}
+
+.client-card > .card-header {
+    border-bottom: 2px solid var(--brand-blue-deep);
+}
+
+.client-card > .card-header h2 {
+    color: var(--brand-blue-dark);
+}
+
+.client-type-badge {
+    border: 1px solid var(--brand-blue);
+    color: var(--brand-blue-deep);
+    background: var(--brand-blue-soft);
+    font-weight: 600;
+}
+
+.client-lead-badge {
+    background: var(--brand-blue);
+    color: #fff;
+}
+
+.client-count-badge {
+    background: var(--brand-blue-soft);
+    color: var(--brand-blue-deep);
+    font-weight: 700;
+}
+
+.client-range-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.client-range-list li {
+    padding: .35rem 0;
+    color: #334155;
+}
+
+.client-completion-panel {
+    border-left: 4px solid #22c55e;
+    background: #f0fdf4;
+    border-radius: .5rem;
+    padding: 1rem 1.1rem;
+}
+
+.client-cancellation-panel {
+    border-left: 4px solid #ef4444;
+    background: #fef2f2;
+    border-radius: .5rem;
+    padding: 1rem 1.1rem;
+}
+
+/* ---- The tracker: technician reports ---- */
+
+/*
+ * Given the strongest treatment on the page - a tinted panel with a yellow
+ * edge - because following these reports is why a client opens it at all.
+ */
+.client-tracker {
+    border: 1px solid var(--brand-blue);
+    border-left: 5px solid var(--brand-blue-deep);
+    border-radius: .75rem;
+    background: var(--brand-blue-tint);
+    padding: 1.25rem;
+}
+
+.client-tracker-heading {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    padding-bottom: .9rem;
+    margin-bottom: 1rem;
+    border-bottom: 1px solid #d5e7f6;
+}
+
+.client-tracker-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 2.6rem;
+    height: 2.6rem;
+    border-radius: .75rem;
+    background: var(--brand-yellow);
+    color: var(--brand-ink);
+    font-size: 1.2rem;
+}
+
+.client-tracker-heading h3 {
+    color: var(--brand-blue-dark);
+}
+
+.client-report {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: .6rem;
+    margin-bottom: .9rem;
+    overflow: hidden;
+}
+
+.client-report:last-child {
+    margin-bottom: 0;
+}
+
+.client-report.is-progress {
+    border-left: 4px solid var(--brand-blue);
+}
+
+.client-report.is-incident {
+    border-left: 4px solid #ef4444;
+}
+
+.client-report-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: .75rem;
+    padding: .85rem 1rem;
+    background: #fbfdff;
+    border-bottom: 1px solid #eef2f7;
+}
+
+.client-report-header h4 {
+    color: var(--brand-blue-dark);
+}
+
+.client-badge-progress {
+    background: var(--brand-blue);
+    color: #fff;
+}
+
+.client-badge-incident {
+    background: #ef4444;
+    color: #fff;
+}
+
+.client-report-body {
+    padding: 1rem;
+    color: #475569;
+    font-size: .92rem;
+}
+
+.client-report-image {
+    width: 100%;
+    height: 150px;
+    object-fit: cover;
+    border-radius: .5rem;
+    border: 1px solid #e5e7eb;
+}
+
+.client-tracker-empty {
+    text-align: center;
+    padding: 2rem 1rem;
+    color: #7ba9cf;
+    font-size: .9rem;
+    background: #fff;
+    border: 1px dashed var(--brand-blue);
+    border-radius: .6rem;
+}
+
+.public-detail-label {
+    font-size: .74rem;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: #7ba9cf;
+}
+
+.public-task-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.public-task-list li {
+    display: flex;
+    align-items: flex-start;
+    gap: .6rem;
+    padding: .55rem 0;
+    border-bottom: 1px solid #f1f5f9;
+    font-size: .9rem;
+}
+
+.public-task-list li:last-child {
+    border-bottom: 0;
+}
+
+/* ---- Footer ---- */
+
+.public-footer {
+    background: var(--brand-blue-dark);
+    color: #d5e7f6;
+    padding-block: 3.5rem 2rem;
+    margin-top: 4rem;
+    border-top: 4px solid var(--brand-blue-deep);
+}
+
+.public-footer-logo {
+    height: 38px;
+    width: auto;
+    object-fit: contain;
+}
+
+.public-footer-name {
+    font-weight: 700;
+    color: #fff;
+}
+
+.public-footer-text {
+    font-size: .9rem;
+    color: #b9d5ec;
+    max-width: 42ch;
+}
+
+.public-footer-heading {
+    color: var(--brand-yellow);
+    font-size: .82rem;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    margin-bottom: 1rem;
+}
+
+.public-footer-links,
+.public-footer-contact {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.public-footer-links li {
+    margin-bottom: .55rem;
+}
+
+.public-footer-links a {
+    color: #d5e7f6;
+    text-decoration: none;
+    font-size: .9rem;
+}
+
+.public-footer-links a:hover {
+    color: var(--brand-yellow);
+}
+
+.public-footer-contact li {
+    display: flex;
+    gap: .6rem;
+    margin-bottom: .7rem;
+    font-size: .9rem;
+    color: #b9d5ec;
+}
+
+.public-footer-contact i {
+    color: var(--brand-yellow);
+    margin-top: .15rem;
+}
+
+.public-social {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, .1);
+    color: #d5e7f6;
+    text-decoration: none;
+}
+
+.public-social:hover {
+    background: var(--brand-yellow);
+    color: var(--brand-ink);
+}
+
+.public-footer-rule {
+    border-color: rgba(255, 255, 255, .16);
+    margin-block: 2.5rem 1.5rem;
+}
+
+.public-footer-copyright {
+    font-size: .85rem;
+    color: #8fb8d8;
+    text-align: center;
+}
+
+/* ---- Responsive ---- */
+
+@media (max-width: 991.98px) {
+    .public-navbar .nav-link {
+        padding-inline: 0;
+    }
+
+    .public-nav-actions {
+        margin-top: .75rem;
+    }
+
+    .public-hero {
+        min-height: auto;
+        padding-block: 3.5rem;
+    }
+
+    .public-section {
+        padding-block: 3rem;
+    }
+
+    .public-promo {
+        padding: 2rem;
+    }
+
+    .client-tracker {
+        padding: 1rem;
+    }
+}

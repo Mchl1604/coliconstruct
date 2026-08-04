@@ -108,7 +108,10 @@ class ConfigurationUserManagementTest extends TestCase
         $response->assertSee('Add New User');
         $response->assertSee('Activity Logs');
         $response->assertSee('Audit Trail');
-        $response->assertSee('System Settings module will be implemented in a future update.');
+        $response->assertSee('System Settings');
+        // System Contents is a section of System Settings rather than a tab
+        // of its own.
+        $response->assertSee('System Contents');
     }
 
     // ------------------------------------------------------------------

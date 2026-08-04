@@ -7,6 +7,7 @@ use App\Models\ActivityLog;
 use App\Models\User;
 use App\Services\ActivityLogger;
 use App\Services\CredentialDelivery;
+use App\Services\NotificationService;
 use App\Services\UserAccountService;
 use App\Support\PortalHome;
 use Illuminate\Http\Request;
@@ -33,7 +34,17 @@ class AuthController extends Controller
     /** How long a lockout lasts, in seconds. */
     private const LOCKOUT_SECONDS = 60;
 
-    public function __construct(private readonly ActivityLogger $activityLogger) {}
+    /**
+     * Failed sign-ins for one address within an hour before the super admins
+     * are told about it. Matched to MAX_ATTEMPTS: one lockout is a forgotten
+     * password, and the notification is for the run that keeps going.
+     */
+    private const FAILED_SIGN_IN_ALERT_THRESHOLD = 5;
+
+    public function __construct(
+        private readonly ActivityLogger $activityLogger,
+        private readonly NotificationService $notifications
+    ) {}
 
     public function showLogin()
     {
@@ -101,6 +112,8 @@ class AuthController extends Controller
                 $account,
                 sprintf('Failed sign-in attempt for %s.', $credentials['email'])
             );
+
+            $this->alertOnRepeatedFailures($credentials['email']);
 
             // Deactivated, archived, wrong password, unusable hash: one message
             // for all of them, so nothing here tells a stranger which addresses
@@ -195,7 +208,9 @@ class AuthController extends Controller
         $request->session()->invalidate();
         $request->session()->regenerateToken();
 
-        return redirect()->route('auth.login')->with('success', 'You have been signed out.');
+        // Home rather than the sign-in form: signing out should leave somebody
+        // on the public website, where the header offers Login again.
+        return redirect()->route('landing.home')->with('success', 'You have been signed out.');
     }
 
     // ------------------------------------------------------------------
@@ -390,5 +405,27 @@ class AuthController extends Controller
     private function throttleKey(Request $request): string
     {
         return 'login|'.mb_strtolower((string) $request->input('email')).'|'.$request->ip();
+    }
+
+    /**
+     * Tell the super admins once a run of failures against one address crosses
+     * the threshold.
+     *
+     * Counted from the audit trail rather than the rate limiter: the limiter
+     * forgets after a minute, and "five in the last hour" is the pattern worth
+     * knowing about. Fires on the crossing only, so a persistent attacker does
+     * not fill the bell.
+     */
+    private function alertOnRepeatedFailures(string $email): void
+    {
+        $failures = ActivityLog::query()
+            ->where('action', ActivityLog::LOGIN_FAILED)
+            ->where('description', 'like', '%'.$email.'%')
+            ->where('created_at', '>=', now()->subHour())
+            ->count();
+
+        if ($failures === self::FAILED_SIGN_IN_ALERT_THRESHOLD) {
+            $this->notifications->repeatedFailedSignIns($email, $failures);
+        }
     }
 }

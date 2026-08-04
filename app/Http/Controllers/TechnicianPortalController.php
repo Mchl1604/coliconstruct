@@ -15,6 +15,7 @@ use App\Models\TechnicianReportImage;
 use App\Policies\ProjectPolicy;
 use App\Policies\TaskPolicy;
 use App\Services\ActivityLogger;
+use App\Services\NotificationService;
 use App\Services\ProjectCompletion;
 use App\Services\TaskScheduleRules;
 use Carbon\CarbonImmutable;
@@ -63,6 +64,7 @@ class TechnicianPortalController extends Controller
         private TaskScheduleRules $scheduleRules,
         private ProjectPolicy $projectPolicy,
         private readonly ActivityLogger $activityLogger,
+        private readonly NotificationService $notifications,
     ) {}
 
     // ------------------------------------------------------------------
@@ -409,6 +411,8 @@ class TechnicianPortalController extends Controller
             $task
         );
 
+        $this->notifications->taskAssigned($task);
+
         return $this->succeeded($request, 'Task created.', fn (): array => [
             'task' => $this->taskPayload(
                 $task->load(['technician.account', 'images', 'completedBy']),
@@ -523,6 +527,8 @@ class TechnicianPortalController extends Controller
             $task
         );
 
+        $this->notifications->taskCompleted($task, count($request->file('images') ?? []) > 0);
+
         return $this->succeeded($request, 'Task marked as completed.', fn (): array => [
             'task' => $this->taskPayload(
                 $task->fresh(['technician.account', 'images', 'completedBy']),
@@ -561,6 +567,8 @@ class TechnicianPortalController extends Controller
             sprintf("Deleted task '%s'.", $task->task_title),
             $task
         );
+
+        $this->notifications->taskCancelled($task);
 
         return $this->succeeded($request, 'Task deleted.');
     }
@@ -645,6 +653,8 @@ class TechnicianPortalController extends Controller
             $report
         );
 
+        $this->notifications->technicianReportFiled($project, strtolower($report->typeLabel()));
+
         return $this->succeeded($request, 'Report submitted.', fn (): array => [
             'report' => $this->reportPayload($report->load(['project', 'images'])),
         ], 201);
@@ -719,6 +729,8 @@ class TechnicianPortalController extends Controller
         } catch (Throwable $e) {
             return $this->failed($request, $e->getMessage());
         }
+
+        $this->notifications->projectCompleted($project);
 
         if ($request->expectsJson()) {
             return response()->json(['message' => 'Project marked as completed.']);
@@ -998,6 +1010,9 @@ class TechnicianPortalController extends Controller
             'submitted_by' => $report->technician?->name,
             'date' => $report->report_date?->toDateString(),
             'date_label' => $report->report_date?->format('M j, Y') ?? '—',
+            // The sort key the table's Date column reads, matching the
+            // data-order the Blade rows carry.
+            'date_order' => $report->report_date?->timestamp ?? 0,
             'images' => $report->images->map(fn (TechnicianReportImage $image): array => [
                 'url' => asset('storage/'.$image->image_path),
             ])->all(),

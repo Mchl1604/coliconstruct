@@ -83,12 +83,6 @@
                             value="{{ $task->due_date }}" data-task-due placeholder="Select due date"
                             @readonly(! $isEditable)>
                     </div>
-
-                    <div class="col-12">
-                        <div class="form-text">
-                            Allowed: {{ $rangesLabel ?: 'No schedule set' }}@if ($scheduleRanges->count() > 1). A task cannot span the gap between two ranges.@endif
-                        </div>
-                    </div>
                 </div>
 
                 <hr>

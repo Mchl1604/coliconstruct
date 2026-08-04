@@ -17,6 +17,9 @@ class PortalHome
      * The route each role calls home. Admin shares the super admin's portal:
      * same sidebar, same pages, same routes.
      *
+     * A client has no portal of their own - the public website is their
+     * portal, and My Projects there shows the work booked under their email.
+     *
      * @var array<string, string>
      */
     private const ROUTES = [
@@ -24,7 +27,7 @@ class PortalHome
         'admin' => 'super-admin.dashboard',
         'lead_technician' => 'technician.schedule',
         'technician' => 'technician.schedule',
-        'client' => 'client.dashboard',
+        'client' => 'landing.home',
     ];
 
     public static function routeName(?User $user): string

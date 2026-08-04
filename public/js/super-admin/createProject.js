@@ -37,6 +37,9 @@ document.addEventListener('DOMContentLoaded', function() {
     let startPicker = null;
     let endPicker = null;
     let activeBusyRanges = [];
+    // Whether the unavailable section of the picker is expanded, kept out here
+    // so re-rendering after a pick does not collapse it again.
+    let blockedTechniciansOpen = false;
     const currentStep = {
         value: 1
     };
@@ -279,6 +282,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
                 refreshDatePickers();
                 validateScheduleInputs();
+                renderTechnicianDropdown();
+                renderLeadTechnicianOptions();
             },
         });
 
@@ -288,6 +293,8 @@ document.addEventListener('DOMContentLoaded', function() {
             minDate: 'today',
             onChange: function() {
                 validateScheduleInputs();
+                renderTechnicianDropdown();
+                renderLeadTechnicianOptions();
             },
         });
 
@@ -387,53 +394,177 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    function technicianMatchesProjectTypes(technician, projectTypes) {
+    function escapeHtml(value) {
+        const span = document.createElement('span');
+        span.textContent = value == null ? '' : String(value);
+
+        return span.innerHTML;
+    }
+
+    function matchedSkills(technician, projectTypes) {
         if (!technician || !Array.isArray(technician.skills)) {
-            return false;
+            return [];
         }
 
-        return projectTypes.some(function(projectType) {
-            return technician.skills.includes(projectType);
+        return technician.skills.filter(function(skill) {
+            return projectTypes.includes(skill);
+        });
+    }
+
+    function technicianMatchesProjectTypes(technician, projectTypes) {
+        return matchedSkills(technician, projectTypes).length > 0;
+    }
+
+    /**
+     * The days this technician is already booked on other projects that fall
+     * inside the range being planned. Empty until both dates are chosen -
+     * there is nothing to be unavailable for before that.
+     */
+    function conflictDatesFor(technician, startValue, endValue) {
+        if (!technician || !Array.isArray(technician.schedules)) {
+            return [];
+        }
+
+        if (!startValue || !endValue || startValue > endValue) {
+            return [];
+        }
+
+        const busyDays = new Set();
+
+        technician.schedules.forEach(function(range) {
+            eachDate(range.start, range.end).forEach(function(day) {
+                busyDays.add(day);
+            });
+        });
+
+        return eachDate(startValue, endValue).filter(function(day) {
+            return busyDays.has(day);
         });
     }
 
     function getTechnicianSections() {
         const projectTypes = selectedProjectTypes();
         const selectedIds = selectedTechnicianIds();
+        const startValue = startDateInput ? startDateInput.value : '';
+        const endValue = endDateInput ? endDateInput.value : '';
 
-        const suggested = wizardData
+        const candidates = wizardData
             .filter(function(technician) {
-                return technician.role === 'technician' && technicianMatchesProjectTypes(technician, projectTypes);
+                return technician.role === 'technician';
             })
-            .sort(function(left, right) {
-                const leftMatches = left.skills.filter(function(skill) {
-                    return projectTypes.includes(skill);
-                }).length;
+            .map(function(technician) {
+                const conflicts = conflictDatesFor(technician, startValue, endValue);
+                const matches = matchedSkills(technician, projectTypes);
 
-                const rightMatches = right.skills.filter(function(skill) {
-                    return projectTypes.includes(skill);
-                }).length;
-
-                return rightMatches - leftMatches || left.name.localeCompare(right.name);
+                return {
+                    id: technician.id,
+                    name: technician.name,
+                    matched: matches,
+                    available: conflicts.length === 0,
+                    reason: conflicts.length ? 'Booked on ' + formatDateList(conflicts) : '',
+                };
             });
 
-        const suggestedIds = new Set(suggested.map(function(technician) {
-            return technician.id;
-        }));
+        const byMatchThenName = function(left, right) {
+            return right.matched.length - left.matched.length || left.name.localeCompare(right.name);
+        };
 
-        const other = wizardData
-            .filter(function(technician) {
-                return technician.role === 'technician' && !suggestedIds.has(technician.id);
-            })
-            .sort(function(left, right) {
-                return left.name.localeCompare(right.name);
-            });
+        const free = candidates.filter(function(technician) {
+            return technician.available;
+        });
 
         return {
-            suggested: suggested,
-            other: other,
+            suggested: free.filter(function(technician) {
+                return technician.matched.length > 0;
+            }).sort(byMatchThenName),
+            other: free.filter(function(technician) {
+                return technician.matched.length === 0;
+            }).sort(byMatchThenName),
+            // Shown for context only - a booked technician cannot be picked.
+            blocked: candidates.filter(function(technician) {
+                return !technician.available;
+            }).sort(byMatchThenName),
             selectedIds: selectedIds,
         };
+    }
+
+    /**
+     * Lead technicians get the same three bands as the team picker, expressed
+     * as optgroups so an unavailable lead can be shown but not chosen.
+     */
+    function renderLeadTechnicianOptions() {
+        if (!leadTechSelect) {
+            return;
+        }
+
+        const projectTypes = selectedProjectTypes();
+        const startValue = startDateInput ? startDateInput.value : '';
+        const endValue = endDateInput ? endDateInput.value : '';
+        const currentValue = leadTechSelect.value;
+
+        const leads = wizardData
+            .filter(function(technician) {
+                return technician.role === 'lead_technician';
+            })
+            .map(function(technician) {
+                const conflicts = conflictDatesFor(technician, startValue, endValue);
+                const matches = matchedSkills(technician, projectTypes);
+
+                return {
+                    id: technician.id,
+                    name: technician.name,
+                    matched: matches,
+                    available: conflicts.length === 0,
+                    reason: conflicts.length ? 'Booked on ' + formatDateList(conflicts) : '',
+                };
+            })
+            .sort(function(left, right) {
+                return right.matched.length - left.matched.length || left.name.localeCompare(right.name);
+            });
+
+        const optionMarkup = function(lead) {
+            const label = escapeHtml(lead.name) +
+                (lead.matched.length ? ' — ' + escapeHtml(lead.matched.join(', ')) : '') +
+                (lead.available ? '' : ' (' + escapeHtml(lead.reason) + ')');
+            // Never disable the option already chosen, or the select would lose
+            // its value; the date conflict message still calls it out.
+            const disabled = !lead.available && String(lead.id) !== String(currentValue) ? ' disabled' : '';
+            const selected = String(lead.id) === String(currentValue) ? ' selected' : '';
+
+            return '<option value="' + lead.id + '"' + disabled + selected + '>' + label + '</option>';
+        };
+
+        const group = function(label, items) {
+            if (!items.length) {
+                return '';
+            }
+
+            return '<optgroup label="' + escapeHtml(label) + '">' +
+                items.map(optionMarkup).join('') +
+                '</optgroup>';
+        };
+
+        const free = leads.filter(function(lead) {
+            return lead.available;
+        });
+
+        const suggested = free.filter(function(lead) {
+            return lead.matched.length > 0;
+        });
+
+        const others = free.filter(function(lead) {
+            return lead.matched.length === 0;
+        });
+
+        const blocked = leads.filter(function(lead) {
+            return !lead.available;
+        });
+
+        leadTechSelect.innerHTML =
+            '<option value=""' + (currentValue ? '' : ' selected') + ' disabled>Select Lead Technician</option>' +
+            group('Suggested — matches this project', suggested) +
+            group(suggested.length ? 'Other available' : 'Available', others) +
+            group('Unavailable for these dates', blocked);
     }
 
     function updateTechnicianDropdownButton() {
@@ -456,14 +587,43 @@ document.addEventListener('DOMContentLoaded', function() {
 
         const renderButtons = function(technicians) {
             return technicians.map(function(technician) {
-                const activeClass = selectedIds.includes(String(technician.id)) ? ' active' : '';
-                const pressed = selectedIds.includes(String(technician.id)) ? 'true' : 'false';
+                const isSelected = selectedIds.includes(String(technician.id));
+                const skills = technician.matched.join(', ');
 
-                return '<li><button type="button" class="dropdown-item' + activeClass + '" ' +
+                return '<li><button type="button" class="dropdown-item technician-option' +
+                    (isSelected ? ' active' : '') + '" ' +
                     'data-technician-option="' + technician.id + '" ' +
-                    'data-technician-name="' + technician.name + '" aria-pressed="' + pressed + '">' +
-                    technician.name + '</button></li>';
+                    'data-technician-name="' + escapeHtml(technician.name) + '" ' +
+                    'aria-pressed="' + (isSelected ? 'true' : 'false') + '">' +
+                    '<span class="technician-option-name">' + escapeHtml(technician.name) + '</span>' +
+                    (skills ? '<span class="technician-option-skills">' + escapeHtml(skills) + '</span>' : '') +
+                    '</button></li>';
             }).join('');
+        };
+
+        // Plain rows, not buttons: there is nothing here to click.
+        const renderBlocked = function(technicians) {
+            if (!technicians.length) {
+                return '';
+            }
+
+            const rows = technicians.map(function(technician) {
+                return '<div class="technician-option is-disabled" aria-disabled="true">' +
+                    '<span class="technician-option-name">' + escapeHtml(technician.name) + '</span>' +
+                    '<span class="technician-option-reason">' + escapeHtml(technician.reason) + '</span>' +
+                    '</div>';
+            }).join('');
+
+            return '<li><hr class="dropdown-divider"></li>' +
+                '<li class="technician-blocked-wrap">' +
+                '<button type="button" class="schedule-blocked-toggle' +
+                (blockedTechniciansOpen ? ' is-open' : '') + '" data-technician-blocked-toggle>' +
+                '<i class="bi bi-chevron-right" aria-hidden="true"></i>' +
+                '<span>' + (blockedTechniciansOpen ? 'Hide' : 'Show') + ' unavailable technicians (' +
+                technicians.length + ')</span>' +
+                '</button>' +
+                '<div class="schedule-blocked-list' + (blockedTechniciansOpen ? '' : ' d-none') + '">' +
+                rows + '</div></li>';
         };
 
         const suggestedHtml = sections.suggested.length
@@ -480,6 +640,7 @@ document.addEventListener('DOMContentLoaded', function() {
             '<li><hr class="dropdown-divider"></li>',
             '<li class="dropdown-header text-uppercase small text-secondary">Other Technicians</li>',
             otherHtml,
+            renderBlocked(sections.blocked),
         ].join('');
 
         technicianDropdownMenu.querySelectorAll('[data-technician-option]').forEach(function(button) {
@@ -493,6 +654,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             });
         });
+
+        const blockedToggle = technicianDropdownMenu.querySelector('[data-technician-blocked-toggle]');
+
+        if (blockedToggle) {
+            blockedToggle.addEventListener('click', function() {
+                blockedTechniciansOpen = !blockedTechniciansOpen;
+                renderTechnicianDropdown();
+            });
+        }
     }
 
     function syncTechnicianMenuState() {
@@ -610,6 +780,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function updateScheduleFieldState() {
         refreshDatePickers();
+
+        // refreshDatePickers() can clear the dates it just invalidated, which
+        // changes who counts as available - so the picker is restated here
+        // rather than at each of the call sites.
+        renderTechnicianDropdown();
+        renderLeadTechnicianOptions();
     }
 
     function showScheduleError(message) {
@@ -826,6 +1002,8 @@ document.addEventListener('DOMContentLoaded', function() {
             syncSelectableCards();
             renderTechnicianDropdown();
 
+            renderLeadTechnicianOptions();
+
             if (projectTypeError) {
                 projectTypeError.classList.add('d-none');
             }
@@ -866,21 +1044,26 @@ document.addEventListener('DOMContentLoaded', function() {
         updateSummary();
     });
 
+    // Once dates exist, who is free is knowable - so the picker restates
+    // itself with the booked technicians moved out of reach.
+    const refreshTechnicianAvailability = function() {
+        validateScheduleInputs();
+        renderTechnicianDropdown();
+        renderLeadTechnicianOptions();
+    };
+
     if (startDateInput) {
-        startDateInput.addEventListener('change', function() {
-            validateScheduleInputs();
-        });
+        startDateInput.addEventListener('change', refreshTechnicianAvailability);
     }
 
     if (endDateInput) {
-        endDateInput.addEventListener('change', function() {
-            validateScheduleInputs();
-        });
+        endDateInput.addEventListener('change', refreshTechnicianAvailability);
     }
 
     syncSelectableCards();
     updateClientType();
     renderTechnicianDropdown();
+    renderLeadTechnicianOptions();
     renderTechnicianChips();
     initializeDatePickers();
     updateScheduleFieldState();

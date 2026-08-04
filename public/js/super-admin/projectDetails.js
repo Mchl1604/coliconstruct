@@ -170,29 +170,110 @@ $(function () {
             .filter(Boolean);
     }
 
+    // Whether the unavailable section is expanded, kept outside renderDropdown
+    // so re-rendering after a pick does not collapse it again.
+    let blockedOpen = false;
+
+    function escapeHtml(value) {
+        const span = document.createElement('span');
+        span.textContent = value == null ? '' : String(value);
+
+        return span.innerHTML;
+    }
+
+    function optionMarkup(technician) {
+        const skills = (technician.matched_skills || []).join(', ');
+
+        return '<li><button type="button" class="dropdown-item technician-option" ' +
+            'data-technician-option="' + technician.id + '">' +
+            '<span class="technician-option-name">' + escapeHtml(technician.name) + '</span>' +
+            (skills ? '<span class="technician-option-skills">' + escapeHtml(skills) + '</span>' : '') +
+            '</button></li>';
+    }
+
+    function groupMarkup(label, technicians) {
+        if (!technicians.length) {
+            return '';
+        }
+
+        return '<li><h6 class="dropdown-header">' + escapeHtml(label) + '</h6></li>' +
+            technicians.map(optionMarkup).join('');
+    }
+
+    // Shown so the scheduler can see who is out and why, but rendered as plain
+    // rows rather than buttons - there is nothing here to click.
+    function blockedMarkup(technicians) {
+        if (!technicians.length) {
+            return '';
+        }
+
+        const rows = technicians.map(function(technician) {
+            return '<div class="technician-option is-disabled" aria-disabled="true">' +
+                '<span class="technician-option-name">' + escapeHtml(technician.name) + '</span>' +
+                '<span class="technician-option-reason">' + escapeHtml(technician.reason) + '</span>' +
+                '</div>';
+        }).join('');
+
+        return '<li><hr class="dropdown-divider"></li>' +
+            '<li class="technician-blocked-wrap">' +
+            '<button type="button" class="schedule-blocked-toggle' + (blockedOpen ? ' is-open' : '') + '" ' +
+            'data-technician-blocked-toggle>' +
+            '<i class="bi bi-chevron-right" aria-hidden="true"></i>' +
+            '<span>' + (blockedOpen ? 'Hide' : 'Show') + ' unavailable technicians (' + technicians.length + ')</span>' +
+            '</button>' +
+            '<div class="schedule-blocked-list' + (blockedOpen ? '' : ' d-none') + '">' + rows + '</div>' +
+            '</li>';
+    }
+
     function renderDropdown() {
         const selectedIds = selectedTechnicianIds();
         const leadId = leadTechSelect.value;
 
-        const available = teamData.filter(function(technician) {
-            return technician.role !== 'lead_technician'
+        // Lead technicians are picked in their own select, so they never appear
+        // in the team list.
+        const candidates = teamData.filter(function(technician) {
+            return technician.role !== 'lead_technician';
+        });
+
+        const pickable = candidates.filter(function(technician) {
+            return technician.available
                 && !selectedIds.includes(String(technician.id))
                 && String(technician.id) !== String(leadId);
         });
 
-        dropdownMenu.innerHTML = available.length
-            ? available.map(function(technician) {
-                return '<li><button type="button" class="dropdown-item" ' +
-                    'data-technician-option="' + technician.id + '">' +
-                    technician.name + '</button></li>';
-            }).join('')
-            : '<li><span class="dropdown-item-text text-secondary">No technicians available.</span></li>';
+        const suggested = pickable.filter(function(technician) {
+            return technician.suggested;
+        });
+
+        const others = pickable.filter(function(technician) {
+            return !technician.suggested;
+        });
+
+        const blocked = candidates.filter(function(technician) {
+            return !technician.available;
+        });
+
+        const groups = groupMarkup('Suggested — matches this project', suggested) +
+            groupMarkup(suggested.length ? 'Other available' : 'Available', others);
+
+        dropdownMenu.innerHTML = (groups ||
+            '<li><span class="dropdown-item-text text-secondary">No technicians available.</span></li>') +
+            blockedMarkup(blocked);
 
         dropdownMenu.querySelectorAll('[data-technician-option]').forEach(function(button) {
             button.addEventListener('click', function() {
                 addTechnician(button.dataset.technicianOption);
             });
         });
+
+        const blockedToggle = dropdownMenu.querySelector('[data-technician-blocked-toggle]');
+
+        if (blockedToggle) {
+            blockedToggle.addEventListener('click', function() {
+                blockedOpen = !blockedOpen;
+                renderDropdown();
+            });
+        }
     }
 
     function renderChips() {

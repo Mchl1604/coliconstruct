@@ -274,8 +274,11 @@
                             <label for="technicians" class="form-label">Technicians</label>
                             <div class="technician-picker" data-technician-picker>
                                 <div class="dropdown w-100">
+                                    {{-- Closing only on an outside click keeps the menu up while
+                                         the unavailable section is expanded. --}}
                                     <button type="button" class="form-select technician-dropdown-toggle text-start"
-                                        id="techniciansDropdown" data-bs-toggle="dropdown" aria-expanded="false"
+                                        id="techniciansDropdown" data-bs-toggle="dropdown"
+                                        data-bs-auto-close="outside" aria-expanded="false"
                                         data-technician-dropdown-button>
                                         Select technicians
                                     </button>

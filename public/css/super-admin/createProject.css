@@ -56,8 +56,79 @@
 }
 
 .technician-dropdown-menu {
-    max-height: 240px;
+    max-height: 320px;
     overflow-y: auto;
+}
+
+/* ---- Suggestions and blocked technicians ---- */
+
+.technician-option {
+    display: flex;
+    flex-direction: column;
+    gap: .1rem;
+    white-space: normal;
+}
+
+.technician-option-name {
+    font-weight: 600;
+    color: #0f172a;
+}
+
+.technician-option-skills {
+    font-size: .78rem;
+    color: #15803d;
+}
+
+.technician-option-reason {
+    font-size: .78rem;
+    color: #b45309;
+}
+
+/* Booked technicians are listed for context only - no pointer, no hover. */
+.technician-option.is-disabled {
+    padding: .25rem 1rem;
+    cursor: default;
+    opacity: .75;
+}
+
+.technician-option.is-disabled .technician-option-name {
+    color: #64748b;
+    font-weight: 500;
+}
+
+.technician-blocked-wrap {
+    padding: .25rem 1rem .5rem;
+}
+
+.schedule-blocked-toggle {
+    background: none;
+    border: 0;
+    padding: 0;
+    font-size: .8rem;
+    font-weight: 600;
+    color: #64748b;
+    display: inline-flex;
+    align-items: center;
+    gap: .3rem;
+}
+
+.schedule-blocked-toggle:hover {
+    color: #334155;
+}
+
+.schedule-blocked-toggle i {
+    transition: transform .15s ease;
+}
+
+.schedule-blocked-toggle.is-open i {
+    transform: rotate(90deg);
+}
+
+.schedule-blocked-list {
+    display: flex;
+    flex-direction: column;
+    gap: .35rem;
+    margin-top: .4rem;
 }
 
 .technician-dropdown-menu .dropdown-item.active,

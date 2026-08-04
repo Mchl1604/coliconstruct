@@ -6,8 +6,11 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Policies\ProjectPolicy;
 use App\Policies\TaskPolicy;
+use App\Services\SystemContentService;
 use Illuminate\Auth\Notifications\ResetPassword;
+use Illuminate\Contracts\View\View as ViewContract;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -36,5 +39,13 @@ class AppServiceProvider extends ServiceProvider
             'auth.password.reset',
             ['token' => $token, 'email' => $notifiable->getEmailForPasswordReset()]
         ));
+
+        // Every public page reads its words from the same place, and a child
+        // view's @section is evaluated before its layout - so $content is
+        // shared with both rather than assigned inside the layout.
+        View::composer(
+            ['layouts.publicSite', 'public.*'],
+            fn (ViewContract $view) => $view->with('content', app(SystemContentService::class))
+        );
     }
 }

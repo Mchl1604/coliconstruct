@@ -15,8 +15,11 @@ use App\Models\ScheduleTechnician;
 use App\Models\Task;
 use App\Models\Technician;
 use App\Models\TechnicianReport;
+use App\Models\User;
 use App\Services\ActivityLogger;
+use App\Services\NotificationService;
 use App\Services\ProjectCompletion;
+use App\Services\ProjectTeamCandidates;
 use App\Services\TechnicianAvailabilityService;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
@@ -29,7 +32,10 @@ use Throwable;
 
 class ProjectController extends Controller
 {
-    public function __construct(private readonly ActivityLogger $activityLogger) {}
+    public function __construct(
+        private readonly ActivityLogger $activityLogger,
+        private readonly NotificationService $notifications
+    ) {}
 
     public function index()
     {
@@ -213,6 +219,19 @@ class ProjectController extends Controller
                 $created
             );
 
+            $this->notifications->projectCreated($created);
+
+            $team = $this->notifications->projectTeam($created);
+
+            if ($lead = $this->notifications->projectLead($created)) {
+                $this->notifications->leadAssignedToProject($created, $lead);
+            }
+
+            $this->notifications->techniciansAssignedToProject(
+                $created,
+                $team->reject(fn ($user) => $user->role === User::ROLE_LEAD_TECHNICIAN)
+            );
+
             return redirect()
                 ->route('super-admin.projects')
                 ->with(session()->flash('success', 'Project created successfully.'));
@@ -347,6 +366,7 @@ class ProjectController extends Controller
             'clients',
             'documents',
             'schedule',
+            'schedules',
             'projectTypes',
             'projectTechnicians.technician' => function ($query) {
 
@@ -370,52 +390,11 @@ class ProjectController extends Controller
             ->values();
 
         $project->setRelation('projectTechnicians', $sortedProjectTechnicians);
-        $schedule = $project->schedule;
 
-        $assignedTechnicianIds = $project->projectTechnicians
-            ->pluck('technician_id');
-
-        $applyAvailabilityFilter = function ($query) use ($schedule) {
-            if (! $schedule) {
-                return $query;
-            }
-
-            return $query->whereDoesntHave('projectTechnicians.scheduleTechnicians.schedule', function ($scheduleQuery) use ($schedule) {
-                $scheduleQuery->whereHas('project', function ($projectQuery): void {
-                    // Only projects that are actually active can block availability.
-                    // Not Yet Scheduled, On Hold, Completed, Cancelled, and Archived
-                    // projects must never create a scheduling conflict.
-                    $projectQuery->whereIn('status', Project::ACTIVE_PROJECT_STATUSES);
-                })
-                    ->where(function ($q) use ($schedule) {
-                        $q->whereBetween('start_datetime', [
-                            $schedule->start_datetime,
-                            $schedule->end_datetime,
-                        ])
-                            ->orWhereBetween('end_datetime', [
-                                $schedule->start_datetime,
-                                $schedule->end_datetime,
-                            ])
-                            ->orWhere(function ($q2) use ($schedule) {
-                                $q2->where('start_datetime', '<=', $schedule->start_datetime)
-                                    ->where('end_datetime', '>=', $schedule->end_datetime);
-                            });
-                    });
-            });
-        };
-
-        $availableTechniciansQuery = Technician::with('account')
-            ->whereHas('account', function ($query) {
-                $query->whereIn('role', ['technician', 'lead_technician']);
-            })
-            ->whereNotIn('technician_id', $assignedTechnicianIds);
-
-        $availableTechniciansQuery = $applyAvailabilityFilter($availableTechniciansQuery);
-
-        $availableTechnicians = $availableTechniciansQuery
-            ->get()
-            ->sortBy('name')
-            ->values();
+        // Screened against EVERY date range the project has, not just the
+        // first, and ranked so the technicians whose skills match the project
+        // types come up as suggestions.
+        $teamCandidates = app(ProjectTeamCandidates::class)->forProject($project);
 
         $currentLeadTechnicianId = optional(
             $project->projectTechnicians->first(function ($projectTechnician) {
@@ -428,39 +407,13 @@ class ProjectController extends Controller
             ->reject(fn ($technicianId) => $technicianId === $currentLeadTechnicianId)
             ->values();
 
-        $leadTechnicianOptionsQuery = Technician::with('account')
-            ->whereHas('account', fn ($query) => $query->where('role', 'lead_technician'))
-            ->whereNotIn('technician_id', $assignedTechnicianIds->reject(fn ($id) => $id === $currentLeadTechnicianId));
-
-        $leadTechnicianOptionsQuery = $applyAvailabilityFilter($leadTechnicianOptionsQuery);
-
-        // The currently-assigned lead technician must always remain a valid
-        // option even if they'd otherwise be filtered out, so the select
-        // doesn't lose the existing selection.
-        $leadTechnicianOptions = $leadTechnicianOptionsQuery
-            ->get()
-            ->when($currentLeadTechnicianId, function ($collection) use ($currentLeadTechnicianId) {
-                if ($collection->contains('technician_id', $currentLeadTechnicianId)) {
-                    return $collection;
-                }
-
-                $currentLead = Technician::with('account')->find($currentLeadTechnicianId);
-
-                return $currentLead ? $collection->push($currentLead) : $collection;
-            })
-            ->sortBy('name')
+        // The lead select and the technician picker draw from the same screened
+        // list, so the two can never disagree about who is free.
+        $leadTechnicianOptions = $teamCandidates
+            ->filter(fn (array $candidate): bool => $candidate['role'] === 'lead_technician')
             ->values();
 
-        $assignedTeamLookup = $availableTechnicians
-            ->concat($project->projectTechnicians->pluck('technician')->filter())
-            ->concat($leadTechnicianOptions)
-            ->unique('technician_id')
-            ->map(fn (Technician $technician) => [
-                'id' => $technician->technician_id,
-                'name' => $technician->name,
-                'role' => optional($technician->account)->role,
-            ])
-            ->values();
+        $assignedTeamLookup = $teamCandidates;
 
         $projectTypes = ProjectType::query()
             ->orderBy('type_name', 'asc')
@@ -498,7 +451,6 @@ class ProjectController extends Controller
             'projectTypes',
             'reports',
             'tasks',
-            'availableTechnicians',
             'leadTechnicianOptions',
             'currentLeadTechnicianId',
             'currentTeamTechnicianIds',
@@ -638,6 +590,8 @@ class ProjectController extends Controller
                 $project
             );
 
+            $this->notifications->projectUpdated($project);
+
             return redirect()
                 ->route('super-admin.projects.show', $id)
                 ->with('success', 'Project updated successfully.');
@@ -711,6 +665,10 @@ class ProjectController extends Controller
                 ->with('error', 'This project has no schedule yet.');
         }
 
+        // Read the team before the hold releases it, or there would be
+        // nobody left to tell.
+        $team = $this->notifications->projectTeam($project);
+
         try {
             DB::transaction(function () use ($project): void {
                 $project->update([
@@ -720,6 +678,8 @@ class ProjectController extends Controller
 
                 $this->releaseScheduleAndTechnicians($project);
             });
+
+            $this->notifications->projectPutOnHold($project, $team);
 
             $this->activityLogger->record(
                 ActivityLog::PROJECT_PUT_ON_HOLD,
@@ -749,6 +709,8 @@ class ProjectController extends Controller
         }
 
         $project->update(['on_hold' => false]);
+
+        $this->notifications->projectResumed($project);
 
         $this->activityLogger->record(
             ActivityLog::PROJECT_RESUMED,
@@ -832,6 +794,8 @@ class ProjectController extends Controller
                 $project
             );
 
+            $this->notifications->projectCompleted($project);
+
             return redirect()
                 ->route('super-admin.projects')
                 ->with('success', 'Project marked as completed.');
@@ -892,6 +856,8 @@ class ProjectController extends Controller
                 $project
             );
 
+            $this->notifications->projectCancelled($project);
+
             return redirect()
                 ->route('super-admin.projects.show', $id)
                 ->with('success', 'Project has been cancelled.');
@@ -935,6 +901,8 @@ class ProjectController extends Controller
                 sprintf("Archived project '%s'.", $project->reference_no),
                 $project
             );
+
+            $this->notifications->projectArchived($project);
 
             return redirect()
                 ->route('super-admin.projects')
@@ -980,6 +948,8 @@ class ProjectController extends Controller
                 sprintf("Restored project '%s' from the archive.", $project->reference_no),
                 $project
             );
+
+            $this->notifications->projectRestored($project);
 
             return redirect()
                 ->route('super-admin.projects')
@@ -1125,6 +1095,11 @@ class ProjectController extends Controller
         $currentlyAssignedIds = $project->projectTechnicians->pluck('technician_id');
         $newlyAddedIds = $technicianIds->diff($currentlyAssignedIds)->values();
 
+        // Read before the save so the people who are about to be dropped can
+        // still be identified.
+        $teamBefore = $this->notifications->projectTeam($project);
+        $previousLeadId = $this->notifications->projectLead($project)?->id;
+
         // Every one of the project's date ranges has to be checked, not just the
         // first one, and every day inside each range - a technician who is free on
         // the endpoints but booked mid-range must still be rejected.
@@ -1201,6 +1176,39 @@ class ProjectController extends Controller
                 $newlyAddedIds->count()
             ),
             $project
+        );
+
+        $project->load('projectTechnicians.technician.account');
+
+        $teamAfter = $this->notifications->projectTeam($project);
+        $lead = $this->notifications->projectLead($project);
+
+        if ($lead && $lead->id !== $previousLeadId) {
+            $this->notifications->leadAssignedToProject($project, $lead);
+        }
+
+        if ($previousLeadId && $lead?->id !== $previousLeadId) {
+            $formerLead = $teamBefore->firstWhere('id', $previousLeadId);
+
+            if ($formerLead) {
+                $this->notifications->leadRemovedFromProject($project, $formerLead);
+            }
+        }
+
+        $this->notifications->techniciansAssignedToProject(
+            $project,
+            $teamAfter->filter(
+                fn (User $user): bool => $user->id !== $lead?->id
+                    && ! $teamBefore->contains(fn (User $before): bool => $before->id === $user->id)
+            )
+        );
+
+        $this->notifications->techniciansRemovedFromProject(
+            $project,
+            $teamBefore->filter(
+                fn (User $user): bool => $user->id !== $previousLeadId
+                    && ! $teamAfter->contains(fn (User $after): bool => $after->id === $user->id)
+            )
         );
 
         return back()->with('success', 'Assigned team updated.');

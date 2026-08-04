@@ -314,3 +314,93 @@
     background-color: #7c3aed;
     color: #fff;
 }
+
+/* ---- System Contents ---- */
+
+.content-image-field {
+    border: 1px solid #e5e7eb;
+    border-radius: .6rem;
+    padding: .75rem;
+    background: #f8fafc;
+}
+
+.content-image-preview {
+    display: block;
+    width: 100%;
+    max-height: 160px;
+    /* Uploaded art is never cropped in the editor: the Super Admin has to see
+       what they actually uploaded, whatever its shape. */
+    object-fit: contain;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: .45rem;
+    padding: .4rem;
+}
+
+.content-image-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: .3rem;
+    height: 120px;
+    border: 1px dashed #cbd5e1;
+    border-radius: .45rem;
+    background: #fff;
+    color: #94a3b8;
+    font-size: .82rem;
+}
+
+.content-image-empty i {
+    font-size: 1.4rem;
+}
+
+/* ---- System Contents: section navigation ---- */
+
+/*
+ * The pills carry the blue so the section being edited is obvious, and the
+ * panel below repeats it - the fields on screen always belong to exactly one
+ * part of the website, and it should never be a guess which.
+ */
+.content-section-nav .nav-link {
+    border: 1px solid #cfe3f6;
+    background: #f4f9fe;
+    color: #2370b4;
+    font-weight: 600;
+    padding: .45rem 1rem;
+}
+
+.content-section-nav .nav-link:hover {
+    background: #e3f0fc;
+    border-color: #2d8de1;
+    color: #1b5688;
+}
+
+.content-section-nav .nav-link.active {
+    background: #2370b4;
+    border-color: #2370b4;
+    color: #fff;
+}
+
+.content-section-panel {
+    border: 1px solid #cfe3f6;
+    border-top: 4px solid #2370b4;
+    border-radius: .6rem;
+    background: #fbfdff;
+    padding: 1.25rem;
+}
+
+.content-section-panel-title {
+    font-size: .78rem;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: #2370b4;
+    padding-bottom: .6rem;
+    margin-bottom: 1rem;
+    border-bottom: 1px solid #dceafa;
+}
+
+.content-section-panel-title:empty {
+    display: none;
+}

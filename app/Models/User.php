@@ -81,6 +81,15 @@ class User extends Authenticatable
 
     public const ROLE_SUPER_ADMIN = 'super_admin';
 
+    public const ROLE_ADMIN = 'admin';
+
+    /**
+     * The two roles that run the system and share the administrative portal.
+     *
+     * @var array<int, string>
+     */
+    public const ADMINISTRATOR_ROLES = ['super_admin', 'admin'];
+
     public const ROLE_LEAD_TECHNICIAN = 'lead_technician';
 
     /**

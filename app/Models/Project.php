@@ -118,6 +118,15 @@ class Project extends Model
         return $this->hasMany(ProjectCompletionPhoto::class, 'project_id', 'project_id');
     }
 
+    /**
+     * Progress and incident reports filed by the technicians on site. This is
+     * what a client follows a project by.
+     */
+    public function reports(): HasMany
+    {
+        return $this->hasMany(TechnicianReport::class, 'project_id', 'project_id');
+    }
+
     public function tasks(): HasMany
     {
         return $this->hasMany(Task::class, 'project_id', 'project_id');

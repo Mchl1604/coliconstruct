@@ -102,7 +102,7 @@ class AuthenticationTest extends TestCase
             'admin' => 'super-admin.dashboard',
             'lead_technician' => 'technician.schedule',
             'technician' => 'technician.schedule',
-            'client' => 'client.dashboard',
+            'client' => 'landing.home',
         ] as $role => $home) {
             $this->account($role, ['email' => $role.'@example.test']);
 
@@ -204,7 +204,8 @@ class AuthenticationTest extends TestCase
             'password_confirmation' => 'my-own-password',
         ]);
 
-        $response->assertRedirect(route('client.dashboard'));
+        // A client has no portal of their own; the public website is theirs.
+        $response->assertRedirect(route('landing.home'));
 
         $user = User::where('email', 'jose@example.test')->firstOrFail();
 
@@ -330,7 +331,6 @@ class AuthenticationTest extends TestCase
             'super-admin.projects',
             'super-admin.configuration.index',
             'technician.schedule',
-            'client.dashboard',
         ] as $name) {
             $this->get(route($name))->assertRedirect(route('auth.login'));
         }
@@ -351,7 +351,7 @@ class AuthenticationTest extends TestCase
     {
         $this->actingAs($this->account('client'));
 
-        $this->get(route('technician.schedule'))->assertRedirect(route('client.dashboard'));
+        $this->get(route('technician.schedule'))->assertRedirect(route('landing.home'));
     }
 
     /**
@@ -537,14 +537,31 @@ class AuthenticationTest extends TestCase
     // Signing out
     // ------------------------------------------------------------------
 
+    /**
+     * Signing out lands on the public website, where the header offers Login
+     * again - not on the sign-in form itself.
+     */
     public function test_signing_out_ends_the_session(): void
     {
         $this->actingAs($this->account('admin'));
 
-        $this->post(route('auth.logout'))->assertRedirect(route('auth.login'));
+        $this->post(route('auth.logout'))->assertRedirect(route('landing.home'));
 
         $this->assertGuest();
         $this->get(route('super-admin.dashboard'))->assertRedirect(route('auth.login'));
+    }
+
+    public function test_the_page_reached_after_signing_out_offers_login(): void
+    {
+        $this->actingAs($this->account('admin'));
+
+        $this->post(route('auth.logout'));
+
+        $this->get(route('landing.home'))
+            ->assertOk()
+            ->assertSee(route('auth.login'), escape: false)
+            // No signed-in chrome survives the sign-out.
+            ->assertDontSee('data-notification-bell', escape: false);
     }
 
     private function project(string $name): Project

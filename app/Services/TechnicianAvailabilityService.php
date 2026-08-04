@@ -4,7 +4,6 @@ namespace App\Services;
 
 use App\Models\Project;
 use App\Models\Schedule;
-use App\Models\ScheduleTechnician;
 use App\Models\Technician;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
@@ -71,7 +70,7 @@ class TechnicianAvailabilityService
      * @param  Collection<int, int>|array<int, int>  $technicianIds
      * @param  array<int, array{start: CarbonImmutable, end: CarbonImmutable}>  $ranges
      * @param  array<int, int>  $excludeScheduleIds
-     * @return array<int, array<string, array<int, true>>>  technicianId => date => [projectId => true]
+     * @return array<int, array<string, array<int, true>>> technicianId => date => [projectId => true]
      */
     public function unavailableDayOwners(
         Collection|array $technicianIds,
@@ -268,7 +267,18 @@ class TechnicianAvailabilityService
         })->all();
 
         return implode(' ', $parts)
-            . ' Please select a continuous date range where all selected technicians are available.';
+            .' Please select a continuous date range where all selected technicians are available.';
+    }
+
+    /**
+     * "August 1 and August 2" - the same phrasing the conflict message uses,
+     * for callers that want the dates without the surrounding sentence.
+     *
+     * @param  array<int, string>  $dates
+     */
+    public function describeDates(array $dates): string
+    {
+        return $this->formatDateList($dates);
     }
 
     /**
@@ -400,11 +410,11 @@ class TechnicianAvailabilityService
         }
 
         if (count($labels) === 2) {
-            return $labels[0] . ' and ' . $labels[1];
+            return $labels[0].' and '.$labels[1];
         }
 
         $last = array_pop($labels);
 
-        return implode(', ', $labels) . ', and ' . $last;
+        return implode(', ', $labels).', and '.$last;
     }
 }

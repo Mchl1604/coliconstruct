@@ -309,12 +309,84 @@
 
         {{-- ==================== TAB 3: SYSTEM SETTINGS ==================== --}}
         <div class="tab-pane fade" id="systemSettingsPane" role="tabpanel" aria-labelledby="systemSettingsTab">
+
+            @if (auth()->user()?->isSuperAdmin())
+                {{-- System Contents lives inside System Settings. The public
+                     website belongs to the Super Admin alone, so an Admin gets
+                     the placeholder below and never sees this card. --}}
+                <div class="card shadow-sm border-0 rounded-2 mb-4" id="systemContentsPane">
+                    <div class="card-body p-4">
+
+                        <div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3">
+                            <div>
+                                <h5 class="fw-bold mb-1">
+                                    <i class="bi bi-globe me-1 text-primary" aria-hidden="true"></i>
+                                    System Contents
+                                </h5>
+                                <p class="text-secondary small mb-0">
+                                    Everything the public website shows. Changes go live immediately.
+                                </p>
+                            </div>
+
+                            <a class="btn btn-outline-secondary btn-sm" href="{{ route('landing.home') }}"
+                                target="_blank" rel="noopener">
+                                <i class="bi bi-box-arrow-up-right me-1" aria-hidden="true"></i>
+                                View website
+                            </a>
+                        </div>
+
+                        {{-- Blue pills, so which part of the website is being
+                             edited is obvious at a glance. --}}
+                        <ul class="nav nav-pills gap-2 mb-4 content-section-nav" data-content-sections>
+                            @foreach ($contentSections as $key => $label)
+                                <li class="nav-item">
+                                    <button type="button"
+                                        class="nav-link {{ $loop->first ? 'active' : '' }}"
+                                        data-content-section="{{ $key }}">
+                                        {{ $label }}
+                                    </button>
+                                </li>
+                            @endforeach
+                        </ul>
+
+                        <div class="text-secondary small py-3 px-1 d-none" data-content-loading>
+                            <span class="spinner-border spinner-border-sm me-2" role="status"
+                                aria-hidden="true"></span>
+                            Loading content&hellip;
+                        </div>
+
+                        <div class="content-section-panel">
+                            <div class="content-section-panel-title" data-content-section-title></div>
+
+                            <form data-content-form novalidate>
+                                <div class="row g-4" data-content-fields></div>
+
+                                <div class="d-flex align-items-center gap-2 mt-4">
+                                    <button type="submit" class="btn btn-primary px-4" data-content-save>
+                                        <span class="spinner-border spinner-border-sm me-1 d-none"
+                                            role="status" aria-hidden="true" data-content-save-spinner></span>
+                                        Save Changes
+                                    </button>
+
+                                    <span class="text-success small d-none" data-content-saved>
+                                        <i class="bi bi-check2-circle me-1" aria-hidden="true"></i>Saved
+                                    </span>
+                                </div>
+                            </form>
+                        </div>
+
+                        <div class="alert alert-danger mt-3 d-none" role="alert" data-content-error></div>
+
+                    </div>
+                </div>
+            @endif
+
             <div class="card shadow-sm border-0 rounded-2">
                 <div class="card-body p-5 text-center">
                     <i class="bi bi-gear config-placeholder-icon" aria-hidden="true"></i>
                     <h5 class="fw-bold mt-3 mb-1">System Settings</h5>
                     <p class="text-secondary mb-0">
-                        System Settings module will be implemented in a future update.
+                        The remaining system settings will be implemented in a future update.
                     </p>
                 </div>
             </div>
@@ -650,6 +722,7 @@
                 storeClient: @json(route('super-admin.configuration.users.clients.store')),
                 userBase: @json(url('super-admin/configuration/users')),
                 activityLogs: @json(route('super-admin.configuration.activity-logs')),
+                contentBase: @json(url('super-admin/configuration/contents')),
             };
             window.configurationOptions = {
                 technicianRoles: @json($technicianRoles),
@@ -657,5 +730,8 @@
             };
         </script>
         <script src="/js/super-admin/configuration.js"></script>
+        @if (auth()->user()?->isSuperAdmin())
+            <script src="/js/super-admin/systemContents.js"></script>
+        @endif
     @endpush
 @endsection

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ActivityLog;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
 use App\Models\Schedule;
@@ -9,6 +10,8 @@ use App\Models\ScheduleTechnician;
 use App\Models\Skill;
 use App\Models\Task;
 use App\Models\Technician;
+use App\Services\ActivityLogger;
+use App\Services\NotificationService;
 use App\Services\TechnicianAvailabilityService;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
@@ -47,6 +50,11 @@ class TechnicianController extends Controller
      * @var array<int, string>
      */
     private const STAFFABLE_STATUSES = ['not_yet_scheduled', 'pending', 'ongoing'];
+
+    public function __construct(
+        private readonly ActivityLogger $activityLogger,
+        private readonly NotificationService $notifications
+    ) {}
 
     public function index()
     {
@@ -140,7 +148,7 @@ class TechnicianController extends Controller
                     'client' => $this->clientName($project),
                     'status' => $project->status,
                     'statusLabel' => $this->statusLabel($project),
-                    'rangeLabel' => $start->format('M j, Y') . ' - ' . $end->format('M j, Y'),
+                    'rangeLabel' => $start->format('M j, Y').' - '.$end->format('M j, Y'),
                 ],
             ];
         })->values();
@@ -293,7 +301,7 @@ class TechnicianController extends Controller
                 if (! $isLead && $project->projectTechnicians->count() <= 1) {
                     throw new RuntimeException($this->sentence(
                         'A project must keep at least one technician. Assign someone else before removing '
-                            . $technician->name
+                            .$technician->name
                     ));
                 }
 
@@ -302,13 +310,30 @@ class TechnicianController extends Controller
                 }
 
                 $this->detachTechnician($project, $assignment);
+
+                $this->activityLogger->record(
+                    ActivityLog::TECHNICIAN_REMOVED,
+                    $technician->account,
+                    sprintf(
+                        "Removed %s from '%s'.",
+                        $technician->name,
+                        $project->reference_no ?? $project->name
+                    ),
+                    $project
+                );
+
+                if ($technician->account) {
+                    $isLead
+                        ? $this->notifications->leadRemovedFromProject($project, $technician->account)
+                        : $this->notifications->techniciansRemovedFromProject($project, [$technician->account]);
+                }
             });
         } catch (Throwable $e) {
             return response()->json(['error' => $e->getMessage()], 422);
         }
 
         return response()->json([
-            'message' => $this->sentence($technician->name . ' was removed from ' . $project->name),
+            'message' => $this->sentence($technician->name.' was removed from '.$project->name),
         ]);
     }
 
@@ -458,7 +483,7 @@ class TechnicianController extends Controller
 
                     if ($project->projectTechnicians->contains('technician_id', $technician->technician_id)) {
                         throw new RuntimeException($this->sentence(
-                            $technician->name . ' is already assigned to ' . $project->name
+                            $technician->name.' is already assigned to '.$project->name
                         ));
                     }
 
@@ -517,6 +542,27 @@ class TechnicianController extends Controller
                     }
 
                     $this->attachTechnician($project, $technician);
+
+                    // A lead joining a project is a different event from a
+                    // technician joining it, and the audit trail says which.
+                    $this->activityLogger->record(
+                        $isLeadTechnician
+                            ? ActivityLog::LEAD_TECHNICIAN_ASSIGNED
+                            : ActivityLog::TECHNICIAN_ASSIGNED,
+                        $technician->account,
+                        sprintf(
+                            "Assigned %s to '%s' from the technician's schedule.",
+                            $technician->name,
+                            $project->reference_no ?? $project->name
+                        ),
+                        $project
+                    );
+
+                    if ($technician->account) {
+                        $isLeadTechnician
+                            ? $this->notifications->leadAssignedToProject($project, $technician->account)
+                            : $this->notifications->techniciansAssignedToProject($project, [$technician->account]);
+                    }
                 }
             });
         } catch (Throwable $e) {
@@ -525,8 +571,8 @@ class TechnicianController extends Controller
 
         return response()->json([
             'message' => $projects->count() === 1
-                ? $this->sentence($technician->name . ' was assigned to ' . $projects->first()->name)
-                : $technician->name . ' was assigned to ' . $projects->count() . ' projects.',
+                ? $this->sentence($technician->name.' was assigned to '.$projects->first()->name)
+                : $technician->name.' was assigned to '.$projects->count().' projects.',
         ]);
     }
 
@@ -581,7 +627,7 @@ class TechnicianController extends Controller
     {
         if (! $replacementLeadId) {
             throw new RuntimeException(
-                $outgoing->name . ' is the lead technician. Choose a replacement lead before removing them.'
+                $outgoing->name.' is the lead technician. Choose a replacement lead before removing them.'
             );
         }
 
@@ -595,7 +641,7 @@ class TechnicianController extends Controller
         if (! $replacement) {
             throw new RuntimeException(
                 'That replacement is no longer a valid lead for this project. '
-                    . 'They must be a lead technician who is free for the whole schedule and not already assigned.'
+                    .'They must be a lead technician who is free for the whole schedule and not already assigned.'
             );
         }
 
@@ -690,7 +736,7 @@ class TechnicianController extends Controller
         }
 
         if ($project->on_hold) {
-            throw new RuntimeException($this->sentence($project->name . ' is on hold'));
+            throw new RuntimeException($this->sentence($project->name.' is on hold'));
         }
 
         if (! in_array($project->status, self::STAFFABLE_STATUSES, true)) {
@@ -751,7 +797,7 @@ class TechnicianController extends Controller
             'start_date' => $start ? CarbonImmutable::parse($start)->toDateString() : null,
             'end_date' => $end ? CarbonImmutable::parse($end)->toDateString() : null,
             'range_label' => $start && $end
-                ? CarbonImmutable::parse($start)->format('M j, Y') . ' - ' . CarbonImmutable::parse($end)->format('M j, Y')
+                ? CarbonImmutable::parse($start)->format('M j, Y').' - '.CarbonImmutable::parse($end)->format('M j, Y')
                 : 'No schedule set',
             'has_schedule' => $schedules->isNotEmpty(),
             'ranges' => $schedules->map(fn (Schedule $schedule): array => [
@@ -760,11 +806,11 @@ class TechnicianController extends Controller
                 // `label` reads long for the details panel, `short_label`
                 // fits a table cell where every range is listed.
                 'label' => CarbonImmutable::parse($schedule->start_datetime)->format('F j, Y')
-                    . ' – '
-                    . CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime)->format('F j, Y'),
+                    .' – '
+                    .CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime)->format('F j, Y'),
                 'short_label' => CarbonImmutable::parse($schedule->start_datetime)->format('M j, Y')
-                    . ' - '
-                    . CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime)->format('M j, Y'),
+                    .' - '
+                    .CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime)->format('M j, Y'),
             ])->values()->all(),
             'tasks' => $project->relationLoaded('tasks')
                 ? $project->tasks->map(fn (Task $task): array => [
@@ -776,8 +822,8 @@ class TechnicianController extends Controller
                     'technician' => $task->technician?->name,
                     'range_label' => $task->start_date && $task->due_date
                         ? CarbonImmutable::parse($task->start_date)->format('F d, Y')
-                            . ' - '
-                            . CarbonImmutable::parse($task->due_date)->format('F d, Y')
+                            .' - '
+                            .CarbonImmutable::parse($task->due_date)->format('F d, Y')
                         : 'No dates set',
                 ])->values()->all()
                 : [],
@@ -822,7 +868,7 @@ class TechnicianController extends Controller
      */
     private function sentence(string $text): string
     {
-        return preg_match('/[.!?]$/', $text) === 1 ? $text : $text . '.';
+        return preg_match('/[.!?]$/', $text) === 1 ? $text : $text.'.';
     }
 
     private function positionLabel(Technician $technician): string

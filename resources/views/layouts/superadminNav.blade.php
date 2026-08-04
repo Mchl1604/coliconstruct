@@ -11,6 +11,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
     <link href="/css/theme.css" rel="stylesheet">
     <link href="/css/superAdminNav.css" rel="stylesheet">
+    <link href="/css/notifications.css" rel="stylesheet">
    <link rel="stylesheet"
 href="https://cdn.datatables.net/2.3.8/css/dataTables.dataTables.css">
   @stack('styles')
@@ -114,6 +115,8 @@ href="https://cdn.datatables.net/2.3.8/css/dataTables.dataTables.css">
                     <i class="bi bi-list" aria-hidden="true"></i>
                 </button>
 
+                <x-notification-bell />
+
                 <div class="dropdown">
                     <button class="admin-user-menu" type="button" data-user-menu-toggle data-bs-toggle="dropdown" aria-expanded="false" aria-label="User menu">
                         <span>
@@ -124,10 +127,19 @@ href="https://cdn.datatables.net/2.3.8/css/dataTables.dataTables.css">
                     </button>
 
                     <ul class="dropdown-menu dropdown-menu-end admin-user-dropdown-menu">
-                        <li><a class="dropdown-item" href="#">Profile</a></li>
-                        <li><a class="dropdown-item" href="#">Settings</a></li>
+                        <li><a class="dropdown-item" href="{{ route('profile.edit') }}">Profile</a></li>
+                        <li>
+                            <a class="dropdown-item" href="{{ route('super-admin.configuration.index') }}">Settings</a>
+                        </li>
                         <li><hr class="dropdown-divider"></li>
-                        <li><a class="dropdown-item text-danger" href="{{ route('landing.home') }}">Logout</a></li>
+                        <li>
+                            {{-- Signing out changes state, so it is a POST rather
+                                 than a link anything can follow. --}}
+                            <form method="POST" action="{{ route('auth.logout') }}">
+                                @csrf
+                                <button type="submit" class="dropdown-item text-danger">Logout</button>
+                            </form>
+                        </li>
                     </ul>
                 </div>
             </header>
@@ -175,6 +187,13 @@ href="https://cdn.datatables.net/2.3.8/css/dataTables.dataTables.css">
 <script src="https://cdn.datatables.net/2.3.8/js/dataTables.js"></script>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        window.notificationRoutes = @json([
+            'feed' => route('notifications.feed'),
+            'readAll' => route('notifications.read-all'),
+        ]);
+    </script>
+    <script src="/js/notifications.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function () {
             const toastElList = document.querySelectorAll('.toast');

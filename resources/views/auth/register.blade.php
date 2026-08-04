@@ -54,8 +54,5 @@
             Already have an account?
             <a href="{{ route('auth.login') }}" class="text-decoration-none">Sign in</a>
         </div>
-        <div class="text-muted small mt-2">
-            Registering here creates a client account. Staff accounts are created by an administrator.
-        </div>
     </form>
 @endsection

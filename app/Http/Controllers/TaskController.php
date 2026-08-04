@@ -7,6 +7,7 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskImage;
 use App\Services\ActivityLogger;
+use App\Services\NotificationService;
 use App\Services\TaskScheduleRules;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -19,6 +20,7 @@ class TaskController extends Controller
     public function __construct(
         private TaskScheduleRules $scheduleRules,
         private readonly ActivityLogger $activityLogger,
+        private readonly NotificationService $notifications,
     ) {}
 
     /**
@@ -203,6 +205,8 @@ class TaskController extends Controller
                 $task
             );
 
+            $this->notifications->taskAssigned($task);
+
             return redirect()
                 ->back()
                 ->with('success', 'Task created successfully.');
@@ -254,6 +258,7 @@ class TaskController extends Controller
 
         // Read before the write, so the log can tell an edit from a handover.
         $before = $task->technician_id;
+        $previousOwner = $this->notifications->taskOwner($task);
 
         DB::beginTransaction();
 
@@ -278,6 +283,10 @@ class TaskController extends Controller
                 ),
                 $task
             );
+
+            if ($reassigned) {
+                $this->notifications->taskReassigned($task->fresh('technician.account'), $previousOwner);
+            }
 
             return back()->with('success', 'Task updated successfully.');
         } catch (\Exception $e) {
@@ -354,6 +363,8 @@ class TaskController extends Controller
 
         $photos = count($request->file('images') ?? []);
 
+        $this->notifications->taskCompleted($task, $photos > 0);
+
         if ($photos > 0) {
             $this->activityLogger->record(
                 ActivityLog::TASK_IMAGE_UPLOADED,
@@ -391,6 +402,8 @@ class TaskController extends Controller
             $task->delete();
 
             DB::commit();
+
+            $this->notifications->taskCancelled($task);
 
             return back()->with(
                 'success',

@@ -80,7 +80,15 @@ document.addEventListener("DOMContentLoaded", function () {
     // ------------------------------------------------------------------
 
     /**
-     * Same cells, in the same order, as the Blade-rendered rows above.
+     * A real <tr>, matching the Blade-rendered rows cell for cell - including
+     * the data-order on the date.
+     *
+     * Deliberately not an array of cell strings. The Blade rows carry
+     * data-order, which makes DataTables treat that column as an orthogonal
+     * source ({_: "3.display", sort: "3.@data-order"}); a flat array has no
+     * such shape, so adding one raises "Requested unknown parameter
+     * '[object Object]'" and the new row sorts by nothing. Handing DataTables
+     * a node lets it read the attribute exactly as it does for the rest.
      */
     function rowFor(report) {
         const download = report.images.length
@@ -89,27 +97,38 @@ document.addEventListener("DOMContentLoaded", function () {
               '" download title="Download attachment"><i class="bi bi-download"></i></a>'
             : "";
 
-        return [
-            "#" + report.id,
-            '<div class="fw-semibold">' +
-                portal.escapeHtml(report.project_name) +
-                '</div><small class="text-muted">' +
-                portal.escapeHtml(report.reference_no) +
-                "</small>",
-            portal.escapeHtml(report.title),
-            portal.escapeHtml(report.date_label),
-            '<span class="badge ' +
-                report.type_badge_class +
-                '">' +
-                portal.escapeHtml(report.type_label) +
-                "</span>",
-            '<div class="d-flex justify-content-center gap-2">' +
-                '<button type="button" class="btn btn-sm btn-primary py-1 px-2" data-view-report="' +
-                report.id +
-                '" title="View report"><i class="bi bi-eye"></i></button>' +
-                download +
-                "</div>",
-        ];
+        const row = document.createElement("tr");
+
+        row.innerHTML =
+            "<td>#" +
+            portal.escapeHtml(report.id) +
+            "</td>" +
+            '<td><div class="fw-semibold">' +
+            portal.escapeHtml(report.project_name) +
+            '</div><small class="text-muted">' +
+            portal.escapeHtml(report.reference_no) +
+            "</small></td>" +
+            "<td>" +
+            portal.escapeHtml(report.title) +
+            "</td>" +
+            '<td data-order="' +
+            portal.escapeHtml(report.date_order) +
+            '">' +
+            portal.escapeHtml(report.date_label) +
+            "</td>" +
+            '<td><span class="badge ' +
+            report.type_badge_class +
+            '">' +
+            portal.escapeHtml(report.type_label) +
+            "</span></td>" +
+            '<td class="text-center"><div class="d-flex justify-content-center gap-2">' +
+            '<button type="button" class="btn btn-sm btn-primary py-1 px-2" data-view-report="' +
+            portal.escapeHtml(report.id) +
+            '" title="View report"><i class="bi bi-eye"></i></button>' +
+            download +
+            "</div></td>";
+
+        return row;
     }
 
     const submitButton = document.querySelector("[data-submit-report]");
