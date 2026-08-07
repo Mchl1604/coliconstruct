@@ -65,6 +65,23 @@
     font-weight: 600;
 }
 
+/* The guest header's Sign Up: blue outline, white fill, blue lettering. A
+   solid white rather than transparent, so it keeps its shape over the hero
+   photograph as well as over the white navbar. */
+.btn-sign-up {
+    background: #fff;
+    border: 1px solid var(--brand-blue);
+    color: var(--brand-blue-deep);
+    font-weight: 600;
+}
+
+.btn-sign-up:hover,
+.btn-sign-up:focus {
+    background: var(--brand-blue-soft);
+    border-color: var(--brand-blue-deep);
+    color: var(--brand-blue-dark);
+}
+
 .btn-outline-brand-blue:hover,
 .btn-outline-brand-blue:focus {
     background: var(--brand-blue);

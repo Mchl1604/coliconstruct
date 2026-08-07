@@ -75,6 +75,34 @@ class ProfileManagementTest extends TestCase
             ->assertSee('Lead Technician');
     }
 
+    /**
+     * The administrative header is the profile link and nothing else - no
+     * caret, no account menu. Settings and Logout live in the sidebar.
+     */
+    public function test_the_administrative_header_has_no_account_dropdown(): void
+    {
+        $owner = $this->account('super_admin', 'owner@example.test');
+
+        $this->actingAs($owner)
+            ->get(route('super-admin.configuration.index'))
+            ->assertOk()
+            ->assertSee('admin-user-link', escape: false)
+            ->assertDontSee('admin-user-caret', escape: false)
+            ->assertDontSee('data-user-menu-toggle', escape: false);
+    }
+
+    public function test_a_guest_header_offers_sign_up_and_login(): void
+    {
+        $this->get(route('landing.home'))
+            ->assertOk()
+            // Sign Up opens an account; Login is for people who have one.
+            ->assertSee('Sign Up')
+            ->assertSee(route('auth.register'), escape: false)
+            ->assertSee('Login')
+            ->assertSee(route('auth.login'), escape: false)
+            ->assertSee('btn-sign-up', escape: false);
+    }
+
     public function test_a_client_header_carries_a_name_and_never_a_picture(): void
     {
         $client = $this->account('client', 'client@example.test');

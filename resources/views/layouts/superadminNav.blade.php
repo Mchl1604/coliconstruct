@@ -164,7 +164,6 @@ href="https://cdn.datatables.net/2.3.8/css/dataTables.dataTables.css">
             const shell = document.querySelector('[data-admin-shell]');
             const toggle = document.querySelector('[data-sidebar-toggle]');
             const backdrop = document.querySelector('[data-sidebar-backdrop]');
-            const userMenuToggle = document.querySelector('[data-user-menu-toggle]');
 
             if (!shell || !toggle || !backdrop) {
                 return;
@@ -199,13 +198,6 @@ href="https://cdn.datatables.net/2.3.8/css/dataTables.dataTables.css">
                     setSidebarOpen(false);
                 }
             });
-
-            if (userMenuToggle) {
-                new bootstrap.Dropdown(userMenuToggle, {
-                    autoClose: true,
-                    boundary: 'viewport'
-                });
-            }
         });
     </script>
 

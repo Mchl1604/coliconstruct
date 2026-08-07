@@ -3,12 +3,17 @@
 namespace App\Providers;
 
 use App\Models\Project;
+use App\Models\Schedule;
+use App\Models\SpecialtyRequest;
 use App\Models\Task;
+use App\Models\User;
 use App\Policies\ProjectPolicy;
 use App\Policies\TaskPolicy;
+use App\Services\DashboardMetrics;
 use App\Services\SystemContentService;
 use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Contracts\View\View as ViewContract;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
@@ -47,5 +52,28 @@ class AppServiceProvider extends ServiceProvider
             ['layouts.publicSite', 'public.*'],
             fn (ViewContract $view) => $view->with('content', app(SystemContentService::class))
         );
+
+        $this->keepDashboardFiguresCurrent();
+    }
+
+    /**
+     * Drop the dashboard's cached figures whenever something they count
+     * changes.
+     *
+     * The dashboard caches briefly so a burst of readers costs one query set,
+     * which would otherwise mean a newly created project taking a minute to
+     * appear. Listening on the four models it counts means the invalidation
+     * cannot be forgotten at a call site - every create, update and delete
+     * goes through Eloquent, wherever it is written.
+     */
+    private function keepDashboardFiguresCurrent(): void
+    {
+        $models = [Project::class, User::class, Schedule::class, SpecialtyRequest::class];
+
+        foreach ($models as $model) {
+            foreach (['saved', 'deleted'] as $event) {
+                $model::{$event}(static fn (Model $record) => DashboardMetrics::flush());
+            }
+        }
     }
 }

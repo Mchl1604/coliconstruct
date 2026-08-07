@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\ConfigurationController;
+use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ProjectController;
@@ -99,9 +100,11 @@ Route::prefix('super-admin')
     ->middleware(['auth', 'password.changed', 'role:super_admin,admin'])
     ->group(function () {
 
-        Route::get('/dashboard', function () {
-            return view('super-admin.dashboard');
-        })->name('dashboard');
+        // The landing page after sign-in. Everything it shows arrives with the
+        // page; `summary` re-reads only the figures, for a refresh without a
+        // reload.
+        Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+        Route::get('/dashboard/summary', [DashboardController::class, 'summary'])->name('dashboard.summary');
 
         // ROUTE FOR SUPER ADMIN PROJECTS PAGE
         Route::get('/projects', [ProjectController::class, 'index'])->name('projects');

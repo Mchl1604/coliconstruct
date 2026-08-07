@@ -180,15 +180,7 @@
             text-align: left;
         }
 
-        /* The profile block and its menu caret sit together but are two
-           separate controls: the block opens Profile, the caret opens the
-           menu. */
-        .admin-user-block {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-
+        /* The whole block is the link to Profile - there is no menu beside it. */
         .admin-user-link {
             text-decoration: none;
             transition: border-color .15s ease, background-color .15s ease;
@@ -198,24 +190,6 @@
         .admin-user-link:focus-visible {
             border-color: var(--admin-active);
             background: #f8fafc;
-            color: #111827;
-        }
-
-        .admin-user-caret {
-            display: inline-flex;
-            width: 32px;
-            height: 32px;
-            align-items: center;
-            justify-content: center;
-            border: 1px solid #d1d7df;
-            border-radius: 10px;
-            background: #ffffff;
-            color: #5d6b80;
-        }
-
-        .admin-user-caret:hover,
-        .admin-user-caret[aria-expanded="true"] {
-            border-color: var(--admin-active);
             color: #111827;
         }
 
@@ -231,16 +205,6 @@
             .admin-user-menu > span {
                 display: none;
             }
-        }
-
-        .admin-user-dropdown-menu {
-            min-width: 210px;
-            border: 1px solid #d1d7df;
-            box-shadow: 0 10px 24px rgba(17, 24, 39, 0.12);
-        }
-
-        .admin-user-dropdown-menu .dropdown-item {
-            font-size: 14px;
         }
 
         .admin-user-name {

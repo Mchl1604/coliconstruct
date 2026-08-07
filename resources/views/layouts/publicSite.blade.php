@@ -132,6 +132,11 @@
                             </ul>
                         </div>
                     @else
+                        {{-- A guest gets both doors: the one that opens them
+                             an account, and the one for people who already
+                             have one. --}}
+                        <a class="btn btn-sign-up px-3" href="{{ route('auth.register') }}">Sign Up</a>
+
                         <a class="btn btn-brand-blue px-3" href="{{ route('auth.login') }}">Login</a>
                     @endif
                 </div>

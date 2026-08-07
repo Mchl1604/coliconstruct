@@ -376,6 +376,7 @@
 
                 tabButtons.forEach(function(button) {
                     button.addEventListener('click', function() {
+
                         tabButtons.forEach(function(item) {
                             item.classList.remove('active');
                         });
@@ -424,6 +425,20 @@
                         table.draw();
                     });
                 });
+
+                // The dashboard's status chart links here with ?status=, so a
+                // slice arrives on this page with its tab already chosen.
+                const requestedStatus = new URLSearchParams(window.location.search).get('status');
+
+                if (requestedStatus) {
+                    const requestedTab = document.querySelector(
+                        '[data-status-filter="' + requestedStatus + '"]'
+                    );
+
+                    if (requestedTab) {
+                        requestedTab.click();
+                    }
+                }
 
             });
         </script>

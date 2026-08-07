@@ -1,0 +1,532 @@
+/* ---- The Admin / Super Admin dashboard ----
+   Soft, roomy and short. Everything sits on one pale panel, cards are white
+   with a wide radius and almost no border, and colour is used only where it
+   carries meaning - a status, a percentage, a pastel to tell three cards
+   apart. */
+
+.dashboard-page {
+    --dash-ink: #2b3245;
+    --dash-muted: #8892a6;
+    --dash-line: #eceff6;
+    --dash-radius: 1.35rem;
+
+    background: linear-gradient(160deg, #eef1f9 0%, #f3f0fa 55%, #eef4fb 100%);
+    border-radius: 1.75rem;
+    padding: 1.5rem;
+    color: var(--dash-ink);
+}
+
+/* ---- Header ---- */
+
+.dash-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+    padding: 0 .25rem;
+}
+
+.dash-title {
+    margin: 0;
+    font-size: 1.3rem;
+    font-weight: 700;
+    letter-spacing: -.01em;
+}
+
+.dash-subtitle {
+    margin: .15rem 0 0;
+    font-size: .82rem;
+    color: var(--dash-muted);
+}
+
+.dash-primary-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: .5rem;
+    padding: .6rem 1.15rem;
+    border-radius: 999px;
+    background: #2f2b57;
+    color: #fff;
+    font-size: .85rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: background-color .15s ease, transform .15s ease;
+}
+
+.dash-primary-btn:hover {
+    background: #3d3874;
+    color: #fff;
+    transform: translateY(-1px);
+}
+
+.dash-ghost-btn {
+    padding: .3rem .8rem;
+    border-radius: 999px;
+    background: #f4f6fb;
+    color: var(--dash-muted);
+    font-size: .74rem;
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.dash-ghost-btn:hover {
+    background: #e9edf7;
+    color: var(--dash-ink);
+}
+
+/* ---- The figures ----
+   Small on purpose: a label and a number, as many across as will fit. */
+
+.dash-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+    gap: .6rem;
+    margin-bottom: 1rem;
+}
+
+.dash-stat {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: .5rem;
+    padding: .7rem .9rem;
+    border-radius: 1rem;
+    background: #fff;
+    color: var(--dash-ink);
+    text-decoration: none;
+    box-shadow: 0 2px 10px rgba(43, 50, 69, .04);
+    transition: transform .15s ease, box-shadow .15s ease;
+}
+
+a.dash-stat:hover {
+    color: var(--dash-ink);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(43, 50, 69, .09);
+}
+
+.dash-stat-label {
+    font-size: .72rem;
+    font-weight: 600;
+    color: var(--dash-muted);
+    line-height: 1.3;
+}
+
+.dash-stat-value {
+    font-size: 1.2rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+/* Only the figures that mean something take a colour. */
+.dash-stat.tone-ongoing .dash-stat-value { color: #5aa9e6; }
+.dash-stat.tone-pending .dash-stat-value { color: #d9a520; }
+.dash-stat.tone-overdue .dash-stat-value { color: #e2683f; }
+.dash-stat.tone-completed .dash-stat-value { color: #7c6bd6; }
+
+@keyframes dash-bump {
+    0% { transform: scale(1); }
+    40% { transform: scale(1.16); }
+    100% { transform: scale(1); }
+}
+
+.dash-stat-value.is-updated {
+    animation: dash-bump .45s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .dash-stat,
+    .dash-primary-btn,
+    .dash-stat-value.is-updated {
+        transition: none;
+        animation: none;
+    }
+}
+
+/* ---- Panels ---- */
+
+.dash-grid-main,
+.dash-grid-foot {
+    display: grid;
+    gap: 1rem;
+}
+
+.dash-grid-main {
+    grid-template-columns: 1fr;
+    margin-bottom: 1rem;
+}
+
+.dash-grid-foot {
+    grid-template-columns: 1fr;
+}
+
+@media (min-width: 992px) {
+    .dash-grid-main {
+        grid-template-columns: 1.55fr 1fr;
+    }
+
+    .dash-grid-foot {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+.dash-panel {
+    padding: 1.15rem 1.25rem 1.25rem;
+    border-radius: var(--dash-radius);
+    background: #fff;
+    box-shadow: 0 2px 14px rgba(43, 50, 69, .05);
+}
+
+/* The ring panel sits back a little, as it is read rather than worked. */
+.dash-panel-quiet {
+    background: linear-gradient(180deg, #ffffff 0%, #fbfbff 100%);
+}
+
+.dash-panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+    margin-bottom: 1rem;
+}
+
+.dash-panel-title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 700;
+}
+
+.dash-panel-note {
+    font-size: .74rem;
+    color: var(--dash-muted);
+}
+
+.dash-empty {
+    margin: 0;
+    padding: 1.25rem 0;
+    color: var(--dash-muted);
+    font-size: .84rem;
+    text-align: center;
+}
+
+/* ---- Upcoming work ---- */
+
+.dash-upcoming {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+    gap: .75rem;
+}
+
+.dash-task {
+    display: flex;
+    flex-direction: column;
+    gap: .5rem;
+    padding: 1rem;
+    border-radius: 1.1rem;
+    color: var(--dash-ink);
+    text-decoration: none;
+    transition: transform .15s ease;
+}
+
+.dash-task:hover {
+    color: var(--dash-ink);
+    transform: translateY(-3px);
+}
+
+.dash-task.tone-blue { background: #dceafa; }
+.dash-task.tone-lilac { background: #e8e6fa; }
+.dash-task.tone-peach { background: #fbe0d3; }
+
+.dash-task-chip {
+    align-self: flex-start;
+    padding: .18rem .65rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, .75);
+    font-size: .66rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+}
+
+.dash-task-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    line-height: 1.25;
+}
+
+.dash-task-meta {
+    font-size: .74rem;
+    color: #5f6a80;
+}
+
+.dash-task-team {
+    display: flex;
+    align-items: center;
+    margin-top: .1rem;
+    min-height: 1.6rem;
+}
+
+/* Overlapped faces, as a team reads on the reference. */
+.dash-task-face {
+    width: 1.6rem;
+    height: 1.6rem;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid rgba(255, 255, 255, .9);
+    margin-right: -.45rem;
+}
+
+.dash-task-foot {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    margin-top: .35rem;
+}
+
+.dash-task-bar {
+    flex: 1 1 auto;
+    height: .3rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, .7);
+    overflow: hidden;
+}
+
+.dash-task-bar > span {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    background: rgba(43, 50, 69, .45);
+}
+
+.dash-task-count {
+    font-size: .72rem;
+    font-weight: 700;
+    color: #5f6a80;
+}
+
+/* ---- The ring ---- */
+
+.dash-ring-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.dash-legend {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: .85rem;
+    min-width: 8rem;
+}
+
+.dash-legend li {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-template-rows: auto auto;
+    column-gap: .5rem;
+    align-items: center;
+}
+
+.dash-legend-dot {
+    width: .55rem;
+    height: .55rem;
+    border-radius: 50%;
+}
+
+.dash-legend-label {
+    font-size: .78rem;
+    color: var(--dash-muted);
+}
+
+/* The percentage is the point, so it gets the size. */
+.dash-legend-value {
+    grid-column: 2;
+    font-size: 1.25rem;
+    font-weight: 700;
+    line-height: 1.1;
+}
+
+.dash-ring {
+    position: relative;
+    flex: 0 0 auto;
+    width: 11.5rem;
+    height: 11.5rem;
+}
+
+.dash-ring-centre {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+}
+
+.dash-ring-centre strong {
+    font-size: 1.5rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.dash-ring-centre span {
+    font-size: .72rem;
+    color: var(--dash-muted);
+}
+
+/* ---- People ---- */
+
+.dash-people {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.dash-people li {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    padding: .7rem 0;
+    border-bottom: 1px solid var(--dash-line);
+}
+
+.dash-people li:last-child {
+    border-bottom: 0;
+    padding-bottom: 0;
+}
+
+.dash-person-body {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.dash-person-name {
+    font-size: .88rem;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.dash-person-role {
+    font-size: .74rem;
+    color: var(--dash-muted);
+}
+
+.dash-person-count {
+    font-size: .95rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.dash-person-count span {
+    font-size: .72rem;
+    font-weight: 500;
+    color: var(--dash-muted);
+}
+
+/* ---- Activity ---- */
+
+.dash-activity {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.dash-activity li {
+    display: flex;
+    align-items: flex-start;
+    gap: .65rem;
+    padding: .6rem 0;
+    border-bottom: 1px solid var(--dash-line);
+}
+
+.dash-activity li:last-child {
+    border-bottom: 0;
+    padding-bottom: 0;
+}
+
+.dash-activity-dot {
+    flex: 0 0 auto;
+    width: .45rem;
+    height: .45rem;
+    margin-top: .45rem;
+    border-radius: 50%;
+    background: #c6cddc;
+}
+
+.dash-activity-body {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.dash-activity-action {
+    font-size: .86rem;
+    font-weight: 600;
+    color: var(--dash-ink);
+    text-decoration: none;
+}
+
+a.dash-activity-action:hover {
+    color: #4f46e5;
+    text-decoration: underline;
+}
+
+.dash-activity-meta {
+    font-size: .73rem;
+    color: var(--dash-muted);
+}
+
+.dash-activity-module {
+    flex: 0 0 auto;
+    padding: .15rem .55rem;
+    border-radius: 999px;
+    background: #f4f6fb;
+    font-size: .68rem;
+    font-weight: 600;
+    color: var(--dash-muted);
+    white-space: nowrap;
+}
+
+/* ---- Small screens ---- */
+
+@media (max-width: 575.98px) {
+    .dashboard-page {
+        padding: 1rem;
+        border-radius: 1.25rem;
+    }
+
+    .dash-stats {
+        grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+    }
+
+    .dash-primary-btn {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .dash-ring-row {
+        justify-content: center;
+    }
+
+    .dash-ring {
+        width: 10rem;
+        height: 10rem;
+    }
+}
