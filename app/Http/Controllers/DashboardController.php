@@ -33,7 +33,10 @@ class DashboardController extends Controller
         $counts = $this->metrics->projectCounts();
 
         return view('super-admin.dashboard', [
-            'summaryCards' => $this->metrics->summary($viewer),
+            // Handed down rather than re-resolved with auth() in the view:
+            // one place decides who is reading this page.
+            'viewer' => $viewer,
+            'summaryCards' => $this->metrics->summary(),
             // The ring's numbers are rendered as text and drawn as an arc from
             // the same array, so the legend is readable before any script runs.
             'statusBreakdown' => $this->metrics->statusBreakdown(),
@@ -47,9 +50,9 @@ class DashboardController extends Controller
     /**
      * The summary figures on their own, for a refresh without a reload.
      */
-    public function summary(Request $request): JsonResponse
+    public function summary(): JsonResponse
     {
-        return response()->json(['cards' => $this->metrics->summary($request->user())]);
+        return response()->json(['cards' => $this->metrics->summary()]);
     }
 
     // ------------------------------------------------------------------

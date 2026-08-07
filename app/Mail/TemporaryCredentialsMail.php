@@ -3,11 +3,6 @@
 namespace App\Mail;
 
 use App\Models\User;
-use Illuminate\Bus\Queueable;
-use Illuminate\Mail\Mailable;
-use Illuminate\Mail\Mailables\Content;
-use Illuminate\Mail\Mailables\Envelope;
-use Illuminate\Queue\SerializesModels;
 
 /**
  * The sign-in details handed to a newly created account, and the same message
@@ -16,35 +11,36 @@ use Illuminate\Queue\SerializesModels;
  * The plain password is passed in rather than read from the model - the stored
  * one is hashed and cannot be read back, which is the point.
  */
-class TemporaryCredentialsMail extends Mailable
+class TemporaryCredentialsMail extends SystemMail
 {
-    use Queueable, SerializesModels;
-
     public function __construct(
         public readonly User $account,
         public readonly string $temporaryPassword,
         public readonly bool $isReset = false,
     ) {}
 
-    public function envelope(): Envelope
+    protected function subjectLine(): string
     {
-        return new Envelope(
-            subject: $this->isReset
-                ? 'Your Coliconstruct password has been reset'
-                : 'Your Coliconstruct account is ready',
-        );
+        return $this->isReset
+            ? 'Your '.config('company.name').' password has been reset'
+            : 'Welcome to '.config('company.name').' - your account is ready';
     }
 
-    public function content(): Content
+    protected function template(): string
     {
-        return new Content(
-            view: 'emails.temporary-credentials',
-            with: [
-                'account' => $this->account,
-                'temporaryPassword' => $this->temporaryPassword,
-                'isReset' => $this->isReset,
-                'loginUrl' => route('auth.login'),
-            ],
-        );
+        return 'emails.temporary-credentials';
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function payload(): array
+    {
+        return [
+            'account' => $this->account,
+            'temporaryPassword' => $this->temporaryPassword,
+            'isReset' => $this->isReset,
+            'loginUrl' => route('auth.login'),
+        ];
     }
 }

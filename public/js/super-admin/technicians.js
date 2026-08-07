@@ -152,6 +152,17 @@ document.addEventListener("DOMContentLoaded", function () {
         const saveBtn = modal.querySelector("[data-details-save]");
         const saveSpinner = modal.querySelector("[data-details-save-spinner]");
 
+        // The technician's outstanding specialty request, decided here rather
+        // than in a queue of its own.
+        const requestEl = modal.querySelector("[data-details-request]");
+        const requestChangesEl = modal.querySelector("[data-details-request-changes]");
+        const requestWhenEl = modal.querySelector("[data-details-request-when]");
+        const approveBtn = modal.querySelector("[data-details-approve]");
+        const rejectBtn = modal.querySelector("[data-details-reject]");
+        const decideSpinner = modal.querySelector("[data-details-decide-spinner]");
+
+        let pendingRequest = null;
+
         let technicianId = null;
         // What the server currently has.
         let savedSpecialties = [];
@@ -271,12 +282,58 @@ document.addEventListener("DOMContentLoaded", function () {
             renderPendingNote();
         }
 
+        /**
+         * The pending request, as a row of additions and removals. Hidden
+         * entirely when the technician has not asked for anything.
+         */
+        function renderRequest() {
+            if (!requestEl) {
+                return;
+            }
+
+            requestEl.classList.toggle("d-none", !pendingRequest);
+
+            if (!pendingRequest) {
+                return;
+            }
+
+            const chips = []
+                .concat(
+                    (pendingRequest.additions || []).map(function (name) {
+                        return (
+                            '<span class="technician-request-add">' +
+                            '<i class="bi bi-plus-lg" aria-hidden="true"></i>' +
+                            escapeHtml(name) +
+                            "</span>"
+                        );
+                    }),
+                )
+                .concat(
+                    (pendingRequest.removals || []).map(function (name) {
+                        return (
+                            '<span class="technician-request-remove">' +
+                            '<i class="bi bi-dash-lg" aria-hidden="true"></i>' +
+                            escapeHtml(name) +
+                            "</span>"
+                        );
+                    }),
+                );
+
+            requestChangesEl.innerHTML = chips.length
+                ? chips.join("")
+                : '<span class="text-muted small">No change requested.</span>';
+
+            requestWhenEl.textContent =
+                "Submitted " + (pendingRequest.submitted_at || "recently") + ".";
+        }
+
         function render(technician) {
             technicianId = technician.technician_id;
             savedSpecialties = technician.specialties.slice();
             draftIds = savedSpecialties.map(function (item) {
                 return item.skill_id;
             });
+            pendingRequest = technician.pending_request || null;
 
             nameEl.textContent = technician.name;
             metaEl.textContent =
@@ -286,8 +343,57 @@ document.addEventListener("DOMContentLoaded", function () {
             positionEl.textContent = technician.position;
             emailEl.textContent = technician.email || "Not on file";
 
+            renderRequest();
             renderDraft();
             syncTableRow(technician);
+        }
+
+        /**
+         * Approve or reject, then redraw from what the server sends back. The
+         * table row loses its highlight in the same pass, so the page never
+         * disagrees with the dialog.
+         */
+        function decide(url) {
+            if (!pendingRequest) {
+                return;
+            }
+
+            setAlert(errorEl, "");
+            approveBtn.disabled = true;
+            rejectBtn.disabled = true;
+            decideSpinner.classList.remove("d-none");
+
+            request(url, { method: "PUT" }).then(function (result) {
+                approveBtn.disabled = false;
+                rejectBtn.disabled = false;
+                decideSpinner.classList.add("d-none");
+
+                if (!result.ok) {
+                    setAlert(
+                        errorEl,
+                        result.body.error || "That request could not be decided.",
+                    );
+
+                    return;
+                }
+
+                if (result.body.technician) {
+                    render(result.body.technician);
+                    clearRowHighlight(result.body.technician.technician_id);
+                }
+            });
+        }
+
+        if (approveBtn) {
+            approveBtn.addEventListener("click", function () {
+                decide(pendingRequest && pendingRequest.approve_url);
+            });
+        }
+
+        if (rejectBtn) {
+            rejectBtn.addEventListener("click", function () {
+                decide(pendingRequest && pendingRequest.reject_url);
+            });
         }
 
         // Ticking an available specialty queues it; nothing is saved yet.
@@ -368,6 +474,8 @@ document.addEventListener("DOMContentLoaded", function () {
         modal.addEventListener("hidden.bs.modal", function () {
             setAlert(errorEl, "");
             pendingEl.classList.add("d-none");
+            pendingRequest = null;
+            renderRequest();
         });
 
         return {
@@ -375,6 +483,8 @@ document.addEventListener("DOMContentLoaded", function () {
                 technicianId = id;
                 savedSpecialties = [];
                 draftIds = [];
+                pendingRequest = null;
+                renderRequest();
                 setAlert(errorEl, "");
                 pendingEl.classList.add("d-none");
                 nameEl.textContent = "Loading…";
@@ -400,6 +510,28 @@ document.addEventListener("DOMContentLoaded", function () {
                 });
             },
         };
+    }
+
+    /**
+     * A decided request is no longer waiting, so the row stops shouting about
+     * it - without a reload, since the dialog is still open over the top.
+     */
+    function clearRowHighlight(technicianId) {
+        const row = document.querySelector(
+            '[data-technician-row="' + technicianId + '"]',
+        );
+
+        if (!row) {
+            return;
+        }
+
+        row.classList.remove("technician-row-pending");
+
+        const badge = row.querySelector(".technician-pending-badge");
+
+        if (badge) {
+            badge.remove();
+        }
     }
 
     // Keep the Specialty column in step with the modal, no reload needed.
@@ -697,11 +829,14 @@ document.addEventListener("DOMContentLoaded", function () {
             calendarPlaceholderEl.classList.add("d-none");
             calendarEl.classList.remove("d-none");
             calendarNameEl.textContent = result.body.technician.name;
+            // What they are carrying now, not everything they have ever been
+            // assigned: completed work is in the table below, not in this
+            // figure.
+            const activeCount = result.body.activeCount || 0;
+
             calendarCountEl.textContent =
-                result.body.assignmentCount +
-                (result.body.assignmentCount === 1
-                    ? " project"
-                    : " projects");
+                activeCount +
+                (activeCount === 1 ? " active project" : " active projects");
             calendarCountEl.classList.remove("d-none");
             calendarEmptyEl.classList.toggle("d-none", events.length > 0);
 

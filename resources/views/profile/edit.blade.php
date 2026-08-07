@@ -185,7 +185,10 @@
                                     <input type="email" class="form-control @error('email', 'information') is-invalid @enderror"
                                         id="emailAddress" name="email" maxlength="255" required
                                         value="{{ old('email', $account->email) }}">
-                                    <div class="form-text">This is the address you sign in with.</div>
+                                    <div class="form-text">
+                                        This is the address you sign in with. Changing it sends a 6-digit code to
+                                        the new address, which you must enter before the change takes effect.
+                                    </div>
                                     @error('email', 'information')
                                         <div class="invalid-feedback">{{ $message }}</div>
                                     @enderror
@@ -197,6 +200,61 @@
                             </div>
                         </form>
                     </div>
+
+                    {{-- A change of email waiting on its code. The account keeps
+                         the old address until this is confirmed. --}}
+                    @if ($pendingEmail)
+                        <div class="card-footer bg-light border-top">
+                            <div class="d-flex align-items-start gap-2 mb-3">
+                                <i class="bi bi-envelope-check text-primary mt-1" aria-hidden="true"></i>
+                                <div>
+                                    <div class="fw-semibold small">Confirm your new email address</div>
+                                    <div class="text-secondary small">
+                                        We sent a 6-digit code to <strong>{{ $pendingEmail }}</strong>.
+                                        Until you enter it, you keep signing in with {{ $account->email }}.
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="row g-2 align-items-start">
+                                <div class="col-sm-5">
+                                    <form method="POST" action="{{ route('profile.email.verify') }}"
+                                        class="d-flex gap-2">
+                                        @csrf
+                                        <input type="text" name="code" class="form-control text-center"
+                                            style="letter-spacing:.4rem; font-weight:600;" inputmode="numeric"
+                                            autocomplete="one-time-code" maxlength="6" placeholder="000000" required
+                                            aria-label="Verification code">
+                                        <button type="submit" class="btn btn-primary flex-shrink-0">Confirm</button>
+                                    </form>
+                                    @error('code', 'emailChange')
+                                        <div class="text-danger small mt-1">{{ $message }}</div>
+                                    @enderror
+                                </div>
+
+                                <div class="col-sm-7 d-flex gap-2 align-items-center">
+                                    <form method="POST" action="{{ route('profile.email.resend') }}">
+                                        @csrf
+                                        <button type="submit" class="btn btn-link btn-sm p-0 text-decoration-none"
+                                            @disabled($emailRetryAfter > 0)>
+                                            {{ $emailRetryAfter > 0 ? 'Resend code in ' . $emailRetryAfter . 's' : 'Resend code' }}
+                                        </button>
+                                    </form>
+
+                                    <span class="text-secondary">&middot;</span>
+
+                                    <form method="POST" action="{{ route('profile.email.cancel') }}">
+                                        @csrf
+                                        @method('DELETE')
+                                        <button type="submit"
+                                            class="btn btn-link btn-sm p-0 text-decoration-none text-danger">
+                                            Cancel change
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    @endif
                 </div>
 
                 {{-- ------------------------------------- Specialties ---- --}}

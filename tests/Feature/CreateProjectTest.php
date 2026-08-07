@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Document;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
 use App\Models\ProjectType;
@@ -10,10 +11,12 @@ use App\Models\ScheduleTechnician;
 use App\Models\Skill;
 use App\Models\Technician;
 use App\Models\User;
+use App\Services\ProjectEmails;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 class CreateProjectTest extends TestCase
@@ -272,5 +275,127 @@ class CreateProjectTest extends TestCase
 
         $response->assertSessionHasErrors(['quotation_amount']);
         $this->assertDatabaseCount('tbl_projects', 0);
+    }
+
+    /**
+     * A document past the size limit is a field error on the wizard, not a
+     * blunt "content too large" page - provided it is inside PHP's own
+     * post_max_size, which is what keeps the request reaching Laravel at all.
+     */
+    public function test_an_oversized_document_is_refused_by_name(): void
+    {
+        ProjectType::create(['type_name' => 'Aircon Installation']);
+
+        $leadTechnician = $this->createWizardTechnician('lead_technician', 'Lead Technician');
+        $technician = $this->createWizardTechnician('technician', 'Juan Technician');
+
+        $payload = $this->baseProjectPayload($leadTechnician, $technician);
+        $payload['assessment_report'] = UploadedFile::fake()->create(
+            'assessment.pdf',
+            Document::MAX_KILOBYTES + 1,
+            'application/pdf'
+        );
+
+        $this->post(route('super-admin.projects.create.store'), $payload)
+            ->assertSessionHasErrors(['assessment_report']);
+
+        $this->assertDatabaseCount('tbl_projects', 0);
+    }
+
+    /**
+     * Anything that goes wrong while saving comes back as a toast on the
+     * wizard with the typed details still in place - never a stack trace, and
+     * never a half-made project.
+     */
+    public function test_a_failure_while_saving_returns_a_toast_and_leaves_nothing_behind(): void
+    {
+        ProjectType::create(['type_name' => 'Aircon Installation']);
+
+        $leadTechnician = $this->createWizardTechnician('lead_technician', 'Lead Technician');
+        $technician = $this->createWizardTechnician('technician', 'Juan Technician');
+
+        // Stand in for anything that can fail mid-save. A missing table makes
+        // the insert throw a QueryException, which is the realistic shape of a
+        // database fault - and the case that must not put SQL in a toast.
+        //
+        // Documents are written inside the transaction and read nowhere during
+        // validation, so removing this table fails the save and only the save.
+        Schema::drop('tbl_documents');
+
+        $response = $this->from(route('super-admin.projects.create'))
+            ->post(route('super-admin.projects.create.store'), $this->baseProjectPayload($leadTechnician, $technician));
+
+        // Back to the wizard, with a message a person can read.
+        $response->assertRedirect(route('super-admin.projects.create'));
+        $response->assertSessionHas('error');
+
+        $message = (string) session('error');
+
+        $this->assertStringContainsString('could not be created', $message);
+        // Debug mode appends the underlying fault, which is what debug mode is
+        // for - the test environment runs with it on.
+        $this->assertTrue(config('app.debug'));
+        $this->assertStringContainsString('SQLSTATE', $message);
+
+        // The project and its client rolled back with the failure.
+        $this->assertDatabaseCount('tbl_projects', 0);
+        $this->assertDatabaseCount('tbl_clients', 0);
+    }
+
+    /**
+     * With debug off - which is how this runs in production - the toast says
+     * what happened and nothing else. A raw query, the table names and the
+     * driver all stay in the log where they belong.
+     */
+    public function test_a_database_fault_never_leaks_sql_into_the_toast(): void
+    {
+        config(['app.debug' => false]);
+
+        ProjectType::create(['type_name' => 'Aircon Installation']);
+
+        $leadTechnician = $this->createWizardTechnician('lead_technician', 'Lead Technician');
+        $technician = $this->createWizardTechnician('technician', 'Juan Technician');
+
+        Schema::drop('tbl_documents');
+
+        $this->from(route('super-admin.projects.create'))
+            ->post(route('super-admin.projects.create.store'), $this->baseProjectPayload($leadTechnician, $technician))
+            ->assertRedirect(route('super-admin.projects.create'));
+
+        $message = (string) session('error');
+
+        $this->assertStringContainsString('could not be created', $message);
+        $this->assertStringNotContainsString('SQLSTATE', $message);
+        $this->assertStringNotContainsString('insert into', $message);
+        $this->assertStringNotContainsString('tbl_documents', $message);
+    }
+
+    /**
+     * The reverse case: the project saved, but a follow-up did not. The
+     * administrator must still be told it worked, because it did.
+     */
+    public function test_a_failing_follow_up_does_not_report_a_saved_project_as_failed(): void
+    {
+        ProjectType::create(['type_name' => 'Aircon Installation']);
+
+        $leadTechnician = $this->createWizardTechnician('lead_technician', 'Lead Technician');
+        $technician = $this->createWizardTechnician('technician', 'Juan Technician');
+
+        // The client's welcome email blows up after the project is committed.
+        $this->mock(ProjectEmails::class, function ($mock): void {
+            $mock->shouldReceive('projectCreated')
+                ->andThrow(new \RuntimeException('The mail server refused the connection.'));
+            $mock->shouldReceive('documentUploaded')->andReturnNull();
+        });
+
+        $response = $this->post(
+            route('super-admin.projects.create.store'),
+            $this->baseProjectPayload($leadTechnician, $technician)
+        );
+
+        $response->assertRedirect(route('super-admin.projects'));
+        $response->assertSessionHas('success', 'Project created successfully.');
+
+        $this->assertDatabaseCount('tbl_projects', 1);
     }
 }

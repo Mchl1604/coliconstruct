@@ -51,14 +51,21 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function rowMarkup(notification) {
-        return '<tr class="' + (notification.is_read ? '' : 'is-unread') + '" ' +
-            'data-notification-row="' + notification.id + '">' +
+        // The whole row is a link to wherever the notification points, exactly
+        // as each item in the bell dropdown is. The title carries a real <a>
+        // so it can be middle-clicked, copied and reached by keyboard; the
+        // row-level handler below is the convenience on top of it.
+        return '<tr class="notification-center-row ' + (notification.is_read ? '' : 'is-unread') + '" ' +
+            'data-notification-row="' + notification.id + '" ' +
+            'data-open-url="' + escapeHtml(notification.open_url) + '">' +
             '<td class="text-start notification-center-dates">' + escapeHtml(notification.created_at) + '</td>' +
             '<td class="text-start">' +
+            '<a class="notification-center-link" href="' + escapeHtml(notification.open_url) + '">' +
             '<div class="notification-center-title">' +
             '<i class="bi ' + escapeHtml(notification.icon) + ' me-1" aria-hidden="true"></i>' +
             escapeHtml(notification.title) + '</div>' +
             '<div class="notification-center-message">' + escapeHtml(notification.message) + '</div>' +
+            '</a>' +
             '</td>' +
             '<td class="text-start"><span class="badge bg-secondary">' + escapeHtml(notification.module) +
             '</span></td>' +
@@ -113,6 +120,19 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function bindRowActions() {
+        // Clicking anywhere on the row opens it - the same gesture the bell
+        // dropdown answers to. Clicks on the buttons, and on the title's own
+        // link, are left alone: those already do something of their own.
+        body.querySelectorAll('[data-open-url]').forEach(function(row) {
+            row.addEventListener('click', function(event) {
+                if (event.target.closest('a, button')) {
+                    return;
+                }
+
+                window.location.href = row.dataset.openUrl;
+            });
+        });
+
         body.querySelectorAll('[data-mark-read]').forEach(function(button) {
             button.addEventListener('click', function() {
                 send(routeFor('read', button.dataset.markRead), 'PUT').then(load);

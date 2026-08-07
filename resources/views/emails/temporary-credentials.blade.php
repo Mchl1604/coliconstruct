@@ -1,29 +1,47 @@
-<x-mail::message>
-# {{ $isReset ? 'Your password has been reset' : 'Welcome to Coliconstruct' }}
+@extends('emails.layout')
 
-Hello {{ $account->fullName() }},
+@section('subject', $isReset ? 'Your password has been reset' : 'Your account is ready')
 
-@if ($isReset)
-An administrator has reset the password on your Coliconstruct account. Use the
-temporary password below to sign in.
-@else
-An account has been created for you on the Coliconstruct Project Management
-System. Use the details below to sign in for the first time.
-@endif
+@section('preview')
+    {{ $isReset ? 'A temporary password has been issued for your account.' : 'Your account has been created. Here are your sign-in details.' }}
+@endsection
 
-**User ID:** {{ $account->user_code }}
-**Email:** {{ $account->email }}
-**Temporary password:** {{ $temporaryPassword }}
+@section('heading')
+    {{ $isReset ? 'Your password has been reset' : 'Welcome to ' . $company['name'] }}
+@endsection
 
-<x-mail::button :url="$loginUrl">
-Sign in
-</x-mail::button>
+@section('content')
+    <p style="margin:0 0 16px 0;">Hello {{ $account->fullName() }},</p>
 
-You will be asked to choose a new password the first time you sign in. This
-temporary password stops working at that point, so there is no need to keep it.
+    @if ($isReset)
+        <p style="margin:0 0 16px 0;">
+            An administrator has reset the password on your {{ $company['name'] }} account. Use the temporary
+            password below to sign in.
+        </p>
+    @else
+        <p style="margin:0 0 16px 0;">
+            An account has been created for you on the {{ $company['name'] }} {{ $company['tagline'] }}.
+            Use the details below to sign in for the first time.
+        </p>
+    @endif
 
-If you were not expecting this message, please contact your administrator.
+    <x-mail-details :rows="[
+        'User ID' => $account->user_code,
+        'Role' => $account->roleLabel(),
+        'Email address' => $account->email,
+        'Temporary password' => $temporaryPassword,
+    ]" />
 
-Thanks,<br>
-{{ config('app.name') }}
-</x-mail::message>
+    <p style="margin:0 0 16px 0;">
+        You will be asked to choose a new password the first time you sign in. This temporary password stops
+        working at that point, so there is no need to keep it.
+    </p>
+
+    <p style="margin:0; color:#63748a; font-size:13px;">
+        If you were not expecting this message, please contact your administrator.
+    </p>
+@endsection
+
+@section('action')
+    <x-mail-button :url="$loginUrl">Sign in</x-mail-button>
+@endsection

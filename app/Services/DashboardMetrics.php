@@ -24,8 +24,8 @@ use Illuminate\Support\Facades\Cache;
  *   - Counting happens in SQL. A dashboard that loads every project to count
  *     five statuses gets slower every week the business is open, and this one
  *     is the page people land on.
- *   - What an Admin may not read, they are not given. The archive figures are
- *     absent from their payload rather than hidden by the view.
+ *   - Every figure here is about projects, which both administrative roles
+ *     may read. Anything role-specific belongs on the module that owns it.
  *
  * Results are cached briefly and the cache is versioned: any write to a
  * project, an account, a schedule or a specialty request bumps the version
@@ -46,15 +46,16 @@ class DashboardMetrics
 
     /**
      * The statuses the ring and the figures use, with the colour each one
-     * wears. Soft rather than saturated, to match the rest of the page.
+     * wears - the website's own blues and yellow, so the dashboard reads as
+     * part of the same product as the public site.
      *
      * @var array<string, array{label: string, colour: string}>
      */
     public const STATUS_COLOURS = [
-        'completed' => ['label' => 'Completed', 'colour' => '#7c6bd6'],
-        'ongoing' => ['label' => 'Ongoing', 'colour' => '#5aa9e6'],
-        'overdue' => ['label' => 'Overdue', 'colour' => '#f28b6b'],
-        'pending' => ['label' => 'Pending', 'colour' => '#f3c969'],
+        'completed' => ['label' => 'Completed', 'colour' => '#1b5688'],
+        'ongoing' => ['label' => 'Ongoing', 'colour' => '#2d8de1'],
+        'overdue' => ['label' => 'Overdue', 'colour' => '#e2683f'],
+        'pending' => ['label' => 'Pending', 'colour' => '#f0c93c'],
         'cancelled' => ['label' => 'Cancelled', 'colour' => '#b8c1cc'],
     ];
 
@@ -79,7 +80,18 @@ class DashboardMetrics
     }
 
     /**
-     * @template T
+     * Cache one computed figure.
+     *
+     * IMPORTANT: `$compute` must return arrays and scalars only - never a
+     * Collection, a model or any other object.
+     *
+     * Every cache store but `array` serialises what it is given, and an object
+     * read back before its class is loaded comes out as a
+     * __PHP_Incomplete_Class: the first method call on it then fails with
+     * "tried to call a method on an incomplete object". Arrays have no such
+     * problem, and a caller that wants a Collection can wrap the array itself.
+     *
+     * @template T of array|scalar|null
      *
      * @param  callable(): T  $compute
      * @return T
@@ -101,46 +113,42 @@ class DashboardMetrics
      * The small figures across the top of the page.
      *
      * Each is a label and a number and nothing else, with the route it opens.
+     * Every one of them is a project figure, which both administrative roles
+     * may read - so unlike the rest of this class, nothing here is narrowed by
+     * who is asking.
      *
      * @return array<int, array{key: string, label: string, value: int, url: ?string, tone: string}>
      */
-    public function summary(User $viewer): array
+    public function summary(): array
     {
         $counts = $this->projectCounts();
-        $people = $this->peopleCounts();
         $projects = route('super-admin.projects');
 
         $cards = [
             $this->card('total_projects', 'Total Projects', $counts['total'], $projects),
+            // The one figure that answers "what is happening right now".
+            $this->card('active_today', 'Active Today', $counts['active_today'], route('super-admin.schedules.index'), 'today'),
             $this->card('ongoing', 'Ongoing', $counts['ongoing'], $projects, 'ongoing'),
             $this->card('pending', 'Pending', $counts['pending'], $projects, 'pending'),
             $this->card('overdue', 'Overdue', $counts['overdue'], $projects, 'overdue'),
             $this->card('completed', 'Completed', $counts['completed'], $projects, 'completed'),
-            $this->card('clients', 'Clients', $people['clients'], route('super-admin.configuration.index')),
-            $this->card('technicians', 'Technicians', $people['technicians'], route('super-admin.technicians.index')),
         ];
 
         // Shown only when there is something waiting, so an empty queue does
         // not take up a card saying zero.
-        if ($people['pending_specialty_requests'] > 0) {
+        $waiting = $this->pendingSpecialtyRequests();
+
+        if ($waiting > 0) {
             $cards[] = $this->card(
                 'specialty_requests',
                 'Specialty Requests',
-                $people['pending_specialty_requests'],
-                route('super-admin.technicians.index', ['tab' => 'specialty-requests']),
+                $waiting,
+                route('super-admin.technicians.index'),
                 'pending'
             );
         }
 
-        if (! $viewer->isSuperAdmin()) {
-            return $cards;
-        }
-
-        // The archive belongs to the owner.
-        return array_merge($cards, [
-            $this->card('archived_projects', 'Archived Projects', $counts['archived'], route('super-admin.projects.archived')),
-            $this->card('archived_accounts', 'Archived Accounts', $people['archived_accounts'], route('super-admin.configuration.index')),
-        ]);
+        return $cards;
     }
 
     /**
@@ -183,37 +191,41 @@ class DashboardMetrics
                 'overdue' => $overdue,
                 'completed' => (int) ($byStatus['completed'] ?? 0),
                 'cancelled' => (int) ($byStatus['cancelled'] ?? 0),
-                'archived' => Project::query()
-                    ->where(fn ($query) => $query->where('is_archived', true)->orWhere('status', 'archived'))
-                    ->count(),
+                'active_today' => $this->activeTodayCount(),
             ];
         });
     }
 
     /**
-     * The headcounts, again in one pass over the users table.
+     * Projects with a crew on them today: open work whose booked date range
+     * covers the current date.
      *
-     * @return array<string, int>
+     * A project can hold several ranges, so the count is of distinct projects
+     * rather than of schedule rows - two ranges covering today is still one
+     * job happening.
      */
-    public function peopleCounts(): array
+    private function activeTodayCount(): int
     {
-        return $this->remember('peopleCounts', function (): array {
-            $byRole = User::query()
-                ->notArchived()
-                ->selectRaw('role, count(*) as aggregate')
-                ->groupBy('role')
-                ->pluck('aggregate', 'role');
+        $today = CarbonImmutable::today()->toDateString();
 
-            return [
-                'clients' => (int) ($byRole[User::ROLE_CLIENT] ?? 0),
-                'technicians' => (int) ($byRole['technician'] ?? 0) + (int) ($byRole[User::ROLE_LEAD_TECHNICIAN] ?? 0),
-                'lead_technicians' => (int) ($byRole[User::ROLE_LEAD_TECHNICIAN] ?? 0),
-                'admins' => (int) ($byRole[User::ROLE_ADMIN] ?? 0),
-                'super_admins' => (int) ($byRole[User::ROLE_SUPER_ADMIN] ?? 0),
-                'archived_accounts' => User::query()->archived()->count(),
-                'pending_specialty_requests' => SpecialtyRequest::query()->pending()->count(),
-            ];
-        });
+        return Project::query()
+            ->where('is_archived', false)
+            ->whereNotIn('status', ['completed', 'cancelled', 'archived'])
+            ->whereHas('schedules', fn ($query) => $query
+                ->whereDate('start_datetime', '<=', $today)
+                ->whereDate('end_datetime', '>=', $today))
+            ->count();
+    }
+
+    /**
+     * How many technicians are waiting on a specialty decision.
+     */
+    public function pendingSpecialtyRequests(): int
+    {
+        return $this->remember(
+            'pendingSpecialtyRequests',
+            fn (): int => SpecialtyRequest::query()->pending()->count()
+        );
     }
 
     // ------------------------------------------------------------------
@@ -261,7 +273,9 @@ class DashboardMetrics
      */
     public function technicianWorkload(int $limit = 4): Collection
     {
-        return $this->remember('technicianWorkload', function (): Collection {
+        // The cached value is a plain array, not the Collection this returns -
+        // see remember()'s note on why nothing but arrays and scalars go in.
+        $rows = $this->remember('technicianWorkload', function (): array {
             return Technician::query()
                 ->with('account')
                 ->whereHas('account', fn ($query) => $query->whereIn('role', User::TECHNICIAN_ROLES))
@@ -278,8 +292,11 @@ class DashboardMetrics
                     'value' => (int) $technician->ongoing_count,
                 ])
                 ->sortByDesc('value')
-                ->values();
-        })->take($limit)->values();
+                ->values()
+                ->all();
+        });
+
+        return collect($rows)->take($limit)->values();
     }
 
     /**

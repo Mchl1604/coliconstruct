@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Notification;
 use App\Models\Project;
+use App\Models\SpecialtyRequest;
 use App\Models\Task;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
@@ -1010,52 +1011,68 @@ class NotificationService
      * Every administrator is told, because any of them can decide it, and the
      * link opens the queue rather than the technician's row - the reviewer
      * wants the request, not the account.
+     *
+     * The request is the reference, not the technician's account. That is what
+     * makes a second request from the same person a second notification: the
+     * duplicate guard matches on the reference and the wording, and with the
+     * account as the reference every later request looked like a repeat of the
+     * first and was silently dropped.
      */
-    public function specialtyRequestSubmitted(User $technicianAccount): void
+    public function specialtyRequestSubmitted(User $technicianAccount, ?SpecialtyRequest $request = null): void
     {
         $this->deliver(
             $this->administrators(),
             'Specialty Request',
             sprintf(
-                '%s requested changes to their specialties and is awaiting approval.',
-                $technicianAccount->fullName()
+                '%s requested changes to their specialties (%s) and is awaiting approval.',
+                $technicianAccount->fullName(),
+                $request?->changeSummary() ?? 'pending review'
             ),
             Notification::MODULE_USER_MANAGEMENT,
-            $technicianAccount,
+            $request ?? $technicianAccount,
             $this->specialtyQueueLink()
         );
     }
 
-    public function specialtyRequestApproved(User $technicianAccount): void
+    public function specialtyRequestApproved(User $technicianAccount, ?SpecialtyRequest $request = null): void
     {
         $this->deliver(
             $technicianAccount,
             'Specialty Update Approved',
-            'Your specialty update has been approved.',
+            $request
+                ? sprintf('Your specialty update has been approved: %s.', $request->changeSummary())
+                : 'Your specialty update has been approved.',
             Notification::MODULE_USER_MANAGEMENT,
-            $technicianAccount,
+            $request ?? $technicianAccount,
             route('profile.edit', [], false)
         );
     }
 
-    public function specialtyRequestRejected(User $technicianAccount): void
+    public function specialtyRequestRejected(User $technicianAccount, ?SpecialtyRequest $request = null): void
     {
         $this->deliver(
             $technicianAccount,
             'Specialty Update Rejected',
-            'Your specialty update request has been rejected. Your current specialties are unchanged.',
+            $request
+                ? sprintf(
+                    'Your specialty request (%s) has been rejected. Your current specialties are unchanged.',
+                    $request->changeSummary()
+                )
+                : 'Your specialty update request has been rejected. Your current specialties are unchanged.',
             Notification::MODULE_USER_MANAGEMENT,
-            $technicianAccount,
+            $request ?? $technicianAccount,
             route('profile.edit', [], false)
         );
     }
 
     /**
-     * The pending specialty queue, which lives on the Technicians page.
+     * The Technicians page, where whoever is waiting on a specialty decision
+     * is highlighted in the table. There is no queue of its own: the decision
+     * is taken in the technician's own details dialog.
      */
     public function specialtyQueueLink(): string
     {
-        return route('super-admin.technicians.index', ['tab' => 'specialty-requests'], false);
+        return route('super-admin.technicians.index', [], false);
     }
 
     /**

@@ -46,6 +46,7 @@ class PublicSiteTest extends TestCase
             'email' => $email,
             'role' => $role,
             'status' => User::STATUS_ACTIVE,
+            'email_verified_at' => now(),
             'password' => 'correct-password',
         ]);
     }

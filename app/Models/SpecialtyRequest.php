@@ -118,6 +118,31 @@ class SpecialtyRequest extends Model
     }
 
     /**
+     * "added HVAC; removed Plumbing", or "no change" for a request that
+     * somehow carries neither - which the submission guard already rules out.
+     *
+     * Lives on the model rather than in one caller because the audit trail,
+     * the notification and the email all have to describe the same request the
+     * same way. It is also what makes each notification distinct: two requests
+     * from the same technician on the same day say different things, so the
+     * duplicate guard cannot mistake the second for a repeat of the first.
+     */
+    public function changeSummary(): string
+    {
+        $parts = [];
+
+        if ($this->additions()->isNotEmpty()) {
+            $parts[] = 'added '.$this->additions()->implode(', ');
+        }
+
+        if ($this->removals()->isNotEmpty()) {
+            $parts[] = 'removed '.$this->removals()->implode(', ');
+        }
+
+        return $parts === [] ? 'no change' : implode('; ', $parts);
+    }
+
+    /**
      * @param  array<int, int>  $ids
      * @return Collection<int, Skill>
      */

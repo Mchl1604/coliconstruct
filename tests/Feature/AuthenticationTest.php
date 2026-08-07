@@ -2,6 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Mail\OtpCodeMail;
+use App\Models\ActivityLog;
+use App\Models\OtpVerification;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
 use App\Models\Schedule;
@@ -12,6 +15,7 @@ use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\RateLimiter;
 use Tests\TestCase;
 
@@ -47,6 +51,9 @@ class AuthenticationTest extends TestCase
             'email' => 'user@example.test',
             'role' => $role,
             'status' => User::STATUS_ACTIVE,
+            // An account that already exists has a proved address; the
+            // verification workflow is for self-registration alone.
+            'email_verified_at' => now(),
             'password' => 'correct-password',
         ], $overrides));
     }
@@ -192,10 +199,14 @@ class AuthenticationTest extends TestCase
     // ------------------------------------------------------------------
 
     /**
-     * Self-registration produces a client and nothing else.
+     * Self-registration produces a client and nothing else - and does not sign
+     * them in. The address has proved nothing yet, so the account is created
+     * unverified and the browser goes to the verification page.
      */
-    public function test_registering_creates_an_active_client_account(): void
+    public function test_registering_creates_an_unverified_client_account(): void
     {
+        Mail::fake();
+
         $response = $this->post(route('auth.register.store'), [
             'full_name' => 'Jose Garcia',
             'email' => 'jose@example.test',
@@ -204,18 +215,163 @@ class AuthenticationTest extends TestCase
             'password_confirmation' => 'my-own-password',
         ]);
 
-        // A client has no portal of their own; the public website is theirs.
-        $response->assertRedirect(route('landing.home'));
+        $response->assertRedirect(route('auth.verify'));
 
         $user = User::where('email', 'jose@example.test')->firstOrFail();
 
         $this->assertSame(User::ROLE_CLIENT, $user->role);
         $this->assertStringStartsWith('CLI-', (string) $user->user_code);
-        $this->assertTrue($user->canLogin());
         // Their own password, so there is nothing to force them to replace.
         $this->assertFalse($user->must_change_password);
         $this->assertTrue(Hash::check('my-own-password', $user->password));
+
+        // Unverified, not signed in, and holding a live code.
+        $this->assertFalse($user->hasVerifiedEmail());
+        $this->assertTrue($user->requiresEmailVerification());
+        $this->assertGuest();
+
+        Mail::assertQueued(OtpCodeMail::class, fn (OtpCodeMail $mail): bool => $mail->hasTo('jose@example.test')
+            && $mail->purpose === OtpVerification::PURPOSE_REGISTRATION);
+
+        $this->assertDatabaseHas('tbl_otp_verifications', [
+            'email' => 'jose@example.test',
+            'purpose' => OtpVerification::PURPOSE_REGISTRATION,
+        ]);
+    }
+
+    /**
+     * The code is what turns a registration into an account that can sign in.
+     */
+    public function test_the_emailed_code_verifies_the_address_and_signs_the_client_in(): void
+    {
+        Mail::fake();
+
+        $this->post(route('auth.register.store'), [
+            'full_name' => 'Jose Garcia',
+            'email' => 'jose@example.test',
+            'contact_number' => '09175551234',
+            'password' => 'my-own-password',
+            'password_confirmation' => 'my-own-password',
+        ]);
+
+        $code = $this->issuedCode();
+
+        $this->post(route('auth.verify.store'), ['code' => $code])
+            ->assertRedirect(route('landing.home'));
+
+        $user = User::where('email', 'jose@example.test')->firstOrFail();
+
+        $this->assertTrue($user->hasVerifiedEmail());
+        $this->assertTrue($user->canLogin());
         $this->assertAuthenticatedAs($user);
+
+        $this->assertDatabaseHas('tbl_activity_logs', [
+            'action' => ActivityLog::REGISTRATION_VERIFIED,
+        ]);
+    }
+
+    /**
+     * The page a registration lands on: the address it went to, a field for
+     * the code, and a resend that is on a timer rather than a free button.
+     */
+    public function test_the_verification_page_shows_the_address_and_offers_a_resend(): void
+    {
+        Mail::fake();
+
+        $this->post(route('auth.register.store'), [
+            'full_name' => 'Jose Garcia',
+            'email' => 'jose@example.test',
+            'contact_number' => '09175551234',
+            'password' => 'my-own-password',
+            'password_confirmation' => 'my-own-password',
+        ]);
+
+        $response = $this->get(route('auth.verify'));
+
+        $response->assertOk();
+        $response->assertSee('jose@example.test');
+        $response->assertSee('name="code"', false);
+        $response->assertSee(route('auth.verify.resend'), false);
+        // A code was issued a moment ago, so the resend starts on its timer.
+        $response->assertSee('Resend code in');
+    }
+
+    /**
+     * Reaching the verification page without having registered gives nothing
+     * away: there is no address in the session to be about.
+     */
+    public function test_the_verification_page_needs_a_registration_behind_it(): void
+    {
+        $this->get(route('auth.verify'))->assertRedirect(route('auth.login'));
+    }
+
+    /**
+     * A wrong code changes nothing, and costs an attempt.
+     */
+    public function test_a_wrong_code_leaves_the_account_unverified(): void
+    {
+        Mail::fake();
+
+        $this->post(route('auth.register.store'), [
+            'full_name' => 'Jose Garcia',
+            'email' => 'jose@example.test',
+            'contact_number' => '09175551234',
+            'password' => 'my-own-password',
+            'password_confirmation' => 'my-own-password',
+        ]);
+
+        $this->post(route('auth.verify.store'), ['code' => '000000'])
+            ->assertSessionHas('error');
+
+        $this->assertFalse(
+            User::where('email', 'jose@example.test')->firstOrFail()->hasVerifiedEmail()
+        );
+        $this->assertGuest();
+
+        $this->assertDatabaseHas('tbl_otp_verifications', [
+            'email' => 'jose@example.test',
+            'attempts' => 1,
+        ]);
+    }
+
+    /**
+     * Signing in with an address that was never verified does not fail as a
+     * bad password - it resumes the registration where it stopped.
+     */
+    public function test_an_unverified_account_is_sent_back_to_verification(): void
+    {
+        Mail::fake();
+
+        $client = $this->account('client', [
+            'email' => 'unverified@example.test',
+            'email_verified_at' => null,
+        ]);
+
+        $this->post(route('auth.login.attempt'), [
+            'email' => $client->email,
+            'password' => 'correct-password',
+        ])->assertRedirect(route('auth.verify'));
+
+        $this->assertGuest();
+
+        Mail::assertQueued(OtpCodeMail::class);
+    }
+
+    /**
+     * The six digits, read back from the message that carried them - the only
+     * place they exist after being generated.
+     */
+    private function issuedCode(): string
+    {
+        $code = null;
+
+        Mail::assertQueued(OtpCodeMail::class, function (OtpCodeMail $mail) use (&$code): bool {
+            $code = $mail->code;
+
+            return true;
+        });
+
+        return (string) $code;
     }
 
     /**

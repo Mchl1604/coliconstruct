@@ -19,6 +19,7 @@ use App\Models\User;
 use App\Services\ActivityLogger;
 use App\Services\NotificationService;
 use App\Services\ProjectCompletion;
+use App\Services\ProjectEmails;
 use App\Services\ProjectTeamCandidates;
 use App\Services\TechnicianAvailabilityService;
 use Carbon\Carbon;
@@ -29,6 +30,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
+use PDOException;
 use RuntimeException;
 use Throwable;
 
@@ -36,7 +38,8 @@ class ProjectController extends Controller
 {
     public function __construct(
         private readonly ActivityLogger $activityLogger,
-        private readonly NotificationService $notifications
+        private readonly NotificationService $notifications,
+        private readonly ProjectEmails $clientEmails
     ) {}
 
     public function index()
@@ -211,13 +214,51 @@ class ProjectController extends Controller
                 throw new RuntimeException('The project was not created.');
             }
 
-            // Every entry below is written after its transaction commits, so a
-            // rolled-back action leaves nothing claiming it happened.
+            // The project exists from here on. Everything below is follow-up -
+            // the audit trail, the bells, the client's welcome - and none of it
+            // may turn a project that was created into one the interface
+            // reports as failed. announceNewProject() therefore swallows its
+            // own faults rather than letting them reach the catch below.
+            $this->announceNewProject($created, count($validated['technicians']));
+
+            return redirect()
+                ->route('super-admin.projects')
+                ->with('success', 'Project created successfully.');
+        } catch (Throwable $exception) {
+            // Nothing reached the tables: the whole of the work above runs in
+            // one transaction, so a failure anywhere in it leaves no
+            // half-made project behind.
+            //
+            // The person is sent back to the wizard rather than to the
+            // Projects list, with everything they typed still in it. Losing
+            // four steps of data entry to a database hiccup is a worse failure
+            // than the hiccup.
+            report($exception);
+
+            return back()
+                ->withInput()
+                ->with('error', $this->creationFailureMessage($exception));
+        }
+    }
+
+    /**
+     * Everything that happens because a project was created, as opposed to
+     * everything that creates it.
+     *
+     * Kept apart from store() and deliberately unable to fail it. A mail
+     * server being down, or a notification row refusing to write, is not a
+     * reason to tell an administrator their project was not created when it
+     * was - and the transaction has already committed by the time any of this
+     * runs, so there is nothing left to roll back either way.
+     */
+    private function announceNewProject(Project $project, int $supportingTechnicianCount): void
+    {
+        try {
             $this->activityLogger->record(
                 ActivityLog::PROJECT_CREATED,
                 null,
-                sprintf("Created project '%s' for %s.", $created->reference_no, $created->name),
-                $created
+                sprintf("Created project '%s' for %s.", $project->reference_no, $project->name),
+                $project
             );
 
             $this->activityLogger->record(
@@ -225,34 +266,74 @@ class ProjectController extends Controller
                 null,
                 sprintf(
                     "Assigned a lead technician and %d supporting technician(s) to '%s'.",
-                    count($validated['technicians']),
-                    $created->reference_no
+                    $supportingTechnicianCount,
+                    $project->reference_no
                 ),
-                $created
+                $project
             );
 
-            $this->notifications->projectCreated($created);
+            $this->notifications->projectCreated($project);
 
-            $team = $this->notifications->projectTeam($created);
+            $team = $this->notifications->projectTeam($project);
 
-            if ($lead = $this->notifications->projectLead($created)) {
-                $this->notifications->leadAssignedToProject($created, $lead);
+            if ($lead = $this->notifications->projectLead($project)) {
+                $this->notifications->leadAssignedToProject($project, $lead);
             }
 
             $this->notifications->techniciansAssignedToProject(
-                $created,
+                $project,
                 $team->reject(fn ($user) => $user->role === User::ROLE_LEAD_TECHNICIAN)
             );
 
-            return redirect()
-                ->route('super-admin.projects')
-                ->with(session()->flash('success', 'Project created successfully.'));
-        } catch (Throwable $e) {
+            // The client is welcomed to the address the project was booked
+            // under, whether or not they have an account yet - registering
+            // with that same address is what connects the two.
+            $this->clientEmails->projectCreated($project);
 
-            return redirect()
-                ->route('super-admin.projects')
-                ->with(session()->flash('error', 'An error occurred while creating the project: '.$e->getMessage()));
+            // The documents that arrived with the wizard are the client's to
+            // read, so they are told each one is available.
+            foreach (['assessment', 'quotation', 'contract'] as $documentType) {
+                if ($project->documents()->where('document_type', $documentType)->exists()) {
+                    $this->clientEmails->documentUploaded($project, $documentType);
+                }
+            }
+        } catch (Throwable $exception) {
+            // Worth knowing about, but not worth telling an administrator
+            // their project failed when it is sitting in the table.
+            report($exception);
         }
+    }
+
+    /**
+     * What to put in the toast when creating a project fails.
+     *
+     * A RuntimeException is something this module raised deliberately, and its
+     * message is written for a person to read. Anything else is a fault whose
+     * message belongs in the log: a raw SQL error tells an administrator
+     * nothing useful and describes the shape of the database to anyone
+     * watching.
+     *
+     * PDOException is excluded by name because it *extends* RuntimeException -
+     * which makes a failed query look like a deliberate message unless it is
+     * ruled out here. That is precisely the case that would leak.
+     *
+     * In debug mode the detail is appended regardless, because that is what
+     * debug mode is for.
+     */
+    private function creationFailureMessage(Throwable $exception): string
+    {
+        $isDeliberate = $exception instanceof RuntimeException
+            && ! $exception instanceof PDOException;
+
+        if ($isDeliberate) {
+            return $exception->getMessage();
+        }
+
+        $message = 'The project could not be created. Nothing was saved, so you can correct the details and try again.';
+
+        return config('app.debug')
+            ? $message.' ('.$exception->getMessage().')'
+            : $message;
     }
 
     private function defaultSelectedProjectTypes(Collection $projectTypes): array
@@ -534,14 +615,22 @@ class ProjectController extends Controller
             'project_types' => ['required', 'array', 'min:1'],
             'project_types.*' => ['required', 'integer', 'exists:tbl_project_types,type_id'],
 
-            'assessmentDocument' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf,docx'],
-            'quotationDocument' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf,docx'],
-            'contractDocument' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf,docx'],
+            'assessmentDocument' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf,docx', 'max:'.Document::MAX_KILOBYTES],
+            'quotationDocument' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf,docx', 'max:'.Document::MAX_KILOBYTES],
+            'contractDocument' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf,docx', 'max:'.Document::MAX_KILOBYTES],
+        ], [
+            'assessmentDocument.max' => 'The assessment document must be '.Document::MAX_LABEL.' or smaller.',
+            'quotationDocument.max' => 'The quotation document must be '.Document::MAX_LABEL.' or smaller.',
+            'contractDocument.max' => 'The contract document must be '.Document::MAX_LABEL.' or smaller.',
         ]);
+
+        // Collected inside the transaction and read after it commits, so the
+        // client is only told about a document that actually landed.
+        $uploadedDocuments = [];
 
         try {
 
-            DB::transaction(function () use ($validated, $request, $id) {
+            DB::transaction(function () use ($validated, $request, $id, &$uploadedDocuments) {
 
                 $project = Project::findOrFail($id);
 
@@ -573,27 +662,21 @@ class ProjectController extends Controller
                 $project->projectTypes()->sync($validated['project_types']);
 
                 // Update documents here if needed...
-                $this->replaceDocument(
-                    $request->file('assessmentDocument'),
-                    $project->project_id,
-                    'assessment'
-                );
+                if ($this->replaceDocument($request->file('assessmentDocument'), $project->project_id, 'assessment')) {
+                    $uploadedDocuments[] = 'assessment';
+                }
 
-                $this->replaceDocument(
-                    $request->file('quotationDocument'),
-                    $project->project_id,
-                    'quotation'
-                );
+                if ($this->replaceDocument($request->file('quotationDocument'), $project->project_id, 'quotation')) {
+                    $uploadedDocuments[] = 'quotation';
+                }
 
                 if (
                     $client->client_type === 'Commercial' &&
                     $request->hasFile('contractDocument')
                 ) {
-                    $this->replaceDocument(
-                        $request->file('contractDocument'),
-                        $project->project_id,
-                        'contract'
-                    );
+                    if ($this->replaceDocument($request->file('contractDocument'), $project->project_id, 'contract')) {
+                        $uploadedDocuments[] = 'contract';
+                    }
                 }
             });
 
@@ -606,6 +689,12 @@ class ProjectController extends Controller
 
             $this->notifications->projectUpdated($project);
 
+            // A new document is the one part of an edit the client cares
+            // about, so that - and only that - is emailed to them.
+            foreach ($uploadedDocuments as $documentType) {
+                $this->clientEmails->documentUploaded($project, $documentType);
+            }
+
             return redirect()
                 ->route('super-admin.projects.show', $id)
                 ->with('success', 'Project updated successfully.');
@@ -617,10 +706,13 @@ class ProjectController extends Controller
         }
     }
 
-    private function replaceDocument(?UploadedFile $uploadedFile, int $projectId, string $documentType): void
+    /**
+     * @return bool whether a file was actually stored
+     */
+    private function replaceDocument(?UploadedFile $uploadedFile, int $projectId, string $documentType): bool
     {
         if (! $uploadedFile) {
-            return;
+            return false;
         }
 
         $directory = public_path('uploads/'.$documentType);
@@ -661,6 +753,8 @@ class ProjectController extends Controller
                 'document_type' => $documentType,
             ]));
         }
+
+        return true;
     }
 
     public function putOnHold(Request $request, int $id)
@@ -694,6 +788,7 @@ class ProjectController extends Controller
             });
 
             $this->notifications->projectPutOnHold($project, $team);
+            $this->clientEmails->projectPutOnHold($project);
 
             $this->activityLogger->record(
                 ActivityLog::PROJECT_PUT_ON_HOLD,
@@ -725,6 +820,7 @@ class ProjectController extends Controller
         $project->update(['on_hold' => false]);
 
         $this->notifications->projectResumed($project);
+        $this->clientEmails->projectResumed($project);
 
         $this->activityLogger->record(
             ActivityLog::PROJECT_RESUMED,
@@ -758,8 +854,14 @@ class ProjectController extends Controller
             'completion_date' => ['required', 'date'],
             'completion_summary' => ['required', 'string'],
             'completion_remarks' => ['nullable', 'string'],
-            'completion_photos' => ['nullable', 'array'],
-            'completion_photos.*' => ['file', 'mimes:jpg,jpeg,png'],
+            'completion_photos' => ['nullable', 'array', 'max:20'],
+            // Matched to every other photo upload in the system, so a phone
+            // picture is always accepted and nothing arrives that the browser
+            // then struggles to show.
+            'completion_photos.*' => ['file', 'mimes:jpg,jpeg,png', 'max:5120'],
+        ], [
+            'completion_photos.max' => 'Up to 20 completion photos can be uploaded at once.',
+            'completion_photos.*.max' => 'Each completion photo must be 5 MB or smaller.',
         ]);
 
         try {
@@ -809,6 +911,7 @@ class ProjectController extends Controller
             );
 
             $this->notifications->projectCompleted($project);
+            $this->clientEmails->projectCompleted($project->refresh());
 
             return redirect()
                 ->route('super-admin.projects')
@@ -871,6 +974,7 @@ class ProjectController extends Controller
             );
 
             $this->notifications->projectCancelled($project);
+            $this->clientEmails->projectCancelled($project->refresh());
 
             return redirect()
                 ->route('super-admin.projects.show', $id)

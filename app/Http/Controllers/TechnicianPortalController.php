@@ -17,6 +17,7 @@ use App\Policies\TaskPolicy;
 use App\Services\ActivityLogger;
 use App\Services\NotificationService;
 use App\Services\ProjectCompletion;
+use App\Services\ProjectEmails;
 use App\Services\TaskScheduleRules;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
@@ -710,11 +711,13 @@ class TechnicianPortalController extends Controller
             'completion_date' => ['required', 'date'],
             'completion_summary' => ['required', 'string'],
             'completion_remarks' => ['nullable', 'string'],
-            'completion_photos' => ['required', 'array', 'min:1'],
+            'completion_photos' => ['required', 'array', 'min:1', 'max:20'],
             'completion_photos.*' => ['file', 'mimes:jpg,jpeg,png', 'max:5120'],
         ], [
             'completion_photos.required' => 'At least one completion photo is required.',
             'completion_photos.min' => 'At least one completion photo is required.',
+            'completion_photos.max' => 'Up to 20 completion photos can be uploaded at once.',
+            'completion_photos.*.max' => 'Each completion photo must be 5 MB or smaller.',
         ]);
 
         if ($validator->fails()) {
@@ -748,6 +751,10 @@ class TechnicianPortalController extends Controller
         }
 
         $this->notifications->projectCompleted($project);
+
+        // Completed from the portal is still completed, so the client hears
+        // about it in exactly the same words as when an administrator does it.
+        app(ProjectEmails::class)->projectCompleted($project->refresh());
 
         if ($request->expectsJson()) {
             return response()->json(['message' => 'Project marked as completed.']);

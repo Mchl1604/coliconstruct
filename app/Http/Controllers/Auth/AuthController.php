@@ -4,20 +4,20 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
+use App\Models\OtpVerification;
 use App\Models\User;
 use App\Services\ActivityLogger;
-use App\Services\CredentialDelivery;
 use App\Services\NotificationService;
+use App\Services\OtpService;
 use App\Services\UserAccountService;
 use App\Support\PortalHome;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\RateLimiter;
-use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use RuntimeException;
 
 /**
  * Signing in, signing out, and the forced first password change.
@@ -94,6 +94,19 @@ class AuthController extends Controller
         // locked out uses the reset link instead.
         $attempted = ! $unusable && Auth::attempt($credentials);
 
+        // The credentials matched, but the address has never been proved. The
+        // account is real and its password was right, so this is not a failure
+        // to hide behind the generic message - it is sent to finish the
+        // registration it started.
+        if ($attempted && Auth::user()->requiresEmailVerification()) {
+            $pending = Auth::user();
+            Auth::logout();
+
+            RateLimiter::clear($this->throttleKey($request));
+
+            return $this->sendVerificationCode($request, $pending);
+        }
+
         // The credentials matched; now check the account is allowed in at all.
         if ($attempted && ! Auth::user()->canLogin()) {
             Auth::logout();
@@ -164,6 +177,11 @@ class AuthController extends Controller
      * the request, so no crafted field can create an employee account. Staff
      * accounts exist solely because an admin or super admin created them in
      * Configuration.
+     *
+     * The account is created unverified and is not signed in. A code emailed
+     * to the address is the only thing that activates it - see
+     * EmailVerificationController - so an address nobody can read never
+     * becomes a working account.
      */
     public function register(Request $request)
     {
@@ -180,13 +198,35 @@ class AuthController extends Controller
 
         $user = app(UserAccountService::class)->registerClient($validated);
 
-        Auth::login($user);
-        $request->session()->regenerate();
+        return $this->sendVerificationCode($request, $user);
+    }
 
-        $user->forceFill(['last_login_at' => now()])->save();
+    /**
+     * Start - or restart - the verification of a registered address.
+     *
+     * Shared by registration and by a sign-in attempt against an account that
+     * never finished one, so both land on the same page having sent the same
+     * kind of code.
+     */
+    private function sendVerificationCode(Request $request, User $account)
+    {
+        $request->session()->put(EmailVerificationController::SESSION_KEY, $account->email);
 
-        return redirect(PortalHome::url($user))
-            ->with('success', 'Welcome to Coliconstruct.');
+        try {
+            app(OtpService::class)->issue(
+                $account->email,
+                OtpVerification::PURPOSE_REGISTRATION,
+                $account
+            );
+        } catch (RuntimeException $exception) {
+            // A code was sent moments ago, or too many have been asked for.
+            // Either way the page to be on is the same one.
+            return redirect()->route('auth.verify')->with('error', $exception->getMessage());
+        }
+
+        return redirect()
+            ->route('auth.verify')
+            ->with('success', 'We sent a verification code to '.$account->email.'.');
     }
 
     public function logout(Request $request)
@@ -270,119 +310,11 @@ class AuthController extends Controller
     }
 
     // ------------------------------------------------------------------
-    // Forgotten password
-    // ------------------------------------------------------------------
-
-    public function showForgotPassword(CredentialDelivery $credentials)
-    {
-        if (Auth::check()) {
-            return redirect(PortalHome::url(Auth::user()));
-        }
-
-        // Without a real mailer there is nowhere to send a link, so the page
-        // says so rather than pretending one is on its way.
-        return view('auth.forgot-password', [
-            'mailEnabled' => $credentials->isDeliverable(),
-        ]);
-    }
-
-    /**
-     * Email a reset link.
-     *
-     * The answer is the same whether or not the address is on file: telling a
-     * stranger which addresses exist is the one thing this page must not do.
-     */
-    public function sendResetLink(Request $request, CredentialDelivery $credentials)
-    {
-        $request->validate(['email' => ['required', 'string', 'email']]);
-
-        if (! $credentials->isDeliverable()) {
-            return back()->with(
-                'error',
-                'Email is not configured on this system, so a reset link cannot be sent. '
-                    .'Ask an administrator to reset your password from Configuration.'
-            );
-        }
-
-        Password::sendResetLink($request->only('email'));
-
-        // Recorded against the account when there is one, and against the
-        // address alone when there is not - a stream of requests for addresses
-        // that do not exist is worth being able to see.
-        $account = User::where('email', $request->string('email'))->first();
-
-        $this->activityLogger->recordAnonymous(
-            ActivityLog::PASSWORD_RESET_REQUESTED,
-            $account?->fullName() ?? $request->string('email')->toString(),
-            $account,
-            sprintf('A password reset link was requested for %s.', $request->string('email'))
-        );
-
-        return back()->with(
-            'success',
-            'If that address has an account, a reset link is on its way. The link expires in 60 minutes.'
-        );
-    }
-
-    public function showResetPassword(Request $request, string $token)
-    {
-        return view('auth.reset-password', [
-            'token' => $token,
-            'email' => $request->string('email')->toString(),
-        ]);
-    }
-
-    /**
-     * Set the new password against a link's token.
-     */
-    public function resetPassword(Request $request)
-    {
-        $request->validate([
-            'token' => ['required', 'string'],
-            'email' => ['required', 'string', 'email'],
-            'password' => ['required', 'string', 'min:8', 'max:72', 'confirmed'],
-        ], [
-            'password.confirmed' => 'The two passwords do not match.',
-            'password.min' => 'The new password must be at least 8 characters.',
-        ]);
-
-        $reset = null;
-
-        $status = Password::reset(
-            $request->only('email', 'password', 'password_confirmation', 'token'),
-            function (User $user, string $password) use (&$reset): void {
-                // Whatever the account was opened with, this is now the user's
-                // own - so the forced first change no longer applies.
-                $user->forceFill([
-                    'password' => $password,
-                    'must_change_password' => false,
-                    'remember_token' => Str::random(60),
-                ])->save();
-
-                $reset = $user;
-            }
-        );
-
-        if ($status !== Password::PASSWORD_RESET) {
-            throw ValidationException::withMessages([
-                'email' => 'That reset link is no longer valid. Ask for a new one.',
-            ]);
-        }
-
-        $this->activityLogger->recordAnonymous(
-            ActivityLog::PASSWORD_RESET_COMPLETED,
-            $reset?->fullName() ?? $request->string('email')->toString(),
-            $reset,
-            sprintf('%s reset their password from an emailed link.', $reset?->fullName() ?? 'An account holder')
-        );
-
-        return redirect()
-            ->route('auth.login')
-            ->with('success', 'Your password has been reset. Sign in with it now.');
-    }
-
-    // ------------------------------------------------------------------
     // Internals
+    //
+    // Forgetting a password lives in PasswordResetController: it is three
+    // pages and a one-time code rather than a single action, and it does not
+    // belong in the middle of signing in.
     // ------------------------------------------------------------------
 
     /**

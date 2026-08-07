@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\Auth\AuthController;
+use App\Http\Controllers\Auth\EmailVerificationController;
+use App\Http\Controllers\Auth\PasswordResetController;
 use App\Http\Controllers\ConfigurationController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\NotificationController;
@@ -37,12 +39,37 @@ Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth')->n
 Route::get('/register', [AuthController::class, 'showRegister'])->name('auth.register');
 Route::post('/register', [AuthController::class, 'register'])->name('auth.register.store');
 
+// Proving a newly registered address is real. Guest routes by necessity: the
+// account exists but cannot sign in until the code sent to it comes back.
+//
+// Throttled on top of the per-address limits OtpService already applies, so a
+// script cannot burn through somebody's attempts from one machine.
+Route::get('/verify-email', [EmailVerificationController::class, 'show'])->name('auth.verify');
+Route::post('/verify-email', [EmailVerificationController::class, 'verify'])
+    ->middleware('throttle:10,1')
+    ->name('auth.verify.store');
+Route::post('/verify-email/resend', [EmailVerificationController::class, 'resend'])
+    ->middleware('throttle:6,1')
+    ->name('auth.verify.resend');
+
 // Forgotten password. Open to guests by definition - somebody who cannot sign
 // in is exactly who needs it.
-Route::get('/forgot-password', [AuthController::class, 'showForgotPassword'])->name('auth.password.request');
-Route::post('/forgot-password', [AuthController::class, 'sendResetLink'])->name('auth.password.email');
-Route::get('/reset-password/{token}', [AuthController::class, 'showResetPassword'])->name('auth.password.reset');
-Route::post('/reset-password', [AuthController::class, 'resetPassword'])->name('auth.password.store');
+//
+// Three steps: name the address, enter the code emailed to it, choose a new
+// password. Nothing that grants access is left sitting in a mailbox.
+Route::get('/forgot-password', [PasswordResetController::class, 'request'])->name('auth.password.request');
+Route::post('/forgot-password', [PasswordResetController::class, 'sendCode'])
+    ->middleware('throttle:6,1')
+    ->name('auth.password.email');
+Route::get('/forgot-password/verify', [PasswordResetController::class, 'showVerify'])->name('auth.password.verify');
+Route::post('/forgot-password/verify', [PasswordResetController::class, 'verify'])
+    ->middleware('throttle:10,1')
+    ->name('auth.password.verify.store');
+Route::post('/forgot-password/resend', [PasswordResetController::class, 'resend'])
+    ->middleware('throttle:6,1')
+    ->name('auth.password.resend');
+Route::get('/reset-password', [PasswordResetController::class, 'showReset'])->name('auth.password.reset');
+Route::post('/reset-password', [PasswordResetController::class, 'reset'])->name('auth.password.store');
 
 // The forced first password change. Sits inside `auth` but outside
 // `password.changed`, which is the middleware that redirects here.
@@ -69,6 +96,17 @@ Route::middleware(['auth', 'password.changed'])
 
         Route::put('/information', [ProfileController::class, 'updateInformation'])->name('information');
         Route::put('/password', [ProfileController::class, 'updatePassword'])->name('password');
+
+        // Changing the address you sign in with. The new one is parked on the
+        // account until a code sent to it comes back, so a typo cannot lock
+        // somebody out of their own account - see ProfileService.
+        Route::post('/email/verify', [ProfileController::class, 'verifyEmailChange'])
+            ->middleware('throttle:10,1')
+            ->name('email.verify');
+        Route::post('/email/resend', [ProfileController::class, 'resendEmailChange'])
+            ->middleware('throttle:6,1')
+            ->name('email.resend');
+        Route::delete('/email', [ProfileController::class, 'cancelEmailChange'])->name('email.cancel');
 
         // A technician asking for different specialties. The change itself is
         // an administrator's to make - see the Technicians page.

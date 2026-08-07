@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Mail\AccountStatusMail;
 use App\Models\ActivityLog;
 use App\Models\Technician;
 use App\Models\User;
@@ -26,7 +27,8 @@ class UserAccountService
 
     public function __construct(
         private readonly ActivityLogger $activityLogger,
-        private readonly NotificationService $notifications
+        private readonly NotificationService $notifications,
+        private readonly EmailService $email
     ) {}
 
     // ------------------------------------------------------------------
@@ -56,6 +58,10 @@ class UserAccountService
                 'role' => $data['role'],
                 'status' => User::STATUS_ACTIVE,
                 'is_archived' => false,
+                // An administrator opened this account and hands over the
+                // credentials directly, so the address has nothing left to
+                // prove - the verification workflow is for self-registration.
+                'email_verified_at' => now(),
                 // The generated password is temporary by definition.
                 'must_change_password' => true,
                 'created_by' => auth()->id(),
@@ -101,6 +107,9 @@ class UserAccountService
                 'role' => User::ROLE_CLIENT,
                 'status' => User::STATUS_ACTIVE,
                 'is_archived' => false,
+                // Opened by an administrator who hands the credentials over
+                // directly, so there is no address left to prove.
+                'email_verified_at' => now(),
                 'must_change_password' => true,
                 'created_by' => auth()->id(),
                 'password' => $password,
@@ -143,6 +152,10 @@ class UserAccountService
                 'role' => User::ROLE_CLIENT,
                 'status' => User::STATUS_ACTIVE,
                 'is_archived' => false,
+                // Unverified on purpose. A self-registered address has proved
+                // nothing yet, and the account cannot sign in until a code
+                // sent to it comes back - see EmailVerificationController.
+                'email_verified_at' => null,
                 'must_change_password' => false,
                 'created_by' => null,
                 'password' => $data['password'],
@@ -260,6 +273,13 @@ class UserAccountService
 
         $this->notifications->accountStatusChanged($user, $active);
 
+        // The account holder is told directly. A bell notification is no use
+        // to somebody who has just been locked out of the system it lives in.
+        $this->email->sendTo($user, new AccountStatusMail(
+            $user,
+            $active ? AccountStatusMail::ACTIVATED : AccountStatusMail::DEACTIVATED
+        ));
+
         return $user;
     }
 
@@ -276,6 +296,8 @@ class UserAccountService
             throw new RuntimeException('That account is already archived.');
         }
 
+        $wasActive = $user->isActive();
+
         $user->is_archived = true;
         $user->archived_at = now();
         // Recorded on the row as well as in the trail: the Archived Accounts
@@ -291,6 +313,13 @@ class UserAccountService
         );
 
         $this->notifications->accountArchived($user);
+
+        // Archiving takes an account's access away exactly as deactivating
+        // does, so the holder is told in the same words. An account that was
+        // already switched off has been told once and is not told twice.
+        if ($wasActive) {
+            $this->email->sendTo($user, new AccountStatusMail($user, AccountStatusMail::DEACTIVATED));
+        }
 
         return $user;
     }
@@ -321,6 +350,8 @@ class UserAccountService
         );
 
         $this->notifications->accountRestored($user);
+
+        $this->email->sendTo($user, new AccountStatusMail($user, AccountStatusMail::ACTIVATED));
 
         return $user;
     }

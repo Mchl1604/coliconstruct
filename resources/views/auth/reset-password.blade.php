@@ -5,7 +5,9 @@
 @section('card')
     <i class="bi bi-shield-lock text-primary" style="font-size: 2.6rem;" aria-hidden="true"></i>
     <h3 class="mb-1 mt-2">Set a New Password</h3>
-    <p class="text-muted mb-4">Pick one only you know.</p>
+    <p class="text-muted mb-4">
+        Your code was accepted. Pick a password only you know.
+    </p>
 
     @if ($errors->any())
         <div class="alert alert-danger text-start" role="alert">
@@ -13,14 +15,14 @@
         </div>
     @endif
 
+    {{-- The address is not a field: it comes from the code that was just
+         verified, so nothing here can point the reset at another account. --}}
     <form method="POST" action="{{ route('auth.password.store') }}">
         @csrf
-        <input type="hidden" name="token" value="{{ $token }}">
 
         <div class="mb-3 text-start">
-            <label class="form-label" for="email">Email</label>
-            <input type="email" id="email" name="email" class="form-control"
-                value="{{ old('email', $email) }}" required autocomplete="username" readonly>
+            <label class="form-label">Email</label>
+            <input type="email" class="form-control" value="{{ $email }}" autocomplete="username" readonly disabled>
         </div>
 
         <x-password-input name="password" label="New Password" autocomplete="new-password"

@@ -317,7 +317,9 @@ class OverdueProjectTest extends TestCase
         $this->assertNotContains('Cancelled Project', $tableNames);
         $this->assertContains('Paused Project', $tableNames);
         $this->assertContains('Late Project', $tableNames);
-        $this->assertSame(2, $response->json('assignmentCount'));
+        // Both are open work, so both count towards the figure beside the
+        // calendar.
+        $this->assertSame(2, $response->json('activeCount'));
     }
 
     /**

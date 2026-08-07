@@ -123,7 +123,7 @@ class DashboardTest extends TestCase
         // it must not also be counted as ongoing.
         $this->project('ongoing', ['start' => now()->subDays(20), 'end' => now()->subDays(5)]);
 
-        $cards = collect(app(DashboardMetrics::class)->summary($owner))->keyBy('key');
+        $cards = collect(app(DashboardMetrics::class)->summary())->keyBy('key');
 
         $this->assertSame(5, $cards['total_projects']['value']);
         $this->assertSame(1, $cards['ongoing']['value']);
@@ -132,23 +132,51 @@ class DashboardTest extends TestCase
         $this->assertSame(1, $cards['completed']['value']);
     }
 
-    public function test_an_admin_is_not_given_the_archive_figures(): void
+    /**
+     * The strip is project figures only: headcounts and the archive were
+     * taken off it, since neither is something anyone checks daily.
+     */
+    public function test_the_summary_is_project_figures_only(): void
     {
-        $admin = $this->account('admin', 'admin@example.test');
+        $keys = collect(app(DashboardMetrics::class)->summary())->pluck('key');
+
+        foreach (['total_projects', 'active_today', 'ongoing', 'pending', 'overdue', 'completed'] as $key) {
+            $this->assertTrue($keys->contains($key), $key.' should be on the strip.');
+        }
+
+        foreach (['clients', 'technicians', 'archived_projects', 'archived_accounts'] as $key) {
+            $this->assertFalse($keys->contains($key), $key.' should be off the strip.');
+        }
+    }
+
+    /**
+     * Active Today is the work with a crew on it right now: an open project
+     * whose booked range covers today.
+     */
+    public function test_active_today_counts_work_scheduled_across_today(): void
+    {
         $owner = $this->account('super_admin', 'owner@example.test');
 
-        $archived = $this->project('archived');
-        $archived->update(['is_archived' => true, 'archived_at' => now()]);
+        // Running today, both a range that started earlier and one starting
+        // today.
+        $this->project('ongoing', ['start' => now()->subDays(2), 'end' => now()->addDays(2)]);
+        $this->project('ongoing', ['start' => now(), 'end' => now()->addDay()]);
 
-        $metrics = app(DashboardMetrics::class);
+        // Not today: one still to come, one already finished.
+        $this->project('pending', ['start' => now()->addDays(5), 'end' => now()->addDays(8)]);
+        $this->project('ongoing', ['start' => now()->subDays(9), 'end' => now()->subDays(4)]);
 
-        $adminKeys = collect($metrics->summary($admin))->pluck('key');
-        $ownerKeys = collect($metrics->summary($owner))->pluck('key');
+        // Closed work is never "active", even if its dates cover today.
+        $this->project('completed', ['start' => now()->subDay(), 'end' => now()->addDay()]);
 
-        foreach (['archived_projects', 'archived_accounts'] as $key) {
-            $this->assertFalse($adminKeys->contains($key), $key.' should not reach an Admin.');
-            $this->assertTrue($ownerKeys->contains($key), $key.' should reach a Super Admin.');
-        }
+        $cards = collect(app(DashboardMetrics::class)->summary())->keyBy('key');
+
+        $this->assertSame(2, $cards['active_today']['value']);
+
+        $this->actingAs($owner)
+            ->get(route('super-admin.dashboard'))
+            ->assertOk()
+            ->assertSee('Active Today');
     }
 
     public function test_the_specialty_card_appears_only_when_something_is_waiting(): void
@@ -157,7 +185,7 @@ class DashboardTest extends TestCase
         $metrics = app(DashboardMetrics::class);
 
         $this->assertFalse(
-            collect($metrics->summary($owner))->pluck('key')->contains('specialty_requests')
+            collect($metrics->summary())->pluck('key')->contains('specialty_requests')
         );
 
         $tech = $this->account('technician', 'tech@example.test');
@@ -172,7 +200,7 @@ class DashboardTest extends TestCase
         ]);
 
         $this->assertTrue(
-            collect($metrics->summary($owner))->pluck('key')->contains('specialty_requests')
+            collect($metrics->summary())->pluck('key')->contains('specialty_requests')
         );
     }
 
@@ -185,11 +213,11 @@ class DashboardTest extends TestCase
         $owner = $this->account('super_admin', 'owner@example.test');
         $metrics = app(DashboardMetrics::class);
 
-        $before = collect($metrics->summary($owner))->keyBy('key')['total_projects']['value'];
+        $before = collect($metrics->summary())->keyBy('key')['total_projects']['value'];
 
         $this->project('pending');
 
-        $after = collect($metrics->summary($owner))->keyBy('key')['total_projects']['value'];
+        $after = collect($metrics->summary())->keyBy('key')['total_projects']['value'];
 
         $this->assertSame($before + 1, $after);
     }

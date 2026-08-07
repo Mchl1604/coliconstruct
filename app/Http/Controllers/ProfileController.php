@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\OtpVerification;
 use App\Models\Skill;
 use App\Models\User;
+use App\Services\OtpService;
 use App\Services\ProfileService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -61,6 +63,14 @@ class ProfileController extends Controller
             'approvedSkills' => $technician?->skills->sortBy('skill_name')->values() ?? collect(),
             'pendingRequest' => $technician ? $this->profile->pendingSpecialtyRequest($technician) : null,
             'allSkills' => Skill::query()->orderBy('skill_name')->get(['skill_id', 'skill_name']),
+            // A change of email waiting on the code sent to the new address.
+            'pendingEmail' => $user->pending_email,
+            'emailRetryAfter' => $user->hasPendingEmailChange()
+                ? app(OtpService::class)->secondsUntilResend(
+                    (string) $user->pending_email,
+                    OtpVerification::PURPOSE_EMAIL_CHANGE
+                )
+                : 0,
         ]);
     }
 
@@ -118,8 +128,10 @@ class ProfileController extends Controller
             'last_name' => ['required', 'string', 'max:100'],
             'email' => [
                 'required', 'string', 'email', 'max:255',
-                // Their own address is theirs to keep; anybody else's is taken.
+                // Their own address is theirs to keep; anybody else's is taken,
+                // including one somebody else is part-way through claiming.
                 Rule::unique('users', 'email')->ignore($user->id),
+                Rule::unique('users', 'pending_email')->ignore($user->id),
             ],
         ], [
             'email.unique' => 'Another account already uses that email address.',
@@ -127,11 +139,73 @@ class ProfileController extends Controller
 
         return $this->attempt(
             function () use ($user, $data): string {
-                $this->profile->updateInformation($user, $data);
+                $result = $this->profile->updateInformation($user, $data);
 
-                return 'Profile updated.';
+                // A new address is not applied until a code sent to it comes
+                // back, so the message must not claim the email has changed.
+                return $result['email_pending']
+                    ? 'Profile updated. Enter the code we sent to '.$user->pending_email.' to confirm your new email address.'
+                    : 'Profile updated.';
             },
             'Your profile could not be updated.'
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // Changing the sign-in address
+    // ------------------------------------------------------------------
+
+    /**
+     * Confirm the parked address with the code emailed to it.
+     *
+     * A wrong or expired code changes nothing: the account keeps the address
+     * it already had, and the person may ask for another code.
+     */
+    public function verifyEmailChange(Request $request): RedirectResponse
+    {
+        $validated = $request->validateWithBag('emailChange', [
+            'code' => ['required', 'string', 'max:12'],
+        ], [
+            'code.required' => 'Enter the code that was emailed to you.',
+        ]);
+
+        $user = $request->user();
+
+        return $this->attempt(
+            function () use ($user, $validated): string {
+                $updated = $this->profile->confirmEmailChange($user, $validated['code']);
+
+                return 'Your email address is now '.$updated->email.'.';
+            },
+            'Your email address could not be changed.'
+        );
+    }
+
+    public function resendEmailChange(Request $request): RedirectResponse
+    {
+        $user = $request->user();
+
+        return $this->attempt(
+            function () use ($user): string {
+                $this->profile->resendEmailChangeCode($user);
+
+                return 'A new code is on its way to '.$user->pending_email.'.';
+            },
+            'A new code could not be sent.'
+        );
+    }
+
+    public function cancelEmailChange(Request $request): RedirectResponse
+    {
+        $user = $request->user();
+
+        return $this->attempt(
+            function () use ($user): string {
+                $this->profile->cancelEmailChange($user);
+
+                return 'The email change was cancelled. Your address is unchanged.';
+            },
+            'The email change could not be cancelled.'
         );
     }
 

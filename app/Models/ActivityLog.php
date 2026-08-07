@@ -96,6 +96,29 @@ class ActivityLog extends Model
 
     public const PROFILE_PHOTO_REMOVED = 'Profile Picture Removed';
 
+    /**
+     * The verification workflows.
+     *
+     * Filed under Authentication because that is what every one of them
+     * ultimately decides: whether somebody may take an action against an
+     * address they claim is theirs.
+     */
+    public const OTP_SENT = 'OTP Sent';
+
+    public const OTP_VERIFIED = 'OTP Verified';
+
+    public const OTP_EXPIRED = 'OTP Expired';
+
+    public const OTP_FAILED = 'OTP Verification Failed';
+
+    public const REGISTRATION_OTP_SENT = 'Registration OTP Sent';
+
+    public const REGISTRATION_VERIFIED = 'Registration Verified';
+
+    public const EMAIL_CHANGE_REQUESTED = 'Email Change Requested';
+
+    public const EMAIL_CHANGED = 'Email Changed';
+
     // ------------------------------------------------------------------
     // User Management
     //
@@ -163,6 +186,12 @@ class ActivityLog extends Model
     public const PROJECT_RESUMED = 'Project Resumed';
 
     public const PROJECT_RESCHEDULED = 'Project Rescheduled';
+
+    /**
+     * The welcome sent to the client address a project was booked under, so
+     * they can follow the work on the public website.
+     */
+    public const INVITATION_EMAIL_SENT = 'Invitation Email Sent';
 
     public const LEAD_TECHNICIAN_ASSIGNED = 'Lead Technician Assigned';
 
@@ -232,6 +261,14 @@ class ActivityLog extends Model
         self::PROFILE_PHOTO_UPLOADED => self::MODULE_AUTHENTICATION,
         self::PROFILE_PHOTO_CHANGED => self::MODULE_AUTHENTICATION,
         self::PROFILE_PHOTO_REMOVED => self::MODULE_AUTHENTICATION,
+        self::OTP_SENT => self::MODULE_AUTHENTICATION,
+        self::OTP_VERIFIED => self::MODULE_AUTHENTICATION,
+        self::OTP_EXPIRED => self::MODULE_AUTHENTICATION,
+        self::OTP_FAILED => self::MODULE_AUTHENTICATION,
+        self::REGISTRATION_OTP_SENT => self::MODULE_AUTHENTICATION,
+        self::REGISTRATION_VERIFIED => self::MODULE_AUTHENTICATION,
+        self::EMAIL_CHANGE_REQUESTED => self::MODULE_AUTHENTICATION,
+        self::EMAIL_CHANGED => self::MODULE_AUTHENTICATION,
 
         self::EMPLOYEE_CREATED => self::MODULE_USER_MANAGEMENT,
         self::EMPLOYEE_UPDATED => self::MODULE_USER_MANAGEMENT,
@@ -260,6 +297,7 @@ class ActivityLog extends Model
         self::PROJECT_PUT_ON_HOLD => self::MODULE_PROJECTS,
         self::PROJECT_RESUMED => self::MODULE_PROJECTS,
         self::PROJECT_RESCHEDULED => self::MODULE_PROJECTS,
+        self::INVITATION_EMAIL_SENT => self::MODULE_PROJECTS,
         self::LEAD_TECHNICIAN_ASSIGNED => self::MODULE_PROJECTS,
         self::TECHNICIAN_ASSIGNED => self::MODULE_PROJECTS,
         self::TECHNICIAN_REMOVED => self::MODULE_PROJECTS,

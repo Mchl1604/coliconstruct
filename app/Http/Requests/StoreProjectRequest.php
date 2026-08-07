@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Document;
 use App\Models\ProjectType;
 use App\Services\TechnicianAvailabilityService;
 use Carbon\CarbonImmutable;
@@ -18,8 +19,13 @@ class StoreProjectRequest extends FormRequest
     public function rules(): array
     {
         $projectTypes = $this->allowedProjectTypeNames();
+
+        // Every document is held to the same size, stated on the model so the
+        // wizard and the edit dialog cannot drift apart.
+        $documentRules = ['file', 'mimes:jpg,jpeg,png,pdf,docx', 'max:'.Document::MAX_KILOBYTES];
+
         $contractRules = $this->input('client_type') === 'Commercial'
-            ? ['required', 'file', 'mimes:jpg,jpeg,png,pdf,docx']
+            ? array_merge(['required'], $documentRules)
             : ['nullable'];
 
         return [
@@ -34,8 +40,8 @@ class StoreProjectRequest extends FormRequest
             'quotation_amount' => ['required', 'numeric', 'min:0'],
             'project_types' => ['required', 'array', 'min:1'],
             'project_types.*' => ['required', 'string', Rule::in($projectTypes)],
-            'assessment_report' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf,docx'],
-            'approved_quotation' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf,docx'],
+            'assessment_report' => array_merge(['required'], $documentRules),
+            'approved_quotation' => array_merge(['required'], $documentRules),
             'contract' => $contractRules,
             'project_description' => ['required', 'string'],
             'lead_tech' => ['required', 'integer', Rule::exists('tbl_technicians', 'technician_id')],
@@ -51,6 +57,9 @@ class StoreProjectRequest extends FormRequest
         return [
             'quotation_amount.numeric' => 'The quotation amount must be a valid number.',
             'quotation_amount.min' => 'The quotation amount must be at least zero.',
+            'assessment_report.max' => 'The assessment report must be '.Document::MAX_LABEL.' or smaller.',
+            'approved_quotation.max' => 'The approved quotation must be '.Document::MAX_LABEL.' or smaller.',
+            'contract.max' => 'The contract must be '.Document::MAX_LABEL.' or smaller.',
         ];
     }
 

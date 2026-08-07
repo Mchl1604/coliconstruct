@@ -238,7 +238,7 @@ class TechnicianManagementTest extends TestCase
         $response->assertOk();
         $response->assertJsonCount(1, 'events');
         $response->assertJsonPath('events.0.extendedProps.projectName', 'My Project');
-        $response->assertJsonPath('assignmentCount', 1);
+        $response->assertJsonPath('activeCount', 1);
     }
 
     /**
@@ -292,10 +292,11 @@ class TechnicianManagementTest extends TestCase
     }
 
     /**
-     * Cancelled work is not an assignment the technician still owes anything
-     * on, so it is out of both the table and the count beside the calendar.
+     * Cancelled work is out of the table entirely. Completed work stays on the
+     * table as history but is not part of the figure beside the calendar -
+     * that figure is what the technician is carrying now.
      */
-    public function test_cancelled_projects_are_excluded_from_the_assignments_table_and_count(): void
+    public function test_the_calendar_figure_counts_only_live_work(): void
     {
         $ana = $this->technician('Ana Mendoza');
         $lead = $this->leadTechnician('Jose Garcia');
@@ -320,7 +321,8 @@ class TechnicianManagementTest extends TestCase
         // Completed work is history worth keeping on the list.
         $this->assertContains('Completed Project', $names);
 
-        $this->assertSame(2, $response->json('assignmentCount'));
+        // ...but only the ongoing project is a live assignment.
+        $this->assertSame(1, $response->json('activeCount'));
     }
 
     /**
@@ -408,7 +410,7 @@ class TechnicianManagementTest extends TestCase
         $projects = collect($response->json('projects'));
 
         $this->assertSame(2, $projects->count());
-        $this->assertSame(2, $response->json('assignmentCount'));
+        $this->assertSame(2, $response->json('activeCount'));
         $this->assertNull($projects->firstWhere('name', 'Someone Elses Project'));
 
         $led = $projects->firstWhere('name', 'Led Project');

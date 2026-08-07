@@ -8,7 +8,6 @@
 
 @section('content')
     @php
-        $viewer = auth()->user();
         // The pastel each upcoming card wears, cycled so a row of three is
         // never two of the same colour.
         $cardTones = ['blue', 'lilac', 'peach'];

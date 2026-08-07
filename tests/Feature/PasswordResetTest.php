@@ -3,17 +3,20 @@
 namespace Tests\Feature;
 
 use App\Console\Commands\RepairUnusablePasswords;
+use App\Mail\OtpCodeMail;
+use App\Models\OtpVerification;
 use App\Models\User;
-use Illuminate\Auth\Notifications\ResetPassword;
+use App\Services\OtpService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
 
 /**
- * Forgetting a password, and the accounts that could never sign in because
- * what is stored against them is not a hash at all.
+ * Forgetting a password - now a one-time code rather than a link - and the
+ * accounts that could never sign in because what is stored against them is not
+ * a hash at all.
  */
 class PasswordResetTest extends TestCase
 {
@@ -31,6 +34,7 @@ class PasswordResetTest extends TestCase
             'email' => 'person'.$sequence.'@example.test',
             'role' => 'technician',
             'status' => User::STATUS_ACTIVE,
+            'email_verified_at' => now(),
             'password' => 'correct-password',
         ], $overrides));
     }
@@ -100,9 +104,9 @@ class PasswordResetTest extends TestCase
         $response->assertSee('Email is not configured on this system');
     }
 
-    public function test_no_link_is_sent_when_email_is_not_configured(): void
+    public function test_no_code_is_sent_when_email_is_not_configured(): void
     {
-        Notification::fake();
+        Mail::fake();
         config(['mail.default' => 'log']);
 
         $user = $this->account();
@@ -110,20 +114,22 @@ class PasswordResetTest extends TestCase
         $this->post(route('auth.password.email'), ['email' => $user->email])
             ->assertSessionHas('error');
 
-        Notification::assertNothingSent();
+        Mail::assertNothingQueued();
+        $this->assertDatabaseCount('tbl_otp_verifications', 0);
     }
 
-    public function test_a_reset_link_is_sent_when_email_works(): void
+    public function test_a_code_is_emailed_when_email_works(): void
     {
-        Notification::fake();
+        Mail::fake();
         config(['mail.default' => 'smtp']);
 
         $user = $this->account();
 
         $this->post(route('auth.password.email'), ['email' => $user->email])
-            ->assertSessionHas('success');
+            ->assertRedirect(route('auth.password.verify'));
 
-        Notification::assertSentTo($user, ResetPassword::class);
+        Mail::assertQueued(OtpCodeMail::class, fn (OtpCodeMail $mail): bool => $mail->hasTo($user->email)
+            && $mail->purpose === OtpVerification::PURPOSE_FORGOT_PASSWORD);
     }
 
     /**
@@ -132,7 +138,7 @@ class PasswordResetTest extends TestCase
      */
     public function test_an_unknown_address_gets_the_same_answer(): void
     {
-        Notification::fake();
+        Mail::fake();
         config(['mail.default' => 'smtp']);
 
         $known = $this->account();
@@ -140,31 +146,33 @@ class PasswordResetTest extends TestCase
         $forKnown = $this->post(route('auth.password.email'), ['email' => $known->email]);
         $forUnknown = $this->post(route('auth.password.email'), ['email' => 'nobody@example.test']);
 
+        $forKnown->assertRedirect(route('auth.password.verify'));
+        $forUnknown->assertRedirect(route('auth.password.verify'));
+
         $this->assertSame(
             $forKnown->getSession()->get('success'),
             $forUnknown->getSession()->get('success')
         );
+
+        // And nothing was sent to the address that has no account.
+        Mail::assertQueued(OtpCodeMail::class, 1);
     }
 
-    public function test_a_reset_link_sets_the_new_password_and_clears_the_forced_change(): void
+    public function test_the_emailed_code_sets_a_new_password_and_clears_the_forced_change(): void
     {
-        Notification::fake();
+        Mail::fake();
         config(['mail.default' => 'smtp']);
 
         $user = $this->account(['must_change_password' => true]);
 
         $this->post(route('auth.password.email'), ['email' => $user->email]);
 
-        $token = null;
-        Notification::assertSentTo($user, ResetPassword::class, function ($notification) use (&$token) {
-            $token = $notification->token;
+        $this->post(route('auth.password.verify.store'), ['code' => $this->issuedCode()])
+            ->assertRedirect(route('auth.password.reset'));
 
-            return true;
-        });
+        $this->get(route('auth.password.reset'))->assertOk();
 
         $this->post(route('auth.password.store'), [
-            'token' => $token,
-            'email' => $user->email,
             'password' => 'a-brand-new-password',
             'password_confirmation' => 'a-brand-new-password',
         ])->assertRedirect(route('auth.login'));
@@ -173,32 +181,127 @@ class PasswordResetTest extends TestCase
         $this->assertTrue(Hash::check('a-brand-new-password', $user->password));
         $this->assertFalse(Hash::check('correct-password', $user->password));
         $this->assertFalse((bool) $user->must_change_password);
+
+        // The code is spent: the whole workflow is gone.
+        $this->assertDatabaseCount('tbl_otp_verifications', 0);
     }
 
-    public function test_a_made_up_token_is_refused(): void
+    /**
+     * The code-entry page in the middle of the reset, and the fact that it
+     * cannot be reached cold.
+     */
+    public function test_the_code_page_is_reachable_only_part_way_through_a_reset(): void
+    {
+        Mail::fake();
+        config(['mail.default' => 'smtp']);
+
+        $this->get(route('auth.password.verify'))
+            ->assertRedirect(route('auth.password.request'));
+
+        $user = $this->account();
+        $this->post(route('auth.password.email'), ['email' => $user->email]);
+
+        $response = $this->get(route('auth.password.verify'));
+
+        $response->assertOk();
+        $response->assertSee($user->email);
+        $response->assertSee('name="code"', false);
+        $response->assertSee(route('auth.password.resend'), false);
+    }
+
+    public function test_a_made_up_code_is_refused(): void
+    {
+        Mail::fake();
+        config(['mail.default' => 'smtp']);
+
+        $user = $this->account();
+
+        $this->post(route('auth.password.email'), ['email' => $user->email]);
+
+        $this->post(route('auth.password.verify.store'), ['code' => '000000'])
+            ->assertSessionHas('error');
+
+        // Without a confirmed code there is no reset page to reach.
+        $this->get(route('auth.password.reset'))
+            ->assertRedirect(route('auth.password.request'));
+
+        $this->assertTrue(Hash::check('correct-password', $user->refresh()->password));
+    }
+
+    /**
+     * The password form cannot be reached, let alone submitted, without a code
+     * having been confirmed first.
+     */
+    public function test_a_password_cannot_be_set_without_verifying_a_code(): void
     {
         $user = $this->account();
 
         $this->post(route('auth.password.store'), [
-            'token' => 'not-a-real-token',
-            'email' => $user->email,
             'password' => 'a-brand-new-password',
             'password_confirmation' => 'a-brand-new-password',
-        ])->assertSessionHasErrors('email');
+        ])->assertRedirect(route('auth.password.request'));
 
         $this->assertTrue(Hash::check('correct-password', $user->refresh()->password));
     }
 
     public function test_the_two_passwords_must_match(): void
     {
+        Mail::fake();
+        config(['mail.default' => 'smtp']);
+
         $user = $this->account();
 
+        $this->post(route('auth.password.email'), ['email' => $user->email]);
+        $this->post(route('auth.password.verify.store'), ['code' => $this->issuedCode()]);
+
         $this->post(route('auth.password.store'), [
-            'token' => 'anything',
-            'email' => $user->email,
             'password' => 'a-brand-new-password',
             'password_confirmation' => 'something-else-entirely',
         ])->assertSessionHasErrors('password');
+
+        $this->assertTrue(Hash::check('correct-password', $user->refresh()->password));
+    }
+
+    /**
+     * Five wrong guesses burn the code. A sixth is refused whatever it says,
+     * including the right digits.
+     */
+    public function test_the_code_survives_only_five_wrong_guesses(): void
+    {
+        Mail::fake();
+        config(['mail.default' => 'smtp']);
+
+        $user = $this->account();
+
+        $this->post(route('auth.password.email'), ['email' => $user->email]);
+        $correct = $this->issuedCode();
+
+        for ($attempt = 0; $attempt < OtpService::MAX_ATTEMPTS; $attempt++) {
+            $this->post(route('auth.password.verify.store'), ['code' => '000000'])
+                ->assertSessionHas('error');
+        }
+
+        $this->post(route('auth.password.verify.store'), ['code' => $correct])
+            ->assertSessionHas('error');
+
+        $this->get(route('auth.password.reset'))
+            ->assertRedirect(route('auth.password.request'));
+    }
+
+    /**
+     * The six digits, read back from the message that carried them.
+     */
+    private function issuedCode(): string
+    {
+        $code = null;
+
+        Mail::assertQueued(OtpCodeMail::class, function (OtpCodeMail $mail) use (&$code): bool {
+            $code = $mail->code;
+
+            return true;
+        });
+
+        return (string) $code;
     }
 
     // ------------------------------------------------------------------

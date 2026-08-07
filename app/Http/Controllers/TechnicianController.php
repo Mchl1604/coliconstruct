@@ -70,19 +70,20 @@ class TechnicianController extends Controller
 
         $skills = Skill::query()->orderBy('skill_name')->get();
 
-        // The approval queue. Oldest first: a technician who has been waiting
-        // longest is the one to deal with next.
-        $pendingRequests = SpecialtyRequest::query()
+        // Which technicians are waiting on a decision. The table highlights
+        // their row; the decision itself is taken in their details dialog,
+        // where the reviewer can see what they already hold.
+        $pendingTechnicianIds = SpecialtyRequest::query()
             ->pending()
-            ->with(['technician.account', 'technician.skills'])
-            ->orderBy('created_at')
-            ->get();
+            ->pluck('technician_id')
+            ->map(fn ($id): int => (int) $id)
+            ->all();
 
-        return view('super-admin.technicians', compact('technicians', 'skills', 'pendingRequests'));
+        return view('super-admin.technicians', compact('technicians', 'skills', 'pendingTechnicianIds'));
     }
 
     // ------------------------------------------------------------------
-    // Details tab - specialty requests
+    // Specialty requests
     // ------------------------------------------------------------------
 
     /**
@@ -95,6 +96,7 @@ class TechnicianController extends Controller
     public function approveSpecialtyRequest(Request $request, SpecialtyRequest $specialtyRequest)
     {
         return $this->decide(
+            $specialtyRequest,
             fn (): SpecialtyRequest => app(ProfileService::class)
                 ->approveSpecialtyRequest($specialtyRequest, $request->user()),
             'Specialty request approved.',
@@ -109,6 +111,7 @@ class TechnicianController extends Controller
     public function rejectSpecialtyRequest(Request $request, SpecialtyRequest $specialtyRequest)
     {
         return $this->decide(
+            $specialtyRequest,
             fn (): SpecialtyRequest => app(ProfileService::class)
                 ->rejectSpecialtyRequest($specialtyRequest, $request->user()),
             'Specialty request rejected.',
@@ -117,24 +120,32 @@ class TechnicianController extends Controller
     }
 
     /**
-     * Run one approve/reject and turn its outcome into a toast on the page the
-     * reviewer is already looking at.
+     * Run one approve/reject and answer with the technician as they now are.
+     *
+     * JSON rather than a redirect: the decision is taken inside the details
+     * dialog, which redraws itself from this response instead of reloading the
+     * page underneath it.
      *
      * @param  callable(): SpecialtyRequest  $action
      */
-    private function decide(callable $action, string $success, string $fallback)
+    private function decide(SpecialtyRequest $specialtyRequest, callable $action, string $success, string $fallback)
     {
         try {
             $action();
         } catch (RuntimeException $exception) {
-            return back()->with('error', $exception->getMessage());
+            return response()->json(['error' => $exception->getMessage()], 422);
         } catch (Throwable $exception) {
             report($exception);
 
-            return back()->with('error', $fallback);
+            return response()->json(['error' => $fallback], 500);
         }
 
-        return back()->with('success', $success);
+        $technician = $specialtyRequest->technician?->fresh(['account', 'skills']);
+
+        return response()->json([
+            'message' => $success,
+            'technician' => $technician ? $this->technicianPayload($technician) : null,
+        ]);
     }
 
     // ------------------------------------------------------------------
@@ -224,7 +235,17 @@ class TechnicianController extends Controller
         return response()->json([
             'technician' => $this->technicianPayload($technician->load(['account', 'skills'])),
             'events' => $events,
-            'assignmentCount' => $assignedProjects->count(),
+            // What they are actually carrying: pending, ongoing and overdue
+            // work. A completed project is history, not a workload, so the
+            // figure beside the calendar leaves it out - the table below still
+            // lists it.
+            'activeCount' => $assignedProjects
+                ->filter(fn (array $project): bool => in_array(
+                    $project['status'] ?? null,
+                    Project::ACTIVE_PROJECT_STATUSES,
+                    true
+                ))
+                ->count(),
             'projects' => $assignedProjects->all(),
         ]);
     }
@@ -917,6 +938,7 @@ class TechnicianController extends Controller
             'name' => $technician->name,
             'position' => $this->positionLabel($technician),
             'email' => $technician->account?->email,
+            'avatar_url' => $technician->account?->avatarUrl(),
             'specialties' => $technician->skills
                 ->map(fn (Skill $skill): array => [
                     'skill_id' => $skill->skill_id,
@@ -925,6 +947,38 @@ class TechnicianController extends Controller
                 ->sortBy('skill_name')
                 ->values()
                 ->all(),
+            'pending_request' => $this->pendingRequestPayload($technician),
+        ];
+    }
+
+    /**
+     * The technician's outstanding specialty request, if they have one.
+     *
+     * Reviewed in their details dialog rather than in a queue of its own: the
+     * decision is easier to make beside the specialties they already hold.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function pendingRequestPayload(Technician $technician): ?array
+    {
+        $request = SpecialtyRequest::query()
+            ->pending()
+            ->where('technician_id', $technician->technician_id)
+            ->latest('specialty_request_id')
+            ->first();
+
+        if (! $request) {
+            return null;
+        }
+
+        return [
+            'id' => $request->specialty_request_id,
+            'submitted_at' => $request->created_at?->format('M j, Y g:i A'),
+            'additions' => $request->additions()->all(),
+            'removals' => $request->removals()->all(),
+            'resulting' => $request->requestedSkills()->pluck('skill_name')->all(),
+            'approve_url' => route('super-admin.technicians.specialty-requests.approve', $request),
+            'reject_url' => route('super-admin.technicians.specialty-requests.reject', $request),
         ];
     }
 

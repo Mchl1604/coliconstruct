@@ -2,8 +2,10 @@
 
 namespace Tests\Feature;
 
+use App\Mail\EmailChangedMail;
+use App\Mail\OtpCodeMail;
 use App\Models\ActivityLog;
-use App\Models\Notification;
+use App\Models\OtpVerification;
 use App\Models\Skill;
 use App\Models\SpecialtyRequest;
 use App\Models\Technician;
@@ -11,6 +13,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
@@ -39,6 +42,7 @@ class ProfileManagementTest extends TestCase
             'status' => User::STATUS_ACTIVE,
             'is_archived' => false,
             'must_change_password' => false,
+            'email_verified_at' => now(),
             'password' => 'password',
         ], $attributes));
     }
@@ -235,8 +239,14 @@ class ProfileManagementTest extends TestCase
     // Personal information and password
     // ------------------------------------------------------------------
 
-    public function test_a_user_updates_their_own_name_and_email(): void
+    /**
+     * The name is applied at once. The email is not: it is parked until the
+     * code sent to the new address comes back.
+     */
+    public function test_a_user_updates_their_own_name_and_asks_to_change_their_email(): void
     {
+        Mail::fake();
+
         $technician = $this->account('technician', 'tech@example.test');
         $this->technicianFor($technician);
 
@@ -247,7 +257,7 @@ class ProfileManagementTest extends TestCase
                 'last_name' => 'Reyes',
                 'email' => 'maria@example.test',
             ])
-            ->assertSessionHas('success', 'Profile updated.');
+            ->assertSessionHas('success');
 
         $technician->refresh();
 
@@ -255,10 +265,116 @@ class ProfileManagementTest extends TestCase
         // `name` is what the topbar and every listing read, so it has to keep
         // up with the parts.
         $this->assertSame('Maria Santos Reyes', $technician->name);
-        $this->assertSame('maria@example.test', $technician->email);
+
+        // The address they sign in with has not moved.
+        $this->assertSame('tech@example.test', $technician->email);
+        $this->assertSame('maria@example.test', $technician->pending_email);
+
+        Mail::assertQueued(OtpCodeMail::class, fn (OtpCodeMail $mail): bool => $mail->hasTo('maria@example.test')
+            && $mail->purpose === OtpVerification::PURPOSE_EMAIL_CHANGE);
 
         $this->assertDatabaseHas('tbl_activity_logs', ['action' => ActivityLog::PROFILE_NAME_UPDATED]);
-        $this->assertDatabaseHas('tbl_activity_logs', ['action' => ActivityLog::PROFILE_EMAIL_UPDATED]);
+        $this->assertDatabaseHas('tbl_activity_logs', ['action' => ActivityLog::EMAIL_CHANGE_REQUESTED]);
+    }
+
+    /**
+     * The code is the whole of the change: entering it moves the address, and
+     * the old mailbox is told so.
+     */
+    public function test_the_emailed_code_completes_the_change_of_address(): void
+    {
+        Mail::fake();
+
+        $technician = $this->account('technician', 'tech@example.test');
+        $this->technicianFor($technician);
+
+        $this->actingAs($technician)->put(route('profile.information'), [
+            'first_name' => 'Juan',
+            'last_name' => 'Dela Cruz',
+            'email' => 'maria@example.test',
+        ]);
+
+        $this->actingAs($technician)
+            ->post(route('profile.email.verify'), ['code' => $this->issuedCode()])
+            ->assertSessionHas('success');
+
+        $technician->refresh();
+
+        $this->assertSame('maria@example.test', $technician->email);
+        $this->assertNull($technician->pending_email);
+        $this->assertTrue($technician->hasVerifiedEmail());
+
+        // The address being left behind is warned.
+        Mail::assertQueued(EmailChangedMail::class, fn (EmailChangedMail $mail): bool => $mail->hasTo('tech@example.test'));
+
+        $this->assertDatabaseHas('tbl_activity_logs', ['action' => ActivityLog::EMAIL_CHANGED]);
+    }
+
+    /**
+     * A wrong code leaves the account exactly as it was - which is the whole
+     * point of not applying the new address up front.
+     */
+    public function test_a_wrong_code_leaves_the_old_address_in_place(): void
+    {
+        Mail::fake();
+
+        $technician = $this->account('technician', 'tech@example.test');
+        $this->technicianFor($technician);
+
+        $this->actingAs($technician)->put(route('profile.information'), [
+            'first_name' => 'Juan',
+            'last_name' => 'Dela Cruz',
+            'email' => 'maria@example.test',
+        ]);
+
+        $this->actingAs($technician)
+            ->post(route('profile.email.verify'), ['code' => '000000'])
+            ->assertSessionHas('error');
+
+        $technician->refresh();
+
+        $this->assertSame('tech@example.test', $technician->email);
+        $this->assertSame('maria@example.test', $technician->pending_email);
+    }
+
+    public function test_a_pending_change_of_address_can_be_abandoned(): void
+    {
+        Mail::fake();
+
+        $technician = $this->account('technician', 'tech@example.test');
+        $this->technicianFor($technician);
+
+        $this->actingAs($technician)->put(route('profile.information'), [
+            'first_name' => 'Juan',
+            'last_name' => 'Dela Cruz',
+            'email' => 'maria@example.test',
+        ]);
+
+        $this->actingAs($technician)
+            ->delete(route('profile.email.cancel'))
+            ->assertSessionHas('success');
+
+        $technician->refresh();
+
+        $this->assertSame('tech@example.test', $technician->email);
+        $this->assertNull($technician->pending_email);
+        $this->assertDatabaseCount('tbl_otp_verifications', 0);
+    }
+
+    /**
+     * The six digits, read back from the message that carried them.
+     */
+    private function issuedCode(): string
+    {
+        $code = null;
+
+        Mail::assertQueued(OtpCodeMail::class, function (OtpCodeMail $mail) use (&$code): bool {
+            $code = $mail->code;
+
+            return true;
+        });
+
+        return (string) $code;
     }
 
     public function test_an_email_already_in_use_is_refused(): void
@@ -352,10 +468,14 @@ class ProfileManagementTest extends TestCase
 
         $this->assertSame(1, SpecialtyRequest::query()->pending()->count());
 
-        // Approving is what moves them.
+        // Approving is what moves them. The decision is taken inside the
+        // technician's details dialog, so it answers with JSON.
         $this->actingAs($owner)
-            ->put(route('super-admin.technicians.specialty-requests.approve', $request))
-            ->assertSessionHas('success', 'Specialty request approved.');
+            ->putJson(route('super-admin.technicians.specialty-requests.approve', $request))
+            ->assertOk()
+            ->assertJsonPath('message', 'Specialty request approved.')
+            // The dialog redraws from this rather than reloading the page.
+            ->assertJsonPath('technician.pending_request', null);
 
         $this->assertEqualsCanonicalizing(
             ['Electrical', 'HVAC'],
@@ -386,8 +506,9 @@ class ProfileManagementTest extends TestCase
         $request = SpecialtyRequest::query()->pending()->firstOrFail();
 
         $this->actingAs($owner)
-            ->put(route('super-admin.technicians.specialty-requests.reject', $request))
-            ->assertSessionHas('success', 'Specialty request rejected.');
+            ->putJson(route('super-admin.technicians.specialty-requests.reject', $request))
+            ->assertOk()
+            ->assertJsonPath('message', 'Specialty request rejected.');
 
         $this->assertSame(['Electrical'], $technician->refresh()->skills->pluck('skill_name')->all());
         $this->assertSame(SpecialtyRequest::STATUS_REJECTED, $request->refresh()->status);
@@ -418,8 +539,9 @@ class ProfileManagementTest extends TestCase
         $this->actingAs($owner)->put(route('super-admin.technicians.specialty-requests.approve', $request));
 
         $this->actingAs($owner)
-            ->put(route('super-admin.technicians.specialty-requests.reject', $request))
-            ->assertSessionHas('error', 'That request has already been decided.');
+            ->putJson(route('super-admin.technicians.specialty-requests.reject', $request))
+            ->assertStatus(422)
+            ->assertJsonPath('error', 'That request has already been decided.');
     }
 
     public function test_only_a_technician_may_ask_and_only_an_administrator_may_decide(): void
@@ -443,20 +565,24 @@ class ProfileManagementTest extends TestCase
         // A technician cannot approve their own request: the whole Super Admin
         // area is closed to them.
         $this->actingAs($tech)
-            ->put(route('super-admin.technicians.specialty-requests.approve', $request))
-            ->assertRedirect();
+            ->putJson(route('super-admin.technicians.specialty-requests.approve', $request))
+            ->assertForbidden();
 
         $this->assertTrue($request->refresh()->isPending());
 
         // An Admin can, though - deciding is not a Super Admin privilege.
         $this->actingAs($admin)
-            ->put(route('super-admin.technicians.specialty-requests.approve', $request))
-            ->assertSessionHas('success');
+            ->putJson(route('super-admin.technicians.specialty-requests.approve', $request))
+            ->assertOk();
 
         $this->assertSame(SpecialtyRequest::STATUS_APPROVED, $request->refresh()->status);
     }
 
-    public function test_the_queue_shows_a_pending_request_to_administrators(): void
+    /**
+     * There is no queue page: the Technicians table highlights whoever is
+     * waiting, and the decision is taken in their details dialog.
+     */
+    public function test_the_technicians_table_highlights_who_is_waiting(): void
     {
         $owner = $this->account('super_admin', 'owner@example.test');
         $tech = $this->account('technician', 'tech@example.test', [
@@ -464,7 +590,7 @@ class ProfileManagementTest extends TestCase
             'first_name' => 'Michael',
             'last_name' => 'Santos',
         ]);
-        $this->technicianFor($tech, ['Electrical']);
+        $technician = $this->technicianFor($tech, ['Electrical']);
 
         $hvac = Skill::firstOrCreate(['skill_name' => 'HVAC']);
 
@@ -473,14 +599,36 @@ class ProfileManagementTest extends TestCase
         $this->actingAs($owner)
             ->get(route('super-admin.technicians.index'))
             ->assertOk()
-            ->assertSee('Pending Specialty Requests')
             ->assertSee('Michael Santos')
-            ->assertSee('Requested Changes')
-            ->assertSee('HVAC');
+            ->assertSee('technician-row-pending', escape: false)
+            ->assertSee('waiting on a specialty decision')
+            // The tab it used to live on is gone.
+            ->assertDontSee('specialtyRequestsPane', escape: false);
 
-        // The notification links at the queue rather than at the account.
-        $notification = Notification::query()->where('user_id', $owner->id)->firstOrFail();
-        $this->assertStringContainsString('tab=specialty-requests', (string) $notification->url);
+        // And the dialog behind the eye button carries the request itself.
+        $this->actingAs($owner)
+            ->getJson(route('super-admin.technicians.show', $technician))
+            ->assertOk()
+            ->assertJsonPath('pending_request.additions.0', 'HVAC')
+            ->assertJsonPath('pending_request.removals.0', 'Electrical');
+    }
+
+    public function test_a_technician_with_nothing_pending_is_not_highlighted(): void
+    {
+        $owner = $this->account('super_admin', 'owner@example.test');
+        $tech = $this->account('technician', 'tech@example.test');
+        $technician = $this->technicianFor($tech, ['Electrical']);
+
+        $this->actingAs($owner)
+            ->get(route('super-admin.technicians.index'))
+            ->assertOk()
+            ->assertDontSee('technician-row-pending', escape: false)
+            ->assertDontSee('waiting on a specialty decision');
+
+        $this->actingAs($owner)
+            ->getJson(route('super-admin.technicians.show', $technician))
+            ->assertOk()
+            ->assertJsonPath('pending_request', null);
     }
 
     // ------------------------------------------------------------------

@@ -198,9 +198,38 @@
     background: #eff6ff;
 }
 
+/* The whole row opens the notification, so it has to look like it does. */
+.notification-center-row {
+    cursor: pointer;
+}
+
+.notification-center-table tbody tr.notification-center-row:hover {
+    background: #e8f0fe;
+}
+
+/* The title is a real link, but inside a row that is already clickable it
+   should read as text rather than as a second, competing target. */
+.notification-center-link,
+.notification-center-link:hover,
+.notification-center-link:focus {
+    display: block;
+    text-decoration: none;
+    color: inherit;
+}
+
+.notification-center-link:focus-visible {
+    outline: 2px solid #2563eb;
+    outline-offset: 2px;
+    border-radius: 4px;
+}
+
 .notification-center-title {
     font-weight: 600;
     color: #0f172a;
+}
+
+.notification-center-row:hover .notification-center-title {
+    color: #1d4ed8;
 }
 
 .notification-center-message {

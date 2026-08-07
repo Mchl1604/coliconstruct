@@ -26,6 +26,8 @@ use Illuminate\Notifications\Notifiable;
     'company_name',
     'company_address',
     'email',
+    'pending_email',
+    'email_verified_at',
     'role',
     'status',
     'is_archived',
@@ -224,6 +226,40 @@ class User extends Authenticatable
     public function isActive(): bool
     {
         return $this->status === self::STATUS_ACTIVE;
+    }
+
+    /**
+     * Whether this account has proved it owns its email address.
+     */
+    public function hasVerifiedEmail(): bool
+    {
+        return $this->email_verified_at !== null;
+    }
+
+    /**
+     * Whether this account must confirm its address before it may sign in.
+     *
+     * Only self-registration produces an unproved address. Public registration
+     * is client-only by construction - see AuthController::register - and
+     * every employee account is opened by an administrator who already knows
+     * the person and hands them their credentials, so an employee has nothing
+     * left to prove.
+     *
+     * Deliberately separate from canLogin(): a deactivated account is turned
+     * away with nothing to do about it, while this one is turned towards the
+     * verification page.
+     */
+    public function requiresEmailVerification(): bool
+    {
+        return $this->isClient() && ! $this->hasVerifiedEmail();
+    }
+
+    /**
+     * Whether a change of email is waiting on a code sent to the new address.
+     */
+    public function hasPendingEmailChange(): bool
+    {
+        return filled($this->pending_email);
     }
 
     public function isArchivedAccount(): bool
