@@ -30,16 +30,16 @@
     border-color: #0d6efd;
 }
 
+/* The assignee's own profile picture, or the default avatar. An <img> now
+   rather than an icon, so `display: flex` would stretch it - the element is
+   already square and cropped by .user-avatar. */
 .task-assign-avatar {
     width: 56px;
     height: 56px;
     border-radius: 50%;
-    background: #0d6efd;
-    color: #fff;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.5rem;
+    object-fit: cover;
+    background: #e2e8f0;
+    display: block;
     margin: 0 auto 0.75rem;
 }
 

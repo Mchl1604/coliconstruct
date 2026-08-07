@@ -69,7 +69,9 @@ class ConfigurationController extends Controller
             'employeeRoles' => collect(User::EMPLOYEE_ROLES)
                 ->mapWithKeys(fn (string $role): array => [$role => User::ROLES[$role]])
                 ->all(),
-            'assignableRoles' => collect(User::ASSIGNABLE_ROLES)
+            // What THIS administrator may assign: a Super Admin may create an
+            // Admin, an Admin may not.
+            'assignableRoles' => collect(request()->user()->assignableRoles())
                 ->mapWithKeys(fn (string $role): array => [$role => User::ROLES[$role]])
                 ->all(),
             'technicianRoles' => User::TECHNICIAN_ROLES,
@@ -235,6 +237,72 @@ class ConfigurationController extends Controller
     }
 
     /**
+     * The Archived Accounts table: every account taken off the active lists,
+     * most recently archived first.
+     *
+     * Super Admin only, enforced on the route - archiving and restoring are
+     * theirs, and this is the other end of the same privilege.
+     */
+    public function archivedAccounts(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'search' => ['nullable', 'string', 'max:255'],
+            'role' => ['nullable', 'string', Rule::in(array_merge(['all'], array_keys(User::ROLES)))],
+            'page' => ['nullable', 'integer', 'min:1'],
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['error' => $validator->errors()->first()], 422);
+        }
+
+        $filters = $validator->validated();
+
+        $query = User::query()
+            ->archived()
+            ->with('archiver')
+            ->when(
+                ! empty($filters['role']) && $filters['role'] !== 'all',
+                fn (Builder $q) => $q->where('role', $filters['role'])
+            );
+
+        $this->applySearch($query, $filters['search'] ?? null, ['user_code', 'name', 'email']);
+
+        // Rows archived before the timestamp existed sort last rather than
+        // first, which is what a null would otherwise do on some engines.
+        $page = $query
+            ->orderByRaw('archived_at IS NULL')
+            ->orderByDesc('archived_at')
+            ->orderBy('id')
+            ->paginate(self::PER_PAGE)
+            ->withQueryString();
+
+        return response()->json([
+            'rows' => collect($page->items())
+                ->map(fn (User $user): array => $this->archivedRow($user))
+                ->all(),
+            'meta' => $this->paginationMeta($page),
+        ]);
+    }
+
+    /**
+     * Put an archived account back. Nothing was deleted, so nothing has to be
+     * rebuilt - see UserAccountService::restore().
+     */
+    public function restoreAccount(User $user)
+    {
+        try {
+            $restored = $this->accounts->restore($user);
+        } catch (Throwable $exception) {
+            return $this->failure($exception, 'The account could not be restored.');
+        }
+
+        return response()->json([
+            'account' => $this->accountDetail($restored),
+            'message' => 'Account restored. It can sign in again.',
+        ]);
+    }
+
+    /**
      * Everything the edit form needs for one account.
      */
     public function show(User $user)
@@ -274,8 +342,7 @@ class ConfigurationController extends Controller
         try {
             $result = $this->accounts->createEmployee(
                 $data,
-                array_map('intval', $data['skill_ids'] ?? []),
-                $request->file('profile_photo')
+                array_map('intval', $data['skill_ids'] ?? [])
             );
         } catch (Throwable $exception) {
             return $this->failure($exception, 'The employee account could not be created.');
@@ -300,7 +367,7 @@ class ConfigurationController extends Controller
         $data = $validator->validated();
 
         try {
-            $result = $this->accounts->createClient($data, $request->file('profile_photo'));
+            $result = $this->accounts->createClient($data);
         } catch (Throwable $exception) {
             return $this->failure($exception, 'The client account could not be created.');
         }
@@ -337,8 +404,7 @@ class ConfigurationController extends Controller
             $updated = $this->accounts->updateEmployee(
                 $user,
                 $data,
-                array_map('intval', $data['skill_ids'] ?? []),
-                $request->file('profile_photo')
+                array_map('intval', $data['skill_ids'] ?? [])
             );
         } catch (Throwable $exception) {
             return $this->failure($exception, 'The employee account could not be updated.');
@@ -357,11 +423,11 @@ class ConfigurationController extends Controller
         }
 
         // The email is missing on purpose: it is the client's login
-        // credential, and nothing in this module moves it.
+        // credential, and nothing in this module moves it. So is the picture:
+        // clients do not have one.
         $validator = Validator::make($request->all(), [
             'full_name' => ['required', 'string', 'max:255'],
             'contact_number' => ['required', 'string', 'max:32', self::CONTACT_NUMBER_RULE],
-            'profile_photo' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
         ], $this->messages());
 
         if ($validator->fails()) {
@@ -369,11 +435,7 @@ class ConfigurationController extends Controller
         }
 
         try {
-            $updated = $this->accounts->updateClient(
-                $user,
-                $validator->validated(),
-                $request->file('profile_photo')
-            );
+            $updated = $this->accounts->updateClient($user, $validator->validated());
         } catch (Throwable $exception) {
             return $this->failure($exception, 'The client account could not be updated.');
         }
@@ -469,13 +531,16 @@ class ConfigurationController extends Controller
                 Rule::unique('users', 'email')->ignore($user?->id),
             ],
             // A Super Admin being edited keeps their own role, so the form
-            // need not - and must not - be able to send it.
+            // need not - and must not - be able to send it. Everyone else is
+            // held to what the signed-in administrator may actually grant,
+            // which is narrower for an Admin than for a Super Admin.
             'role' => $user?->isSuperAdmin()
                 ? ['nullable', 'string']
-                : ['required', 'string', Rule::in(User::ASSIGNABLE_ROLES)],
+                : ['required', 'string', Rule::in(request()->user()->assignableRoles($user))],
             'skill_ids' => ['nullable', 'array'],
             'skill_ids.*' => ['integer', 'exists:tbl_skills,skill_id'],
-            'profile_photo' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
+            // No picture: an internal account starts on the default avatar and
+            // its owner sets their own from their Profile page.
         ] + $this->passwordRule($user);
     }
 
@@ -539,8 +604,6 @@ class ConfigurationController extends Controller
             'email.unique' => 'Another account already uses that email address.',
             'contact_number.regex' => 'Enter a valid contact number.',
             'password.min' => 'The password must be at least 8 characters.',
-            'profile_photo.image' => 'The profile picture must be an image.',
-            'profile_photo.max' => 'The profile picture must be 5 MB or smaller.',
             'skill_ids.*.exists' => 'One of the selected specialties no longer exists.',
         ];
     }
@@ -620,7 +683,9 @@ class ConfigurationController extends Controller
             'status_label' => $user->statusLabel(),
             'status_badge_class' => $user->statusBadgeClass(),
             'is_active' => $user->isActive(),
-            'photo_url' => $user->profilePhotoUrl(),
+            // Null for an account that never carries a picture, which is what
+            // makes the listing fall back to initials for a client.
+            'avatar_url' => $user->avatarUrl(),
             'initials' => $user->initials(),
         ];
     }
@@ -640,8 +705,28 @@ class ConfigurationController extends Controller
             'status_label' => $user->statusLabel(),
             'status_badge_class' => $user->statusBadgeClass(),
             'is_active' => $user->isActive(),
-            'photo_url' => $user->profilePhotoUrl(),
+            'avatar_url' => $user->avatarUrl(),
             'initials' => $user->initials(),
+        ];
+    }
+
+    /**
+     * One row of the Archived Accounts table.
+     *
+     * @return array<string, mixed>
+     */
+    private function archivedRow(User $user): array
+    {
+        return [
+            'id' => $user->id,
+            'user_code' => $user->user_code,
+            'full_name' => $user->fullName(),
+            'email' => $user->email,
+            'role_label' => $user->roleLabel(),
+            'status_label' => $user->statusLabel(),
+            'status_badge_class' => $user->statusBadgeClass(),
+            'archived_at' => $user->archived_at?->format('M j, Y g:i A') ?? '—',
+            'archived_by' => $user->archiver?->fullName() ?? '—',
         ];
     }
 

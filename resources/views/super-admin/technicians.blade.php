@@ -16,13 +16,30 @@
         </div>
     </div>
 
+    @php
+        // A specialty notification links here with ?tab=specialty-requests, so
+        // clicking it lands on the queue rather than on the Details table.
+        $opensRequests = request('tab') === 'specialty-requests';
+    @endphp
+
     <ul class="nav nav-tabs technician-tabs mb-3" role="tablist">
         <li class="nav-item" role="presentation">
-            <button class="nav-link active" id="technicianDetailsTab" data-bs-toggle="tab"
-                data-bs-target="#technicianDetailsPane" type="button" role="tab"
-                aria-controls="technicianDetailsPane" aria-selected="true">
+            <button class="nav-link {{ $opensRequests ? '' : 'active' }}" id="technicianDetailsTab"
+                data-bs-toggle="tab" data-bs-target="#technicianDetailsPane" type="button" role="tab"
+                aria-controls="technicianDetailsPane" aria-selected="{{ $opensRequests ? 'false' : 'true' }}">
                 <i class="bi bi-person-vcard me-1" aria-hidden="true"></i>
                 Details
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link {{ $opensRequests ? 'active' : '' }}" id="specialtyRequestsTab"
+                data-bs-toggle="tab" data-bs-target="#specialtyRequestsPane" type="button" role="tab"
+                aria-controls="specialtyRequestsPane" aria-selected="{{ $opensRequests ? 'true' : 'false' }}">
+                <i class="bi bi-patch-question me-1" aria-hidden="true"></i>
+                Specialty Requests
+                @if ($pendingRequests->isNotEmpty())
+                    <span class="badge bg-warning text-dark ms-1">{{ $pendingRequests->count() }}</span>
+                @endif
             </button>
         </li>
         <li class="nav-item" role="presentation">
@@ -38,8 +55,8 @@
     <div class="tab-content">
 
         {{-- ============================ TAB 1: DETAILS ============================ --}}
-        <div class="tab-pane fade show active" id="technicianDetailsPane" role="tabpanel"
-            aria-labelledby="technicianDetailsTab">
+        <div class="tab-pane fade {{ $opensRequests ? '' : 'show active' }}" id="technicianDetailsPane"
+            role="tabpanel" aria-labelledby="technicianDetailsTab">
 
             <div class="card shadow-sm border-0 rounded-2">
                 <div class="card-body p-2">
@@ -48,7 +65,7 @@
                             <thead class="table-info">
                                 <tr>
                                     <th>Technician ID</th>
-                                    <th>Full Name</th>
+                                    <th>Technician</th>
                                     <th>Specialty</th>
                                     <th>Position</th>
                                     <th class="text-center">Action</th>
@@ -66,7 +83,20 @@
                                     @endphp
                                     <tr data-technician-row="{{ $technician->technician_id }}">
                                         <td>{{ $technician->technician_id }}</td>
-                                        <td class="fw-semibold">{{ $technician->name }}</td>
+                                        <td>
+                                            {{-- Picture beside the name, the
+                                                 same one they set on their own
+                                                 profile page. --}}
+                                            <div class="d-flex align-items-center gap-2">
+                                                <x-user-avatar :user="$technician->account" size="sm" />
+                                                <div>
+                                                    <div class="fw-semibold">{{ $technician->name }}</div>
+                                                    <div class="small text-muted">
+                                                        {{ $technician->account?->email }}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </td>
                                         <td data-technician-specialties="{{ $technician->technician_id }}">
                                             @forelse ($technician->skills->sortBy('skill_name') as $skill)
                                                 <span class="technician-chip">{{ $skill->skill_name }}</span>
@@ -95,7 +125,127 @@
             </div>
         </div>
 
-        {{-- ============================ TAB 2: SCHEDULES ============================ --}}
+        {{-- ======================= TAB 2: SPECIALTY REQUESTS ======================= --}}
+        {{-- A technician cannot change their own specialties; they ask, and
+             this is where the asking is decided. Until it is, their approved
+             specialties stay exactly as they are. --}}
+        <div class="tab-pane fade {{ $opensRequests ? 'show active' : '' }}" id="specialtyRequestsPane"
+            role="tabpanel" aria-labelledby="specialtyRequestsTab">
+
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                <div>
+                    <h5 class="fw-bold mb-0">Pending Specialty Requests</h5>
+                    <span class="text-secondary small">
+                        Approving applies the requested set. Rejecting changes nothing.
+                    </span>
+                </div>
+            </div>
+
+            @forelse ($pendingRequests as $specialtyRequest)
+                @php
+                    $requestTechnician = $specialtyRequest->technician;
+                    $requestAccount = $requestTechnician?->account;
+                    $additions = $specialtyRequest->additions();
+                    $removals = $specialtyRequest->removals();
+                @endphp
+
+                <div class="card shadow-sm border-0 rounded-2 mb-3">
+                    <div class="card-body p-3">
+                        <div class="row g-3 align-items-start">
+
+                            <div class="col-lg-4">
+                                <div class="d-flex align-items-center gap-3">
+                                    <x-user-avatar :user="$requestAccount" size="lg" />
+
+                                    <div class="min-w-0">
+                                        <div class="fw-semibold">
+                                            {{ $requestAccount?->fullName() ?? $requestTechnician?->name ?? 'Unknown' }}
+                                        </div>
+                                        <div class="small text-muted">
+                                            {{ $requestAccount?->roleLabel() ?? 'Technician' }}
+                                        </div>
+                                        <div class="small text-muted">
+                                            Submitted
+                                            {{ $specialtyRequest->created_at?->format('M j, Y g:i A') }}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="col-lg-4">
+                                <div class="technician-field-label">Current Specialties</div>
+                                <div class="d-flex flex-wrap gap-1">
+                                    @forelse ($specialtyRequest->currentSkills() as $skill)
+                                        <span class="technician-chip">{{ $skill->skill_name }}</span>
+                                    @empty
+                                        <span class="text-muted small">None.</span>
+                                    @endforelse
+                                </div>
+                            </div>
+
+                            <div class="col-lg-4">
+                                <div class="technician-field-label">Requested Changes</div>
+                                <div class="d-flex flex-wrap gap-1">
+                                    @foreach ($additions as $name)
+                                        <span class="badge bg-success-subtle text-success-emphasis border border-success-subtle">
+                                            <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>{{ $name }}
+                                        </span>
+                                    @endforeach
+
+                                    @foreach ($removals as $name)
+                                        <span class="badge bg-danger-subtle text-danger-emphasis border border-danger-subtle">
+                                            <i class="bi bi-dash-lg me-1" aria-hidden="true"></i>{{ $name }}
+                                        </span>
+                                    @endforeach
+
+                                    @if ($additions->isEmpty() && $removals->isEmpty())
+                                        <span class="text-muted small">No change.</span>
+                                    @endif
+                                </div>
+                            </div>
+
+                            <div class="col-12">
+                                <div class="d-flex flex-wrap justify-content-end gap-2">
+                                    <form method="POST"
+                                        action="{{ route('super-admin.technicians.specialty-requests.reject', $specialtyRequest) }}">
+                                        @csrf
+                                        @method('PUT')
+                                        <button type="submit" class="btn btn-outline-danger btn-sm">
+                                            <i class="bi bi-x-lg me-1" aria-hidden="true"></i>
+                                            Reject
+                                        </button>
+                                    </form>
+
+                                    <form method="POST"
+                                        action="{{ route('super-admin.technicians.specialty-requests.approve', $specialtyRequest) }}">
+                                        @csrf
+                                        @method('PUT')
+                                        <button type="submit" class="btn btn-success btn-sm">
+                                            <i class="bi bi-check-lg me-1" aria-hidden="true"></i>
+                                            Approve
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+                </div>
+            @empty
+                <div class="card shadow-sm border-0 rounded-2">
+                    <div class="card-body p-5 text-center">
+                        <i class="bi bi-patch-check text-secondary" style="font-size: 2.4rem;"
+                            aria-hidden="true"></i>
+                        <h6 class="fw-bold mt-3 mb-1">Nothing waiting</h6>
+                        <p class="text-secondary mb-0">
+                            No technician has a specialty change awaiting approval.
+                        </p>
+                    </div>
+                </div>
+            @endforelse
+        </div>
+
+        {{-- ============================ TAB 3: SCHEDULES ============================ --}}
         <div class="tab-pane fade" id="technicianSchedulesPane" role="tabpanel"
             aria-labelledby="technicianSchedulesTab">
 

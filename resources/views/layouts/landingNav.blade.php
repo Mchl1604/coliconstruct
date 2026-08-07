@@ -86,37 +86,7 @@
     </div>
 </nav>
 
-{{-- Success Toast --}}
-@if (session('success'))
-<div class="toast-container position-fixed top-0 end-0 p-3">
-    <div class="toast align-items-center bg-success text-white border-0"
-         role="alert"
-         data-bs-autohide="true"
-         data-bs-delay="3000">
-
-        <div class="toast-body">
-            {{ session('success') }}
-        </div>
-
-    </div>
-</div>
-@endif
-
-{{-- Error Toast --}}
-@if (session('error'))
-<div class="toast-container position-fixed top-0 end-0 p-3">
-    <div class="toast align-items-center bg-danger text-white border-0"
-         role="alert"
-         data-bs-autohide="true"
-         data-bs-delay="3000">
-
-        <div class="toast-body">
-            {{ session('error') }}
-        </div>
-
-    </div>
-</div>
-@endif
+<x-flash-toasts />
 
 {{-- Page Content --}}
 <main>

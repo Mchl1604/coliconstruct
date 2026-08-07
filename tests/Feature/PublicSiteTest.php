@@ -248,11 +248,16 @@ class PublicSiteTest extends TestCase
             $html
         );
 
+        // A client's profile is their details and their password - and never a
+        // profile picture, which is reserved for the people running the work.
         $this->actingAs($client)
             ->get(route('profile.edit'))
             ->assertOk()
-            ->assertSee('Account Details')
-            ->assertSee($client->email);
+            ->assertSee('Personal Information')
+            ->assertSee('Change Password')
+            ->assertSee($client->email)
+            ->assertDontSee('Upload Picture')
+            ->assertDontSee('Specialties');
     }
 
     public function test_the_profile_page_needs_a_signed_in_account(): void

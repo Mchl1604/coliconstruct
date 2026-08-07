@@ -127,8 +127,17 @@
                                 </span>
 
                                 <div class="schedule-modal-team-chips">
-                                    @forelse ($project->projectTechnicians->pluck('technician.name')->filter() as $technicianName)
-                                        <span class="schedule-tech-chip">{{ $technicianName }}</span>
+                                    @forelse ($project->projectTechnicians as $projectTechnician)
+                                        @continue(! $projectTechnician->technician)
+
+                                        {{-- Picture in the chip: who is booked
+                                             is easier to scan as faces than as
+                                             a row of names. --}}
+                                        <span class="schedule-tech-chip">
+                                            <x-user-avatar :user="$projectTechnician->technician->account"
+                                                size="xs" class="me-1" />
+                                            {{ $projectTechnician->technician->name }}
+                                        </span>
                                     @empty
                                         <span class="text-muted small">No technicians assigned</span>
                                     @endforelse

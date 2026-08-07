@@ -43,8 +43,10 @@ class ProjectTeamCandidates
      */
     public function forProject(Project $project): Collection
     {
+        // The picker cards show each technician's picture, so the account has
+        // to bring its photo path and name parts along with the role.
         $technicians = Technician::query()
-            ->with(['account:id,name,role', 'skills'])
+            ->with(['account:id,name,first_name,middle_name,last_name,role,profile_photo_path', 'skills'])
             ->whereHas('account', fn ($query) => $query->whereIn('role', ['technician', 'lead_technician']))
             ->get();
 
@@ -78,6 +80,10 @@ class ProjectTeamCandidates
                     'id' => $technicianId,
                     'name' => $technician->name,
                     'role' => $technician->account?->role,
+                    'role_label' => $technician->account?->roleLabel(),
+                    // Their own picture, or the default avatar - never null
+                    // for a technician, who is always an internal account.
+                    'avatar_url' => $technician->account?->avatarUrl(),
                     'available' => $available,
                     // Someone already on the team can always stay on it, even
                     // if a clash slipped in through another route - otherwise

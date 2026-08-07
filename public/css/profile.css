@@ -1,0 +1,90 @@
+/* ---- The profile page ----
+   Rendered inside three different shells - the administrative one, the
+   technician one and the public site - so everything here is scoped to the
+   page's own classes and inherits the shell's typography. */
+
+.profile-layout {
+    max-width: 72rem;
+}
+
+/* Stands in for a picture on the one account type that never has one. */
+.profile-initials {
+    display: inline-flex;
+    width: 132px;
+    height: 132px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: #e2e8f0;
+    color: #475569;
+    font-size: 2.6rem;
+    font-weight: 700;
+    letter-spacing: .02em;
+}
+
+.profile-section-label {
+    font-size: .7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: #94a3b8;
+}
+
+.profile-facts {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: .75rem;
+    margin: 0;
+}
+
+.profile-facts dt {
+    font-size: .7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: #94a3b8;
+    margin-bottom: .1rem;
+}
+
+.profile-facts dd {
+    margin: 0;
+    font-size: .9rem;
+    font-weight: 600;
+    color: #0f172a;
+    overflow-wrap: anywhere;
+}
+
+/* The outstanding request, set apart so it reads as "not yet true". */
+.profile-pending-panel {
+    border: 1px dashed #f0c36d;
+    border-radius: .6rem;
+    background: #fffbeb;
+    padding: 1rem;
+}
+
+/* An approved specialty. Same look as the chips on the Technicians page, but
+   defined here so the profile page does not depend on that page's stylesheet
+   being loaded in three different shells. */
+.profile-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    padding: .3rem .7rem;
+    border-radius: 999px;
+    background: #eef2ff;
+    color: #3730a3;
+    font-size: .85rem;
+    font-weight: 600;
+}
+
+@media (min-width: 576px) {
+    .profile-facts {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (min-width: 992px) {
+    .profile-facts {
+        grid-template-columns: 1fr;
+    }
+}

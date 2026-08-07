@@ -5,9 +5,7 @@ namespace App\Services;
 use App\Models\ActivityLog;
 use App\Models\Technician;
 use App\Models\User;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 use RuntimeException;
 
 /**
@@ -23,9 +21,6 @@ use RuntimeException;
  */
 class UserAccountService
 {
-    /** Where profile pictures live on the public disk. */
-    private const PHOTO_DIRECTORY = 'profile-photos';
-
     /** Length of a generated temporary password. */
     private const TEMPORARY_PASSWORD_LENGTH = 14;
 
@@ -43,13 +38,13 @@ class UserAccountService
      * @param  array<int, int>  $skillIds
      * @return array{user: User, password: string}
      */
-    public function createEmployee(array $data, array $skillIds = [], ?UploadedFile $photo = null): array
+    public function createEmployee(array $data, array $skillIds = []): array
     {
         // The administrator may type a password of their own; without one, a
         // generated value is used instead.
         $password = $data['password'] ?? $this->generateTemporaryPassword();
 
-        $user = DB::transaction(function () use ($data, $skillIds, $photo, $password): User {
+        $user = DB::transaction(function () use ($data, $skillIds, $password): User {
             $user = User::create([
                 'user_code' => $this->nextUserCode('EMP'),
                 'name' => $this->displayName($data),
@@ -65,7 +60,8 @@ class UserAccountService
                 'must_change_password' => true,
                 'created_by' => auth()->id(),
                 'password' => $password,
-                'profile_photo_path' => $this->storePhoto($photo),
+                // No picture: the account starts on the default avatar and its
+                // owner sets their own from their Profile page.
             ]);
 
             $this->syncTechnicianRecord($user, $skillIds);
@@ -83,11 +79,11 @@ class UserAccountService
      * @param  array<string, mixed>  $data
      * @return array{user: User, password: string}
      */
-    public function createClient(array $data, ?UploadedFile $photo = null): array
+    public function createClient(array $data): array
     {
         $password = $data['password'] ?? $this->generateTemporaryPassword();
 
-        $user = DB::transaction(function () use ($data, $photo, $password): User {
+        $user = DB::transaction(function () use ($data, $password): User {
             [$first, $middle, $last] = $this->splitFullName($data['full_name']);
 
             return User::create([
@@ -108,7 +104,7 @@ class UserAccountService
                 'must_change_password' => true,
                 'created_by' => auth()->id(),
                 'password' => $password,
-                'profile_photo_path' => $this->storePhoto($photo),
+                // Clients never carry a profile picture.
             ]);
         });
 
@@ -179,11 +175,11 @@ class UserAccountService
      * @param  array<string, mixed>  $data
      * @param  array<int, int>  $skillIds
      */
-    public function updateEmployee(User $user, array $data, array $skillIds = [], ?UploadedFile $photo = null): User
+    public function updateEmployee(User $user, array $data, array $skillIds = []): User
     {
         $this->guardEditable($user);
 
-        DB::transaction(function () use ($user, $data, $skillIds, $photo): void {
+        DB::transaction(function () use ($user, $data, $skillIds): void {
             $user->fill([
                 'name' => $this->displayName($data),
                 'first_name' => $data['first_name'],
@@ -196,10 +192,6 @@ class UserAccountService
                 // Admin keeps theirs - the form cannot assign or remove it.
                 'role' => $user->isSuperAdmin() ? User::ROLE_SUPER_ADMIN : $data['role'],
             ]);
-
-            if ($photo) {
-                $user->profile_photo_path = $this->replacePhoto($user, $photo);
-            }
 
             $user->save();
 
@@ -217,11 +209,11 @@ class UserAccountService
      *
      * @param  array<string, mixed>  $data
      */
-    public function updateClient(User $user, array $data, ?UploadedFile $photo = null): User
+    public function updateClient(User $user, array $data): User
     {
         $this->guardEditable($user);
 
-        DB::transaction(function () use ($user, $data, $photo): void {
+        DB::transaction(function () use ($user, $data): void {
             [$first, $middle, $last] = $this->splitFullName($data['full_name']);
 
             $user->fill([
@@ -231,10 +223,6 @@ class UserAccountService
                 'last_name' => $last,
                 'contact_number' => $data['contact_number'],
             ]);
-
-            if ($photo) {
-                $user->profile_photo_path = $this->replacePhoto($user, $photo);
-            }
 
             $user->save();
         });
@@ -290,6 +278,9 @@ class UserAccountService
 
         $user->is_archived = true;
         $user->archived_at = now();
+        // Recorded on the row as well as in the trail: the Archived Accounts
+        // table names who did it, and a table is joined rather than searched.
+        $user->archived_by = auth()->id();
         // An archived account must not be able to sign in either.
         $user->status = User::STATUS_DEACTIVATED;
         $user->save();
@@ -300,6 +291,36 @@ class UserAccountService
         );
 
         $this->notifications->accountArchived($user);
+
+        return $user;
+    }
+
+    /**
+     * Put an archived account back on the active lists.
+     *
+     * The exact opposite of archive(): nothing was deleted, so nothing has to
+     * be rebuilt. The account's projects, reports, documents and audit history
+     * never stopped pointing at this row - clearing the flags is the whole of
+     * the restore, and it comes back active so it can sign in again.
+     */
+    public function restore(User $user): User
+    {
+        if (! $user->is_archived) {
+            throw new RuntimeException('That account is not archived.');
+        }
+
+        $user->is_archived = false;
+        $user->archived_at = null;
+        $user->archived_by = null;
+        $user->status = User::STATUS_ACTIVE;
+        $user->save();
+
+        $this->activityLogger->record(
+            $user->isClient() ? ActivityLog::CLIENT_RESTORED : ActivityLog::EMPLOYEE_RESTORED,
+            $user
+        );
+
+        $this->notifications->accountRestored($user);
 
         return $user;
     }
@@ -504,26 +525,5 @@ class UserAccountService
                 $parts[count($parts) - 1],
             ],
         };
-    }
-
-    private function storePhoto(?UploadedFile $photo): ?string
-    {
-        return $photo?->store(self::PHOTO_DIRECTORY, 'public') ?: null;
-    }
-
-    /**
-     * Swap in a new picture and drop the old file, so replacing a photo
-     * repeatedly doesn't accumulate orphans on disk.
-     */
-    private function replacePhoto(User $user, UploadedFile $photo): string
-    {
-        $previous = $user->profile_photo_path;
-        $path = (string) $this->storePhoto($photo);
-
-        if ($previous && $previous !== $path) {
-            Storage::disk('public')->delete($previous);
-        }
-
-        return $path;
     }
 }

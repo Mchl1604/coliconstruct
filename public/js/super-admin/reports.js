@@ -22,6 +22,27 @@ document.addEventListener("DOMContentLoaded", function () {
         return meta ? meta.getAttribute("content") : "";
     }
 
+    /**
+     * Who filed a report: their own picture beside their name. Reports are
+     * always filed by internal accounts, so there is a picture - their own or
+     * the default avatar - unless the account has since been removed.
+     */
+    function submitterCell(report) {
+        const avatar = report.submitted_by_avatar
+            ? '<img class="user-avatar user-avatar-xs" src="' +
+              escapeHtml(report.submitted_by_avatar) +
+              '" alt="" loading="lazy">'
+            : "";
+
+        return (
+            '<div class="d-flex align-items-center gap-2">' +
+            avatar +
+            "<span>" +
+            escapeHtml(report.submitted_by) +
+            "</span></div>"
+        );
+    }
+
     function setAlert(element, message) {
         if (!element) {
             return;
@@ -153,7 +174,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     escapeHtml(report.type_label) +
                     "</span></td>" +
                     "<td>" +
-                    escapeHtml(report.submitted_by) +
+                    submitterCell(report) +
                     "</td>" +
                     "<td>" +
                     escapeHtml(report.report_date_label) +

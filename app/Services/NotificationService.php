@@ -984,6 +984,80 @@ class NotificationService
         );
     }
 
+    public function accountRestored(User $account): void
+    {
+        $this->deliver(
+            $this->audienceForAccount($account),
+            'Account Restored',
+            sprintf(
+                '%s restored the account for %s, which can sign in again.',
+                $this->actorName(),
+                $account->fullName()
+            ),
+            Notification::MODULE_USER_MANAGEMENT,
+            $account,
+            $this->accountLink()
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // Specialty requests
+    // ------------------------------------------------------------------
+
+    /**
+     * A technician has asked to change their specialties.
+     *
+     * Every administrator is told, because any of them can decide it, and the
+     * link opens the queue rather than the technician's row - the reviewer
+     * wants the request, not the account.
+     */
+    public function specialtyRequestSubmitted(User $technicianAccount): void
+    {
+        $this->deliver(
+            $this->administrators(),
+            'Specialty Request',
+            sprintf(
+                '%s requested changes to their specialties and is awaiting approval.',
+                $technicianAccount->fullName()
+            ),
+            Notification::MODULE_USER_MANAGEMENT,
+            $technicianAccount,
+            $this->specialtyQueueLink()
+        );
+    }
+
+    public function specialtyRequestApproved(User $technicianAccount): void
+    {
+        $this->deliver(
+            $technicianAccount,
+            'Specialty Update Approved',
+            'Your specialty update has been approved.',
+            Notification::MODULE_USER_MANAGEMENT,
+            $technicianAccount,
+            route('profile.edit', [], false)
+        );
+    }
+
+    public function specialtyRequestRejected(User $technicianAccount): void
+    {
+        $this->deliver(
+            $technicianAccount,
+            'Specialty Update Rejected',
+            'Your specialty update request has been rejected. Your current specialties are unchanged.',
+            Notification::MODULE_USER_MANAGEMENT,
+            $technicianAccount,
+            route('profile.edit', [], false)
+        );
+    }
+
+    /**
+     * The pending specialty queue, which lives on the Technicians page.
+     */
+    public function specialtyQueueLink(): string
+    {
+        return route('super-admin.technicians.index', ['tab' => 'specialty-requests'], false);
+    }
+
     /**
      * Somebody resetting an administrator's password is a security event, so
      * it goes to the super admins whoever the account belongs to.

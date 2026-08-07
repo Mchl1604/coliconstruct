@@ -181,13 +181,32 @@ $(function () {
         return span.innerHTML;
     }
 
+    /**
+     * One technician's card: picture, name, role, the specialties that match
+     * this project, and - for a blocked one, below - why they are out.
+     */
+    function avatarMarkup(technician) {
+        if (!technician.avatar_url) {
+            return '';
+        }
+
+        return '<img class="user-avatar user-avatar-md technician-option-avatar" src="' +
+            escapeHtml(technician.avatar_url) + '" alt="" loading="lazy">';
+    }
+
     function optionMarkup(technician) {
-        const skills = (technician.matched_skills || []).join(', ');
+        const skills = (technician.skills || []).join(', ');
 
         return '<li><button type="button" class="dropdown-item technician-option" ' +
             'data-technician-option="' + technician.id + '">' +
+            avatarMarkup(technician) +
+            '<span class="technician-option-body">' +
             '<span class="technician-option-name">' + escapeHtml(technician.name) + '</span>' +
+            '<span class="technician-option-role">' +
+            escapeHtml(technician.role_label || 'Technician') + '</span>' +
             (skills ? '<span class="technician-option-skills">' + escapeHtml(skills) + '</span>' : '') +
+            '<span class="technician-option-available">Available</span>' +
+            '</span>' +
             '</button></li>';
     }
 
@@ -209,8 +228,13 @@ $(function () {
 
         const rows = technicians.map(function(technician) {
             return '<div class="technician-option is-disabled" aria-disabled="true">' +
+                avatarMarkup(technician) +
+                '<span class="technician-option-body">' +
                 '<span class="technician-option-name">' + escapeHtml(technician.name) + '</span>' +
+                '<span class="technician-option-role">' +
+                escapeHtml(technician.role_label || 'Technician') + '</span>' +
                 '<span class="technician-option-reason">' + escapeHtml(technician.reason) + '</span>' +
+                '</span>' +
                 '</div>';
         }).join('');
 

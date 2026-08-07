@@ -5,7 +5,12 @@
     /notifications/feed and refreshed while the page is open, so one component
     serves the administrative and technician shells without either of them
     knowing what is in it.
+
+    `modal` swaps the footer link for a control that opens the Notification
+    Center in a centred dialog instead of navigating to a page of its own.
 --}}
+@props(['modal' => false])
+
 <div class="notification-bell dropdown" data-notification-bell>
     <button type="button" class="notification-bell-button" data-bs-toggle="dropdown" data-bs-auto-close="outside"
         aria-expanded="false" aria-label="Notifications" data-notification-toggle>
@@ -30,8 +35,15 @@
             </div>
         </div>
 
-        <a class="notification-dropdown-footer" href="{{ route('notifications.index') }}">
-            View All Notifications
-        </a>
+        @if ($modal)
+            <button type="button" class="notification-dropdown-footer w-100" data-bs-toggle="modal"
+                data-bs-target="#notificationCenterModal">
+                View All Notifications
+            </button>
+        @else
+            <a class="notification-dropdown-footer" href="{{ route('notifications.index') }}">
+                View All Notifications
+            </a>
+        @endif
     </div>
 </div>

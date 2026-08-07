@@ -147,10 +147,16 @@ document.addEventListener("DOMContentLoaded", function () {
         input.blur();
     }
 
+    /**
+     * A row's person: their picture where they have one, their initials where
+     * they never will. Clients carry no picture anywhere in the system, so the
+     * server sends avatar_url as null for them and this shows the initials
+     * instead.
+     */
     function avatarCell(row) {
-        const avatar = row.photo_url
+        const avatar = row.avatar_url
             ? '<img class="config-avatar" src="' +
-              escapeHtml(row.photo_url) +
+              escapeHtml(row.avatar_url) +
               '" alt="">'
             : '<span class="config-avatar">' +
               escapeHtml(row.initials) +
@@ -193,6 +199,19 @@ document.addEventListener("DOMContentLoaded", function () {
         );
     }
 
+    /**
+     * Archiving belongs to the Super Admin. An Admin manages accounts right up
+     * to deactivating them; taking one out of the system is not theirs, so the
+     * button is not drawn - and the route refuses it either way.
+     */
+    function archiveButton(id) {
+        if (!options.canArchive) {
+            return "";
+        }
+
+        return actionButton("archive", id, "bi-trash", "Archive account", "danger");
+    }
+
     const pageError = document.querySelector("[data-user-error]");
 
     // ---------------------------------------------------------------
@@ -211,6 +230,11 @@ document.addEventListener("DOMContentLoaded", function () {
         const count = document.querySelector(config.countSelector);
         const pagination = document.querySelector(config.paginationSelector);
         const search = document.querySelector(config.searchSelector);
+        // A table inside a dialog needs its own error line: the page-level one
+        // sits behind the backdrop where nobody would read it.
+        const errorBox = config.errorSelector
+            ? document.querySelector(config.errorSelector)
+            : pageError;
         const filters = (config.filterSelectors || []).map(function (selector) {
             return document.querySelector(selector);
         });
@@ -302,7 +326,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     if (!result.ok) {
                         body.innerHTML = "";
                         setAlert(
-                            pageError,
+                            errorBox,
                             result.body.error ||
                                 "Could not load " + (config.noun || "accounts") + ".",
                         );
@@ -311,7 +335,7 @@ document.addEventListener("DOMContentLoaded", function () {
                         return;
                     }
 
-                    setAlert(pageError, "");
+                    setAlert(errorBox, "");
 
                     const rows = result.body.rows || [];
 
@@ -431,7 +455,7 @@ document.addEventListener("DOMContentLoaded", function () {
                           "Activate account",
                           "success",
                       )) +
-                actionButton("archive", row.id, "bi-trash", "Archive account", "danger") +
+                archiveButton(row.id) +
                 "</div></td>" +
                 "</tr>"
             );
@@ -489,18 +513,123 @@ document.addEventListener("DOMContentLoaded", function () {
                           "Activate account",
                           "success",
                       )) +
-                actionButton("archive", row.id, "bi-trash", "Archive account", "danger") +
+                archiveButton(row.id) +
                 "</div></td>" +
                 "</tr>"
             );
         },
     });
 
+    // ---------------------------------------------------------------
+    // Archived Accounts
+    //
+    // The other end of archiving, and Super Admin only for the same reason:
+    // the dialog is not rendered for an Admin, so this whole section stands
+    // down when it is absent.
+    // ---------------------------------------------------------------
+
+    const archivedModalEl = document.querySelector("[data-archived-modal]");
+    const archivedError = document.querySelector("[data-archived-error]");
+
+    const archivedTable = archivedModalEl
+        ? createTable({
+              url: routes.archivedAccounts,
+              bodySelector: "[data-archived-body]",
+              loadingSelector: "[data-archived-loading]",
+              emptySelector: "[data-archived-empty]",
+              countSelector: "[data-archived-count]",
+              paginationSelector: "[data-archived-pagination]",
+              searchSelector: "[data-archived-search]",
+              errorSelector: "[data-archived-error]",
+              filterSelectors: ["[data-archived-role]"],
+              noun: "archived accounts",
+              singular: "archived account",
+              renderRow: function (row) {
+                  return (
+                      "<tr>" +
+                      '<td class="config-code-cell">' +
+                      escapeHtml(row.user_code) +
+                      "</td>" +
+                      "<td>" +
+                      escapeHtml(row.full_name) +
+                      "</td>" +
+                      "<td>" +
+                      escapeHtml(row.email) +
+                      "</td>" +
+                      "<td>" +
+                      escapeHtml(row.role_label) +
+                      "</td>" +
+                      '<td><span class="badge ' +
+                      escapeHtml(row.status_badge_class) +
+                      '">' +
+                      escapeHtml(row.status_label) +
+                      "</span></td>" +
+                      "<td>" +
+                      escapeHtml(row.archived_at) +
+                      "</td>" +
+                      "<td>" +
+                      escapeHtml(row.archived_by) +
+                      "</td>" +
+                      '<td class="text-center">' +
+                      '<button type="button" class="btn btn-sm btn-success py-1 px-2" ' +
+                      'data-restore-user="' +
+                      row.id +
+                      '"><i class="bi bi-arrow-counterclockwise me-1"></i>Restore</button>' +
+                      "</td>" +
+                      "</tr>"
+                  );
+              },
+          })
+        : null;
+
+    if (archivedModalEl && archivedTable) {
+        // Loaded on open rather than on page load: most visits to
+        // Configuration never touch the archive.
+        archivedModalEl.addEventListener("show.bs.modal", function () {
+            setAlert(archivedError, "");
+            archivedTable.reset();
+        });
+
+        archivedTable.element.addEventListener("click", function (event) {
+            const button = event.target.closest("[data-restore-user]");
+
+            if (!button) {
+                return;
+            }
+
+            const id = button.dataset.restoreUser;
+
+            button.disabled = true;
+            setAlert(archivedError, "");
+
+            sendJson(routes.userBase + "/" + id + "/restore", "PUT").then(
+                function (result) {
+                    button.disabled = false;
+
+                    if (!result.ok) {
+                        setAlert(
+                            archivedError,
+                            result.body.error || "That account could not be restored.",
+                        );
+
+                        return;
+                    }
+
+                    // The account has moved from one list to the other, so
+                    // both have to be redrawn.
+                    archivedTable.reload();
+                    refreshTables();
+                },
+            );
+        });
+    }
+
     // The filter key each select contributes to the query string.
     [
         ["[data-employee-role]", "role"],
         ["[data-employee-status]", "status"],
         ["[data-client-status]", "status"],
+        ["[data-archived-role]", "role"],
         ["[data-log-role]", "role"],
         ["[data-log-module]", "module"],
         ["[data-log-range]", "range"],
@@ -667,7 +796,6 @@ document.addEventListener("DOMContentLoaded", function () {
     const fieldsWrap = document.querySelector("[data-user-fields]");
     const employeeOnly = document.querySelectorAll("[data-employee-only]");
     const clientOnly = document.querySelectorAll("[data-client-only]");
-    const photoBlock = document.querySelector("[data-photo-block]");
     const emailField = document.querySelector("[data-email-field]");
     const emailInput = userForm.querySelector('[name="email"]');
     const emailLockedNote = document.querySelector("[data-email-locked-note]");
@@ -682,8 +810,6 @@ document.addEventListener("DOMContentLoaded", function () {
     const passwordCopy = document.querySelector("[data-password-copy]");
     const passwordRegenerate = document.querySelector("[data-password-regenerate]");
     const accountHistory = document.querySelector("[data-account-history]");
-    const photoInput = document.querySelector("[data-photo-input]");
-    const photoPreview = document.querySelector("[data-photo-preview]");
     const userSubmit = document.querySelector("[data-user-submit]");
     const userSubmitLabel = document.querySelector("[data-user-submit-label]");
     const userSpinner = document.querySelector("[data-user-spinner]");
@@ -770,25 +896,11 @@ document.addEventListener("DOMContentLoaded", function () {
         roleSelect.disabled = false;
     }
 
-    function setPhotoPreview(url, initials) {
-        if (url) {
-            photoPreview.innerHTML =
-                '<img src="' + escapeHtml(url) + '" alt="Profile picture">';
-
-            return;
-        }
-
-        photoPreview.innerHTML = "<span>" + escapeHtml(initials || "?") + "</span>";
-    }
-
     function setAccountType(type) {
         accountType = type;
 
         toggleAll(employeeOnly, type === "employee");
         toggleAll(clientOnly, type === "client");
-        // A new client account is opened with just their name, number and
-        // email; the company details and picture come later, on the edit form.
-        photoBlock.classList.toggle("d-none", type === "client" && !editing);
 
         fieldsWrap.classList.remove("d-none");
         userSubmit.disabled = false;
@@ -813,7 +925,6 @@ document.addEventListener("DOMContentLoaded", function () {
         fieldsWrap.classList.add("d-none");
         typeStep.classList.remove("d-none");
         passwordBlock.classList.remove("d-none");
-        photoBlock.classList.remove("d-none");
         accountHistory.classList.add("d-none");
         emailField.classList.remove("d-none");
         emailInput.disabled = false;
@@ -830,7 +941,6 @@ document.addEventListener("DOMContentLoaded", function () {
             input.checked = false;
         });
 
-        setPhotoPreview(null, "?");
         renderSpecialties();
         refreshSpecialtyOptions();
         setAlert(userFormError, "");
@@ -899,7 +1009,6 @@ document.addEventListener("DOMContentLoaded", function () {
             applyRoleVisibility();
         }
 
-        setPhotoPreview(account.photo_url, account.initials);
         bootstrapModal(userModalEl)?.show();
     }
 
@@ -954,21 +1063,6 @@ document.addEventListener("DOMContentLoaded", function () {
         refreshSpecialtyOptions();
     });
 
-    photoInput.addEventListener("change", function () {
-        const file = photoInput.files && photoInput.files[0];
-
-        if (!file || !file.type.startsWith("image/")) {
-            return;
-        }
-
-        const url = URL.createObjectURL(file);
-
-        setPhotoPreview(url, "");
-        photoPreview.querySelector("img").onload = function () {
-            URL.revokeObjectURL(url);
-        };
-    });
-
     passwordCopy.addEventListener("click", function () {
         copyToClipboard(passwordDisplay, passwordCopy);
     });
@@ -1021,10 +1115,8 @@ document.addEventListener("DOMContentLoaded", function () {
             payload.set("password", passwordDisplay.value.trim());
         }
 
-        if (photoInput.files && photoInput.files[0]) {
-            payload.set("profile_photo", photoInput.files[0]);
-        }
-
+        // No profile picture is sent: an account's owner sets their own from
+        // their Profile page, and a client never has one.
         const url = editing
             ? routes.userBase +
               "/" +

@@ -112,6 +112,9 @@ class ClientProjects
                 'projectTechnicians.technician.account',
                 'tasks',
                 'completionPhotos',
+                // The Project Documents buttons, which only appear for the
+                // documents a project actually has.
+                'documents',
                 // The client's tracker: what the technicians reported, newest
                 // first, with whatever they photographed.
                 'reports' => fn ($query) => $query->with('images')->latest('report_date'),

@@ -23,16 +23,7 @@
 
 <body>
 
-    @foreach (['success' => 'bg-success', 'error' => 'bg-danger'] as $key => $background)
-        @if (session($key))
-            <div class="toast-container position-fixed top-0 end-0 p-3">
-                <div class="toast align-items-center {{ $background }} text-white border-0" role="alert"
-                    data-bs-autohide="true" data-bs-delay="3000">
-                    <div class="toast-body">{{ session($key) }}</div>
-                </div>
-            </div>
-        @endif
-    @endforeach
+    <x-flash-toasts />
 
     <div class="d-flex align-items-center justify-content-center min-vh-100 py-4">
         <div class="card shadow-sm" style="width: 460px; max-width: 100%;">

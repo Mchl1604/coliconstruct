@@ -21,7 +21,7 @@
                 </div>
 
                 @if ($isClient && $projects->isNotEmpty())
-                    <span class="badge bg-secondary">
+                    <span class="badge bg-secondary" data-project-count>
                         {{ $projects->count() }} {{ Str::plural('project', $projects->count()) }}
                     </span>
                 @endif
@@ -62,11 +62,68 @@
                     </p>
                 </div>
             @else
+                {{-- Narrowing happens in the browser: a client's list is small
+                     and already on the page, so a filter or a keystroke must
+                     not cost a round trip. --}}
+                @php
+                    $statusFilters = [
+                        'all' => 'All',
+                        'pending' => 'Pending',
+                        'ongoing' => 'Ongoing',
+                        'overdue' => 'Overdue',
+                        'completed' => 'Completed',
+                        'cancelled' => 'Cancelled',
+                    ];
+                    $filterCounts = collect($cards)->countBy('filter_status');
+                @endphp
+
+                <div class="card client-card shadow-sm mb-4" data-project-filters>
+                    <div class="card-body">
+                        <div class="row g-3 align-items-center">
+                            <div class="col-lg-7">
+                                <div class="project-filter-tabs" role="group" aria-label="Filter projects by status">
+                                    @foreach ($statusFilters as $value => $label)
+                                        <button type="button"
+                                            class="project-filter-tab {{ $value === 'all' ? 'active' : '' }}"
+                                            data-project-filter="{{ $value }}"
+                                            aria-pressed="{{ $value === 'all' ? 'true' : 'false' }}">
+                                            {{ $label }}
+                                            <span class="project-filter-count">
+                                                {{ $value === 'all' ? count($cards) : ($filterCounts[$value] ?? 0) }}
+                                            </span>
+                                        </button>
+                                    @endforeach
+                                </div>
+                            </div>
+
+                            <div class="col-lg-5">
+                                <label class="visually-hidden" for="projectSearch">Search projects</label>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-white">
+                                        <i class="bi bi-search" aria-hidden="true"></i>
+                                    </span>
+                                    <input type="search" class="form-control" id="projectSearch"
+                                        placeholder="Search ID, reference, type, client or address&hellip;"
+                                        data-project-search>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="public-empty-state d-none" data-project-empty>
+                    <i class="bi bi-search fs-1 d-block mb-3 text-secondary" aria-hidden="true"></i>
+                    <h2 class="h6 fw-bold text-dark mb-1">No projects match this view.</h2>
+                    <p class="mb-0">Try another status, or clear the search box.</p>
+                </div>
+
                 {{-- The card grid of Figure 11: coloured header carrying the
                      reference and status, then the project's facts. --}}
-                <div class="row g-4">
+                <div class="row g-4" data-project-grid>
                     @foreach ($cards as $card)
-                        <div class="col-md-6 col-xl-4">
+                        <div class="col-md-6 col-xl-4" data-project-card
+                            data-status="{{ $card['filter_status'] }}"
+                            data-search="{{ $card['search_text'] }}">
                             <article class="project-card">
 
                                 <header class="project-card-header {{ $card['header_class'] }}">
@@ -116,18 +173,11 @@
                                         </p>
                                     @endif
 
-                                    <div class="project-card-progress" role="progressbar"
-                                        aria-valuenow="{{ $card['progress'] }}" aria-valuemin="0" aria-valuemax="100"
-                                        aria-label="Project progress">
-                                        <span style="width: {{ $card['progress'] }}%"></span>
-                                    </div>
-
-                                    <div class="project-card-progress-label">
-                                        <span>{{ $card['progress'] }}% complete</span>
-                                        @if ($card['updated_at'])
-                                            <span>Updated {{ $card['updated_at']->diffForHumans() }}</span>
-                                        @endif
-                                    </div>
+                                    @if ($card['updated_at'])
+                                        <div class="project-card-updated">
+                                            Updated {{ $card['updated_at']->diffForHumans() }}
+                                        </div>
+                                    @endif
                                 </div>
 
                                 <footer class="project-card-footer">
@@ -138,6 +188,10 @@
                         </div>
                     @endforeach
                 </div>
+
+                @push('scripts')
+                    <script src="/js/clientProjects.js"></script>
+                @endpush
             @endif
 
         </div>

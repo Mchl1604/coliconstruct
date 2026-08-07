@@ -1,3 +1,101 @@
+/* ---- Project Details: the brand blue ----
+   The layout is unchanged; only the colour is. These are the same values the
+   client's own project page uses, declared here because publicSite.css is not
+   loaded inside the administrative or technician shells.
+
+   Scoped to .project-details-page so nothing else in either portal picks up a
+   blue card header by accident. */
+
+.project-details-page {
+    --project-blue: #2d8de1;
+    --project-blue-deep: #2370b4;
+    --project-blue-dark: #1b5688;
+    --project-blue-soft: #eaf4fd;
+    --project-blue-tint: #f4f9fe;
+}
+
+/* A blue rule under every card heading, matching the client page's cards. */
+.project-details-page .card {
+    border: 1px solid #e5e7eb;
+    border-radius: .75rem;
+}
+
+.project-details-page .card > .card-header {
+    background: #fff;
+    border-bottom: 2px solid var(--project-blue-deep);
+}
+
+.project-details-page .card > .card-header h2,
+.project-details-page .card > .card-header h4,
+.project-details-page .card > .card-header h5 {
+    color: var(--project-blue-dark);
+}
+
+/* The reference number and the page heading. */
+.project-details-page .project-reference {
+    color: var(--project-blue-deep);
+}
+
+/* The project type pills: outlined blue on a pale blue field, in place of the
+   grey bordered ones. */
+.project-details-page .project-type-badge {
+    border: 1px solid var(--project-blue);
+    background: var(--project-blue-soft);
+    color: var(--project-blue-deep);
+    font-weight: 600;
+}
+
+.project-details-page .project-lead-badge {
+    background: var(--project-blue);
+    color: #fff;
+}
+
+/* Icons that sit beside a fact - the address, the phone, the calendar. */
+.project-details-page .text-brand-blue {
+    color: var(--project-blue-deep);
+}
+
+/* Section headings inside a card body, where there is no card-header to tint. */
+.project-details-page .project-section-heading {
+    color: var(--project-blue-dark);
+    font-weight: 700;
+}
+
+/* The Project Activity tabs: a blue underline on the active one rather than
+   Bootstrap's boxed tab. */
+.project-details-page .nav-tabs {
+    border-bottom: 1px solid #d5e7f6;
+}
+
+.project-details-page .nav-tabs .nav-link {
+    border: 0;
+    border-bottom: 3px solid transparent;
+    border-radius: 0;
+    color: #64748b;
+    font-weight: 600;
+}
+
+.project-details-page .nav-tabs .nav-link:hover {
+    color: var(--project-blue-deep);
+    border-bottom-color: var(--project-blue-line, #7cc0f4);
+}
+
+.project-details-page .nav-tabs .nav-link.active {
+    color: var(--project-blue-dark);
+    background: transparent;
+    border-bottom-color: var(--project-blue-deep);
+}
+
+/* The document buttons under the project overview. */
+.project-details-page .btn-outline-primary {
+    --bs-btn-color: var(--project-blue-deep);
+    --bs-btn-border-color: var(--project-blue);
+    --bs-btn-hover-bg: var(--project-blue);
+    --bs-btn-hover-border-color: var(--project-blue);
+    --bs-btn-active-bg: var(--project-blue-deep);
+    --bs-btn-active-border-color: var(--project-blue-deep);
+}
+
 .technician-card{
     cursor:pointer;
     transition:.2s ease;
@@ -72,11 +170,41 @@
     color: #64748b;
 }
 
+/* A picker card: picture on the left, everything about the person on the
+   right. Wraps rather than truncates - a technician with four specialties is
+   exactly the one you want to be able to read. */
 .technician-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    white-space: normal;
+}
+
+.technician-option-avatar {
+    margin-top: 0.1rem;
+}
+
+.technician-option-body {
     display: flex;
     flex-direction: column;
     gap: 0.1rem;
-    white-space: normal;
+    min-width: 0;
+}
+
+.technician-option-role {
+    font-size: 0.76rem;
+    color: #64748b;
+}
+
+.technician-option-available {
+    font-size: 0.76rem;
+    font-weight: 600;
+    color: #15803d;
+}
+
+/* A blocked technician is listed for context; "available" would be a lie. */
+.technician-option.is-disabled .technician-option-available {
+    display: none;
 }
 
 .technician-option-name {

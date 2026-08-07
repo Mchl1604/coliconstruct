@@ -5,6 +5,12 @@
 @endpush
 
 @section('content')
+    @php
+        // Archiving a project - and reading the archive - belongs to the Super
+        // Admin. An Admin creates, views, edits and closes projects.
+        $canArchive = (bool) auth()->user()?->isSuperAdmin();
+    @endphp
+
     <div class="d-flex justify-content-between align-items-center mb-3">
         <div>
             <h4 class="fw-bold mb-1">Projects</h4>
@@ -12,11 +18,13 @@
         </div>
 
         <div class="d-flex gap-2">
-            <button type="button" class="btn btn-sm btn-outline-secondary"
-                onclick="window.location='{{ route('super-admin.projects.archived') }}'">
-                <i class="bi bi-archive me-1"></i>
-                View Archived Projects
-            </button>
+            @if ($canArchive)
+                <button type="button" class="btn btn-sm btn-outline-secondary"
+                    onclick="window.location='{{ route('super-admin.projects.archived') }}'">
+                    <i class="bi bi-archive me-1"></i>
+                    View Archived Projects
+                </button>
+            @endif
 
             <button type="button" class="btn btn-sm btn-primary"
                 onclick="window.location='{{ route('super-admin.projects.create') }}'">
@@ -131,11 +139,13 @@
                                                 </button>
                                             @endif
 
-                                            <button class="btn btn-sm btn-dark py-1 px-2" data-bs-toggle="modal"
-                                                data-bs-target="#archiveProjectModal{{ $project->project_id }}"
-                                                title="Archive Project">
-                                                <i class="bi bi-archive"></i>
-                                            </button>
+                                            @if ($canArchive)
+                                                <button class="btn btn-sm btn-dark py-1 px-2" data-bs-toggle="modal"
+                                                    data-bs-target="#archiveProjectModal{{ $project->project_id }}"
+                                                    title="Archive Project">
+                                                    <i class="bi bi-archive"></i>
+                                                </button>
+                                            @endif
                                         @endif
                                     </div>
                                 </td>
@@ -294,6 +304,7 @@
                             </div>
 
                             <!-- ARCHIVE PROJECT MODAL -->
+                            @if ($canArchive)
                             <div class="modal fade" id="archiveProjectModal{{ $project->project_id }}" tabindex="-1"
                                 aria-labelledby="archiveProjectModalLabel{{ $project->project_id }}" aria-hidden="true">
 
@@ -331,6 +342,7 @@
                                     </div>
                                 </div>
                             </div>
+                            @endif
                         @endforeach
 
 

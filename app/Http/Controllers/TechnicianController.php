@@ -8,10 +8,12 @@ use App\Models\ProjectTechnician;
 use App\Models\Schedule;
 use App\Models\ScheduleTechnician;
 use App\Models\Skill;
+use App\Models\SpecialtyRequest;
 use App\Models\Task;
 use App\Models\Technician;
 use App\Services\ActivityLogger;
 use App\Services\NotificationService;
+use App\Services\ProfileService;
 use App\Services\TechnicianAvailabilityService;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
@@ -68,7 +70,71 @@ class TechnicianController extends Controller
 
         $skills = Skill::query()->orderBy('skill_name')->get();
 
-        return view('super-admin.technicians', compact('technicians', 'skills'));
+        // The approval queue. Oldest first: a technician who has been waiting
+        // longest is the one to deal with next.
+        $pendingRequests = SpecialtyRequest::query()
+            ->pending()
+            ->with(['technician.account', 'technician.skills'])
+            ->orderBy('created_at')
+            ->get();
+
+        return view('super-admin.technicians', compact('technicians', 'skills', 'pendingRequests'));
+    }
+
+    // ------------------------------------------------------------------
+    // Details tab - specialty requests
+    // ------------------------------------------------------------------
+
+    /**
+     * Apply a technician's pending specialty request.
+     *
+     * Only an administrator reaches this - the whole Super Admin group is
+     * behind `role:super_admin,admin` - and the change is the only thing that
+     * moves a technician's specialties short of editing them here directly.
+     */
+    public function approveSpecialtyRequest(Request $request, SpecialtyRequest $specialtyRequest)
+    {
+        return $this->decide(
+            fn (): SpecialtyRequest => app(ProfileService::class)
+                ->approveSpecialtyRequest($specialtyRequest, $request->user()),
+            'Specialty request approved.',
+            'The request could not be approved.'
+        );
+    }
+
+    /**
+     * Turn a request down. The technician's approved specialties are left
+     * exactly as they are.
+     */
+    public function rejectSpecialtyRequest(Request $request, SpecialtyRequest $specialtyRequest)
+    {
+        return $this->decide(
+            fn (): SpecialtyRequest => app(ProfileService::class)
+                ->rejectSpecialtyRequest($specialtyRequest, $request->user()),
+            'Specialty request rejected.',
+            'The request could not be rejected.'
+        );
+    }
+
+    /**
+     * Run one approve/reject and turn its outcome into a toast on the page the
+     * reviewer is already looking at.
+     *
+     * @param  callable(): SpecialtyRequest  $action
+     */
+    private function decide(callable $action, string $success, string $fallback)
+    {
+        try {
+            $action();
+        } catch (RuntimeException $exception) {
+            return back()->with('error', $exception->getMessage());
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return back()->with('error', $fallback);
+        }
+
+        return back()->with('success', $success);
     }
 
     // ------------------------------------------------------------------

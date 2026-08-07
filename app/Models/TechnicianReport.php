@@ -73,6 +73,18 @@ class TechnicianReport extends Model
             ?? 'Unknown';
     }
 
+    /**
+     * The picture to show beside submitterName(), from the same account.
+     *
+     * Null only when nobody can be identified; a report is always filed by
+     * somebody internal, so in practice this is their picture or the default
+     * avatar.
+     */
+    public function submitterAvatarUrl(): ?string
+    {
+        return ($this->submitter ?? $this->technician?->account)?->avatarUrl();
+    }
+
     public function typeLabel(): string
     {
         return self::TYPES[$this->report_type] ?? ucfirst((string) $this->report_type);

@@ -1,8 +1,10 @@
 @extends('layouts.superadminNav')
 
+@section('title', $title . ' - ' . $project->reference_no)
+
 @section('content')
     <div class="container-fluid py-4">
-        <div class="d-flex justify-content-between align-items-center mb-3">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
             <div>
                 <h2 class="fw-bold mb-1">
                     {{ $title }} Preview
@@ -12,10 +14,24 @@
                 </div>
             </div>
 
-            <a href="{{ asset($document->document_path) }}" class="btn btn-outline-secondary" target="_blank"
-                rel="noopener noreferrer">
-                Open Original File
-            </a>
+            <div class="d-flex flex-wrap gap-2">
+                <a href="{{ route('super-admin.projects.show', $project->project_id) }}"
+                    class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left me-1" aria-hidden="true"></i>
+                    Back to Project
+                </a>
+
+                <a href="{{ asset($document->document_path) }}" class="btn btn-outline-secondary" target="_blank"
+                    rel="noopener noreferrer">
+                    Open Original File
+                </a>
+
+                <a href="{{ asset($document->document_path) }}" class="btn btn-primary"
+                    download="{{ $document->document_name }}">
+                    <i class="bi bi-download me-1" aria-hidden="true"></i>
+                    Download
+                </a>
+            </div>
         </div>
 
         <div class="card shadow-sm">

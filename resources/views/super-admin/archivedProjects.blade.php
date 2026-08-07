@@ -24,10 +24,14 @@
                 <table id="archivedProjectsTable" class="table table-hover table-striped align-middle mb-0">
                     <thead class="table-info">
                         <tr>
-                            <th>Project Name</th>
+                            <th>Project ID</th>
+                            <th>Reference No.</th>
                             <th>Client</th>
-                            <th>Address</th>
+                            <th>Client Type</th>
+                            <th>Project Type</th>
+                            <th>Quotation</th>
                             <th>Archived Date</th>
+                            <th>Archived By</th>
                             <th class="text-center">Actions</th>
                         </tr>
                     </thead>
@@ -38,13 +42,36 @@
                              parse ("Requested unknown parameter"). Its own
                              emptyTable message covers it (see the init below). --}}
                         @foreach ($projects as $project)
+                            @php
+                                $client = $project->clients->first();
+                                // The same rule the active Projects table uses:
+                                // a company is named by its company, a
+                                // homeowner by their name.
+                                $clientName =
+                                    $client?->client_type === 'Commercial'
+                                        ? $client->company_name ?: $client->fullname
+                                        : $client?->fullname;
+                            @endphp
+
                             <tr>
-                                <td>{{ $project->name }}</td>
-                                <td>{{ $project->clients->first()->fullname ?? 'N/A' }}</td>
-                                <td>{{ $project->address }}</td>
+                                <td>{{ $project->project_id }}</td>
+                                <td>{{ $project->reference_no ?? 'N/A' }}</td>
+                                <td>{{ $clientName ?: 'N/A' }}</td>
+                                <td>{{ $client?->client_type ?? 'N/A' }}</td>
                                 <td>
+                                    @forelse ($project->projectTypes as $projectType)
+                                        <span class="project-type-chip">{{ $projectType->type_name }}</span>
+                                    @empty
+                                        <span class="text-muted small">N/A</span>
+                                    @endforelse
+                                </td>
+                                <td class="text-success fw-semibold">
+                                    &#8369; {{ number_format((float) $project->quotation, 2) }}
+                                </td>
+                                <td data-order="{{ $project->archived_at?->timestamp ?? 0 }}">
                                     {{ $project->archived_at ? \Carbon\Carbon::parse($project->archived_at)->format('M d, Y') : 'N/A' }}
                                 </td>
+                                <td>{{ $project->archivedByUser?->fullName() ?? '—' }}</td>
                                 <td class="text-center">
                                     <button class="btn btn-sm btn-success py-1 px-2" data-bs-toggle="modal"
                                         data-bs-target="#restoreProjectModal{{ $project->project_id }}">
@@ -68,9 +95,12 @@
                                         </div>
 
                                         <div class="modal-body">
-                                            Restore <strong>{{ $project->name }}</strong>? It will move back into the
-                                            active Projects list as <strong>Not Yet Scheduled</strong> and must be
-                                            scheduled and assigned technicians again.
+                                            Restore <strong>{{ $project->reference_no ?? $project->name }}</strong>?
+                                            It moves back into the active Projects list as
+                                            <strong>Not Yet Scheduled</strong>. Its client, documents, quotation,
+                                            reports and task history all come back with it; the schedule and the
+                                            assigned technicians were released when it was archived, so those have to
+                                            be set again.
                                         </div>
 
                                         <div class="modal-footer">
@@ -108,6 +138,15 @@
                     pageLength: 10,
                     lengthMenu: [10, 25, 50, 100],
                     info: false,
+                    // Most recently archived first, read from the timestamp on
+                    // the cell rather than from the formatted date.
+                    order: [
+                        [6, 'desc']
+                    ],
+                    columnDefs: [{
+                        targets: -1,
+                        orderable: false
+                    }],
                     language: {
                         search: "",
                         searchPlaceholder: "Search archived projects...",

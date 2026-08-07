@@ -30,10 +30,12 @@
         $canComplete = $canCloseProject && $completionBlockers === [];
     @endphp
 
-    <div class="container-fluid py-2">
+    {{-- `project-details-page` is what applies the brand blue from the
+         client's own project page; the layout below is unchanged. --}}
+    <div class="container-fluid py-2 project-details-page">
 
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-            <h2 class="fw-bold mb-0">Project Details</h2>
+            <h2 class="fw-bold mb-0 text-brand-blue">Project Details</h2>
 
             <div class="d-flex gap-2">
                 @if ($canCloseProject)
@@ -82,16 +84,16 @@
                     <div>
                         <h2 class="fw-bold mb-2">{{ $client?->fullname ?? 'N/A' }}</h2>
 
-                        <span class="fw-bold me-4 mb-3">{{ $project->reference_no }}</span>
+                        <span class="fw-bold me-4 mb-3 project-reference">{{ $project->reference_no }}</span>
 
                         <div class="text-muted">
                             <span class="me-2">
-                                <i class="bi bi-file-earmark-text" aria-hidden="true"></i>
+                                <i class="bi bi-file-earmark-text text-brand-blue" aria-hidden="true"></i>
                                 Project ID: {{ $project->project_id }}
                             </span>
 
                             <span>
-                                <i class="bi bi-geo-alt" aria-hidden="true"></i>
+                                <i class="bi bi-geo-alt text-brand-blue" aria-hidden="true"></i>
                                 {{ $project->address }}
                             </span>
                         </div>
@@ -120,7 +122,7 @@
                         </div>
 
                         @foreach ($project->projectTypes as $type)
-                            <span class="badge rounded-pill border text-dark fs-6 px-3 py-2">
+                            <span class="badge rounded-pill fs-6 px-3 py-2 project-type-badge">
                                 {{ $type->type_name }}
                             </span>
                         @endforeach
@@ -226,18 +228,32 @@
                                 @endphp
 
                                 @if ($technician)
-                                    <li class="list-group-item d-flex justify-content-between align-items-center">
-                                        <div>
-                                            <i class="bi bi-person-circle me-2 text-primary" aria-hidden="true"></i>
-                                            {{ $technician->name }}
-                                            @if ($technician->technician_id === $technicianId)
-                                                <span class="badge bg-info text-dark ms-1">You</span>
-                                            @endif
-                                        </div>
+                                    <li class="list-group-item d-flex align-items-start gap-3">
+                                        <x-user-avatar :user="$technician->account" size="md" />
 
-                                        @if (optional($technician->account)->role === 'lead_technician')
-                                            <span class="badge bg-primary">Lead Technician</span>
-                                        @endif
+                                        <div class="flex-grow-1 min-w-0">
+                                            <div class="d-flex flex-wrap align-items-center gap-2">
+                                                <span class="fw-semibold">{{ $technician->name }}</span>
+
+                                                @if ($technician->technician_id === $technicianId)
+                                                    <span class="badge bg-info text-dark">You</span>
+                                                @endif
+
+                                                @if (optional($technician->account)->role === 'lead_technician')
+                                                    <span class="badge project-lead-badge">Lead Technician</span>
+                                                @else
+                                                    <span class="badge bg-secondary">Technician</span>
+                                                @endif
+                                            </div>
+
+                                            <div class="d-flex flex-wrap gap-1 mt-1">
+                                                @forelse ($technician->skills->sortBy('skill_name') as $skill)
+                                                    <span class="technician-chip">{{ $skill->skill_name }}</span>
+                                                @empty
+                                                    <span class="text-muted small">No specialties assigned.</span>
+                                                @endforelse
+                                            </div>
+                                        </div>
                                     </li>
                                 @endif
                             @empty
@@ -557,9 +573,8 @@
                                         value="{{ $technician->technician_id }}" required>
 
                                     <div class="task-assign-card">
-                                        <div class="task-assign-avatar">
-                                            <i class="bi bi-person-fill" aria-hidden="true"></i>
-                                        </div>
+                                        <x-user-avatar :user="$technician->account" size="lg"
+                                            class="task-assign-avatar" />
                                         <div class="task-assign-name">{{ $technician->name }}</div>
                                         <div class="task-assign-count">
                                             {{ $activeCount }}

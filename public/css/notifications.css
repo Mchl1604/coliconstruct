@@ -220,3 +220,95 @@
     color: #94a3b8;
     font-size: .85rem;
 }
+
+/* ---- The Notification Center dialog ---- */
+
+.notification-modal-list {
+    display: flex;
+    flex-direction: column;
+    gap: .5rem;
+}
+
+.notification-modal-item {
+    display: flex;
+    align-items: flex-start;
+    gap: .75rem;
+    padding: .75rem .85rem;
+    border: 1px solid #e5e7eb;
+    border-radius: .6rem;
+    background: #fff;
+}
+
+.notification-modal-item.is-unread {
+    border-color: #bfdbfe;
+    background: #eff6ff;
+}
+
+.notification-modal-item:not(.is-unread) {
+    opacity: .8;
+}
+
+.notification-modal-item .notification-item-icon {
+    margin-top: .1rem;
+}
+
+.notification-modal-item.is-unread .notification-item-icon {
+    background: #bfdbfe;
+    color: #1d4ed8;
+}
+
+.notification-modal-item-body {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.notification-modal-item-title {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    font-size: .9rem;
+    font-weight: 600;
+    color: #0f172a;
+}
+
+/* The unread indicator: a dot rather than a word, so a long title still
+   fits on a phone. */
+.notification-modal-dot {
+    flex: 0 0 auto;
+    width: .5rem;
+    height: .5rem;
+    border-radius: 50%;
+    background: #2563eb;
+}
+
+.notification-modal-item-message {
+    margin: .15rem 0 .3rem;
+    font-size: .84rem;
+    color: #475569;
+    overflow-wrap: anywhere;
+}
+
+.notification-modal-item-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .35rem;
+    font-size: .74rem;
+    color: #94a3b8;
+}
+
+.notification-modal-item-actions {
+    flex: 0 0 auto;
+    display: flex;
+    gap: .25rem;
+}
+
+@media (max-width: 575.98px) {
+    .notification-modal-item {
+        flex-wrap: wrap;
+    }
+
+    .notification-modal-item-actions {
+        width: 100%;
+        justify-content: flex-end;
+    }
+}

@@ -59,8 +59,11 @@ class ProjectController extends Controller
 
     public function archivedIndex()
     {
+        // projectTypes and archivedByUser are the two columns the table gained
+        // beyond the project's own row; loading them here is what keeps the
+        // page to a fixed number of queries however long the archive gets.
         $projects = Project::query()
-            ->with(['clients', 'documents'])
+            ->with(['clients', 'documents', 'projectTypes', 'archivedByUser'])
             ->where(function ($query): void {
                 $query->where('is_archived', true)
                     ->orWhere('status', 'archived');
@@ -379,7 +382,9 @@ class ProjectController extends Controller
             'projectTypes',
             'projectTechnicians.technician' => function ($query) {
 
-                $query->with('account')
+                // `skills` is loaded because the Assigned Team panel now lists
+                // each technician's approved specialties beside their name.
+                $query->with(['account', 'skills'])
                     ->withCount([
                         'tasks as tasks_count' => function ($q) {
 

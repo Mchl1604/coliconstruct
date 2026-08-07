@@ -534,27 +534,68 @@
     margin-bottom: 0;
 }
 
-.project-card-progress {
-    height: .4rem;
-    border-radius: 999px;
-    background: #e2e8f0;
-    overflow: hidden;
+.project-card-updated {
+    font-size: .76rem;
+    color: #64748b;
     margin-top: .9rem;
 }
 
-.project-card-progress span {
-    display: block;
-    height: 100%;
-    border-radius: 999px;
-    background: var(--brand-blue);
+/* ---- My Projects filter bar ---- */
+
+.project-filter-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .4rem;
 }
 
-.project-card-progress-label {
-    display: flex;
-    justify-content: space-between;
-    font-size: .76rem;
-    color: #64748b;
-    margin-top: .3rem;
+.project-filter-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    border: 1px solid #dbe4ee;
+    background: #fff;
+    color: #475569;
+    border-radius: 999px;
+    padding: .35rem .85rem;
+    font-size: .85rem;
+    font-weight: 600;
+    line-height: 1.4;
+    transition: background-color .15s ease, border-color .15s ease, color .15s ease;
+}
+
+.project-filter-tab:hover {
+    border-color: var(--brand-blue);
+    color: var(--brand-blue-deep);
+}
+
+.project-filter-tab.active {
+    background: var(--brand-blue);
+    border-color: var(--brand-blue);
+    color: #fff;
+}
+
+.project-filter-count {
+    display: inline-block;
+    min-width: 1.4rem;
+    border-radius: 999px;
+    background: #eef2f7;
+    color: #475569;
+    font-size: .72rem;
+    font-weight: 700;
+    text-align: center;
+    padding: 0 .35rem;
+}
+
+.project-filter-tab.active .project-filter-count {
+    background: rgba(255, 255, 255, .25);
+    color: #fff;
+}
+
+@media (max-width: 575.98px) {
+    .project-filter-tab {
+        flex: 1 1 auto;
+        justify-content: center;
+    }
 }
 
 .project-card-footer {
@@ -901,4 +942,31 @@
     .client-tracker {
         padding: 1rem;
     }
+}
+
+/* ---- The signed-in client's header link ----
+   Name over email, and the whole thing opens Profile. No avatar: profile
+   pictures belong to the people who run the work, not to customers. */
+
+.public-profile-link {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+    line-height: 1.2;
+    text-align: left;
+}
+
+.public-profile-name {
+    font-weight: 600;
+}
+
+.public-profile-email {
+    font-size: .72rem;
+    font-weight: 400;
+    opacity: .75;
+    max-width: 14rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }

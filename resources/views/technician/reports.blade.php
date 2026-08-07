@@ -38,6 +38,72 @@
         </div>
     @endif
 
+    {{-- Filters, matching the Super Admin Reports page: the same narrowings,
+         applied to the rows already on the page rather than over the wire,
+         because a lead's own reports are a short list. --}}
+    <div class="card shadow-sm border-0 rounded-2 mb-3">
+        <div class="card-body p-3">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <label class="form-label small fw-semibold mb-1" for="reportProjectFilter">Project</label>
+                    <select id="reportProjectFilter" class="form-select form-select-sm" data-filter-project>
+                        <option value="all">All Projects</option>
+                        @foreach ($filterProjects as $filterProject)
+                            <option value="{{ $filterProject->project_id }}">
+                                {{ $filterProject->reference_no }} &mdash; {{ $filterProject->name }}
+                            </option>
+                        @endforeach
+                    </select>
+                </div>
+
+                <div class="col-md-3">
+                    <label class="form-label small fw-semibold mb-1" for="reportTypeFilter">Report Type</label>
+                    <select id="reportTypeFilter" class="form-select form-select-sm" data-filter-type>
+                        <option value="all">All Report Types</option>
+                        @foreach ($reportTypes as $value => $label)
+                            <option value="{{ $value }}">{{ $label }}</option>
+                        @endforeach
+                    </select>
+                </div>
+
+                <div class="col-md-3">
+                    <label class="form-label small fw-semibold mb-1" for="reportDateFilter">Date</label>
+                    <select id="reportDateFilter" class="form-select form-select-sm" data-filter-date>
+                        <option value="all">All Dates</option>
+                        <option value="today">Today</option>
+                        <option value="week">This Week</option>
+                        <option value="month">This Month</option>
+                        <option value="custom">Custom Date Range</option>
+                    </select>
+                </div>
+
+                <div class="col-md-3">
+                    <label class="form-label small fw-semibold mb-1" for="reportSearch">Search</label>
+                    <input type="search" id="reportSearch" class="form-control form-control-sm"
+                        placeholder="Project, title, technician&hellip;" data-filter-search>
+                </div>
+
+                {{-- Only meaningful once Custom Date Range is chosen. --}}
+                <div class="col-md-3 d-none" data-custom-range>
+                    <label class="form-label small fw-semibold mb-1" for="reportStartDate">From</label>
+                    <input type="date" id="reportStartDate" class="form-control form-control-sm" data-filter-start>
+                </div>
+
+                <div class="col-md-3 d-none" data-custom-range>
+                    <label class="form-label small fw-semibold mb-1" for="reportEndDate">To</label>
+                    <input type="date" id="reportEndDate" class="form-control form-control-sm" data-filter-end>
+                </div>
+
+                <div class="col-md-3 d-flex align-items-end">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-filter-reset>
+                        <i class="bi bi-arrow-counterclockwise me-1" aria-hidden="true"></i>
+                        Reset
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="card shadow-sm border-0 rounded-2">
         <div class="card-body p-2">
             <div class="table-responsive">
@@ -63,7 +129,11 @@
                                 $reportClient = $report->project?->clients->first();
                             @endphp
 
-                            <tr>
+                            {{-- Everything the filter bar matches on travels
+                                 with the row, so narrowing costs no request. --}}
+                            <tr data-report-date="{{ $report->report_date?->toDateString() }}"
+                                data-project-id="{{ $report->project_id }}"
+                                data-report-type="{{ $report->report_type }}">
                                 <td>#{{ $report->id }}</td>
                                 <td>{{ $report->project?->reference_no ?? '—' }}</td>
                                 <td class="fw-semibold">
@@ -73,7 +143,15 @@
                                 <td>
                                     <span class="badge {{ $report->typeBadgeClass() }}">{{ $report->typeLabel() }}</span>
                                 </td>
-                                <td>{{ $report->submitterName() }}</td>
+                                <td>
+                                    <div class="d-flex align-items-center gap-2">
+                                        @if ($report->submitterAvatarUrl())
+                                            <img class="user-avatar user-avatar-xs"
+                                                src="{{ $report->submitterAvatarUrl() }}" alt="" loading="lazy">
+                                        @endif
+                                        <span>{{ $report->submitterName() }}</span>
+                                    </div>
+                                </td>
                                 <td data-order="{{ $report->report_date?->timestamp ?? 0 }}">
                                     {{ $report->report_date?->format('M j, Y') ?? '—' }}
                                 </td>

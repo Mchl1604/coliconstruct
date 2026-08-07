@@ -89,14 +89,25 @@
 
                 <div class="d-flex align-items-center gap-2 public-nav-actions">
                     @if ($viewer)
-                        <x-notification-bell />
+                        {{-- A client reads their notifications in a dialog
+                             rather than on a page of their own. Staff signed
+                             in here keep the Notification Center page, which
+                             is where the rest of their portal links to. --}}
+                        <x-notification-bell :modal="$viewer->isClient()" />
+
+                        {{-- The name alone, and it is the link to Profile.
+                             Clients never carry a profile picture: they are
+                             customers, not people who run the work. --}}
+                        <a class="btn btn-outline-brand-blue public-profile-link" href="{{ route('profile.edit') }}"
+                            aria-label="Signed in as {{ $viewer->fullName() }} - open your profile">
+                            <span class="public-profile-name">{{ $viewer->fullName() }}</span>
+                            <span class="public-profile-email d-none d-lg-block">{{ $viewer->email }}</span>
+                        </a>
 
                         <div class="dropdown">
-                            {{-- The name alone: no avatar, since the system has
-                                 no profile pictures on the public side. --}}
-                            <button class="btn btn-outline-brand-blue dropdown-toggle" type="button"
-                                data-bs-toggle="dropdown" aria-expanded="false">
-                                {{ $viewer->fullName() }}
+                            <button class="btn btn-outline-brand-blue" type="button" data-bs-toggle="dropdown"
+                                aria-expanded="false" aria-label="Account menu">
+                                <i class="bi bi-caret-down-fill" aria-hidden="true"></i>
                             </button>
 
                             <ul class="dropdown-menu dropdown-menu-end">
@@ -129,22 +140,10 @@
         </div>
     </nav>
 
-    @if (session('success'))
-        <div class="toast-container position-fixed top-0 end-0 p-3">
-            <div class="toast align-items-center bg-success text-white border-0" role="alert"
-                data-bs-autohide="true" data-bs-delay="3000">
-                <div class="toast-body">{{ session('success') }}</div>
-            </div>
-        </div>
-    @endif
+    <x-flash-toasts />
 
-    @if (session('error'))
-        <div class="toast-container position-fixed top-0 end-0 p-3">
-            <div class="toast align-items-center bg-danger text-white border-0" role="alert"
-                data-bs-autohide="true" data-bs-delay="3000">
-                <div class="toast-body">{{ session('error') }}</div>
-            </div>
-        </div>
+    @if ($viewer?->isClient())
+        <x-notification-center-modal />
     @endif
 
     <main>

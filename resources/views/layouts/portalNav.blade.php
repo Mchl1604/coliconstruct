@@ -96,12 +96,17 @@
 
                 <x-notification-bell />
 
-                <div class="admin-user-menu" role="group" aria-label="Signed in as">
+                {{-- The whole block is the link to Profile: a picture and a
+                     name is what people aim at, not a menu item inside it. --}}
+                <a class="admin-user-menu admin-user-link" href="{{ route('profile.edit') }}"
+                    aria-label="Signed in as {{ $user?->fullName() }} - open your profile">
+                    <x-user-avatar :user="$user" size="md" alt="" />
+
                     <span>
                         <span class="admin-user-name">{{ $user?->fullName() }}</span>
                         <span class="admin-user-role">{{ $user?->roleLabel() }}</span>
                     </span>
-                </div>
+                </a>
             </header>
 
             <main class="admin-page">
@@ -110,26 +115,9 @@
         </div>
     </div>
 
-    @if (session('success'))
-        <div class="toast-container position-fixed top-0 end-0 p-3">
-            <div class="toast align-items-center bg-success text-white border-0" role="alert"
-                data-bs-autohide="true" data-bs-delay="3000">
-                <div class="toast-body">{{ session('success') }}</div>
-            </div>
-        </div>
-    @endif
-
-    @if (session('error'))
-        <div class="toast-container position-fixed top-0 end-0 p-3">
-            <div class="toast align-items-center bg-danger text-white border-0" role="alert" data-bs-autohide="true"
-                data-bs-delay="3000">
-                <div class="toast-body">{{ session('error') }}</div>
-            </div>
-        </div>
-    @endif
-
-    {{-- The toasts an AJAX action raises are appended here. --}}
-    <div class="toast-container position-fixed top-0 end-0 p-3" data-toast-container></div>
+    {{-- Flashed toasts, and the container the toasts an AJAX action raises
+         are appended to. --}}
+    <x-flash-toasts />
 
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <script src="https://cdn.datatables.net/2.3.8/js/dataTables.js"></script>

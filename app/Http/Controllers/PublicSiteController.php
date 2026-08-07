@@ -119,6 +119,18 @@ class PublicSiteController extends Controller
     // ------------------------------------------------------------------
 
     /**
+     * The documents a client may open on their own project, in the order the
+     * buttons appear. Anything not listed here is not shown to them.
+     *
+     * @var array<string, string>
+     */
+    public const DOCUMENT_TITLES = [
+        'assessment' => 'Assessment',
+        'quotation' => 'Quotation',
+        'contract' => 'Contract',
+    ];
+
+    /**
      * The facts a project card shows, gathered once so the grid and the
      * details page cannot describe the same project differently.
      *
@@ -128,18 +140,27 @@ class PublicSiteController extends Controller
     {
         $start = $project->schedules->min('start_datetime');
         $end = $project->schedules->max('end_datetime');
+        $client = $project->clients->first();
+        $clientName = $client?->company_name ?: $client?->fullname;
 
         return [
             'id' => $project->project_id,
             'reference_no' => $project->reference_no,
             'name' => $project->name,
             'service' => $project->projectTypes->pluck('type_name')->implode(', '),
+            'client_name' => $clientName,
             'location' => $project->address,
             'description' => $project->description,
             'status' => $project->status,
             'status_label' => $project->statusLabel(),
             'status_badge_class' => $project->statusBadgeClass(),
             'header_class' => $this->headerClass($project),
+            // What the My Projects filter bar matches on. Overdue is derived
+            // rather than stored, so it travels as its own flag and the filter
+            // key is the status the tab bar offers rather than the column.
+            'is_overdue' => $project->isOverdue(),
+            'filter_status' => $this->filterStatus($project),
+            'search_text' => $this->searchText($project, $clientName),
             'start_date' => $start,
             'end_date' => $end,
             'lead_technician' => $this->clientProjects->leadTechnicianName($project),
@@ -151,6 +172,45 @@ class PublicSiteController extends Controller
             'updated_at' => $project->updated_at,
             'url' => route('public.projects.show', $project->project_id),
         ];
+    }
+
+    /**
+     * Which tab of the My Projects filter bar a project belongs under.
+     *
+     * Overdue is a tab of its own, so an overdue project is not also counted
+     * as Ongoing - the same rule the Super Admin projects table applies.
+     * "Not yet scheduled" work is booked but undated, which reads as Pending
+     * to the client who booked it.
+     */
+    private function filterStatus(Project $project): string
+    {
+        if ($project->isOverdue()) {
+            return 'overdue';
+        }
+
+        return match ($project->status) {
+            'not_yet_scheduled', 'pending' => 'pending',
+            'ongoing' => 'ongoing',
+            'completed' => 'completed',
+            'cancelled' => 'cancelled',
+            default => $project->status,
+        };
+    }
+
+    /**
+     * Everything the My Projects search box matches a project on, flattened
+     * into one lower-cased haystack the browser can scan without a request.
+     */
+    private function searchText(Project $project, ?string $clientName): string
+    {
+        return mb_strtolower(collect([
+            $project->project_id,
+            $project->reference_no,
+            $project->name,
+            $project->projectTypes->pluck('type_name')->implode(' '),
+            $clientName,
+            $project->address,
+        ])->filter()->implode(' '));
     }
 
     /**

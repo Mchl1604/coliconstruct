@@ -81,6 +81,21 @@ class ActivityLog extends Model
 
     public const PROFILE_UPDATED = 'Profile Updated';
 
+    /**
+     * The profile actions an account performs on itself. Filed under
+     * Authentication alongside Profile Updated, which is where the trail
+     * already keeps "what somebody did to their own account".
+     */
+    public const PROFILE_NAME_UPDATED = 'Profile Name Updated';
+
+    public const PROFILE_EMAIL_UPDATED = 'Profile Email Updated';
+
+    public const PROFILE_PHOTO_UPLOADED = 'Profile Picture Uploaded';
+
+    public const PROFILE_PHOTO_CHANGED = 'Profile Picture Changed';
+
+    public const PROFILE_PHOTO_REMOVED = 'Profile Picture Removed';
+
     // ------------------------------------------------------------------
     // User Management
     //
@@ -100,6 +115,8 @@ class ActivityLog extends Model
 
     public const EMPLOYEE_ARCHIVED = 'Employee Archived';
 
+    public const EMPLOYEE_RESTORED = 'Employee Restored';
+
     public const CLIENT_CREATED = 'Client Account Created';
 
     public const CLIENT_UPDATED = 'Client Updated';
@@ -111,6 +128,19 @@ class ActivityLog extends Model
     public const CLIENT_DEACTIVATED = 'Client Deactivated';
 
     public const CLIENT_ARCHIVED = 'Client Archived';
+
+    public const CLIENT_RESTORED = 'Client Restored';
+
+    /**
+     * The specialty approval workflow. A technician asks; an administrator
+     * decides. All three sit in User Management because that is where the
+     * deciding happens.
+     */
+    public const SPECIALTY_REQUEST_SUBMITTED = 'Specialty Request Submitted';
+
+    public const SPECIALTY_REQUEST_APPROVED = 'Specialty Request Approved';
+
+    public const SPECIALTY_REQUEST_REJECTED = 'Specialty Request Rejected';
 
     // ------------------------------------------------------------------
     // Projects
@@ -197,6 +227,11 @@ class ActivityLog extends Model
         self::PASSWORD_RESET_COMPLETED => self::MODULE_AUTHENTICATION,
         self::PASSWORD_CHANGED => self::MODULE_AUTHENTICATION,
         self::PROFILE_UPDATED => self::MODULE_AUTHENTICATION,
+        self::PROFILE_NAME_UPDATED => self::MODULE_AUTHENTICATION,
+        self::PROFILE_EMAIL_UPDATED => self::MODULE_AUTHENTICATION,
+        self::PROFILE_PHOTO_UPLOADED => self::MODULE_AUTHENTICATION,
+        self::PROFILE_PHOTO_CHANGED => self::MODULE_AUTHENTICATION,
+        self::PROFILE_PHOTO_REMOVED => self::MODULE_AUTHENTICATION,
 
         self::EMPLOYEE_CREATED => self::MODULE_USER_MANAGEMENT,
         self::EMPLOYEE_UPDATED => self::MODULE_USER_MANAGEMENT,
@@ -204,12 +239,17 @@ class ActivityLog extends Model
         self::EMPLOYEE_ACTIVATED => self::MODULE_USER_MANAGEMENT,
         self::EMPLOYEE_DEACTIVATED => self::MODULE_USER_MANAGEMENT,
         self::EMPLOYEE_ARCHIVED => self::MODULE_USER_MANAGEMENT,
+        self::EMPLOYEE_RESTORED => self::MODULE_USER_MANAGEMENT,
         self::CLIENT_CREATED => self::MODULE_USER_MANAGEMENT,
         self::CLIENT_UPDATED => self::MODULE_USER_MANAGEMENT,
         self::CLIENT_PASSWORD_RESET => self::MODULE_USER_MANAGEMENT,
         self::CLIENT_ACTIVATED => self::MODULE_USER_MANAGEMENT,
         self::CLIENT_DEACTIVATED => self::MODULE_USER_MANAGEMENT,
         self::CLIENT_ARCHIVED => self::MODULE_USER_MANAGEMENT,
+        self::CLIENT_RESTORED => self::MODULE_USER_MANAGEMENT,
+        self::SPECIALTY_REQUEST_SUBMITTED => self::MODULE_USER_MANAGEMENT,
+        self::SPECIALTY_REQUEST_APPROVED => self::MODULE_USER_MANAGEMENT,
+        self::SPECIALTY_REQUEST_REJECTED => self::MODULE_USER_MANAGEMENT,
 
         self::PROJECT_CREATED => self::MODULE_PROJECTS,
         self::PROJECT_UPDATED => self::MODULE_PROJECTS,

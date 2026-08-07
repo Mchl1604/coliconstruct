@@ -360,6 +360,7 @@ class ReportController extends Controller
             'type_badge_class' => $report->typeBadgeClass(),
             'type_accent_class' => $report->typeAccentClass(),
             'submitted_by' => $report->submitterName(),
+            'submitted_by_avatar' => $report->submitterAvatarUrl(),
             'report_date' => $report->report_date?->toDateString(),
             'report_date_label' => $report->report_date?->format('M j, Y') ?? '—',
             'image_count' => $report->images->count(),

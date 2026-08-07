@@ -101,9 +101,8 @@
                                     @checked($task->technician_id == $technician->technician_id)>
 
                                 <div class="task-assign-card">
-                                    <div class="task-assign-avatar">
-                                        <i class="bi bi-person-fill" aria-hidden="true"></i>
-                                    </div>
+                                    <x-user-avatar :user="$technician->account" size="lg"
+                                        class="task-assign-avatar" />
                                     <div class="task-assign-name">{{ $technician->name }}</div>
                                     <div class="task-assign-count">
                                         {{ $activeCount }}
@@ -126,9 +125,8 @@
                          like a choice that is merely disabled. --}}
                     @if ($task->technician)
                         <div class="task-assign-static">
-                            <div class="task-assign-avatar">
-                                <i class="bi bi-person-fill" aria-hidden="true"></i>
-                            </div>
+                            <x-user-avatar :user="$task->technician->account" size="lg"
+                                class="task-assign-avatar" />
                             <div>
                                 <div class="task-assign-name">{{ $task->technician->name }}</div>
                                 @if (optional($task->technician->account)->role === 'lead_technician')

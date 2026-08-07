@@ -144,6 +144,9 @@ class TechnicianPortalController extends Controller
             'projectTypes',
             'completionPhotos',
             'projectTechnicians.technician.account',
+            // The Assigned Team panel lists each technician's approved
+            // specialties beside their name.
+            'projectTechnicians.technician.skills',
         ]);
 
         // The lead first, matching how the Super Admin page orders the team.
@@ -268,7 +271,12 @@ class TechnicianPortalController extends Controller
         $technician = $this->technician($request);
 
         $reports = TechnicianReport::query()
-            ->with(['project.clients', 'images', 'technician.account', 'submitter'])
+            ->with([
+                'project.clients',
+                'images',
+                'technician.account',
+                'submitter',
+            ])
             ->where('technician_id', $technician->technician_id)
             ->orderByDesc('report_date')
             ->orderByDesc('id')
@@ -276,6 +284,14 @@ class TechnicianPortalController extends Controller
 
         return view('technician.reports', [
             'reports' => $reports,
+            // The Project list is built from the rows actually on the page, so
+            // it can never offer a filter that matches nothing.
+            'filterProjects' => $reports
+                ->map(fn (TechnicianReport $report): ?Project => $report->project)
+                ->filter()
+                ->unique('project_id')
+                ->sortBy('reference_no')
+                ->values(),
             // The viewer reads from this rather than re-fetching a report it
             // has already been handed.
             'reportPayloads' => $reports
@@ -1011,6 +1027,7 @@ class TechnicianPortalController extends Controller
             'type_badge_class' => $report->typeBadgeClass(),
             'type_accent_class' => $report->typeAccentClass(),
             'submitted_by' => $report->submitterName(),
+            'submitted_by_avatar' => $report->submitterAvatarUrl(),
             'date' => $report->report_date?->toDateString(),
             'date_label' => $report->report_date?->format('M j, Y') ?? '—',
             // The sort key the table's Date column reads, matching the

@@ -1,0 +1,45 @@
+
+/* ---- Profile pictures ----
+   One set of sizes for every place a person is shown, so an avatar in a table
+   matches the one in the topbar. Always square and always cropped rather than
+   squashed: uploads arrive in every aspect ratio there is. */
+
+.user-avatar {
+    flex: 0 0 auto;
+    border-radius: 50%;
+    object-fit: cover;
+    background: #e2e8f0;
+}
+
+.user-avatar-xs {
+    width: 24px;
+    height: 24px;
+}
+
+.user-avatar-sm {
+    width: 32px;
+    height: 32px;
+}
+
+.user-avatar-md {
+    width: 40px;
+    height: 40px;
+}
+
+.user-avatar-lg {
+    width: 56px;
+    height: 56px;
+}
+
+.user-avatar-xl {
+    width: 132px;
+    height: 132px;
+    border: 4px solid #ffffff;
+    box-shadow: 0 4px 16px rgba(15, 23, 42, .16);
+}
+
+/* Bootstrap has no min-width utility, and a flex child that will not shrink
+   below its content is what makes a long name push a row sideways. */
+.min-w-0 {
+    min-width: 0;
+}

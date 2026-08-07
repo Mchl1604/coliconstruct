@@ -85,10 +85,21 @@
                                         </small>
                                     </td>
                                     <td>
-                                        {{ $task->technician?->name ?? 'Unassigned' }}
-                                        @if ($isMine)
-                                            <span class="badge bg-info text-dark ms-1">You</span>
-                                        @endif
+                                        {{-- The assignee's own picture beside
+                                             their name; an unassigned task has
+                                             nobody to show. --}}
+                                        <div class="d-flex align-items-center gap-2">
+                                            @if ($task->technician?->account)
+                                                <x-user-avatar :user="$task->technician->account" size="xs" />
+                                            @endif
+
+                                            <span>
+                                                {{ $task->technician?->name ?? 'Unassigned' }}
+                                                @if ($isMine)
+                                                    <span class="badge bg-info text-dark ms-1">You</span>
+                                                @endif
+                                            </span>
+                                        </div>
                                     </td>
                                     <td data-order="{{ $task->start_date ? \Carbon\CarbonImmutable::parse($task->start_date)->timestamp : 0 }}">
                                         {{ $task->start_date ? \Carbon\CarbonImmutable::parse($task->start_date)->format('M j, Y') : '—' }}

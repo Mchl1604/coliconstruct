@@ -51,9 +51,30 @@ Route::middleware('auth')->group(function () {
 });
 
 // The signed-in account's own details, reachable from every header.
+//
+// Every endpoint acts on the signed-in account and takes no id, which is the
+// whole of "a user may edit only their own profile" - there is no other
+// profile these routes can reach.
 Route::middleware(['auth', 'password.changed'])
-    ->get('/profile', [ProfileController::class, 'edit'])
-    ->name('profile.edit');
+    ->prefix('profile')
+    ->name('profile.')
+    ->group(function () {
+        Route::get('/', [ProfileController::class, 'edit'])->name('edit');
+
+        // POST rather than PUT for the picture: it is multipart, which PHP
+        // does not parse from a PUT body.
+        Route::post('/photo', [ProfileController::class, 'updatePhoto'])->name('photo.update');
+        Route::delete('/photo', [ProfileController::class, 'destroyPhoto'])->name('photo.destroy');
+
+        Route::put('/information', [ProfileController::class, 'updateInformation'])->name('information');
+        Route::put('/password', [ProfileController::class, 'updatePassword'])->name('password');
+
+        // A technician asking for different specialties. The change itself is
+        // an administrator's to make - see the Technicians page.
+        Route::post('/specialties', [ProfileController::class, 'requestSpecialties'])
+            ->middleware('role:technician,lead_technician')
+            ->name('specialties.request');
+    });
 
 // Notifications. Shared by every portal rather than duplicated per role: a
 // notification is addressed to a person, and "mine" is the whole of the
@@ -84,7 +105,16 @@ Route::prefix('super-admin')
 
         // ROUTE FOR SUPER ADMIN PROJECTS PAGE
         Route::get('/projects', [ProjectController::class, 'index'])->name('projects');
-        Route::get('/projects/archived', [ProjectController::class, 'archivedIndex'])->name('projects.archived');
+
+        // Archiving is a Super Admin privilege. An Admin creates, reads,
+        // edits, activates and deactivates; taking a record out of the active
+        // system - and putting it back - belongs to the system's owner.
+        //
+        // Declared here rather than in a group of its own so /projects/archived
+        // keeps being matched before /projects/{id}.
+        Route::get('/projects/archived', [ProjectController::class, 'archivedIndex'])
+            ->middleware('role:super_admin')
+            ->name('projects.archived');
         Route::get('/projects/create', [ProjectController::class, 'create'])->name('projects.create');
         Route::post('/projects/create', [ProjectController::class, 'store'])->name('projects.create.store');
         Route::get('/projects/{id}', [ProjectController::class, 'show'])->name('projects.show');
@@ -92,8 +122,12 @@ Route::prefix('super-admin')
         Route::put('/projects/{id}/resume', [ProjectController::class, 'resume'])->name('projects.resume');
         Route::post('/projects/{id}/complete', [ProjectController::class, 'complete'])->name('projects.complete');
         Route::post('/projects/{id}/cancel', [ProjectController::class, 'cancel'])->name('projects.cancel');
-        Route::post('/projects/{id}/archive', [ProjectController::class, 'archive'])->name('projects.archive');
-        Route::put('/projects/{id}/restore', [ProjectController::class, 'restore'])->name('projects.restore');
+        Route::post('/projects/{id}/archive', [ProjectController::class, 'archive'])
+            ->middleware('role:super_admin')
+            ->name('projects.archive');
+        Route::put('/projects/{id}/restore', [ProjectController::class, 'restore'])
+            ->middleware('role:super_admin')
+            ->name('projects.restore');
         Route::get('/projects/{id}/documents/{type}', [ProjectController::class, 'previewDocument'])->name('projects.documents.preview');
         Route::put('/projects/{id}', [ProjectController::class, 'update'])->name('projects.update');
         Route::put('/projects/{id}/team', [ProjectController::class, 'updateAssignedTeam'])->name('projects.team.update');
@@ -121,6 +155,13 @@ Route::prefix('super-admin')
 
         // ROUTE FOR SUPER ADMIN TECHNICIANS PAGE
         Route::get('/technicians', [TechnicianController::class, 'index'])->name('technicians.index');
+        // The specialty approval queue. Declared before /technicians/{technician}
+        // so the literal segment wins.
+        Route::put('/technicians/specialty-requests/{specialtyRequest}/approve', [TechnicianController::class, 'approveSpecialtyRequest'])
+            ->name('technicians.specialty-requests.approve');
+        Route::put('/technicians/specialty-requests/{specialtyRequest}/reject', [TechnicianController::class, 'rejectSpecialtyRequest'])
+            ->name('technicians.specialty-requests.reject');
+
         Route::get('/technicians/{technician}', [TechnicianController::class, 'show'])->name('technicians.show');
         Route::put('/technicians/{technician}/specialties', [TechnicianController::class, 'syncSpecialties'])->name('technicians.specialties.sync');
         Route::get('/technicians/{technician}/calendar', [TechnicianController::class, 'calendar'])->name('technicians.calendar');
@@ -141,6 +182,13 @@ Route::prefix('super-admin')
             Route::get('/users/employees', [ConfigurationController::class, 'employees'])->name('users.employees');
             Route::get('/users/clients', [ConfigurationController::class, 'clients'])->name('users.clients');
             Route::get('/users/generated-password', [ConfigurationController::class, 'generatePassword'])->name('users.password');
+
+            // Archived Accounts. Declared before /users/{user} so the literal
+            // segment wins, and Super Admin only for the same reason project
+            // archiving is.
+            Route::get('/users/archived', [ConfigurationController::class, 'archivedAccounts'])
+                ->middleware('role:super_admin')
+                ->name('users.archived');
 
             // Activity Logs.
             Route::get('/activity-logs', [ConfigurationController::class, 'activityLogs'])->name('activity-logs');
@@ -167,7 +215,11 @@ Route::prefix('super-admin')
             Route::post('/users/{user}/client', [ConfigurationController::class, 'updateClient'])->name('users.clients.update');
             Route::put('/users/{user}/password', [ConfigurationController::class, 'resetPassword'])->name('users.password.reset');
             Route::put('/users/{user}/status', [ConfigurationController::class, 'setStatus'])->name('users.status');
-            Route::delete('/users/{user}', [ConfigurationController::class, 'archive'])->name('users.archive');
+
+            Route::middleware('role:super_admin')->group(function () {
+                Route::delete('/users/{user}', [ConfigurationController::class, 'archive'])->name('users.archive');
+                Route::put('/users/{user}/restore', [ConfigurationController::class, 'restoreAccount'])->name('users.restore');
+            });
         });
     });
 

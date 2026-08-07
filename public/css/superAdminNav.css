@@ -170,14 +170,67 @@
             display: flex;
             min-width: 190px;
             align-items: center;
-            justify-content: space-between;
+            justify-content: flex-start;
             gap: 10px;
             border: 1px solid #d1d7df;
             border-radius: 10px;
             background: #ffffff;
-            padding: 6px 10px 6px 12px;
+            padding: 6px 12px;
             color: #111827;
             text-align: left;
+        }
+
+        /* The profile block and its menu caret sit together but are two
+           separate controls: the block opens Profile, the caret opens the
+           menu. */
+        .admin-user-block {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .admin-user-link {
+            text-decoration: none;
+            transition: border-color .15s ease, background-color .15s ease;
+        }
+
+        .admin-user-link:hover,
+        .admin-user-link:focus-visible {
+            border-color: var(--admin-active);
+            background: #f8fafc;
+            color: #111827;
+        }
+
+        .admin-user-caret {
+            display: inline-flex;
+            width: 32px;
+            height: 32px;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid #d1d7df;
+            border-radius: 10px;
+            background: #ffffff;
+            color: #5d6b80;
+        }
+
+        .admin-user-caret:hover,
+        .admin-user-caret[aria-expanded="true"] {
+            border-color: var(--admin-active);
+            color: #111827;
+        }
+
+        /* On a phone the topbar is tight: the name and role go, and the
+           picture alone stands for the profile link. */
+        @media (max-width: 575.98px) {
+            .admin-user-menu {
+                min-width: 0;
+                padding: 4px;
+                border-color: transparent;
+            }
+
+            .admin-user-menu > span {
+                display: none;
+            }
         }
 
         .admin-user-dropdown-menu {

@@ -9,10 +9,18 @@
 @endpush
 
 @section('content')
+    @php
+        // Archiving - and everything that hangs off it - belongs to the Super
+        // Admin. An Admin creates, reads, edits, activates and deactivates.
+        $isSuperAdmin = (bool) auth()->user()?->isSuperAdmin();
+    @endphp
+
     <div class="d-flex justify-content-between align-items-center mb-3">
         <div>
             <h4 class="fw-bold mb-1">Configuration</h4>
-            <p class="text-secondary small mb-0">Accounts, audit history and system-wide settings.</p>
+            <p class="text-secondary small mb-0">
+                {{ $isSuperAdmin ? 'Accounts, audit history and system-wide settings.' : 'Accounts and audit history.' }}
+            </p>
         </div>
     </div>
 
@@ -32,13 +40,16 @@
                 Activity Logs
             </button>
         </li>
-        <li class="nav-item" role="presentation">
-            <button class="nav-link" id="systemSettingsTab" data-bs-toggle="tab" data-bs-target="#systemSettingsPane"
-                type="button" role="tab" aria-controls="systemSettingsPane" aria-selected="false">
-                <i class="bi bi-gear me-1" aria-hidden="true"></i>
-                System Settings
-            </button>
-        </li>
+        @if ($isSuperAdmin)
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="systemSettingsTab" data-bs-toggle="tab"
+                    data-bs-target="#systemSettingsPane" type="button" role="tab"
+                    aria-controls="systemSettingsPane" aria-selected="false">
+                    <i class="bi bi-gear me-1" aria-hidden="true"></i>
+                    System Settings
+                </button>
+            </li>
+        @endif
     </ul>
 
     <div class="tab-content">
@@ -53,10 +64,20 @@
                     <span class="text-secondary small">Every employee and client account in the system.</span>
                 </div>
 
-                <button type="button" class="btn btn-primary" data-add-user-open>
-                    <i class="bi bi-person-plus me-1" aria-hidden="true"></i>
-                    Add New User
-                </button>
+                <div class="d-flex flex-wrap gap-2">
+                    @if ($isSuperAdmin)
+                        <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal"
+                            data-bs-target="#archivedAccountsModal">
+                            <i class="bi bi-archive me-1" aria-hidden="true"></i>
+                            View Archived Accounts
+                        </button>
+                    @endif
+
+                    <button type="button" class="btn btn-primary" data-add-user-open>
+                        <i class="bi bi-person-plus me-1" aria-hidden="true"></i>
+                        Add New User
+                    </button>
+                </div>
             </div>
 
             <div class="alert alert-danger d-none" role="alert" data-user-error></div>
@@ -308,12 +329,13 @@
         </div>
 
         {{-- ==================== TAB 3: SYSTEM SETTINGS ==================== --}}
+        {{-- Super Admin only. An Admin's Configuration is User Management and
+             Activity Logs, so the whole pane goes rather than being emptied. --}}
+        @if ($isSuperAdmin)
         <div class="tab-pane fade" id="systemSettingsPane" role="tabpanel" aria-labelledby="systemSettingsTab">
 
-            @if (auth()->user()?->isSuperAdmin())
-                {{-- System Contents lives inside System Settings. The public
-                     website belongs to the Super Admin alone, so an Admin gets
-                     the placeholder below and never sees this card. --}}
+            {{-- System Contents lives inside System Settings: the public
+                 website belongs to the Super Admin alone. --}}
                 <div class="card shadow-sm border-0 rounded-2 mb-4" id="systemContentsPane">
                     <div class="card-body p-4">
 
@@ -379,18 +401,18 @@
 
                     </div>
                 </div>
-            @endif
 
-            <div class="card shadow-sm border-0 rounded-2">
-                <div class="card-body p-5 text-center">
-                    <i class="bi bi-gear config-placeholder-icon" aria-hidden="true"></i>
-                    <h5 class="fw-bold mt-3 mb-1">System Settings</h5>
-                    <p class="text-secondary mb-0">
-                        The remaining system settings will be implemented in a future update.
-                    </p>
+                <div class="card shadow-sm border-0 rounded-2">
+                    <div class="card-body p-5 text-center">
+                        <i class="bi bi-gear config-placeholder-icon" aria-hidden="true"></i>
+                        <h5 class="fw-bold mt-3 mb-1">System Settings</h5>
+                        <p class="text-secondary mb-0">
+                            The remaining system settings will be implemented in a future update.
+                        </p>
+                    </div>
                 </div>
             </div>
-        </div>
+        @endif
     </div>
 
     {{-- ==================== ADD / EDIT USER MODAL ==================== --}}
@@ -496,21 +518,10 @@
                                 </div>
                             </div>
 
-                            <div class="mb-4" data-photo-block>
-                                <label class="form-label small fw-semibold mb-1" for="userPhoto">
-                                    Profile Picture
-                                </label>
-                                <div class="config-photo-row">
-                                    <div class="config-photo-preview" data-photo-preview>
-                                        <span data-photo-initials>?</span>
-                                    </div>
-                                    <div class="flex-grow-1">
-                                        <input type="file" id="userPhoto" class="form-control" name="profile_photo"
-                                            accept="image/*" data-photo-input>
-                                        <small class="text-muted">Optional. JPG, PNG or WEBP, up to 5 MB.</small>
-                                    </div>
-                                </div>
-                            </div>
+                            {{-- No profile picture field. An internal account
+                                 starts on the default avatar and its owner sets
+                                 their own picture from their Profile page;
+                                 clients never have one at all. --}}
 
                             {{-- ---------------- Employment ---------------- --}}
                             <div data-employee-only>
@@ -686,6 +697,91 @@
         </div>
     </div>
 
+    {{-- ==================== ARCHIVED ACCOUNTS MODAL ==================== --}}
+    @if ($isSuperAdmin)
+        <div class="modal fade" id="archivedAccountsModal" tabindex="-1" aria-hidden="true"
+            aria-labelledby="archivedAccountsModalLabel" data-archived-modal>
+            <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+                <div class="modal-content">
+
+                    <div class="modal-header">
+                        <div>
+                            <h5 class="modal-title" id="archivedAccountsModalLabel">Archived Accounts</h5>
+                            <p class="text-secondary small mb-0">
+                                Nothing here was deleted. Restoring an account brings it back exactly as it was.
+                            </p>
+                        </div>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+
+                    <div class="modal-body">
+                        <div class="config-table-header">
+                            <div>
+                                <h6 class="config-table-title mb-0">
+                                    <i class="bi bi-archive me-1" aria-hidden="true"></i>
+                                    Archive
+                                </h6>
+                                <span class="text-secondary small" data-archived-count></span>
+                            </div>
+
+                            <div class="config-table-controls">
+                                <input type="search" class="form-control form-control-sm config-search"
+                                    placeholder="Search user ID, name or email&hellip;"
+                                    aria-label="Search archived accounts" data-archived-search>
+
+                                <select class="form-select form-select-sm config-filter" aria-label="Filter by role"
+                                    data-archived-role>
+                                    <option value="all">All Roles</option>
+                                    @foreach ($logRoles as $value => $label)
+                                        <option value="{{ $value }}">{{ $label }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="table-responsive">
+                            <table class="table table-hover table-striped align-middle mb-0">
+                                <thead class="table-info">
+                                    <tr>
+                                        <th>User ID</th>
+                                        <th>Name</th>
+                                        <th>Email</th>
+                                        <th>Role</th>
+                                        <th>Status</th>
+                                        <th>Archived Date</th>
+                                        <th>Archived By</th>
+                                        <th class="text-center">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody data-archived-body></tbody>
+                            </table>
+                        </div>
+
+                        <div class="text-secondary small py-3 px-1 d-none" data-archived-loading>
+                            <span class="spinner-border spinner-border-sm me-2" role="status"
+                                aria-hidden="true"></span>
+                            Loading archived accounts&hellip;
+                        </div>
+
+                        <div class="schedule-empty-state mt-2 d-none" data-archived-empty>
+                            No archived accounts.
+                        </div>
+
+                        <div class="alert alert-danger mt-3 mb-0 d-none" role="alert" data-archived-error></div>
+
+                        <nav class="config-pagination d-none" aria-label="Archived account pages"
+                            data-archived-pagination></nav>
+                    </div>
+
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    @endif
+
     {{-- ==================== CONFIRMATION MODAL ==================== --}}
     <div class="modal fade" id="confirmActionModal" tabindex="-1" aria-hidden="true" data-confirm-modal>
         <div class="modal-dialog modal-dialog-centered">
@@ -723,10 +819,16 @@
                 userBase: @json(url('super-admin/configuration/users')),
                 activityLogs: @json(route('super-admin.configuration.activity-logs')),
                 contentBase: @json(url('super-admin/configuration/contents')),
+                @if ($isSuperAdmin)
+                    archivedAccounts: @json(route('super-admin.configuration.users.archived')),
+                @endif
             };
             window.configurationOptions = {
                 technicianRoles: @json($technicianRoles),
                 mailEnabled: @json($mailEnabled),
+                // The row actions are drawn in JavaScript, so whether an
+                // account may be archived has to reach it as data.
+                canArchive: @json($isSuperAdmin),
             };
         </script>
         <script src="/js/super-admin/configuration.js"></script>

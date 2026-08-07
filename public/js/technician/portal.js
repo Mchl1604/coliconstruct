@@ -77,14 +77,31 @@
             return;
         }
 
+        // Warning and information read as dark text on their backgrounds, so
+        // the close button has to switch with them.
+        const name = variant || "success";
+        const isDark = name === "warning" || name === "info";
+
         const element = document.createElement("div");
 
         element.className =
-            "toast align-items-center text-white border-0 bg-" +
-            (variant || "success");
+            "toast align-items-center border-0 bg-" +
+            name +
+            (isDark ? " text-dark" : " text-white");
         element.setAttribute("role", "alert");
+        element.setAttribute("aria-live", "assertive");
+        element.setAttribute("aria-atomic", "true");
+        // Inner flex row, matching the flash-toasts component: `d-flex` on the
+        // toast itself would beat the rule that keeps it hidden until shown.
         element.innerHTML =
-            '<div class="toast-body">' + escapeHtml(message) + "</div>";
+            '<div class="d-flex">' +
+            '<div class="toast-body">' +
+            escapeHtml(message) +
+            "</div>" +
+            '<button type="button" class="btn-close ' +
+            (isDark ? "" : "btn-close-white ") +
+            'me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>' +
+            "</div>";
 
         container.appendChild(element);
 

@@ -29,18 +29,14 @@
                                 {{ $card['reference_no'] ?? 'Reference not assigned' }}
                             </span>
 
+                            {{-- The project type is not repeated here: it is
+                                 already carried by the coloured badges below,
+                                 and one project type on the page is enough. --}}
                             <div class="text-muted mt-2">
                                 <span class="me-3">
                                     <i class="bi bi-geo-alt" aria-hidden="true"></i>
                                     {{ $card['location'] ?: 'Location not set' }}
                                 </span>
-
-                                @if ($card['service'])
-                                    <span>
-                                        <i class="bi bi-wrench-adjustable" aria-hidden="true"></i>
-                                        {{ $card['service'] }}
-                                    </span>
-                                @endif
                             </div>
 
                             @if ($client)
@@ -124,6 +120,44 @@
                                     {{ $project->cancellation_remarks }}
                                 </p>
                             @endif
+                        </div>
+                    @endif
+
+                    {{-- Project documents. A button appears only for a document
+                         that exists: a disabled control that never becomes
+                         usable tells the client nothing. --}}
+                    @php
+                        $documentTitles = \App\Http\Controllers\PublicSiteController::DOCUMENT_TITLES;
+
+                        // Keyed into a plain array on purpose: Eloquent's
+                        // Collection::only() filters by primary key rather than
+                        // by array key, so it would quietly return nothing here.
+                        $clientDocuments = $project->documents
+                            ->whereIn('document_type', array_keys($documentTitles))
+                            ->keyBy('document_type')
+                            ->all();
+                    @endphp
+
+                    @if ($clientDocuments !== [])
+                        <hr>
+
+                        <h2 class="h6 fw-bold mb-2">Project Documents</h2>
+
+                        {{-- Straight to the file in a new tab, the way the
+                             administrative pages open the same documents: the
+                             client wants to read the document, not a page
+                             wrapped around it. --}}
+                        <div class="d-flex flex-wrap gap-2">
+                            @foreach ($documentTitles as $type => $label)
+                                @continue(! isset($clientDocuments[$type]))
+
+                                <a class="btn btn-outline-brand-blue"
+                                    href="{{ asset($clientDocuments[$type]->document_path) }}" target="_blank"
+                                    rel="noopener noreferrer">
+                                    <i class="bi bi-file-earmark-text me-1" aria-hidden="true"></i>
+                                    {{ $label }}
+                                </a>
+                            @endforeach
                         </div>
                     @endif
                 </div>

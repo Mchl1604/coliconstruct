@@ -199,7 +199,9 @@
     background: #fff;
     border: 1px solid #cbd5e1;
     border-radius: 999px;
-    padding: 0.2rem 0.65rem;
+    /* Tighter on the left: the chip now leads with a round avatar, which
+       carries its own visual padding. */
+    padding: 0.15rem 0.65rem 0.15rem 0.2rem;
 }
 
 /* ---- Date-details modal ---- */

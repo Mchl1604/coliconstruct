@@ -30,6 +30,7 @@ use Illuminate\Notifications\Notifiable;
     'status',
     'is_archived',
     'archived_at',
+    'archived_by',
     'must_change_password',
     'last_login_at',
     'created_by',
@@ -78,6 +79,17 @@ class User extends Authenticatable
      * @var array<int, string>
      */
     public const ASSIGNABLE_ROLES = ['admin', 'lead_technician', 'technician'];
+
+    /**
+     * The roles an Admin may assign.
+     *
+     * An Admin cannot make another Admin: granting a peer the same authority
+     * you hold is how an administrative tier quietly stops being controlled by
+     * the system's owner. Only a Super Admin hands out `admin`.
+     *
+     * @var array<int, string>
+     */
+    public const ADMIN_ASSIGNABLE_ROLES = ['lead_technician', 'technician'];
 
     public const ROLE_SUPER_ADMIN = 'super_admin';
 
@@ -136,6 +148,15 @@ class User extends Authenticatable
     }
 
     /**
+     * The administrator who archived this account, for the Archived Accounts
+     * table. Null for an account archived before the column existed.
+     */
+    public function archiver(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'archived_by', 'id');
+    }
+
+    /**
      * Log entries about this account, rather than the ones it caused.
      */
     public function activityLogs(): HasMany
@@ -153,6 +174,14 @@ class User extends Authenticatable
     public function scopeNotArchived(Builder $query): Builder
     {
         return $query->where('is_archived', false);
+    }
+
+    /**
+     * The other half: what the Archived Accounts table lists.
+     */
+    public function scopeArchived(Builder $query): Builder
+    {
+        return $query->where('is_archived', true);
     }
 
     public function scopeEmployees(Builder $query): Builder
@@ -308,6 +337,30 @@ class User extends Authenticatable
         return self::ROLES[$this->role] ?? ucwords(str_replace('_', ' ', (string) $this->role));
     }
 
+    /**
+     * The roles this account may hand out, optionally when editing a specific
+     * account.
+     *
+     * A target's own current role is always included so saving an existing
+     * account never fails on a role the editor could not have granted in the
+     * first place - an Admin editing another Admin's contact number must not
+     * be told their role is invalid.
+     *
+     * @return array<int, string>
+     */
+    public function assignableRoles(?self $target = null): array
+    {
+        $roles = $this->isSuperAdmin()
+            ? self::ASSIGNABLE_ROLES
+            : self::ADMIN_ASSIGNABLE_ROLES;
+
+        if ($target && $target->role && ! in_array($target->role, $roles, true)) {
+            $roles[] = $target->role;
+        }
+
+        return array_values($roles);
+    }
+
     public function statusLabel(): string
     {
         if ($this->is_archived) {
@@ -338,6 +391,31 @@ class User extends Authenticatable
         return $this->profile_photo_path
             ? asset('storage/'.$this->profile_photo_path)
             : null;
+    }
+
+    /**
+     * Whether this account has a profile picture at all.
+     *
+     * Clients never do: they are customers, and the system shows them by name.
+     * Everyone who runs the work - technicians, leads, admins, the owner - has
+     * one, falling back to the default avatar until they upload their own.
+     */
+    public function usesProfilePhoto(): bool
+    {
+        return ! $this->isClient();
+    }
+
+    /**
+     * The picture to show for this account, or null when it should not be
+     * shown with one at all.
+     */
+    public function avatarUrl(): ?string
+    {
+        if (! $this->usesProfilePhoto()) {
+            return null;
+        }
+
+        return $this->profilePhotoUrl() ?? asset('img/default-avatar.svg');
     }
 
     public function initials(): string

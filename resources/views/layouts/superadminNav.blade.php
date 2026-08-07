@@ -117,31 +117,20 @@ href="https://cdn.datatables.net/2.3.8/css/dataTables.dataTables.css">
 
                 <x-notification-bell />
 
-                <div class="dropdown">
-                    <button class="admin-user-menu" type="button" data-user-menu-toggle data-bs-toggle="dropdown" aria-expanded="false" aria-label="User menu">
-                        <span>
-                            <span class="admin-user-name">{{ $displayName }}</span>
-                            <span class="admin-user-role">{{ $displayRole }}</span>
-                        </span>
-                        <i class="bi bi-caret-down-fill" aria-hidden="true"></i>
-                    </button>
+                {{-- The whole block is the link to Profile, and that is all it
+                     is. There is no account menu beside it: Settings is
+                     Configuration in the sidebar, and Logout is at the foot of
+                     it, so the caret only stood between people and their own
+                     page. --}}
+                <a class="admin-user-menu admin-user-link" href="{{ route('profile.edit') }}"
+                    aria-label="Signed in as {{ $displayName }} - open your profile">
+                    <x-user-avatar :user="$user" size="md" alt="" />
 
-                    <ul class="dropdown-menu dropdown-menu-end admin-user-dropdown-menu">
-                        <li><a class="dropdown-item" href="{{ route('profile.edit') }}">Profile</a></li>
-                        <li>
-                            <a class="dropdown-item" href="{{ route('super-admin.configuration.index') }}">Settings</a>
-                        </li>
-                        <li><hr class="dropdown-divider"></li>
-                        <li>
-                            {{-- Signing out changes state, so it is a POST rather
-                                 than a link anything can follow. --}}
-                            <form method="POST" action="{{ route('auth.logout') }}">
-                                @csrf
-                                <button type="submit" class="dropdown-item text-danger">Logout</button>
-                            </form>
-                        </li>
-                    </ul>
-                </div>
+                    <span>
+                        <span class="admin-user-name">{{ $displayName }}</span>
+                        <span class="admin-user-role">{{ $displayRole }}</span>
+                    </span>
+                </a>
             </header>
 
             <main class="admin-page">
@@ -150,37 +139,7 @@ href="https://cdn.datatables.net/2.3.8/css/dataTables.dataTables.css">
         </div>
     </div>
     
-{{-- Success Toast --}}
-@if (session('success'))
-<div class="toast-container position-fixed top-0 end-0 p-3">
-    <div class="toast align-items-center bg-success text-white border-0"
-         role="alert"
-         data-bs-autohide="true"
-         data-bs-delay="3000">
-
-        <div class="toast-body">
-            {{ session('success') }}
-        </div>
-
-    </div>
-</div>
-@endif
-
-{{-- Error Toast --}}
-@if (session('error'))
-<div class="toast-container position-fixed top-0 end-0 p-3">
-    <div class="toast align-items-center bg-danger text-white border-0"
-         role="alert"
-         data-bs-autohide="true"
-         data-bs-delay="3000">
-
-        <div class="toast-body">
-            {{ session('error') }}
-        </div>
-
-    </div>
-</div>
-@endif
+<x-flash-toasts />
 
        <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 

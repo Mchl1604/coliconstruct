@@ -21,6 +21,214 @@ document.addEventListener("DOMContentLoaded", function () {
     });
 
     // ------------------------------------------------------------------
+    // Filters
+    //
+    // The same four narrowings the Super Admin Reports page offers - project,
+    // report type, date and a search box - applied to the rows already on the
+    // page: a lead's own log is short, so a round trip per keystroke would buy
+    // nothing. All four combine, and all four survive paging.
+    // ------------------------------------------------------------------
+
+    const filters = {
+        project: "all",
+        type: "all",
+        date: "all",
+        from: "",
+        to: "",
+    };
+
+    function isoDate(date) {
+        const month = String(date.getMonth() + 1).padStart(2, "0");
+        const day = String(date.getDate()).padStart(2, "0");
+
+        return date.getFullYear() + "-" + month + "-" + day;
+    }
+
+    /**
+     * The [from, to] the Date select stands for, as ISO strings, or null when
+     * every date qualifies. Weeks run Monday to Sunday and months are calendar
+     * months, matching how the server reads the same options.
+     */
+    function dateBounds() {
+        const today = new Date();
+
+        if (filters.date === "today") {
+            return [isoDate(today), isoDate(today)];
+        }
+
+        if (filters.date === "week") {
+            const start = new Date(today);
+            // getDay() is 0 on Sunday, which belongs to the week that started
+            // six days earlier rather than to the one starting tomorrow.
+            start.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+
+            const end = new Date(start);
+            end.setDate(start.getDate() + 6);
+
+            return [isoDate(start), isoDate(end)];
+        }
+
+        if (filters.date === "month") {
+            const start = new Date(today.getFullYear(), today.getMonth(), 1);
+            const end = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+
+            return [isoDate(start), isoDate(end)];
+        }
+
+        if (filters.date === "custom" && (filters.from || filters.to)) {
+            return [filters.from || "0000-01-01", filters.to || "9999-12-31"];
+        }
+
+        return null;
+    }
+
+    function matchesRow(row) {
+        if (!row) {
+            return true;
+        }
+
+        const bounds = dateBounds();
+
+        if (bounds) {
+            const reportDate = row.getAttribute("data-report-date") || "";
+
+            if (!reportDate || reportDate < bounds[0] || reportDate > bounds[1]) {
+                return false;
+            }
+        }
+
+        if (
+            filters.project !== "all" &&
+            row.getAttribute("data-project-id") !== filters.project
+        ) {
+            return false;
+        }
+
+        if (
+            filters.type !== "all" &&
+            row.getAttribute("data-report-type") !== filters.type
+        ) {
+            return false;
+        }
+
+        return true;
+    }
+
+    if (table && window.jQuery) {
+        const search = window.jQuery.fn.dataTable.ext.search;
+
+        search.push(function (settings, data, dataIndex) {
+            if (settings.nTable.id !== "portalReportsTable") {
+                return true;
+            }
+
+            return matchesRow(table.row(dataIndex).node());
+        });
+    }
+
+    const customRange = document.querySelectorAll("[data-custom-range]");
+    const startInput = document.querySelector("[data-filter-start]");
+    const endInput = document.querySelector("[data-filter-end]");
+    const searchInput = document.querySelector("[data-filter-search]");
+    const resetButton = document.querySelector("[data-filter-reset]");
+
+    function redraw() {
+        if (table) {
+            table.draw();
+        }
+    }
+
+    [
+        ["[data-filter-project]", "project"],
+        ["[data-filter-type]", "type"],
+        ["[data-filter-date]", "date"],
+    ].forEach(function (pair) {
+        const element = document.querySelector(pair[0]);
+
+        if (!element) {
+            return;
+        }
+
+        element.value = "all";
+
+        element.addEventListener("change", function () {
+            filters[pair[1]] = element.value;
+
+            if (pair[1] === "date") {
+                const isCustom = element.value === "custom";
+
+                customRange.forEach(function (wrapper) {
+                    wrapper.classList.toggle("d-none", !isCustom);
+                });
+            }
+
+            redraw();
+        });
+    });
+
+    [startInput, endInput].forEach(function (input) {
+        if (!input) {
+            return;
+        }
+
+        input.addEventListener("change", function () {
+            filters.from = startInput ? startInput.value : "";
+            filters.to = endInput ? endInput.value : "";
+            redraw();
+        });
+    });
+
+    // The search box drives DataTables' own search, so it matches on every
+    // visible column - project, title, technician - rather than on a list of
+    // fields this file would have to keep in step with the table.
+    if (searchInput && table) {
+        let searchTimer = null;
+
+        searchInput.addEventListener("input", function () {
+            window.clearTimeout(searchTimer);
+            searchTimer = window.setTimeout(function () {
+                table.search(searchInput.value).draw();
+            }, 250);
+        });
+    }
+
+    if (resetButton) {
+        resetButton.addEventListener("click", function () {
+            filters.project = "all";
+            filters.type = "all";
+            filters.date = "all";
+            filters.from = "";
+            filters.to = "";
+
+            [
+                "[data-filter-project]",
+                "[data-filter-type]",
+                "[data-filter-date]",
+            ].forEach(function (selector) {
+                const element = document.querySelector(selector);
+
+                if (element) {
+                    element.value = "all";
+                }
+            });
+
+            [startInput, endInput, searchInput].forEach(function (input) {
+                if (input) {
+                    input.value = "";
+                }
+            });
+
+            customRange.forEach(function (wrapper) {
+                wrapper.classList.add("d-none");
+            });
+
+            if (table) {
+                table.search("").draw();
+            }
+        });
+    }
+
+    // ------------------------------------------------------------------
     // Viewer
     // ------------------------------------------------------------------
 
@@ -117,6 +325,12 @@ document.addEventListener("DOMContentLoaded", function () {
     function rowFor(report) {
         const row = document.createElement("tr");
 
+        // The same attributes the Blade rows carry, so a report submitted
+        // without a reload is filterable the moment it lands.
+        row.setAttribute("data-report-date", report.date || "");
+        row.setAttribute("data-project-id", report.project_id || "");
+        row.setAttribute("data-report-type", report.type || "");
+
         row.innerHTML =
             "<td>#" +
             portal.escapeHtml(report.id) +
@@ -134,9 +348,15 @@ document.addEventListener("DOMContentLoaded", function () {
             '">' +
             portal.escapeHtml(report.type_label) +
             "</span></td>" +
-            "<td>" +
+            '<td><div class="d-flex align-items-center gap-2">' +
+            (report.submitted_by_avatar
+                ? '<img class="user-avatar user-avatar-xs" src="' +
+                  portal.escapeHtml(report.submitted_by_avatar) +
+                  '" alt="" loading="lazy">'
+                : "") +
+            "<span>" +
             portal.escapeHtml(report.submitted_by) +
-            "</td>" +
+            "</span></div></td>" +
             '<td data-order="' +
             portal.escapeHtml(report.date_order) +
             '">' +
