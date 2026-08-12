@@ -120,6 +120,11 @@ document.addEventListener("DOMContentLoaded", function () {
             pageLength: 10,
             lengthMenu: [10, 25, 50, 100],
             info: false,
+            // DataTables types this column as numeric, which right-aligns it
+            // and reverses the header so the sort arrow lands on the left. A
+            // technician ID is a label, not a quantity, so it is put back with
+            // every other column. Ordering stays numeric.
+            columnDefs: [{ targets: 0, className: "dt-left" }],
             language: {
                 search: "",
                 searchPlaceholder: "Search technicians...",

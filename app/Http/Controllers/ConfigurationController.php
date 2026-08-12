@@ -695,11 +695,13 @@ class ConfigurationController extends Controller
      */
     private function clientRow(User $user): array
     {
+        // No company name column: a client is listed by who they are and how
+        // they sign in. It stays searchable, so somebody who knows only the
+        // company can still find the person.
         return [
             'id' => $user->id,
             'user_code' => $user->user_code,
             'full_name' => $user->fullName(),
-            'company_name' => $user->company_name ?: '—',
             'email' => $user->email,
             'status' => $user->status,
             'status_label' => $user->statusLabel(),

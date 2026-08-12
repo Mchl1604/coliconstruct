@@ -481,9 +481,6 @@ document.addEventListener("DOMContentLoaded", function () {
                 avatarCell(row) +
                 "</td>" +
                 "<td>" +
-                escapeHtml(row.company_name) +
-                "</td>" +
-                "<td>" +
                 escapeHtml(row.email) +
                 "</td>" +
                 "<td>" +

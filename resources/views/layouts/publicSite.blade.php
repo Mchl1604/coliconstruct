@@ -95,18 +95,20 @@
                              is where the rest of their portal links to. --}}
                         <x-notification-bell :modal="$viewer->isClient()" />
 
-                        {{-- The name alone, and it is the link to Profile.
-                             Clients never carry a profile picture: they are
-                             customers, not people who run the work. --}}
-                        <a class="btn btn-outline-brand-blue public-profile-link" href="{{ route('profile.edit') }}"
-                            aria-label="Signed in as {{ $viewer->fullName() }} - open your profile">
-                            <span class="public-profile-name">{{ $viewer->fullName() }}</span>
-                            <span class="public-profile-email d-none d-lg-block">{{ $viewer->email }}</span>
-                        </a>
-
+                        {{-- Who is signed in and the menu that acts on it are
+                             one control: two buttons side by side read as two
+                             separate things when they are the same thing.
+                             Their picture leads, the way it does everywhere
+                             else a person is shown. --}}
                         <div class="dropdown">
-                            <button class="btn btn-outline-brand-blue" type="button" data-bs-toggle="dropdown"
-                                aria-expanded="false" aria-label="Account menu">
+                            <button class="btn btn-outline-brand-blue public-profile-link" type="button"
+                                data-bs-toggle="dropdown" aria-expanded="false"
+                                aria-label="Signed in as {{ $viewer->fullName() }} - open the account menu">
+                                <x-user-avatar :user="$viewer" size="sm" />
+                                <span class="public-profile-identity">
+                                    <span class="public-profile-name">{{ $viewer->fullName() }}</span>
+                                    <span class="public-profile-email d-none d-lg-block">{{ $viewer->email }}</span>
+                                </span>
                                 <i class="bi bi-caret-down-fill" aria-hidden="true"></i>
                             </button>
 

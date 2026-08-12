@@ -1,10 +1,9 @@
 {{--
     One account's profile picture, wherever a person is shown.
 
-    Takes the account itself rather than a URL so the "clients have no picture"
-    rule is decided in one place: pass a client and this renders nothing at
-    all, which is what every caller wants and none of them should have to
-    remember.
+    Takes the account itself rather than a URL so the fallback is decided in
+    one place: every account has a picture, and any that has not been set falls
+    back to the default avatar.
 
     `user` may also be null - an unassigned task, a report whose submitter has
     since been removed - in which case the default avatar stands in.
@@ -16,13 +15,9 @@
 ])
 
 @php
-    // A client is shown by name; there is no avatar to fall back to.
-    $isClient = $user?->isClient() === true;
-    $source = $user?->avatarUrl() ?? ($user === null ? asset('img/default-avatar.svg') : null);
+    $source = $user?->avatarUrl() ?? asset('img/default-avatar.svg');
 @endphp
 
-@unless ($isClient || $source === null)
-    <img src="{{ $source }}" alt="{{ $alt ?? ($user?->fullName() ?? 'Profile picture') }}"
-        loading="lazy" decoding="async"
-        {{ $attributes->merge(['class' => 'user-avatar user-avatar-' . $size]) }}>
-@endunless
+<img src="{{ $source }}" alt="{{ $alt ?? ($user?->fullName() ?? 'Profile picture') }}"
+    loading="lazy" decoding="async"
+    {{ $attributes->merge(['class' => 'user-avatar user-avatar-' . $size]) }}>

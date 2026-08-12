@@ -8,6 +8,7 @@ use App\Models\ProjectTechnician;
 use App\Models\Schedule;
 use App\Models\SystemContent;
 use App\Models\Technician;
+use App\Models\TechnicianReport;
 use App\Models\User;
 use App\Services\SystemContentService;
 use Carbon\CarbonImmutable;
@@ -249,15 +250,15 @@ class PublicSiteTest extends TestCase
             $html
         );
 
-        // A client's profile is their details and their password - and never a
-        // profile picture, which is reserved for the people running the work.
+        // A client's profile is their details, their password and their
+        // picture. Specialties belong to the people running the work.
         $this->actingAs($client)
             ->get(route('profile.edit'))
             ->assertOk()
             ->assertSee('Personal Information')
             ->assertSee('Change Password')
             ->assertSee($client->email)
-            ->assertDontSee('Upload Picture')
+            ->assertSee('Upload Picture')
             ->assertDontSee('Specialties');
     }
 
@@ -378,6 +379,52 @@ class PublicSiteTest extends TestCase
             ->get(route('public.projects.show', $project->project_id))
             ->assertOk()
             ->assertSee('Aircon Installation - Greenfield Offices');
+    }
+
+    /**
+     * The tracker leads the page, so the latest word from site has to be the
+     * first thing a client reads.
+     *
+     * report_date carries no time, so reports filed on one day used to come
+     * back in whatever order the database chose - which read as oldest first.
+     */
+    public function test_a_clients_reports_are_listed_newest_first(): void
+    {
+        $client = $this->account('client', 'client@example.test');
+        $project = $this->projectFor('client@example.test');
+
+        $technicianAccount = $this->account('technician', 'tech@example.test');
+        $technician = Technician::create([
+            'account_id' => $technicianAccount->id,
+            'role' => 'technician',
+        ]);
+
+        // Deliberately created oldest first, and with two sharing a date so
+        // the tie-break is exercised rather than assumed.
+        foreach ([
+            ['Week one progress', '2026-08-03'],
+            ['Week two progress', '2026-08-10'],
+            ['Same day follow-up', '2026-08-10'],
+        ] as [$title, $date]) {
+            TechnicianReport::create([
+                'project_id' => $project->project_id,
+                'technician_id' => $technician->technician_id,
+                'submitted_by' => $technicianAccount->id,
+                'report_type' => 'progress',
+                'report_title' => $title,
+                'report_description' => 'Description',
+                'report_date' => $date,
+            ]);
+        }
+
+        $response = $this->actingAs($client)
+            ->get(route('public.projects.show', $project->project_id))
+            ->assertOk();
+
+        $this->assertSame(
+            ['Same day follow-up', 'Week two progress', 'Week one progress'],
+            $response->viewData('reports')->pluck('report_title')->all()
+        );
     }
 
     /**

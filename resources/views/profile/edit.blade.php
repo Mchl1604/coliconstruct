@@ -20,7 +20,6 @@
 
 @section('content')
     @php
-        $usesPhoto = $account->usesProfilePhoto();
         $isPublicShell = $layout === 'layouts.publicSite';
     @endphp
 
@@ -40,56 +39,51 @@
                 <div class="card shadow-sm border-0 rounded-3 h-100">
                     <div class="card-body text-center p-4">
 
-                        @if ($usesPhoto)
-                            <img src="{{ $account->avatarUrl() }}" class="user-avatar user-avatar-xl mb-3"
-                                alt="Your profile picture">
-                        @else
-                            {{-- Clients carry no picture anywhere in the
-                                 system, so there is nothing to show or set. --}}
-                            <div class="profile-initials mb-3" aria-hidden="true">{{ $account->initials() }}</div>
-                        @endif
+                        <img src="{{ $account->avatarUrl() }}" class="user-avatar user-avatar-xl mb-3"
+                            alt="Your profile picture">
 
                         <h2 class="h5 fw-bold mb-1">{{ $account->fullName() }}</h2>
                         <p class="text-secondary small mb-3">{{ $account->roleLabel() }}</p>
 
-                        @if ($usesPhoto)
-                            <form method="POST" action="{{ route('profile.photo.update') }}"
-                                enctype="multipart/form-data" class="mb-2" data-photo-form>
+                        {{-- Every account sets its own picture, clients
+                             included, and shows the default avatar until it
+                             does. --}}
+                        <form method="POST" action="{{ route('profile.photo.update') }}"
+                            enctype="multipart/form-data" class="mb-2" data-photo-form>
+                            @csrf
+
+                            <label class="form-label small fw-semibold" for="profilePhoto">
+                                {{ $account->profile_photo_path ? 'Change Picture' : 'Upload Picture' }}
+                            </label>
+
+                            <input type="file" class="form-control form-control-sm mb-2" id="profilePhoto"
+                                name="profile_photo" accept="image/*" required>
+
+                            <div class="form-text text-start mb-2">
+                                JPG, PNG or WEBP, up to 5 MB. It is shown as a circle, so a square picture
+                                crops best.
+                            </div>
+
+                            @error('profile_photo', 'photo')
+                                <div class="alert alert-danger text-start small py-2">{{ $message }}</div>
+                            @enderror
+
+                            <button type="submit" class="btn btn-primary btn-sm w-100">
+                                <i class="bi bi-upload me-1" aria-hidden="true"></i>
+                                {{ $account->profile_photo_path ? 'Change Picture' : 'Upload Picture' }}
+                            </button>
+                        </form>
+
+                        @if ($account->profile_photo_path)
+                            <form method="POST" action="{{ route('profile.photo.destroy') }}">
                                 @csrf
+                                @method('DELETE')
 
-                                <label class="form-label small fw-semibold" for="profilePhoto">
-                                    {{ $account->profile_photo_path ? 'Change Picture' : 'Upload Picture' }}
-                                </label>
-
-                                <input type="file" class="form-control form-control-sm mb-2" id="profilePhoto"
-                                    name="profile_photo" accept="image/*" required>
-
-                                <div class="form-text text-start mb-2">
-                                    JPG, PNG or WEBP, up to 5 MB. It is shown as a circle, so a square picture
-                                    crops best.
-                                </div>
-
-                                @error('profile_photo', 'photo')
-                                    <div class="alert alert-danger text-start small py-2">{{ $message }}</div>
-                                @enderror
-
-                                <button type="submit" class="btn btn-primary btn-sm w-100">
-                                    <i class="bi bi-upload me-1" aria-hidden="true"></i>
-                                    {{ $account->profile_photo_path ? 'Change Picture' : 'Upload Picture' }}
+                                <button type="submit" class="btn btn-outline-danger btn-sm w-100">
+                                    <i class="bi bi-trash me-1" aria-hidden="true"></i>
+                                    Remove Picture
                                 </button>
                             </form>
-
-                            @if ($account->profile_photo_path)
-                                <form method="POST" action="{{ route('profile.photo.destroy') }}">
-                                    @csrf
-                                    @method('DELETE')
-
-                                    <button type="submit" class="btn btn-outline-danger btn-sm w-100">
-                                        <i class="bi bi-trash me-1" aria-hidden="true"></i>
-                                        Remove Picture
-                                    </button>
-                                </form>
-                            @endif
                         @endif
 
                         <hr class="my-4">

@@ -66,6 +66,7 @@
                             <thead class="table-info">
                                 <tr>
                                     <th>Technician ID</th>
+                                    <th>Employee ID</th>
                                     <th>Technician</th>
                                     <th>Specialty</th>
                                     <th>Position</th>
@@ -89,6 +90,10 @@
                                     <tr data-technician-row="{{ $technician->technician_id }}"
                                         class="{{ $awaitingDecision ? 'technician-row-pending' : '' }}">
                                         <td>{{ $technician->technician_id }}</td>
+                                        {{-- The code on their staff account,
+                                             which is how they are referred to
+                                             everywhere outside this page. --}}
+                                        <td>{{ $technician->account?->user_code ?? '—' }}</td>
                                         <td>
                                             {{-- Picture beside the name, the
                                                  same one they set on their own

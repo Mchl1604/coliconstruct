@@ -133,7 +133,13 @@ class ConfigurationUserManagementTest extends TestCase
         $clients = $this->getJson(route('super-admin.configuration.users.clients'));
         $clients->assertOk();
         $clients->assertJsonCount(1, 'rows');
-        $clients->assertJsonPath('rows.0.company_name', 'Some Company');
+        // The fixture's default name - what matters is that the one row here
+        // is the client and not the employee above it.
+        $clients->assertJsonPath('rows.0.full_name', 'Existing Employee');
+
+        // The company name is not a column on this table; the picture is.
+        $clients->assertJsonMissingPath('rows.0.company_name');
+        $this->assertArrayHasKey('avatar_url', $clients->json('rows.0'));
     }
 
     public function test_employees_can_be_searched_and_filtered(): void
@@ -180,14 +186,24 @@ class ConfigurationUserManagementTest extends TestCase
 
     public function test_clients_can_be_searched_by_company_name(): void
     {
-        $this->makeClient(['name' => 'Jose Garcia', 'company_name' => 'Garcia Holdings']);
-        $this->makeClient(['name' => 'Ana Mendoza', 'company_name' => 'Mendoza Builders']);
+        $this->makeClient([
+            'first_name' => 'Jose',
+            'last_name' => 'Garcia',
+            'company_name' => 'Garcia Holdings',
+        ]);
+        $this->makeClient([
+            'first_name' => 'Ana',
+            'last_name' => 'Mendoza',
+            'company_name' => 'Mendoza Builders',
+        ]);
 
         $response = $this->getJson(route('super-admin.configuration.users.clients', ['search' => 'Holdings']));
 
         $response->assertOk();
         $response->assertJsonCount(1, 'rows');
-        $response->assertJsonPath('rows.0.company_name', 'Garcia Holdings');
+        // The company name is no longer a column, but it is still searchable -
+        // somebody who knows only the company can still find the person.
+        $response->assertJsonPath('rows.0.full_name', 'Jose Garcia');
     }
 
     /**

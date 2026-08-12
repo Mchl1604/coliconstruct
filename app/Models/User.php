@@ -436,9 +436,13 @@ class User extends Authenticatable
      * Everyone who runs the work - technicians, leads, admins, the owner - has
      * one, falling back to the default avatar until they upload their own.
      */
+    /**
+     * Every account has a picture, clients included. They set their own from
+     * their Profile page, and fall back to the default avatar until they do.
+     */
     public function usesProfilePhoto(): bool
     {
-        return ! $this->isClient();
+        return true;
     }
 
     /**

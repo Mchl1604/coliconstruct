@@ -116,8 +116,13 @@ class ClientProjects
                 // documents a project actually has.
                 'documents',
                 // The client's tracker: what the technicians reported, newest
-                // first, with whatever they photographed.
-                'reports' => fn ($query) => $query->with('images')->latest('report_date'),
+                // first, with whatever they photographed. report_date carries
+                // no time, so several reports filed on one day would come back
+                // in whatever order the database chose - most recently filed
+                // breaks the tie.
+                'reports' => fn ($query) => $query->with('images')
+                    ->orderByDesc('report_date')
+                    ->orderByDesc('id'),
             ])
             ->where('project_id', $projectId)
             ->where('is_archived', false)

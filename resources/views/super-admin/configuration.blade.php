@@ -159,7 +159,7 @@
 
                         <div class="config-table-controls">
                             <input type="search" class="form-control form-control-sm config-search"
-                                placeholder="Search user ID, name, company or email&hellip;" aria-label="Search clients"
+                                placeholder="Search user ID, name or email&hellip;" aria-label="Search clients"
                                 data-client-search>
 
                             <select class="form-select form-select-sm config-filter" aria-label="Filter by status"
@@ -177,7 +177,6 @@
                                 <tr>
                                     <th>User ID</th>
                                     <th>Full Name</th>
-                                    <th>Company Name</th>
                                     <th>Email Address</th>
                                     <th>Status</th>
                                     <th class="text-center">Action</th>

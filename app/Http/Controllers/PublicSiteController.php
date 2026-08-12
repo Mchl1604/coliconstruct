@@ -100,8 +100,12 @@ class PublicSiteController extends Controller
             'project' => $record,
             'card' => $this->card($record),
             'client' => $record->clients->first(),
-            // The client's tracker, so it leads the page.
-            'reports' => $record->reports->sortByDesc('report_date')->values(),
+            // The client's tracker, so it leads the page. Newest first, with
+            // the most recently filed breaking a same-day tie - re-stated here
+            // rather than trusting the order the relation arrived in.
+            'reports' => $record->reports
+                ->sortByDesc(fn ($report): array => [$report->report_date, $report->id])
+                ->values(),
             'completedTasks' => $tasks->where('status', 'completed')->values(),
             'remainingTasks' => $tasks->whereNotIn('status', ['completed'])->values(),
             'ranges' => $record->schedules

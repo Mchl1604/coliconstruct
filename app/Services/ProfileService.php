@@ -49,7 +49,6 @@ class ProfileService
      */
     public function updatePhoto(User $user, UploadedFile $photo): User
     {
-        $this->guardInternal($user, 'Client accounts do not use profile pictures.');
 
         $previous = $user->profile_photo_path;
 
@@ -77,7 +76,6 @@ class ProfileService
      */
     public function removePhoto(User $user): User
     {
-        $this->guardInternal($user, 'Client accounts do not use profile pictures.');
 
         if (! $user->profile_photo_path) {
             throw new RuntimeException('There is no profile picture to remove.');
@@ -472,17 +470,6 @@ class ProfileService
     {
         if (! $request->isPending()) {
             throw new RuntimeException('That request has already been decided.');
-        }
-    }
-
-    /**
-     * Profile pictures are for the people who run the work. A client is a
-     * customer, and the system shows their name and nothing more.
-     */
-    private function guardInternal(User $user, string $message): void
-    {
-        if ($user->isClient()) {
-            throw new RuntimeException($message);
         }
     }
 

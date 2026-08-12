@@ -107,7 +107,11 @@ class ProfileManagementTest extends TestCase
             ->assertSee('btn-sign-up', escape: false);
     }
 
-    public function test_a_client_header_carries_a_name_and_never_a_picture(): void
+    /**
+     * One control, carrying the client's picture, their name and their email,
+     * that opens the account menu.
+     */
+    public function test_a_client_header_carries_their_picture_name_and_email(): void
     {
         $client = $this->account('client', 'client@example.test');
 
@@ -117,7 +121,8 @@ class ProfileManagementTest extends TestCase
             ->assertSee('public-profile-link', escape: false)
             ->assertSee(route('profile.edit'), escape: false)
             ->assertSee('client@example.test')
-            ->assertDontSee('default-avatar.svg');
+            // Nothing uploaded yet, so the default avatar stands in.
+            ->assertSee('default-avatar.svg');
     }
 
     // ------------------------------------------------------------------
@@ -217,22 +222,39 @@ class ProfileManagementTest extends TestCase
         $this->assertSame(asset('img/default-avatar.svg'), $admin->avatarUrl());
     }
 
-    public function test_a_client_has_no_picture_to_set(): void
+    /**
+     * A client sets their own picture from their profile page, the same way
+     * everybody else does.
+     */
+    public function test_a_client_sets_and_removes_their_own_picture(): void
     {
         Storage::fake('public');
 
         $client = $this->account('client', 'client@example.test');
 
-        $this->assertFalse($client->usesProfilePhoto());
-        $this->assertNull($client->avatarUrl());
+        $this->assertTrue($client->usesProfilePhoto());
+        // Nothing set yet, so the default avatar stands in.
+        $this->assertSame(asset('img/default-avatar.svg'), $client->avatarUrl());
 
         $this->actingAs($client)
             ->post(route('profile.photo.update'), [
                 'profile_photo' => UploadedFile::fake()->image('me.jpg'),
             ])
-            ->assertSessionHas('error', 'Client accounts do not use profile pictures.');
+            ->assertSessionHas('success');
+
+        $stored = $client->refresh()->profile_photo_path;
+
+        $this->assertNotNull($stored);
+        Storage::disk('public')->assertExists($stored);
+        $this->assertNotSame(asset('img/default-avatar.svg'), $client->avatarUrl());
+
+        $this->actingAs($client)
+            ->delete(route('profile.photo.destroy'))
+            ->assertSessionHas('success', 'Profile picture removed.');
 
         $this->assertNull($client->refresh()->profile_photo_path);
+        Storage::disk('public')->assertMissing($stored);
+        $this->assertSame(asset('img/default-avatar.svg'), $client->avatarUrl());
     }
 
     // ------------------------------------------------------------------
