@@ -120,7 +120,17 @@ document.addEventListener("DOMContentLoaded", function () {
                             technician.technician_id +
                             '" required>' +
                             '<div class="task-assign-card">' +
-                            '<div class="task-assign-avatar"><i class="bi bi-person-fill"></i></div>' +
+                            // Same markup the Blade-rendered assign cards
+                            // produce, so a person looks the same wherever
+                            // they are picked from.
+                            '<img class="user-avatar user-avatar-lg task-assign-avatar" src="' +
+                            escapeHtml(
+                                technician.avatar_url ||
+                                    "/img/default-avatar.svg",
+                            ) +
+                            '" alt="' +
+                            escapeHtml(technician.name) +
+                            '" loading="lazy" decoding="async">' +
                             '<div class="task-assign-name">' +
                             escapeHtml(technician.name) +
                             "</div>" +

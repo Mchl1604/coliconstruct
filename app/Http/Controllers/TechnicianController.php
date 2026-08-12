@@ -208,15 +208,13 @@ class TechnicianController extends Controller
 
         $events = $schedules->map(function (Schedule $schedule): array {
             $project = $schedule->project;
-            $start = CarbonImmutable::parse($schedule->start_datetime);
-            $end = CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime);
 
             return [
                 'id' => $schedule->schedule_id,
                 'title' => $project->reference_no,
-                'start' => $start->toDateString(),
-                // FullCalendar treats all-day end dates as exclusive.
-                'end' => $end->addDay()->toDateString(),
+                // A partial day comes back as a timed event, so the bar
+                // carries its hours instead of reading as a whole day.
+                ...$schedule->toCalendarTimes(),
                 'color' => $project->calendarColor(),
                 'extendedProps' => [
                     'projectId' => $project->project_id,
@@ -225,7 +223,7 @@ class TechnicianController extends Controller
                     'client' => $this->clientName($project),
                     'status' => $project->status,
                     'statusLabel' => $this->statusLabel($project),
-                    'rangeLabel' => $start->format('M j, Y').' - '.$end->format('M j, Y'),
+                    'rangeLabel' => $schedule->describe(),
                 ],
             ];
         })->values();
@@ -883,21 +881,26 @@ class TechnicianController extends Controller
             'url' => route('super-admin.projects.show', $project->project_id),
             'start_date' => $start ? CarbonImmutable::parse($start)->toDateString() : null,
             'end_date' => $end ? CarbonImmutable::parse($end)->toDateString() : null,
-            'range_label' => $start && $end
-                ? CarbonImmutable::parse($start)->format('M j, Y').' - '.CarbonImmutable::parse($end)->format('M j, Y')
-                : 'No schedule set',
+            // The project's overall span. With a single schedule that IS the
+            // schedule, so it is described rather than printed as a span of
+            // one date to itself.
+            'range_label' => match (true) {
+                $schedules->count() === 1 => $schedules->first()->describe(),
+                (bool) ($start && $end) => CarbonImmutable::parse($start)->format('M j, Y')
+                    .' - '.CarbonImmutable::parse($end)->format('M j, Y'),
+                default => 'No schedule set',
+            },
             'has_schedule' => $schedules->isNotEmpty(),
             'ranges' => $schedules->map(fn (Schedule $schedule): array => [
-                'start' => CarbonImmutable::parse($schedule->start_datetime)->toDateString(),
-                'end' => CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime)->toDateString(),
+                'start' => $schedule->startsOn()->toDateString(),
+                'end' => $schedule->endsOn()->toDateString(),
                 // `label` reads long for the details panel, `short_label`
-                // fits a table cell where every range is listed.
-                'label' => CarbonImmutable::parse($schedule->start_datetime)->format('F j, Y')
-                    .' – '
-                    .CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime)->format('F j, Y'),
-                'short_label' => CarbonImmutable::parse($schedule->start_datetime)->format('M j, Y')
-                    .' - '
-                    .CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime)->format('M j, Y'),
+                // fits a table cell where every schedule is listed. Both come
+                // from the shared formatter, so a Partial Day carries its
+                // hours into either.
+                'label' => $schedule->describe('F j, Y'),
+                'short_label' => $schedule->describe(),
+                'is_partial_day' => $schedule->isPartialDay(),
             ])->values()->all(),
             'tasks' => $project->relationLoaded('tasks')
                 ? $project->tasks->map(fn (Task $task): array => [

@@ -9,6 +9,13 @@ document.addEventListener('DOMContentLoaded', function() {
         return;
     }
 
+    const MODE_DATE_BASED = 'date_based';
+    const MODE_PARTIAL_DAY = 'partial_day';
+    const MINUTES_PER_DAY = 1440;
+    // The working day, mirroring Schedule::WORKING_HOUR_START / _END.
+    const WORKING_HOUR_START = 8;
+    const WORKING_HOUR_END = 17;
+
     const steps = Array.from(form.querySelectorAll('[data-wizard-step]'));
     const progressSteps = Array.from(document.querySelectorAll('[data-progress-step]'));
     const stepCounter = document.querySelector('[data-step-counter]');
@@ -30,13 +37,21 @@ document.addEventListener('DOMContentLoaded', function() {
     const leadTechSelect = form.querySelector('[data-lead-tech-select]');
     const startDateInput = form.querySelector('[data-summary-input="start_date"]');
     const endDateInput = form.querySelector('[data-summary-input="end_date"]');
+    const projectDateInput = form.querySelector('[data-summary-input="project_date"]');
+    const startTimeSelect = form.querySelector('[data-summary-input="start_time"]');
+    const endTimeSelect = form.querySelector('[data-summary-input="end_time"]');
+    const schedulingModeWrap = form.querySelector('[data-scheduling-mode-wrap]');
+    const schedulingModeRadios = Array.from(form.querySelectorAll('[data-scheduling-mode-radio]'));
+    const schedulingModeOptions = Array.from(form.querySelectorAll('[data-scheduling-mode-option]'));
+    const dateBasedFields = Array.from(form.querySelectorAll('[data-date-based-field]'));
+    const partialDayFields = Array.from(form.querySelectorAll('[data-partial-day-field]'));
     const scheduleError = form.querySelector('[data-schedule-error]');
     const contractUploadCard = form.querySelector('[data-contract-upload-card]');
     const contractUploadInput = form.querySelector('[data-contract-upload-input]');
     const companyReviewCard = document.querySelector('[data-company-review-card]');
     let startPicker = null;
     let endPicker = null;
-    let activeBusyRanges = [];
+    let projectDatePicker = null;
     // Whether the unavailable section of the picker is expanded, kept out here
     // so re-rendering after a pick does not collapse it again.
     let blockedTechniciansOpen = false;
@@ -76,6 +91,108 @@ document.addEventListener('DOMContentLoaded', function() {
         return value;
     }
 
+    // -----------------------------------------------------------------
+    // Scheduling mode
+    // -----------------------------------------------------------------
+
+    function isResidential() {
+        const residential = form.querySelector('[data-client-type-radio][value="Residential"]');
+
+        return Boolean(residential && residential.checked);
+    }
+
+    function schedulingMode() {
+        // Partial days are a Residential offering, so a Commercial project is
+        // always read as whole-day whatever the radio happens to hold.
+        if (!isResidential()) {
+            return MODE_DATE_BASED;
+        }
+
+        const checked = schedulingModeRadios.find(function(radio) {
+            return radio.checked;
+        });
+
+        return checked && checked.value === MODE_PARTIAL_DAY ? MODE_PARTIAL_DAY : MODE_DATE_BASED;
+    }
+
+    function isPartialDay() {
+        return schedulingMode() === MODE_PARTIAL_DAY;
+    }
+
+    // Fields belonging to the mode that is not in use are disabled as well as
+    // hidden, so the browser neither validates them nor submits them.
+    function setFieldGroupActive(wrappers, inputs, active) {
+        wrappers.forEach(function(wrapper) {
+            wrapper.hidden = !active;
+        });
+
+        inputs.forEach(function(input) {
+            if (!input) {
+                return;
+            }
+
+            input.required = active;
+
+            if (!active) {
+                input.disabled = true;
+                input.value = '';
+            }
+        });
+    }
+
+    function applySchedulingMode() {
+        const partialDay = isPartialDay();
+
+        if (schedulingModeWrap) {
+            schedulingModeWrap.hidden = !isResidential();
+        }
+
+        schedulingModeOptions.forEach(function(option) {
+            const radio = option.querySelector('input');
+            option.classList.toggle('is-selected', Boolean(radio && radio.checked));
+        });
+
+        setFieldGroupActive(dateBasedFields, [startDateInput, endDateInput], !partialDay);
+        setFieldGroupActive(partialDayFields, [projectDateInput, startTimeSelect, endTimeSelect], partialDay);
+
+        refreshDatePickers();
+    }
+
+    // -----------------------------------------------------------------
+    // Time helpers
+    // -----------------------------------------------------------------
+
+    function minutesFromTime(value) {
+        if (typeof value !== 'string' || !/^\d{2}:\d{2}$/.test(value)) {
+            return null;
+        }
+
+        return (Number(value.slice(0, 2)) * 60) + Number(value.slice(3, 5));
+    }
+
+    function formatMinutes(minutes) {
+        const hours = Math.floor(minutes / 60);
+        const rest = minutes % 60;
+        const suffix = hours >= 12 ? 'PM' : 'AM';
+        const display = hours % 12 === 0 ? 12 : hours % 12;
+
+        return display + ':' + String(rest).padStart(2, '0') + ' ' + suffix;
+    }
+
+    // Half-open, matching TechnicianAvailabilityService: a booking ending at
+    // 10:00 AM and one starting at 10:00 AM do not clash.
+    function intervalsOverlap(fromA, toA, fromB, toB) {
+        return fromA < toB && fromB < toA;
+    }
+
+    function describeInterval(interval) {
+        if (interval.from <= 0 && interval.to >= MINUTES_PER_DAY) {
+            return 'the whole day';
+        }
+
+        return formatMinutes(interval.from) + ' - ' + formatMinutes(interval.to);
+    }
+
     function selectedTechnicianIdsFromInputs() {
         if (!technicianHiddenInputs) {
             return [];
@@ -93,23 +210,6 @@ document.addEventListener('DOMContentLoaded', function() {
             ...(leadTechnicianId ? [leadTechnicianId] : []),
             ...selectedTechnicianIdsFromInputs(),
         ]));
-    }
-
-    function busyRangesForTechnicians(technicianIds) {
-        return technicianIds.flatMap(function(technicianId) {
-            const technician = technicianLookup.get(String(technicianId));
-
-            if (!technician || !Array.isArray(technician.schedules)) {
-                return [];
-            }
-
-            return technician.schedules.map(function(range) {
-                return {
-                    start: range.start,
-                    end: range.end,
-                };
-            });
-        });
     }
 
     // Inclusive list of 'YYYY-MM-DD' strings between two date strings.
@@ -134,11 +234,114 @@ document.addEventListener('DOMContentLoaded', function() {
         return dates;
     }
 
-    // Mirrors TechnicianAvailabilityService on the server: a range is only
-    // valid when every selected technician is free on EVERY day inside it,
-    // so a range whose endpoints are free but which spans a busy day in the
-    // middle is still rejected.
-    function scheduleConflicts(startValue, endValue) {
+    /**
+     * The minutes a technician is already spoken for on one date.
+     *
+     * A whole-day booking takes the entire day; a partial day takes only its
+     * hours, leaving the rest of that date free for other work.
+     */
+    function busyIntervalsOn(technician, date) {
+        if (!technician || !Array.isArray(technician.schedules) || !date) {
+            return [];
+        }
+
+        const intervals = [];
+
+        technician.schedules.forEach(function(range) {
+            if (range.mode === MODE_PARTIAL_DAY) {
+                if (range.start !== date) {
+                    return;
+                }
+
+                const from = minutesFromTime(range.start_time);
+                const to = minutesFromTime(range.end_time);
+
+                if (from !== null && to !== null) {
+                    intervals.push({ from: from, to: to });
+                }
+
+                return;
+            }
+
+            if (date >= range.start && date <= range.end) {
+                intervals.push({ from: 0, to: MINUTES_PER_DAY });
+            }
+        });
+
+        return intervals;
+    }
+
+    function isFreeBetween(intervals, from, to) {
+        return !intervals.some(function(interval) {
+            return intervalsOverlap(from, to, interval.from, interval.to);
+        });
+    }
+
+    /**
+     * Whether at least one bookable hour is still open on this date - which is
+     * what decides if the date can be offered at all.
+     */
+    function hasFreeHourOn(technician, date) {
+        const intervals = busyIntervalsOn(technician, date);
+
+        for (let hour = WORKING_HOUR_START; hour < WORKING_HOUR_END; hour++) {
+            if (isFreeBetween(intervals, hour * 60, (hour + 1) * 60)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    function activeTechnicians() {
+        return activeTechnicianIds()
+            .map(function(technicianId) {
+                return technicianLookup.get(String(technicianId));
+            })
+            .filter(Boolean);
+    }
+
+    /**
+     * Everybody who cannot work the schedule as it currently stands.
+     *
+     * Whole-day mode reports the dates that clash; partial-day mode reports
+     * the hours, so the message can name them.
+     */
+    function scheduleConflicts() {
+        if (isPartialDay()) {
+            const date = projectDateInput ? projectDateInput.value : '';
+            const from = minutesFromTime(startTimeSelect ? startTimeSelect.value : '');
+            const to = minutesFromTime(endTimeSelect ? endTimeSelect.value : '');
+
+            if (!date || from === null || to === null || from >= to) {
+                return [];
+            }
+
+            return activeTechnicians().reduce(function(conflicts, technician) {
+                const clashes = busyIntervalsOn(technician, date).filter(function(interval) {
+                    return intervalsOverlap(from, to, interval.from, interval.to);
+                });
+
+                if (clashes.length) {
+                    conflicts.push({
+                        name: technician.name,
+                        date: date,
+                        // A whole-day booking says everything on its own.
+                        labels: clashes.some(function(interval) {
+                            return interval.from <= 0 && interval.to >= MINUTES_PER_DAY;
+                        })
+                            ? ['the whole day']
+                            : clashes.map(describeInterval),
+                    });
+                }
+
+                return conflicts;
+            }, []);
+        }
+
+        const startValue = startDateInput ? startDateInput.value : '';
+        const endValue = endDateInput ? endDateInput.value : '';
+
         if (!startValue || !endValue || startValue > endValue) {
             return [];
         }
@@ -149,23 +352,9 @@ document.addEventListener('DOMContentLoaded', function() {
             return [];
         }
 
-        return activeTechnicianIds().reduce(function(conflicts, technicianId) {
-            const technician = technicianLookup.get(String(technicianId));
-
-            if (!technician || !Array.isArray(technician.schedules)) {
-                return conflicts;
-            }
-
-            const busyDays = new Set();
-
-            technician.schedules.forEach(function(range) {
-                eachDate(range.start, range.end).forEach(function(day) {
-                    busyDays.add(day);
-                });
-            });
-
+        return activeTechnicians().reduce(function(conflicts, technician) {
             const hits = selectedDays.filter(function(day) {
-                return busyDays.has(day);
+                return busyIntervalsOn(technician, day).length > 0;
             });
 
             if (hits.length) {
@@ -215,43 +404,138 @@ document.addEventListener('DOMContentLoaded', function() {
             return '';
         }
 
+        if (isPartialDay()) {
+            return conflicts.map(function(conflict) {
+                return 'Technician ' + conflict.name + ' is already booked ' +
+                    conflict.labels.join(' and ') + ' on ' + formatDateList([conflict.date]) + '.';
+            }).join(' ') + ' Please choose a time when every selected technician is free.';
+        }
+
         return conflicts.map(function(conflict) {
             return 'Technician ' + conflict.name + ' is unavailable on ' + formatDateList(conflict.dates) + '.';
         }).join(' ') + ' Please select a continuous date range where all selected technicians are available.';
     }
 
-    function recomputeActiveBusyRanges() {
-        activeBusyRanges = busyRangesForTechnicians(activeTechnicianIds());
+    // -----------------------------------------------------------------
+    // Date and time pickers
+    // -----------------------------------------------------------------
+
+    function normalizeDateString(value) {
+        if (!(value instanceof Date) || Number.isNaN(value.getTime())) {
+            return null;
+        }
+
+        const year = String(value.getFullYear());
+        const month = String(value.getMonth() + 1).padStart(2, '0');
+        const day = String(value.getDate()).padStart(2, '0');
+
+        return year + '-' + month + '-' + day;
     }
 
-    function disableRangesForFlatpickr() {
-        return activeBusyRanges.map(function(range) {
-            return { from: range.start, to: range.end };
+    // A whole-day booking needs the day untouched; a partial day only needs
+    // one hour of it still open.
+    function isDateBlocked(date) {
+        const dateString = normalizeDateString(date);
+
+        if (!dateString) {
+            return false;
+        }
+
+        const technicians = activeTechnicians();
+
+        if (isPartialDay()) {
+            return technicians.some(function(technician) {
+                return !hasFreeHourOn(technician, dateString);
+            });
+        }
+
+        return technicians.some(function(technician) {
+            return busyIntervalsOn(technician, dateString).length > 0;
+        });
+    }
+
+    /**
+     * Grey out the hours the team cannot actually work.
+     *
+     * A start time needs the hour beginning there to be free. An end time
+     * needs every hour from the chosen start up to it to be free, so a
+     * selection can never span somebody else's booking.
+     */
+    function refreshTimeOptions() {
+        if (!startTimeSelect || !endTimeSelect) {
+            return;
+        }
+
+        const date = projectDateInput ? projectDateInput.value : '';
+        const technicians = activeTechnicians();
+        const intervalsByTechnician = technicians.map(function(technician) {
+            return busyIntervalsOn(technician, date);
+        });
+
+        const freeBetween = function(from, to) {
+            return intervalsByTechnician.every(function(intervals) {
+                return isFreeBetween(intervals, from, to);
+            });
+        };
+
+        Array.from(startTimeSelect.options).forEach(function(option) {
+            if (!option.value) {
+                return;
+            }
+
+            const from = minutesFromTime(option.value);
+            // 5 PM can only ever end a booking.
+            const bookable = from !== null && from < WORKING_HOUR_END * 60;
+
+            option.disabled = !date ? false : !(bookable && freeBetween(from, from + 60));
+        });
+
+        const startMinutes = minutesFromTime(startTimeSelect.value);
+
+        Array.from(endTimeSelect.options).forEach(function(option) {
+            if (!option.value) {
+                return;
+            }
+
+            const to = minutesFromTime(option.value);
+
+            if (to === null || startMinutes === null) {
+                option.disabled = false;
+
+                return;
+            }
+
+            option.disabled = to <= startMinutes || (date ? !freeBetween(startMinutes, to) : false);
+        });
+
+        // A choice that has just become impossible is dropped rather than
+        // left sitting in the field looking valid.
+        [startTimeSelect, endTimeSelect].forEach(function(select) {
+            const selected = select.options[select.selectedIndex];
+
+            if (selected && selected.disabled) {
+                select.value = '';
+            }
         });
     }
 
     function refreshDatePickers() {
         const enabled = scheduleInputsReady();
+        const partialDay = isPartialDay();
 
-        if (startDateInput) {
-            startDateInput.disabled = !enabled;
-        }
+        [startDateInput, endDateInput].forEach(function(input) {
+            if (input) {
+                input.disabled = partialDay || !enabled;
+            }
+        });
 
-        if (endDateInput) {
-            endDateInput.disabled = !enabled;
-        }
-
-        recomputeActiveBusyRanges();
-
-        const disableRanges = disableRangesForFlatpickr();
-
-        if (startPicker) {
-            startPicker.set('disable', disableRanges);
-        }
+        [projectDateInput, startTimeSelect, endTimeSelect].forEach(function(input) {
+            if (input) {
+                input.disabled = !partialDay || !enabled;
+            }
+        });
 
         if (endPicker) {
-            endPicker.set('disable', disableRanges);
-
             if (startPicker && startPicker.selectedDates[0]) {
                 endPicker.set('minDate', startPicker.selectedDates[0]);
             } else {
@@ -259,54 +543,81 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
 
+        // Every picker re-reads the disable rule, which depends on who is
+        // selected and on the mode in force.
+        [startPicker, endPicker, projectDatePicker].forEach(function(picker) {
+            if (picker) {
+                picker.set('disable', [isDateBlocked]);
+            }
+        });
+
+        if (partialDay) {
+            refreshTimeOptions();
+        }
+
         if (!enabled) {
             resetScheduleDates();
-        } else if (!isScheduleRangeAvailable(startDateInput && startDateInput.value, endDateInput && endDateInput.value)) {
+        } else if (scheduleConflicts().length) {
             resetScheduleDates();
         }
     }
 
     function initializeDatePickers() {
-        if (!window.flatpickr || !startDateInput || !endDateInput) {
+        if (!window.flatpickr) {
             return;
         }
 
-        startPicker = window.flatpickr(startDateInput, {
-            dateFormat: 'Y-m-d',
-            allowInput: true,
-            minDate: 'today',
-            onChange: function(selectedDates, dateStr, instance) {
-                if (endPicker) {
-                    endPicker.clear(false);
-                }
+        const afterChange = function() {
+            refreshDatePickers();
+            validateScheduleInputs();
+            renderTechnicianDropdown();
+            renderLeadTechnicianOptions();
+            updateSummary();
+        };
 
-                refreshDatePickers();
-                validateScheduleInputs();
-                renderTechnicianDropdown();
-                renderLeadTechnicianOptions();
-            },
-        });
+        if (startDateInput && endDateInput) {
+            startPicker = window.flatpickr(startDateInput, {
+                dateFormat: 'Y-m-d',
+                allowInput: true,
+                minDate: 'today',
+                onChange: function() {
+                    if (endPicker) {
+                        endPicker.clear(false);
+                    }
 
-        endPicker = window.flatpickr(endDateInput, {
-            dateFormat: 'Y-m-d',
-            allowInput: true,
-            minDate: 'today',
-            onChange: function() {
-                validateScheduleInputs();
-                renderTechnicianDropdown();
-                renderLeadTechnicianOptions();
-            },
-        });
+                    afterChange();
+                },
+            });
 
-        refreshDatePickers();
-    }
-
-    function isScheduleRangeAvailable(startValue, endValue) {
-        if (!startValue || !endValue) {
-            return true;
+            endPicker = window.flatpickr(endDateInput, {
+                dateFormat: 'Y-m-d',
+                allowInput: true,
+                minDate: 'today',
+                onChange: afterChange,
+            });
         }
 
-        return scheduleConflicts(startValue, endValue).length === 0;
+        if (projectDateInput) {
+            projectDatePicker = window.flatpickr(projectDateInput, {
+                dateFormat: 'Y-m-d',
+                allowInput: true,
+                minDate: 'today',
+                onChange: function() {
+                    // The hours on offer belong to the date just chosen.
+                    if (startTimeSelect) {
+                        startTimeSelect.value = '';
+                    }
+
+                    if (endTimeSelect) {
+                        endTimeSelect.value = '';
+                    }
+
+                    afterChange();
+                },
+            });
+        }
+
+        refreshDatePickers();
     }
 
     function selectedProjectTypes() {
@@ -392,6 +703,20 @@ document.addEventListener('DOMContentLoaded', function() {
         if (companyReviewCard) {
             companyReviewCard.closest('.review-item')?.classList.toggle('d-none', !commercialSelected);
         }
+
+        // Switching to Commercial takes partial days off the table, so the
+        // schedule section is put back to whole days.
+        if (commercialSelected) {
+            const dateBasedRadio = schedulingModeRadios.find(function(radio) {
+                return radio.value === MODE_DATE_BASED;
+            });
+
+            if (dateBasedRadio) {
+                dateBasedRadio.checked = true;
+            }
+        }
+
+        applySchedulingMode();
     }
 
     function escapeHtml(value) {
@@ -411,57 +736,71 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    function technicianMatchesProjectTypes(technician, projectTypes) {
-        return matchedSkills(technician, projectTypes).length > 0;
-    }
-
     /**
-     * The days this technician is already booked on other projects that fall
-     * inside the range being planned. Empty until both dates are chosen -
-     * there is nothing to be unavailable for before that.
+     * Why this technician cannot take the schedule as it stands, or '' when
+     * they can. Empty until enough of the schedule is chosen to judge - there
+     * is nothing to be unavailable for before that.
      */
-    function conflictDatesFor(technician, startValue, endValue) {
+    function unavailableReasonFor(technician) {
         if (!technician || !Array.isArray(technician.schedules)) {
-            return [];
+            return '';
         }
+
+        if (isPartialDay()) {
+            const date = projectDateInput ? projectDateInput.value : '';
+            const from = minutesFromTime(startTimeSelect ? startTimeSelect.value : '');
+            const to = minutesFromTime(endTimeSelect ? endTimeSelect.value : '');
+
+            if (!date) {
+                return '';
+            }
+
+            // With a date but no hours yet, the only question that can be
+            // answered is whether any of that day is left at all.
+            if (from === null || to === null || from >= to) {
+                return hasFreeHourOn(technician, date) ? '' : 'Fully booked on ' + formatDateList([date]);
+            }
+
+            const clashes = busyIntervalsOn(technician, date).filter(function(interval) {
+                return intervalsOverlap(from, to, interval.from, interval.to);
+            });
+
+            return clashes.length
+                ? 'Booked ' + clashes.map(describeInterval).join(' and ') + ' on ' + formatDateList([date])
+                : '';
+        }
+
+        const startValue = startDateInput ? startDateInput.value : '';
+        const endValue = endDateInput ? endDateInput.value : '';
 
         if (!startValue || !endValue || startValue > endValue) {
-            return [];
+            return '';
         }
 
-        const busyDays = new Set();
-
-        technician.schedules.forEach(function(range) {
-            eachDate(range.start, range.end).forEach(function(day) {
-                busyDays.add(day);
-            });
+        const hits = eachDate(startValue, endValue).filter(function(day) {
+            return busyIntervalsOn(technician, day).length > 0;
         });
 
-        return eachDate(startValue, endValue).filter(function(day) {
-            return busyDays.has(day);
-        });
+        return hits.length ? 'Booked on ' + formatDateList(hits) : '';
     }
 
     function getTechnicianSections() {
         const projectTypes = selectedProjectTypes();
         const selectedIds = selectedTechnicianIds();
-        const startValue = startDateInput ? startDateInput.value : '';
-        const endValue = endDateInput ? endDateInput.value : '';
 
         const candidates = wizardData
             .filter(function(technician) {
                 return technician.role === 'technician';
             })
             .map(function(technician) {
-                const conflicts = conflictDatesFor(technician, startValue, endValue);
-                const matches = matchedSkills(technician, projectTypes);
+                const reason = unavailableReasonFor(technician);
 
                 return {
                     id: technician.id,
                     name: technician.name,
-                    matched: matches,
-                    available: conflicts.length === 0,
-                    reason: conflicts.length ? 'Booked on ' + formatDateList(conflicts) : '',
+                    matched: matchedSkills(technician, projectTypes),
+                    available: reason === '',
+                    reason: reason,
                 };
             });
 
@@ -498,8 +837,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         const projectTypes = selectedProjectTypes();
-        const startValue = startDateInput ? startDateInput.value : '';
-        const endValue = endDateInput ? endDateInput.value : '';
         const currentValue = leadTechSelect.value;
 
         const leads = wizardData
@@ -507,15 +844,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 return technician.role === 'lead_technician';
             })
             .map(function(technician) {
-                const conflicts = conflictDatesFor(technician, startValue, endValue);
-                const matches = matchedSkills(technician, projectTypes);
+                const reason = unavailableReasonFor(technician);
 
                 return {
                     id: technician.id,
                     name: technician.name,
-                    matched: matches,
-                    available: conflicts.length === 0,
-                    reason: conflicts.length ? 'Booked on ' + formatDateList(conflicts) : '',
+                    matched: matchedSkills(technician, projectTypes),
+                    available: reason === '',
+                    reason: reason,
                 };
             })
             .sort(function(left, right) {
@@ -527,7 +863,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 (lead.matched.length ? ' — ' + escapeHtml(lead.matched.join(', ')) : '') +
                 (lead.available ? '' : ' (' + escapeHtml(lead.reason) + ')');
             // Never disable the option already chosen, or the select would lose
-            // its value; the date conflict message still calls it out.
+            // its value; the schedule conflict message still calls it out.
             const disabled = !lead.available && String(lead.id) !== String(currentValue) ? ' disabled' : '';
             const selected = String(lead.id) === String(currentValue) ? ' selected' : '';
 
@@ -564,7 +900,7 @@ document.addEventListener('DOMContentLoaded', function() {
             '<option value=""' + (currentValue ? '' : ' selected') + ' disabled>Select Lead Technician</option>' +
             group('Suggested — matches this project', suggested) +
             group(suggested.length ? 'Other available' : 'Available', others) +
-            group('Unavailable for these dates', blocked);
+            group(isPartialDay() ? 'Unavailable at this time' : 'Unavailable for these dates', blocked);
     }
 
     function updateTechnicianDropdownButton() {
@@ -755,23 +1091,18 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function resetScheduleDates() {
-        if (startPicker) {
-            startPicker.clear(false);
-        }
+        [startPicker, endPicker, projectDatePicker].forEach(function(picker) {
+            if (picker) {
+                picker.clear(false);
+            }
+        });
 
-        if (endPicker) {
-            endPicker.clear(false);
-        }
-
-        if (startDateInput) {
-            startDateInput.value = '';
-            startDateInput.setCustomValidity('');
-        }
-
-        if (endDateInput) {
-            endDateInput.value = '';
-            endDateInput.setCustomValidity('');
-        }
+        [startDateInput, endDateInput, projectDateInput, startTimeSelect, endTimeSelect].forEach(function(field) {
+            if (field) {
+                field.value = '';
+                field.setCustomValidity('');
+            }
+        });
     }
 
     function scheduleInputsReady() {
@@ -797,27 +1128,68 @@ document.addEventListener('DOMContentLoaded', function() {
         scheduleError.classList.toggle('d-none', !message);
     }
 
+    function scheduleFields() {
+        return isPartialDay()
+            ? [projectDateInput, startTimeSelect, endTimeSelect]
+            : [startDateInput, endDateInput];
+    }
+
     function validateScheduleInputs() {
-        if (!startDateInput || !endDateInput || startDateInput.disabled || endDateInput.disabled) {
+        const fields = scheduleFields().filter(Boolean);
+
+        if (!fields.length || fields.some(function(field) {
+            return field.disabled;
+        })) {
             showScheduleError('');
+
             return true;
         }
 
-        startDateInput.setCustomValidity('');
-        endDateInput.setCustomValidity('');
+        fields.forEach(function(field) {
+            field.setCustomValidity('');
+        });
 
-        if (!startDateInput.value || !endDateInput.value) {
+        // Nothing to say until the whole schedule has been filled in.
+        if (fields.some(function(field) {
+            return !field.value;
+        })) {
             showScheduleError('');
+
             return true;
         }
 
-        const conflicts = scheduleConflicts(startDateInput.value, endDateInput.value);
+        if (isPartialDay()) {
+            const from = minutesFromTime(startTimeSelect.value);
+            const to = minutesFromTime(endTimeSelect.value);
+
+            if (from !== null && to !== null && from >= to) {
+                const message = 'The end time must be later than the start time.';
+                endTimeSelect.setCustomValidity(message);
+                showScheduleError(message);
+
+                return false;
+            }
+
+            if (to !== null && to > WORKING_HOUR_END * 60) {
+                const message = 'The end time cannot be later than 5:00 PM.';
+                endTimeSelect.setCustomValidity(message);
+                showScheduleError(message);
+
+                return false;
+            }
+        }
+
+        const conflicts = scheduleConflicts();
 
         if (conflicts.length) {
             const message = conflictMessage(conflicts);
-            startDateInput.setCustomValidity(message);
-            endDateInput.setCustomValidity(message);
+
+            fields.forEach(function(field) {
+                field.setCustomValidity(message);
+            });
+
             showScheduleError(message);
+
             return false;
         }
 
@@ -844,12 +1216,45 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    function selectedTimeLabel(select) {
+        if (!select || !select.value) {
+            return '';
+        }
+
+        const option = select.options[select.selectedIndex];
+
+        return option ? option.textContent.trim() : '';
+    }
+
+    /**
+     * The schedule as one line for the review step: a date range for whole
+     * days, and the date with its hours for a partial day.
+     */
+    function scheduleSummary() {
+        if (isPartialDay()) {
+            const date = formatFieldValue(projectDateInput);
+            const from = selectedTimeLabel(startTimeSelect);
+            const to = selectedTimeLabel(endTimeSelect);
+
+            if (date === 'Not filled yet' || !from || !to) {
+                return '';
+            }
+
+            return date + ' · ' + from + ' - ' + to;
+        }
+
+        return [startDateInput, endDateInput]
+            .map(formatFieldValue)
+            .filter(function(value) {
+                return value !== 'Not filled yet';
+            })
+            .join(' to ');
+    }
+
     function updateSummary() {
         const clientFirstName = form.querySelector('[data-summary-input="firstname"]');
         const clientMiddleName = form.querySelector('[data-summary-input="middle_name"]');
         const clientSurname = form.querySelector('[data-summary-input="surname"]');
-        const startDate = form.querySelector('[data-summary-input="start_date"]');
-        const endDate = form.querySelector('[data-summary-input="end_date"]');
 
         const leadTechnician = selectedLeadTechnician();
         const technicianNames = selectedTechnicians().map(function(technician) {
@@ -876,12 +1281,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 '[data-summary-input="project_description"]')),
             lead_tech: leadTechnician ? leadTechnician.name : 'Not filled yet',
             technicians: technicianNames.length ? technicianNames.join(', ') : 'Not filled yet',
-            schedule_range: [startDate, endDate]
-                .map(formatFieldValue)
-                .filter(function(value) {
-                    return value !== 'Not filled yet';
-                })
-                .join(' to '),
+            scheduling_mode: isPartialDay() ? 'Partial Day' : 'Date-Based',
+            schedule_range: scheduleSummary(),
         };
 
         Object.keys(summaryMap).forEach(function(key) {
@@ -993,6 +1394,32 @@ document.addEventListener('DOMContentLoaded', function() {
         radio.addEventListener('change', function() {
             syncSelectableCards();
             updateClientType();
+            updateScheduleFieldState();
+            updateSummary();
+        });
+    });
+
+    // Switching mode swaps which fields are in play, without a reload.
+    schedulingModeRadios.forEach(function(radio) {
+        radio.addEventListener('change', function() {
+            applySchedulingMode();
+            validateScheduleInputs();
+            renderTechnicianDropdown();
+            renderLeadTechnicianOptions();
+            updateSummary();
+        });
+    });
+
+    [startTimeSelect, endTimeSelect].forEach(function(select) {
+        if (!select) {
+            return;
+        }
+
+        select.addEventListener('change', function() {
+            refreshTimeOptions();
+            validateScheduleInputs();
+            renderTechnicianDropdown();
+            renderLeadTechnicianOptions();
             updateSummary();
         });
     });
@@ -1021,15 +1448,17 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Last line of defence: the review step can be reached before a technician
-    // change invalidates the chosen dates, so re-check on submit too. The
-    // server enforces the same rule regardless.
+    // change invalidates the chosen schedule, so re-check on submit too. The
+    // server enforces the same rules regardless.
     form.addEventListener('submit', function(event) {
         if (!validateScheduleInputs()) {
             event.preventDefault();
             setStep(3);
 
-            if (startDateInput) {
-                startDateInput.reportValidity();
+            const firstField = scheduleFields().find(Boolean);
+
+            if (firstField) {
+                firstField.reportValidity();
             }
         }
     });
@@ -1040,25 +1469,22 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     form.addEventListener('change', function() {
-        updateClientType();
         updateSummary();
     });
 
-    // Once dates exist, who is free is knowable - so the picker restates
-    // itself with the booked technicians moved out of reach.
+    // Once the schedule exists, who is free is knowable - so the picker
+    // restates itself with the booked technicians moved out of reach.
     const refreshTechnicianAvailability = function() {
         validateScheduleInputs();
         renderTechnicianDropdown();
         renderLeadTechnicianOptions();
     };
 
-    if (startDateInput) {
-        startDateInput.addEventListener('change', refreshTechnicianAvailability);
-    }
-
-    if (endDateInput) {
-        endDateInput.addEventListener('change', refreshTechnicianAvailability);
-    }
+    [startDateInput, endDateInput, projectDateInput].forEach(function(input) {
+        if (input) {
+            input.addEventListener('change', refreshTechnicianAvailability);
+        }
+    });
 
     syncSelectableCards();
     updateClientType();

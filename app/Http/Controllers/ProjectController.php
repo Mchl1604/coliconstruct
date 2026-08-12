@@ -97,24 +97,31 @@ class ProjectController extends Controller
             ->values();
 
         $technicianSchedules = $this->buildTechnicianSchedules();
+        // Stated by the model so the dropdowns and the server agree on which
+        // hours exist without the list being written out twice.
+        $workingHours = Schedule::workingHourOptions();
 
         return view('super-admin.createProject', compact(
             'projectTypes',
             'technicians',
             'suggestedTechnicians',
             'otherTechnicians',
-            'technicianSchedules'
+            'technicianSchedules',
+            'workingHours'
         ));
     }
 
     public function store(StoreProjectRequest $request)
     {
         $validated = $request->validated();
+        // Worked out by the request during validation, so the mode, the dates
+        // and the times are read once and interpreted once.
+        $scheduleEntry = $request->scheduleEntry();
         $created = null;
 
         try {
 
-            DB::transaction(function () use ($validated, $request, &$created): void {
+            DB::transaction(function () use ($validated, $request, $scheduleEntry, &$created): void {
 
                 $project = Project::create([
                     'name' => $this->resolveProjectName($validated),
@@ -169,8 +176,9 @@ class ProjectController extends Controller
 
                 $schedule = Schedule::create([
                     'project_id' => $project->project_id,
-                    'start_datetime' => CarbonImmutable::parse($validated['start_date'])->startOfDay(),
-                    'end_datetime' => CarbonImmutable::parse($validated['end_date'])->endOfDay(),
+                    'start_datetime' => $scheduleEntry['start'],
+                    'end_datetime' => $scheduleEntry['end'],
+                    'scheduling_mode' => $scheduleEntry['mode'],
                     'status' => 'scheduled',
                     'remarks' => 'Created from project wizard',
                 ]);
@@ -369,6 +377,16 @@ class ProjectController extends Controller
             ->values();
     }
 
+    /**
+     * Every busy range per technician, for the wizard's client-side screening.
+     *
+     * `start` and `end` stay the dates they always were, so a whole-day
+     * booking reads exactly as before. A partial day carries its hours as
+     * well, which is what lets the browser offer a date where somebody is
+     * booked for part of the day but free for the rest of it.
+     *
+     * @return array<int, array<int, array{start: string, end: string, mode: string, start_time: ?string, end_time: ?string}>>
+     */
     private function buildTechnicianSchedules(): array
     {
         $schedules = Schedule::query()
@@ -379,13 +397,12 @@ class ProjectController extends Controller
                 'scheduleTechnicians:schedule_technician_id,schedule_id,project_technician_id',
                 'scheduleTechnicians.projectTechnician:project_technician_id,technician_id',
             ])
-            ->get(['schedule_id', 'project_id', 'start_datetime', 'end_datetime']);
+            ->get(['schedule_id', 'project_id', 'start_datetime', 'end_datetime', 'scheduling_mode']);
 
         $scheduleMap = [];
 
         foreach ($schedules as $schedule) {
-            $startDate = CarbonImmutable::parse($schedule->start_datetime)->toDateString();
-            $endDate = CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime)->toDateString();
+            $busyRange = $this->busyRangePayload($schedule);
 
             foreach ($schedule->scheduleTechnicians as $scheduleTechnician) {
                 $technicianId = $scheduleTechnician->projectTechnician?->technician_id;
@@ -394,14 +411,31 @@ class ProjectController extends Controller
                     continue;
                 }
 
-                $scheduleMap[$technicianId][] = [
-                    'start' => $startDate,
-                    'end' => $endDate,
-                ];
+                $scheduleMap[$technicianId][] = $busyRange;
             }
         }
 
         return $scheduleMap;
+    }
+
+    /**
+     * One busy range as the browser needs to see it.
+     *
+     * @return array{start: string, end: string, mode: string, start_time: ?string, end_time: ?string}
+     */
+    private function busyRangePayload(Schedule $schedule): array
+    {
+        $start = CarbonImmutable::parse($schedule->start_datetime);
+        $end = CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime);
+        $isPartialDay = $schedule->isPartialDay();
+
+        return [
+            'start' => $start->toDateString(),
+            'end' => $end->toDateString(),
+            'mode' => $schedule->scheduling_mode,
+            'start_time' => $isPartialDay ? $start->format('H:i') : null,
+            'end_time' => $isPartialDay ? $end->format('H:i') : null,
+        ];
     }
 
     private function resolveProjectName(array $validated): string
@@ -1218,14 +1252,13 @@ class ProjectController extends Controller
         $teamBefore = $this->notifications->projectTeam($project);
         $previousLeadId = $this->notifications->projectLead($project)?->id;
 
-        // Every one of the project's date ranges has to be checked, not just the
+        // Every one of the project's schedules has to be checked, not just the
         // first one, and every day inside each range - a technician who is free on
-        // the endpoints but booked mid-range must still be rejected.
+        // the endpoints but booked mid-range must still be rejected. A partial-day
+        // schedule only asks about its own hours, so joining a team booked for a
+        // morning does not require the whole day to be free.
         $ranges = $project->schedules
-            ->map(fn ($schedule): array => [
-                'start' => CarbonImmutable::parse($schedule->start_datetime)->startOfDay(),
-                'end' => CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime)->startOfDay(),
-            ])
+            ->map(fn (Schedule $schedule): array => $schedule->toAvailabilityRange())
             ->all();
 
         if ($ranges !== [] && $newlyAddedIds->isNotEmpty()) {

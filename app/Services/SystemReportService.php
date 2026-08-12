@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Project;
+use App\Models\Schedule;
 use App\Models\Task;
 use App\Models\Technician;
 use Carbon\CarbonImmutable;
@@ -697,10 +698,10 @@ class SystemReportService
             ->orderByDesc('project_id')
             ->get()
             ->map(function (Project $project): array {
+                // The shared formatter, so a Partial Day is reported with its
+                // hours rather than as a date printed twice.
                 $ranges = $project->schedules
-                    ->map(fn ($schedule) => CarbonImmutable::parse($schedule->start_datetime)->format('M j, Y')
-                        .' - '
-                        .CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime)->format('M j, Y'))
+                    ->map(fn (Schedule $schedule): string => $schedule->describe())
                     ->implode('; ');
 
                 return [

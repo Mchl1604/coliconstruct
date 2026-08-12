@@ -10,6 +10,7 @@ use App\Models\Task;
 use App\Models\Technician;
 use App\Services\ActivityLogger;
 use App\Services\NotificationService;
+use App\Services\ScheduleModeRules;
 use App\Services\TechnicianAvailabilityService;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
@@ -60,12 +61,16 @@ class ScheduleController extends Controller
         $calendarEvents = $this->buildCalendarEvents($projects);
         $technicianSchedules = $this->buildTechnicianSchedules();
         $technicianNames = $this->buildTechnicianNames();
+        // Stated by the model so the dropdowns and the server agree on which
+        // hours exist without the list being written out twice.
+        $workingHours = Schedule::workingHourOptions();
 
         return view('super-admin.schedule', compact(
             'projects',
             'calendarEvents',
             'technicianSchedules',
-            'technicianNames'
+            'technicianNames',
+            'workingHours'
         ));
     }
 
@@ -124,11 +129,9 @@ class ScheduleController extends Controller
                         ->values()
                         ->all(),
                     'ranges' => $covering->map(fn (Schedule $schedule): array => [
-                        'start' => CarbonImmutable::parse($schedule->start_datetime)->toDateString(),
-                        'end' => CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime)->toDateString(),
-                        'label' => CarbonImmutable::parse($schedule->start_datetime)->format('M j, Y')
-                            .' - '
-                            .CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime)->format('M j, Y'),
+                        'start' => $schedule->startsOn()->toDateString(),
+                        'end' => $schedule->endsOn()->toDateString(),
+                        'label' => $schedule->describe(),
                     ])->all(),
                 ];
             })->values(),
@@ -152,20 +155,35 @@ class ScheduleController extends Controller
         // Validated by hand rather than via $request->validate(): the app only
         // renders exceptions as JSON for api/* paths (see bootstrap/app.php),
         // so a thrown ValidationException here would redirect with HTML.
-        $validator = Validator::make($request->all(), [
-            'start_date' => ['required', 'date'],
-            'end_date' => ['required', 'date', 'after_or_equal:start_date'],
-        ]);
+        $scheduleRules = app(ScheduleModeRules::class);
+        $validator = Validator::make($request->all(), $scheduleRules->rules());
 
         if ($validator->fails()) {
             return response()->json(['error' => $validator->errors()->first()], 422);
         }
 
-        $validated = $validator->validated();
+        // Screening only reports who could take the slot; whether the slot is
+        // itself in the past is assign()'s to refuse, exactly as before.
+        $entry = $scheduleRules->validateEntry(
+            $validator,
+            $request->only([
+                'scheduling_mode',
+                'start_date',
+                'end_date',
+                'project_date',
+                'start_time',
+                'end_time',
+            ]),
+            '',
+            true,
+            true
+        );
 
-        $start = CarbonImmutable::parse($validated['start_date'])->startOfDay();
-        $end = CarbonImmutable::parse($validated['end_date'])->startOfDay();
-        $ranges = [['start' => $start, 'end' => $end]];
+        if (! $entry) {
+            return response()->json(['error' => $validator->errors()->first()], 422);
+        }
+
+        $isPartialDay = $entry['mode'] === Schedule::MODE_PARTIAL_DAY;
 
         $candidates = Project::query()
             ->with(['clients', 'schedules', 'projectTechnicians.technician.account'])
@@ -178,17 +196,15 @@ class ScheduleController extends Controller
             ->get();
 
         // One query covers availability for every technician on every
-        // candidate project, tagged with the project that booked each day.
+        // candidate project, tagged with the project standing in the way.
         $allTechnicianIds = $candidates
             ->flatMap(fn (Project $project) => $project->projectTechnicians->pluck('technician_id'))
             ->filter()
             ->unique()
             ->values();
 
-        $dayOwners = app(TechnicianAvailabilityService::class)
-            ->unavailableDayOwners($allTechnicianIds, $ranges);
-
-        $rangeDays = $this->eachDate($start->toDateString(), $end->toDateString());
+        $blockers = app(TechnicianAvailabilityService::class)
+            ->conflictingProjectsByTechnician($allTechnicianIds, [$entry]);
 
         $eligible = [];
         $blocked = [];
@@ -196,16 +212,30 @@ class ScheduleController extends Controller
         foreach ($candidates as $project) {
             $projectId = (int) $project->project_id;
 
-            // A project can't be booked over dates it already occupies.
-            $selfOverlap = $project->schedules->contains(function (Schedule $schedule) use ($start, $end): bool {
-                $scheduleStart = CarbonImmutable::parse($schedule->start_datetime)->startOfDay();
-                $scheduleEnd = CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime)->startOfDay();
+            // Partial days are a Residential offering. Commercial work is
+            // listed as unavailable rather than quietly dropped, so a project
+            // somebody expected to see is never simply missing.
+            if ($isPartialDay && ! $project->isResidential()) {
+                $blocked[] = $this->projectPayload(
+                    $project,
+                    'Partial Day scheduling is available on Residential projects only.'
+                );
 
-                return $start->lte($scheduleEnd) && $end->gte($scheduleStart);
-            });
+                continue;
+            }
+
+            // A project can't be booked over time it already occupies.
+            $selfOverlap = $project->schedules->contains(
+                fn (Schedule $schedule): bool => $scheduleRules->overlaps($entry, $schedule->occupiedInterval())
+            );
 
             if ($selfOverlap) {
-                $blocked[] = $this->projectPayload($project, 'Already scheduled during these dates.');
+                $blocked[] = $this->projectPayload(
+                    $project,
+                    $isPartialDay
+                        ? 'Already scheduled at this time.'
+                        : 'Already scheduled during these dates.'
+                );
 
                 continue;
             }
@@ -213,28 +243,19 @@ class ScheduleController extends Controller
             $unavailableNames = [];
 
             foreach ($project->projectTechnicians as $projectTechnician) {
-                $technicianId = (int) $projectTechnician->technician_id;
-                $busyDays = $dayOwners[$technicianId] ?? [];
+                $owners = $blockers[(int) $projectTechnician->technician_id] ?? [];
 
-                if ($busyDays === []) {
+                // Time this same project booked doesn't count against it.
+                unset($owners[$projectId]);
+
+                if ($owners === []) {
                     continue;
                 }
 
-                foreach ($rangeDays as $day) {
-                    $ownersForDay = $busyDays[$day] ?? [];
+                $name = $projectTechnician->technician?->name;
 
-                    // Days this same project booked don't count against it.
-                    unset($ownersForDay[$projectId]);
-
-                    if ($ownersForDay !== []) {
-                        $name = $projectTechnician->technician?->name;
-
-                        if ($name) {
-                            $unavailableNames[$name] = true;
-                        }
-
-                        break;
-                    }
+                if ($name) {
+                    $unavailableNames[$name] = true;
                 }
             }
 
@@ -243,7 +264,9 @@ class ScheduleController extends Controller
                     $project,
                     implode(', ', array_keys($unavailableNames))
                         .(count($unavailableNames) === 1 ? ' is' : ' are')
-                        .' booked on another project during these dates.'
+                        .($isPartialDay
+                            ? ' booked on another project at this time.'
+                            : ' booked on another project during these dates.')
                 );
 
                 continue;
@@ -253,8 +276,10 @@ class ScheduleController extends Controller
         }
 
         return response()->json([
-            'start_date' => $start->toDateString(),
-            'end_date' => $end->toDateString(),
+            'start_date' => $entry['start']->toDateString(),
+            'end_date' => $entry['end']->toDateString(),
+            'scheduling_mode' => $entry['mode'],
+            'schedule_label' => $this->describeRangeEntry($entry),
             'projects' => $eligible,
             'blocked' => $blocked,
         ]);
@@ -271,15 +296,16 @@ class ScheduleController extends Controller
     {
         // Hand-rolled for the same reason as assignableProjects(): this
         // endpoint must always answer with JSON, never an HTML redirect.
+        $scheduleRules = app(ScheduleModeRules::class);
+
         $validator = Validator::make($request->all(), [
-            'start_date' => ['required', 'date', 'after_or_equal:today'],
-            'end_date' => ['required', 'date', 'after_or_equal:start_date'],
             'project_ids' => ['required', 'array', 'min:1'],
             'project_ids.*' => ['required', 'integer', 'exists:tbl_projects,project_id'],
+            ...$scheduleRules->rules(),
         ], [
             'project_ids.required' => 'Select at least one project to schedule.',
             'project_ids.min' => 'Select at least one project to schedule.',
-            'start_date.after_or_equal' => 'The start date cannot be in the past.',
+            ...$scheduleRules->messages(),
         ]);
 
         if ($validator->fails()) {
@@ -288,24 +314,39 @@ class ScheduleController extends Controller
 
         $validated = $validator->validated();
 
-        $start = CarbonImmutable::parse($validated['start_date'])->startOfDay();
-        $end = CarbonImmutable::parse($validated['end_date'])->endOfDay();
-        $ranges = [['start' => $start, 'end' => $start->max($end)->startOfDay()]];
+        $entry = $scheduleRules->validateEntry(
+            $validator,
+            $request->only([
+                'scheduling_mode',
+                'start_date',
+                'end_date',
+                'project_date',
+                'start_time',
+                'end_time',
+            ])
+        );
+
+        if (! $entry) {
+            return response()->json(['error' => $validator->errors()->first()], 422);
+        }
+
+        $scheduleLabel = $this->describeRangeEntry($entry);
 
         $projects = Project::query()
-            ->with(['schedules', 'projectTechnicians.technician.account'])
+            ->with(['clients', 'schedules', 'projectTechnicians.technician.account'])
             ->whereIn('project_id', $validated['project_ids'])
             ->get();
 
         $availability = app(TechnicianAvailabilityService::class);
 
         try {
-            DB::transaction(function () use ($projects, $start, $end, $ranges, $availability): void {
+            DB::transaction(function () use ($projects, $entry, $scheduleLabel, $scheduleRules, $availability): void {
                 $claimedTechnicians = [];
 
                 foreach ($projects as $project) {
                     $this->assertProjectSchedulable($project);
-                    $this->assertNoSelfOverlap($project, $start, $end);
+                    $this->assertPartialDayAllowed($project, $entry['mode']);
+                    $this->assertNoSelfOverlap($project, $entry, $scheduleRules);
 
                     $technicianIds = $project->projectTechnicians
                         ->pluck('technician_id')
@@ -316,7 +357,7 @@ class ScheduleController extends Controller
                     // Conflicts against everything already in the database.
                     $availability->assertContinuouslyAvailable(
                         $technicianIds,
-                        $ranges,
+                        [$entry],
                         $project->project_id
                     );
 
@@ -325,7 +366,7 @@ class ScheduleController extends Controller
                     foreach ($technicianIds as $technicianId) {
                         if (isset($claimedTechnicians[$technicianId])) {
                             throw new RuntimeException(sprintf(
-                                '%s is assigned to both %s and %s, so they cannot share these dates.',
+                                '%s is assigned to both %s and %s, so they cannot share this schedule.',
                                 $project->projectTechnicians
                                     ->firstWhere('technician_id', $technicianId)?->technician?->name
                                     ?? 'A technician',
@@ -339,8 +380,9 @@ class ScheduleController extends Controller
 
                     $schedule = Schedule::create([
                         'project_id' => $project->project_id,
-                        'start_datetime' => $start,
-                        'end_datetime' => $end,
+                        'start_datetime' => $entry['start'],
+                        'end_datetime' => $entry['end'],
+                        'scheduling_mode' => $entry['mode'],
                         'status' => 'scheduled',
                         'remarks' => 'Added from the schedules calendar',
                     ]);
@@ -362,15 +404,12 @@ class ScheduleController extends Controller
                         sprintf(
                             "Scheduled '%s' for %s from the calendar.",
                             $project->reference_no ?? $project->name,
-                            $this->describeRange($start, $end)
+                            $scheduleLabel
                         ),
                         $project
                     );
 
-                    $this->notifications->projectScheduled(
-                        $project,
-                        $this->describeRange($start, $end)
-                    );
+                    $this->notifications->projectScheduled($project, $scheduleLabel);
                 }
             });
         } catch (Throwable $e) {
@@ -382,17 +421,6 @@ class ScheduleController extends Controller
                 ? $projects->first()->name.' has been scheduled.'
                 : $projects->count().' projects have been scheduled.',
         ]);
-    }
-
-    /**
-     * "Aug 9, 2026 - Aug 12, 2026", or a single date when the range is one day.
-     */
-    private function describeRange(CarbonImmutable $start, CarbonImmutable $end): string
-    {
-        $from = $start->format('M j, Y');
-        $to = $end->format('M j, Y');
-
-        return $from === $to ? $from : $from.' - '.$to;
     }
 
     /**
@@ -409,10 +437,9 @@ class ScheduleController extends Controller
 
         return $schedules
             ->sortBy('start_datetime')
-            ->map(fn (Schedule $schedule): string => $this->describeRange(
-                CarbonImmutable::parse($schedule->start_datetime),
-                CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime)
-            ))
+            // describe() is what puts the hours in the log for a partial day,
+            // so "changed from X to Y" stays true for both kinds of schedule.
+            ->map(fn (Schedule $schedule): string => $schedule->describe())
             ->implode('; ');
     }
 
@@ -476,42 +503,40 @@ class ScheduleController extends Controller
         }
     }
 
-    private function assertNoSelfOverlap(Project $project, CarbonImmutable $start, CarbonImmutable $end): void
+    /**
+     * Partial days are a Residential offering, and the calendar books one
+     * shared window across every project picked - so a Commercial project in
+     * that selection is refused by name rather than downgraded to a whole day.
+     */
+    private function assertPartialDayAllowed(Project $project, string $mode): void
     {
-        $overlaps = $project->schedules->contains(function (Schedule $schedule) use ($start, $end): bool {
-            $scheduleStart = CarbonImmutable::parse($schedule->start_datetime);
-            $scheduleEnd = CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime);
-
-            return $start->lte($scheduleEnd) && $end->gte($scheduleStart);
-        });
-
-        if ($overlaps) {
-            throw new RuntimeException($project->name.' already has a schedule covering these dates.');
+        if ($mode !== Schedule::MODE_PARTIAL_DAY || $project->isResidential()) {
+            return;
         }
+
+        throw new RuntimeException(sprintf(
+            '%s is a Commercial project, and Partial Day scheduling is available on Residential projects only.',
+            $project->name
+        ));
     }
 
     /**
-     * Inclusive list of 'Y-m-d' strings between two dates.
-     *
-     * @return array<int, string>
+     * @param  array{start: CarbonImmutable, end: CarbonImmutable, mode: string}  $entry
      */
-    private function eachDate(string $from, string $to): array
+    private function assertNoSelfOverlap(Project $project, array $entry, ScheduleModeRules $scheduleRules): void
     {
-        $cursor = CarbonImmutable::parse($from)->startOfDay();
-        $end = CarbonImmutable::parse($to)->startOfDay();
-        $dates = [];
+        $overlaps = $project->schedules->contains(
+            fn (Schedule $schedule): bool => $scheduleRules->overlaps($entry, $schedule->occupiedInterval())
+        );
 
-        while ($cursor->lte($end)) {
-            $dates[] = $cursor->toDateString();
-            $cursor = $cursor->addDay();
+        if ($overlaps) {
+            throw new RuntimeException($project->name.' already has a schedule covering this time.');
         }
-
-        return $dates;
     }
 
     public function update(Request $request, int $id)
     {
-        $project = Project::with(['schedules', 'projectTechnicians'])->findOrFail($id);
+        $project = Project::with(['schedules', 'projectTechnicians', 'clients'])->findOrFail($id);
 
         if ($project->isReadOnly()) {
             return redirect()
@@ -519,31 +544,26 @@ class ScheduleController extends Controller
                 ->with('error', 'This project is '.$project->status.' and its schedule can no longer be changed.');
         }
 
+        $scheduleRules = app(ScheduleModeRules::class);
+
         $validated = $request->validate([
             'ranges' => ['required', 'array', 'min:1'],
             'ranges.*.schedule_id' => ['nullable', 'integer', 'exists:tbl_schedule,schedule_id'],
-            'ranges.*.start_date' => ['required', 'date'],
-            'ranges.*.end_date' => ['required', 'date', 'after_or_equal:ranges.*.start_date'],
+            ...$scheduleRules->rules('ranges.*.'),
         ], [
-            'ranges.required' => 'At least one date range is required.',
-            'ranges.min' => 'At least one date range is required.',
+            'ranges.required' => 'At least one schedule is required.',
+            'ranges.min' => 'At least one schedule is required.',
+            ...$scheduleRules->messages('ranges.*.'),
         ]);
 
         // Read before anything moves, so the log can say what it changed from.
         $rangesBefore = $this->describeSchedules($project->schedules);
 
         try {
-            DB::transaction(function () use ($validated, $project): void {
-                $ranges = collect($validated['ranges'])->map(function (array $range) {
-                    return [
-                        'schedule_id' => isset($range['schedule_id']) ? (int) $range['schedule_id'] : null,
-                        'start' => CarbonImmutable::parse($range['start_date'])->startOfDay(),
-                        'end' => CarbonImmutable::parse($range['end_date'])->endOfDay(),
-                    ];
-                });
+            DB::transaction(function () use ($validated, $project, $scheduleRules): void {
+                $ranges = $this->resolveSubmittedRanges($project, $validated['ranges'], $scheduleRules);
 
-                $this->assertNewRangesNotInPast($ranges);
-                $this->assertNoOverlapWithinSubmission($ranges);
+                $this->assertNoOverlapWithinSubmission($ranges, $scheduleRules);
                 $this->assertRangesAvailable($project, $ranges);
 
                 $keepScheduleIds = $ranges->pluck('schedule_id')->filter()->values();
@@ -563,6 +583,7 @@ class ScheduleController extends Controller
                             ->update([
                                 'start_datetime' => $range['start'],
                                 'end_datetime' => $range['end'],
+                                'scheduling_mode' => $range['mode'],
                             ]);
 
                         return;
@@ -572,6 +593,7 @@ class ScheduleController extends Controller
                         'project_id' => $project->project_id,
                         'start_datetime' => $range['start'],
                         'end_datetime' => $range['end'],
+                        'scheduling_mode' => $range['mode'],
                         'status' => 'scheduled',
                         'remarks' => 'Added from schedules page',
                     ]);
@@ -682,7 +704,11 @@ class ScheduleController extends Controller
      * Delegates to the shared availability service so the schedules page, the
      * project wizard and the assigned-team editor all enforce identical rules.
      *
-     * @param  Collection<int, array{schedule_id: ?int, start: CarbonImmutable, end: CarbonImmutable}>  $ranges
+     * Every row is re-checked on every save, so a partial day widened back
+     * into a whole day is tested against what that now demands rather than
+     * against the hours it used to occupy.
+     *
+     * @param  Collection<int, array{schedule_id: ?int, mode: string, start: CarbonImmutable, end: CarbonImmutable}>  $ranges
      */
     private function assertRangesAvailable(Project $project, Collection $ranges): void
     {
@@ -700,42 +726,102 @@ class ScheduleController extends Controller
             $ranges->map(fn (array $range): array => [
                 'start' => $range['start'],
                 'end' => $range['end'],
+                'mode' => $range['mode'],
             ])->all(),
             $project->project_id
         );
     }
 
     /**
-     * New date ranges (no existing schedule_id) cannot start before today.
-     * Existing ranges are left alone so already-saved past dates don't
-     * block an unrelated edit to the same project.
+     * Work out what each submitted row means, and whether it is allowed to
+     * mean it.
      *
-     * @param  Collection<int, array{schedule_id: ?int, start: CarbonImmutable, end: CarbonImmutable}>  $ranges
+     * Scheduling mode belongs to the individual row, so a project may hold any
+     * mix of whole-day and partial-day schedules and each is judged on its
+     * own. A row already saved keeps whatever dates it holds, so editing one
+     * schedule is never blocked by another having slipped into the past.
+     *
+     * Nothing here modifies, merges or removes a row other than the one being
+     * submitted: a conversion that cannot be made without guessing is refused
+     * outright and the person is asked to resolve it.
+     *
+     * @param  array<int, array<string, mixed>>  $submitted
+     * @return Collection<int, array{schedule_id: ?int, mode: string, start: CarbonImmutable, end: CarbonImmutable}>
      */
-    private function assertNewRangesNotInPast(Collection $ranges): void
-    {
-        $today = CarbonImmutable::today();
+    private function resolveSubmittedRanges(
+        Project $project,
+        array $submitted,
+        ScheduleModeRules $scheduleRules
+    ): Collection {
+        $existing = $project->schedules->keyBy('schedule_id');
+        $partialDayAllowed = $project->isResidential();
 
-        foreach ($ranges as $range) {
-            if ($range['schedule_id']) {
+        // A throwaway validator, used purely as somewhere for the shared rules
+        // to report to. Its messages are surfaced as the page's error toast,
+        // which is how every other failure on this screen already arrives.
+        $validator = Validator::make([], []);
+
+        $resolved = collect();
+        $conversions = [];
+
+        foreach ($submitted as $index => $entry) {
+            $scheduleId = isset($entry['schedule_id']) ? (int) $entry['schedule_id'] : null;
+            $schedule = $scheduleId ? $existing->get($scheduleId) : null;
+
+            if ($scheduleId && ! $schedule) {
+                throw new RuntimeException('One of the schedules being edited does not belong to this project.');
+            }
+
+            $range = $scheduleRules->validateEntry(
+                $validator,
+                $entry,
+                sprintf('ranges.%d.', $index),
+                $partialDayAllowed,
+                $schedule !== null
+            );
+
+            if (! $range) {
                 continue;
             }
 
-            if ($range['start']->lt($today)) {
-                throw new RuntimeException('New date ranges cannot start before today.');
+            if ($schedule) {
+                $conversions[] = [$schedule, $range['mode']];
             }
+
+            $resolved->push([
+                'schedule_id' => $scheduleId,
+                'mode' => $range['mode'],
+                'start' => $range['start'],
+                'end' => $range['end'],
+            ]);
         }
+
+        if ($validator->errors()->isNotEmpty()) {
+            throw new RuntimeException($validator->errors()->first());
+        }
+
+        // Checked only once every row is known to be well formed, so a person
+        // is not told about a conversion while a plain typo is still unfixed.
+        foreach ($conversions as [$schedule, $mode]) {
+            $scheduleRules->assertConvertible($schedule, $mode);
+        }
+
+        return $resolved;
     }
 
     /**
-     * Ranges submitted together for the same project must not overlap each
-     * other, whether they're pre-existing ranges being edited or brand new
-     * ones being added alongside them. This is what stops a range added on
-     * a previous edit from remaining pickable when adding another one.
+     * Schedules submitted together for the same project must not claim the
+     * same time as each other, whether they're pre-existing rows being edited
+     * or brand new ones being added alongside them. This is what stops a range
+     * added on a previous edit from remaining pickable when adding another.
      *
-     * @param  Collection<int, array{schedule_id: ?int, start: CarbonImmutable, end: CarbonImmutable}>  $ranges
+     * Two partial days on one date are fine as long as their hours don't meet,
+     * so the comparison is the same half-open one the availability service
+     * uses rather than a whole-day overlap.
+     *
+     * @param  Collection<int, array{schedule_id: ?int, mode: string, start: CarbonImmutable, end: CarbonImmutable}>  $ranges
      */
-    private function assertNoOverlapWithinSubmission(Collection $ranges): void
+    private function assertNoOverlapWithinSubmission(Collection $ranges, ScheduleModeRules $scheduleRules): void
     {
         $rangesList = $ranges->values();
 
@@ -744,19 +830,30 @@ class ScheduleController extends Controller
                 $a = $rangesList[$i];
                 $b = $rangesList[$j];
 
-                $overlaps = $a['start']->lte($b['end']) && $a['end']->gte($b['start']);
-
-                if ($overlaps) {
+                if ($scheduleRules->overlaps($a, $b)) {
                     throw new RuntimeException(sprintf(
-                        'Date range %s to %s overlaps with %s to %s in the same submission.',
-                        $a['start']->toDateString(),
-                        $a['end']->toDateString(),
-                        $b['start']->toDateString(),
-                        $b['end']->toDateString()
+                        'The schedule for %s overlaps with %s in the same submission.',
+                        $this->describeRangeEntry($a),
+                        $this->describeRangeEntry($b)
                     ));
                 }
             }
         }
+    }
+
+    /**
+     * A submitted row described the way a saved one would be, so the wording
+     * of an error matches the wording everywhere else.
+     *
+     * @param  array{mode: string, start: CarbonImmutable, end: CarbonImmutable}  $range
+     */
+    private function describeRangeEntry(array $range): string
+    {
+        return (new Schedule([
+            'start_datetime' => $range['start'],
+            'end_datetime' => $range['end'],
+            'scheduling_mode' => $range['mode'],
+        ]))->describe();
     }
 
     /**
@@ -780,21 +877,21 @@ class ScheduleController extends Controller
             $color = $project->calendarColor();
 
             foreach ($project->schedules as $schedule) {
-                $start = CarbonImmutable::parse($schedule->start_datetime);
-                $end = CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime);
-
                 $events[] = [
                     'id' => $schedule->schedule_id,
                     'title' => $project->reference_no,
-                    'start' => $start->toDateString(),
-                    // FullCalendar's end date for all-day events is exclusive.
-                    'end' => $end->addDay()->toDateString(),
+                    // A partial day comes back as a timed event, so the bar
+                    // carries its hours instead of reading as a whole day.
+                    ...$schedule->toCalendarTimes(),
                     'color' => $color,
                     'extendedProps' => [
                         'projectId' => $project->project_id,
                         'scheduleId' => $schedule->schedule_id,
                         'referenceNo' => $project->reference_no,
                         'projectName' => $project->name,
+                        // Carries the hours for a partial day, so the tooltip
+                        // says more than the bar can show.
+                        'scheduleLabel' => $schedule->describe(),
                         'status' => $project->status,
                         'statusLabel' => $this->statusLabel($project),
                         'onHold' => $project->on_hold,
@@ -828,10 +925,14 @@ class ScheduleController extends Controller
     }
 
     /**
-     * Build a map of technician_id => list of busy date ranges, tagged with
-     * the project each range belongs to, for every active project schedule.
+     * Build a map of technician_id => list of busy ranges, tagged with the
+     * project each belongs to, for every active project schedule.
      *
-     * @return array<int, array<int, array{start: string, end: string, project_id: int}>>
+     * `start` and `end` stay the dates they always were. A partial day carries
+     * its hours alongside them, which is what lets the browser leave the rest
+     * of that day pickable.
+     *
+     * @return array<int, array<int, array{start: string, end: string, project_id: int, mode: string, start_time: ?string, end_time: ?string}>>
      */
     private function buildTechnicianSchedules(): array
     {
@@ -843,13 +944,23 @@ class ScheduleController extends Controller
                 'scheduleTechnicians:schedule_technician_id,schedule_id,project_technician_id',
                 'scheduleTechnicians.projectTechnician:project_technician_id,technician_id',
             ])
-            ->get(['schedule_id', 'project_id', 'start_datetime', 'end_datetime']);
+            ->get(['schedule_id', 'project_id', 'start_datetime', 'end_datetime', 'scheduling_mode']);
 
         $scheduleMap = [];
 
         foreach ($schedules as $schedule) {
-            $startDate = CarbonImmutable::parse($schedule->start_datetime)->toDateString();
-            $endDate = CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime)->toDateString();
+            $start = CarbonImmutable::parse($schedule->start_datetime);
+            $end = CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime);
+            $isPartialDay = $schedule->isPartialDay();
+
+            $busyRange = [
+                'start' => $start->toDateString(),
+                'end' => $end->toDateString(),
+                'project_id' => $schedule->project_id,
+                'mode' => $schedule->scheduling_mode,
+                'start_time' => $isPartialDay ? $start->format('H:i') : null,
+                'end_time' => $isPartialDay ? $end->format('H:i') : null,
+            ];
 
             foreach ($schedule->scheduleTechnicians as $scheduleTechnician) {
                 $technicianId = $scheduleTechnician->projectTechnician?->technician_id;
@@ -858,11 +969,7 @@ class ScheduleController extends Controller
                     continue;
                 }
 
-                $scheduleMap[$technicianId][] = [
-                    'start' => $startDate,
-                    'end' => $endDate,
-                    'project_id' => $schedule->project_id,
-                ];
+                $scheduleMap[$technicianId][] = $busyRange;
             }
         }
 

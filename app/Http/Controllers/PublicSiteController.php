@@ -109,6 +109,9 @@ class PublicSiteController extends Controller
                 ->map(fn ($schedule): array => [
                     'start' => $schedule->start_datetime,
                     'end' => $schedule->end_datetime ?? $schedule->start_datetime,
+                    // A client should see the hours somebody is coming, not a
+                    // date printed twice. Same formatter as every other screen.
+                    'label' => $schedule->describe('M d, Y'),
                 ])
                 ->values(),
         ]);

@@ -22,13 +22,10 @@
                 ],
             )
             ->values();
-        $scheduleRangesLabel = $scheduleRanges
-            ->map(
-                fn($range) => \Carbon\Carbon::parse($range['start'])->format('M j, Y') .
-                    ' – ' .
-                    \Carbon\Carbon::parse($range['end'])->format('M j, Y'),
-            )
-            ->join('; ');
+        // Tasks are dated, never timed, so the window a task may sit in is
+        // still the whole of a partial day's date - but the label says which
+        // schedule that date came from.
+        $scheduleRangesLabel = $project->schedules->map(fn($schedule) => $schedule->describe())->join('; ');
     @endphp
     {{-- `project-details-page` is what applies the brand blue from the
          client's own project page; the layout below is unchanged. --}}
@@ -485,12 +482,19 @@
 
                     <div class="card-body">
                         <div>
-                            <strong>Date Ranges:</strong>
+                            <strong>Schedules:</strong>
                         </div>
                         <ul>
+                            {{-- describe() is the one formatter every screen
+                                 shares, so a Partial Day reads as
+                                 "Aug 6, 2026 · 8:00 AM - 12:00 PM" here and
+                                 everywhere else it appears. --}}
                             @forelse($project->schedules as $schedule)
                                 <li class="list-group-item">
-                                    <strong>{{ \Carbon\Carbon::parse($schedule->start_datetime)->format('M d, Y') }}</strong> - <strong>{{ \Carbon\Carbon::parse($schedule->end_datetime)->format('M d, Y') }}</strong>
+                                    <strong>{{ $schedule->describe() }}</strong>
+                                    @if ($schedule->isPartialDay())
+                                        <span class="badge bg-info text-dark ms-1">Partial Day</span>
+                                    @endif
                                 </li>
                             @empty
                                 <li class="list-group-item text-muted">

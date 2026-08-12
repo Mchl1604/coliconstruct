@@ -204,19 +204,13 @@
                         </div>
 
                         <div class="card-body">
-                            <div class="fw-semibold mb-2">Date Ranges:</div>
+                            <div class="fw-semibold mb-2">Schedules:</div>
 
                             <ul class="client-range-list">
                                 @forelse ($ranges as $range)
                                     <li>
                                         <i class="bi bi-calendar-event me-2 text-brand-blue" aria-hidden="true"></i>
-                                        <strong>
-                                            {{ \Carbon\CarbonImmutable::parse($range['start'])->format('M d, Y') }}
-                                        </strong>
-                                        &ndash;
-                                        <strong>
-                                            {{ \Carbon\CarbonImmutable::parse($range['end'])->format('M d, Y') }}
-                                        </strong>
+                                        <strong>{{ $range['label'] }}</strong>
                                     </li>
                                 @empty
                                     <li class="text-muted">No schedule set yet.</li>

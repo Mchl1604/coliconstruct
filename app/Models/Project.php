@@ -138,6 +138,28 @@ class Project extends Model
     }
 
     /**
+     * Residential or Commercial, as recorded on the project's client.
+     *
+     * There is no type column on the project itself: the distinction is set
+     * once when the wizard writes the client row and is never editable
+     * afterwards. Callers that ask this in a loop should eager load `clients`,
+     * as the projects and schedules listings already do.
+     */
+    public function clientType(): ?string
+    {
+        return $this->clients->first()?->client_type;
+    }
+
+    /**
+     * Partial-day scheduling is offered on Residential work only. Commercial
+     * projects keep the whole-day workflow they have always had.
+     */
+    public function isResidential(): bool
+    {
+        return mb_strtolower(trim((string) $this->clientType())) === 'residential';
+    }
+
+    /**
      * Whether this project is locked for editing (historical record).
      */
     public function isReadOnly(): bool

@@ -13,6 +13,13 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
+    const MODE_DATE_BASED = "date_based";
+    const MODE_PARTIAL_DAY = "partial_day";
+    const MINUTES_PER_DAY = 1440;
+    // The working day, mirroring Schedule::WORKING_HOUR_START / _END.
+    const WORKING_HOUR_START = 8;
+    const WORKING_HOUR_END = 17;
+
     const technicianSchedules =
         window.scheduleTechnicianAvailability &&
         typeof window.scheduleTechnicianAvailability === "object"
@@ -57,6 +64,37 @@ document.addEventListener("DOMContentLoaded", function () {
         return dates;
     }
 
+    function minutesFromTime(value) {
+        if (typeof value !== "string" || !/^\d{2}:\d{2}$/.test(value)) {
+            return null;
+        }
+
+        return Number(value.slice(0, 2)) * 60 + Number(value.slice(3, 5));
+    }
+
+    function formatMinutes(minutes) {
+        const hours = Math.floor(minutes / 60);
+        const rest = minutes % 60;
+        const suffix = hours >= 12 ? "PM" : "AM";
+        const display = hours % 12 === 0 ? 12 : hours % 12;
+
+        return display + ":" + String(rest).padStart(2, "0") + " " + suffix;
+    }
+
+    // Half-open, matching TechnicianAvailabilityService: a booking ending at
+    // 10:00 AM and one starting at 10:00 AM do not clash.
+    function intervalsOverlap(fromA, toA, fromB, toB) {
+        return fromA < toB && fromB < toA;
+    }
+
+    function describeInterval(interval) {
+        if (interval.from <= 0 && interval.to >= MINUTES_PER_DAY) {
+            return "the whole day";
+        }
+
+        return formatMinutes(interval.from) + " - " + formatMinutes(interval.to);
+    }
+
     function formatDateList(dates) {
         const currentYear = new Date().getFullYear();
         const allCurrentYear = dates.every(function (date) {
@@ -99,6 +137,31 @@ document.addEventListener("DOMContentLoaded", function () {
             return "";
         }
 
+        // Hours-only clashes name the hours; anything touching whole days
+        // keeps the wording the page has always used.
+        if (
+            conflicts.every(function (conflict) {
+                return conflict.labels && conflict.labels.length;
+            })
+        ) {
+            return (
+                conflicts
+                    .map(function (conflict) {
+                        return (
+                            "Technician " +
+                            conflict.name +
+                            " is already booked " +
+                            conflict.labels.join(" and ") +
+                            " on " +
+                            formatDateList([conflict.date]) +
+                            "."
+                        );
+                    })
+                    .join(" ") +
+                " Please choose a time when every selected technician is free."
+            );
+        }
+
         return (
             conflicts
                 .map(function (conflict) {
@@ -115,38 +178,122 @@ document.addEventListener("DOMContentLoaded", function () {
         );
     }
 
-    // Mirrors TechnicianAvailabilityService on the server: every day inside
-    // the range must be free for every assigned technician, so a range whose
-    // endpoints are free but which spans a busy day is still rejected.
-    function conflictsForRange(projectId, technicianIds, startValue, endValue) {
-        if (!startValue || !endValue || startValue > endValue) {
-            return [];
-        }
+    /**
+     * The minutes a technician is already spoken for on one date, ignoring
+     * whatever the given project itself booked.
+     *
+     * A whole-day booking takes the entire day; a partial day takes only its
+     * hours, leaving the rest of that date free for other work.
+     */
+    function busyIntervalsOn(technicianId, date, excludeProjectId) {
+        const ranges = technicianSchedules[technicianId] || [];
+        const intervals = [];
 
-        const selectedDays = eachDate(startValue, endValue);
+        ranges.forEach(function (range) {
+            if (String(range.project_id) === String(excludeProjectId)) {
+                return;
+            }
 
-        if (!selectedDays.length) {
-            return [];
-        }
-
-        return technicianIds.reduce(function (conflicts, technicianId) {
-            const techRanges = technicianSchedules[technicianId] || [];
-            const busyDays = new Set();
-
-            techRanges.forEach(function (range) {
-                // The project's own booked dates never block itself; overlap
-                // between rows of this form is checked separately.
-                if (String(range.project_id) === String(projectId)) {
+            if (range.mode === MODE_PARTIAL_DAY) {
+                if (range.start !== date) {
                     return;
                 }
 
-                eachDate(range.start, range.end).forEach(function (day) {
-                    busyDays.add(day);
-                });
-            });
+                const from = minutesFromTime(range.start_time);
+                const to = minutesFromTime(range.end_time);
 
+                if (from !== null && to !== null) {
+                    intervals.push({ from: from, to: to });
+                }
+
+                return;
+            }
+
+            if (date >= range.start && date <= range.end) {
+                intervals.push({ from: 0, to: MINUTES_PER_DAY });
+            }
+        });
+
+        return intervals;
+    }
+
+    function isFreeBetween(intervals, from, to) {
+        return !intervals.some(function (interval) {
+            return intervalsOverlap(from, to, interval.from, interval.to);
+        });
+    }
+
+    function hasFreeHourOn(technicianId, date, excludeProjectId) {
+        const intervals = busyIntervalsOn(technicianId, date, excludeProjectId);
+
+        for (let hour = WORKING_HOUR_START; hour < WORKING_HOUR_END; hour++) {
+            if (isFreeBetween(intervals, hour * 60, (hour + 1) * 60)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Everyone who cannot work the given schedule.
+     *
+     * `entry` is {mode, start, end} for whole days, or {mode, date, from, to}
+     * in minutes for an hours-only booking.
+     */
+    function conflictsForEntry(entry, technicianIds, excludeProjectId) {
+        if (entry.mode === MODE_PARTIAL_DAY) {
+            if (!entry.date || entry.from === null || entry.to === null || entry.from >= entry.to) {
+                return [];
+            }
+
+            return technicianIds.reduce(function (conflicts, technicianId) {
+                const clashes = busyIntervalsOn(
+                    technicianId,
+                    entry.date,
+                    excludeProjectId,
+                ).filter(function (interval) {
+                    return intervalsOverlap(
+                        entry.from,
+                        entry.to,
+                        interval.from,
+                        interval.to,
+                    );
+                });
+
+                if (clashes.length) {
+                    conflicts.push({
+                        name:
+                            technicianNames[technicianId] ||
+                            "A selected technician",
+                        date: entry.date,
+                        labels: clashes.some(function (interval) {
+                            return (
+                                interval.from <= 0 &&
+                                interval.to >= MINUTES_PER_DAY
+                            );
+                        })
+                            ? ["the whole day"]
+                            : clashes.map(describeInterval),
+                    });
+                }
+
+                return conflicts;
+            }, []);
+        }
+
+        if (!entry.start || !entry.end || entry.start > entry.end) {
+            return [];
+        }
+
+        const selectedDays = eachDate(entry.start, entry.end);
+
+        return technicianIds.reduce(function (conflicts, technicianId) {
             const hits = selectedDays.filter(function (day) {
-                return busyDays.has(day);
+                return (
+                    busyIntervalsOn(technicianId, day, excludeProjectId).length >
+                    0
+                );
             });
 
             if (hits.length) {
@@ -162,47 +309,49 @@ document.addEventListener("DOMContentLoaded", function () {
         }, []);
     }
 
-    // Busy ranges for a project's assigned technicians, excluding the
-    // project's own existing schedule (a project is always "available"
-    // during its own booked dates, handled separately per row so a new
-    // range can't overlap ranges already added/saved for this project).
-    function busyRangesForProject(projectId, technicianIds) {
-        const ranges = [];
+    // Two entries claim the same time. Whole days are compared as whole days;
+    // hours on one date are compared half-open.
+    function entriesOverlap(a, b) {
+        if (!entryIsComplete(a) || !entryIsComplete(b)) {
+            return false;
+        }
 
-        technicianIds.forEach(function (technicianId) {
-            const techRanges = technicianSchedules[technicianId] || [];
+        const spanA = entrySpan(a);
+        const spanB = entrySpan(b);
 
-            techRanges.forEach(function (range) {
-                if (String(range.project_id) !== String(projectId)) {
-                    ranges.push({ start: range.start, end: range.end });
-                }
-            });
-        });
-
-        return ranges;
+        return spanA.start < spanB.end && spanB.start < spanA.end;
     }
 
-    // Ranges currently sitting in the other rows of this same form, so a
-    // row's picker also blocks dates already used elsewhere in this project.
-    function ownProjectRangesExcluding(container, excludeRow) {
-        const ranges = [];
+    // A comparable stretch of time, in minutes since an epoch date.
+    function entrySpan(entry) {
+        const dayNumber = function (date) {
+            return Math.floor(new Date(date + "T00:00:00").getTime() / 60000);
+        };
 
-        container.querySelectorAll("[data-range-row]").forEach(function (otherRow) {
-            if (otherRow === excludeRow) {
-                return;
-            }
+        if (entry.mode === MODE_PARTIAL_DAY) {
+            return {
+                start: dayNumber(entry.date) + entry.from,
+                end: dayNumber(entry.date) + entry.to,
+            };
+        }
 
-            const startInput = otherRow.querySelector("[data-range-start]");
-            const endInput = otherRow.querySelector("[data-range-end]");
-            const start = startInput ? startInput.value : "";
-            const end = endInput ? endInput.value : "";
+        return {
+            start: dayNumber(entry.start),
+            end: dayNumber(entry.end) + MINUTES_PER_DAY,
+        };
+    }
 
-            if (start && end) {
-                ranges.push({ start: start, end: end });
-            }
-        });
+    function entryIsComplete(entry) {
+        if (entry.mode === MODE_PARTIAL_DAY) {
+            return Boolean(
+                entry.date &&
+                    entry.from !== null &&
+                    entry.to !== null &&
+                    entry.from < entry.to,
+            );
+        }
 
-        return ranges;
+        return Boolean(entry.start && entry.end && entry.start <= entry.end);
     }
 
     function destroyPicker(input) {
@@ -211,59 +360,282 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
-    function initRangeRow(row, busyRanges, container) {
-        const startInput = row.querySelector("[data-range-start]");
-        const endInput = row.querySelector("[data-range-end]");
+    // -----------------------------------------------------------------
+    // Per-project schedule edit modal
+    // -----------------------------------------------------------------
 
-        if (!startInput || !endInput || !window.flatpickr) {
+    function rowMode(row) {
+        const modeSelect = row.querySelector("[data-range-mode]");
+
+        return modeSelect && modeSelect.value === MODE_PARTIAL_DAY
+            ? MODE_PARTIAL_DAY
+            : MODE_DATE_BASED;
+    }
+
+    function readRow(row) {
+        const value = function (selector) {
+            const field = row.querySelector(selector);
+
+            return field ? field.value : "";
+        };
+
+        const scheduleIdInput = row.querySelector('input[name*="[schedule_id]"]');
+
+        if (rowMode(row) === MODE_PARTIAL_DAY) {
+            return {
+                mode: MODE_PARTIAL_DAY,
+                date: value("[data-range-project-date]"),
+                from: minutesFromTime(value("[data-range-start-time]")),
+                to: minutesFromTime(value("[data-range-end-time]")),
+                isNew: !scheduleIdInput || !scheduleIdInput.value,
+            };
+        }
+
+        return {
+            mode: MODE_DATE_BASED,
+            start: value("[data-range-start]"),
+            end: value("[data-range-end]"),
+            isNew: !scheduleIdInput || !scheduleIdInput.value,
+        };
+    }
+
+    // The group not in use is hidden AND disabled, so the browser neither
+    // validates it nor submits it.
+    function applyRowMode(row) {
+        const partialDay = rowMode(row) === MODE_PARTIAL_DAY;
+
+        row.querySelectorAll("[data-range-date-based]").forEach(function (wrap) {
+            wrap.hidden = partialDay;
+        });
+
+        row.querySelectorAll("[data-range-partial-day]").forEach(function (wrap) {
+            wrap.hidden = !partialDay;
+        });
+
+        [
+            ["[data-range-start]", !partialDay],
+            ["[data-range-end]", !partialDay],
+            ["[data-range-project-date]", partialDay],
+            ["[data-range-start-time]", partialDay],
+            ["[data-range-end-time]", partialDay],
+        ].forEach(function (pair) {
+            const field = row.querySelector(pair[0]);
+
+            if (!field) {
+                return;
+            }
+
+            field.disabled = !pair[1];
+            field.required = pair[1];
+        });
+    }
+
+    /**
+     * Grey out the hours this project's team cannot actually work on the
+     * chosen date.
+     */
+    function refreshRowTimeOptions(row, technicianIds, projectId) {
+        const startTime = row.querySelector("[data-range-start-time]");
+        const endTime = row.querySelector("[data-range-end-time]");
+        const dateInput = row.querySelector("[data-range-project-date]");
+
+        if (!startTime || !endTime) {
             return;
         }
 
-        destroyPicker(startInput);
-        destroyPicker(endInput);
+        const date = dateInput ? dateInput.value : "";
+
+        const freeBetween = function (from, to) {
+            return technicianIds.every(function (technicianId) {
+                return isFreeBetween(
+                    busyIntervalsOn(technicianId, date, projectId),
+                    from,
+                    to,
+                );
+            });
+        };
+
+        Array.from(startTime.options).forEach(function (option) {
+            if (!option.value) {
+                return;
+            }
+
+            const from = minutesFromTime(option.value);
+            // 5 PM can only ever end a booking.
+            const bookable = from !== null && from < WORKING_HOUR_END * 60;
+
+            option.disabled = !date
+                ? false
+                : !(bookable && freeBetween(from, from + 60));
+        });
+
+        const startMinutes = minutesFromTime(startTime.value);
+
+        Array.from(endTime.options).forEach(function (option) {
+            if (!option.value) {
+                return;
+            }
+
+            const to = minutesFromTime(option.value);
+
+            if (to === null || startMinutes === null) {
+                option.disabled = false;
+
+                return;
+            }
+
+            option.disabled =
+                to <= startMinutes || (date ? !freeBetween(startMinutes, to) : false);
+        });
+
+        [startTime, endTime].forEach(function (select) {
+            const selected = select.options[select.selectedIndex];
+
+            if (selected && selected.disabled) {
+                select.value = "";
+            }
+        });
+    }
+
+    function initRangeRow(row, technicianIds, projectId, container) {
+        const startInput = row.querySelector("[data-range-start]");
+        const endInput = row.querySelector("[data-range-end]");
+        const projectDateInput = row.querySelector("[data-range-project-date]");
+        const modeSelect = row.querySelector("[data-range-mode]");
+
+        if (!window.flatpickr) {
+            return;
+        }
+
+        [startInput, endInput, projectDateInput].forEach(destroyPicker);
 
         const scheduleIdInput = row.querySelector('input[name*="[schedule_id]"]');
         const isExisting = !!(scheduleIdInput && scheduleIdInput.value);
         const minDate = isExisting ? null : "today";
 
-        const disabledFn = function (date) {
+        // Time already claimed by the other rows of this same form, so a row's
+        // picker also blocks what is spoken for elsewhere in this project.
+        const otherRowEntries = function () {
+            return Array.from(container.querySelectorAll("[data-range-row]"))
+                .filter(function (otherRow) {
+                    return otherRow !== row;
+                })
+                .map(readRow)
+                .filter(entryIsComplete);
+        };
+
+        const wholeDayBlocked = function (date) {
             const dateString = normalizeDateString(date);
 
             if (!dateString) {
                 return false;
             }
 
-            const combined = busyRanges.concat(ownProjectRangesExcluding(container, row));
+            const busyElsewhere = technicianIds.some(function (technicianId) {
+                return (
+                    busyIntervalsOn(technicianId, dateString, projectId).length >
+                    0
+                );
+            });
 
-            return combined.some(function (range) {
-                return dateString >= range.start && dateString <= range.end;
+            if (busyElsewhere) {
+                return true;
+            }
+
+            return otherRowEntries().some(function (entry) {
+                return entriesOverlap(entry, {
+                    mode: MODE_DATE_BASED,
+                    start: dateString,
+                    end: dateString,
+                });
             });
         };
 
-        const endPicker = window.flatpickr(endInput, {
-            dateFormat: "Y-m-d",
-            allowInput: true,
-            minDate: minDate,
-            disable: [disabledFn],
-        });
+        // A partial day only needs one hour of the date still open.
+        const partialDayBlocked = function (date) {
+            const dateString = normalizeDateString(date);
 
-        const startPicker = window.flatpickr(startInput, {
-            dateFormat: "Y-m-d",
-            allowInput: true,
-            minDate: minDate,
-            disable: [disabledFn],
-            onChange: function (selectedDates) {
-                if (selectedDates[0]) {
-                    endPicker.set("minDate", selectedDates[0]);
-                } else {
-                    endPicker.set("minDate", minDate);
-                }
-            },
-        });
+            if (!dateString) {
+                return false;
+            }
 
-        if (startInput.value) {
-            endPicker.set("minDate", startInput.value);
+            return technicianIds.some(function (technicianId) {
+                return !hasFreeHourOn(technicianId, dateString, projectId);
+            });
+        };
+
+        if (startInput && endInput) {
+            const endPicker = window.flatpickr(endInput, {
+                dateFormat: "Y-m-d",
+                allowInput: true,
+                minDate: minDate,
+                disable: [wholeDayBlocked],
+            });
+
+            const startPicker = window.flatpickr(startInput, {
+                dateFormat: "Y-m-d",
+                allowInput: true,
+                minDate: minDate,
+                disable: [wholeDayBlocked],
+                onChange: function (selectedDates) {
+                    if (selectedDates[0]) {
+                        endPicker.set("minDate", selectedDates[0]);
+                    } else {
+                        endPicker.set("minDate", minDate);
+                    }
+                },
+            });
+
+            if (startInput.value) {
+                endPicker.set("minDate", startInput.value);
+            }
+
+            // Referenced so the linter sees the picker is used; flatpickr
+            // keeps its own handle on the element either way.
+            void startPicker;
         }
+
+        if (projectDateInput) {
+            window.flatpickr(projectDateInput, {
+                dateFormat: "Y-m-d",
+                allowInput: true,
+                minDate: minDate,
+                disable: [partialDayBlocked],
+                onChange: function () {
+                    // The hours on offer belong to the date just chosen.
+                    const startTime = row.querySelector("[data-range-start-time]");
+                    const endTime = row.querySelector("[data-range-end-time]");
+
+                    if (startTime) {
+                        startTime.value = "";
+                    }
+
+                    if (endTime) {
+                        endTime.value = "";
+                    }
+
+                    refreshRowTimeOptions(row, technicianIds, projectId);
+                },
+            });
+        }
+
+        row.querySelectorAll(
+            "[data-range-start-time], [data-range-end-time]",
+        ).forEach(function (select) {
+            select.addEventListener("change", function () {
+                refreshRowTimeOptions(row, technicianIds, projectId);
+            });
+        });
+
+        if (modeSelect) {
+            modeSelect.addEventListener("change", function () {
+                applyRowMode(row);
+                refreshRowTimeOptions(row, technicianIds, projectId);
+            });
+        }
+
+        applyRowMode(row);
+        refreshRowTimeOptions(row, technicianIds, projectId);
     }
 
     function updateRemoveButtons(container) {
@@ -280,6 +652,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function initScheduleModal(modal) {
         const projectId = modal.dataset.projectId;
+        const partialDayAllowed = modal.dataset.partialDayAllowed === "1";
         const technicianIds = (modal.dataset.technicianIds || "")
             .split(",")
             .map(function (id) {
@@ -287,11 +660,12 @@ document.addEventListener("DOMContentLoaded", function () {
             })
             .filter(Boolean);
 
-        const busyRanges = busyRangesForProject(projectId, technicianIds);
         const container = modal.querySelector("[data-ranges-container]");
         const addButton = modal.querySelector("[data-add-range]");
         const template = document.querySelector(
-            "template[data-range-template]",
+            partialDayAllowed
+                ? "template[data-range-template-residential]"
+                : "template[data-range-template]",
         );
         const errorBox = modal.querySelector("[data-range-error]");
         const form = modal.querySelector("form");
@@ -301,7 +675,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         container.querySelectorAll("[data-range-row]").forEach(function (row) {
-            initRangeRow(row, busyRanges, container);
+            initRangeRow(row, technicianIds, projectId, container);
         });
 
         updateRemoveButtons(container);
@@ -314,21 +688,28 @@ document.addEventListener("DOMContentLoaded", function () {
                 );
                 const clone =
                     template.content.firstElementChild.cloneNode(true);
-                const startInput = clone.querySelector("[data-range-start]");
-                const endInput = clone.querySelector("[data-range-end]");
 
-                if (startInput) {
-                    startInput.name = "ranges[" + nextIndex + "][start_date]";
-                }
+                // The template carries no names; each field is claimed for
+                // this row as it is added.
+                [
+                    ["[data-range-mode]", "scheduling_mode"],
+                    ["[data-range-start]", "start_date"],
+                    ["[data-range-end]", "end_date"],
+                    ["[data-range-project-date]", "project_date"],
+                    ["[data-range-start-time]", "start_time"],
+                    ["[data-range-end-time]", "end_time"],
+                ].forEach(function (pair) {
+                    const field = clone.querySelector(pair[0]);
 
-                if (endInput) {
-                    endInput.name = "ranges[" + nextIndex + "][end_date]";
-                }
+                    if (field) {
+                        field.name = "ranges[" + nextIndex + "][" + pair[1] + "]";
+                    }
+                });
 
                 container.appendChild(clone);
                 container.dataset.nextIndex = String(nextIndex + 1);
 
-                initRangeRow(clone, busyRanges, container);
+                initRangeRow(clone, technicianIds, projectId, container);
                 updateRemoveButtons(container);
 
                 if (errorBox) {
@@ -351,8 +732,14 @@ document.addEventListener("DOMContentLoaded", function () {
                 return;
             }
 
-            destroyPicker(row.querySelector("[data-range-start]"));
-            destroyPicker(row.querySelector("[data-range-end]"));
+            [
+                "[data-range-start]",
+                "[data-range-end]",
+                "[data-range-project-date]",
+            ].forEach(function (selector) {
+                destroyPicker(row.querySelector(selector));
+            });
+
             row.remove();
             updateRemoveButtons(container);
         });
@@ -366,57 +753,51 @@ document.addEventListener("DOMContentLoaded", function () {
 
                 let hasOverlap = false;
                 let hasPastDate = false;
+                let hasBadTimes = false;
                 const availabilityConflicts = [];
-                const parsed = rows.map(function (row) {
-                    const startInput = row.querySelector("[data-range-start]");
-                    const endInput = row.querySelector("[data-range-end]");
-                    const scheduleIdInput = row.querySelector(
-                        'input[name*="[schedule_id]"]',
-                    );
+                const entries = rows.map(readRow);
 
-                    return {
-                        start: startInput ? startInput.value : "",
-                        end: endInput ? endInput.value : "",
-                        isNew: !scheduleIdInput || !scheduleIdInput.value,
-                    };
-                });
-
-                parsed.forEach(function (range) {
-                    if (!range.start || !range.end) {
-                        return;
-                    }
-
-                    if (range.isNew && range.start < todayString) {
-                        hasPastDate = true;
-                    }
-
-                    if (range.end < range.start) {
-                        hasOverlap = true;
-                        return;
-                    }
-
-                    // Every calendar day in the range must be free, not just
-                    // the endpoints.
-                    conflictsForRange(
-                        projectId,
-                        technicianIds,
-                        range.start,
-                        range.end,
-                    ).forEach(function (conflict) {
-                        availabilityConflicts.push(conflict);
-                    });
-                });
-
-                for (let i = 0; i < parsed.length; i++) {
-                    for (let j = i + 1; j < parsed.length; j++) {
-                        const a = parsed[i];
-                        const b = parsed[j];
-
-                        if (!a.start || !a.end || !b.start || !b.end) {
-                            continue;
+                entries.forEach(function (entry) {
+                    if (entry.mode === MODE_PARTIAL_DAY) {
+                        if (!entry.date || entry.from === null || entry.to === null) {
+                            return;
                         }
 
-                        if (a.start <= b.end && a.end >= b.start) {
+                        if (entry.from >= entry.to) {
+                            hasBadTimes = true;
+
+                            return;
+                        }
+
+                        if (entry.isNew && entry.date < todayString) {
+                            hasPastDate = true;
+                        }
+                    } else {
+                        if (!entry.start || !entry.end) {
+                            return;
+                        }
+
+                        if (entry.isNew && entry.start < todayString) {
+                            hasPastDate = true;
+                        }
+
+                        if (entry.end < entry.start) {
+                            hasOverlap = true;
+
+                            return;
+                        }
+                    }
+
+                    conflictsForEntry(entry, technicianIds, projectId).forEach(
+                        function (conflict) {
+                            availabilityConflicts.push(conflict);
+                        },
+                    );
+                });
+
+                for (let i = 0; i < entries.length; i++) {
+                    for (let j = i + 1; j < entries.length; j++) {
+                        if (entriesOverlap(entries[i], entries[j])) {
                             hasOverlap = true;
                         }
                     }
@@ -431,38 +812,47 @@ document.addEventListener("DOMContentLoaded", function () {
                         return item.name === conflict.name;
                     });
 
-                    if (existing) {
+                    if (!existing) {
+                        mergedConflicts.push({
+                            name: conflict.name,
+                            date: conflict.date,
+                            dates: conflict.dates ? conflict.dates.slice() : undefined,
+                            labels: conflict.labels ? conflict.labels.slice() : undefined,
+                        });
+
+                        return;
+                    }
+
+                    if (conflict.dates && existing.dates) {
                         conflict.dates.forEach(function (date) {
                             if (existing.dates.indexOf(date) === -1) {
                                 existing.dates.push(date);
                             }
                         });
                         existing.dates.sort();
-
-                        return;
                     }
-
-                    mergedConflicts.push({
-                        name: conflict.name,
-                        dates: conflict.dates.slice(),
-                    });
                 });
 
                 const isInvalid =
-                    hasOverlap || hasPastDate || mergedConflicts.length > 0;
+                    hasOverlap ||
+                    hasPastDate ||
+                    hasBadTimes ||
+                    mergedConflicts.length > 0;
 
                 if (isInvalid && errorBox) {
                     event.preventDefault();
 
                     if (hasPastDate) {
                         errorBox.textContent =
-                            "New date ranges cannot start before today.";
-                    } else if (mergedConflicts.length) {
+                            "New schedules cannot start before today.";
+                    } else if (hasBadTimes) {
                         errorBox.textContent =
-                            conflictMessage(mergedConflicts);
+                            "The end time must be later than the start time.";
+                    } else if (mergedConflicts.length) {
+                        errorBox.textContent = conflictMessage(mergedConflicts);
                     } else {
                         errorBox.textContent =
-                            "One or more date ranges are invalid or overlap another range in this form.";
+                            "One or more schedules are invalid or overlap another schedule in this form.";
                     }
 
                     errorBox.classList.remove("d-none");
@@ -563,6 +953,18 @@ document.addEventListener("DOMContentLoaded", function () {
         const startInput = modal.querySelector("[data-add-start]");
         const endInput = modal.querySelector("[data-add-end]");
 
+        const modeSelect = modal.querySelector("[data-add-mode]");
+        const modeHint = modal.querySelector("[data-add-mode-hint]");
+        const dateBasedFields = Array.from(
+            modal.querySelectorAll("[data-add-date-based]"),
+        );
+        const partialDayFields = Array.from(
+            modal.querySelectorAll("[data-add-partial-day]"),
+        );
+        const dateInput = modal.querySelector("[data-add-date]");
+        const startTimeSelect = modal.querySelector("[data-add-start-time]");
+        const endTimeSelect = modal.querySelector("[data-add-end-time]");
+
         const eligibleWrap = modal.querySelector("[data-eligible-wrap]");
         const eligibleLoading = modal.querySelector("[data-eligible-loading]");
         const eligibleList = modal.querySelector("[data-eligible-list]");
@@ -588,6 +990,10 @@ document.addEventListener("DOMContentLoaded", function () {
         let eligibleToken = 0;
         let dateToken = 0;
 
+        function isPartialDay() {
+            return modeSelect && modeSelect.value === MODE_PARTIAL_DAY;
+        }
+
         function showError(message) {
             errorBox.textContent = message || "";
             errorBox.classList.toggle("d-none", !message);
@@ -598,9 +1004,7 @@ document.addEventListener("DOMContentLoaded", function () {
             successBox.classList.toggle("d-none", !message);
         }
 
-        function resetAddPanel() {
-            panel.classList.add("d-none");
-            toggleBtn.classList.remove("d-none");
+        function clearResults() {
             eligibleWrap.classList.add("d-none");
             eligibleList.innerHTML = "";
             blockedList.innerHTML = "";
@@ -614,6 +1018,12 @@ document.addEventListener("DOMContentLoaded", function () {
             selectedProjectIds = [];
             saveBtn.classList.add("d-none");
             saveBtn.disabled = true;
+        }
+
+        function resetAddPanel() {
+            panel.classList.add("d-none");
+            toggleBtn.classList.remove("d-none");
+            clearResults();
             showError("");
             showSuccess("");
 
@@ -622,7 +1032,43 @@ document.addEventListener("DOMContentLoaded", function () {
                 endPicker = null;
             }
 
+            if (modeSelect) {
+                modeSelect.value = MODE_DATE_BASED;
+            }
+
             endInput.value = "";
+
+            [startTimeSelect, endTimeSelect].forEach(function (select) {
+                if (select) {
+                    select.value = "";
+                }
+            });
+
+            applyMode();
+        }
+
+        // Switching mode swaps which fields are in play, with no reload, and
+        // throws away results that were found for the other kind of slot.
+        function applyMode() {
+            const partialDay = isPartialDay();
+
+            dateBasedFields.forEach(function (field) {
+                field.hidden = partialDay;
+            });
+
+            partialDayFields.forEach(function (field) {
+                field.hidden = !partialDay;
+            });
+
+            if (modeHint) {
+                modeHint.textContent = partialDay
+                    ? "Books set hours on the clicked date. Residential projects only."
+                    : "Books the whole of every day in the range.";
+            }
+
+            if (dateInput) {
+                dateInput.value = selectedDate || "";
+            }
         }
 
         // Which technicians are spoken for by the projects already ticked.
@@ -808,8 +1254,36 @@ document.addEventListener("DOMContentLoaded", function () {
             refreshEligibleStates();
         }
 
-        function loadEligible() {
+        // The slot being asked about, as query/body parameters.
+        function scheduleParams() {
+            if (isPartialDay()) {
+                if (!selectedDate || !startTimeSelect.value || !endTimeSelect.value) {
+                    return null;
+                }
+
+                return {
+                    scheduling_mode: MODE_PARTIAL_DAY,
+                    project_date: selectedDate,
+                    start_time: startTimeSelect.value,
+                    end_time: endTimeSelect.value,
+                };
+            }
+
             if (!selectedDate || !endInput.value) {
+                return null;
+            }
+
+            return {
+                scheduling_mode: MODE_DATE_BASED,
+                start_date: selectedDate,
+                end_date: endInput.value,
+            };
+        }
+
+        function loadEligible() {
+            const params = scheduleParams();
+
+            if (!params) {
                 return;
             }
 
@@ -827,10 +1301,8 @@ document.addEventListener("DOMContentLoaded", function () {
             showSuccess("");
 
             const url =
-                "/super-admin/schedules/assignable?start_date=" +
-                encodeURIComponent(selectedDate) +
-                "&end_date=" +
-                encodeURIComponent(endInput.value);
+                "/super-admin/schedules/assignable?" +
+                new URLSearchParams(params).toString();
 
             fetch(url, { headers: { Accept: "application/json" } })
                 .then(function (response) {
@@ -960,6 +1432,7 @@ document.addEventListener("DOMContentLoaded", function () {
             toggleBtn.classList.add("d-none");
             panel.classList.remove("d-none");
             startInput.value = selectedDate || "";
+            applyMode();
 
             if (window.flatpickr) {
                 endPicker = window.flatpickr(endInput, {
@@ -979,6 +1452,37 @@ document.addEventListener("DOMContentLoaded", function () {
             endInput.focus();
         });
 
+        if (modeSelect) {
+            modeSelect.addEventListener("change", function () {
+                // Results found for the other kind of slot no longer apply.
+                clearResults();
+                showError("");
+                applyMode();
+                loadEligible();
+            });
+        }
+
+        [startTimeSelect, endTimeSelect].forEach(function (select) {
+            if (!select) {
+                return;
+            }
+
+            select.addEventListener("change", function () {
+                const from = minutesFromTime(startTimeSelect.value);
+                const to = minutesFromTime(endTimeSelect.value);
+
+                if (from !== null && to !== null && from >= to) {
+                    clearResults();
+                    showError("The end time must be later than the start time.");
+
+                    return;
+                }
+
+                showError("");
+                loadEligible();
+            });
+        });
+
         blockedToggle.addEventListener("click", function () {
             const isOpen = !blockedList.classList.contains("d-none");
 
@@ -992,7 +1496,9 @@ document.addEventListener("DOMContentLoaded", function () {
         });
 
         saveBtn.addEventListener("click", function () {
-            if (!selectedProjectIds.length || !selectedDate || !endInput.value) {
+            const params = scheduleParams();
+
+            if (!selectedProjectIds.length || !params) {
                 return;
             }
 
@@ -1008,11 +1514,11 @@ document.addEventListener("DOMContentLoaded", function () {
                     "X-CSRF-TOKEN": csrfToken(),
                     "X-Requested-With": "XMLHttpRequest",
                 },
-                body: JSON.stringify({
-                    start_date: selectedDate,
-                    end_date: endInput.value,
-                    project_ids: selectedProjectIds,
-                }),
+                body: JSON.stringify(
+                    Object.assign({}, params, {
+                        project_ids: selectedProjectIds,
+                    }),
+                ),
             })
                 .then(function (response) {
                     return response.json().then(function (body) {
@@ -1084,6 +1590,13 @@ document.addEventListener("DOMContentLoaded", function () {
             dayMaxEvents: true,
             events: calendarEvents,
             eventDisplay: "block",
+            // Partial days arrive as timed events; without this the bar would
+            // abbreviate 8:00 AM to "8a".
+            eventTimeFormat: {
+                hour: "numeric",
+                minute: "2-digit",
+                meridiem: "short",
+            },
             // Every calendar day opens the date-details modal.
             dateClick: function (info) {
                 if (!dateModal) {
@@ -1111,11 +1624,17 @@ document.addEventListener("DOMContentLoaded", function () {
                         ? statusRaw.charAt(0).toUpperCase() + statusRaw.slice(1)
                         : "");
                 const readOnly = Boolean(info.event.extendedProps.readOnly);
+                const scheduleLabel =
+                    info.event.extendedProps.scheduleLabel || "";
 
                 const tooltipParts = [info.event.title];
 
                 if (projectName) {
                     tooltipParts.push(projectName);
+                }
+
+                if (scheduleLabel) {
+                    tooltipParts.push(scheduleLabel);
                 }
 
                 if (status) {

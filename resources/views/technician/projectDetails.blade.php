@@ -271,13 +271,17 @@
                     </div>
 
                     <div class="card-body">
-                        <div><strong>Date Ranges:</strong></div>
+                        <div><strong>Schedules:</strong></div>
                         <ul>
+                            {{-- Shared formatter, so the hours a technician is
+                                 expected on site read the same here as they do
+                                 on the administrator's copy of this page. --}}
                             @forelse ($project->schedules as $schedule)
                                 <li class="list-group-item">
-                                    <strong>{{ \Carbon\Carbon::parse($schedule->start_datetime)->format('M d, Y') }}</strong>
-                                    -
-                                    <strong>{{ \Carbon\Carbon::parse($schedule->end_datetime ?? $schedule->start_datetime)->format('M d, Y') }}</strong>
+                                    <strong>{{ $schedule->describe() }}</strong>
+                                    @if ($schedule->isPartialDay())
+                                        <span class="badge bg-info text-dark ms-1">Partial Day</span>
+                                    @endif
                                 </li>
                             @empty
                                 <li class="list-group-item text-muted">No schedule set.</li>

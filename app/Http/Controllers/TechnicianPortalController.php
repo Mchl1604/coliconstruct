@@ -177,7 +177,17 @@ class TechnicianPortalController extends Controller
             ->orderByDesc('id')
             ->get();
 
-        $technicians = $project->projectTechnicians->pluck('technician')->filter()->values();
+        // The lead leads the Assign To picker, matching the administrator's
+        // copy of this page and the Create Task dialog.
+        $technicians = $project->projectTechnicians
+            ->pluck('technician')
+            ->filter()
+            ->sortBy(fn ($technician): string => sprintf(
+                '%d %s',
+                optional($technician->account)->role === 'lead_technician' ? 0 : 1,
+                mb_strtolower((string) $technician->name)
+            ))
+            ->values();
 
         $technicianActiveTaskCounts = Task::query()
             ->whereIn('technician_id', $technicians->pluck('technician_id'))
@@ -882,15 +892,12 @@ class TechnicianPortalController extends Controller
      */
     private function calendarEvent(Project $project, Schedule $schedule): array
     {
-        $start = CarbonImmutable::parse($schedule->start_datetime);
-        $end = CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime);
-
         return [
             'id' => $schedule->schedule_id,
             'title' => $project->reference_no,
-            'start' => $start->toDateString(),
-            // FullCalendar treats all-day end dates as exclusive.
-            'end' => $end->addDay()->toDateString(),
+            // A partial day comes back as a timed event, so the bar carries
+            // its hours instead of reading as a whole day.
+            ...$schedule->toCalendarTimes(),
             'color' => $project->calendarColor(),
             'extendedProps' => [
                 'projectId' => $project->project_id,
@@ -898,7 +905,7 @@ class TechnicianPortalController extends Controller
                 'projectName' => $project->name,
                 'client' => $this->clientName($project),
                 'statusLabel' => $project->statusLabel(),
-                'rangeLabel' => $start->format('M j, Y').' - '.$end->format('M j, Y'),
+                'rangeLabel' => $schedule->describe(),
             ],
         ];
     }
@@ -929,10 +936,22 @@ class TechnicianPortalController extends Controller
                 ->map(fn (ProjectTechnician $assignment): ?array => $assignment->technician ? [
                     'technician_id' => $assignment->technician->technician_id,
                     'name' => $assignment->technician->name,
+                    'role' => optional($assignment->technician->account)->role,
                     'is_lead' => optional($assignment->technician->account)->role === 'lead_technician',
+                    // Their own picture, or the default avatar - the same
+                    // source the Blade-rendered assign cards draw from, so the
+                    // two never show the same person differently.
+                    'avatar_url' => $assignment->technician->account?->avatarUrl()
+                        ?? asset('img/default-avatar.svg'),
                     'active_task_count' => (int) ($activeTaskCounts[$assignment->technician->technician_id] ?? 0),
                 ] : null)
                 ->filter()
+                // The lead comes first, then everyone else alphabetically.
+                ->sortBy(fn (array $technician): string => sprintf(
+                    '%d %s',
+                    $technician['is_lead'] ? 0 : 1,
+                    mb_strtolower((string) $technician['name'])
+                ))
                 ->values()
                 ->all(),
         ];
@@ -964,9 +983,10 @@ class TechnicianPortalController extends Controller
             'start_date' => $start ? CarbonImmutable::parse($start)->format('M j, Y') : null,
             'end_date' => $end ? CarbonImmutable::parse($end)->format('M j, Y') : null,
             'ranges' => $schedules->map(fn (Schedule $schedule): array => [
-                'label' => CarbonImmutable::parse($schedule->start_datetime)->format('M j, Y')
-                    .' - '
-                    .CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime)->format('M j, Y'),
+                // The shared formatter, so a technician sees the hours they
+                // are expected on site rather than a date twice over.
+                'label' => $schedule->describe(),
+                'is_partial_day' => $schedule->isPartialDay(),
             ])->values()->all(),
             'technicians' => $project->projectTechnicians
                 ->map(fn (ProjectTechnician $assignment): ?array => $assignment->technician ? [

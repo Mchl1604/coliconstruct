@@ -669,6 +669,13 @@ document.addEventListener("DOMContentLoaded", function () {
             height: "auto",
             dayMaxEvents: true,
             eventDisplay: "block",
+            // Partial days arrive as timed events; without this the bar would
+            // abbreviate 8:00 AM to "8a".
+            eventTimeFormat: {
+                hour: "numeric",
+                minute: "2-digit",
+                meridiem: "short",
+            },
             events: [],
             eventDidMount: function (info) {
                 const props = info.event.extendedProps;

@@ -4,6 +4,8 @@ namespace App\Http\Requests;
 
 use App\Models\Document;
 use App\Models\ProjectType;
+use App\Models\Schedule;
+use App\Services\ScheduleModeRules;
 use App\Services\TechnicianAvailabilityService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Http\FormRequest;
@@ -11,6 +13,15 @@ use Illuminate\Validation\Rule;
 
 class StoreProjectRequest extends FormRequest
 {
+    /**
+     * What the submitted schedule turned out to mean, worked out during
+     * validation so the controller does not have to interpret raw input a
+     * second time and reach a different answer.
+     *
+     * @var array{mode: string, start: CarbonImmutable, end: CarbonImmutable}|null
+     */
+    private ?array $scheduleEntry = null;
+
     public function authorize(): bool
     {
         return true;
@@ -47,8 +58,10 @@ class StoreProjectRequest extends FormRequest
             'lead_tech' => ['required', 'integer', Rule::exists('tbl_technicians', 'technician_id')],
             'technicians' => ['required', 'array', 'min:1'],
             'technicians.*' => ['required', 'integer', Rule::exists('tbl_technicians', 'technician_id')],
-            'start_date' => ['required', 'date', 'after_or_equal:today'],
-            'end_date' => ['required', 'date', 'after_or_equal:start_date'],
+            // The dates and times themselves are shape-checked here and given
+            // their meaning by ScheduleModeRules in after(), which is the only
+            // place that knows what the chosen mode requires.
+            ...app(ScheduleModeRules::class)->rules(),
         ];
     }
 
@@ -60,7 +73,20 @@ class StoreProjectRequest extends FormRequest
             'assessment_report.max' => 'The assessment report must be '.Document::MAX_LABEL.' or smaller.',
             'approved_quotation.max' => 'The approved quotation must be '.Document::MAX_LABEL.' or smaller.',
             'contract.max' => 'The contract must be '.Document::MAX_LABEL.' or smaller.',
+            ...app(ScheduleModeRules::class)->messages(),
         ];
+    }
+
+    /**
+     * The schedule this request asks for, as the controller should store it.
+     *
+     * @return array{mode: string, start: CarbonImmutable, end: CarbonImmutable}
+     */
+    public function scheduleEntry(): array
+    {
+        // Unreachable while the request has passed validation: after() either
+        // fills this in or fails the request.
+        return $this->scheduleEntry ?? throw new \RuntimeException('The schedule was not validated.');
     }
 
     public function after(): array
@@ -68,10 +94,35 @@ class StoreProjectRequest extends FormRequest
         return [
             function ($validator): void {
                 // Only run once the fields this check depends on are themselves
-                // valid, otherwise a bad date string would blow up the parser.
-                if ($validator->errors()->hasAny(['start_date', 'end_date', 'lead_tech', 'technicians'])) {
+                // valid, otherwise there is no team to check availability for.
+                if ($validator->errors()->hasAny(['lead_tech', 'technicians'])) {
                     return;
                 }
+
+                $scheduleRules = app(ScheduleModeRules::class);
+
+                $entry = $scheduleRules->validateEntry(
+                    $validator,
+                    $this->only([
+                        'scheduling_mode',
+                        'start_date',
+                        'end_date',
+                        'project_date',
+                        'start_time',
+                        'end_time',
+                    ]),
+                    '',
+                    // Partial days are a Residential offering. A Commercial
+                    // project asking for one is refused rather than quietly
+                    // downgraded to a whole day.
+                    $this->input('client_type') === 'Residential'
+                );
+
+                if (! $entry) {
+                    return;
+                }
+
+                $this->scheduleEntry = $entry;
 
                 $technicianIds = collect([
                     $this->input('lead_tech'),
@@ -82,26 +133,29 @@ class StoreProjectRequest extends FormRequest
                     ->unique()
                     ->values();
 
-                if ($technicianIds->isEmpty() || ! $this->filled(['start_date', 'end_date'])) {
+                if ($technicianIds->isEmpty()) {
                     return;
                 }
 
-                $ranges = [[
-                    'start' => CarbonImmutable::parse($this->input('start_date'))->startOfDay(),
-                    'end' => CarbonImmutable::parse($this->input('end_date'))->startOfDay(),
-                ]];
-
-                $conflicts = app(TechnicianAvailabilityService::class)
-                    ->findConflicts($technicianIds, $ranges);
+                $availability = app(TechnicianAvailabilityService::class);
+                $conflicts = $availability->findConflicts($technicianIds, [$entry]);
 
                 if ($conflicts->isEmpty()) {
                     return;
                 }
 
-                $message = app(TechnicianAvailabilityService::class)->conflictMessage($conflicts);
+                $message = $availability->conflictMessage($conflicts);
 
-                $validator->errors()->add('start_date', $message);
-                $validator->errors()->add('end_date', $message);
+                // Reported against the fields the chosen mode actually shows,
+                // so the wizard can put the message where the person is
+                // looking.
+                $fields = $entry['mode'] === Schedule::MODE_PARTIAL_DAY
+                    ? ['project_date', 'start_time', 'end_time']
+                    : ['start_date', 'end_date'];
+
+                foreach ($fields as $field) {
+                    $validator->errors()->add($field, $message);
+                }
             },
         ];
     }

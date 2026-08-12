@@ -3,8 +3,8 @@
 namespace App\Services;
 
 use App\Models\Project;
+use App\Models\Schedule;
 use App\Models\Technician;
-use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 
 /**
@@ -117,11 +117,12 @@ class ProjectTeamCandidates
      */
     private function busyDates(Project $project, Collection $technicianIds): array
     {
+        // Each schedule asks only about what it actually occupies: a whole-day
+        // range about every day it covers, a partial day about its hours. So a
+        // technician booked elsewhere in the afternoon is still offered for a
+        // project that runs in the morning.
         $ranges = $project->schedules
-            ->map(fn ($schedule): array => [
-                'start' => CarbonImmutable::parse($schedule->start_datetime)->startOfDay(),
-                'end' => CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime)->startOfDay(),
-            ])
+            ->map(fn (Schedule $schedule): array => $schedule->toAvailabilityRange())
             ->all();
 
         if ($ranges === []) {

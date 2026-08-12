@@ -69,7 +69,7 @@
                             <span class="dash-task-title">{{ Str::limit($item['title'], 34) }}</span>
 
                             <span class="dash-task-meta">
-                                {{ $item['start']->format('M j') }} &ndash; {{ $item['end']->format('M j') }}
+                                {{ $item['schedule_label'] }}
                             </span>
 
                             <span class="dash-task-team">

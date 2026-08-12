@@ -337,6 +337,11 @@ class DashboardMetrics
                     'is_overdue' => $project->isOverdue(),
                     'start' => CarbonImmutable::parse($schedule->start_datetime),
                     'end' => CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime),
+                    // The card shows this instead of the two dates when the
+                    // booking is only part of a day, where "Aug 6 – Aug 6"
+                    // would say less than nothing.
+                    'schedule_label' => $schedule->describe('M j'),
+                    'is_partial_day' => $schedule->isPartialDay(),
                     // Tasks done out of tasks set: the nearest thing this
                     // system has to "how far along is it".
                     'done' => $done,

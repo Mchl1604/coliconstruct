@@ -324,16 +324,78 @@
                             </div>
                         </div>
 
-                        <div class="col-md-6">
+                        {{-- Partial days are a Residential offering, so the
+                             choice is only put in front of the person when it
+                             is theirs to make. --}}
+                        <div class="col-md-12" data-scheduling-mode-wrap>
+                            <label class="form-label">Scheduling Mode</label>
+
+                            <div class="schedule-mode-grid">
+                                <label class="schedule-mode-option is-selected" data-scheduling-mode-option>
+                                    <input type="radio" name="scheduling_mode"
+                                        value="{{ \App\Models\Schedule::MODE_DATE_BASED }}" class="visually-hidden"
+                                        data-scheduling-mode-radio checked>
+                                    <span class="schedule-mode-icon"><i class="bi bi-calendar-range"
+                                            aria-hidden="true"></i></span>
+                                    <span>
+                                        <strong>Date-Based</strong>
+                                        <small>Books the whole of every day in the range</small>
+                                    </span>
+                                </label>
+
+                                <label class="schedule-mode-option" data-scheduling-mode-option>
+                                    <input type="radio" name="scheduling_mode"
+                                        value="{{ \App\Models\Schedule::MODE_PARTIAL_DAY }}" class="visually-hidden"
+                                        data-scheduling-mode-radio>
+                                    <span class="schedule-mode-icon"><i class="bi bi-clock-history"
+                                            aria-hidden="true"></i></span>
+                                    <span>
+                                        <strong>Partial Day</strong>
+                                        <small>Books set hours on a single date</small>
+                                    </span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6" data-date-based-field>
                             <label for="startDate" class="form-label">Start Date</label>
                             <input type="date" name="start_date" id="startDate" class="form-control"
                                 data-summary-input="start_date" data-schedule-date-input disabled required>
                         </div>
 
-                        <div class="col-md-6">
+                        <div class="col-md-6" data-date-based-field>
                             <label for="endDate" class="form-label">End Date</label>
                             <input type="date" name="end_date" id="endDate" class="form-control"
                                 data-summary-input="end_date" data-schedule-date-input disabled required>
+                        </div>
+
+                        <div class="col-md-4" data-partial-day-field hidden>
+                            <label for="projectDate" class="form-label">Project Date</label>
+                            <input type="date" name="project_date" id="projectDate" class="form-control"
+                                data-summary-input="project_date" data-schedule-date-input disabled required>
+                            <div class="form-text">Only dates where everyone has a free slot can be picked.</div>
+                        </div>
+
+                        <div class="col-md-4" data-partial-day-field hidden>
+                            <label for="startTime" class="form-label">Start Time</label>
+                            <select name="start_time" id="startTime" class="form-select"
+                                data-summary-input="start_time" data-schedule-time-input disabled required>
+                                <option value="" selected>Select start time</option>
+                                @foreach ($workingHours as $hour)
+                                    <option value="{{ $hour['value'] }}">{{ $hour['label'] }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+
+                        <div class="col-md-4" data-partial-day-field hidden>
+                            <label for="endTime" class="form-label">End Time</label>
+                            <select name="end_time" id="endTime" class="form-select"
+                                data-summary-input="end_time" data-schedule-time-input disabled required>
+                                <option value="" selected>Select end time</option>
+                                @foreach ($workingHours as $hour)
+                                    <option value="{{ $hour['value'] }}">{{ $hour['label'] }}</option>
+                                @endforeach
+                            </select>
                         </div>
 
                         <div class="col-md-12">
@@ -428,6 +490,10 @@
                                 <div class="review-item">
                                     <span class="review-item-label">Lead Tech</span>
                                     <span class="review-item-value" data-summary-target="lead_tech">Not filled yet</span>
+                                </div>
+                                <div class="review-item">
+                                    <span class="review-item-label">Scheduling Mode</span>
+                                    <span class="review-item-value" data-summary-target="scheduling_mode">Date-Based</span>
                                 </div>
                                 <div class="review-item">
                                     <span class="review-item-label">Schedule</span>

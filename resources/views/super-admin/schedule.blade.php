@@ -95,6 +95,7 @@
             aria-labelledby="scheduleEditModalLabel{{ $project->project_id }}" aria-hidden="true"
             data-schedule-edit-modal
             data-project-id="{{ $project->project_id }}"
+            data-partial-day-allowed="{{ $project->isResidential() ? '1' : '0' }}"
             data-technician-ids="{{ $project->projectTechnicians->pluck('technician_id')->implode(',') }}">
 
             <div class="modal-dialog modal-lg">
@@ -146,66 +147,28 @@
 
                             <p class="text-muted small mb-3">
                                 <i class="bi bi-info-circle me-1"></i>
-                                At least one date range is required. New ranges can't overlap with a date already
+                                At least one schedule is required. New schedules can't overlap time already
                                 booked by this project's technicians on another project.
+                                @if ($project->isResidential())
+                                    A Partial Day schedule books set hours on one date, leaving the rest of that
+                                    day free.
+                                @endif
                             </p>
 
                             <div data-ranges-container data-next-index="{{ max($project->schedules->count(), 1) }}">
                                 @forelse ($project->schedules as $index => $schedule)
-                                    <div class="schedule-range-row row g-2 align-items-end mb-2" data-range-row>
-                                        <input type="hidden" name="ranges[{{ $index }}][schedule_id]"
-                                            value="{{ $schedule->schedule_id }}">
-
-                                        <div class="col-5">
-                                            <label class="form-label small mb-1">Start Date</label>
-                                            <input type="date" class="form-control form-control-sm"
-                                                name="ranges[{{ $index }}][start_date]"
-                                                value="{{ \Carbon\Carbon::parse($schedule->start_datetime)->format('Y-m-d') }}"
-                                                data-range-start required>
-                                        </div>
-
-                                        <div class="col-5">
-                                            <label class="form-label small mb-1">End Date</label>
-                                            <input type="date" class="form-control form-control-sm"
-                                                name="ranges[{{ $index }}][end_date]"
-                                                value="{{ \Carbon\Carbon::parse($schedule->end_datetime)->format('Y-m-d') }}"
-                                                data-range-end required>
-                                        </div>
-
-                                        <div class="col-2">
-                                            <button type="button" class="btn btn-sm btn-outline-danger w-100"
-                                                data-remove-range title="Remove date range">
-                                                <i class="bi bi-trash"></i>
-                                            </button>
-                                        </div>
-                                    </div>
+                                    <x-schedule-range-row :schedule="$schedule" :index="$index"
+                                        :working-hours="$workingHours"
+                                        :partial-day-allowed="$project->isResidential()" />
                                 @empty
-                                    <div class="schedule-range-row row g-2 align-items-end mb-2" data-range-row>
-                                        <div class="col-5">
-                                            <label class="form-label small mb-1">Start Date</label>
-                                            <input type="date" class="form-control form-control-sm"
-                                                name="ranges[0][start_date]" data-range-start required>
-                                        </div>
-
-                                        <div class="col-5">
-                                            <label class="form-label small mb-1">End Date</label>
-                                            <input type="date" class="form-control form-control-sm"
-                                                name="ranges[0][end_date]" data-range-end required>
-                                        </div>
-
-                                        <div class="col-2">
-                                            <button type="button" class="btn btn-sm btn-outline-danger w-100"
-                                                data-remove-range title="Remove date range" disabled>
-                                                <i class="bi bi-trash"></i>
-                                            </button>
-                                        </div>
-                                    </div>
+                                    <x-schedule-range-row :index="0" :working-hours="$workingHours"
+                                        :partial-day-allowed="$project->isResidential()" />
                                 @endforelse
                             </div>
 
                             <button type="button" class="btn btn-sm btn-outline-primary mt-1" data-add-range>
                                 <i class="bi bi-plus-lg me-1"></i>
-                                Add Date Range
+                                Add New Schedule
                             </button>
 
                             <div class="schedule-range-error text-danger small mt-2 d-none" data-range-error></div>
@@ -274,19 +237,57 @@
 
                     {{-- Step 2 onward --}}
                     <div class="schedule-add-panel d-none" data-add-project-panel>
+                        <div class="mb-3">
+                            <label class="form-label small mb-1" for="scheduleAddMode">Scheduling Mode</label>
+                            <select class="form-select" id="scheduleAddMode" data-add-mode>
+                                <option value="{{ \App\Models\Schedule::MODE_DATE_BASED }}">Date-Based</option>
+                                <option value="{{ \App\Models\Schedule::MODE_PARTIAL_DAY }}">Partial Day</option>
+                            </select>
+                            <div class="form-text" data-add-mode-hint>
+                                Books the whole of every day in the range.
+                            </div>
+                        </div>
+
                         <div class="row g-3">
-                            <div class="col-md-6">
+                            <div class="col-md-6" data-add-date-based>
                                 <label class="form-label small mb-1" for="scheduleAddStartDate">Start Date</label>
                                 <input type="text" class="form-control" id="scheduleAddStartDate"
                                     data-add-start readonly disabled>
                                 <div class="form-text">Set by the date you clicked.</div>
                             </div>
 
-                            <div class="col-md-6">
+                            <div class="col-md-6" data-add-date-based>
                                 <label class="form-label small mb-1" for="scheduleAddEndDate">End Date</label>
                                 <input type="text" class="form-control" id="scheduleAddEndDate"
                                     data-add-end placeholder="Select end date" required>
                                 <div class="form-text">Pick this to see which projects are free.</div>
+                            </div>
+
+                            <div class="col-md-4" data-add-partial-day hidden>
+                                <label class="form-label small mb-1" for="scheduleAddDate">Project Date</label>
+                                <input type="text" class="form-control" id="scheduleAddDate"
+                                    data-add-date readonly disabled>
+                                <div class="form-text">Set by the date you clicked.</div>
+                            </div>
+
+                            <div class="col-md-4" data-add-partial-day hidden>
+                                <label class="form-label small mb-1" for="scheduleAddStartTime">Start Time</label>
+                                <select class="form-select" id="scheduleAddStartTime" data-add-start-time>
+                                    <option value="">Select start time</option>
+                                    @foreach ($workingHours as $hour)
+                                        <option value="{{ $hour['value'] }}">{{ $hour['label'] }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+
+                            <div class="col-md-4" data-add-partial-day hidden>
+                                <label class="form-label small mb-1" for="scheduleAddEndTime">End Time</label>
+                                <select class="form-select" id="scheduleAddEndTime" data-add-end-time>
+                                    <option value="">Select end time</option>
+                                    @foreach ($workingHours as $hour)
+                                        <option value="{{ $hour['value'] }}">{{ $hour['label'] }}</option>
+                                    @endforeach
+                                </select>
                             </div>
                         </div>
 
@@ -337,26 +338,15 @@
         </div>
     </div>
 
-    {{-- Range row template used by JS when adding a new date range (shared markup) --}}
+    {{-- Row templates used by JS when adding a schedule. Two of them, because
+         whether the mode selector belongs in a row depends on the project, and
+         a single page-level template is shared by every modal. --}}
     <template data-range-template>
-        <div class="schedule-range-row row g-2 align-items-end mb-2" data-range-row>
-            <div class="col-5">
-                <label class="form-label small mb-1">Start Date</label>
-                <input type="date" class="form-control form-control-sm" data-range-start required>
-            </div>
+        <x-schedule-range-row :working-hours="$workingHours" :partial-day-allowed="false" />
+    </template>
 
-            <div class="col-5">
-                <label class="form-label small mb-1">End Date</label>
-                <input type="date" class="form-control form-control-sm" data-range-end required>
-            </div>
-
-            <div class="col-2">
-                <button type="button" class="btn btn-sm btn-outline-danger w-100" data-remove-range
-                    title="Remove date range">
-                    <i class="bi bi-trash"></i>
-                </button>
-            </div>
-        </div>
+    <template data-range-template-residential>
+        <x-schedule-range-row :working-hours="$workingHours" :partial-day-allowed="true" />
     </template>
 
     @push('scripts')

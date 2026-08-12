@@ -133,13 +133,27 @@ class TaskController extends Controller
 
         $technicians = $technicians
             ->map(function ($technician) use ($activeTaskCounts) {
+                $isLead = optional($technician->account)->role === 'lead_technician';
+
                 return [
                     'technician_id' => $technician->technician_id,
                     'name' => $technician->name,
                     'role' => optional($technician->account)->role,
+                    'is_lead' => $isLead,
+                    // Their own picture, or the default avatar - the same
+                    // source the Blade-rendered assign cards draw from, so the
+                    // two never show the same person differently.
+                    'avatar_url' => $technician->account?->avatarUrl() ?? asset('img/default-avatar.svg'),
                     'active_task_count' => (int) ($activeTaskCounts[$technician->technician_id] ?? 0),
                 ];
             })
+            // The lead comes first, as they already do in the Assigned Team
+            // panel, then everyone else alphabetically.
+            ->sortBy(fn (array $technician): string => sprintf(
+                '%d %s',
+                $technician['is_lead'] ? 0 : 1,
+                mb_strtolower((string) $technician['name'])
+            ))
             ->values();
 
         return response()->json([

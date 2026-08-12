@@ -19,13 +19,15 @@
 }
 
 .client-type-grid,
+.schedule-mode-grid,
 .project-type-grid,
 .upload-grid {
     display: grid;
     gap: 1rem;
 }
 
-.client-type-grid {
+.client-type-grid,
+.schedule-mode-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
@@ -182,6 +184,7 @@
 }
 
 .client-type-option,
+.schedule-mode-option,
 .project-type-option,
 .upload-card {
     border: 1px solid #dbe3ec;
@@ -191,6 +194,7 @@
 }
 
 .client-type-option,
+.schedule-mode-option,
 .project-type-option {
     padding: 1rem;
     cursor: pointer;
@@ -200,6 +204,7 @@
 }
 
 .client-type-option strong,
+.schedule-mode-option strong,
 .project-type-name,
 .upload-card strong {
     display: block;
@@ -208,6 +213,7 @@
 }
 
 .client-type-option small,
+.schedule-mode-option small,
 .upload-card p {
     display: block;
     margin-top: .2rem;
@@ -216,6 +222,7 @@
 }
 
 .client-type-icon,
+.schedule-mode-icon,
 .project-type-icon {
     width: 2.6rem;
     height: 2.6rem;
@@ -230,6 +237,7 @@
 }
 
 .client-type-option.is-selected,
+.schedule-mode-option.is-selected,
 .project-type-option.is-selected {
     border-color: #0d6efd;
     background: #eff6ff;
@@ -237,6 +245,7 @@
 }
 
 .client-type-option.is-selected .client-type-icon,
+.schedule-mode-option.is-selected .schedule-mode-icon,
 .project-type-option.is-selected .project-type-icon {
     background: #0d6efd;
     color: #ffffff;
