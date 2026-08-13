@@ -6,7 +6,6 @@ use App\Models\ActivityLog;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
 use App\Models\Schedule;
-use App\Models\ScheduleTechnician;
 use App\Models\Skill;
 use App\Models\SpecialtyRequest;
 use App\Models\Task;
@@ -14,6 +13,7 @@ use App\Models\Technician;
 use App\Services\ActivityLogger;
 use App\Services\NotificationService;
 use App\Services\ProfileService;
+use App\Services\ProjectTeam;
 use App\Services\TechnicianAvailabilityService;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
@@ -55,7 +55,8 @@ class TechnicianController extends Controller
 
     public function __construct(
         private readonly ActivityLogger $activityLogger,
-        private readonly NotificationService $notifications
+        private readonly NotificationService $notifications,
+        private readonly ProjectTeam $projectTeam
     ) {}
 
     public function index()
@@ -670,17 +671,7 @@ class TechnicianController extends Controller
      */
     private function attachTechnician(Project $project, Technician $technician): void
     {
-        $projectTechnician = ProjectTechnician::firstOrCreate([
-            'project_id' => $project->project_id,
-            'technician_id' => $technician->technician_id,
-        ]);
-
-        $project->schedules()->get()->each(function (Schedule $schedule) use ($projectTechnician): void {
-            ScheduleTechnician::firstOrCreate([
-                'schedule_id' => $schedule->schedule_id,
-                'project_technician_id' => $projectTechnician->project_technician_id,
-            ]);
-        });
+        $this->projectTeam->attach($project, (int) $technician->technician_id);
     }
 
     /**
@@ -689,20 +680,7 @@ class TechnicianController extends Controller
      */
     private function detachTechnician(Project $project, ProjectTechnician $assignment): void
     {
-        ScheduleTechnician::query()
-            ->where('project_technician_id', $assignment->project_technician_id)
-            ->delete();
-
-        Task::query()
-            ->where('project_id', $project->project_id)
-            ->where('technician_id', $assignment->technician_id)
-            ->where('status', '!=', 'completed')
-            ->update([
-                'technician_id' => null,
-                'status' => 'unassigned',
-            ]);
-
-        $assignment->delete();
+        $this->projectTeam->detach($project, $assignment);
     }
 
     /**

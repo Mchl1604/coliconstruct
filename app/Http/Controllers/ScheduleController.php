@@ -5,11 +5,11 @@ namespace App\Http\Controllers;
 use App\Models\ActivityLog;
 use App\Models\Project;
 use App\Models\Schedule;
-use App\Models\ScheduleTechnician;
 use App\Models\Task;
 use App\Models\Technician;
 use App\Services\ActivityLogger;
 use App\Services\NotificationService;
+use App\Services\ProjectTeam;
 use App\Services\ScheduleModeRules;
 use App\Services\TechnicianAvailabilityService;
 use Carbon\CarbonImmutable;
@@ -43,7 +43,8 @@ class ScheduleController extends Controller
 
     public function __construct(
         private readonly ActivityLogger $activityLogger,
-        private readonly NotificationService $notifications
+        private readonly NotificationService $notifications,
+        private readonly ProjectTeam $projectTeam
     ) {}
 
     public function index()
@@ -387,12 +388,7 @@ class ScheduleController extends Controller
                         'remarks' => 'Added from the schedules calendar',
                     ]);
 
-                    $project->projectTechnicians->each(function ($projectTechnician) use ($schedule): void {
-                        ScheduleTechnician::create([
-                            'schedule_id' => $schedule->schedule_id,
-                            'project_technician_id' => $projectTechnician->project_technician_id,
-                        ]);
-                    });
+                    $this->projectTeam->linkScheduleToTeam($schedule, $project);
 
                     $this->promoteStatusAfterScheduling($project);
 
@@ -573,9 +569,7 @@ class ScheduleController extends Controller
                     ->get()
                     ->each(fn (Schedule $schedule) => $schedule->delete());
 
-                $projectTechnicianIds = $project->projectTechnicians->pluck('project_technician_id');
-
-                $ranges->each(function (array $range) use ($project, $projectTechnicianIds): void {
+                $ranges->each(function (array $range) use ($project): void {
                     if ($range['schedule_id']) {
                         Schedule::query()
                             ->where('project_id', $project->project_id)
@@ -598,12 +592,7 @@ class ScheduleController extends Controller
                         'remarks' => 'Added from schedules page',
                     ]);
 
-                    $projectTechnicianIds->each(function (int $projectTechnicianId) use ($schedule): void {
-                        ScheduleTechnician::create([
-                            'schedule_id' => $schedule->schedule_id,
-                            'project_technician_id' => $projectTechnicianId,
-                        ]);
-                    });
+                    $this->projectTeam->linkScheduleToTeam($schedule, $project);
                 });
 
                 $this->syncTaskDatesWithSchedule($project, $ranges);

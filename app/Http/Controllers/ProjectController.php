@@ -11,7 +11,6 @@ use App\Models\ProjectCompletionPhoto;
 use App\Models\ProjectTechnician;
 use App\Models\ProjectType;
 use App\Models\Schedule;
-use App\Models\ScheduleTechnician;
 use App\Models\Task;
 use App\Models\Technician;
 use App\Models\TechnicianReport;
@@ -20,6 +19,7 @@ use App\Services\ActivityLogger;
 use App\Services\NotificationService;
 use App\Services\ProjectCompletion;
 use App\Services\ProjectEmails;
+use App\Services\ProjectTeam;
 use App\Services\ProjectTeamCandidates;
 use App\Services\TechnicianAvailabilityService;
 use Carbon\Carbon;
@@ -39,7 +39,8 @@ class ProjectController extends Controller
     public function __construct(
         private readonly ActivityLogger $activityLogger,
         private readonly NotificationService $notifications,
-        private readonly ProjectEmails $clientEmails
+        private readonly ProjectEmails $clientEmails,
+        private readonly ProjectTeam $projectTeam
     ) {}
 
     public function index()
@@ -167,14 +168,10 @@ class ProjectController extends Controller
                     ->unique()
                     ->values();
 
-                $projectTechnicians = $selectedTechnicianIds->map(function (int $technicianId) use ($project) {
-                    return ProjectTechnician::create([
-                        'project_id' => $project->project_id,
-                        'technician_id' => $technicianId,
-                    ]);
-                });
-
-                $schedule = Schedule::create([
+                // The dates are written first so that attaching each technician
+                // books them onto this schedule in the same step, through the
+                // one path that always writes both rows.
+                Schedule::create([
                     'project_id' => $project->project_id,
                     'start_datetime' => $scheduleEntry['start'],
                     'end_datetime' => $scheduleEntry['end'],
@@ -183,11 +180,8 @@ class ProjectController extends Controller
                     'remarks' => 'Created from project wizard',
                 ]);
 
-                $projectTechnicians->each(function ($projectTechnician) use ($schedule) {
-                    ScheduleTechnician::create([
-                        'schedule_id' => $schedule->schedule_id,
-                        'project_technician_id' => $projectTechnician->project_technician_id,
-                    ]);
+                $selectedTechnicianIds->each(function (int $technicianId) use ($project): void {
+                    $this->projectTeam->attach($project, $technicianId);
                 });
 
                 $this->promoteStatusAfterScheduling($project);
@@ -1275,45 +1269,21 @@ class ProjectController extends Controller
             }
         }
 
+        // Both halves go through ProjectTeam, so somebody added here is booked
+        // onto the project's existing dates exactly as they are when they are
+        // added from the technician's own schedule page. Written any other way
+        // they would sit on the team while still reading as free for those
+        // dates, and could be booked onto a second project over them.
         DB::transaction(function () use ($project, $technicianIds): void {
-            $projectTechniciansToRemove = DB::table('tbl_project_technicians')
-                ->select('project_technician_id', 'technician_id')
-                ->where('project_id', '=', $project->project_id)
-                ->whereNotIn('technician_id', $technicianIds->toArray())
-                ->get();
-
-            if ($projectTechniciansToRemove->isNotEmpty()) {
-
-                $projectTechnicianIds = $projectTechniciansToRemove
-                    ->pluck('project_technician_id')
-                    ->toArray();
-
-                $removedTechnicianIds = $projectTechniciansToRemove
-                    ->pluck('technician_id')
-                    ->toArray();
-
-                DB::table('tbl_schedule_technicians')
-                    ->whereIn('project_technician_id', $projectTechnicianIds)
-                    ->delete();
-
-                DB::table('tbl_project_technicians')
-                    ->whereIn('project_technician_id', $projectTechnicianIds)
-                    ->delete();
-
-                Task::where('project_id', $project->project_id)
-                    ->whereIn('technician_id', $removedTechnicianIds)
-                    ->where('status', '!=', 'completed') // don't touch finished work
-                    ->update([
-                        'technician_id' => null,
-                        'status' => 'unassigned',
-                    ]);
-            }
+            $project->projectTechnicians()
+                ->whereNotIn('technician_id', $technicianIds->all())
+                ->get()
+                ->each(function (ProjectTechnician $assignment) use ($project): void {
+                    $this->projectTeam->detach($project, $assignment);
+                });
 
             $technicianIds->each(function (int $technicianId) use ($project): void {
-                ProjectTechnician::firstOrCreate([
-                    'project_id' => $project->project_id,
-                    'technician_id' => $technicianId,
-                ]);
+                $this->projectTeam->attach($project, $technicianId);
             });
         });
 
