@@ -305,4 +305,82 @@ class ProjectTeamScheduleLinkTest extends TestCase
 
         $this->assertSame(0, ScheduleTechnician::count());
     }
+
+    public function test_the_repair_books_the_orphaned_member_onto_every_schedule(): void
+    {
+        $project = $this->createProject();
+        $first = $this->addRange($project, $this->day(5), $this->day(7));
+        $second = $this->addRange($project, $this->day(12), $this->day(14));
+        $orphan = $this->createTechnician('Orphaned Tech');
+
+        ProjectTechnician::create([
+            'project_id' => $project->project_id,
+            'technician_id' => $orphan->technician_id,
+        ]);
+
+        Artisan::call('project-team:repair', ['--force' => true]);
+
+        $this->assertStringContainsString('Inserted 2 rows', Artisan::output());
+        $this->assertSame(1, $this->scheduleLinkCount($first, $orphan));
+        $this->assertSame(1, $this->scheduleLinkCount($second, $orphan));
+    }
+
+    /**
+     * The repaired technician has to be busy afterwards - that is the whole
+     * point of the rows.
+     */
+    public function test_a_repaired_technician_reads_as_busy_elsewhere(): void
+    {
+        $booked = $this->createProject();
+        $this->addRange($booked, $this->day(5), $this->day(9));
+        $shared = $this->createTechnician('Shared Tech');
+
+        ProjectTechnician::create([
+            'project_id' => $booked->project_id,
+            'technician_id' => $shared->technician_id,
+        ]);
+
+        Artisan::call('project-team:repair', ['--force' => true]);
+
+        $other = $this->createProject();
+        $this->addRange($other, $this->day(6), $this->day(8));
+
+        $this->put(route('super-admin.projects.team.update', $other->project_id), [
+            'lead_tech' => $this->createTechnician('Other Lead', 'lead_technician')->technician_id,
+            'technicians' => [$shared->technician_id],
+        ])->assertSessionHas('error');
+    }
+
+    public function test_the_repair_dry_run_writes_nothing(): void
+    {
+        $project = $this->createProject();
+        $this->addRange($project, $this->day(5), $this->day(7));
+
+        ProjectTechnician::create([
+            'project_id' => $project->project_id,
+            'technician_id' => $this->createTechnician('Orphaned Tech')->technician_id,
+        ]);
+
+        Artisan::call('project-team:repair', ['--dry-run' => true, '--force' => true]);
+
+        $this->assertStringContainsString('this was a dry run', Artisan::output());
+        $this->assertSame(0, ScheduleTechnician::count());
+    }
+
+    public function test_the_repair_is_safe_to_run_twice(): void
+    {
+        $project = $this->createProject();
+        $this->addRange($project, $this->day(5), $this->day(7));
+
+        ProjectTechnician::create([
+            'project_id' => $project->project_id,
+            'technician_id' => $this->createTechnician('Orphaned Tech')->technician_id,
+        ]);
+
+        Artisan::call('project-team:repair', ['--force' => true]);
+        Artisan::call('project-team:repair', ['--force' => true]);
+
+        $this->assertStringContainsString('Nothing to repair', Artisan::output());
+        $this->assertSame(1, ScheduleTechnician::count());
+    }
 }
