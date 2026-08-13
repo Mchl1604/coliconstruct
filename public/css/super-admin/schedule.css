@@ -96,17 +96,203 @@
     color: #374151;
 }
 
+/* ---- One booking, as a card you can read at a glance ---- */
+
+.schedule-range-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    /* Rows number themselves, so one added after a removal still reads in
+       order without anything having to renumber them. */
+    counter-reset: schedule-range;
+}
+
 .schedule-range-row {
-    background: #f8fafc;
-    border: 1px solid #e5e7eb;
-    border-radius: 0.5rem;
-    padding: 0.5rem 0.5rem 0.25rem;
-    margin-left: 0;
-    margin-right: 0;
+    counter-increment: schedule-range;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.6rem;
+    padding: 0.7rem 0.85rem 0.85rem;
+    transition:
+        border-color 0.12s ease,
+        box-shadow 0.12s ease;
+}
+
+.schedule-range-row:hover {
+    border-color: #cbd5e1;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+}
+
+.schedule-range-row:focus-within {
+    border-color: #86b7fe;
+    box-shadow: 0 0 0 0.18rem rgba(13, 110, 253, 0.1);
+}
+
+.schedule-range-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.6rem;
+}
+
+.schedule-range-index::before {
+    content: "Schedule " counter(schedule-range);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #64748b;
+}
+
+.schedule-range-head-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.schedule-range-mode {
+    width: auto;
+    min-width: 8.5rem;
+    font-size: 0.78rem;
+    border-radius: 0.4rem;
+}
+
+.schedule-range-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.9rem;
+    height: 1.9rem;
+    border-radius: 0.4rem;
+    border: 1px solid #e2e8f0;
+    background: #fff;
+    color: #94a3b8;
+    transition:
+        color 0.12s ease,
+        border-color 0.12s ease,
+        background-color 0.12s ease;
+}
+
+.schedule-range-remove:hover:not(:disabled) {
+    color: #b42318;
+    border-color: #f1c7c2;
+    background: #fef3f2;
+}
+
+.schedule-range-remove:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.schedule-range-fields {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.5rem;
+}
+
+/* The group not in use is hidden by the `hidden` attribute, which a display
+   rule of our own would otherwise win against. */
+.schedule-range-field[hidden],
+.schedule-range-arrow[hidden] {
+    display: none;
+}
+
+.schedule-range-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    flex: 1 1 9rem;
+    min-width: 8rem;
+}
+
+.schedule-range-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: #64748b;
+    margin: 0;
+}
+
+/* Matched on the element rather than on our own class: flatpickr replaces the
+   visible field with an alt input of its own making, and this has to dress
+   that one too. */
+.schedule-range-fields .form-control,
+.schedule-range-fields .form-select {
+    font-size: 0.86rem;
+    border-radius: 0.45rem;
+    border-color: #e2e8f0;
+    background-color: #fff;
+}
+
+.schedule-range-fields .form-control:focus,
+.schedule-range-fields .form-select:focus {
+    border-color: #86b7fe;
 }
 
 .schedule-range-row .flatpickr-input[readonly] {
     background-color: #fff;
+}
+
+/* Sits between the two halves of a range, on the baseline of the inputs. */
+.schedule-range-arrow {
+    flex: 0 0 auto;
+    padding-bottom: 0.45rem;
+    color: #cbd5e1;
+    font-size: 0.8rem;
+}
+
+.schedule-add-range {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    width: 100%;
+    margin-top: 0.6rem;
+    padding: 0.5rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #0d6efd;
+    background: #fff;
+    border: 1px dashed #b6d4fe;
+    border-radius: 0.6rem;
+    transition:
+        background-color 0.12s ease,
+        border-color 0.12s ease;
+}
+
+.schedule-add-range:hover {
+    background: #f5f9ff;
+    border-color: #0d6efd;
+}
+
+.schedule-range-error {
+    margin-top: 0.7rem;
+    padding: 0.55rem 0.7rem;
+    border: 1px solid #f1c7c2;
+    border-radius: 0.45rem;
+    background: #fef3f2;
+    color: #7a271a;
+    font-size: 0.8rem;
+}
+
+.schedule-modal-note {
+    display: flex;
+    gap: 0.45rem;
+    margin: 0.9rem 0 0;
+    padding: 0.6rem 0.7rem;
+    border-radius: 0.5rem;
+    background: #f8fafc;
+    color: #64748b;
+    font-size: 0.78rem;
+    line-height: 1.5;
+}
+
+.schedule-modal-note i {
+    margin-top: 0.1rem;
+    color: #94a3b8;
 }
 
 /* Every calendar day is clickable, so make that discoverable. */
@@ -172,6 +358,7 @@
     border: 1px solid #e5e7eb;
     border-radius: 0.6rem;
     padding: 0.7rem 0.85rem;
+    margin-bottom: 1.1rem;
 }
 
 .schedule-modal-team-label {
@@ -217,6 +404,8 @@
     letter-spacing: 0.05em;
     color: #64748b;
     margin-bottom: 0.6rem;
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid #e5e7eb;
 }
 
 .schedule-count-pill {

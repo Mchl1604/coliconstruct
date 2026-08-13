@@ -20,6 +20,21 @@ document.addEventListener("DOMContentLoaded", function () {
     const WORKING_HOUR_START = 8;
     const WORKING_HOUR_END = 17;
 
+    /**
+     * Dates read as "Aug 25, 2026" and are still submitted as 2026-08-25.
+     *
+     * flatpickr's alt input is what the person sees and types into; the real
+     * field keeps the ISO value, which is what the server parses and what
+     * every date comparison on this page is written against. Changing the
+     * stored format instead would have meant rewriting all of those.
+     */
+    const FRIENDLY_DATE = {
+        dateFormat: "Y-m-d",
+        altInput: true,
+        altFormat: "M j, Y",
+        allowInput: true,
+    };
+
     const technicianSchedules =
         window.scheduleTechnicianAvailability &&
         typeof window.scheduleTechnicianAvailability === "object"
@@ -93,6 +108,22 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         return formatMinutes(interval.from) + " - " + formatMinutes(interval.to);
+    }
+
+    /**
+     * "Aug 25, 2026" - what a stored date reads as anywhere a person sees one,
+     * matching the alt inputs the pickers show.
+     */
+    function friendlyDate(dateString) {
+        if (!dateString) {
+            return "";
+        }
+
+        return new Date(dateString + "T00:00:00").toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+        });
     }
 
     function formatDateList(dates) {
@@ -427,6 +458,19 @@ document.addEventListener("DOMContentLoaded", function () {
 
             field.disabled = !pair[1];
             field.required = pair[1];
+
+            // A date field is really two: the one that carries the value and
+            // flatpickr's alt input, which is what a person sees and what the
+            // browser validates. Hiding the pair leaves the alt input a
+            // candidate for validation - being out of view is not the same as
+            // being disabled - so an unused one would hold the whole form back
+            // with a message nobody can see. It follows its own field.
+            const altInput = field._flatpickr && field._flatpickr.altInput;
+
+            if (altInput) {
+                altInput.disabled = !pair[1];
+                altInput.required = pair[1];
+            }
         });
     }
 
@@ -566,15 +610,13 @@ document.addEventListener("DOMContentLoaded", function () {
 
         if (startInput && endInput) {
             const endPicker = window.flatpickr(endInput, {
-                dateFormat: "Y-m-d",
-                allowInput: true,
+                ...FRIENDLY_DATE,
                 minDate: minDate,
                 disable: [wholeDayBlocked],
             });
 
             const startPicker = window.flatpickr(startInput, {
-                dateFormat: "Y-m-d",
-                allowInput: true,
+                ...FRIENDLY_DATE,
                 minDate: minDate,
                 disable: [wholeDayBlocked],
                 onChange: function (selectedDates) {
@@ -597,8 +639,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
         if (projectDateInput) {
             window.flatpickr(projectDateInput, {
-                dateFormat: "Y-m-d",
-                allowInput: true,
+                ...FRIENDLY_DATE,
                 minDate: minDate,
                 disable: [partialDayBlocked],
                 onChange: function () {
@@ -754,12 +795,18 @@ document.addEventListener("DOMContentLoaded", function () {
                 let hasOverlap = false;
                 let hasPastDate = false;
                 let hasBadTimes = false;
+                // Checked here rather than left to the browser: the date
+                // fields are flatpickr alt inputs, and the real field behind
+                // one is hidden, which bars it from native validation.
+                let hasIncomplete = false;
                 const availabilityConflicts = [];
                 const entries = rows.map(readRow);
 
                 entries.forEach(function (entry) {
                     if (entry.mode === MODE_PARTIAL_DAY) {
                         if (!entry.date || entry.from === null || entry.to === null) {
+                            hasIncomplete = true;
+
                             return;
                         }
 
@@ -774,6 +821,8 @@ document.addEventListener("DOMContentLoaded", function () {
                         }
                     } else {
                         if (!entry.start || !entry.end) {
+                            hasIncomplete = true;
+
                             return;
                         }
 
@@ -837,12 +886,16 @@ document.addEventListener("DOMContentLoaded", function () {
                     hasOverlap ||
                     hasPastDate ||
                     hasBadTimes ||
+                    hasIncomplete ||
                     mergedConflicts.length > 0;
 
                 if (isInvalid && errorBox) {
                     event.preventDefault();
 
-                    if (hasPastDate) {
+                    if (hasIncomplete) {
+                        errorBox.textContent =
+                            "Every schedule needs its dates filled in.";
+                    } else if (hasPastDate) {
                         errorBox.textContent =
                             "New schedules cannot start before today.";
                     } else if (hasBadTimes) {
@@ -1069,7 +1122,7 @@ document.addEventListener("DOMContentLoaded", function () {
             }
 
             if (dateInput) {
-                dateInput.value = selectedDate || "";
+                dateInput.value = friendlyDate(selectedDate);
             }
         }
 
@@ -1580,12 +1633,12 @@ document.addEventListener("DOMContentLoaded", function () {
         toggleBtn.addEventListener("click", function () {
             toggleBtn.classList.add("d-none");
             panel.classList.remove("d-none");
-            startInput.value = selectedDate || "";
+            startInput.value = friendlyDate(selectedDate);
             applyMode();
 
             if (window.flatpickr) {
                 endPicker = window.flatpickr(endInput, {
-                    dateFormat: "Y-m-d",
+                    ...FRIENDLY_DATE,
                     allowInput: false,
                     minDate: selectedDate,
                     onChange: function () {

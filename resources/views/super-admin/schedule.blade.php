@@ -55,12 +55,11 @@
                                     {{ $project->projectTechnicians->pluck('technician.name')->filter()->join(', ') ?: 'Unassigned' }}
                                 </td>
                                 <td>
+                                    {{-- describe() is the one place that decides how a
+                                         schedule reads, so a single day says one date and
+                                         a partial day carries its hours. --}}
                                     @forelse ($project->schedules as $schedule)
-                                        <div class="small">
-                                            {{ \Carbon\Carbon::parse($schedule->start_datetime)->format('M d, Y') }}
-                                            &ndash;
-                                            {{ \Carbon\Carbon::parse($schedule->end_datetime)->format('M d, Y') }}
-                                        </div>
+                                        <div class="small">{{ $schedule->describe() }}</div>
                                     @empty
                                         <span class="text-muted small">No date range set</span>
                                     @endforelse
@@ -121,9 +120,9 @@
                         </div>
 
                         <div class="modal-body">
-                            <div class="schedule-modal-team mb-3">
+                            <div class="schedule-modal-team">
                                 <span class="schedule-modal-team-label">
-                                    <i class="bi bi-people-fill me-1" aria-hidden="true"></i>
+                                    <i class="bi bi-people-fill" aria-hidden="true"></i>
                                     Assigned Technicians
                                 </span>
 
@@ -145,17 +144,19 @@
                                 </div>
                             </div>
 
-                            <p class="text-muted small mb-3">
-                                <i class="bi bi-info-circle me-1"></i>
-                                At least one schedule is required. New schedules can't overlap time already
-                                booked by this project's technicians on another project.
-                                @if ($project->isResidential())
-                                    A Partial Day schedule books set hours on one date, leaving the rest of that
-                                    day free.
-                                @endif
-                            </p>
+                            <div class="schedule-section-heading">
+                                <span>
+                                    <i class="bi bi-calendar2-week me-1" aria-hidden="true"></i>
+                                    Date Ranges
+                                </span>
+                                <span class="schedule-count-pill">
+                                    {{ max($project->schedules->count(), 1) }}
+                                    scheduled
+                                </span>
+                            </div>
 
-                            <div data-ranges-container data-next-index="{{ max($project->schedules->count(), 1) }}">
+                            <div class="schedule-range-list" data-ranges-container
+                                data-next-index="{{ max($project->schedules->count(), 1) }}">
                                 @forelse ($project->schedules as $index => $schedule)
                                     <x-schedule-range-row :schedule="$schedule" :index="$index"
                                         :working-hours="$workingHours"
@@ -166,19 +167,32 @@
                                 @endforelse
                             </div>
 
-                            <button type="button" class="btn btn-sm btn-outline-primary mt-1" data-add-range>
-                                <i class="bi bi-plus-lg me-1"></i>
+                            <button type="button" class="schedule-add-range" data-add-range>
+                                <i class="bi bi-plus-lg" aria-hidden="true"></i>
                                 Add New Schedule
                             </button>
 
-                            <div class="schedule-range-error text-danger small mt-2 d-none" data-range-error></div>
+                            <div class="schedule-range-error d-none" data-range-error></div>
+
+                            <p class="schedule-modal-note">
+                                <i class="bi bi-info-circle" aria-hidden="true"></i>
+                                <span>
+                                    At least one schedule is required, and a new one can't overlap time this
+                                    project's technicians are already booked for elsewhere.
+                                    @if ($project->isResidential())
+                                        A Partial Day schedule books set hours on one date, leaving the rest of
+                                        that day free.
+                                    @endif
+                                </span>
+                            </p>
                         </div>
 
                         <div class="modal-footer">
-                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                            <button type="button" class="btn btn-light" data-bs-dismiss="modal">
                                 Cancel
                             </button>
                             <button type="submit" class="btn btn-primary" data-schedule-submit>
+                                <i class="bi bi-check-lg me-1" aria-hidden="true"></i>
                                 Save Schedule
                             </button>
                         </div>
