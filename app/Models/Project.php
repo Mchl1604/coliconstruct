@@ -25,7 +25,7 @@ class Project extends Model
 
     /**
      * Statuses that DO count as a scheduling conflict for a technician.
-     * Everything else (not_yet_scheduled, on_hold, completed, cancelled,
+     * Everything else (unscheduled, on_hold, completed, cancelled,
      * archived) must be ignored by the technician availability checker.
      *
      * @var array<int, string>
@@ -249,7 +249,7 @@ class Project extends Model
         }
 
         return match ($this->status) {
-            'not_yet_scheduled' => 'Not Yet Scheduled',
+            'unscheduled' => 'Unscheduled',
             'pending' => 'Pending',
             'ongoing' => 'Ongoing',
             'completed' => 'Completed',
@@ -273,7 +273,7 @@ class Project extends Model
         }
 
         return match ($this->status) {
-            'not_yet_scheduled' => 'bg-info text-dark',
+            'unscheduled' => 'bg-info text-dark',
             'pending' => 'bg-warning',
             'ongoing' => 'bg-primary',
             'completed' => 'bg-success',

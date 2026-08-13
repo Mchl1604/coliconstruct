@@ -165,7 +165,7 @@ class ReportsPageTest extends TestCase
     {
         $ongoing = $this->project('Ongoing Project', 'ongoing');
         $pending = $this->project('Pending Project', 'pending');
-        $fresh = $this->project('Unscheduled Project', 'not_yet_scheduled');
+        $fresh = $this->project('Unscheduled Project', 'unscheduled');
         $completed = $this->project('Completed Project', 'completed');
         $cancelled = $this->project('Cancelled Project', 'cancelled');
         $archived = $this->project('Archived Project', 'archived', [], 100, true);

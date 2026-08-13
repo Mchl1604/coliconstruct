@@ -72,7 +72,7 @@ class TaskController extends Controller
 
         // Only projects that can actually receive new tasks are selectable in
         // the Add Task modal: completed, cancelled and archived are excluded.
-        // A not-yet-scheduled project stays on the list and the form-data
+        // An unscheduled project stays on the list and the form-data
         // endpoint explains why it cannot take a task, which reads better than
         // the project simply not being there.
         $schedulableProjects = Project::query()

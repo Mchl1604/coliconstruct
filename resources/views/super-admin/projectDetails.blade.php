@@ -219,7 +219,7 @@
                     <div>
                         @php
                             $statusClass = match ($project->status) {
-                                'not_yet_scheduled' => 'bg-info text-dark',
+                                'unscheduled' => 'bg-info text-dark',
                                 'pending' => 'bg-warning text-dark',
                                 'ongoing' => 'bg-primary',
                                 'completed' => 'bg-success',

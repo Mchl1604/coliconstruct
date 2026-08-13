@@ -196,7 +196,7 @@ class PublicSiteController extends Controller
         }
 
         return match ($project->status) {
-            'not_yet_scheduled', 'pending' => 'pending',
+            'unscheduled', 'pending' => 'pending',
             'ongoing' => 'ongoing',
             'completed' => 'completed',
             'cancelled' => 'cancelled',
@@ -231,7 +231,7 @@ class PublicSiteController extends Controller
         }
 
         return match ($project->status) {
-            'not_yet_scheduled' => 'project-card-header-pending',
+            'unscheduled' => 'project-card-header-pending',
             'pending' => 'project-card-header-scheduled',
             'ongoing' => 'project-card-header-progress',
             'completed' => 'project-card-header-complete',

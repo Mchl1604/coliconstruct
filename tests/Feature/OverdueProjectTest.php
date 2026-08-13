@@ -146,7 +146,7 @@ class OverdueProjectTest extends TestCase
             'completed' => $this->project('Completed Project', 'completed'),
             'cancelled' => $this->project('Cancelled Project', 'cancelled'),
             'archived' => $this->project('Archived Project', 'archived', false, true),
-            'not_yet_scheduled' => $this->project('Unscheduled Project', 'not_yet_scheduled'),
+            'unscheduled' => $this->project('Unscheduled Project', 'unscheduled'),
         ];
 
         foreach ($cases as $label => $project) {

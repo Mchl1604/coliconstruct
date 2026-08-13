@@ -145,7 +145,7 @@ class PartialDayScheduleTest extends TestCase
         $project = Project::create([
             'name' => $clientType.' Project '.uniqid(),
             'reference_no' => 'REF-'.uniqid(),
-            'status' => 'not_yet_scheduled',
+            'status' => 'unscheduled',
             'address' => 'Address',
             'description' => 'Description',
         ]);

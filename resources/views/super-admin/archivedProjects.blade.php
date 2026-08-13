@@ -97,7 +97,7 @@
                                         <div class="modal-body">
                                             Restore <strong>{{ $project->reference_no ?? $project->name }}</strong>?
                                             It moves back into the active Projects list as
-                                            <strong>Not Yet Scheduled</strong>. Its client, documents, quotation,
+                                            <strong>Unscheduled</strong>. Its client, documents, quotation,
                                             reports and task history all come back with it; the schedule and the
                                             assigned technicians were released when it was archived, so those have to
                                             be set again.

@@ -46,12 +46,12 @@ class TechnicianController extends Controller
      *
      * Wider than Project::ACTIVE_PROJECT_STATUSES on purpose: a project can be
      * staffed before it is scheduled. Restoring an archived project leaves it
-     * not-yet-scheduled with no team, so it has to be reachable here - and
+     * unscheduled with no team, so it has to be reachable here - and
      * scheduling it later links every assigned technician to the new range.
      *
      * @var array<int, string>
      */
-    private const STAFFABLE_STATUSES = ['not_yet_scheduled', 'pending', 'ongoing'];
+    private const STAFFABLE_STATUSES = ['unscheduled', 'pending', 'ongoing'];
 
     public function __construct(
         private readonly ActivityLogger $activityLogger,

@@ -185,21 +185,21 @@ class ReadOnlyProjectVisibilityTest extends TestCase
 
     /**
      * The task list is for live work only: pending and ongoing projects.
-     * Everything else - not-yet-scheduled, on-hold, completed, cancelled,
+     * Everything else - unscheduled, on-hold, completed, cancelled,
      * archived - is left off the page entirely.
      */
     public function test_tasks_page_only_lists_tasks_of_pending_or_ongoing_projects(): void
     {
         $pending = $this->createProject('Pending Project', 'pending');
         $ongoing = $this->createProject('Ongoing Project', 'ongoing');
-        $notYetScheduled = $this->createProject('Not Scheduled Project', 'not_yet_scheduled');
+        $unscheduledProject = $this->createProject('Not Scheduled Project', 'unscheduled');
         $completed = $this->createProject('Completed Project', 'completed');
         $cancelled = $this->createProject('Cancelled Project', 'cancelled');
         $archived = $this->createProject('Archived Project', 'archived', true);
 
         $this->addTask($pending, 'Visible Pending Task');
         $this->addTask($ongoing, 'Visible Ongoing Task');
-        $this->addTask($notYetScheduled, 'Hidden Unscheduled Task');
+        $this->addTask($unscheduledProject, 'Hidden Unscheduled Task');
         $this->addTask($completed, 'Hidden Completed Task');
         $this->addTask($cancelled, 'Hidden Cancelled Task');
         $this->addTask($archived, 'Hidden Archived Task');
@@ -225,7 +225,7 @@ class ReadOnlyProjectVisibilityTest extends TestCase
         $ongoingNoTask = $this->createProject('Ongoing No Task', 'ongoing');
         $pendingNoTask = $this->createProject('Pending No Task', 'pending');
 
-        $notYetScheduled = $this->createProject('Not Scheduled Project', 'not_yet_scheduled');
+        $unscheduledProject = $this->createProject('Not Scheduled Project', 'unscheduled');
         $completed = $this->createProject('Completed Project', 'completed');
         $cancelled = $this->createProject('Cancelled Project', 'cancelled');
         $archived = $this->createProject('Archived Project', 'archived', true);
@@ -244,7 +244,7 @@ class ReadOnlyProjectVisibilityTest extends TestCase
         $this->assertContains($pendingNoTask->project_id, $filterIds);
 
         // Anything the table can never show stays out.
-        $this->assertNotContains($notYetScheduled->project_id, $filterIds);
+        $this->assertNotContains($unscheduledProject->project_id, $filterIds);
         $this->assertNotContains($completed->project_id, $filterIds);
         $this->assertNotContains($cancelled->project_id, $filterIds);
         $this->assertNotContains($archived->project_id, $filterIds);

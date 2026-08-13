@@ -181,7 +181,7 @@ class DashboardMetrics
             $overdue = Project::query()->overdue()->count();
             $overdueOngoing = Project::query()->overdue()->where('status', 'ongoing')->count();
 
-            $pending = (int) ($byStatus['pending'] ?? 0) + (int) ($byStatus['not_yet_scheduled'] ?? 0);
+            $pending = (int) ($byStatus['pending'] ?? 0) + (int) ($byStatus['unscheduled'] ?? 0);
             $ongoing = (int) ($byStatus['ongoing'] ?? 0);
 
             return [

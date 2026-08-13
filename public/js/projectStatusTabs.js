@@ -34,7 +34,7 @@ document.addEventListener("DOMContentLoaded", function () {
         if (status === "pending") {
             return (
                 !isOverdue &&
-                (rowStatus === "pending" || rowStatus === "not_yet_scheduled")
+                (rowStatus === "pending" || rowStatus === "unscheduled")
             );
         }
 

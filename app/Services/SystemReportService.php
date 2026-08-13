@@ -254,7 +254,7 @@ class SystemReportService
 
         return [
             'total' => (int) $counts->sum(),
-            'pending' => (int) ($counts['pending'] ?? 0) + (int) ($counts['not_yet_scheduled'] ?? 0),
+            'pending' => (int) ($counts['pending'] ?? 0) + (int) ($counts['unscheduled'] ?? 0),
             'ongoing' => (int) ($counts['ongoing'] ?? 0),
             'completed' => (int) ($counts['completed'] ?? 0),
             'cancelled' => (int) ($counts['cancelled'] ?? 0),
@@ -402,7 +402,7 @@ class SystemReportService
         $counts['overdue'] = (int) $overdue->sum();
 
         $slices = [
-            'not_yet_scheduled' => ['Not Yet Scheduled', '#0dcaf0'],
+            'unscheduled' => ['Unscheduled', '#0dcaf0'],
             'pending' => ['Pending', '#f0ad4e'],
             'ongoing' => ['Ongoing', '#0d6efd'],
             'on_hold' => ['On Hold', '#6c757d'],

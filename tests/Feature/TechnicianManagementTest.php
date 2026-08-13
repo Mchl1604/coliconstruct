@@ -910,14 +910,14 @@ class TechnicianManagementTest extends TestCase
 
     /**
      * A project can be staffed before it is scheduled - restoring an archived
-     * project leaves it not-yet-scheduled with no team at all.
+     * project leaves it unscheduled with no team at all.
      */
-    public function test_not_yet_scheduled_projects_can_be_staffed(): void
+    public function test_unscheduled_projects_can_be_staffed(): void
     {
         $ana = $this->technician('Ana Mendoza');
         $lead = $this->leadTechnician('Jose Garcia');
 
-        $fresh = $this->project('Restored Project', [$lead], 'not_yet_scheduled');
+        $fresh = $this->project('Restored Project', [$lead], 'unscheduled');
 
         $response = $this->getJson(route('super-admin.technicians.assignable', $ana->technician_id));
 
@@ -955,7 +955,7 @@ class TechnicianManagementTest extends TestCase
         $ana = $this->technician('Ana Mendoza');
         $lead = $this->leadTechnician('Jose Garcia');
 
-        $fresh = $this->project('Restored Project', [$lead], 'not_yet_scheduled');
+        $fresh = $this->project('Restored Project', [$lead], 'unscheduled');
 
         $this->postJson(
             route('super-admin.technicians.projects.store', $ana->technician_id),
@@ -998,7 +998,7 @@ class TechnicianManagementTest extends TestCase
         $busy = $this->project('Busy Project', [$ana]);
         $this->schedule($busy, $this->day(1), $this->day(30));
 
-        $fresh = $this->project('Restored Project', [$lead], 'not_yet_scheduled');
+        $fresh = $this->project('Restored Project', [$lead], 'unscheduled');
 
         $response = $this->getJson(route('super-admin.technicians.assignable', $ana->technician_id));
 

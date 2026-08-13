@@ -144,14 +144,14 @@ class ScheduleCalendarAssignTest extends TestCase
     }
 
     /**
-     * A not-yet-scheduled project is the main thing you would want to book
+     * An unscheduled project is the main thing you would want to book
      * from the calendar - restoring an archived project leaves it in exactly
      * that state, with no schedule at all.
      */
-    public function test_not_yet_scheduled_projects_can_be_booked_from_the_calendar(): void
+    public function test_unscheduled_projects_can_be_booked_from_the_calendar(): void
     {
         $tech = $this->createTechnician('Free Tech');
-        $fresh = $this->createProject('Not Yet Scheduled', [$tech], 'not_yet_scheduled');
+        $fresh = $this->createProject('Unscheduled', [$tech], 'unscheduled');
 
         $response = $this->getJson(route('super-admin.schedules.assignable', [
             'start_date' => $this->day(5),
@@ -160,7 +160,7 @@ class ScheduleCalendarAssignTest extends TestCase
 
         $response->assertOk();
         $this->assertContains(
-            'Not Yet Scheduled',
+            'Unscheduled',
             collect($response->json('projects'))->pluck('name')->all()
         );
 
@@ -175,7 +175,7 @@ class ScheduleCalendarAssignTest extends TestCase
         $schedule = Schedule::where('project_id', $fresh->project_id)->first();
         $this->assertNotNull($schedule);
 
-        // Booking it promotes the project off not_yet_scheduled.
+        // Booking it promotes the project off unscheduled.
         $this->assertSame('pending', $fresh->fresh()->status);
     }
 
@@ -188,7 +188,7 @@ class ScheduleCalendarAssignTest extends TestCase
         $bare = Project::create([
             'name' => 'Restored Project',
             'reference_no' => 'REF-RESTORED',
-            'status' => 'not_yet_scheduled',
+            'status' => 'unscheduled',
             'address' => 'Address',
             'description' => 'Description',
         ]);

@@ -78,7 +78,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
         return (
             {
-                not_yet_scheduled: "bg-info text-dark",
+                unscheduled: "bg-info text-dark",
                 pending: "bg-warning",
                 ongoing: "bg-primary",
                 completed: "bg-success",

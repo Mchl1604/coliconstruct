@@ -173,7 +173,7 @@ class SchedulingActivityLogTest extends TestCase
 
         $day10 = CarbonImmutable::today()->addDays(10)->toDateString();
 
-        $project = $this->createProject('not_yet_scheduled');
+        $project = $this->createProject('unscheduled');
         ProjectTechnician::create([
             'project_id' => $project->project_id,
             'technician_id' => $technician->technician_id,

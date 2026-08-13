@@ -23,7 +23,7 @@ class ProjectPolicy
      *
      * @var array<int, string>
      */
-    private const REPORTABLE_STATUSES = ['not_yet_scheduled', 'pending', 'ongoing'];
+    private const REPORTABLE_STATUSES = ['unscheduled', 'pending', 'ongoing'];
 
     /**
      * A technician sees a project because they are on its team - never

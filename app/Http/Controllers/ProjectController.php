@@ -126,7 +126,7 @@ class ProjectController extends Controller
 
                 $project = Project::create([
                     'name' => $this->resolveProjectName($validated),
-                    'status' => 'not_yet_scheduled',
+                    'status' => 'unscheduled',
                     'quotation' => $validated['quotation_amount'],
                     'address' => $validated['project_address'],
                     'description' => $validated['project_description'],
@@ -795,7 +795,7 @@ class ProjectController extends Controller
                 ->with('error', 'This project is '.$project->status.' and cannot be put on hold.');
         }
 
-        if ($project->status === 'not_yet_scheduled') {
+        if ($project->status === 'unscheduled') {
             return redirect()
                 ->route('super-admin.projects', $id)
                 ->with('error', 'This project has no schedule yet.');
@@ -809,7 +809,7 @@ class ProjectController extends Controller
             DB::transaction(function () use ($project): void {
                 $project->update([
                     'on_hold' => true,
-                    'status' => 'not_yet_scheduled',
+                    'status' => 'unscheduled',
                 ]);
 
                 $this->releaseScheduleAndTechnicians($project);
@@ -859,7 +859,7 @@ class ProjectController extends Controller
 
         return redirect()
             ->route('super-admin.projects', $id)
-            ->with('success', 'Project has been resumed. It is Not Yet Scheduled and must be scheduled again.');
+            ->with('success', 'Project has been resumed. It is Unscheduled and must be scheduled again.');
     }
 
     /**
@@ -1062,7 +1062,7 @@ class ProjectController extends Controller
 
     /**
      * Restore an archived project back into the active pipeline as
-     * Not Yet Scheduled. It must be scheduled again from scratch.
+     * Unscheduled. It must be scheduled again from scratch.
      */
     public function restore(int $id)
     {
@@ -1077,7 +1077,7 @@ class ProjectController extends Controller
         try {
             DB::transaction(function () use ($project): void {
                 $project->update([
-                    'status' => 'not_yet_scheduled',
+                    'status' => 'unscheduled',
                     'is_archived' => false,
                     'archived_at' => null,
                     'archived_by' => null,
@@ -1099,7 +1099,7 @@ class ProjectController extends Controller
 
             return redirect()
                 ->route('super-admin.projects')
-                ->with('success', 'Project restored. It is now Not Yet Scheduled.');
+                ->with('success', 'Project restored. It is now Unscheduled.');
         } catch (Throwable $e) {
             return redirect()
                 ->route('super-admin.projects.archived')
@@ -1144,12 +1144,12 @@ class ProjectController extends Controller
     }
 
     /**
-     * Promote a freshly-scheduled project out of Not Yet Scheduled. Mirrors
+     * Promote a freshly-scheduled project out of Unscheduled. Mirrors
      * the same "pending vs ongoing" rule used by updateStatus().
      */
     private function promoteStatusAfterScheduling(Project $project): void
     {
-        if ($project->status !== 'not_yet_scheduled') {
+        if ($project->status !== 'unscheduled') {
             return;
         }
 
@@ -1191,7 +1191,7 @@ class ProjectController extends Controller
 
             switch ($project->status) {
 
-                case 'not_yet_scheduled':
+                case 'unscheduled':
                     $this->promoteStatusAfterScheduling($project);
                     break;
 

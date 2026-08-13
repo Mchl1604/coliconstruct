@@ -598,7 +598,7 @@ class TechnicianAvailabilityService
      * Busy schedules for the given technicians inside the validation window.
      *
      * Only projects whose status still counts as active block a technician.
-     * Completed, cancelled, archived, on-hold and not-yet-scheduled projects
+     * Completed, cancelled, archived, on-hold and unscheduled projects
      * are ignored, matching the rules already used across the app.
      *
      * @param  Collection<int, int>  $technicianIds

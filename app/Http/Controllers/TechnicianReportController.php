@@ -16,7 +16,7 @@ class TechnicianReportController extends Controller
      *
      * @var array<int, string>
      */
-    private const REPORTABLE_STATUSES = ['not_yet_scheduled', 'pending', 'ongoing'];
+    private const REPORTABLE_STATUSES = ['unscheduled', 'pending', 'ongoing'];
 
     public function store(Request $request, $id)
     {

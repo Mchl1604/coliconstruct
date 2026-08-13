@@ -32,14 +32,14 @@ class ScheduleController extends Controller
     /**
      * Statuses that can be booked onto a date from the calendar.
      *
-     * Wider than ACTIVE_PROJECT_STATUSES on purpose: a not-yet-scheduled
+     * Wider than ACTIVE_PROJECT_STATUSES on purpose: an unscheduled
      * project is the main thing you would want to schedule. Restoring an
      * archived project leaves it in exactly that state, with its schedule
      * released, so it has to be reachable here.
      *
      * @var array<int, string>
      */
-    private const SCHEDULABLE_STATUSES = ['not_yet_scheduled', 'pending', 'ongoing'];
+    private const SCHEDULABLE_STATUSES = ['unscheduled', 'pending', 'ongoing'];
 
     public function __construct(
         private readonly ActivityLogger $activityLogger,
@@ -142,7 +142,7 @@ class ScheduleController extends Controller
     /**
      * Projects that can take on the given date range.
      *
-     * A project qualifies when it is schedulable (not-yet-scheduled, pending
+     * A project qualifies when it is schedulable (unscheduled, pending
      * or ongoing, and neither on hold nor archived), none of its own ranges
      * already cover these dates, and every technician on it is continuously
      * free for the whole range.
@@ -666,12 +666,12 @@ class ScheduleController extends Controller
     }
 
     /**
-     * Promote a Not Yet Scheduled project once it receives a schedule from
+     * Promote an Unscheduled project once it receives a schedule from
      * the schedules page, mirroring ProjectController's promotion rule.
      */
     private function promoteStatusAfterScheduling(Project $project): void
     {
-        if ($project->status !== 'not_yet_scheduled') {
+        if ($project->status !== 'unscheduled') {
             return;
         }
 

@@ -118,7 +118,7 @@
                                         </button>
 
                                         @if (! $isReadOnly)
-                                            @if ($project->on_hold !== true && $project->status !== 'not_yet_scheduled')
+                                            @if ($project->on_hold !== true && $project->status !== 'unscheduled')
                                                 <button class="btn btn-sm btn-warning py-1 px-2" data-bs-toggle="modal"
                                                     data-bs-target="#onHoldModal{{ $project->project_id }}">
                                                     <i class="bi bi-pause"></i>
@@ -408,7 +408,7 @@
                             }
 
                             if (status === 'pending') {
-                                return !isOverdue && (rowStatus === 'pending' || rowStatus === 'not_yet_scheduled');
+                                return !isOverdue && (rowStatus === 'pending' || rowStatus === 'unscheduled');
                             }
 
                             // Ongoing means "on track": overdue work has its

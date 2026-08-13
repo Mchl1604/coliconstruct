@@ -31,7 +31,7 @@ class ClientProjects
     private const STATUS_RANK = [
         'ongoing' => 0,
         'pending' => 1,
-        'not_yet_scheduled' => 2,
+        'unscheduled' => 2,
         'completed' => 3,
         'cancelled' => 4,
         'archived' => 5,
