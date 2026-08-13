@@ -15,13 +15,6 @@
     $isCompleted = $task->isCompleted();
     $isEditable = $updateAction !== null && ! $isCompleted;
 
-    $rangesLabel = $scheduleRanges
-        ->map(
-            fn($range) => \Carbon\Carbon::parse($range['start'])->format('M j, Y') .
-                ' – ' .
-                \Carbon\Carbon::parse($range['end'])->format('M j, Y'),
-        )
-        ->join('; ');
 @endphp
 
 {{--

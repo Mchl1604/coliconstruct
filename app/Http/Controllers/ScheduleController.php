@@ -12,6 +12,7 @@ use App\Services\NotificationService;
 use App\Services\ProjectTeam;
 use App\Services\ScheduleDateRemoval;
 use App\Services\ScheduleModeRules;
+use App\Services\TaskScheduleRules;
 use App\Services\TechnicianAvailabilityService;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
@@ -45,7 +46,8 @@ class ScheduleController extends Controller
     public function __construct(
         private readonly ActivityLogger $activityLogger,
         private readonly NotificationService $notifications,
-        private readonly ProjectTeam $projectTeam
+        private readonly ProjectTeam $projectTeam,
+        private readonly TaskScheduleRules $taskScheduleRules
     ) {}
 
     public function index()
@@ -748,10 +750,16 @@ class ScheduleController extends Controller
     }
 
     /**
-     * Tasks must always reflect the latest schedule. Any task whose dates
-     * no longer fall inside at least one of the project's current date
-     * ranges gets its dates cleared (shown as "Unassigned" in the UI)
-     * instead of silently keeping stale dates.
+     * Tasks must always reflect the latest schedule. Any task whose dates no
+     * longer fall inside the project's scheduled period gets its dates cleared
+     * (shown as "Unassigned" in the UI) instead of silently keeping stale
+     * dates.
+     *
+     * The test is TaskScheduleRules', the same one the task forms validate
+     * against - anything else and this would clear dates the form had just
+     * accepted. Only a change that moves the outer bounds of the period can
+     * strand a task now: splitting a range leaves those bounds where they
+     * were, so a task spanning the split keeps its dates.
      *
      * @param  Collection<int, array{schedule_id: ?int, start: CarbonImmutable, end: CarbonImmutable}>  $ranges
      * @return Collection<int, Task> the tasks whose dates were cleared, so a
@@ -763,7 +771,7 @@ class ScheduleController extends Controller
         $currentRanges = $ranges->map(fn (array $range) => [
             'start' => $range['start']->toDateString(),
             'end' => $range['end']->toDateString(),
-        ]);
+        ])->all();
 
         return Task::query()
             ->where('project_id', $project->project_id)
@@ -771,12 +779,11 @@ class ScheduleController extends Controller
             ->whereNotNull('due_date')
             ->get()
             ->filter(function (Task $task) use ($currentRanges): bool {
-                $taskStart = CarbonImmutable::parse($task->start_date)->toDateString();
-                $taskEnd = CarbonImmutable::parse($task->due_date)->toDateString();
-
-                $stillCovered = $currentRanges->contains(function (array $range) use ($taskStart, $taskEnd): bool {
-                    return $taskStart >= $range['start'] && $taskEnd <= $range['end'];
-                });
+                $stillCovered = $this->taskScheduleRules->windowCovers(
+                    $currentRanges,
+                    CarbonImmutable::parse($task->start_date)->toDateString(),
+                    CarbonImmutable::parse($task->due_date)->toDateString()
+                );
 
                 if ($stillCovered) {
                     return false;

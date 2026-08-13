@@ -11,9 +11,9 @@
         $scheduleStart = $project->schedules->min('start_datetime');
         $scheduleEnd = $project->schedules->max('end_datetime');
         $hasSchedule = $scheduleStart && $scheduleEnd;
-        // Each range on its own: a project can be scheduled Jul 10-15 and
-        // Jul 20-25, and a task must sit inside ONE of those. Using only the
-        // overall min/max would wrongly allow Jul 16-19.
+        // Each range on its own: the pickers work out the period they span,
+        // which is what a task is measured against, and the panel below still
+        // shows a person which days are actually booked.
         $scheduleRanges = $project->schedules
             ->map(
                 fn($schedule) => [
@@ -26,6 +26,8 @@
         // still the whole of a partial day's date - but the label says which
         // schedule that date came from.
         $scheduleRangesLabel = $project->schedules->map(fn($schedule) => $schedule->describe())->join('; ');
+        // The period a task may be dated in: earliest booked date to latest.
+        $taskDateWindowLabel = app(\App\Services\TaskScheduleRules::class)->describeWindow($scheduleRanges->all());
     @endphp
     {{-- `project-details-page` is what applies the brand blue from the
          client's own project page; the layout below is unchanged. --}}
@@ -1434,7 +1436,7 @@
 
                             <div class="col-12 mb-3">
                                 <div class="form-text">
-                                    Allowed: {{ $scheduleRangesLabel ?: 'No schedule set' }}@if ($scheduleRanges->count() > 1). A task cannot span the gap between two ranges.@endif
+                                    Allowed: {{ $taskDateWindowLabel ?: 'No schedule set' }}@if ($scheduleRanges->count() > 1). This project is booked {{ $scheduleRangesLabel }}, and a task may span the gap between those dates.@endif
                                 </div>
                             </div>
 

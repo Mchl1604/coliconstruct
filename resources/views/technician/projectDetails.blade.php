@@ -555,9 +555,11 @@
                             <div class="col-12 mb-3">
                                 <div class="form-text">
                                     Allowed:
-                                    {{ $scheduleRanges->map(fn($range) => \Carbon\Carbon::parse($range['start'])->format('M j, Y') . ' – ' . \Carbon\Carbon::parse($range['end'])->format('M j, Y'))->join('; ') ?: 'No schedule set' }}
+                                    {{ app(\App\Services\TaskScheduleRules::class)->describeWindow($scheduleRanges->all()) ?: 'No schedule set' }}
                                     @if ($scheduleRanges->count() > 1)
-                                        . A task cannot span the gap between two ranges.
+                                        . This project is booked
+                                        {{ app(\App\Services\TaskScheduleRules::class)->describe($scheduleRanges->all()) }},
+                                        and a task may span the gap between those dates.
                                     @endif
                                 </div>
                             </div>

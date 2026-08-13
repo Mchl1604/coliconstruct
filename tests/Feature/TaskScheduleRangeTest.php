@@ -14,9 +14,15 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 /**
- * A project's schedule can have gaps - July 10-15 and July 20-25, say.
- * A task must sit entirely inside ONE of those ranges. Checking only the
- * earliest start and latest end would wrongly accept July 16-19.
+ * A project's schedule can have gaps - booked day 10-15 and day 20-25, say.
+ *
+ * A task is measured against the period those ranges span, day 10 through day
+ * 25, not against the ranges one at a time. "Start when we arrive, finish
+ * before we leave" is a sensible task on a project that runs in two visits,
+ * and the days between the visits are the project's own business.
+ *
+ * What is still refused is a task reaching outside that period altogether:
+ * before the project starts, or after it ends.
  */
 class TaskScheduleRangeTest extends TestCase
 {
@@ -101,43 +107,67 @@ class TaskScheduleRangeTest extends TestCase
         );
     }
 
-    /**
-     * The exact reported bug: dates that sit in the gap between two ranges.
-     */
-    public function test_it_rejects_task_dates_inside_the_gap_between_ranges(): void
-    {
-        $response = $this->storeTask($this->day(16), $this->day(19));
+    // ------------------------------------------------------------------
+    // Inside the period
+    // ------------------------------------------------------------------
 
-        $response->assertSessionHasErrors(['start_date', 'due_date']);
-        $this->assertSame(0, Task::count());
+    public function test_it_accepts_a_task_inside_the_first_range(): void
+    {
+        $this->storeTask($this->day(11), $this->day(14))->assertSessionHasNoErrors();
+
+        $this->assertSame(1, Task::count());
     }
 
-    public function test_it_rejects_a_task_that_spans_the_gap(): void
+    public function test_it_accepts_a_task_inside_the_second_range(): void
+    {
+        $this->storeTask($this->day(21), $this->day(24))->assertSessionHasNoErrors();
+
+        $this->assertSame(1, Task::count());
+    }
+
+    public function test_it_accepts_a_task_that_spans_the_gap(): void
     {
         // Starts inside range one, ends inside range two.
-        $response = $this->storeTask($this->day(14), $this->day(21));
+        $this->storeTask($this->day(14), $this->day(21))->assertSessionHasNoErrors();
 
-        $response->assertSessionHasErrors(['start_date', 'due_date']);
-        $this->assertSame(0, Task::count());
+        $this->assertSame(1, Task::count());
     }
 
-    public function test_it_rejects_a_task_that_starts_in_a_range_but_ends_in_the_gap(): void
+    public function test_it_accepts_a_task_lying_wholly_in_the_gap(): void
     {
-        $response = $this->storeTask($this->day(13), $this->day(18));
+        $this->storeTask($this->day(16), $this->day(19))->assertSessionHasNoErrors();
 
-        $response->assertSessionHasErrors(['start_date', 'due_date']);
-        $this->assertSame(0, Task::count());
+        $this->assertSame(1, Task::count());
     }
 
-    public function test_it_rejects_a_task_that_starts_in_the_gap_and_ends_in_a_range(): void
+    public function test_it_accepts_a_task_covering_the_whole_period(): void
     {
-        $response = $this->storeTask($this->day(18), $this->day(22));
+        $this->storeTask($this->day(10), $this->day(25))->assertSessionHasNoErrors();
 
-        $response->assertSessionHasErrors(['start_date', 'due_date']);
+        $this->assertSame(1, Task::count());
+    }
+
+    // ------------------------------------------------------------------
+    // Outside it
+    // ------------------------------------------------------------------
+
+    public function test_it_rejects_a_task_starting_before_the_period(): void
+    {
+        $this->storeTask($this->day(8), $this->day(12))
+            ->assertSessionHasErrors(['start_date', 'due_date']);
+
         $this->assertSame(0, Task::count());
     }
 
-    public function test_it_rejects_dates_outside_every_range(): void
+    public function test_it_rejects_a_task_ending_after_the_period(): void
+    {
+        $this->storeTask($this->day(10), $this->day(30))
+            ->assertSessionHasErrors(['start_date', 'due_date']);
+
+        $this->assertSame(0, Task::count());
+    }
+
+    public function test_it_rejects_dates_outside_the_period_entirely(): void
     {
         $this->storeTask($this->day(1), $this->day(3))
             ->assertSessionHasErrors(['start_date', 'due_date']);
@@ -148,36 +178,13 @@ class TaskScheduleRangeTest extends TestCase
         $this->assertSame(0, Task::count());
     }
 
-    public function test_it_accepts_a_task_inside_the_first_range(): void
+    // ------------------------------------------------------------------
+    // Editing is held to the same rule
+    // ------------------------------------------------------------------
+
+    private function existingTask(): Task
     {
-        $response = $this->storeTask($this->day(11), $this->day(14));
-
-        $response->assertSessionHasNoErrors();
-        $this->assertSame(1, Task::count());
-    }
-
-    public function test_it_accepts_a_task_inside_the_second_range(): void
-    {
-        $response = $this->storeTask($this->day(21), $this->day(24));
-
-        $response->assertSessionHasNoErrors();
-        $this->assertSame(1, Task::count());
-    }
-
-    public function test_it_accepts_a_task_matching_a_range_exactly(): void
-    {
-        $response = $this->storeTask($this->day(20), $this->day(25));
-
-        $response->assertSessionHasNoErrors();
-        $this->assertSame(1, Task::count());
-    }
-
-    /**
-     * Editing an existing task is held to the same rule.
-     */
-    public function test_updating_a_task_into_the_gap_is_rejected(): void
-    {
-        $task = Task::create([
+        return Task::create([
             'project_id' => $this->project->project_id,
             'technician_id' => $this->technician->technician_id,
             'task_title' => 'Existing Task',
@@ -186,50 +193,46 @@ class TaskScheduleRangeTest extends TestCase
             'due_date' => $this->day(12),
             'status' => 'pending',
         ]);
-
-        $response = $this->put(route('super-admin.tasks.update', $task->task_id), [
-            'task_title' => 'Existing Task',
-            'task_description' => 'Description',
-            'technician_id' => $this->technician->technician_id,
-            'start_date' => $this->day(16),
-            'due_date' => $this->day(19),
-        ]);
-
-        $response->assertSessionHasErrors(['start_date', 'due_date']);
-
-        $task->refresh();
-        $this->assertSame($this->day(11), CarbonImmutable::parse($task->start_date)->toDateString());
     }
 
-    public function test_updating_a_task_within_one_range_succeeds(): void
+    private function updateTask(Task $task, string $startDate, string $dueDate)
     {
-        $task = Task::create([
-            'project_id' => $this->project->project_id,
-            'technician_id' => $this->technician->technician_id,
-            'task_title' => 'Existing Task',
-            'task_description' => 'Description',
-            'start_date' => $this->day(11),
-            'due_date' => $this->day(12),
-            'status' => 'pending',
-        ]);
-
-        $response = $this->put(route('super-admin.tasks.update', $task->task_id), [
+        return $this->put(route('super-admin.tasks.update', $task->task_id), [
             'task_title' => 'Existing Task',
             'task_description' => 'Description',
             'technician_id' => $this->technician->technician_id,
-            'start_date' => $this->day(21),
-            'due_date' => $this->day(23),
+            'start_date' => $startDate,
+            'due_date' => $dueDate,
         ]);
-
-        $response->assertSessionHasNoErrors();
-
-        $task->refresh();
-        $this->assertSame($this->day(21), CarbonImmutable::parse($task->start_date)->toDateString());
     }
+
+    public function test_updating_a_task_across_the_gap_succeeds(): void
+    {
+        $task = $this->existingTask();
+
+        $this->updateTask($task, $this->day(14), $this->day(21))->assertSessionHasNoErrors();
+
+        $this->assertSame($this->day(14), CarbonImmutable::parse($task->refresh()->start_date)->toDateString());
+    }
+
+    public function test_updating_a_task_outside_the_period_is_rejected(): void
+    {
+        $task = $this->existingTask();
+
+        $this->updateTask($task, $this->day(11), $this->day(40))
+            ->assertSessionHasErrors(['start_date', 'due_date']);
+
+        $this->assertSame($this->day(11), CarbonImmutable::parse($task->refresh()->start_date)->toDateString());
+        $this->assertSame($this->day(12), CarbonImmutable::parse($task->refresh()->due_date)->toDateString());
+    }
+
+    // ------------------------------------------------------------------
+    // What the form is told
+    // ------------------------------------------------------------------
 
     /**
-     * The Add Task modal needs the individual ranges to build its pickers;
-     * min/max alone is what allowed gap dates to be chosen.
+     * The pickers work the period out from the ranges, and the ranges are
+     * still what the screens show a person as actually booked.
      */
     public function test_the_task_form_endpoint_exposes_every_range(): void
     {
@@ -243,5 +246,38 @@ class TaskScheduleRangeTest extends TestCase
         $response->assertJsonPath('ranges.0.end', $this->day(15));
         $response->assertJsonPath('ranges.1.start', $this->day(20));
         $response->assertJsonPath('ranges.1.end', $this->day(25));
+
+        // The outer bounds are the period a task may be dated in.
+        $response->assertJsonPath('schedule_start', $this->day(10));
+        $response->assertJsonPath('schedule_end', $this->day(25));
+    }
+
+    /**
+     * The reason this rule was widened: splitting a range must not strand the
+     * work that was booked across it.
+     */
+    public function test_a_task_survives_the_range_it_sat_in_being_split(): void
+    {
+        $task = Task::create([
+            'project_id' => $this->project->project_id,
+            'technician_id' => $this->technician->technician_id,
+            'task_title' => 'Spans the split',
+            'task_description' => 'Description',
+            'start_date' => $this->day(11),
+            'due_date' => $this->day(14),
+            'status' => 'pending',
+        ]);
+
+        $schedule = Schedule::where('project_id', $this->project->project_id)
+            ->orderBy('start_datetime')
+            ->firstOrFail();
+
+        $this->deleteJson(route('super-admin.schedules.dates.destroy', [
+            'schedule' => $schedule->schedule_id,
+            'date' => $this->day(13),
+        ]))->assertOk()->assertJsonPath('cleared_tasks', 0);
+
+        $this->assertSame($this->day(11), CarbonImmutable::parse($task->refresh()->start_date)->toDateString());
+        $this->assertSame($this->day(14), CarbonImmutable::parse($task->refresh()->due_date)->toDateString());
     }
 }

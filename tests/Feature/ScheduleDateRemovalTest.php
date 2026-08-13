@@ -354,6 +354,12 @@ class ScheduleDateRemovalTest extends TestCase
         $this->assertSame('ongoing', $project->fresh()->status);
     }
 
+    /**
+     * Only a removal that moves the outer bounds of the scheduled period can
+     * strand a task - taking the last day off does exactly that. A date taken
+     * out of the middle leaves those bounds alone, which is covered by
+     * TaskScheduleRangeTest.
+     */
     public function test_a_task_that_no_longer_fits_loses_its_dates_and_is_reported(): void
     {
         $lead = $this->createTechnician('Lead Person', 'lead_technician');
@@ -364,23 +370,23 @@ class ScheduleDateRemovalTest extends TestCase
             'project_id' => $project->project_id,
             'technician_id' => $lead->technician_id,
             'task_title' => 'Fit the ducting',
-            'task_description' => 'On the removed day',
+            'task_description' => 'Ends on the removed last day',
             'status' => 'pending',
-            'start_date' => $this->day(13),
-            'due_date' => $this->day(13),
+            'start_date' => $this->day(14),
+            'due_date' => $this->day(15),
         ]);
 
         $untouched = Task::create([
             'project_id' => $project->project_id,
             'technician_id' => $lead->technician_id,
             'task_title' => 'Test the unit',
-            'task_description' => 'Still inside a kept range',
+            'task_description' => 'Still inside the period that remains',
             'status' => 'pending',
             'start_date' => $this->day(10),
             'due_date' => $this->day(11),
         ]);
 
-        $response = $this->removeDate($schedule, $this->day(13));
+        $response = $this->removeDate($schedule, $this->day(15));
 
         $response->assertOk();
         $response->assertJsonPath('cleared_tasks', 1);
@@ -397,6 +403,35 @@ class ScheduleDateRemovalTest extends TestCase
 
         $notification = Notification::where('title', 'Task Dates Cleared')->first();
         $this->assertStringContainsString('Fit the ducting', $notification->message);
+    }
+
+    /**
+     * A task dated on the very day being removed keeps its dates, because the
+     * period the project is scheduled over has not changed. Days inside that
+     * period which the project is not booked for are the project's own
+     * business - the same reason a task may span the gap between two ranges.
+     */
+    public function test_a_task_on_the_removed_day_keeps_its_dates(): void
+    {
+        $lead = $this->createTechnician('Lead Person', 'lead_technician');
+        $project = $this->createProject([$lead]);
+        $schedule = $this->book($project, $this->day(10), $this->day(15));
+
+        $task = Task::create([
+            'project_id' => $project->project_id,
+            'technician_id' => $lead->technician_id,
+            'task_title' => 'Fit the ducting',
+            'task_description' => 'On the removed day',
+            'status' => 'pending',
+            'start_date' => $this->day(13),
+            'due_date' => $this->day(13),
+        ]);
+
+        $this->removeDate($schedule, $this->day(13))
+            ->assertOk()
+            ->assertJsonPath('cleared_tasks', 0);
+
+        $this->assertSame($this->day(13), $task->fresh()->start_date);
     }
 
     public function test_a_task_still_covered_raises_no_notification(): void

@@ -98,10 +98,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
                 rangesHint.textContent = ranges.length
                     ? "Allowed: " +
-                      window.taskDatePickers.describeRanges(ranges) +
-                      (ranges.length > 1
-                          ? ". A task cannot span the gap between two ranges."
-                          : ".")
+                      window.taskDatePickers.describeWindow(ranges) +
+                      "."
                     : "";
 
                 if (!data.technicians.length) {

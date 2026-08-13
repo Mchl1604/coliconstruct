@@ -7,20 +7,32 @@ use Carbon\Carbon;
 use Illuminate\Validation\Validator;
 
 /**
- * The "a task must sit inside one of its project's schedule ranges" rule.
+ * The "a task must sit inside its project's scheduled period" rule.
+ *
+ * A project can hold several date ranges with gaps between them - booked
+ * Aug 10-15 and Aug 25-30, say. A task is measured against the whole period
+ * those ranges span, from the earliest booked date to the latest: Aug 10
+ * through Aug 30. Anything starting on or after the first and ending on or
+ * before the last is allowed, whether or not every day in between is booked.
+ *
+ * A task is a piece of work with a deadline, not a claim on a day. Fitting
+ * one inside a single range used to be the rule, which made a perfectly
+ * sensible task - "start when we arrive, finish before we leave" - impossible
+ * to express on a project that runs in two visits, and made a task vanish from
+ * the board whenever a range it happened to sit in was split.
  *
  * Extracted from TaskController so the technician portal enforces exactly the
  * same thing rather than a second, drifting copy of it. ScheduleController
- * re-checks the same rule after a reschedule.
+ * re-checks the same rule after a reschedule, and after a date is removed.
  */
 class TaskScheduleRules
 {
     /**
      * Every date range on a project's schedule, as 'Y-m-d' pairs.
      *
-     * A project can have several ranges with gaps between them (July 10-15 and
-     * July 20-25, say). Checking only the earliest start and the latest end
-     * would wrongly accept July 16-19, so callers must test them individually.
+     * Still the ranges themselves rather than the period they span: this is
+     * what the screens show a person, and "booked Aug 10-15 and Aug 25-30" is
+     * more use to them than the outer bound alone.
      *
      * @return array<int, array{start: string, end: string}>
      */
@@ -39,30 +51,47 @@ class TaskScheduleRules
     }
 
     /**
-     * The range that fully contains the given dates, if any. A task cannot
-     * straddle the gap between two ranges.
+     * The period the project is scheduled over: its earliest booked date and
+     * its latest, gaps included.
      *
      * @param  array<int, array{start: string, end: string}>  $ranges
-     * @return array{start: string, end: string}|null
+     * @return array{start: string, end: string}|null null when nothing is booked
      */
-    public function rangeCovering(array $ranges, ?string $startDate, ?string $dueDate): ?array
+    public function window(array $ranges): ?array
     {
-        if (! $startDate || ! $dueDate) {
+        if ($ranges === []) {
             return null;
         }
 
-        foreach ($ranges as $range) {
-            if ($startDate >= $range['start'] && $dueDate <= $range['end']) {
-                return $range;
-            }
-        }
-
-        return null;
+        return [
+            'start' => collect($ranges)->min(fn (array $range): string => $range['start']),
+            'end' => collect($ranges)->max(fn (array $range): string => $range['end']),
+        ];
     }
 
     /**
-     * Human-readable list of the allowed windows, for validation messages and
-     * the form hints that sit under the date pickers.
+     * Whether the given dates sit inside that period.
+     *
+     * @param  array<int, array{start: string, end: string}>  $ranges
+     */
+    public function windowCovers(array $ranges, ?string $startDate, ?string $dueDate): bool
+    {
+        if (! $startDate || ! $dueDate) {
+            return false;
+        }
+
+        $window = $this->window($ranges);
+
+        if (! $window) {
+            return false;
+        }
+
+        return $startDate >= $window['start'] && $dueDate <= $window['end'];
+    }
+
+    /**
+     * Human-readable list of the booked ranges, for the form hints that sit
+     * under the date pickers.
      *
      * @param  array<int, array{start: string, end: string}>  $ranges
      */
@@ -76,7 +105,26 @@ class TaskScheduleRules
     }
 
     /**
-     * Add the "inside a single schedule range" check to a validator.
+     * "Aug 10, 2026 - Aug 30, 2026" - the period a task may be given dates in,
+     * which is what a validation message has to talk about.
+     *
+     * @param  array<int, array{start: string, end: string}>  $ranges
+     */
+    public function describeWindow(array $ranges): string
+    {
+        $window = $this->window($ranges);
+
+        if (! $window) {
+            return '';
+        }
+
+        return Carbon::parse($window['start'])->format('M j, Y')
+            .' - '
+            .Carbon::parse($window['end'])->format('M j, Y');
+    }
+
+    /**
+     * Add the "inside the project's scheduled period" check to a validator.
      *
      * @param  array<int, array{start: string, end: string}>  $ranges
      */
@@ -89,14 +137,12 @@ class TaskScheduleRules
 
             $data = $validator->getData();
 
-            if ($this->rangeCovering($ranges, $data['start_date'] ?? null, $data['due_date'] ?? null)) {
+            if ($this->windowCovers($ranges, $data['start_date'] ?? null, $data['due_date'] ?? null)) {
                 return;
             }
 
-            $message = count($ranges) === 1
-                ? 'The task dates must fall inside the project schedule ('.$this->describe($ranges).').'
-                : 'The task dates must fall inside a single one of the project\'s schedule ranges ('
-                    .$this->describe($ranges).'). A task cannot span the gap between two ranges.';
+            $message = 'The task dates must fall inside the project\'s scheduled period ('
+                .$this->describeWindow($ranges).').';
 
             $validator->errors()->add('start_date', $message);
             $validator->errors()->add('due_date', $message);
