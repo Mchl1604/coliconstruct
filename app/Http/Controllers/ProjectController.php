@@ -150,32 +150,35 @@ class ProjectController extends Controller
                 ->map(fn (Schedule $schedule): array => $schedule->toAvailabilityRange())
                 ->all();
         } else {
-            // The wizard only offers the button once its dates are filled in,
-            // so a request without them is a stale page rather than a state to
-            // design for - it is refused rather than silently screened against
-            // nothing, which would call everybody available.
-            $entry = $scheduleRules->validateEntry(
-                $validator,
-                $request->only([
-                    'scheduling_mode',
-                    'start_date',
-                    'end_date',
-                    'project_date',
-                    'start_time',
-                    'end_time',
-                ]),
-                '',
-                true,
-                true
-            );
+            $schedule = $request->only([
+                'scheduling_mode',
+                'start_date',
+                'end_date',
+                'project_date',
+                'start_time',
+                'end_time',
+            ]);
 
-            if (! $entry) {
-                return response()->json([
-                    'error' => 'Choose the project schedule first, so the technicians can be checked against it.',
-                ], 422);
+            // The wizard cannot fill its schedule in until a team exists, so a
+            // project being created usually has no dates yet when this is
+            // asked. With none there is nothing to clash with, and every team
+            // comes back offerable - the wizard then screens each technician
+            // against the dates as they are chosen, and StoreProjectRequest
+            // refuses a team that does not fit them.
+            $ranges = [];
+
+            if ($this->describesASchedule($request)) {
+                $entry = $scheduleRules->validateEntry($validator, $schedule, '', true, true);
+
+                if (! $entry) {
+                    return response()->json([
+                        'error' => $validator->errors()->first()
+                            ?: 'That schedule could not be read, so nobody could be checked against it.',
+                    ], 422);
+                }
+
+                $ranges = [$entry];
             }
-
-            $ranges = [$entry];
         }
 
         return response()->json([
@@ -184,6 +187,19 @@ class ProjectController extends Controller
                 $destination?->project_id
             ),
         ]);
+    }
+
+    /**
+     * Whether the caller is asking about a schedule at all.
+     *
+     * A wizard that has not reached its dates yet sends none of these, which
+     * is a different thing from sending one that cannot be read: the first is
+     * screened against nothing, the second is refused.
+     */
+    private function describesASchedule(Request $request): bool
+    {
+        return collect(['start_date', 'end_date', 'project_date', 'start_time', 'end_time'])
+            ->contains(fn (string $field): bool => $request->filled($field));
     }
 
     public function store(StoreProjectRequest $request)

@@ -276,17 +276,20 @@
                             <div class="d-flex align-items-center justify-content-between">
                                 <label for="technicians" class="form-label mb-0">Technicians</label>
 
-                                {{-- Available once the schedule below is
-                                     filled in: the team can only be checked
-                                     against dates that exist. --}}
+                                {{-- Offered from the start. The schedule below
+                                     cannot be filled in until a team exists,
+                                     so waiting for dates would mean picking by
+                                     hand the very team this is meant to save
+                                     you picking. --}}
                                 <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal"
-                                    data-bs-target="#importTeamModal" data-import-team-button disabled>
+                                    data-bs-target="#importTeamModal" data-import-team-button>
                                     <i class="bi bi-people me-1" aria-hidden="true"></i>
                                     Import Team
                                 </button>
                             </div>
                             <div class="form-text mb-2" data-import-team-hint>
-                                Set the schedule below to copy a team from another project.
+                                Copy a team from another project. Once you set the schedule below, anyone who is
+                                already booked over those dates is flagged here.
                             </div>
 
                             <div class="technician-picker" data-technician-picker>

@@ -1543,29 +1543,39 @@ document.addEventListener('DOMContentLoaded', function() {
         });
 
         return function () {
-            const ready = Boolean(importTeamParams());
-
-            importButton.disabled = !ready;
-
-            if (importHint) {
-                importHint.classList.toggle('d-none', ready);
+            if (!importHint) {
+                return;
             }
+
+            importHint.textContent = scheduleChosen()
+                ? 'Copy a team from another project. Anyone already booked over these dates is flagged.'
+                : 'Copy a team from another project. Once you set the schedule below, anyone who is '
+                    + 'already booked over those dates is flagged here.';
         };
+    }
+
+    function scheduleChosen() {
+        const fields = scheduleFields().filter(Boolean);
+
+        return fields.length > 0 && fields.every(function (field) {
+            return field.value;
+        });
     }
 
     /**
      * The schedule the wizard is about to save, as the import endpoint reads
-     * it - or null while it is still incomplete.
+     * it.
+     *
+     * Empty until the dates are chosen, which is the ordinary case: the
+     * schedule fields stay disabled until a team exists, so waiting for them
+     * would mean picking by hand the very team this is meant to save picking.
+     * With no dates the endpoint screens against nothing and offers every
+     * team; the wizard then flags anyone who clashes as the dates go in, and
+     * the server refuses a team that does not fit them.
      */
     function importTeamParams() {
-        const fields = scheduleFields().filter(Boolean);
-
-        const ready = fields.length > 0 && fields.every(function (field) {
-            return field.value;
-        });
-
-        if (!ready) {
-            return null;
+        if (!scheduleChosen()) {
+            return {};
         }
 
         return isPartialDay()

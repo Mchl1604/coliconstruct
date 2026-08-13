@@ -360,13 +360,44 @@ class ImportTechnicianTeamTest extends TestCase
         $this->assertSame('Busy Tech', $payload['unavailable'][0]['name']);
     }
 
-    public function test_the_wizard_is_refused_without_a_schedule(): void
+    /**
+     * The wizard's schedule fields stay disabled until a team exists, so a
+     * project being created almost always asks this before it has any dates.
+     * With none there is nothing to clash with, and every team is offered -
+     * the wizard flags anyone who clashes as the dates go in, and
+     * StoreProjectRequest refuses a team that does not fit them.
+     */
+    public function test_the_wizard_offers_every_team_before_its_dates_are_chosen(): void
+    {
+        $busy = $this->createTechnician('Busy Tech');
+        $this->createProject('Busy Team', [$busy]);
+
+        $elsewhere = $this->createProject('Elsewhere', [$busy]);
+        $this->book($elsewhere, $this->day(5), $this->day(9));
+
+        $projects = $this->sources([])->json('projects');
+
+        $payload = $this->find($projects, 'Busy Team');
+
+        $this->assertNotNull($payload);
+        $this->assertTrue($payload['available']);
+        $this->assertSame([], $payload['unavailable']);
+    }
+
+    /**
+     * A schedule that cannot be read is a different thing from no schedule at
+     * all, and is refused rather than quietly screened against nothing.
+     */
+    public function test_an_unreadable_schedule_is_refused(): void
     {
         $this->createProject('Some Team', [$this->createTechnician('Jose Garcia')]);
 
-        $this->sources([])
-            ->assertStatus(422)
-            ->assertJsonPath('error', 'Choose the project schedule first, so the technicians can be checked against it.');
+        // An end date before the start date: filled in, but meaningless.
+        $this->sources([
+            'scheduling_mode' => Schedule::MODE_DATE_BASED,
+            'start_date' => $this->day(9),
+            'end_date' => $this->day(5),
+        ])->assertStatus(422);
     }
 
     // ------------------------------------------------------------------
@@ -421,9 +452,14 @@ class ImportTechnicianTeamTest extends TestCase
         $response->assertOk();
         $response->assertSee('Import Team');
         $response->assertSee('data-import-team-modal', false);
-        // Off until the schedule below it is filled in, because there would be
-        // nothing to check availability against.
         $response->assertSee('data-import-team-button', false);
+        // Offered from the start: the schedule fields below cannot be filled
+        // in until a team exists, so waiting for dates would mean picking by
+        // hand the very team this is meant to save picking.
+        $this->assertStringNotContainsString(
+            'data-import-team-button disabled',
+            $response->getContent()
+        );
     }
 
     // ------------------------------------------------------------------
