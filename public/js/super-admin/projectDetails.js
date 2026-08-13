@@ -394,14 +394,39 @@ $(function () {
      */
     function initImportTeam() {
         const importModal = document.querySelector('[data-import-team-modal]');
+        const teamModal = document.getElementById('editAssignedTeamModal');
+        const openButton = form.querySelector('[data-import-team-open]');
 
-        if (!importModal || !window.importTeam) {
+        if (!importModal || !teamModal || !openButton || !window.importTeam || !window.bootstrap) {
             return;
         }
 
         const leadOption = function (technicianId) {
             return leadTechSelect.querySelector('option[value="' + technicianId + '"]');
         };
+
+        // One dialog at a time, and the editor is always what you come back
+        // to - with whoever was imported already in the picker, ready to be
+        // adjusted and saved.
+        let handingOver = false;
+
+        openButton.addEventListener('click', function () {
+            handingOver = true;
+            window.bootstrap.Modal.getOrCreateInstance(teamModal).hide();
+        });
+
+        teamModal.addEventListener('hidden.bs.modal', function () {
+            if (!handingOver) {
+                return;
+            }
+
+            handingOver = false;
+            window.bootstrap.Modal.getOrCreateInstance(importModal).show();
+        });
+
+        importModal.addEventListener('hidden.bs.modal', function () {
+            window.bootstrap.Modal.getOrCreateInstance(teamModal).show();
+        });
 
         window.importTeam.init({
             modal: importModal,

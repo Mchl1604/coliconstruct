@@ -1226,9 +1226,16 @@
 
                             {{-- Copies a team from another project into the
                                  picker below, which stays exactly as editable
-                                 as it is when people are chosen by hand. --}}
-                            <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal"
-                                data-bs-target="#importTeamModal">
+                                 as it is when people are chosen by hand.
+
+                                 Opened from JavaScript rather than by
+                                 data-bs-toggle: Bootstrap's data API replaces
+                                 the modal it is triggered from, which would
+                                 close this editor and drop the person back on
+                                 the page. The two are handed over explicitly
+                                 instead, and this dialog comes back when the
+                                 import one closes. --}}
+                            <button type="button" class="btn btn-sm btn-outline-primary" data-import-team-open>
                                 <i class="bi bi-people me-1" aria-hidden="true"></i>
                                 Import Team
                             </button>
