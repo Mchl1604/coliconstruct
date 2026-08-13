@@ -700,6 +700,66 @@ class NotificationService
         );
     }
 
+    /**
+     * Tasks that stopped fitting the schedule when a date was taken off it.
+     *
+     * Their dates are cleared rather than left pointing at a day the project
+     * is no longer booked for, and clearing them quietly would mean the work
+     * simply went missing from the board. The lead runs the task list and the
+     * administrators own the schedule, so those are the people who can put a
+     * date back on it.
+     *
+     * @param  iterable<int, Task>  $tasks
+     */
+    public function taskDatesCleared(Project $project, iterable $tasks): void
+    {
+        $tasks = collect($tasks)->values();
+
+        if ($tasks->isEmpty()) {
+            return;
+        }
+
+        $lead = $this->projectLead($project);
+
+        $this->deliver(
+            $this->oversight()->merge($lead ? [$lead] : []),
+            'Task Dates Cleared',
+            sprintf(
+                '%s on %s no longer %s inside the schedule, so %s dates were cleared. %s',
+                $tasks->count() === 1
+                    ? sprintf('"%s"', $tasks->first()->task_title)
+                    : sprintf('%d tasks', $tasks->count()),
+                $this->projectLabel($project),
+                $tasks->count() === 1 ? 'falls' : 'fall',
+                $tasks->count() === 1 ? 'its' : 'their',
+                $tasks->count() === 1
+                    ? 'It needs new dates.'
+                    : sprintf('They need new dates: %s.', $this->taskTitleList($tasks))
+            ),
+            Notification::MODULE_TASKS,
+            $project,
+            $this->projectLink($project)
+        );
+    }
+
+    /**
+     * '"Fit the ducting", "Test the unit", and 3 more' - enough to recognise
+     * the work without turning the message into a list.
+     *
+     * @param  Collection<int, Task>  $tasks
+     */
+    private function taskTitleList(Collection $tasks): string
+    {
+        $shown = $tasks->take(3)->map(fn (Task $task): string => sprintf('"%s"', $task->task_title));
+        $remaining = $tasks->count() - $shown->count();
+
+        if ($remaining > 0) {
+            $shown->push(sprintf('%d more', $remaining));
+        }
+
+        return $shown->join(', ', ', and ');
+    }
+
     public function projectScheduled(Project $project, string $ranges): void
     {
         $this->deliver(

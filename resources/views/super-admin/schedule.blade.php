@@ -225,6 +225,12 @@
                         <div data-date-empty class="schedule-empty-state d-none">
                             No projects are scheduled on this date.
                         </div>
+
+                        {{-- Taking this date off one of the bookings above.
+                             Completed, cancelled and archived work is listed
+                             but not editable, so it carries no action. --}}
+                        <div class="alert alert-danger mt-3 mb-0 d-none" role="alert" data-date-error></div>
+                        <div class="alert alert-success mt-3 mb-0 d-none" role="alert" data-date-success></div>
                     </div>
 
                     <hr class="my-4">

@@ -183,6 +183,13 @@ Route::prefix('super-admin')
         Route::get('/schedules/assignable', [ScheduleController::class, 'assignableProjects'])->name('schedules.assignable');
         Route::post('/schedules/assign', [ScheduleController::class, 'assign'])->name('schedules.assign');
         Route::get('/schedules/date/{date}', [ScheduleController::class, 'dateDetails'])->name('schedules.date');
+
+        // Taking a single date off one booking, from the panel that opens
+        // when a calendar date is clicked. Declared before /schedules/{id} so
+        // the longer path is matched first.
+        Route::delete('/schedules/{schedule}/dates/{date}', [ScheduleController::class, 'removeDate'])
+            ->whereNumber('schedule')
+            ->name('schedules.dates.destroy');
         Route::put('/schedules/{id}', [ScheduleController::class, 'update'])->name('schedules.update');
 
         // ROUTE FOR SUPER ADMIN REPORTS PAGE

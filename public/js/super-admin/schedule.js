@@ -947,6 +947,8 @@ document.addEventListener("DOMContentLoaded", function () {
         const listEl = modal.querySelector("[data-date-projects]");
         const emptyEl = modal.querySelector("[data-date-empty]");
         const countEl = modal.querySelector("[data-date-count]");
+        const dateErrorEl = modal.querySelector("[data-date-error]");
+        const dateSuccessEl = modal.querySelector("[data-date-success]");
 
         const toggleBtn = modal.querySelector("[data-add-project-toggle]");
         const panel = modal.querySelector("[data-add-project-panel]");
@@ -1338,19 +1340,58 @@ document.addEventListener("DOMContentLoaded", function () {
                 });
         }
 
+        // One booking, with the action that takes the clicked date off it.
+        // The confirmation sits inline rather than in a dialog of its own: it
+        // asks about one date, and it should not cover the list it came from.
+        function bookingMarkup(project, range, dateLabel) {
+            const chip =
+                '<span class="schedule-date-card-range">' +
+                '<i class="bi bi-calendar3"></i>' +
+                escapeHtml(range.label) +
+                "</span>";
+
+            if (project.read_only) {
+                return (
+                    '<div class="schedule-date-card-booking">' +
+                    chip +
+                    '<span class="schedule-date-readonly">View only</span>' +
+                    "</div>"
+                );
+            }
+
+            return (
+                '<div class="schedule-date-card-booking">' +
+                chip +
+                '<button type="button" class="schedule-date-remove" data-remove-date="' +
+                escapeHtml(range.remove_url) +
+                '">' +
+                '<i class="bi bi-calendar-x" aria-hidden="true"></i>' +
+                "Remove This Date" +
+                "</button>" +
+                "</div>" +
+                '<div class="schedule-date-confirm d-none" data-remove-confirm>' +
+                "<span>Remove <strong>" +
+                escapeHtml(dateLabel) +
+                "</strong> from this project?</span>" +
+                '<span class="schedule-date-confirm-actions">' +
+                '<button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" data-remove-cancel>' +
+                "Cancel</button>" +
+                '<button type="button" class="btn btn-sm btn-danger py-0 px-2" data-remove-go>' +
+                "Remove</button>" +
+                "</span>" +
+                "</div>"
+            );
+        }
+
         function renderDateProjects(payload) {
             const projects = payload.projects || [];
+            const dateLabel = payload.label || selectedDate;
 
             listEl.innerHTML = projects
                 .map(function (project) {
                     const ranges = (project.ranges || [])
                         .map(function (range) {
-                            return (
-                                '<span class="schedule-date-card-range">' +
-                                '<i class="bi bi-calendar3"></i>' +
-                                escapeHtml(range.label) +
-                                "</span>"
-                            );
+                            return bookingMarkup(project, range, dateLabel);
                         })
                         .join("");
 
@@ -1394,6 +1435,112 @@ document.addEventListener("DOMContentLoaded", function () {
             countEl.classList.toggle("d-none", projects.length === 0);
         }
 
+        function showDateError(message) {
+            dateErrorEl.textContent = message || "";
+            dateErrorEl.classList.toggle("d-none", !message);
+        }
+
+        function showDateSuccess(message) {
+            dateSuccessEl.textContent = message || "";
+            dateSuccessEl.classList.toggle("d-none", !message);
+        }
+
+        function closeConfirmations() {
+            listEl
+                .querySelectorAll("[data-remove-confirm]")
+                .forEach(function (confirmation) {
+                    confirmation.classList.add("d-none");
+                });
+        }
+
+        // Take the clicked date off one booking. The whole page is reloaded
+        // afterwards, the same way saving a new booking does: the calendar,
+        // the table and the availability data all have to catch up.
+        function removeDate(button) {
+            const url = button.dataset.removeDate;
+
+            if (!url) {
+                return;
+            }
+
+            button.disabled = true;
+            showDateError("");
+
+            fetch(url, {
+                method: "DELETE",
+                headers: {
+                    Accept: "application/json",
+                    "X-CSRF-TOKEN": csrfToken(),
+                    "X-Requested-With": "XMLHttpRequest",
+                },
+            })
+                .then(function (response) {
+                    return response.json().then(function (body) {
+                        return { ok: response.ok, body: body };
+                    });
+                })
+                .then(function (result) {
+                    if (!result.ok) {
+                        button.disabled = false;
+                        showDateError(
+                            result.body.error ||
+                                "Could not remove that date.",
+                        );
+
+                        return;
+                    }
+
+                    closeConfirmations();
+                    showDateSuccess(
+                        (result.body.message || "The date was removed.") +
+                            " Refreshing…",
+                    );
+
+                    window.setTimeout(function () {
+                        window.location.reload();
+                    }, 900);
+                })
+                .catch(function () {
+                    button.disabled = false;
+                    showDateError("Could not remove that date.");
+                });
+        }
+
+        listEl.addEventListener("click", function (event) {
+            const remove = event.target.closest("[data-remove-date]");
+
+            if (remove) {
+                // Only one date is ever in question at a time.
+                closeConfirmations();
+                remove
+                    .closest(".schedule-date-card-booking")
+                    .nextElementSibling.classList.remove("d-none");
+
+                return;
+            }
+
+            const cancel = event.target.closest("[data-remove-cancel]");
+
+            if (cancel) {
+                cancel.closest("[data-remove-confirm]").classList.add("d-none");
+                showDateError("");
+
+                return;
+            }
+
+            const go = event.target.closest("[data-remove-go]");
+
+            if (go) {
+                const confirmation = go.closest("[data-remove-confirm]");
+                const button = confirmation.previousElementSibling.querySelector(
+                    "[data-remove-date]",
+                );
+
+                go.disabled = true;
+                removeDate(button);
+            }
+        });
+
         function loadDateProjects() {
             const token = ++dateToken;
 
@@ -1401,6 +1548,8 @@ document.addEventListener("DOMContentLoaded", function () {
             listEl.innerHTML = "";
             emptyEl.classList.add("d-none");
             countEl.classList.add("d-none");
+            showDateError("");
+            showDateSuccess("");
 
             fetch(
                 "/super-admin/schedules/date/" + encodeURIComponent(selectedDate),

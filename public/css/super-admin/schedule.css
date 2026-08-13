@@ -277,6 +277,61 @@
     margin-right: 0.3rem;
 }
 
+/* ---- Taking one date off a booking ---- */
+
+.schedule-date-card-booking {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.schedule-date-remove {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #b42318;
+    background: transparent;
+    border: 1px solid #f1c7c2;
+    border-radius: 0.35rem;
+    padding: 0.15rem 0.5rem;
+    margin-top: 0.4rem;
+}
+
+.schedule-date-remove:hover {
+    background: #fef3f2;
+    border-color: #e5a8a1;
+}
+
+.schedule-date-confirm {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.45rem;
+    padding: 0.5rem 0.6rem;
+    border: 1px solid #f1c7c2;
+    border-radius: 0.45rem;
+    background: #fef3f2;
+    font-size: 0.8rem;
+    color: #7a271a;
+}
+
+.schedule-date-confirm-actions {
+    display: flex;
+    gap: 0.35rem;
+}
+
+.schedule-date-readonly {
+    font-size: 0.75rem;
+    color: #94a3b8;
+    margin-top: 0.4rem;
+}
+
 .schedule-empty-state {
     border: 1px dashed #d1d5db;
     border-radius: 0.55rem;

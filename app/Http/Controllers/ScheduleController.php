@@ -10,6 +10,7 @@ use App\Models\Technician;
 use App\Services\ActivityLogger;
 use App\Services\NotificationService;
 use App\Services\ProjectTeam;
+use App\Services\ScheduleDateRemoval;
 use App\Services\ScheduleModeRules;
 use App\Services\TechnicianAvailabilityService;
 use Carbon\CarbonImmutable;
@@ -123,16 +124,28 @@ class ScheduleController extends Controller
                     'status' => $project->status,
                     'status_label' => $this->statusLabel($project),
                     'on_hold' => (bool) $project->on_hold,
+                    // Completed, cancelled and archived work is a historical
+                    // record: it is listed here, but its dates cannot be
+                    // changed, exactly as on the calendar and in the table.
+                    'read_only' => $project->isReadOnly(),
                     'url' => route('super-admin.projects.show', $project->project_id),
                     'technicians' => $project->projectTechnicians
                         ->map(fn ($projectTechnician) => $projectTechnician->technician?->name)
                         ->filter()
                         ->values()
                         ->all(),
+                    // One entry per booking covering the day, each removable on
+                    // its own: a Residential project can hold two partial days
+                    // on one date, and "remove this date" has to say which.
                     'ranges' => $covering->map(fn (Schedule $schedule): array => [
+                        'schedule_id' => $schedule->schedule_id,
                         'start' => $schedule->startsOn()->toDateString(),
                         'end' => $schedule->endsOn()->toDateString(),
                         'label' => $schedule->describe(),
+                        'remove_url' => route('super-admin.schedules.dates.destroy', [
+                            'schedule' => $schedule->schedule_id,
+                            'date' => $dayString,
+                        ]),
                     ])->all(),
                 ];
             })->values(),
@@ -629,26 +642,135 @@ class ScheduleController extends Controller
     }
 
     /**
+     * Take one calendar date off one of a project's schedules.
+     *
+     * Reached from the panel that opens when a calendar date is clicked, and
+     * always for the date that was clicked - there is nothing to choose here,
+     * which is the point of it.
+     *
+     * The date is removed from the one booking named in the URL rather than
+     * from everything the project holds that day: a Residential project may
+     * have a morning and an afternoon booked separately on one date, and only
+     * the person clicking knows which of them is being given up.
+     */
+    public function removeDate(Schedule $schedule, string $date)
+    {
+        try {
+            $day = CarbonImmutable::parse($date)->startOfDay();
+        } catch (Throwable $e) {
+            return response()->json(['error' => 'Invalid date.'], 422);
+        }
+
+        $project = Project::query()
+            ->with(['clients', 'schedules', 'projectTechnicians.technician.account'])
+            ->find($schedule->project_id);
+
+        if (! $project) {
+            return response()->json(['error' => 'That schedule no longer exists.'], 422);
+        }
+
+        $removal = app(ScheduleDateRemoval::class);
+        $clearedTasks = collect();
+
+        // Read before anything moves, so the log can say what it changed from.
+        $rangesBefore = $this->describeSchedules($project->schedules);
+        $label = $day->format('F j, Y');
+
+        try {
+            DB::transaction(function () use ($project, $schedule, $day, $removal, &$clearedTasks): void {
+                $this->assertDateRemovable($project);
+
+                $removal->remove($schedule, $day);
+
+                $project->unsetRelation('schedules');
+
+                // A task can only sit inside a date the project still holds,
+                // which is the same rule a reschedule applies - so it is the
+                // same code that applies it.
+                $clearedTasks = $this->syncTaskDatesWithSchedule($project, $this->storedRanges($project));
+
+                $this->releaseStatusWhenNoDatesRemain($project);
+            });
+        } catch (Throwable $e) {
+            return response()->json(['error' => $e->getMessage()], 422);
+        }
+
+        $project->unsetRelation('schedules');
+        $rangesAfter = $this->describeSchedules($project->schedules()->orderBy('start_datetime')->get());
+
+        $this->activityLogger->record(
+            ActivityLog::PROJECT_RESCHEDULED,
+            null,
+            sprintf(
+                "Removed %s from the schedule on '%s'. Its dates changed from %s to %s.",
+                $label,
+                $project->reference_no ?? $project->name,
+                $rangesBefore,
+                $rangesAfter
+            ),
+            $project
+        );
+
+        $this->notifications->projectScheduleChanged($project, $rangesAfter);
+        $this->notifications->taskDatesCleared($project, $clearedTasks);
+
+        return response()->json([
+            'message' => sprintf('%s was removed from %s.', $label, $project->name),
+            'schedule_label' => $rangesAfter,
+            'cleared_tasks' => $clearedTasks->count(),
+        ]);
+    }
+
+    /**
+     * Whose dates may be taken away.
+     *
+     * The same rule the rest of the page runs on: a completed, cancelled or
+     * archived project is a record of what happened and is not edited, and an
+     * on-hold project has no dates to take - putting one on hold releases them
+     * all.
+     */
+    private function assertDateRemovable(Project $project): void
+    {
+        if ($project->isReadOnly()) {
+            throw new RuntimeException(sprintf(
+                'This project is %s and its schedule can no longer be changed.',
+                $project->status
+            ));
+        }
+
+        if ($project->is_archived) {
+            throw new RuntimeException('This project is archived and its schedule can no longer be changed.');
+        }
+
+        if ($project->on_hold) {
+            throw new RuntimeException('This project is on hold and its schedule can no longer be changed.');
+        }
+    }
+
+    /**
      * Tasks must always reflect the latest schedule. Any task whose dates
      * no longer fall inside at least one of the project's current date
      * ranges gets its dates cleared (shown as "Unassigned" in the UI)
      * instead of silently keeping stale dates.
      *
      * @param  Collection<int, array{schedule_id: ?int, start: CarbonImmutable, end: CarbonImmutable}>  $ranges
+     * @return Collection<int, Task> the tasks whose dates were cleared, so a
+     *                               caller can say so rather than leave the
+     *                               work to be noticed missing
      */
-    private function syncTaskDatesWithSchedule(Project $project, Collection $ranges): void
+    private function syncTaskDatesWithSchedule(Project $project, Collection $ranges): Collection
     {
         $currentRanges = $ranges->map(fn (array $range) => [
             'start' => $range['start']->toDateString(),
             'end' => $range['end']->toDateString(),
         ]);
 
-        Task::query()
+        return Task::query()
             ->where('project_id', $project->project_id)
             ->whereNotNull('start_date')
             ->whereNotNull('due_date')
             ->get()
-            ->each(function (Task $task) use ($currentRanges): void {
+            ->filter(function (Task $task) use ($currentRanges): bool {
                 $taskStart = CarbonImmutable::parse($task->start_date)->toDateString();
                 $taskEnd = CarbonImmutable::parse($task->due_date)->toDateString();
 
@@ -656,13 +778,55 @@ class ScheduleController extends Controller
                     return $taskStart >= $range['start'] && $taskEnd <= $range['end'];
                 });
 
-                if (! $stillCovered) {
-                    $task->update([
-                        'start_date' => null,
-                        'due_date' => null,
-                    ]);
+                if ($stillCovered) {
+                    return false;
                 }
-            });
+
+                $task->update([
+                    'start_date' => null,
+                    'due_date' => null,
+                ]);
+
+                return true;
+            })
+            ->values();
+    }
+
+    /**
+     * The project's schedules as syncTaskDatesWithSchedule() reads them.
+     *
+     * @return Collection<int, array{schedule_id: ?int, start: CarbonImmutable, end: CarbonImmutable}>
+     */
+    private function storedRanges(Project $project): Collection
+    {
+        return $project->schedules()->get()->map(fn (Schedule $schedule): array => [
+            'schedule_id' => (int) $schedule->schedule_id,
+            'start' => $schedule->startsOn(),
+            'end' => $schedule->endsOn(),
+        ]);
+    }
+
+    /**
+     * A project that has just lost its last date is Unscheduled again.
+     *
+     * The mirror of promoteStatusAfterScheduling(): a project's status follows
+     * whether it holds any dates, in both directions. A project that still
+     * holds dates is left exactly as it is - an ongoing project with work
+     * still ahead of it has not stopped being ongoing because one day came
+     * off, and one whose remaining dates have all passed is overdue, which the
+     * model derives without a status of its own.
+     */
+    private function releaseStatusWhenNoDatesRemain(Project $project): void
+    {
+        if ($project->isReadOnly() || $project->status === 'unscheduled') {
+            return;
+        }
+
+        if ($project->schedules()->exists()) {
+            return;
+        }
+
+        $project->update(['status' => 'unscheduled']);
     }
 
     /**
