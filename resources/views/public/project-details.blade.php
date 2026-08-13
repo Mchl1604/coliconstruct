@@ -129,12 +129,12 @@
                     @php
                         $documentTitles = \App\Http\Controllers\PublicSiteController::DOCUMENT_TITLES;
 
-                        // Keyed into a plain array on purpose: Eloquent's
-                        // Collection::only() filters by primary key rather than
-                        // by array key, so it would quietly return nothing here.
+                        // Grouped rather than keyed: a project holds any number
+                        // of files of each type, and keying would show the
+                        // client only the last of them.
                         $clientDocuments = $project->documents
                             ->whereIn('document_type', array_keys($documentTitles))
-                            ->keyBy('document_type')
+                            ->groupBy('document_type')
                             ->all();
                     @endphp
 
@@ -151,12 +151,18 @@
                             @foreach ($documentTitles as $type => $label)
                                 @continue(! isset($clientDocuments[$type]))
 
-                                <a class="btn btn-outline-brand-blue"
-                                    href="{{ asset($clientDocuments[$type]->document_path) }}" target="_blank"
-                                    rel="noopener noreferrer">
-                                    <i class="bi bi-file-earmark-text me-1" aria-hidden="true"></i>
-                                    {{ $label }}
-                                </a>
+                                {{-- A button per file, numbered when a document
+                                     runs to more than one, so the client can
+                                     reach every page rather than only the
+                                     first. --}}
+                                @foreach ($clientDocuments[$type] as $index => $document)
+                                    <a class="btn btn-outline-brand-blue"
+                                        href="{{ asset($document->document_path) }}" target="_blank"
+                                        rel="noopener noreferrer" title="{{ $document->document_name }}">
+                                        <i class="bi bi-file-earmark-text me-1" aria-hidden="true"></i>
+                                        {{ $label }}{{ count($clientDocuments[$type]) > 1 ? ' '.($index + 1) : '' }}
+                                    </a>
+                                @endforeach
                             @endforeach
                         </div>
                     @endif

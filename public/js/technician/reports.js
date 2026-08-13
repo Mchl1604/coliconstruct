@@ -12,6 +12,11 @@ document.addEventListener("DOMContentLoaded", function () {
     const table = portal.dataTable("#portalReportsTable", "reports", {
         // Date Submitted, now the sixth column.
         order: [[5, "desc"]],
+        // "Showing 1 to 10 of 25" under the pages, which the portal's tables
+        // otherwise leave off. A report log is the one place the count is the
+        // point, and it is what the Super Admin Reports page says above its
+        // own pages - so both read the same.
+        info: true,
         columnDefs: [
             // Date Submitted carries a `data-order` timestamp, which
             // DataTables reads as numeric and then right-aligns on its own.

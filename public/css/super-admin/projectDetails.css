@@ -268,3 +268,211 @@
     gap: 0.35rem;
     margin-top: 0.4rem;
 }
+/* ---- Project documents ----
+   Each type is a group of files rather than a single button: a quotation can
+   run to several pages, and every one of them has to be reachable. */
+
+.project-document-groups {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.project-document-group {
+    flex: 1 1 15rem;
+    min-width: 0;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.55rem;
+    padding: 0.7rem 0.85rem;
+    background: #fff;
+}
+
+.project-document-group-head {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.5rem;
+    color: #0f172a;
+}
+
+.project-document-file {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.3rem 0;
+}
+
+.project-document-file + .project-document-file {
+    border-top: 1px dashed #e5e7eb;
+}
+
+/* The count is the one number on the card, so it wears yellow and is the
+   thing the eye lands on; the files themselves are blue, which is what says
+   they open. */
+.project-document-count {
+    background: #ffc107;
+    border: 1px solid #e0a800;
+    color: #3d2f00;
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+/* The name is the wide part and the only part that may be cut: the remove
+   button beside it must never be pushed off the card. */
+.project-document-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #2370b4;
+    text-decoration: none;
+}
+
+.project-document-link span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.project-document-link:hover {
+    color: #1b5688;
+    text-decoration: underline;
+}
+
+/* The file icon takes the lighter brand blue, so the row reads as one blue
+   thing rather than a grey mark beside a blue name. */
+.project-document-link i {
+    color: #2d8de1;
+}
+
+/* ---- Edit Project Details dialog ----
+   Three long sections in one scrolling body, so each is a panel of its own
+   with a blue heading: what you are filling in should never be a guess. */
+
+.edit-project-header {
+    background: #2370b4;
+    color: #fff;
+    border-bottom: 0;
+    align-items: flex-start;
+}
+
+.edit-project-eyebrow {
+    display: block;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #cfe3f6;
+    margin-bottom: 0.15rem;
+}
+
+.edit-project-body {
+    background: #f8fafc;
+}
+
+.edit-section {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-top: 3px solid #2370b4;
+    border-radius: 0.6rem;
+    padding: 1.1rem 1.15rem 1.25rem;
+    margin-bottom: 1rem;
+}
+
+.edit-section:last-child {
+    margin-bottom: 0;
+}
+
+.edit-section-title {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #2370b4;
+    padding-bottom: 0.6rem;
+    margin-bottom: 1rem;
+    border-bottom: 1px solid #dceafa;
+}
+
+.edit-section-note {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid #cfe3f6;
+    border-radius: 0.5rem;
+    background: #f4f9fe;
+    font-size: 0.8rem;
+    color: #35618c;
+}
+
+.edit-section-note i {
+    color: #2370b4;
+    margin-top: 0.1rem;
+}
+
+.edit-document-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.55rem;
+    padding: 0.8rem;
+    background: #fbfdff;
+}
+
+.edit-document-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+/* Nothing on file yet says so in the section's blue rather than in grey,
+   which reads as disabled. */
+.edit-document-none {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #2370b4;
+    background: #eaf4fd;
+    border: 1px solid #cfe3f6;
+    border-radius: 999px;
+    padding: 0.15rem 0.55rem;
+}
+
+/* What is about to be uploaded, listed before the form is saved. */
+.edit-document-picked {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.edit-document-picked li {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.76rem;
+    font-weight: 600;
+    color: #2370b4;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.edit-document-picked li i {
+    color: #2d8de1;
+}
+
+.edit-project-footer {
+    background: #f8fafc;
+    border-top: 1px solid #e5e7eb;
+}

@@ -59,10 +59,33 @@ class ScheduleController extends Controller
                 'projectTechnicians.technician.account',
             ])
             ->where('is_archived', false)
+            // Cancelled work is off this page entirely - calendar, table and
+            // the panel a clicked date opens. The schedules themselves are
+            // untouched and still read on the project's own page.
+            ->where('status', '!=', 'cancelled')
             ->orderBy('project_id', 'desc')
             ->get();
 
-        $calendarEvents = $this->buildCalendarEvents($projects);
+        // A project holding no dates is Unscheduled: there is nothing to draw
+        // on the calendar and nothing to list, so it appears on neither. Its
+        // edit modal is still rendered - that is what the Update Schedule link
+        // on the project's own page opens - which is how it gets dates again.
+        $scheduledProjects = $projects
+            ->filter(fn (Project $project): bool => $project->schedules->isNotEmpty())
+            ->values();
+
+        // The other half: work waiting for its first dates, which is the only
+        // way it reaches the calendar. On-hold projects are left out - a hold
+        // releases the dates and the team, and the project has to be resumed
+        // before it can be booked, which is the project page's to do.
+        $unscheduledProjects = $projects
+            ->filter(fn (Project $project): bool => $project->schedules->isEmpty()
+                && ! $project->on_hold
+                && ! $project->isReadOnly())
+            ->sortBy('name')
+            ->values();
+
+        $calendarEvents = $this->buildCalendarEvents($scheduledProjects);
         $technicianSchedules = $this->buildTechnicianSchedules();
         $technicianNames = $this->buildTechnicianNames();
         // Stated by the model so the dropdowns and the server agree on which
@@ -71,6 +94,8 @@ class ScheduleController extends Controller
 
         return view('super-admin.schedule', compact(
             'projects',
+            'scheduledProjects',
+            'unscheduledProjects',
             'calendarEvents',
             'technicianSchedules',
             'technicianNames',
@@ -98,6 +123,9 @@ class ScheduleController extends Controller
                 'projectTechnicians.technician.account',
             ])
             ->where('is_archived', false)
+            // Kept off this panel for the same reason it is kept off the
+            // calendar and the table: cancelled work has left this page.
+            ->where('status', '!=', 'cancelled')
             ->whereHas('schedules', function ($query) use ($dayString): void {
                 $query->whereDate('start_datetime', '<=', $dayString)
                     ->whereDate('end_datetime', '>=', $dayString);
@@ -126,9 +154,9 @@ class ScheduleController extends Controller
                     'status' => $project->status,
                     'status_label' => $this->statusLabel($project),
                     'on_hold' => (bool) $project->on_hold,
-                    // Completed, cancelled and archived work is a historical
-                    // record: it is listed here, but its dates cannot be
-                    // changed, exactly as on the calendar and in the table.
+                    // Completed work is a historical record: it is listed
+                    // here, but its dates cannot be changed, exactly as on
+                    // the calendar and in the table.
                     'read_only' => $project->isReadOnly(),
                     'url' => route('super-admin.projects.show', $project->project_id),
                     'technicians' => $project->projectTechnicians
@@ -557,22 +585,22 @@ class ScheduleController extends Controller
 
         $scheduleRules = app(ScheduleModeRules::class);
 
+        // A project is allowed to hold no dates at all. Submitting an empty
+        // form gives every one of them up, which leaves the project
+        // Unscheduled and takes it off the calendar and the table until it is
+        // booked again - the same end state as removing its last date.
         $validated = $request->validate([
-            'ranges' => ['required', 'array', 'min:1'],
+            'ranges' => ['nullable', 'array'],
             'ranges.*.schedule_id' => ['nullable', 'integer', 'exists:tbl_schedule,schedule_id'],
             ...$scheduleRules->rules('ranges.*.'),
-        ], [
-            'ranges.required' => 'At least one schedule is required.',
-            'ranges.min' => 'At least one schedule is required.',
-            ...$scheduleRules->messages('ranges.*.'),
-        ]);
+        ], $scheduleRules->messages('ranges.*.'));
 
         // Read before anything moves, so the log can say what it changed from.
         $rangesBefore = $this->describeSchedules($project->schedules);
 
         try {
             DB::transaction(function () use ($validated, $project, $scheduleRules): void {
-                $ranges = $this->resolveSubmittedRanges($project, $validated['ranges'], $scheduleRules);
+                $ranges = $this->resolveSubmittedRanges($project, $validated['ranges'] ?? [], $scheduleRules);
 
                 $this->assertNoOverlapWithinSubmission($ranges, $scheduleRules);
                 $this->assertRangesAvailable($project, $ranges);
@@ -612,8 +640,13 @@ class ScheduleController extends Controller
 
                 $this->syncTaskDatesWithSchedule($project, $ranges);
                 $this->promoteStatusAfterScheduling($project);
+                // Status follows the dates in both directions, so giving the
+                // last one up here reads the same as giving it up from the
+                // calendar: the project is Unscheduled again.
+                $this->releaseStatusWhenNoDatesRemain($project);
             });
 
+            $project->unsetRelation('schedules');
             $rangesAfter = $this->describeSchedules($project->schedules()->orderBy('start_datetime')->get());
 
             $this->activityLogger->record(
@@ -635,7 +668,12 @@ class ScheduleController extends Controller
 
             return redirect()
                 ->route('super-admin.schedules.index')
-                ->with('success', 'Schedule updated successfully.');
+                ->with('success', $project->schedules()->exists()
+                    ? 'Schedule updated successfully.'
+                    : sprintf(
+                        '%s now holds no dates and is Unscheduled, so it has been taken off the calendar and the table.',
+                        $project->name
+                    ));
         } catch (Throwable $e) {
             return redirect()
                 ->route('super-admin.schedules.index')
@@ -1055,8 +1093,8 @@ class ScheduleController extends Controller
                         'status' => $project->status,
                         'statusLabel' => $this->statusLabel($project),
                         'onHold' => $project->on_hold,
-                        // Completed / cancelled / archived projects are
-                        // historical records: their schedule can't be edited.
+                        // A completed project is a historical record: clicking
+                        // it opens the view-only panel rather than the editor.
                         'readOnly' => $project->isReadOnly(),
                     ],
                 ];

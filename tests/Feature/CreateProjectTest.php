@@ -74,8 +74,10 @@ class CreateProjectTest extends TestCase
             'project_address' => '123 Sample Street, Sample City',
             'quotation_amount' => '1250.00',
             'project_types' => ['Aircon Installation'],
-            'assessment_report' => UploadedFile::fake()->create('assessment.pdf', 12, 'application/pdf'),
-            'approved_quotation' => UploadedFile::fake()->create('quotation.jpg', 12, 'image/jpeg'),
+            // Each document type takes an array of files, which is what the
+            // wizard's inputs now post.
+            'assessment_report' => [UploadedFile::fake()->create('assessment.pdf', 12, 'application/pdf')],
+            'approved_quotation' => [UploadedFile::fake()->create('quotation.jpg', 12, 'image/jpeg')],
             'project_description' => 'Test project description',
             'lead_tech' => $leadTechnician->technician_id,
             'technicians' => [$technician->technician_id],
@@ -86,7 +88,8 @@ class CreateProjectTest extends TestCase
         if ($includeContract) {
             $payload['client_type'] = 'Commercial';
             $payload['company_name'] = 'Acme Corp';
-            $payload['contract'] = UploadedFile::fake()->create('contract.docx', 12, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+            // A PDF, not a .docx: project documents are PDFs and images only.
+            $payload['contract'] = [UploadedFile::fake()->create('contract.pdf', 12, 'application/pdf')];
         }
 
         return $payload;
@@ -290,14 +293,15 @@ class CreateProjectTest extends TestCase
         $technician = $this->createWizardTechnician('technician', 'Juan Technician');
 
         $payload = $this->baseProjectPayload($leadTechnician, $technician);
-        $payload['assessment_report'] = UploadedFile::fake()->create(
+        $payload['assessment_report'] = [UploadedFile::fake()->create(
             'assessment.pdf',
             Document::MAX_KILOBYTES + 1,
             'application/pdf'
-        );
+        )];
 
+        // Named per file now, since a type may carry several of them.
         $this->post(route('super-admin.projects.create.store'), $payload)
-            ->assertSessionHasErrors(['assessment_report']);
+            ->assertSessionHasErrors(['assessment_report.0']);
 
         $this->assertDatabaseCount('tbl_projects', 0);
     }

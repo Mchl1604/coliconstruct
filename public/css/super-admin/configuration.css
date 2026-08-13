@@ -83,21 +83,9 @@
     flex-wrap: nowrap;
 }
 
-/* ---- Pagination ---- */
-
-.config-pagination {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    margin-top: 0.85rem;
-}
-
-.config-pagination-summary {
-    font-size: 0.82rem;
-    color: #64748b;
-}
+/* ---- Pagination ----
+   Shared with every other table that pages in SQL, so it lives in theme.css
+   alongside `.table-pagination` rather than being stated twice. */
 
 /* ---- Modal sections ---- */
 
@@ -403,4 +391,148 @@
 
 .content-section-panel-title:empty {
     display: none;
+}
+
+/* ---- System Settings: section navigation ----
+   Two long sections and more to come, so the tab carries its own jump links.
+   Sticky, so they stay reachable however far down the page you are, and in
+   the same blue the sections themselves wear. */
+
+.settings-section-nav {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .5rem;
+    margin-bottom: 1rem;
+    padding: .6rem .75rem;
+    border: 1px solid #cfe3f6;
+    border-radius: .6rem;
+    /* Opaque: the cards scroll underneath it. */
+    background: #f4f9fe;
+}
+
+/* How far below the sticky nav a jumped-to section lands. Stated here rather
+   than as an offset in JavaScript, so scrollIntoView can do the arithmetic
+   whatever ends up being the thing that scrolls. */
+#systemContentsPane,
+#projectTypesPane {
+    scroll-margin-top: 5rem;
+}
+
+.settings-section-nav-label {
+    font-size: .72rem;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: #6b8fb5;
+    margin-right: .15rem;
+}
+
+.settings-section-link {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    padding: .35rem .85rem;
+    border: 1px solid #cfe3f6;
+    border-radius: 999px;
+    background: #fff;
+    color: #2370b4;
+    font-size: .82rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition:
+        background-color .12s ease,
+        border-color .12s ease,
+        color .12s ease;
+}
+
+.settings-section-link:hover {
+    background: #e3f0fc;
+    border-color: #2d8de1;
+    color: #1b5688;
+}
+
+.settings-section-link.is-current {
+    background: #2370b4;
+    border-color: #2370b4;
+    color: #fff;
+}
+
+/* The card a jump link just landed on, so the eye knows where it arrived. */
+@keyframes settings-section-flash {
+    from {
+        box-shadow: 0 0 0 .25rem rgba(35, 112, 180, .25);
+    }
+
+    to {
+        box-shadow: 0 0 0 .25rem rgba(35, 112, 180, 0);
+    }
+}
+
+.settings-section-landed {
+    animation: settings-section-flash .9s ease-out;
+}
+
+/* ---- Project Types ----
+   The same blue System Contents wears on its panel, so the two halves of
+   System Settings read as one thing rather than two. */
+
+.project-types-card {
+    border: 1px solid #cfe3f6;
+    border-top: 4px solid #2370b4;
+}
+
+.project-types-heading {
+    color: #2370b4;
+}
+
+.project-types-add {
+    margin-inline: 0;
+    padding: .85rem .75rem 1rem;
+    border: 1px solid #cfe3f6;
+    border-radius: .6rem;
+    background: #f4f9fe;
+}
+
+.project-types-table thead th {
+    background: #2370b4;
+    color: #fff;
+    border-bottom: 0;
+    font-size: .78rem;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+}
+
+.project-types-table thead th:first-child {
+    border-top-left-radius: .45rem;
+}
+
+.project-types-table thead th:last-child {
+    border-top-right-radius: .45rem;
+}
+
+/* A count is the number that matters on this table, so it wears yellow and
+   catches the eye; a type nothing uses says so in the section's own blue
+   rather than in grey, which reads as disabled. */
+.project-type-count {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    background: #ffc107;
+    border: 1px solid #e0a800;
+    color: #3d2f00;
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.project-type-count.is-none {
+    background: #eaf4fd;
+    border-color: #cfe3f6;
+    color: #2370b4;
+    font-weight: 600;
 }

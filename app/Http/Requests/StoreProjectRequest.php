@@ -31,13 +31,17 @@ class StoreProjectRequest extends FormRequest
     {
         $projectTypes = $this->allowedProjectTypeNames();
 
-        // Every document is held to the same size, stated on the model so the
+        // Every document type takes any number of files, and every file is
+        // held to the same kind and size - both stated on the model so the
         // wizard and the edit dialog cannot drift apart.
-        $documentRules = ['file', 'mimes:jpg,jpeg,png,pdf,docx', 'max:'.Document::MAX_KILOBYTES];
+        $documentRules = ['array', 'max:'.Document::MAX_FILES];
+        $fileRules = Document::fileRules();
 
+        // A contract is a Commercial project's to provide. A Residential one
+        // may still attach files, but is never asked for them.
         $contractRules = $this->input('client_type') === 'Commercial'
-            ? array_merge(['required'], $documentRules)
-            : ['nullable'];
+            ? array_merge(['required'], $documentRules, ['min:1'])
+            : array_merge(['nullable'], $documentRules);
 
         return [
             'client_type' => ['required', Rule::in(['Residential', 'Commercial'])],
@@ -51,9 +55,12 @@ class StoreProjectRequest extends FormRequest
             'quotation_amount' => ['required', 'numeric', 'min:0'],
             'project_types' => ['required', 'array', 'min:1'],
             'project_types.*' => ['required', 'string', Rule::in($projectTypes)],
-            'assessment_report' => array_merge(['required'], $documentRules),
-            'approved_quotation' => array_merge(['required'], $documentRules),
+            'assessment_report' => array_merge(['required'], $documentRules, ['min:1']),
+            'assessment_report.*' => $fileRules,
+            'approved_quotation' => array_merge(['required'], $documentRules, ['min:1']),
+            'approved_quotation.*' => $fileRules,
             'contract' => $contractRules,
+            'contract.*' => $fileRules,
             'project_description' => ['required', 'string'],
             'lead_tech' => ['required', 'integer', Rule::exists('tbl_technicians', 'technician_id')],
             'technicians' => ['required', 'array', 'min:1'],
@@ -70,9 +77,23 @@ class StoreProjectRequest extends FormRequest
         return [
             'quotation_amount.numeric' => 'The quotation amount must be a valid number.',
             'quotation_amount.min' => 'The quotation amount must be at least zero.',
-            'assessment_report.max' => 'The assessment report must be '.Document::MAX_LABEL.' or smaller.',
-            'approved_quotation.max' => 'The approved quotation must be '.Document::MAX_LABEL.' or smaller.',
-            'contract.max' => 'The contract must be '.Document::MAX_LABEL.' or smaller.',
+            'assessment_report.required' => 'Upload at least one assessment report file.',
+            'assessment_report.min' => 'Upload at least one assessment report file.',
+            'assessment_report.max' => 'Upload at most '.Document::MAX_FILES.' assessment report files.',
+            'assessment_report.*.mimes' => Document::mimesMessage('assessment report'),
+            'assessment_report.*.max' => Document::maxMessage('assessment report'),
+
+            'approved_quotation.required' => 'Upload at least one approved quotation file.',
+            'approved_quotation.min' => 'Upload at least one approved quotation file.',
+            'approved_quotation.max' => 'Upload at most '.Document::MAX_FILES.' approved quotation files.',
+            'approved_quotation.*.mimes' => Document::mimesMessage('approved quotation'),
+            'approved_quotation.*.max' => Document::maxMessage('approved quotation'),
+
+            'contract.required' => 'Upload at least one contract file.',
+            'contract.min' => 'Upload at least one contract file.',
+            'contract.max' => 'Upload at most '.Document::MAX_FILES.' contract files.',
+            'contract.*.mimes' => Document::mimesMessage('contract'),
+            'contract.*.max' => Document::maxMessage('contract'),
             ...app(ScheduleModeRules::class)->messages(),
         ];
     }

@@ -6,6 +6,10 @@ document.addEventListener("DOMContentLoaded", function () {
             pageLength: 10,
             lengthMenu: [10, 25, 50, 100],
             info: false,
+            // A project ID is a label, not a quantity: without this
+            // DataTables types the column as numeric and right-aligns it.
+            // Ordering stays numeric.
+            columnDefs: [{ targets: 0, className: "dt-left" }],
             language: {
                 search: "",
                 searchPlaceholder: "Search schedules...",
@@ -679,16 +683,23 @@ document.addEventListener("DOMContentLoaded", function () {
         refreshRowTimeOptions(row, technicianIds, projectId);
     }
 
-    function updateRemoveButtons(container) {
+    /**
+     * The list can be emptied completely: a project holding no dates is
+     * Unscheduled, which is a state it is allowed to be saved in. So no row is
+     * ever undeletable, and the empty state stands in for the last one.
+     */
+    function refreshRangesState(modal, container) {
         const rows = container.querySelectorAll("[data-range-row]");
+        const emptyState = modal.querySelector("[data-ranges-empty]");
+        const countPill = modal.querySelector("[data-ranges-count]");
 
-        rows.forEach(function (row) {
-            const removeButton = row.querySelector("[data-remove-range]");
+        if (emptyState) {
+            emptyState.classList.toggle("d-none", rows.length > 0);
+        }
 
-            if (removeButton) {
-                removeButton.disabled = rows.length <= 1;
-            }
-        });
+        if (countPill) {
+            countPill.textContent = rows.length + " scheduled";
+        }
     }
 
     function initScheduleModal(modal) {
@@ -715,11 +726,53 @@ document.addEventListener("DOMContentLoaded", function () {
             return;
         }
 
-        container.querySelectorAll("[data-range-row]").forEach(function (row) {
-            initRangeRow(row, technicianIds, projectId, container);
-        });
+        // The rows exactly as the server sent them. Read before any picker has
+        // touched the DOM: flatpickr replaces each date field with a visible
+        // alt input of its own, and a snapshot taken later would carry those
+        // duplicates with it.
+        const pristineRows = container.innerHTML;
+        const pristineNextIndex = container.dataset.nextIndex || "0";
 
-        updateRemoveButtons(container);
+        function clearError() {
+            if (errorBox) {
+                errorBox.classList.add("d-none");
+                errorBox.textContent = "";
+            }
+        }
+
+        function destroyRowPickers() {
+            container
+                .querySelectorAll(
+                    "[data-range-start], [data-range-end], [data-range-project-date]",
+                )
+                .forEach(destroyPicker);
+        }
+
+        function initRows() {
+            container
+                .querySelectorAll("[data-range-row]")
+                .forEach(function (row) {
+                    initRangeRow(row, technicianIds, projectId, container);
+                });
+
+            refreshRangesState(modal, container);
+        }
+
+        initRows();
+
+        // Closing without saving changes nothing. An edit lives only in this
+        // form until it is submitted, so the form goes back to the schedule
+        // the server sent rather than keeping dates that were never saved -
+        // including rows that were removed, and rows that were added.
+        modal.addEventListener("hidden.bs.modal", function () {
+            destroyRowPickers();
+
+            container.innerHTML = pristineRows;
+            container.dataset.nextIndex = pristineNextIndex;
+
+            initRows();
+            clearError();
+        });
 
         if (addButton && template) {
             addButton.addEventListener("click", function () {
@@ -751,12 +804,8 @@ document.addEventListener("DOMContentLoaded", function () {
                 container.dataset.nextIndex = String(nextIndex + 1);
 
                 initRangeRow(clone, technicianIds, projectId, container);
-                updateRemoveButtons(container);
-
-                if (errorBox) {
-                    errorBox.classList.add("d-none");
-                    errorBox.textContent = "";
-                }
+                refreshRangesState(modal, container);
+                clearError();
             });
         }
 
@@ -782,7 +831,11 @@ document.addEventListener("DOMContentLoaded", function () {
             });
 
             row.remove();
-            updateRemoveButtons(container);
+            refreshRangesState(modal, container);
+
+            // Removing the row that was complained about may well have fixed
+            // the complaint, so it does not stay on screen.
+            clearError();
         });
 
         if (form) {
@@ -1782,6 +1835,503 @@ document.addEventListener("DOMContentLoaded", function () {
 
     const dateModal = dateModalEl ? initDateModal(dateModalEl) : null;
 
+    // ---------------------------------------------------------------
+    // Unscheduled projects: the work the calendar cannot show, and the
+    // flow for giving one of them its first dates.
+    //
+    // Both steps live in the one dialog. Picking a project swaps the list
+    // for its form and Back swaps it straight back, so a second modal is
+    // never stacked on this one.
+    // ---------------------------------------------------------------
+
+    function initUnscheduledModal(modal) {
+        const listPanel = modal.querySelector("[data-unscheduled-list-panel]");
+        const formPanel = modal.querySelector("[data-unscheduled-form-panel]");
+        const backBtn = modal.querySelector("[data-unscheduled-back]");
+        const titleEl = modal.querySelector("[data-unscheduled-title]");
+        const eyebrowEl = modal.querySelector("[data-unscheduled-eyebrow]");
+
+        const modeWrap = modal.querySelector("[data-unscheduled-mode-wrap]");
+        const modeSelect = modal.querySelector("[data-unscheduled-mode]");
+        const modeHint = modal.querySelector("[data-unscheduled-mode-hint]");
+        const dateBasedFields = Array.from(
+            modal.querySelectorAll("[data-unscheduled-date-based]"),
+        );
+        const partialDayFields = Array.from(
+            modal.querySelectorAll("[data-unscheduled-partial-day]"),
+        );
+
+        const startInput = modal.querySelector("[data-unscheduled-start]");
+        const endInput = modal.querySelector("[data-unscheduled-end]");
+        const dateInput = modal.querySelector("[data-unscheduled-date]");
+        const startTimeSelect = modal.querySelector(
+            "[data-unscheduled-start-time]",
+        );
+        const endTimeSelect = modal.querySelector("[data-unscheduled-end-time]");
+
+        const errorBox = modal.querySelector("[data-unscheduled-error]");
+        const successBox = modal.querySelector("[data-unscheduled-success]");
+        const saveBtn = modal.querySelector("[data-unscheduled-save]");
+        const saveSpinner = modal.querySelector("[data-unscheduled-save-spinner]");
+
+        const listTitle = titleEl ? titleEl.textContent : "";
+
+        // The project being scheduled, or null while the list is showing.
+        let picked = null;
+        let pickers = [];
+
+        function isPartialDay() {
+            return modeSelect && modeSelect.value === MODE_PARTIAL_DAY;
+        }
+
+        function showError(message) {
+            errorBox.textContent = message || "";
+            errorBox.classList.toggle("d-none", !message);
+        }
+
+        function showSuccess(message) {
+            successBox.textContent = message || "";
+            successBox.classList.toggle("d-none", !message);
+        }
+
+        function destroyPickers() {
+            pickers.forEach(function (picker) {
+                picker.destroy();
+            });
+            pickers = [];
+        }
+
+        function applyMode() {
+            const partialDay = isPartialDay();
+
+            dateBasedFields.forEach(function (field) {
+                field.hidden = partialDay;
+            });
+
+            partialDayFields.forEach(function (field) {
+                field.hidden = !partialDay;
+            });
+
+            if (modeHint) {
+                modeHint.textContent = partialDay
+                    ? "Books set hours on one date, leaving the rest of that day free."
+                    : "Books the whole of every day in the range.";
+            }
+        }
+
+        // A day nobody on this project can work is not offered at all, the
+        // same rule the per-project editor's pickers apply.
+        function wholeDayBlocked(date) {
+            const dateString = normalizeDateString(date);
+
+            if (!dateString || !picked) {
+                return false;
+            }
+
+            return picked.technicianIds.some(function (technicianId) {
+                return (
+                    busyIntervalsOn(technicianId, dateString, picked.projectId)
+                        .length > 0
+                );
+            });
+        }
+
+        // A partial day only needs one hour of the date still open.
+        function partialDayBlocked(date) {
+            const dateString = normalizeDateString(date);
+
+            if (!dateString || !picked) {
+                return false;
+            }
+
+            return picked.technicianIds.some(function (technicianId) {
+                return !hasFreeHourOn(
+                    technicianId,
+                    dateString,
+                    picked.projectId,
+                );
+            });
+        }
+
+        function buildPickers() {
+            destroyPickers();
+
+            if (!window.flatpickr) {
+                [startInput, endInput, dateInput].forEach(function (input) {
+                    if (input) {
+                        input.type = "date";
+                        input.min = normalizeDateString(new Date());
+                    }
+                });
+
+                return;
+            }
+
+            const endPicker = window.flatpickr(endInput, {
+                ...FRIENDLY_DATE,
+                minDate: "today",
+                disable: [wholeDayBlocked],
+                onChange: function () {
+                    showError("");
+                },
+            });
+
+            const startPicker = window.flatpickr(startInput, {
+                ...FRIENDLY_DATE,
+                minDate: "today",
+                disable: [wholeDayBlocked],
+                onChange: function (selectedDates) {
+                    endPicker.set("minDate", selectedDates[0] || "today");
+                    showError("");
+                },
+            });
+
+            const datePicker = window.flatpickr(dateInput, {
+                ...FRIENDLY_DATE,
+                minDate: "today",
+                disable: [partialDayBlocked],
+                onChange: function () {
+                    // The hours on offer belong to the date just chosen.
+                    [startTimeSelect, endTimeSelect].forEach(function (select) {
+                        select.value = "";
+                    });
+                    refreshTimeOptions();
+                    showError("");
+                },
+            });
+
+            pickers = [endPicker, startPicker, datePicker];
+        }
+
+        // Grey out the hours this project's team cannot work on the chosen
+        // date, exactly as the per-project editor does.
+        function refreshTimeOptions() {
+            if (!picked) {
+                return;
+            }
+
+            const date = dateInput.value;
+
+            const freeBetween = function (from, to) {
+                return picked.technicianIds.every(function (technicianId) {
+                    return isFreeBetween(
+                        busyIntervalsOn(technicianId, date, picked.projectId),
+                        from,
+                        to,
+                    );
+                });
+            };
+
+            Array.from(startTimeSelect.options).forEach(function (option) {
+                if (!option.value) {
+                    return;
+                }
+
+                const from = minutesFromTime(option.value);
+                // 5 PM can only ever end a booking.
+                const bookable = from !== null && from < WORKING_HOUR_END * 60;
+
+                option.disabled = !date
+                    ? false
+                    : !(bookable && freeBetween(from, from + 60));
+            });
+
+            const startMinutes = minutesFromTime(startTimeSelect.value);
+
+            Array.from(endTimeSelect.options).forEach(function (option) {
+                if (!option.value) {
+                    return;
+                }
+
+                const to = minutesFromTime(option.value);
+
+                if (to === null || startMinutes === null) {
+                    option.disabled = false;
+
+                    return;
+                }
+
+                option.disabled =
+                    to <= startMinutes ||
+                    (date ? !freeBetween(startMinutes, to) : false);
+            });
+
+            [startTimeSelect, endTimeSelect].forEach(function (select) {
+                const selected = select.options[select.selectedIndex];
+
+                if (selected && selected.disabled) {
+                    select.value = "";
+                }
+            });
+        }
+
+        function showList() {
+            picked = null;
+            destroyPickers();
+
+            listPanel.classList.remove("d-none");
+            formPanel.classList.add("d-none");
+            saveBtn.classList.add("d-none");
+
+            if (titleEl) {
+                titleEl.textContent = listTitle;
+            }
+
+            if (eyebrowEl) {
+                eyebrowEl.textContent = "Unscheduled";
+            }
+
+            showError("");
+            showSuccess("");
+        }
+
+        function showForm(button) {
+            picked = {
+                projectId: button.dataset.unscheduledPick,
+                name: button.dataset.projectName || "",
+                referenceNo: button.dataset.referenceNo || "",
+                partialDayAllowed: button.dataset.partialDayAllowed === "1",
+                technicianIds: (button.dataset.technicianIds || "")
+                    .split(",")
+                    .map(function (id) {
+                        return id.trim();
+                    })
+                    .filter(Boolean),
+            };
+
+            listPanel.classList.add("d-none");
+            formPanel.classList.remove("d-none");
+            saveBtn.classList.remove("d-none");
+            saveBtn.disabled = false;
+
+            if (titleEl) {
+                titleEl.textContent = picked.name;
+            }
+
+            if (eyebrowEl) {
+                eyebrowEl.textContent = picked.referenceNo
+                    ? "Schedule · " + picked.referenceNo
+                    : "Schedule";
+            }
+
+            // Partial days are a Residential offering, so a Commercial
+            // project is never shown the choice.
+            modeSelect.value = MODE_DATE_BASED;
+            modeWrap.classList.toggle("d-none", !picked.partialDayAllowed);
+
+            [startInput, endInput, dateInput].forEach(function (input) {
+                input.value = "";
+            });
+
+            [startTimeSelect, endTimeSelect].forEach(function (select) {
+                select.value = "";
+            });
+
+            applyMode();
+            buildPickers();
+            refreshTimeOptions();
+            showError("");
+            showSuccess("");
+        }
+
+        // What the picked slot means, as the assign endpoint reads it.
+        function scheduleParams() {
+            if (isPartialDay()) {
+                if (
+                    !dateInput.value ||
+                    !startTimeSelect.value ||
+                    !endTimeSelect.value
+                ) {
+                    return null;
+                }
+
+                return {
+                    scheduling_mode: MODE_PARTIAL_DAY,
+                    project_date: dateInput.value,
+                    start_time: startTimeSelect.value,
+                    end_time: endTimeSelect.value,
+                };
+            }
+
+            if (!startInput.value || !endInput.value) {
+                return null;
+            }
+
+            return {
+                scheduling_mode: MODE_DATE_BASED,
+                start_date: startInput.value,
+                end_date: endInput.value,
+            };
+        }
+
+        /**
+         * Everything the server will check, checked here first so a mistake is
+         * answered without a round trip. The server checks it all again.
+         */
+        function validationError(params) {
+            const todayString = normalizeDateString(new Date());
+
+            if (params.scheduling_mode === MODE_PARTIAL_DAY) {
+                const from = minutesFromTime(params.start_time);
+                const to = minutesFromTime(params.end_time);
+
+                if (from === null || to === null || from >= to) {
+                    return "The end time must be later than the start time.";
+                }
+
+                if (params.project_date < todayString) {
+                    return "The project date cannot be in the past.";
+                }
+
+                return conflictMessage(
+                    conflictsForEntry(
+                        {
+                            mode: MODE_PARTIAL_DAY,
+                            date: params.project_date,
+                            from: from,
+                            to: to,
+                        },
+                        picked.technicianIds,
+                        picked.projectId,
+                    ),
+                );
+            }
+
+            if (params.end_date < params.start_date) {
+                return "The end date must be on or after the start date.";
+            }
+
+            if (params.start_date < todayString) {
+                return "The start date cannot be in the past.";
+            }
+
+            return conflictMessage(
+                conflictsForEntry(
+                    {
+                        mode: MODE_DATE_BASED,
+                        start: params.start_date,
+                        end: params.end_date,
+                    },
+                    picked.technicianIds,
+                    picked.projectId,
+                ),
+            );
+        }
+
+        listPanel.addEventListener("click", function (event) {
+            const button = event.target.closest("[data-unscheduled-pick]");
+
+            if (button) {
+                showForm(button);
+            }
+        });
+
+        backBtn.addEventListener("click", showList);
+
+        if (modeSelect) {
+            modeSelect.addEventListener("change", function () {
+                applyMode();
+                showError("");
+            });
+        }
+
+        [startTimeSelect, endTimeSelect].forEach(function (select) {
+            select.addEventListener("change", function () {
+                refreshTimeOptions();
+                showError("");
+            });
+        });
+
+        saveBtn.addEventListener("click", function () {
+            if (!picked) {
+                return;
+            }
+
+            const params = scheduleParams();
+
+            if (!params) {
+                showError(
+                    isPartialDay()
+                        ? "Pick the date and both times first."
+                        : "Pick a start date and an end date first.",
+                );
+
+                return;
+            }
+
+            const problem = validationError(params);
+
+            if (problem) {
+                showError(problem);
+
+                return;
+            }
+
+            saveBtn.disabled = true;
+            saveSpinner.classList.remove("d-none");
+            showError("");
+
+            fetch("/super-admin/schedules/assign", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Accept: "application/json",
+                    "X-CSRF-TOKEN": csrfToken(),
+                    "X-Requested-With": "XMLHttpRequest",
+                },
+                body: JSON.stringify(
+                    Object.assign({}, params, {
+                        project_ids: [Number(picked.projectId)],
+                    }),
+                ),
+            })
+                .then(function (response) {
+                    return response.json().then(function (body) {
+                        return { ok: response.ok, body: body };
+                    });
+                })
+                .then(function (result) {
+                    saveSpinner.classList.add("d-none");
+
+                    if (!result.ok) {
+                        saveBtn.disabled = false;
+                        showError(
+                            result.body.error ||
+                                "Could not save the schedule.",
+                        );
+
+                        return;
+                    }
+
+                    showSuccess(
+                        (result.body.message || "Schedule saved.") +
+                            " Refreshing…",
+                    );
+
+                    // Reload so the calendar, the table and the availability
+                    // data all reflect the new booking.
+                    window.setTimeout(function () {
+                        window.location.reload();
+                    }, 900);
+                })
+                .catch(function () {
+                    saveSpinner.classList.add("d-none");
+                    saveBtn.disabled = false;
+                    showError("Could not save the schedule.");
+                });
+        });
+
+        // Reopening starts at the list, never half way into a project that
+        // was picked and then abandoned.
+        modal.addEventListener("hidden.bs.modal", showList);
+    }
+
+    const unscheduledModalEl = document.querySelector("[data-unscheduled-modal]");
+
+    if (unscheduledModalEl) {
+        initUnscheduledModal(unscheduledModalEl);
+    }
+
     const calendarEl = document.getElementById("schedulesCalendar");
 
     if (calendarEl && window.FullCalendar) {
@@ -1844,22 +2394,21 @@ document.addEventListener("DOMContentLoaded", function () {
                 }
 
                 if (readOnly) {
-                    // No edit modal exists for these, so say why up front.
+                    // Still clickable - it opens the view-only panel - so the
+                    // tooltip says what clicking will get you.
                     tooltipParts.push("View only");
                     info.el.classList.add("fc-event-readonly");
                 }
 
                 info.el.setAttribute("title", tooltipParts.join(" · "));
             },
+            // A completed project opens as a record of its dates; everything
+            // else opens the editor.
             eventClick: function (info) {
-                if (info.event.extendedProps.readOnly) {
-                    return;
-                }
-
                 const projectId = info.event.extendedProps.projectId;
-                const modalEl = document.getElementById(
-                    "scheduleEditModal" + projectId,
-                );
+                const modalEl = info.event.extendedProps.readOnly
+                    ? document.getElementById("scheduleViewModal" + projectId)
+                    : document.getElementById("scheduleEditModal" + projectId);
 
                 if (modalEl && window.bootstrap) {
                     window.bootstrap.Modal.getOrCreateInstance(modalEl).show();

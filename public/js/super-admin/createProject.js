@@ -68,6 +68,27 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    /**
+     * What a file field reads as on the review step.
+     *
+     * A document type takes as many files as it runs to, so one is named and
+     * several are counted - a list of eight filenames would bury the rest of
+     * the summary.
+     */
+    function uploadedFileLabel(field) {
+        const files = field && field.files ? field.files : null;
+
+        if (!files || !files.length) {
+            return 'Not uploaded yet';
+        }
+
+        if (files.length === 1) {
+            return files[0].name;
+        }
+
+        return files.length + ' files selected';
+    }
+
     function formatFieldValue(field) {
         if (!field) {
             return 'Not filled yet';
@@ -78,7 +99,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         if (field.type === 'file') {
-            return field.files && field.files[0] ? field.files[0].name : 'Not uploaded yet';
+            return uploadedFileLabel(field);
         }
 
         const value = field.value.trim();
@@ -1215,13 +1236,9 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         return documentFields.map(function(fieldName) {
-            const input = form.querySelector('[data-summary-input="' + fieldName + '"]');
-
-            if (!input || !input.files || !input.files[0]) {
-                return 'Not uploaded yet';
-            }
-
-            return input.files[0].name;
+            return uploadedFileLabel(
+                form.querySelector('[data-summary-input="' + fieldName + '"]')
+            );
         });
     }
 

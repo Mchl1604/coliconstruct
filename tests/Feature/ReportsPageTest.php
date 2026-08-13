@@ -199,13 +199,107 @@ class ReportsPageTest extends TestCase
         $response = $this->getJson(route('super-admin.reports.technician'));
 
         $response->assertOk();
-        $response->assertJsonPath('total', 2);
+        $response->assertJsonPath('meta.total', 2);
 
         $titles = collect($response->json('reports'))->pluck('report_title')->all();
 
         $this->assertContains('Report On First', $titles);
         // Reports outlive their project's status; the repository shows them all.
         $this->assertContains('Report On Second', $titles);
+    }
+
+    /**
+     * The list pages in SQL, so the browser is handed one page of rows at a
+     * time however many reports exist.
+     */
+    public function test_it_returns_one_page_of_reports_at_a_time(): void
+    {
+        $tech = $this->technician('Ana Mendoza');
+        $project = $this->project('Busy Project', 'ongoing', [$tech]);
+
+        // Dated apart so the newest-first order is unambiguous, and the
+        // pages can be checked against a known sequence.
+        for ($index = 0; $index < 25; $index++) {
+            $this->report($project, $tech, 'Report '.$index, 'progress', $this->day(-$index));
+        }
+
+        $first = $this->getJson(route('super-admin.reports.technician'));
+
+        $first->assertOk();
+        $first->assertJsonCount(10, 'reports');
+        $first->assertJsonPath('meta.total', 25);
+        $first->assertJsonPath('meta.current_page', 1);
+        $first->assertJsonPath('meta.last_page', 3);
+        $first->assertJsonPath('meta.from', 1);
+        $first->assertJsonPath('meta.to', 10);
+        $first->assertJsonPath('reports.0.report_title', 'Report 0');
+
+        $second = $this->getJson(route('super-admin.reports.technician', ['page' => 2]));
+
+        $second->assertOk();
+        $second->assertJsonCount(10, 'reports');
+        $second->assertJsonPath('meta.current_page', 2);
+        $second->assertJsonPath('meta.from', 11);
+        $second->assertJsonPath('reports.0.report_title', 'Report 10');
+
+        // The last page carries the remainder, not a full page.
+        $last = $this->getJson(route('super-admin.reports.technician', ['page' => 3]));
+
+        $last->assertOk();
+        $last->assertJsonCount(5, 'reports');
+        $last->assertJsonPath('meta.to', 25);
+        $last->assertJsonPath('reports.4.report_title', 'Report 24');
+
+        // No page repeats a row and none is missed.
+        $seen = collect([1, 2, 3])
+            ->flatMap(fn (int $page) => collect(
+                $this->getJson(route('super-admin.reports.technician', ['page' => $page]))->json('reports')
+            )->pluck('id'))
+            ->all();
+
+        $this->assertCount(25, $seen);
+        $this->assertCount(25, array_unique($seen));
+    }
+
+    /**
+     * Paging narrows to whatever the filters left behind, not to the whole
+     * table - otherwise page 2 of a search would show rows the search
+     * excluded.
+     */
+    public function test_paging_applies_to_the_filtered_results(): void
+    {
+        $tech = $this->technician('Ana Mendoza');
+        $alpha = $this->project('Alpha Project', 'ongoing', [$tech]);
+        $beta = $this->project('Beta Project', 'ongoing', [$tech]);
+
+        for ($index = 0; $index < 12; $index++) {
+            $this->report($alpha, $tech, 'Alpha '.$index, 'progress', $this->day(-$index));
+        }
+
+        for ($index = 0; $index < 12; $index++) {
+            $this->report($beta, $tech, 'Beta '.$index, 'progress', $this->day(-$index));
+        }
+
+        $filtered = $this->getJson(route('super-admin.reports.technician', [
+            'project_id' => $alpha->project_id,
+        ]));
+
+        $filtered->assertOk();
+        $filtered->assertJsonPath('meta.total', 12);
+        $filtered->assertJsonPath('meta.last_page', 2);
+
+        $secondPage = $this->getJson(route('super-admin.reports.technician', [
+            'project_id' => $alpha->project_id,
+            'page' => 2,
+        ]));
+
+        $secondPage->assertOk();
+        $secondPage->assertJsonCount(2, 'reports');
+
+        // Every row on the filtered page 2 still belongs to Alpha.
+        $projectIds = collect($secondPage->json('reports'))->pluck('project_id')->unique()->all();
+
+        $this->assertSame([$alpha->project_id], array_values($projectIds));
     }
 
     public function test_it_filters_by_project_and_report_type(): void
@@ -222,13 +316,13 @@ class ReportsPageTest extends TestCase
             'project_id' => $alpha->project_id,
         ]));
         $byProject->assertOk();
-        $byProject->assertJsonPath('total', 2);
+        $byProject->assertJsonPath('meta.total', 2);
 
         $byType = $this->getJson(route('super-admin.reports.technician', [
             'report_type' => 'incident',
         ]));
         $byType->assertOk();
-        $byType->assertJsonPath('total', 1);
+        $byType->assertJsonPath('meta.total', 1);
         $byType->assertJsonPath('reports.0.report_title', 'Alpha Incident');
 
         $both = $this->getJson(route('super-admin.reports.technician', [
@@ -236,7 +330,7 @@ class ReportsPageTest extends TestCase
             'report_type' => 'incident',
         ]));
         $both->assertOk();
-        $both->assertJsonPath('total', 0);
+        $both->assertJsonPath('meta.total', 0);
     }
 
     /**
@@ -261,14 +355,14 @@ class ReportsPageTest extends TestCase
             $response = $this->getJson(route('super-admin.reports.technician', ['search' => $term]));
 
             $response->assertOk();
-            $response->assertJsonPath('total', 1);
+            $response->assertJsonPath('meta.total', 1);
             $response->assertJsonPath('reports.0.report_title', $expected);
         }
 
         // Description text is searchable too - both reports share it.
         $this->getJson(route('super-admin.reports.technician', ['search' => 'Second line']))
             ->assertOk()
-            ->assertJsonPath('total', 2);
+            ->assertJsonPath('meta.total', 2);
     }
 
     public function test_it_filters_by_date_window(): void
@@ -281,7 +375,7 @@ class ReportsPageTest extends TestCase
 
         $today = $this->getJson(route('super-admin.reports.technician', ['date_filter' => 'today']));
         $today->assertOk();
-        $today->assertJsonPath('total', 1);
+        $today->assertJsonPath('meta.total', 1);
         $today->assertJsonPath('reports.0.report_title', 'Today Report');
 
         $custom = $this->getJson(route('super-admin.reports.technician', [
@@ -290,11 +384,11 @@ class ReportsPageTest extends TestCase
             'end_date' => $this->day(-50),
         ]));
         $custom->assertOk();
-        $custom->assertJsonPath('total', 1);
+        $custom->assertJsonPath('meta.total', 1);
         $custom->assertJsonPath('reports.0.report_title', 'Old Report');
 
         $all = $this->getJson(route('super-admin.reports.technician', ['date_filter' => 'all']));
-        $all->assertJsonPath('total', 2);
+        $all->assertJsonPath('meta.total', 2);
     }
 
     // ------------------------------------------------------------------

@@ -11,9 +11,11 @@
 @section('content')
     @php
         $client = $project->clients->first();
-        $documentsByType = $project->documents->keyBy('document_type');
-        $assessmentDocument = $documentsByType->get('assessment');
-        $contractDocument = $documentsByType->get('contract');
+        // Grouped, not keyed: a project holds any number of files of each
+        // type, and keyBy would quietly show only the last of them.
+        $documentsByType = $project->documents->groupBy('document_type');
+        $assessmentDocuments = $documentsByType->get('assessment', collect());
+        $contractDocuments = $documentsByType->get('contract', collect());
 
         $clientTypeClass = match (strtolower($client?->client_type ?? '')) {
             'residential' => 'bi bi-house-door',
@@ -185,21 +187,30 @@
                 {{-- No quotation document either: what a project is worth is
                      commercial information, not something the crew running it
                      needs. --}}
+                {{-- One button per file, numbered when there is more than one:
+                     the crew needs every page of an assessment, not whichever
+                     of them happened to be uploaded last. --}}
                 <div class="d-flex gap-2 flex-wrap">
-                    @if ($assessmentDocument)
-                        <a href="{{ asset($assessmentDocument->document_path) }}" class="btn btn-outline-primary"
-                            target="_blank" rel="noopener noreferrer">Assessment</a>
-                    @else
+                    @forelse ($assessmentDocuments as $index => $document)
+                        <a href="{{ asset($document->document_path) }}" class="btn btn-outline-primary"
+                            target="_blank" rel="noopener noreferrer"
+                            title="{{ $document->document_name }}">
+                            Assessment{{ $assessmentDocuments->count() > 1 ? ' '.($index + 1) : '' }}
+                        </a>
+                    @empty
                         <button type="button" class="btn btn-outline-primary" disabled>Assessment</button>
-                    @endif
+                    @endforelse
 
                     @if ($client?->client_type === 'Commercial')
-                        @if ($contractDocument)
-                            <a href="{{ asset($contractDocument->document_path) }}" class="btn btn-outline-success"
-                                target="_blank" rel="noopener noreferrer">Contract</a>
-                        @else
+                        @forelse ($contractDocuments as $index => $document)
+                            <a href="{{ asset($document->document_path) }}" class="btn btn-outline-success"
+                                target="_blank" rel="noopener noreferrer"
+                                title="{{ $document->document_name }}">
+                                Contract{{ $contractDocuments->count() > 1 ? ' '.($index + 1) : '' }}
+                            </a>
+                        @empty
                             <button type="button" class="btn btn-outline-success" disabled>Contract</button>
-                        @endif
+                        @endforelse
                     @endif
                 </div>
 

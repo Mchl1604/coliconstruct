@@ -33,6 +33,12 @@ class ReportController extends Controller
     private const REPORTABLE_STATUSES = ['unscheduled', 'pending', 'ongoing'];
 
     /**
+     * Rows per page in the technician reports table, matching the tables on
+     * the Configuration page so a page of rows is the same size everywhere.
+     */
+    private const PER_PAGE = 10;
+
+    /**
      * Letterhead details for the exported PDF. The single place to change
      * them; move to a settings table if they ever become editable in-app.
      *
@@ -95,10 +101,11 @@ class ReportController extends Controller
     // ------------------------------------------------------------------
 
     /**
-     * Filtered, searched list of every technician report.
+     * Filtered, searched, paginated list of every technician report.
      *
-     * Filtering happens in SQL so the browser never has to hold the whole
-     * table, and the eager loads keep it to a fixed number of queries.
+     * Filtering and paging both happen in SQL so the browser never has to hold
+     * the whole table, and the eager loads keep it to a fixed number of
+     * queries: the page costs the same with ten reports or ten thousand.
      */
     public function technicianReports(Request $request)
     {
@@ -109,6 +116,7 @@ class ReportController extends Controller
             'start_date' => ['nullable', 'date'],
             'end_date' => ['nullable', 'date'],
             'search' => ['nullable', 'string', 'max:255'],
+            'page' => ['nullable', 'integer', 'min:1'],
         ]);
 
         if ($validator->fails()) {
@@ -150,11 +158,21 @@ class ReportController extends Controller
             });
         }
 
-        $reports = $query->orderByDesc('report_date')->orderByDesc('id')->get();
+        // Ordered by id as well as date: report_date carries no time, so a
+        // day's reports would otherwise come back in whatever order the
+        // database felt like - and an unstable order across pages is how a
+        // row gets shown twice and another never at all.
+        $page = $query
+            ->orderByDesc('report_date')
+            ->orderByDesc('id')
+            ->paginate(self::PER_PAGE)
+            ->withQueryString();
 
         return response()->json([
-            'reports' => $reports->map(fn (TechnicianReport $report): array => $this->reportRow($report))->all(),
-            'total' => $reports->count(),
+            'reports' => collect($page->items())
+                ->map(fn (TechnicianReport $report): array => $this->reportRow($report))
+                ->all(),
+            'meta' => $this->paginationMeta($page),
         ]);
     }
 

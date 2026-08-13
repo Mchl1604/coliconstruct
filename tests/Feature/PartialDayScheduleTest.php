@@ -71,8 +71,8 @@ class PartialDayScheduleTest extends TestCase
             'project_address' => '123 Sample Street',
             'quotation_amount' => '1250.00',
             'project_types' => ['Aircon Installation'],
-            'assessment_report' => UploadedFile::fake()->create('assessment.pdf', 12, 'application/pdf'),
-            'approved_quotation' => UploadedFile::fake()->create('quotation.jpg', 12, 'image/jpeg'),
+            'assessment_report' => [UploadedFile::fake()->create('assessment.pdf', 12, 'application/pdf')],
+            'approved_quotation' => [UploadedFile::fake()->create('quotation.jpg', 12, 'image/jpeg')],
             'project_description' => 'Test project description',
             'lead_tech' => $lead->technician_id,
             'technicians' => [$technician->technician_id],
@@ -80,7 +80,7 @@ class PartialDayScheduleTest extends TestCase
 
         if ($clientType === 'Commercial') {
             $payload['company_name'] = 'Acme Corp';
-            $payload['contract'] = UploadedFile::fake()->create('contract.pdf', 12, 'application/pdf');
+            $payload['contract'] = [UploadedFile::fake()->create('contract.pdf', 12, 'application/pdf')];
         }
 
         return $payload;

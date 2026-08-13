@@ -333,6 +333,24 @@
         @if ($isSuperAdmin)
         <div class="tab-pane fade" id="systemSettingsPane" role="tabpanel" aria-labelledby="systemSettingsTab">
 
+            {{-- Jump links, so a long tab does not have to be scrolled to be
+                 navigated. Sticky, and the pill for whatever is on screen
+                 lights up - the same blue pills System Contents uses for its
+                 own sections, one level up. --}}
+            <nav class="settings-section-nav" aria-label="System settings sections" data-settings-nav>
+                <span class="settings-section-nav-label">Jump to</span>
+
+                <a class="settings-section-link" href="#systemContentsPane" data-settings-link>
+                    <i class="bi bi-globe" aria-hidden="true"></i>
+                    System Contents
+                </a>
+
+                <a class="settings-section-link" href="#projectTypesPane" data-settings-link>
+                    <i class="bi bi-diagram-3" aria-hidden="true"></i>
+                    Project Types
+                </a>
+            </nav>
+
             {{-- System Contents lives inside System Settings: the public
                  website belongs to the Super Admin alone. --}}
                 <div class="card shadow-sm border-0 rounded-2 mb-4" id="systemContentsPane">
@@ -397,6 +415,76 @@
                         </div>
 
                         <div class="alert alert-danger mt-3 d-none" role="alert" data-content-error></div>
+
+                    </div>
+                </div>
+
+                {{-- Project Types: the catalogue of work the company does.
+                     The same list serves two screens - it is what a project
+                     may be, and what a technician may be qualified for - so
+                     everything written here lands in both. --}}
+                <div class="card shadow-sm rounded-2 mb-4 project-types-card" id="projectTypesPane">
+                    <div class="card-body p-4">
+
+                        <div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3">
+                            <div>
+                                <h5 class="fw-bold mb-1 project-types-heading">
+                                    <i class="bi bi-diagram-3 me-1" aria-hidden="true"></i>
+                                    Project Types
+                                </h5>
+                                <p class="text-secondary small mb-0">
+                                    The services a project can be booked for. Each one is also a technician
+                                    specialty, so adding a type here offers it on the Technicians page too.
+                                </p>
+                            </div>
+                        </div>
+
+                        <form class="row g-2 align-items-end mb-3 project-types-add" data-project-type-add-form
+                            novalidate>
+                            <div class="col-sm">
+                                <label class="form-label small fw-semibold mb-1" for="projectTypeName">
+                                    Add a project type
+                                </label>
+                                <input type="text" class="form-control" id="projectTypeName"
+                                    placeholder="e.g. Heating Installation" maxlength="255"
+                                    data-project-type-name required>
+                            </div>
+                            <div class="col-sm-auto">
+                                <button type="submit" class="btn btn-primary px-4" data-project-type-add>
+                                    <span class="spinner-border spinner-border-sm me-1 d-none" role="status"
+                                        aria-hidden="true" data-project-type-add-spinner></span>
+                                    <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
+                                    Add
+                                </button>
+                            </div>
+                        </form>
+
+                        <div class="text-secondary small py-3 px-1" data-project-type-loading>
+                            <span class="spinner-border spinner-border-sm me-2" role="status"
+                                aria-hidden="true"></span>
+                            Loading project types&hellip;
+                        </div>
+
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle mb-0 project-types-table">
+                                <thead>
+                                    <tr>
+                                        <th>Project Type</th>
+                                        <th>Projects</th>
+                                        <th>Technicians</th>
+                                        <th class="text-center">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody data-project-type-body></tbody>
+                            </table>
+                        </div>
+
+                        <div class="schedule-empty-state mt-2 d-none" data-project-type-empty>
+                            No project types yet. Add the first one above.
+                        </div>
+
+                        <div class="alert alert-danger mt-3 mb-0 d-none" role="alert" data-project-type-error></div>
+                        <div class="alert alert-success mt-3 mb-0 d-none" role="alert" data-project-type-success></div>
 
                     </div>
                 </div>
@@ -820,6 +908,7 @@
                 contentBase: @json(url('super-admin/configuration/contents')),
                 @if ($isSuperAdmin)
                     archivedAccounts: @json(route('super-admin.configuration.users.archived')),
+                    projectTypes: @json(route('super-admin.configuration.project-types.index')),
                 @endif
             };
             window.configurationOptions = {
@@ -833,6 +922,8 @@
         <script src="/js/super-admin/configuration.js"></script>
         @if (auth()->user()?->isSuperAdmin())
             <script src="/js/super-admin/systemContents.js"></script>
+            <script src="/js/super-admin/projectTypes.js"></script>
+            <script src="/js/super-admin/systemSettingsNav.js"></script>
         @endif
     @endpush
 @endsection

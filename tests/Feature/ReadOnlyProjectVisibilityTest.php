@@ -115,6 +115,73 @@ class ReadOnlyProjectVisibilityTest extends TestCase
         $response->assertDontSee('scheduleEditModal'.$cancelled->project_id, false);
     }
 
+    /**
+     * A completed project is still worth opening: it is a record of what the
+     * work was scheduled for. It opens read-only, from the table and from the
+     * calendar alike.
+     */
+    public function test_a_completed_project_opens_as_a_view_only_panel(): void
+    {
+        $ongoing = $this->createProject('Ongoing Project', 'ongoing');
+        $completed = $this->createProject('Completed Project', 'completed');
+
+        $this->bookProject($ongoing, $this->day(5), $this->day(6));
+        $this->bookProject($completed, $this->day(-6), $this->day(-5));
+
+        $response = $this->get(route('super-admin.schedules.index'));
+
+        $response->assertOk();
+        $response->assertSee('scheduleViewModal'.$completed->project_id, false);
+        $response->assertSee('View Schedule');
+
+        // Live work has the editor instead, never both.
+        $response->assertDontSee('scheduleViewModal'.$ongoing->project_id, false);
+
+        // And the calendar bar it is opened from is still there.
+        $names = collect($response->viewData('calendarEvents'))
+            ->pluck('extendedProps.projectName')
+            ->all();
+
+        $this->assertContains('Completed Project', $names);
+    }
+
+    /**
+     * Cancelled work has left this page: it is not on the calendar, not in the
+     * table, and not in the panel a clicked date opens. Its schedules are left
+     * exactly where they are - the project's own page still reads them.
+     */
+    public function test_cancelled_projects_are_off_the_schedules_page_but_keep_their_schedules(): void
+    {
+        $ongoing = $this->createProject('Ongoing Project', 'ongoing');
+        $cancelled = $this->createProject('Cancelled Project', 'cancelled');
+
+        $this->bookProject($ongoing, $this->day(5), $this->day(6));
+        $this->bookProject($cancelled, $this->day(5), $this->day(6));
+
+        $response = $this->get(route('super-admin.schedules.index'));
+
+        $response->assertOk();
+        $response->assertSee('Ongoing Project');
+        $response->assertDontSee('Cancelled Project');
+
+        $listedIds = $response->viewData('scheduledProjects')->pluck('project_id')->all();
+
+        $this->assertContains($ongoing->project_id, $listedIds);
+        $this->assertNotContains($cancelled->project_id, $listedIds);
+
+        // Nor in the panel a clicked date opens.
+        $details = $this->getJson(route('super-admin.schedules.date', $this->day(5)));
+
+        $details->assertOk();
+        $this->assertSame(
+            [$ongoing->project_id],
+            collect($details->json('projects'))->pluck('project_id')->all()
+        );
+
+        // The booking itself is untouched.
+        $this->assertSame(1, $cancelled->schedules()->count());
+    }
+
     public function test_read_only_projects_are_never_offered_for_a_new_date_range(): void
     {
         $this->createProject('Ongoing Project', 'ongoing');

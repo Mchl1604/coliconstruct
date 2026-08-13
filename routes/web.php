@@ -8,6 +8,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ProjectController;
+use App\Http\Controllers\ProjectTypeController;
 use App\Http\Controllers\PublicSiteController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\ScheduleController;
@@ -175,7 +176,14 @@ Route::prefix('super-admin')
         Route::put('/projects/{id}/restore', [ProjectController::class, 'restore'])
             ->middleware('role:super_admin')
             ->name('projects.restore');
-        Route::get('/projects/{id}/documents/{type}', [ProjectController::class, 'previewDocument'])->name('projects.documents.preview');
+        // Documents are addressed one at a time: a project may hold several of
+        // each type, so the type alone no longer names a file.
+        Route::get('/projects/{id}/documents/{document}', [ProjectController::class, 'previewDocument'])
+            ->whereNumber('document')
+            ->name('projects.documents.preview');
+        Route::delete('/projects/{id}/documents/{document}', [ProjectController::class, 'destroyDocument'])
+            ->whereNumber('document')
+            ->name('projects.documents.destroy');
         Route::put('/projects/{id}', [ProjectController::class, 'update'])->name('projects.update');
         Route::put('/projects/{id}/team', [ProjectController::class, 'updateAssignedTeam'])->name('projects.team.update');
         Route::post('/projects/{id}/reports', [TechnicianReportController::class, 'store'])->name('technician.reports.store');
@@ -255,6 +263,16 @@ Route::prefix('super-admin')
                 Route::put('/{section}', [SystemContentController::class, 'update'])->name('update');
                 Route::post('/images/{key}', [SystemContentController::class, 'storeImage'])->name('images.store');
                 Route::delete('/images/{key}', [SystemContentController::class, 'destroyImage'])->name('images.destroy');
+            });
+
+            // Project Types: the catalogue of work the company does, which is
+            // also the technician specialty list. Super Admin only, turned
+            // away by the controller on the same terms as System Contents.
+            Route::prefix('project-types')->name('project-types.')->group(function () {
+                Route::get('/', [ProjectTypeController::class, 'index'])->name('index');
+                Route::post('/', [ProjectTypeController::class, 'store'])->name('store');
+                Route::put('/{projectType}', [ProjectTypeController::class, 'update'])->name('update');
+                Route::delete('/{projectType}', [ProjectTypeController::class, 'destroy'])->name('destroy');
             });
 
             // Creation.

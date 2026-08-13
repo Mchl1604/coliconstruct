@@ -476,6 +476,139 @@ $(function () {
     renderDropdown();
     initImportTeam();
 
+    // ------------------------------------------------------------------
+    // Project documents
+    //
+    // Uploading adds files, so removing one is its own action. The row goes
+    // as soon as the server confirms it, rather than costing a page load for
+    // a change that touches one line.
+    // ------------------------------------------------------------------
 
+    /**
+     * The edit dialog's upload cards: what you just picked, listed under the
+     * input. A file field otherwise says "3 files" and leaves you to trust it,
+     * which is thin when the files are being added to a project rather than
+     * replacing what is there.
+     */
+    (function initPickedFileLists() {
+        document.querySelectorAll('[data-upload-input]').forEach(function (input) {
+            const list = input.parentElement.querySelector('[data-picked-list]');
+
+            if (!list) {
+                return;
+            }
+
+            input.addEventListener('change', function () {
+                const files = Array.from(input.files || []);
+
+                list.innerHTML = files
+                    .map(function (file) {
+                        const name = document.createElement('span');
+                        name.textContent = file.name;
+
+                        return '<li><i class="bi bi-paperclip"></i>' + name.innerHTML + '</li>';
+                    })
+                    .join('');
+
+                list.classList.toggle('d-none', files.length === 0);
+            });
+        });
+    })();
+
+    (function initDocumentRemoval() {
+        const wrap = document.querySelector('[data-project-documents]');
+
+        if (!wrap) {
+            return;
+        }
+
+        const errorBox = document.querySelector('[data-document-error]');
+        const token = document.querySelector('meta[name="csrf-token"]')?.content || '';
+
+        function showError(message) {
+            if (!errorBox) {
+                return;
+            }
+
+            errorBox.textContent = message || '';
+            errorBox.classList.toggle('d-none', !message);
+        }
+
+        wrap.addEventListener('click', function (event) {
+            const button = event.target.closest('[data-document-remove]');
+
+            if (!button || button.disabled) {
+                return;
+            }
+
+            const label = button.dataset.documentLabel || 'this file';
+
+            if (!window.confirm('Remove "' + label + '" from this project?')) {
+                return;
+            }
+
+            button.disabled = true;
+            showError('');
+
+            fetch(button.dataset.documentRemove, {
+                method: 'DELETE',
+                headers: {
+                    Accept: 'application/json',
+                    'X-CSRF-TOKEN': token,
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+            })
+                .then(function (response) {
+                    return response
+                        .json()
+                        .catch(function () {
+                            return {};
+                        })
+                        .then(function (body) {
+                            return { ok: response.ok, body: body };
+                        });
+                })
+                .then(function (result) {
+                    if (!result.ok) {
+                        button.disabled = false;
+                        showError(result.body.error || 'Could not remove that file.');
+
+                        return;
+                    }
+
+                    const row = button.closest('[data-document-row]');
+                    const group = row ? row.closest('.project-document-group') : null;
+
+                    row?.remove();
+
+                    if (!group) {
+                        return;
+                    }
+
+                    // The count beside the heading, and the "none uploaded"
+                    // line that takes over when the last one goes.
+                    const remaining = group.querySelectorAll('[data-document-row]').length;
+                    const badge = group.querySelector('.badge');
+
+                    if (badge) {
+                        badge.textContent = String(remaining);
+                        badge.classList.toggle('d-none', remaining === 0);
+                    }
+
+                    if (remaining === 0) {
+                        const name = group.querySelector('.fw-semibold')?.textContent.trim() || 'file';
+                        const empty = document.createElement('span');
+
+                        empty.className = 'text-muted small';
+                        empty.textContent = 'No ' + name.toLowerCase() + ' uploaded.';
+                        group.appendChild(empty);
+                    }
+                })
+                .catch(function () {
+                    button.disabled = false;
+                    showError('Could not remove that file.');
+                });
+        });
+    })();
 
 });

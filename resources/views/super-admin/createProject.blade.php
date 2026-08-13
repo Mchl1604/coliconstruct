@@ -200,6 +200,11 @@
                                 one project type.</div>
                         </div>
 
+                        {{-- Each document takes as many files as it runs to - a
+                             quotation is often several pages - and every one of
+                             them is a PDF or a picture of one. Both rules are
+                             the model's, so the picker cannot offer what the
+                             server would refuse. --}}
                         <div class="col-12">
                             <label class="form-label">Upload Documents</label>
                             <div class="upload-grid">
@@ -208,10 +213,11 @@
                                         <i class="bi bi-clipboard2-pulse" aria-hidden="true"></i>
                                         <div>
                                             <strong>Assessment Report</strong>
-                                            <p>Upload the assessment report file.</p>
+                                            <p>{{ \App\Models\Document::ALLOWED_LABEL }}. You may select more than one.</p>
                                         </div>
                                     </div>
-                                    <input type="file" name="assessment_report" class="form-control"
+                                    <input type="file" name="assessment_report[]" class="form-control"
+                                        accept="{{ \App\Models\Document::ACCEPT_ATTRIBUTE }}" multiple
                                         data-summary-input="assessment_report" required>
                                 </div>
 
@@ -220,10 +226,11 @@
                                         <i class="bi bi-file-earmark-check" aria-hidden="true"></i>
                                         <div>
                                             <strong>Approved Quotation</strong>
-                                            <p>Upload the approved quotation copy.</p>
+                                            <p>{{ \App\Models\Document::ALLOWED_LABEL }}. You may select more than one.</p>
                                         </div>
                                     </div>
-                                    <input type="file" name="approved_quotation" class="form-control"
+                                    <input type="file" name="approved_quotation[]" class="form-control"
+                                        accept="{{ \App\Models\Document::ACCEPT_ATTRIBUTE }}" multiple
                                         data-summary-input="approved_quotation" required>
                                 </div>
 
@@ -232,10 +239,11 @@
                                         <i class="bi bi-file-earmark-text" aria-hidden="true"></i>
                                         <div>
                                             <strong>Contract</strong>
-                                            <p>Upload the signed contract file.</p>
+                                            <p>{{ \App\Models\Document::ALLOWED_LABEL }}. You may select more than one.</p>
                                         </div>
                                     </div>
-                                    <input type="file" name="contract" class="form-control"
+                                    <input type="file" name="contract[]" class="form-control"
+                                        accept="{{ \App\Models\Document::ACCEPT_ATTRIBUTE }}" multiple
                                         data-summary-input="contract" data-contract-upload-input>
                                 </div>
                             </div>

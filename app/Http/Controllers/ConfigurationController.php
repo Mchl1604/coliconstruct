@@ -789,18 +789,4 @@ class ConfigurationController extends Controller
             'operating_system' => $log->operating_system,
         ];
     }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function paginationMeta($page): array
-    {
-        return [
-            'current_page' => $page->currentPage(),
-            'last_page' => $page->lastPage(),
-            'total' => $page->total(),
-            'from' => $page->firstItem(),
-            'to' => $page->lastItem(),
-        ];
-    }
 }

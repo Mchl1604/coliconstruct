@@ -276,20 +276,20 @@ class ProjectController extends Controller
 
                 $this->promoteStatusAfterScheduling($project);
 
-                $this->storeDocument(
+                $this->storeDocuments(
                     $request->file('assessment_report'),
                     $project->project_id,
                     'assessment'
                 );
 
-                $this->storeDocument(
+                $this->storeDocuments(
                     $request->file('approved_quotation'),
                     $project->project_id,
                     'quotation'
                 );
 
                 if ($validated['client_type'] !== 'Residential' && $request->hasFile('contract')) {
-                    $this->storeDocument(
+                    $this->storeDocuments(
                         $request->file('contract'),
                         $project->project_id,
                         'contract'
@@ -549,26 +549,52 @@ class ProjectController extends Controller
         return sprintf('PRJ-%s-%s', now()->format('Ymd'), str_pad((string) $projectId, 5, '0', STR_PAD_LEFT));
     }
 
-    private function storeDocument(?UploadedFile $uploadedFile, int $projectId, string $folder): void
+    /**
+     * File every upload of one document type against the project.
+     *
+     * Files are added, never swapped: a quotation can run to several pages,
+     * and a project keeps every one of them until somebody removes it by hand.
+     *
+     * @param  array<int, UploadedFile>|UploadedFile|null  $uploadedFiles
+     * @return int how many were stored, so a caller can tell the client only
+     *             about a document that actually landed
+     */
+    private function storeDocuments(array|UploadedFile|null $uploadedFiles, int $projectId, string $folder): int
     {
-        if (! $uploadedFile) {
-            return;
+        // A form written before these fields took several files still sends
+        // one, and is still stored the same way.
+        $files = collect(is_array($uploadedFiles) ? $uploadedFiles : [$uploadedFiles])
+            ->filter(fn ($file): bool => $file instanceof UploadedFile);
+
+        if ($files->isEmpty()) {
+            return 0;
         }
 
         $directory = public_path('uploads/'.$folder);
 
         File::ensureDirectoryExists($directory);
 
-        $fileName = Str::uuid()->toString().'.'.$uploadedFile->getClientOriginalExtension();
-        $uploadedFile->move($directory, $fileName);
+        $files->each(function (UploadedFile $uploadedFile) use ($directory, $projectId, $folder): void {
+            // Named by uuid rather than by what it was called on the way in:
+            // two people uploading "quotation.pdf" must not land on one file.
+            $fileName = Str::uuid()->toString().'.'.$uploadedFile->getClientOriginalExtension();
 
-        Document::create([
-            'project_id' => $projectId,
-            'document_type' => $folder,
-            'document_name' => $fileName,
-            'document_path' => 'uploads/'.$folder.'/'.$fileName,
-            'uploaded_at' => now(),
-        ]);
+            $uploadedFile->move($directory, $fileName);
+
+            Document::create([
+                'project_id' => $projectId,
+                'document_type' => $folder,
+                // The name it arrived under, so the list reads as the person
+                // who uploaded it would expect rather than as a uuid. Clipped
+                // to what the column holds: the name is a label here, and the
+                // file on disk is found by document_path either way.
+                'document_name' => mb_substr($uploadedFile->getClientOriginalName(), 0, 255),
+                'document_path' => 'uploads/'.$folder.'/'.$fileName,
+                'uploaded_at' => now(),
+            ]);
+        });
+
+        return $files->count();
     }
 
     public function show(Request $request, int $id)
@@ -674,32 +700,34 @@ class ProjectController extends Controller
 
     }
 
-    public function previewDocument(int $id, string $type)
+    /**
+     * One document, on its own page.
+     *
+     * Addressed by document rather than by type: a project may hold several
+     * assessments, and "the assessment" no longer names one of them.
+     */
+    public function previewDocument(int $id, Document $document)
     {
         $project = Project::query()
             ->with(['documents'])
             ->findOrFail($id);
 
-        $document = $project->documents->firstWhere('document_type', $type);
+        abort_unless((int) $document->project_id === (int) $project->project_id, 404);
 
-        abort_unless($document, 404);
-
+        $type = $document->document_type;
         $documentUrl = asset($document->document_path);
         $extension = strtolower(pathinfo($document->document_path, PATHINFO_EXTENSION));
 
         $previewType = match ($extension) {
             'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg' => 'image',
             'pdf' => 'pdf',
+            // No longer accepted on the way in, but old documents are still
+            // read, so the viewer still knows what to do with one.
             'doc', 'docx' => 'docx',
             default => 'file',
         };
 
-        $title = match ($type) {
-            'assessment' => 'Assessment',
-            'quotation' => 'Quotation',
-            'contract' => 'Contract',
-            default => ucfirst($type),
-        };
+        $title = Document::TYPES[$type] ?? ucfirst($type);
 
         return view('super-admin.projectDocumentPreview', compact(
             'project',
@@ -733,13 +761,25 @@ class ProjectController extends Controller
             'project_types' => ['required', 'array', 'min:1'],
             'project_types.*' => ['required', 'integer', 'exists:tbl_project_types,type_id'],
 
-            'assessmentDocument' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf,docx', 'max:'.Document::MAX_KILOBYTES],
-            'quotationDocument' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf,docx', 'max:'.Document::MAX_KILOBYTES],
-            'contractDocument' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf,docx', 'max:'.Document::MAX_KILOBYTES],
+            // Each type takes any number of files, and anything uploaded here
+            // is added to what the project already holds rather than
+            // replacing it - removing one is its own action.
+            'assessmentDocument' => ['nullable', 'array', 'max:'.Document::MAX_FILES],
+            'assessmentDocument.*' => Document::fileRules(),
+            'quotationDocument' => ['nullable', 'array', 'max:'.Document::MAX_FILES],
+            'quotationDocument.*' => Document::fileRules(),
+            'contractDocument' => ['nullable', 'array', 'max:'.Document::MAX_FILES],
+            'contractDocument.*' => Document::fileRules(),
         ], [
-            'assessmentDocument.max' => 'The assessment document must be '.Document::MAX_LABEL.' or smaller.',
-            'quotationDocument.max' => 'The quotation document must be '.Document::MAX_LABEL.' or smaller.',
-            'contractDocument.max' => 'The contract document must be '.Document::MAX_LABEL.' or smaller.',
+            'assessmentDocument.max' => 'Upload at most '.Document::MAX_FILES.' assessment files at a time.',
+            'assessmentDocument.*.mimes' => Document::mimesMessage('assessment'),
+            'assessmentDocument.*.max' => Document::maxMessage('assessment'),
+            'quotationDocument.max' => 'Upload at most '.Document::MAX_FILES.' quotation files at a time.',
+            'quotationDocument.*.mimes' => Document::mimesMessage('quotation'),
+            'quotationDocument.*.max' => Document::maxMessage('quotation'),
+            'contractDocument.max' => 'Upload at most '.Document::MAX_FILES.' contract files at a time.',
+            'contractDocument.*.mimes' => Document::mimesMessage('contract'),
+            'contractDocument.*.max' => Document::maxMessage('contract'),
         ]);
 
         // Collected inside the transaction and read after it commits, so the
@@ -779,20 +819,19 @@ class ProjectController extends Controller
 
                 $project->projectTypes()->sync($validated['project_types']);
 
-                // Update documents here if needed...
-                if ($this->replaceDocument($request->file('assessmentDocument'), $project->project_id, 'assessment')) {
+                // Anything uploaded is added to what the project already
+                // holds. Files are only ever taken away one at a time, by the
+                // remove button beside each of them.
+                if ($this->storeDocuments($request->file('assessmentDocument'), $project->project_id, 'assessment')) {
                     $uploadedDocuments[] = 'assessment';
                 }
 
-                if ($this->replaceDocument($request->file('quotationDocument'), $project->project_id, 'quotation')) {
+                if ($this->storeDocuments($request->file('quotationDocument'), $project->project_id, 'quotation')) {
                     $uploadedDocuments[] = 'quotation';
                 }
 
-                if (
-                    $client->client_type === 'Commercial' &&
-                    $request->hasFile('contractDocument')
-                ) {
-                    if ($this->replaceDocument($request->file('contractDocument'), $project->project_id, 'contract')) {
+                if ($client->client_type === 'Commercial') {
+                    if ($this->storeDocuments($request->file('contractDocument'), $project->project_id, 'contract')) {
                         $uploadedDocuments[] = 'contract';
                     }
                 }
@@ -825,54 +864,54 @@ class ProjectController extends Controller
     }
 
     /**
-     * @return bool whether a file was actually stored
+     * Take one file off a project.
+     *
+     * The only way a document leaves a project, now that uploading adds
+     * rather than replaces. Read-only work is a historical record and is not
+     * edited, which is the same rule the edit dialog itself runs on.
      */
-    private function replaceDocument(?UploadedFile $uploadedFile, int $projectId, string $documentType): bool
+    public function destroyDocument(Request $request, int $id, Document $document)
     {
-        if (! $uploadedFile) {
-            return false;
+        $project = Project::findOrFail($id);
+
+        if ((int) $document->project_id !== (int) $project->project_id) {
+            return response()->json(['error' => 'That document belongs to another project.'], 404);
         }
 
-        $directory = public_path('uploads/'.$documentType);
-
-        File::ensureDirectoryExists($directory);
-
-        // Find existing document
-        $document = Document::query()
-            ->where('project_id', $projectId)
-            ->where('document_type', $documentType)
-            ->first();
-
-        // Delete old physical file
-        if ($document && File::exists(public_path($document->document_path))) {
-            File::delete(public_path($document->document_path));
+        if ($project->isReadOnly() || $project->is_archived) {
+            return response()->json([
+                'error' => 'This project is '.$project->status.' and its documents can no longer be changed.',
+            ], 422);
         }
 
-        // Store new file
-        $fileName = Str::uuid().'.'.$uploadedFile->getClientOriginalExtension();
+        $name = $document->document_name;
+        $type = $document->document_type;
+        $path = public_path($document->document_path);
 
-        $uploadedFile->move($directory, $fileName);
+        $document->delete();
 
-        $data = [
-            'document_name' => $fileName,
-            'document_path' => 'uploads/'.$documentType.'/'.$fileName,
-            'uploaded_at' => now(),
-        ];
-
-        if ($document) {
-
-            // Replace existing database record
-            $document->update($data);
-        } else {
-
-            // Create one if it doesn't exist
-            Document::create(array_merge($data, [
-                'project_id' => $projectId,
-                'document_type' => $documentType,
-            ]));
+        // The row is what the pages read, so it goes first; a file left on
+        // disk by a failed unlink is invisible rather than broken.
+        if (File::exists($path)) {
+            File::delete($path);
         }
 
-        return true;
+        $this->activityLogger->record(
+            ActivityLog::PROJECT_UPDATED,
+            null,
+            sprintf(
+                "Removed the %s document '%s' from project '%s'.",
+                Document::TYPES[$type] ?? $type,
+                $name,
+                $project->reference_no ?? $project->name
+            ),
+            $project
+        );
+
+        return response()->json([
+            'message' => sprintf('%s was removed.', $name),
+            'remaining' => $project->documents()->where('document_type', $type)->count(),
+        ]);
     }
 
     public function putOnHold(Request $request, int $id)

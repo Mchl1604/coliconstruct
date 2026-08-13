@@ -43,3 +43,25 @@
 .min-w-0 {
     min-width: 0;
 }
+
+/* ---- Pagination under a JSON-driven table ----
+   Every table that pages in SQL rather than in the browser wears this: a
+   count on the left, the page controls on the right. Stated once here so
+   Configuration and Reports cannot drift apart; `.config-pagination` is the
+   name Configuration's markup already uses. */
+
+.table-pagination,
+.config-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.85rem;
+}
+
+.table-pagination-summary,
+.config-pagination-summary {
+    font-size: 0.82rem;
+    color: #64748b;
+}

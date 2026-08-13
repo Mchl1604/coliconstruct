@@ -322,54 +322,59 @@
 
                 <hr>
 
+                {{-- A project holds any number of files of each type, so each
+                     type is a group of them rather than a single button. The
+                     remove action sits with the file it removes; read-only
+                     work is a record and carries none. --}}
                 @php
-                    $documentsByType = $project->documents->keyBy('document_type');
+                    $documentsByType = $project->documents->groupBy('document_type');
+                    $isCommercial = $project->clients->first()?->client_type === 'Commercial';
+                    $documentTypes = collect(\App\Models\Document::TYPES)
+                        ->reject(fn ($label, $type) => $type === 'contract' && ! $isCommercial);
                 @endphp
 
-                <div class="d-flex gap-2">
+                <div class="project-document-groups" data-project-documents
+                    data-project-id="{{ $project->project_id }}">
+                    @foreach ($documentTypes as $type => $label)
+                        @php $files = $documentsByType->get($type, collect()); @endphp
 
-                    @php
-                        $assessmentDocument = $documentsByType->get('assessment');
-                        $quotationDocument = $documentsByType->get('quotation');
-                        $contractDocument = $documentsByType->get('contract');
-                    @endphp
+                        <div class="project-document-group">
+                            {{-- The count is the one number here, so it carries
+                                 the yellow; the files themselves are blue,
+                                 which is what says they open. --}}
+                            <div class="project-document-group-head">
+                                <span class="fw-semibold">{{ $label }}</span>
+                                @if ($files->isNotEmpty())
+                                    <span class="badge project-document-count">{{ $files->count() }}</span>
+                                @endif
+                            </div>
 
-                    @if ($assessmentDocument)
-                        <a href="{{ asset($assessmentDocument->document_path) }}" class="btn btn-outline-primary"
-                            target="_blank" rel="noopener noreferrer">
-                            Assessment
-                        </a>
-                    @else
-                        <button class="btn btn-outline-primary" disabled>
-                            Assessment
-                        </button>
-                    @endif
+                            @forelse ($files as $document)
+                                <div class="project-document-file" data-document-row="{{ $document->document_id }}">
+                                    <a href="{{ asset($document->document_path) }}" target="_blank"
+                                        rel="noopener noreferrer" class="project-document-link"
+                                        title="{{ $document->document_name }}">
+                                        <i class="bi bi-file-earmark-text" aria-hidden="true"></i>
+                                        <span>{{ $document->document_name }}</span>
+                                    </a>
 
-                    @if ($quotationDocument)
-                        <a href="{{ asset($quotationDocument->document_path) }}" class="btn btn-outline-primary"
-                            target="_blank" rel="noopener noreferrer">
-                            Quotation
-                        </a>
-                    @else
-                        <button class="btn btn-outline-primary" disabled>
-                            Quotation
-                        </button>
-                    @endif
-
-                    @if ($project->clients->first()?->client_type === 'Commercial')
-                        @if ($contractDocument)
-                            <a href="{{ asset($contractDocument->document_path) }}" class="btn btn-outline-success"
-                                target="_blank" rel="noopener noreferrer">
-                                Contract
-                            </a>
-                        @else
-                            <button class="btn btn-outline-success" disabled>
-                                Contract
-                            </button>
-                        @endif
-                    @endif
-
+                                    @unless ($isReadOnly)
+                                        <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2"
+                                            data-document-remove="{{ route('super-admin.projects.documents.destroy', ['id' => $project->project_id, 'document' => $document->document_id]) }}"
+                                            data-document-label="{{ $document->document_name }}"
+                                            title="Remove this file">
+                                            <i class="bi bi-trash3" aria-hidden="true"></i>
+                                        </button>
+                                    @endunless
+                                </div>
+                            @empty
+                                <span class="text-muted small">No {{ strtolower($label) }} uploaded.</span>
+                            @endforelse
+                        </div>
+                    @endforeach
                 </div>
+
+                <div class="alert alert-danger mt-3 mb-0 d-none" role="alert" data-document-error></div>
                 <div class="mt-3">
                     <span class="fw-bold me-2">
                         Quotation:
@@ -878,13 +883,18 @@
 
             <div class="modal-content border-0 shadow d-flex flex-column" style="max-height: calc(100vh - 3rem);">
 
-                <div class="modal-header bg-light">
-                    <h5 class="modal-title fw-bold" id="editProjectDetailsModalLabel">
-                        <i class="bi bi-pencil-square me-2"></i>
-                        Edit Project Details
-                    </h5>
+                <div class="modal-header edit-project-header">
+                    <div>
+                        <span class="edit-project-eyebrow">
+                            <i class="bi bi-pencil-square me-1" aria-hidden="true"></i>
+                            Editing {{ $project->reference_no }}
+                        </span>
+                        <h5 class="modal-title fw-bold mb-0" id="editProjectDetailsModalLabel">
+                            {{ $project->name }}
+                        </h5>
+                    </div>
 
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
 
                 <form class="d-flex flex-column flex-grow-1 overflow-hidden"
@@ -892,11 +902,12 @@
                     enctype="multipart/form-data">
                     @csrf
                     @method('PUT')
-                    <div class="modal-body flex-grow-1 overflow-auto">
+                    <div class="modal-body flex-grow-1 overflow-auto edit-project-body">
 
                         <!-- Client Information -->
-                        <h6 class="text-primary fw-bold mb-3">
-                            <i class="bi bi-person-circle me-2"></i>
+                        <section class="edit-section">
+                        <h6 class="edit-section-title">
+                            <i class="bi bi-person-circle" aria-hidden="true"></i>
                             Client Information
                         </h6>
 
@@ -961,12 +972,12 @@
                             </div>
 
                         </div>
-
-                        <hr class="my-4">
+                        </section>
 
                         <!-- Project Information -->
-                        <h6 class="text-primary fw-bold mb-3">
-                            <i class="bi bi-folder2-open me-2"></i>
+                        <section class="edit-section">
+                        <h6 class="edit-section-title">
+                            <i class="bi bi-folder2-open" aria-hidden="true"></i>
                             Project Information
                         </h6>
                         <div class="mb-4">
@@ -1063,76 +1074,83 @@
                             <textarea class="form-control" rows="2" name="project_description">{{ $project->description }}</textarea>
 
                         </div>
-
-                        <hr class="my-4">
+                        </section>
 
                         <!-- Documents -->
-                        <h6 class="text-primary fw-bold mb-3">
-                            <i class="bi bi-file-earmark-arrow-up me-2"></i>
+                        <section class="edit-section">
+                        <h6 class="edit-section-title">
+                            <i class="bi bi-file-earmark-arrow-up" aria-hidden="true"></i>
                             Update Documents
                         </h6>
 
+                        {{-- Said once for all three rather than repeated under
+                             each: it is the same rule every time. --}}
+                        <p class="edit-section-note">
+                            <i class="bi bi-info-circle" aria-hidden="true"></i>
+                            <span>
+                                {{ \App\Models\Document::ALLOWED_LABEL }}, up to
+                                {{ \App\Models\Document::MAX_LABEL }} each. You may pick several at once, and
+                                anything you pick is <strong>added</strong> to what the project already holds &mdash;
+                                remove a file from the list on the page behind this dialog.
+                            </span>
+                        </p>
+
+                        @php
+                            $uploadFields = [
+                                'assessment' => ['label' => 'Assessment', 'field' => 'assessmentDocument'],
+                                'quotation' => ['label' => 'Quotation', 'field' => 'quotationDocument'],
+                            ];
+
+                            if ($project->clients->first()?->client_type === 'Commercial') {
+                                $uploadFields['contract'] = ['label' => 'Contract', 'field' => 'contractDocument'];
+                            }
+                        @endphp
+
                         <div class="row g-3">
+                            @foreach ($uploadFields as $type => $upload)
+                                @php $held = $documentsByType->get($type, collect())->count(); @endphp
 
-                            <div class="col-md-4">
-
-                                <div class="border rounded p-3 h-100">
-
-                                    <label class="form-label fw-semibold">
-                                        Assessment
-                                    </label>
-
-                                    <input type="file" class="form-control" name="assessmentDocument">
-
-                                </div>
-
-                            </div>
-
-                            <div class="col-md-4">
-
-                                <div class="border rounded p-3 h-100">
-
-                                    <label class="form-label fw-semibold">
-                                        Quotation
-                                    </label>
-
-                                    <input type="file" class="form-control" name="quotationDocument">
-
-                                </div>
-
-                            </div>
-
-                            @if ($project->clients->first()?->client_type === 'Commercial')
                                 <div class="col-md-4">
+                                    <div class="edit-document-card h-100">
 
-                                    <div class="border rounded p-3 h-100">
+                                        <div class="edit-document-head">
+                                            <span class="fw-semibold">{{ $upload['label'] }}</span>
 
-                                        <label class="form-label fw-semibold">
-                                            Contract
-                                        </label>
+                                            {{-- What the project holds now, so it
+                                                 is clear these are added to. --}}
+                                            @if ($held)
+                                                <span class="badge project-document-count">{{ $held }} on file</span>
+                                            @else
+                                                <span class="edit-document-none">None yet</span>
+                                            @endif
+                                        </div>
 
-                                        <input type="file" class="form-control" name="contractDocument">
+                                        <input type="file" class="form-control form-control-sm"
+                                            name="{{ $upload['field'] }}[]"
+                                            accept="{{ \App\Models\Document::ACCEPT_ATTRIBUTE }}" multiple
+                                            data-upload-input>
+
+                                        {{-- Filled in by projectDetails.js once
+                                             files are chosen, so what is about to
+                                             be uploaded is visible before saving. --}}
+                                        <ul class="edit-document-picked d-none" data-picked-list></ul>
+
                                     </div>
-
                                 </div>
-                            @endif
-
+                            @endforeach
                         </div>
+                        </section>
 
                     </div>
 
-                    <div class="modal-footer">
+                    <div class="modal-footer edit-project-footer">
 
                         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
-
                             Cancel
-
                         </button>
 
-                        <button type="submit" class="btn btn-primary">
-
-                            <i class="bi bi-check-lg me-1"></i>
-
+                        <button type="submit" class="btn btn-primary px-4">
+                            <i class="bi bi-check-lg me-1" aria-hidden="true"></i>
                             Save Changes
                         </button>
 

@@ -146,6 +146,12 @@
                     columnDefs: [{
                         targets: -1,
                         orderable: false
+                    }, {
+                        // A project ID is a label, not a quantity: without
+                        // this DataTables types it as numeric and right-aligns
+                        // it. Ordering stays numeric.
+                        targets: 0,
+                        className: 'dt-left'
                     }],
                     language: {
                         search: "",

@@ -1,7 +1,62 @@
+/* The strip above the calendar: what the colours mean on the left, and the
+   way into the projects that have no colours to show on the right. */
+.schedule-legend-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
 .schedule-legend {
     display: flex;
     flex-wrap: wrap;
     gap: 1rem;
+}
+
+.schedule-unscheduled-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.schedule-unscheduled-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.35rem;
+    padding: 0 0.35rem;
+    border-radius: 999px;
+    background: #0d6efd;
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1.35rem;
+}
+
+.schedule-unscheduled-btn:hover .schedule-unscheduled-count {
+    background: #fff;
+    color: #0d6efd;
+}
+
+/* The way back from one project's dates to the list it was picked from. */
+.schedule-back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-bottom: 0.75rem;
+    padding: 0;
+    border: 0;
+    background: none;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #0d6efd;
+}
+
+.schedule-back-link:hover {
+    text-decoration: underline;
 }
 
 .schedule-legend-item {
@@ -80,14 +135,10 @@
     filter: brightness(0.93);
 }
 
-/* Completed / cancelled / archived projects have no edit modal to open. */
+/* A completed project opens the view-only panel rather than the editor, so it
+   stays clickable and only reads as quieter than live work. */
 #schedulesCalendar .fc-event.fc-event-readonly {
-    cursor: default;
     opacity: 0.75;
-}
-
-#schedulesCalendar .fc-event.fc-event-readonly:hover {
-    filter: none;
 }
 
 #schedulesCalendar .fc-daygrid-more-link {
@@ -126,6 +177,33 @@
 .schedule-range-row:focus-within {
     border-color: #86b7fe;
     box-shadow: 0 0 0 0.18rem rgba(13, 110, 253, 0.1);
+}
+
+/* The same booking with nothing to change: one line, read rather than
+   edited, and numbered by the same counter as an editable row. */
+.schedule-range-static {
+    counter-increment: schedule-range;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.4rem;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.6rem;
+    padding: 0.7rem 0.85rem;
+}
+
+.schedule-range-static-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #334155;
+}
+
+.schedule-range-static-label i {
+    color: #94a3b8;
 }
 
 .schedule-range-head {

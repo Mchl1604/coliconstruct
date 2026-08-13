@@ -102,9 +102,15 @@ document.addEventListener("DOMContentLoaded", function () {
     const reportsLoading = document.querySelector("[data-reports-loading]");
     const reportsEmpty = document.querySelector("[data-reports-empty]");
     const reportsCount = document.querySelector("[data-reports-count]");
+    const reportsPagination = document.querySelector(
+        "[data-reports-pagination]",
+    );
 
     let reportsRequestToken = 0;
     let searchTimer = null;
+    // Which page of results is on screen. Paging happens in SQL, so this is
+    // the whole of what the browser remembers about it.
+    let reportsPage = 1;
 
     if (window.flatpickr) {
         [filters.start, filters.end].forEach(function (input) {
@@ -113,7 +119,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     dateFormat: "Y-m-d",
                     allowInput: false,
                     onChange: function () {
-                        loadReports();
+                        reloadReportsFromFirstPage();
                     },
                 });
             }
@@ -122,6 +128,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function currentReportFilters() {
         const params = new URLSearchParams();
+
+        params.set("page", String(reportsPage));
 
         if (filters.project && filters.project.value) {
             params.set("project_id", filters.project.value);
@@ -191,8 +199,50 @@ document.addEventListener("DOMContentLoaded", function () {
             .join("");
 
         reportsEmpty.classList.toggle("d-none", reports.length > 0);
-        reportsCount.textContent =
-            reports.length + (reports.length === 1 ? " report" : " reports");
+    }
+
+    /**
+     * Previous / Page X of Y / Next, plus the count of what is on screen.
+     *
+     * Hidden outright when there is nothing to page through: one page of
+     * results needs no controls, and neither does no results at all.
+     */
+    function renderReportsPagination(meta) {
+        if (!reportsPagination) {
+            return;
+        }
+
+        if (!meta || !meta.total) {
+            reportsPagination.classList.add("d-none");
+            reportsPagination.innerHTML = "";
+
+            return;
+        }
+
+        reportsPagination.classList.remove("d-none");
+        reportsPagination.innerHTML =
+            '<span class="table-pagination-summary">Showing ' +
+            meta.from +
+            "&ndash;" +
+            meta.to +
+            " of " +
+            meta.total +
+            '</span><div class="btn-group btn-group-sm">' +
+            '<button type="button" class="btn btn-outline-secondary" data-page="' +
+            (meta.current_page - 1) +
+            '"' +
+            (meta.current_page <= 1 ? " disabled" : "") +
+            ">Previous</button>" +
+            '<button type="button" class="btn btn-outline-secondary" disabled>Page ' +
+            meta.current_page +
+            " of " +
+            meta.last_page +
+            "</button>" +
+            '<button type="button" class="btn btn-outline-secondary" data-page="' +
+            (meta.current_page + 1) +
+            '"' +
+            (meta.current_page >= meta.last_page ? " disabled" : "") +
+            ">Next</button></div>";
     }
 
     function loadReports() {
@@ -215,19 +265,64 @@ document.addEventListener("DOMContentLoaded", function () {
                 reportsEmpty.textContent =
                     result.body.error || "Could not load reports.";
                 reportsEmpty.classList.remove("d-none");
+                renderReportsPagination(null);
 
                 return;
             }
 
+            const meta = result.body.meta || {};
+
             renderReports(result.body.reports || []);
+
+            // The heading counts everything the filters match, not just the
+            // page on screen - which is the figure somebody is really after.
+            reportsCount.textContent =
+                (meta.total || 0) + (meta.total === 1 ? " report" : " reports");
+
+            renderReportsPagination(meta);
+
+            // Deleting the last row of the last page, or narrowing the
+            // filters, can leave the request pointing past the end. The
+            // server answers with an empty page; step back onto a real one.
+            if (
+                meta.total > 0 &&
+                meta.current_page > meta.last_page &&
+                reportsPage !== meta.last_page
+            ) {
+                reportsPage = meta.last_page;
+                loadReports();
+            }
         });
+    }
+
+    /**
+     * Any change to what is being looked for starts again at page one: the
+     * page you were on has no meaning once the result set underneath it
+     * changes.
+     */
+    function reloadReportsFromFirstPage() {
+        reportsPage = 1;
+        loadReports();
     }
 
     [filters.project, filters.type].forEach(function (control) {
         if (control) {
-            control.addEventListener("change", loadReports);
+            control.addEventListener("change", reloadReportsFromFirstPage);
         }
     });
+
+    if (reportsPagination) {
+        reportsPagination.addEventListener("click", function (event) {
+            const button = event.target.closest("[data-page]");
+
+            if (!button || button.disabled) {
+                return;
+            }
+
+            reportsPage = Number(button.dataset.page);
+            loadReports();
+        });
+    }
 
     if (filters.date) {
         filters.date.addEventListener("change", function () {
@@ -242,7 +337,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 !isCustom ||
                 (filters.start.value && filters.end.value)
             ) {
-                loadReports();
+                reloadReportsFromFirstPage();
             }
         });
     }
@@ -251,7 +346,7 @@ document.addEventListener("DOMContentLoaded", function () {
         // Debounced so typing doesn't fire a request per keystroke.
         filters.search.addEventListener("input", function () {
             window.clearTimeout(searchTimer);
-            searchTimer = window.setTimeout(loadReports, 300);
+            searchTimer = window.setTimeout(reloadReportsFromFirstPage, 300);
         });
     }
 
@@ -274,7 +369,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 cell.classList.add("d-none");
             });
 
-            loadReports();
+            reloadReportsFromFirstPage();
         });
     }
 

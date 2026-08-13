@@ -147,6 +147,12 @@
                     <div class="schedule-empty-state m-2 d-none" data-reports-empty>
                         No technician reports match these filters.
                     </div>
+
+                    {{-- Filled in by reports.js from the paging figures the
+                         endpoint returns, the same way the Configuration
+                         tables do it. --}}
+                    <nav class="table-pagination px-2 pb-1 d-none" aria-label="Technician report pages"
+                        data-reports-pagination></nav>
                 </div>
             </div>
         </div>

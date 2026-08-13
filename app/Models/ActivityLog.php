@@ -235,6 +235,14 @@ class ActivityLog extends Model
 
     public const SYSTEM_SETTINGS_UPDATED = 'System Settings Updated';
 
+    // The catalogue of work the company does. A project type and a technician
+    // specialty are the same entry, so one action covers both halves.
+    public const PROJECT_TYPE_CREATED = 'Project Type Created';
+
+    public const PROJECT_TYPE_UPDATED = 'Project Type Renamed';
+
+    public const PROJECT_TYPE_DELETED = 'Project Type Removed';
+
     public const BACKUP_CREATED = 'Backup Created';
 
     public const RESTORE_PERFORMED = 'Restore Performed';
@@ -316,6 +324,9 @@ class ActivityLog extends Model
         self::REPORT_PRINTED => self::MODULE_REPORTS,
 
         self::SYSTEM_SETTINGS_UPDATED => self::MODULE_CONFIGURATION,
+        self::PROJECT_TYPE_CREATED => self::MODULE_CONFIGURATION,
+        self::PROJECT_TYPE_UPDATED => self::MODULE_CONFIGURATION,
+        self::PROJECT_TYPE_DELETED => self::MODULE_CONFIGURATION,
         self::BACKUP_CREATED => self::MODULE_CONFIGURATION,
         self::RESTORE_PERFORMED => self::MODULE_CONFIGURATION,
     ];
