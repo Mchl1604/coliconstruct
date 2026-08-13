@@ -55,6 +55,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // Whether the unavailable section of the picker is expanded, kept out here
     // so re-rendering after a pick does not collapse it again.
     let blockedTechniciansOpen = false;
+    // Set once the Import Team dialog is wired up; the schedule fields call it
+    // as they change, and it is absent until then.
+    let refreshImportTeamButton = null;
     const currentStep = {
         value: 1
     };
@@ -1135,6 +1138,12 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function validateScheduleInputs() {
+        // Every schedule field funnels through here, which makes it the one
+        // place that knows the dates have moved.
+        if (refreshImportTeamButton) {
+            refreshImportTeamButton();
+        }
+
         const fields = scheduleFields().filter(Boolean);
 
         if (!fields.length || fields.some(function(field) {
@@ -1486,12 +1495,100 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
+    /**
+     * Copying a team from another project fills this same picker in. Nothing
+     * is saved by it: the chips can be removed, more technicians added, and
+     * the lead changed, exactly as if each had been chosen by hand.
+     *
+     * The button waits for the schedule, because the whole point of the dialog
+     * is to say who is free for these dates - and before they are chosen there
+     * are no dates to be free for.
+     */
+    function initImportTeam() {
+        const importModal = document.querySelector('[data-import-team-modal]');
+        const importButton = form.querySelector('[data-import-team-button]');
+        const importHint = form.querySelector('[data-import-team-hint]');
+
+        if (!importModal || !importButton || !window.importTeam) {
+            return null;
+        }
+
+        window.importTeam.init({
+            modal: importModal,
+            // A new project has no lead yet, so the imported one simply
+            // becomes it - there is nothing to overrule.
+            confirmLeadChange: false,
+            params: importTeamParams,
+            onImport: function (result) {
+                if (result.lead) {
+                    const option = leadTechSelect.querySelector(
+                        'option[value="' + result.lead.id + '"]'
+                    );
+
+                    if (option) {
+                        option.disabled = false;
+                    }
+
+                    leadTechSelect.value = String(result.lead.id);
+                }
+
+                result.technicians.forEach(function (technician) {
+                    addTechnician(String(technician.id));
+                });
+
+                renderTechnicianChips();
+                updateScheduleFieldState();
+                updateSummary();
+            },
+        });
+
+        return function () {
+            const ready = Boolean(importTeamParams());
+
+            importButton.disabled = !ready;
+
+            if (importHint) {
+                importHint.classList.toggle('d-none', ready);
+            }
+        };
+    }
+
+    /**
+     * The schedule the wizard is about to save, as the import endpoint reads
+     * it - or null while it is still incomplete.
+     */
+    function importTeamParams() {
+        const fields = scheduleFields().filter(Boolean);
+
+        const ready = fields.length > 0 && fields.every(function (field) {
+            return field.value;
+        });
+
+        if (!ready) {
+            return null;
+        }
+
+        return isPartialDay()
+            ? {
+                scheduling_mode: MODE_PARTIAL_DAY,
+                project_date: projectDateInput.value,
+                start_time: startTimeSelect.value,
+                end_time: endTimeSelect.value,
+            }
+            : {
+                scheduling_mode: MODE_DATE_BASED,
+                start_date: startDateInput.value,
+                end_date: endDateInput.value,
+            };
+    }
+
     syncSelectableCards();
     updateClientType();
     renderTechnicianDropdown();
     renderLeadTechnicianOptions();
     renderTechnicianChips();
     initializeDatePickers();
+    refreshImportTeamButton = initImportTeam();
     updateScheduleFieldState();
     updateSummary();
     setStep(1);

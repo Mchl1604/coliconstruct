@@ -1,0 +1,257 @@
+/*
+ * The Import Team dialog, shared by the project wizard and the assigned-team
+ * editor.
+ *
+ * The unavailable section is deliberately the same shape as the one on the
+ * schedules page and in the technician pickers: a chevron, a count, and a list
+ * that is shown but not offered.
+ */
+
+.import-team-eyebrow {
+    display: block;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #64748b;
+}
+
+.import-team-section {
+    margin-top: 1.1rem;
+}
+
+.import-team-section:first-of-type {
+    margin-top: 0;
+}
+
+.import-team-section-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #475569;
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid #e5e7eb;
+    margin-bottom: 0.6rem;
+}
+
+.import-team-count {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #64748b;
+    background: #f1f5f9;
+    border-radius: 999px;
+    padding: 0.05rem 0.5rem;
+}
+
+.import-team-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+}
+
+.import-team-card {
+    border: 1px solid #e5e7eb;
+    border-left: 4px solid #cbd5e1;
+    border-radius: 0.55rem;
+    padding: 0.7rem 0.85rem;
+    background: #fff;
+}
+
+.import-team-card.is-partial {
+    border-left-color: #f0ad4e;
+}
+
+.import-team-card.is-blocked {
+    border-left-color: #e5a8a1;
+    background: #fcfcfd;
+}
+
+.import-team-card-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.import-team-card-name {
+    font-weight: 700;
+    color: #0f172a;
+    line-height: 1.3;
+}
+
+.import-team-card-meta {
+    font-size: 0.8rem;
+    color: #64748b;
+    margin-top: 0.15rem;
+}
+
+.import-team-card-schedule {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #334155;
+    background: #f1f5f9;
+    border-radius: 0.35rem;
+    padding: 0.15rem 0.5rem;
+    margin-top: 0.45rem;
+}
+
+.import-team-members {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin-top: 0.5rem;
+}
+
+.import-team-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #334155;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 999px;
+    padding: 0.12rem 0.5rem 0.12rem 0.15rem;
+}
+
+.import-team-chip.is-unavailable {
+    color: #94a3b8;
+    background: #fff;
+    text-decoration: line-through;
+}
+
+.import-team-chip-avatar {
+    width: 1.25rem;
+    height: 1.25rem;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.import-team-chip-lead {
+    font-size: 0.62rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #0d6efd;
+}
+
+.import-team-reasons {
+    margin-top: 0.5rem;
+    padding: 0.45rem 0.6rem;
+    border: 1px solid #f1c7c2;
+    border-radius: 0.45rem;
+    background: #fef3f2;
+    font-size: 0.75rem;
+    color: #7a271a;
+}
+
+.import-team-reasons div + div {
+    margin-top: 0.2rem;
+}
+
+.import-team-actions {
+    margin-top: 0.6rem;
+    display: flex;
+    justify-content: flex-end;
+}
+
+/* ---- Unavailable projects, shown but folded away ---- */
+
+.import-blocked-wrap {
+    margin-top: 0.7rem;
+}
+
+.import-blocked-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #64748b;
+    background: transparent;
+    border: 0;
+    padding: 0.15rem 0;
+}
+
+.import-blocked-toggle:hover {
+    color: #0f172a;
+}
+
+.import-blocked-toggle i {
+    transition: transform 0.15s ease;
+}
+
+.import-blocked-toggle.is-open i {
+    transform: rotate(90deg);
+}
+
+.import-blocked-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+    margin-top: 0.5rem;
+}
+
+/* ---- Choosing between two lead technicians ---- */
+
+.import-lead-choice {
+    border: 1px solid #e5e7eb;
+    border-radius: 0.6rem;
+    padding: 1rem;
+    background: #f8fafc;
+}
+
+.import-lead-options {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 0.9rem;
+}
+
+.import-lead-option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    width: 100%;
+    text-align: left;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.5rem;
+    padding: 0.6rem 0.75rem;
+    background: #fff;
+}
+
+.import-lead-option:hover {
+    border-color: #0d6efd;
+    background: #f8faff;
+}
+
+.import-lead-option-title {
+    font-weight: 700;
+    color: #0f172a;
+    font-size: 0.85rem;
+}
+
+.import-lead-option-detail {
+    font-size: 0.75rem;
+    color: #64748b;
+    margin-top: 0.1rem;
+}
+
+.import-team-empty {
+    border: 1px dashed #d1d5db;
+    border-radius: 0.55rem;
+    padding: 1rem;
+    text-align: center;
+    color: #94a3b8;
+    font-size: 0.85rem;
+}

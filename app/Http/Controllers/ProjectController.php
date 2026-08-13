@@ -16,11 +16,13 @@ use App\Models\Technician;
 use App\Models\TechnicianReport;
 use App\Models\User;
 use App\Services\ActivityLogger;
+use App\Services\ImportableTeamSources;
 use App\Services\NotificationService;
 use App\Services\ProjectCompletion;
 use App\Services\ProjectEmails;
 use App\Services\ProjectTeam;
 use App\Services\ProjectTeamCandidates;
+use App\Services\ScheduleModeRules;
 use App\Services\TechnicianAvailabilityService;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
@@ -29,6 +31,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use PDOException;
 use RuntimeException;
@@ -110,6 +113,77 @@ class ProjectController extends Controller
             'technicianSchedules',
             'workingHours'
         ));
+    }
+
+    /**
+     * The teams that could be imported onto a project, screened against the
+     * dates that project will hold.
+     *
+     * Serves both callers, because the question is the same one either way and
+     * only the destination's dates differ. An existing project is named by
+     * `project_id` and its stored schedules are used. A project being created
+     * has no id and no rows yet, so the wizard sends the schedule it is about
+     * to save, in exactly the shape every other scheduling screen submits.
+     */
+    public function importableTeams(Request $request)
+    {
+        // Hand-rolled rather than $request->validate(): this endpoint must
+        // always answer with JSON, and only api/* paths render exceptions that
+        // way (see bootstrap/app.php).
+        $scheduleRules = app(ScheduleModeRules::class);
+
+        $validator = Validator::make($request->all(), [
+            'project_id' => ['nullable', 'integer', 'exists:tbl_projects,project_id'],
+            ...$scheduleRules->rules(),
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['error' => $validator->errors()->first()], 422);
+        }
+
+        $destination = $request->filled('project_id')
+            ? Project::with('schedules')->find($request->integer('project_id'))
+            : null;
+
+        if ($destination) {
+            $ranges = $destination->schedules
+                ->map(fn (Schedule $schedule): array => $schedule->toAvailabilityRange())
+                ->all();
+        } else {
+            // The wizard only offers the button once its dates are filled in,
+            // so a request without them is a stale page rather than a state to
+            // design for - it is refused rather than silently screened against
+            // nothing, which would call everybody available.
+            $entry = $scheduleRules->validateEntry(
+                $validator,
+                $request->only([
+                    'scheduling_mode',
+                    'start_date',
+                    'end_date',
+                    'project_date',
+                    'start_time',
+                    'end_time',
+                ]),
+                '',
+                true,
+                true
+            );
+
+            if (! $entry) {
+                return response()->json([
+                    'error' => 'Choose the project schedule first, so the technicians can be checked against it.',
+                ], 422);
+            }
+
+            $ranges = [$entry];
+        }
+
+        return response()->json([
+            'projects' => app(ImportableTeamSources::class)->forRanges(
+                $ranges,
+                $destination?->project_id
+            ),
+        ]);
     }
 
     public function store(StoreProjectRequest $request)
@@ -1274,12 +1348,24 @@ class ProjectController extends Controller
         // added from the technician's own schedule page. Written any other way
         // they would sit on the team while still reading as free for those
         // dates, and could be booked onto a second project over them.
-        DB::transaction(function () use ($project, $technicianIds): void {
+        // technician_id => [name, tasks], gathered inside the transaction and
+        // told to people after it commits.
+        $unassignedWork = [];
+
+        DB::transaction(function () use ($project, $technicianIds, &$unassignedWork): void {
             $project->projectTechnicians()
+                ->with('technician.account')
                 ->whereNotIn('technician_id', $technicianIds->all())
                 ->get()
-                ->each(function (ProjectTechnician $assignment) use ($project): void {
-                    $this->projectTeam->detach($project, $assignment);
+                ->each(function (ProjectTechnician $assignment) use ($project, &$unassignedWork): void {
+                    $released = $this->projectTeam->detach($project, $assignment);
+
+                    if ($released->isNotEmpty()) {
+                        $unassignedWork[] = [
+                            'name' => $assignment->technician?->name ?? 'A technician',
+                            'tasks' => $released,
+                        ];
+                    }
                 });
 
             $technicianIds->each(function (int $technicianId) use ($project): void {
@@ -1331,6 +1417,16 @@ class ProjectController extends Controller
                     && ! $teamAfter->contains(fn (User $after): bool => $after->id === $user->id)
             )
         );
+
+        // Work the departing technicians were holding does not leave with
+        // them, so somebody has to be told it is waiting for an owner.
+        foreach ($unassignedWork as $released) {
+            $this->notifications->tasksUnassignedByTeamChange(
+                $project,
+                $released['name'],
+                $released['tasks']
+            );
+        }
 
         return back()->with('success', 'Assigned team updated.');
     }

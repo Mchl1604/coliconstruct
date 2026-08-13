@@ -395,7 +395,15 @@ class TechnicianController extends Controller
                     $this->promoteReplacementLead($project, $technician, $replacementLeadId);
                 }
 
-                $this->detachTechnician($project, $assignment);
+                $released = $this->detachTechnician($project, $assignment);
+
+                // Told after the transaction commits, like every other
+                // notification: DB::afterCommit inside deliver() sees to it.
+                $this->notifications->tasksUnassignedByTeamChange(
+                    $project,
+                    $technician->name,
+                    $released
+                );
 
                 $this->activityLogger->record(
                     ActivityLog::TECHNICIAN_REMOVED,
@@ -678,9 +686,9 @@ class TechnicianController extends Controller
      * Drop a technician's assignment plus its schedule rows, and release any
      * unfinished task they held - mirroring the assigned-team editor.
      */
-    private function detachTechnician(Project $project, ProjectTechnician $assignment): void
+    private function detachTechnician(Project $project, ProjectTechnician $assignment): Collection
     {
-        $this->projectTeam->detach($project, $assignment);
+        return $this->projectTeam->detach($project, $assignment);
     }
 
     /**

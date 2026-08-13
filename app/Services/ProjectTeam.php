@@ -61,23 +61,33 @@ class ProjectTeam
      *
      * Completed work keeps its technician: it is a record of who did it, not a
      * statement about who is available now.
+     *
+     * @return Collection<int, Task> the tasks left without a technician, so a
+     *                               caller can say so rather than let the work
+     *                               go quietly unowned
      */
-    public function detach(Project $project, ProjectTechnician $assignment): void
+    public function detach(Project $project, ProjectTechnician $assignment): Collection
     {
         ScheduleTechnician::query()
             ->where('project_technician_id', $assignment->project_technician_id)
             ->delete();
 
-        Task::query()
+        $released = Task::query()
             ->where('project_id', $project->project_id)
             ->where('technician_id', $assignment->technician_id)
             ->where('status', '!=', 'completed')
+            ->get();
+
+        Task::query()
+            ->whereIn('task_id', $released->pluck('task_id'))
             ->update([
                 'technician_id' => null,
                 'status' => 'unassigned',
             ]);
 
         $assignment->delete();
+
+        return $released;
     }
 
     /**

@@ -158,6 +158,12 @@ Route::prefix('super-admin')
             ->name('projects.archived');
         Route::get('/projects/create', [ProjectController::class, 'create'])->name('projects.create');
         Route::post('/projects/create', [ProjectController::class, 'store'])->name('projects.create.store');
+
+        // The teams that could be copied onto a project, for the Import Team
+        // dialog in the wizard and in the assigned-team editor. Declared
+        // before /projects/{id} so the literal segment wins.
+        Route::get('/projects/importable-teams', [ProjectController::class, 'importableTeams'])
+            ->name('projects.importable-teams');
         Route::get('/projects/{id}', [ProjectController::class, 'show'])->name('projects.show');
         Route::put('/projects/{id}/hold', [ProjectController::class, 'putOnHold'])->name('projects.hold');
         Route::put('/projects/{id}/resume', [ProjectController::class, 'resume'])->name('projects.resume');

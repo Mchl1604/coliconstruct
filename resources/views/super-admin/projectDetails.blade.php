@@ -6,6 +6,8 @@
         {{-- The Assign To picker cards, shared with the Tasks page and the
              technician portal. --}}
         <link rel="stylesheet" href="/css/taskModal.css">
+        {{-- The Import Team dialog, shared with the project wizard. --}}
+        <link rel="stylesheet" href="/css/importTeam.css">
     @endpush
     @php
         $scheduleStart = $project->schedules->min('start_datetime');
@@ -1219,7 +1221,18 @@
 
                         <hr>
 
-                        <label class="form-label fw-bold mb-2">Technicians</label>
+                        <div class="d-flex align-items-center justify-content-between mb-2">
+                            <label class="form-label fw-bold mb-0">Technicians</label>
+
+                            {{-- Copies a team from another project into the
+                                 picker below, which stays exactly as editable
+                                 as it is when people are chosen by hand. --}}
+                            <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal"
+                                data-bs-target="#importTeamModal">
+                                <i class="bi bi-people me-1" aria-hidden="true"></i>
+                                Import Team
+                            </button>
+                        </div>
 
                         <div class="technician-picker" data-technician-picker>
                             <div class="dropdown w-100">
@@ -1262,6 +1275,8 @@
 
     </div>
     <!-- END OF EDIT ASSIGNED TEAM MODAL -->
+
+    <x-import-team-modal />
 
     @push('scripts')
         <script>
@@ -1537,6 +1552,7 @@
         {{-- Same range-aware task date pickers the Tasks page uses. --}}
         <script src="/js/super-admin/taskDatePickers.js"></script>
         <script src="/js/imagePreview.js"></script>
+        <script src="/js/importTeam.js"></script>
         <script src="/js/super-admin/projectDetails.js"></script>
         <script>
             window.assignedTeamData = @json($assignedTeamLookup);
@@ -1544,6 +1560,7 @@
                 'leadTechId' => $currentLeadTechnicianId,
                 'technicianIds' => $currentTeamTechnicianIds,
             ]);
+            window.importTeamProjectId = @json($project->project_id);
         </script>
     @endpush
 @endsection

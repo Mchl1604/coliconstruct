@@ -386,9 +386,70 @@ $(function () {
         }
     });
 
+    /**
+     * Copying a team from another project puts its people into this same
+     * picker. Nothing is saved and nothing is locked: the chips can be removed,
+     * more technicians added, and the lead changed, exactly as if every one of
+     * them had been chosen by hand.
+     */
+    function initImportTeam() {
+        const importModal = document.querySelector('[data-import-team-modal]');
+
+        if (!importModal || !window.importTeam) {
+            return;
+        }
+
+        const leadOption = function (technicianId) {
+            return leadTechSelect.querySelector('option[value="' + technicianId + '"]');
+        };
+
+        window.importTeam.init({
+            modal: importModal,
+            confirmLeadChange: true,
+            params: function () {
+                return { project_id: window.importTeamProjectId };
+            },
+            currentLeadId: function () {
+                if (!leadTechSelect.value) {
+                    return null;
+                }
+
+                const technician = technicianLookup.get(String(leadTechSelect.value));
+
+                return {
+                    id: leadTechSelect.value,
+                    name: technician ? technician.name : 'the current lead technician',
+                };
+            },
+            onImport: function (result) {
+                if (result.lead && !result.keepCurrentLead) {
+                    const option = leadOption(result.lead.id);
+
+                    if (option) {
+                        // The server screened this person against this
+                        // project's dates just now, so a stale disabled
+                        // attribute from page load must not stand in the way.
+                        option.disabled = false;
+                        leadTechSelect.value = String(result.lead.id);
+                    }
+                }
+
+                result.technicians.forEach(function (technician) {
+                    addTechnician(String(technician.id));
+                });
+
+                leadTechError.classList.add('d-none');
+                leadTechSelect.setCustomValidity('');
+                renderChips();
+                renderDropdown();
+            },
+        });
+    }
+
     seedInitialTechnicians();
     renderChips();
     renderDropdown();
+    initImportTeam();
 
 
 

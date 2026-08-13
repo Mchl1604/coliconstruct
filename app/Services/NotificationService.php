@@ -743,6 +743,48 @@ class NotificationService
     }
 
     /**
+     * Tasks left without a technician because the person holding them was
+     * taken off the project's team.
+     *
+     * The same audience as taskDatesCleared(), for the same reason: the work
+     * has not gone away, and somebody has to give it to whoever is picking it
+     * up. Only unfinished work is ever released - what they already completed
+     * stays theirs.
+     *
+     * @param  iterable<int, Task>  $tasks
+     */
+    public function tasksUnassignedByTeamChange(Project $project, string $technicianName, iterable $tasks): void
+    {
+        $tasks = collect($tasks)->values();
+
+        if ($tasks->isEmpty()) {
+            return;
+        }
+
+        $lead = $this->projectLead($project);
+
+        $this->deliver(
+            $this->oversight()->merge($lead ? [$lead] : []),
+            'Tasks Left Unassigned',
+            sprintf(
+                '%s on %s %s unassigned because %s was removed from the project team. %s',
+                $tasks->count() === 1
+                    ? sprintf('"%s"', $tasks->first()->task_title)
+                    : sprintf('%d tasks', $tasks->count()),
+                $this->projectLabel($project),
+                $tasks->count() === 1 ? 'is now' : 'are now',
+                $technicianName,
+                $tasks->count() === 1
+                    ? 'It needs a technician.'
+                    : sprintf('They need a technician: %s.', $this->taskTitleList($tasks))
+            ),
+            Notification::MODULE_TASKS,
+            $project,
+            $this->projectLink($project)
+        );
+    }
+
+    /**
      * '"Fit the ducting", "Test the unit", and 3 more' - enough to recognise
      * the work without turning the message into a list.
      *

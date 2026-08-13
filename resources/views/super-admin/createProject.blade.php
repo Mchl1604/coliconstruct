@@ -3,6 +3,8 @@
 @push('styles')
     <link href="/css/super-admin/createProject.css" rel="stylesheet">
     <link href="/css/super-admin/createProjectProgress.css" rel="stylesheet">
+    {{-- The Import Team dialog, shared with the assigned-team editor. --}}
+    <link rel="stylesheet" href="/css/importTeam.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 @endpush
 
@@ -271,7 +273,22 @@
                         </div>
 
                         <div class="col-md-12">
-                            <label for="technicians" class="form-label">Technicians</label>
+                            <div class="d-flex align-items-center justify-content-between">
+                                <label for="technicians" class="form-label mb-0">Technicians</label>
+
+                                {{-- Available once the schedule below is
+                                     filled in: the team can only be checked
+                                     against dates that exist. --}}
+                                <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal"
+                                    data-bs-target="#importTeamModal" data-import-team-button disabled>
+                                    <i class="bi bi-people me-1" aria-hidden="true"></i>
+                                    Import Team
+                                </button>
+                            </div>
+                            <div class="form-text mb-2" data-import-team-hint>
+                                Set the schedule below to copy a team from another project.
+                            </div>
+
                             <div class="technician-picker" data-technician-picker>
                                 <div class="dropdown w-100">
                                     {{-- Closing only on an outside click keeps the menu up while
@@ -529,11 +546,14 @@
         </div>
     </div>
 
+    <x-import-team-modal />
+
     @push('scripts')
         <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
         <script>
             window.projectWizardData = @json($technicianWizardData);
         </script>
+        <script src="/js/importTeam.js"></script>
         <script src="/js/super-admin/createProject.js"></script>
     @endpush
 @endsection
