@@ -51,7 +51,7 @@
 
     <x-task-board :projects="$projects" :tasks-by-project="$tasksByProject"
         :technicians-by-project="$techniciansByProject" :ranges-by-project="$rangesByProject"
-        :active-task-counts="$technicianActiveTaskCounts" :manageable="$manageable"
+        :active-task-counts-by-project="$technicianActiveTaskCounts" :manageable="$manageable"
         update-route="super-admin.tasks.update" complete-route="super-admin.tasks.complete"
         delete-route="super-admin.tasks.destroy"
         empty-message="There are no active projects, so there is no task board to show." />

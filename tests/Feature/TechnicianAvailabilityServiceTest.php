@@ -416,6 +416,67 @@ class TechnicianAvailabilityServiceTest extends TestCase
         )->isEmpty());
     }
 
+    /**
+     * Widening a project onto a free neighbouring day is allowed, and the days
+     * it already holds are never held against it.
+     *
+     * The case that reads as a bug from the outside: booked day 21-23, asked
+     * for day 20-24, with the technician free on both new days. Nothing should
+     * be reported at all - the overlap with day 21-23 is this project's own.
+     */
+    public function test_widening_a_range_over_a_projects_own_dates_reports_nothing(): void
+    {
+        $technician = $this->createTechnician('Ana Reyes');
+        $project = $this->bookWholeDays($technician, $this->day(21), $this->day(23));
+
+        $conflicts = $this->availability()->findConflicts(
+            [$technician->technician_id],
+            $this->wholeDayRange($this->day(20), $this->day(24)),
+            (int) $project->project_id
+        );
+
+        $this->assertTrue(
+            $conflicts->isEmpty(),
+            'A project must not be blocked by the dates it already holds.'
+        );
+    }
+
+    /**
+     * When something genuinely does block, the message says WHAT.
+     *
+     * Without the project named, a clash on a date inside the range being
+     * edited is indistinguishable from the project blocking itself - which is
+     * exactly how a correct refusal came to be read as a bug.
+     */
+    public function test_a_conflict_names_the_project_holding_the_technician(): void
+    {
+        $technician = $this->createTechnician('Kevin Lopez');
+
+        // The project being edited, and a different one holding day 20.
+        $mine = $this->bookWholeDays($technician, $this->day(21), $this->day(23));
+        $other = $this->bookWholeDays($technician, $this->day(20), $this->day(20));
+
+        $other->forceFill(['reference_no' => 'PRJ-OTHER-0001'])->save();
+
+        $conflicts = $this->availability()->findConflicts(
+            [$technician->technician_id],
+            $this->wholeDayRange($this->day(20), $this->day(24)),
+            (int) $mine->project_id
+        );
+
+        $this->assertCount(1, $conflicts);
+
+        // Only the other project's day is reported; days 21-23 are this
+        // project's own and are not held against it.
+        $this->assertSame([$this->day(20)], $conflicts->first()['dates']);
+        $this->assertSame(['PRJ-OTHER-0001'], $conflicts->first()['projects']);
+
+        $message = $this->availability()->conflictMessage($conflicts);
+
+        $this->assertStringContainsString('Kevin Lopez', $message);
+        $this->assertStringContainsString('(booked on PRJ-OTHER-0001)', $message);
+    }
+
     public function test_assert_continuously_available_throws_with_the_conflict_message(): void
     {
         $technician = $this->createTechnician('Mika Santos');

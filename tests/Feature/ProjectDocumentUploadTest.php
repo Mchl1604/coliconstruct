@@ -31,11 +31,13 @@ class ProjectDocumentUploadTest extends TestCase
 
     protected function tearDown(): void
     {
-        // The controller writes into public/uploads rather than a fake disk,
-        // so the files a test made are cleared up behind it.
+        // The controller moves files onto disk rather than onto a fake disk,
+        // so the files a test made are cleared up behind it. They land under
+        // the configured uploads root, which the suite points somewhere
+        // disposable - hence diskPath() rather than public_path().
         foreach (array_keys(Document::TYPES) as $type) {
             foreach (Document::query()->where('document_type', $type)->get() as $document) {
-                $path = public_path($document->document_path);
+                $path = $document->diskPath();
 
                 if (File::exists($path)) {
                     File::delete($path);
@@ -182,7 +184,9 @@ class ProjectDocumentUploadTest extends TestCase
         )->assertSessionHasNoErrors();
 
         $doomed = $project->documents()->where('document_name', 'drop.pdf')->firstOrFail();
-        $path = public_path($doomed->document_path);
+        // Asked of the document: the suite writes uploads to a throwaway root,
+        // so public_path() is not where the file is under test.
+        $path = $doomed->diskPath();
 
         $this->assertTrue(File::exists($path));
 

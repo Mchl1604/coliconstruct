@@ -207,9 +207,11 @@ class NotificationEventsTest extends TestCase
             'completion_summary' => 'All done.',
         ]);
 
-        $this->assertContains('Project Completed', $this->titlesFor($technician->account));
-        $this->assertContains('Project Completed', $this->titlesFor($admin));
-        $this->assertContains('Your Project Is Complete', $this->titlesFor($clientAccount));
+        // Completing no longer closes a project outright: it hands it to the
+        // client, so that is what everybody is told about.
+        $this->assertContains('Project Awaiting Client Confirmation', $this->titlesFor($technician->account));
+        $this->assertContains('Project Awaiting Client Confirmation', $this->titlesFor($admin));
+        $this->assertContains('Please Confirm Your Completed Project', $this->titlesFor($clientAccount));
     }
 
     /**

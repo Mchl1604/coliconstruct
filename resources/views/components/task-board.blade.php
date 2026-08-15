@@ -3,7 +3,11 @@
     'tasksByProject',
     'techniciansByProject' => collect(),
     'rangesByProject' => collect(),
-    'activeTaskCounts' => collect(),
+    // project_id => (technician_id => open task count). Keyed by project
+    // because the same technician can hold different amounts of two projects
+    // shown side by side on this page, and "N Active Tasks" in a project's own
+    // dialog means N on THAT project - see TechnicianTaskLoad.
+    'activeTaskCountsByProject' => collect(),
     // Per project: may the viewer edit and delete tasks on it?
     'manageable' => collect(),
     // The viewer's own technician record, for the "You" badge. Null for an
@@ -32,6 +36,9 @@
             $projectTechnicians = $techniciansByProject[$project->project_id] ?? collect();
             $projectRanges = $rangesByProject[$project->project_id] ?? collect();
             $canManage = (bool) ($manageable[$project->project_id] ?? false);
+            // This project's slice of the load map, so a technician's count is
+            // what they hold HERE rather than across every job they are on.
+            $projectTaskCounts = $activeTaskCountsByProject[$project->project_id] ?? collect();
         @endphp
 
         <div class="card shadow-sm border-0 rounded-2 mb-3" data-project-card
@@ -160,7 +167,7 @@
 
             <x-task-details-modal :task="$task"
                 :technicians="$canManage ? $projectTechnicians : collect()"
-                :active-task-counts="$activeTaskCounts" :schedule-ranges="$projectRanges"
+                :active-task-counts="$projectTaskCounts" :schedule-ranges="$projectRanges"
                 :update-action="$canManage ? route($updateRoute, $task->task_id) : null"
                 :update-method="$updateMethod" />
 

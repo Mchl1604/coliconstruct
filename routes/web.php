@@ -3,6 +3,7 @@
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Auth\EmailVerificationController;
 use App\Http\Controllers\Auth\PasswordResetController;
+use App\Http\Controllers\ClientProjectController;
 use App\Http\Controllers\ConfigurationController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\NotificationController;
@@ -29,6 +30,15 @@ Route::get('/my-projects', [PublicSiteController::class, 'myProjects'])->name('p
 Route::get('/my-projects/{project}', [PublicSiteController::class, 'projectDetails'])
     ->whereNumber('project')
     ->name('public.projects.show');
+
+// The one action a client takes rather than reads: signing off a project the
+// company has reported as finished. Behind `auth` because it writes, and the
+// controller additionally proves the project is theirs - a client has no
+// portal, so this is the only POST route they ever reach.
+Route::post('/my-projects/{project}/confirm', [ClientProjectController::class, 'confirm'])
+    ->middleware(['auth', 'password.changed'])
+    ->whereNumber('project')
+    ->name('public.projects.confirm');
 
 // Authentication
 Route::get('/login', [AuthController::class, 'showLogin'])->name('auth.login');
@@ -169,6 +179,12 @@ Route::prefix('super-admin')
         Route::put('/projects/{id}/hold', [ProjectController::class, 'putOnHold'])->name('projects.hold');
         Route::put('/projects/{id}/resume', [ProjectController::class, 'resume'])->name('projects.resume');
         Route::post('/projects/{id}/complete', [ProjectController::class, 'complete'])->name('projects.complete');
+
+        // Putting a project that is waiting on its client back to work. The
+        // only action allowed on a locked project, and only on that one status
+        // - a completed project is refused by ProjectReopen itself, so the
+        // rule does not depend on which page drew the button.
+        Route::post('/projects/{id}/reopen', [ProjectController::class, 'reopen'])->name('projects.reopen');
         Route::post('/projects/{id}/cancel', [ProjectController::class, 'cancel'])->name('projects.cancel');
         Route::post('/projects/{id}/archive', [ProjectController::class, 'archive'])
             ->middleware('role:super_admin')

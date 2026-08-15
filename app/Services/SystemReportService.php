@@ -79,7 +79,12 @@ class SystemReportService
      *
      * @var array<int, string>
      */
-    private const QUOTATION_ALL_STATUSES = ['pending', 'ongoing', 'completed'];
+    private const QUOTATION_ALL_STATUSES = [
+        'pending',
+        'ongoing',
+        Project::STATUS_AWAITING_CLIENT_CONFIRMATION,
+        'completed',
+    ];
 
     /**
      * Statuses that count as live work when judging technician utilisation.
@@ -256,7 +261,11 @@ class SystemReportService
             'total' => (int) $counts->sum(),
             'pending' => (int) ($counts['pending'] ?? 0) + (int) ($counts['unscheduled'] ?? 0),
             'ongoing' => (int) ($counts['ongoing'] ?? 0),
-            'completed' => (int) ($counts['completed'] ?? 0),
+            // Finished work counts as completed in the headline figures, the
+            // same way it does on the dashboard and in the Completed tab.
+            'completed' => (int) ($counts['completed'] ?? 0)
+                + (int) ($counts[Project::STATUS_AWAITING_CLIENT_CONFIRMATION] ?? 0),
+            'awaiting_confirmation' => (int) ($counts[Project::STATUS_AWAITING_CLIENT_CONFIRMATION] ?? 0),
             'cancelled' => (int) ($counts['cancelled'] ?? 0),
             'archived' => (int) ($counts['archived'] ?? 0),
             'overdue' => Project::overdue()->count(),
@@ -407,6 +416,10 @@ class SystemReportService
             'ongoing' => ['Ongoing', '#0d6efd'],
             'on_hold' => ['On Hold', '#6c757d'],
             'overdue' => ['Overdue', Project::OVERDUE_COLOR],
+            // Its own slice rather than folded into Completed: this chart is
+            // where the work stands, and "finished but not signed off" is a
+            // real place for it to stand.
+            'awaiting_client_confirmation' => ['Awaiting Confirmation', '#6ea67f'],
             'completed' => ['Completed', '#198754'],
             'cancelled' => ['Cancelled', '#dc3545'],
             'archived' => ['Archived', '#212529'],
@@ -574,7 +587,13 @@ class SystemReportService
 
             'overdue' => $query->whereIn('project_id', $this->overdueProjectIds()),
 
-            'completed' => $query->where('status', 'completed'),
+            // The work is done and the money is committed either way, so the
+            // Completed option covers both - matching the Completed tab on the
+            // projects table and the dashboard's Completed figure.
+            'completed' => $query->whereIn('status', [
+                'completed',
+                Project::STATUS_AWAITING_CLIENT_CONFIRMATION,
+            ]),
 
             'pending', 'ongoing' => $query
                 ->where('status', $status)
@@ -801,6 +820,7 @@ class SystemReportService
         return "case
             when is_archived = 1 or status = 'archived' then 'archived'
             when status = 'completed' then 'completed'
+            when status = 'awaiting_client_confirmation' then 'awaiting_client_confirmation'
             when status = 'cancelled' then 'cancelled'
             when on_hold = 1 then 'on_hold'
             else status

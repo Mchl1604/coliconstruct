@@ -134,6 +134,19 @@ class DashboardMetrics
             $this->card('completed', 'Completed', $counts['completed'], $projects, 'completed'),
         ];
 
+        // Shown only when something is actually sitting with a client, for the
+        // same reason the specialty queue below is: a card reading zero is a
+        // card in the way.
+        if ($counts['awaiting_confirmation'] > 0) {
+            $cards[] = $this->card(
+                'awaiting_confirmation',
+                'Awaiting Confirmation',
+                $counts['awaiting_confirmation'],
+                $projects,
+                'pending'
+            );
+        }
+
         // Shown only when there is something waiting, so an empty queue does
         // not take up a card saying zero.
         $waiting = $this->pendingSpecialtyRequests();
@@ -183,13 +196,20 @@ class DashboardMetrics
 
             $pending = (int) ($byStatus['pending'] ?? 0) + (int) ($byStatus['unscheduled'] ?? 0);
             $ongoing = (int) ($byStatus['ongoing'] ?? 0);
+            $awaiting = (int) ($byStatus[Project::STATUS_AWAITING_CLIENT_CONFIRMATION] ?? 0);
 
             return [
                 'total' => (int) $byStatus->sum(),
                 'pending' => max(0, $pending - ($overdue - $overdueOngoing)),
                 'ongoing' => max(0, $ongoing - $overdueOngoing),
                 'overdue' => $overdue,
-                'completed' => (int) ($byStatus['completed'] ?? 0),
+                // Finished work, counted as finished. Excluding it would make
+                // the Completed figure disagree with the Completed tab on the
+                // projects table, which now lists both.
+                'completed' => (int) ($byStatus['completed'] ?? 0) + $awaiting,
+                // Kept separately as well, for the card that says how many are
+                // sitting with a client rather than with the company.
+                'awaiting_confirmation' => $awaiting,
                 'cancelled' => (int) ($byStatus['cancelled'] ?? 0),
                 'active_today' => $this->activeTodayCount(),
             ];
@@ -208,9 +228,12 @@ class DashboardMetrics
     {
         $today = CarbonImmutable::today()->toDateString();
 
+        // Finished work is not happening today, whichever side of the client's
+        // confirmation it sits on - the dates it still holds are the days the
+        // crew already worked.
         return Project::query()
             ->where('is_archived', false)
-            ->whereNotIn('status', ['completed', 'cancelled', 'archived'])
+            ->whereNotIn('status', Project::READ_ONLY_STATUSES)
             ->whereHas('schedules', fn ($query) => $query
                 ->whereDate('start_datetime', '<=', $today)
                 ->whereDate('end_datetime', '>=', $today))
@@ -312,7 +335,7 @@ class DashboardMetrics
             ->with(['project.clients', 'project.projectTypes', 'project.tasks', 'project.projectTechnicians.technician.account'])
             ->whereHas('project', fn ($query) => $query
                 ->where('is_archived', false)
-                ->whereNotIn('status', ['completed', 'cancelled', 'archived']))
+                ->whereNotIn('status', Project::READ_ONLY_STATUSES))
             ->whereDate('end_datetime', '>=', $today->toDateString())
             ->orderBy('start_datetime')
             ->limit($limit)

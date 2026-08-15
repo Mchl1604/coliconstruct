@@ -97,9 +97,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 }
 
                 rangesHint.textContent = ranges.length
-                    ? "Allowed: " +
-                      window.taskDatePickers.describeWindow(ranges) +
-                      "."
+                    ? window.taskDatePickers.describeSelectable(ranges)
                     : "";
 
                 if (!data.technicians.length) {

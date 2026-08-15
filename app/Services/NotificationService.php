@@ -461,6 +461,194 @@ class NotificationService
         );
     }
 
+    /**
+     * The company has finished, and the client has been asked to confirm.
+     *
+     * The client's message is the one that matters here - it is the only one
+     * asking somebody to do something - so it names the deadline and says what
+     * happens if they do nothing. The staff message is oversight: the project
+     * has left their hands and is waiting on somebody outside the company.
+     */
+    public function projectAwaitingClientConfirmation(Project $project): void
+    {
+        $this->deliver(
+            $this->oversight()->merge($this->excludingActor($this->projectTeam($project))),
+            'Project Awaiting Client Confirmation',
+            sprintf(
+                '%s has been marked complete by %s and is waiting for the client to confirm. '
+                    .'It completes automatically after %d days if they do not reply.',
+                $this->projectLabel($project),
+                $this->actorName(),
+                Project::COMPLETION_CONFIRMATION_DAYS
+            ),
+            Notification::MODULE_PROJECTS,
+            $project,
+            $this->projectLink($project)
+        );
+
+        $this->deliver(
+            $this->projectClients($project),
+            'Please Confirm Your Completed Project',
+            sprintf(
+                'The work on %s has been completed. Please review it and confirm. '
+                    .'If we do not hear from you within %d days it will be marked complete automatically.',
+                $this->clientProjectLabel($project),
+                Project::COMPLETION_CONFIRMATION_DAYS
+            ),
+            Notification::MODULE_PROJECTS,
+            $project,
+            $this->projectLink($project)
+        );
+    }
+
+    /**
+     * Day five of seven. Addressed to the client alone: reminding the office
+     * that a client has not replied yet is not something anybody can act on.
+     */
+    public function completionConfirmationReminder(Project $project): void
+    {
+        $remaining = max(1, Project::COMPLETION_CONFIRMATION_DAYS - Project::COMPLETION_REMINDER_DAYS);
+
+        $this->deliver(
+            $this->projectClients($project),
+            'Reminder: Confirm Your Completed Project',
+            sprintf(
+                '%s is still waiting for your confirmation. It will be marked complete automatically in %d %s.',
+                $this->clientProjectLabel($project),
+                $remaining,
+                $remaining === 1 ? 'day' : 'days'
+            ),
+            Notification::MODULE_PROJECTS,
+            $project,
+            $this->projectLink($project)
+        );
+    }
+
+    /**
+     * The client agreed. Everybody who worked on it hears so.
+     */
+    public function clientConfirmedCompletion(Project $project): void
+    {
+        $this->deliver(
+            $this->oversight()->merge($this->projectTeam($project)),
+            'Client Confirmed Completion',
+            sprintf('The client has confirmed that %s is complete.', $this->projectLabel($project)),
+            Notification::MODULE_PROJECTS,
+            $project,
+            $this->projectLink($project)
+        );
+
+        $this->deliver(
+            $this->projectClients($project),
+            'Your Project Is Complete',
+            sprintf(
+                'Thank you for confirming. %s is now complete, and its full record stays available to you here.',
+                $this->clientProjectLabel($project)
+            ),
+            Notification::MODULE_PROJECTS,
+            $project,
+            $this->projectLink($project)
+        );
+    }
+
+    /**
+     * Seven days went by. Written by the scheduled run, where nobody is signed
+     * in - hence no actorName() anywhere in it.
+     */
+    public function projectAutoCompleted(Project $project): void
+    {
+        $this->deliver(
+            $this->oversight()->merge($this->projectTeam($project)),
+            'Project Completed Automatically',
+            sprintf(
+                '%s was marked complete automatically after %d days without a reply from the client.',
+                $this->projectLabel($project),
+                Project::COMPLETION_CONFIRMATION_DAYS
+            ),
+            Notification::MODULE_PROJECTS,
+            $project,
+            $this->projectLink($project)
+        );
+
+        $this->deliver(
+            $this->projectClients($project),
+            'Your Project Has Been Completed',
+            sprintf(
+                '%s has been marked complete, as the %d day confirmation period has passed. '
+                    .'Please contact us if anything about the work still needs attention.',
+                $this->clientProjectLabel($project),
+                Project::COMPLETION_CONFIRMATION_DAYS
+            ),
+            Notification::MODULE_PROJECTS,
+            $project,
+            $this->projectLink($project)
+        );
+    }
+
+    /**
+     * An administrator put the project back to work instead of letting it
+     * close. The crew are told separately, with the dates, because for them it
+     * is a booking rather than a status change - see projectReopenedSchedule().
+     */
+    public function projectReopened(Project $project, string $reason): void
+    {
+        $this->deliver(
+            $this->oversight(),
+            'Project Reopened',
+            sprintf(
+                '%s was reopened by %s and is active again. Reason: %s',
+                $this->projectLabel($project),
+                $this->actorName(),
+                $reason
+            ),
+            Notification::MODULE_PROJECTS,
+            $project,
+            $this->projectLink($project)
+        );
+
+        $this->deliver(
+            $this->projectClients($project),
+            'Your Project Has Been Reopened',
+            sprintf(
+                'Further work has been scheduled on %s, so it is active again. '
+                    .'You will be asked to confirm it once the work is finished.',
+                $this->clientProjectLabel($project)
+            ),
+            Notification::MODULE_PROJECTS,
+            $project,
+            $this->projectLink($project)
+        );
+    }
+
+    /**
+     * The dates a reopened project is now booked for, for the crew who have to
+     * turn up on them.
+     */
+    public function projectReopenedSchedule(Project $project, string $ranges): void
+    {
+        $this->deliver(
+            $this->excludingActor($this->projectTeam($project)),
+            'Project Reopened - New Schedule',
+            sprintf(
+                '%s is active again and booked for %s.',
+                $this->projectLabel($project),
+                $ranges
+            ),
+            Notification::MODULE_SCHEDULE,
+            $project,
+            $this->scheduleLink($project)
+        );
+
+        $this->deliver(
+            $this->projectClients($project),
+            'New Dates For Your Project',
+            sprintf('%s is now scheduled for %s.', $this->clientProjectLabel($project), $ranges),
+            Notification::MODULE_SCHEDULE,
+            $project,
+            $this->projectLink($project)
+        );
+    }
+
     public function projectCancelled(Project $project): void
     {
         $this->deliver(

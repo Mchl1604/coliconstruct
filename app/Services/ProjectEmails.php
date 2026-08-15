@@ -70,6 +70,51 @@ class ProjectEmails
         $this->update($project, ProjectUpdateMail::COMPLETED, $project->completion_summary);
     }
 
+    /**
+     * The work is finished and the client is being asked to say so.
+     *
+     * The one project email that asks for a decision rather than announcing
+     * one, which is why it is sent the moment completion is requested rather
+     * than waiting for anything else to happen.
+     */
+    public function projectAwaitingConfirmation(Project $project): void
+    {
+        $this->update($project, ProjectUpdateMail::AWAITING_CONFIRMATION, $project->completion_summary);
+    }
+
+    /**
+     * Day five of seven. Sent by the scheduled run, and idempotent by the
+     * column it stamps rather than by anything here.
+     */
+    public function completionReminder(Project $project): void
+    {
+        $this->update($project, ProjectUpdateMail::CONFIRMATION_REMINDER, $project->completion_summary);
+    }
+
+    public function completionConfirmed(Project $project): void
+    {
+        $this->update($project, ProjectUpdateMail::CONFIRMED, $project->completion_summary);
+    }
+
+    public function projectAutoCompleted(Project $project): void
+    {
+        $this->update($project, ProjectUpdateMail::AUTO_COMPLETED, $project->completion_summary);
+    }
+
+    /**
+     * A project put back to work, and the dates it was put back to.
+     *
+     * One email rather than two. "Your project has been reopened" and "here
+     * are its new dates" describe a single decision taken in a single moment,
+     * and arriving as two messages a second apart reads as a fault rather than
+     * as thoroughness - so the new schedule travels in this email's details
+     * table, which ProjectUpdateMail reads from the project itself.
+     */
+    public function projectReopened(Project $project): void
+    {
+        $this->update($project, ProjectUpdateMail::REOPENED, $project->reopen_reason);
+    }
+
     public function projectCancelled(Project $project): void
     {
         $this->update($project, ProjectUpdateMail::CANCELLED, $project->cancellation_reason);

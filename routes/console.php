@@ -14,6 +14,16 @@ Artisan::command('inspire', function () {
 // be running on the server.
 Schedule::command('tasks:remind')->dailyAt('08:00');
 
+// The confirmation clock: day five reminders, and completing the projects
+// whose seven days ran out. Runs just after the task reminders so a client
+// who is due both hears them together rather than at two times of day.
+//
+// Deliberately not driven by anybody opening a page - a client who never signs
+// in again is the case the seven days exist for. Needs the same
+// `php artisan schedule:work` (or cron entry calling schedule:run) that
+// tasks:remind does; without it, no project ever completes automatically.
+Schedule::command('projects:process-completion-confirmations')->dailyAt('08:05');
+
 // Lapsed verification codes.
 //
 // Issuing a code already sweeps as it goes, so this only matters on a quiet

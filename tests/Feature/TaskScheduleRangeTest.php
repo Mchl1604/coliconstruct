@@ -16,13 +16,14 @@ use Tests\TestCase;
 /**
  * A project's schedule can have gaps - booked day 10-15 and day 20-25, say.
  *
- * A task is measured against the period those ranges span, day 10 through day
- * 25, not against the ranges one at a time. "Start when we arrive, finish
- * before we leave" is a sensible task on a project that runs in two visits,
- * and the days between the visits are the project's own business.
+ * A task may SPAN such a gap: "start when we arrive, finish before we leave"
+ * is a sensible task on a project that runs in two visits, and the days
+ * between the visits are the project's own business.
  *
- * What is still refused is a task reaching outside that period altogether:
- * before the project starts, or after it ends.
+ * What it may not do is BEGIN or END on a day nobody is booked. A day in the
+ * gap is not a day this project exists on, so a task cannot start then and a
+ * deadline cannot fall then. Reaching outside the period altogether is
+ * refused for the same reason.
  */
 class TaskScheduleRangeTest extends TestCase
 {
@@ -133,11 +134,34 @@ class TaskScheduleRangeTest extends TestCase
         $this->assertSame(1, Task::count());
     }
 
-    public function test_it_accepts_a_task_lying_wholly_in_the_gap(): void
+    /**
+     * The one case the old rule got wrong. Both endpoints land on days nobody
+     * is booked, so there is no day for the work to start on and no day for it
+     * to be handed in.
+     */
+    public function test_it_rejects_a_task_lying_wholly_in_the_gap(): void
     {
-        $this->storeTask($this->day(16), $this->day(19))->assertSessionHasNoErrors();
+        $this->storeTask($this->day(16), $this->day(19))
+            ->assertSessionHasErrors(['start_date', 'due_date']);
 
-        $this->assertSame(1, Task::count());
+        $this->assertSame(0, Task::count());
+    }
+
+    public function test_it_rejects_a_task_starting_in_the_gap(): void
+    {
+        // Ends on a booked day, but begins on one nobody is on site for.
+        $this->storeTask($this->day(16), $this->day(21))
+            ->assertSessionHasErrors('start_date');
+
+        $this->assertSame(0, Task::count());
+    }
+
+    public function test_it_rejects_a_task_due_in_the_gap(): void
+    {
+        $this->storeTask($this->day(14), $this->day(19))
+            ->assertSessionHasErrors('due_date');
+
+        $this->assertSame(0, Task::count());
     }
 
     public function test_it_accepts_a_task_covering_the_whole_period(): void
@@ -153,8 +177,10 @@ class TaskScheduleRangeTest extends TestCase
 
     public function test_it_rejects_a_task_starting_before_the_period(): void
     {
+        // Only the start is wrong, and only the start is complained about:
+        // somebody who picked a good deadline should not be told to change it.
         $this->storeTask($this->day(8), $this->day(12))
-            ->assertSessionHasErrors(['start_date', 'due_date']);
+            ->assertSessionHasErrors('start_date');
 
         $this->assertSame(0, Task::count());
     }
@@ -162,7 +188,7 @@ class TaskScheduleRangeTest extends TestCase
     public function test_it_rejects_a_task_ending_after_the_period(): void
     {
         $this->storeTask($this->day(10), $this->day(30))
-            ->assertSessionHasErrors(['start_date', 'due_date']);
+            ->assertSessionHasErrors('due_date');
 
         $this->assertSame(0, Task::count());
     }
@@ -220,7 +246,7 @@ class TaskScheduleRangeTest extends TestCase
         $task = $this->existingTask();
 
         $this->updateTask($task, $this->day(11), $this->day(40))
-            ->assertSessionHasErrors(['start_date', 'due_date']);
+            ->assertSessionHasErrors('due_date');
 
         $this->assertSame($this->day(11), CarbonImmutable::parse($task->refresh()->start_date)->toDateString());
         $this->assertSame($this->day(12), CarbonImmutable::parse($task->refresh()->due_date)->toDateString());

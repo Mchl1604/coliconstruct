@@ -9,6 +9,7 @@ use App\Models\TaskImage;
 use App\Services\ActivityLogger;
 use App\Services\NotificationService;
 use App\Services\TaskScheduleRules;
+use App\Services\TechnicianTaskLoad;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -63,12 +64,12 @@ class TaskController extends Controller
             $project->project_id => ! $project->isReadOnly() && ! $project->isArchived(),
         ]);
 
-        $technicianActiveTaskCounts = Task::query()
-            ->whereIn('technician_id', $techniciansByProject->flatten()->pluck('technician_id')->unique())
-            ->whereIn('status', ['pending', 'ongoing'])
-            ->selectRaw('technician_id, count(*) as active_count')
-            ->groupBy('technician_id')
-            ->pluck('active_count', 'technician_id');
+        // Keyed by project as well as by technician: this page shows several
+        // boards at once, and the same technician on two projects has a
+        // different amount of each of them on their plate. One query covers
+        // every board on the page.
+        $technicianActiveTaskCounts = app(TechnicianTaskLoad::class)
+            ->forProjects($projects->pluck('project_id'));
 
         // Only projects that can actually receive new tasks are selectable in
         // the Add Task modal: completed, cancelled and archived are excluded.
@@ -122,14 +123,7 @@ class TaskController extends Controller
             ->filter(fn ($projectTechnician) => $projectTechnician->technician)
             ->map(fn ($projectTechnician) => $projectTechnician->technician);
 
-        $technicianIds = $technicians->pluck('technician_id')->filter()->values();
-
-        $activeTaskCounts = Task::query()
-            ->whereIn('technician_id', $technicianIds)
-            ->whereIn('status', ['pending', 'ongoing'])
-            ->selectRaw('technician_id, count(*) as active_count')
-            ->groupBy('technician_id')
-            ->pluck('active_count', 'technician_id');
+        $activeTaskCounts = app(TechnicianTaskLoad::class)->forProject($project->project_id);
 
         $technicians = $technicians
             ->map(function ($technician) use ($activeTaskCounts) {

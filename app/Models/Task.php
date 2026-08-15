@@ -20,6 +20,17 @@ class Task extends Model
      */
     public const OPEN_STATUSES = ['unassigned', 'pending', 'ongoing'];
 
+    /**
+     * Open work that somebody is actually holding.
+     *
+     * Narrower than OPEN_STATUSES, which includes unassigned: a task nobody
+     * owns is still outstanding work on a project, but it is not a load on any
+     * technician. This is what the "N Active Tasks" figure counts.
+     *
+     * @var array<int, string>
+     */
+    public const ACTIVE_STATUSES = ['pending', 'ongoing'];
+
     protected $fillable = [
         'project_id',
         'technician_id',

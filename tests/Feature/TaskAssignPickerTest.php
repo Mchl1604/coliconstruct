@@ -6,8 +6,10 @@ use App\Models\Project;
 use App\Models\ProjectTechnician;
 use App\Models\Schedule;
 use App\Models\ScheduleTechnician;
+use App\Models\Task;
 use App\Models\Technician;
 use App\Models\User;
+use App\Services\TechnicianTaskLoad;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -126,5 +128,124 @@ class TaskAssignPickerTest extends TestCase
         // Nothing uploaded falls back to the shared default rather than to a
         // broken image or an icon that does not match the other cards.
         $this->assertSame(asset('img/default-avatar.svg'), $withoutPhoto['avatar_url']);
+    }
+
+    // ------------------------------------------------------------------
+    // "N Active Tasks"
+    // ------------------------------------------------------------------
+
+    /**
+     * The count is this project's, not the technician's whole workload.
+     *
+     * It used to be counted across every project at once, so somebody holding
+     * one task on another job read as "1 Active Task" on a project they had
+     * nothing on - which is exactly backwards from what the picker is for.
+     */
+    public function test_the_active_count_ignores_work_on_other_projects(): void
+    {
+        $zoe = Technician::whereHas('account', fn ($query) => $query->where('name', 'Zoe Alvarez'))->first();
+
+        // A second project, with Zoe on it and a task in her name.
+        $other = Project::create([
+            'name' => 'Other Project',
+            'reference_no' => 'REF-OTHER',
+            'status' => 'ongoing',
+            'address' => 'Address',
+            'description' => 'Description',
+        ]);
+
+        ProjectTechnician::create([
+            'project_id' => $other->project_id,
+            'technician_id' => $zoe->technician_id,
+        ]);
+
+        Task::create([
+            'project_id' => $other->project_id,
+            'technician_id' => $zoe->technician_id,
+            'task_title' => 'Work on the other job',
+            'task_description' => 'Nothing to do with the picker project.',
+            'status' => 'pending',
+        ]);
+
+        $counts = collect($this->formData())->pluck('active_task_count', 'name');
+
+        $this->assertSame(0, $counts['Zoe Alvarez'], 'Another project\'s task is not this project\'s load.');
+    }
+
+    public function test_the_active_count_counts_this_project_s_open_work(): void
+    {
+        $zoe = Technician::whereHas('account', fn ($query) => $query->where('name', 'Zoe Alvarez'))->first();
+
+        foreach ([['Fit the unit', 'pending'], ['Test the unit', 'ongoing'], ['Old job', 'completed']] as [$title, $status]) {
+            Task::create([
+                'project_id' => $this->project->project_id,
+                'technician_id' => $zoe->technician_id,
+                'task_title' => $title,
+                'task_description' => 'On this project.',
+                'status' => $status,
+            ]);
+        }
+
+        // Nobody owns this one, so it is outstanding work on the project but
+        // not a load on any technician.
+        Task::create([
+            'project_id' => $this->project->project_id,
+            'technician_id' => null,
+            'task_title' => 'Waiting for an owner',
+            'task_description' => 'Unassigned.',
+            'status' => 'unassigned',
+        ]);
+
+        $counts = collect($this->formData())->pluck('active_task_count', 'name');
+
+        // Pending and ongoing count; completed does not.
+        $this->assertSame(2, $counts['Zoe Alvarez']);
+        $this->assertSame(0, $counts['Rita Lead']);
+    }
+
+    /**
+     * The same technician on two projects shows a different figure on each,
+     * which is what the per-project keying on the Tasks page is for.
+     */
+    public function test_each_project_reports_its_own_load_for_the_same_technician(): void
+    {
+        $zoe = Technician::whereHas('account', fn ($query) => $query->where('name', 'Zoe Alvarez'))->first();
+
+        $other = Project::create([
+            'name' => 'Other Project',
+            'reference_no' => 'REF-OTHER-2',
+            'status' => 'ongoing',
+            'address' => 'Address',
+            'description' => 'Description',
+        ]);
+
+        ProjectTechnician::create([
+            'project_id' => $other->project_id,
+            'technician_id' => $zoe->technician_id,
+        ]);
+
+        Task::create([
+            'project_id' => $this->project->project_id,
+            'technician_id' => $zoe->technician_id,
+            'task_title' => 'Here',
+            'task_description' => 'On the picker project.',
+            'status' => 'pending',
+        ]);
+
+        foreach (['There one', 'There two'] as $title) {
+            Task::create([
+                'project_id' => $other->project_id,
+                'technician_id' => $zoe->technician_id,
+                'task_title' => $title,
+                'task_description' => 'On the other project.',
+                'status' => 'pending',
+            ]);
+        }
+
+        $byProject = app(TechnicianTaskLoad::class)
+            ->forProjects([$this->project->project_id, $other->project_id]);
+
+        $this->assertSame(1, $byProject[$this->project->project_id][$zoe->technician_id]);
+        $this->assertSame(2, $byProject[$other->project_id][$zoe->technician_id]);
     }
 }

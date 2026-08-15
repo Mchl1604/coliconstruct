@@ -137,12 +137,17 @@
                     </div>
                 </div>
 
-                @if ($project->isCompleted())
+                {{-- Readable from the moment completion is filed, so a lead can
+                     check what they submitted while the client decides. --}}
+                @if ($project->hasCompletionReport() && ! $project->isCancelled())
                     <hr>
                     <div class="completion-report">
                         <h5 class="fw-bold text-success mb-3">
                             <i class="bi bi-check-circle me-2" aria-hidden="true"></i>
                             Completion Report
+                            @unless ($project->isCompleted())
+                                <span class="badge bg-secondary align-middle ms-2">Awaiting client confirmation</span>
+                            @endunless
                         </h5>
 
                         <div class="mb-2">
@@ -565,13 +570,7 @@
 
                             <div class="col-12 mb-3">
                                 <div class="form-text">
-                                    Allowed:
-                                    {{ app(\App\Services\TaskScheduleRules::class)->describeWindow($scheduleRanges->all()) ?: 'No schedule set' }}
-                                    @if ($scheduleRanges->count() > 1)
-                                        . This project is booked
-                                        {{ app(\App\Services\TaskScheduleRules::class)->describe($scheduleRanges->all()) }},
-                                        and a task may span the gap between those dates.
-                                    @endif
+                                    {{ app(\App\Services\TaskScheduleRules::class)->describeSelectable($scheduleRanges->all()) }}
                                 </div>
                             </div>
                         </div>
@@ -706,8 +705,11 @@
 
                         @if ($canComplete)
                             <p class="mb-3">
-                                Every task on this project is completed. Marking it complete makes the
-                                project view only and releases any dates still booked ahead.
+                                Every task on this project is completed. Filing this report releases any dates
+                                still booked ahead and sends the project to the client to confirm. It becomes
+                                view only from now on, and completes automatically after
+                                {{ \App\Models\Project::COMPLETION_CONFIRMATION_DAYS }} days if the client does
+                                not reply.
                             </p>
 
                             @include('technician.partials.completion-fields', ['suffix' => 'Details'])

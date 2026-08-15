@@ -276,9 +276,15 @@ class OverdueProjectTest extends TestCase
         $this->assertNotContains('Cancelled Project', $names);
         $this->assertNotContains('Paused Project', $names);
 
-        // Overdue events are orange and labelled Overdue.
+        // Overdue events are orange and labelled Overdue. Bookings are drawn
+        // outlined rather than filled, so the colour is on the border and the
+        // lettering and the bar itself is transparent.
         $lateEvent = $events->firstWhere('extendedProps.projectName', 'Late Project');
-        $this->assertSame(Project::OVERDUE_COLOR, $lateEvent['color']);
+        // The ink cut, not the fill: OVERDUE_COLOR is the badge background and
+        // is too pale to write with - see Project::CALENDAR_INK.
+        $this->assertSame(Project::CALENDAR_INK['overdue'], $lateEvent['borderColor']);
+        $this->assertSame(Project::CALENDAR_INK['overdue'], $lateEvent['textColor']);
+        $this->assertSame('transparent', $lateEvent['backgroundColor']);
         $this->assertSame('Overdue', $lateEvent['extendedProps']['statusLabel']);
     }
 
@@ -308,7 +314,10 @@ class OverdueProjectTest extends TestCase
         $names = $events->pluck('extendedProps.projectName')->unique()->values()->all();
 
         $this->assertSame(['Late Project'], $names);
-        $this->assertSame(Project::OVERDUE_COLOR, $events->first()['color']);
+        // Outlined rather than filled, the same as every other calendar.
+        $this->assertSame(Project::CALENDAR_INK['overdue'], $events->first()['borderColor']);
+        $this->assertSame(Project::CALENDAR_INK['overdue'], $events->first()['textColor']);
+        $this->assertSame('transparent', $events->first()['backgroundColor']);
         $this->assertSame('Overdue', $events->first()['extendedProps']['statusLabel']);
 
         // Cancelled work is dropped from the assignments table and its count
@@ -326,6 +335,10 @@ class OverdueProjectTest extends TestCase
      * A completed project must not stay booked. Dates past the completion date
      * are released, so it stops occupying the calendar and its technicians
      * stop reading as busy.
+     *
+     * The dates go at the moment completion is requested, not when the client
+     * confirms it: waiting a week for a reply would keep a finished project
+     * reading as booked, and its crew as busy, for that week.
      */
     public function test_completing_a_project_releases_its_future_dates(): void
     {
@@ -339,7 +352,7 @@ class OverdueProjectTest extends TestCase
         ])->assertRedirect();
 
         $project->refresh();
-        $this->assertSame('completed', $project->status);
+        $this->assertSame(Project::STATUS_AWAITING_CLIENT_CONFIRMATION, $project->status);
 
         // The range wholly ahead is gone; the one already running is kept but
         // cut short at the completion date.

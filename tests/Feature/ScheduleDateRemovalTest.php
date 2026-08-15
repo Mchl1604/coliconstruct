@@ -406,12 +406,17 @@ class ScheduleDateRemovalTest extends TestCase
     }
 
     /**
-     * A task dated on the very day being removed keeps its dates, because the
-     * period the project is scheduled over has not changed. Days inside that
-     * period which the project is not booked for are the project's own
-     * business - the same reason a task may span the gap between two ranges.
+     * A task dated on the very day being removed loses its dates.
+     *
+     * Removing the day is saying nobody is on site then, and a task cannot
+     * start - or fall due - on a day the project does not exist on. The lead
+     * is told, which is what the cleared-dates notification is for.
+     *
+     * Contrast the task that merely SPANS the removed day: the gap between two
+     * booked stretches is the project's own business, and a task running
+     * across it keeps its dates. Only the endpoints have to be booked.
      */
-    public function test_a_task_on_the_removed_day_keeps_its_dates(): void
+    public function test_a_task_on_the_removed_day_loses_its_dates(): void
     {
         $lead = $this->createTechnician('Lead Person', 'lead_technician');
         $project = $this->createProject([$lead]);
@@ -429,9 +434,41 @@ class ScheduleDateRemovalTest extends TestCase
 
         $this->removeDate($schedule, $this->day(13))
             ->assertOk()
+            ->assertJsonPath('cleared_tasks', 1);
+
+        $this->assertNull($task->fresh()->start_date);
+        $this->assertNull($task->fresh()->due_date);
+    }
+
+    /**
+     * The other half of the rule: a task running ACROSS the removed day is
+     * left alone, because both the day it starts on and the day it is due are
+     * still booked.
+     */
+    public function test_a_task_spanning_the_removed_day_keeps_its_dates(): void
+    {
+        $lead = $this->createTechnician('Lead Person', 'lead_technician');
+        $project = $this->createProject([$lead]);
+        $schedule = $this->book($project, $this->day(10), $this->day(15));
+
+        $task = Task::create([
+            'project_id' => $project->project_id,
+            'technician_id' => $lead->technician_id,
+            'task_title' => 'Fit the ducting',
+            'task_description' => 'Runs across the removed day',
+            'status' => 'pending',
+            'start_date' => $this->day(11),
+            'due_date' => $this->day(15),
+        ]);
+
+        // Splits the booking into day 10-12 and day 14-15. The task starts on
+        // day 11 and is due on day 15, both still booked.
+        $this->removeDate($schedule, $this->day(13))
+            ->assertOk()
             ->assertJsonPath('cleared_tasks', 0);
 
-        $this->assertSame($this->day(13), $task->fresh()->start_date);
+        $this->assertSame($this->day(11), $task->fresh()->start_date);
+        $this->assertSame($this->day(15), $task->fresh()->due_date);
     }
 
     public function test_a_task_still_covered_raises_no_notification(): void

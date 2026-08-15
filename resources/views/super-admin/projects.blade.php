@@ -109,7 +109,10 @@
                                 </td>
                                 <td class="text-center">
                                     @php
-                                        $isReadOnly = in_array($project->status, ['completed', 'cancelled', 'archived'], true);
+                                        // Asked of the model rather than restated here, which is
+                                        // how this list came to be missing a status the rest of
+                                        // the system already treats as locked.
+                                        $isReadOnly = $project->isReadOnly();
                                     @endphp
                                     <div class="projects-action-buttons">
                                         <button class="btn btn-sm btn-primary py-1 px-2"
@@ -265,7 +268,8 @@
                                                 <div class="mb-3">
                                                     <label class="form-label fw-semibold">Completion Date</label>
                                                     <input type="date" class="form-control" name="completion_date"
-                                                        value="{{ now()->format('Y-m-d') }}" required>
+                                                        value="{{ now()->format('Y-m-d') }}"
+                                                        max="{{ now()->format('Y-m-d') }}" required>
                                                 </div>
 
                                                 <div class="mb-3">
@@ -423,6 +427,15 @@
                             // own tab so the two don't double-count.
                             if (status === 'ongoing') {
                                 return rowStatus === 'ongoing' && !isOverdue;
+                            }
+
+                            // A project waiting on its client has had its work
+                            // finished, so it belongs with the completed work
+                            // rather than in a tab of its own. The badge on the
+                            // row is what says it is not signed off yet.
+                            if (status === 'completed') {
+                                return rowStatus === 'completed' ||
+                                    rowStatus === 'awaiting_client_confirmation';
                             }
 
                             return rowStatus === status;

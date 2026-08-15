@@ -55,7 +55,7 @@
 
     <x-task-board :projects="$projects" :tasks-by-project="$tasksByProject"
         :technicians-by-project="$techniciansByProject" :ranges-by-project="$rangesByProject"
-        :active-task-counts="$technicianActiveTaskCounts" :manageable="$manageable"
+        :active-task-counts-by-project="$technicianActiveTaskCounts" :manageable="$manageable"
         :viewer-technician-id="$technicianId" update-route="technician.tasks.update"
         complete-route="technician.tasks.complete" delete-route="technician.tasks.destroy"
         update-method="POST" complete-method="POST"

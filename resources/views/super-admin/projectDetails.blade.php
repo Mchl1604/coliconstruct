@@ -28,8 +28,10 @@
         // still the whole of a partial day's date - but the label says which
         // schedule that date came from.
         $scheduleRangesLabel = $project->schedules->map(fn($schedule) => $schedule->describe())->join('; ');
-        // The period a task may be dated in: earliest booked date to latest.
-        $taskDateWindowLabel = app(\App\Services\TaskScheduleRules::class)->describeWindow($scheduleRanges->all());
+        // Which days a task may start and be due on. Not the outer period: the
+        // gap between two visits is not a day this project exists on, and the
+        // pickers grey those days out.
+        $taskDateHint = app(\App\Services\TaskScheduleRules::class)->describeSelectable($scheduleRanges->all());
     @endphp
     {{-- `project-details-page` is what applies the brand blue from the
          client's own project page; the layout below is unchanged. --}}
@@ -43,6 +45,272 @@
                 Back to Projects
             </a>
         </div>
+
+        {{-- Waiting on the client. The work is done and the project is locked;
+             the only move left is reopening it onto a new schedule, and that
+             belongs to an administrator. --}}
+        @if ($project->isAwaitingClientConfirmation())
+            <div class="alert alert-success border-0 shadow-sm mb-4" role="alert">
+                <div class="d-flex flex-wrap align-items-start gap-3">
+                    <div class="fs-3 lh-1">
+                        <i class="bi bi-hourglass-split" aria-hidden="true"></i>
+                    </div>
+
+                    <div class="flex-grow-1">
+                        <h5 class="alert-heading mb-1">Awaiting client confirmation</h5>
+                        {{-- Built as one sentence rather than as fragments with
+                             punctuation between them: Blade puts a newline where
+                             each directive was, and the browser renders that as a
+                             space, which is what strands a comma from its word. --}}
+                        @php
+                            $requestedBy = $project->completionRequestedByUser?->fullName();
+                            $sentence = 'The work was recorded as finished on '
+                                . ($project->completed_at?->format('F j, Y') ?? 'an earlier date') . '.';
+
+                            if ($project->completion_requested_at) {
+                                $sentence .= ' Sent for confirmation on '
+                                    . $project->completion_requested_at->format('F j, Y')
+                                    . ($requestedBy ? ' by ' . $requestedBy : '') . '.';
+                            }
+                        @endphp
+
+                        <p class="mb-2">
+                            {{ $sentence }} The client has been emailed and notified.
+                        </p>
+
+                        <p class="mb-2">
+                            @if ($project->confirmationDeadline())
+                                It completes automatically on
+                                <strong>{{ $project->confirmationDeadline()->format('F j, Y') }}</strong>
+                                ({{ $project->confirmationCountdown() }}) if the client does not reply.
+                            @endif
+                            This project is locked and cannot be edited while it is waiting.
+                        </p>
+
+                        @if ($canReopen)
+                            <button type="button" class="btn btn-sm btn-outline-dark" data-bs-toggle="modal"
+                                data-bs-target="#reopenProjectModal">
+                                <i class="bi bi-arrow-counterclockwise me-1" aria-hidden="true"></i>
+                                Reopen Project
+                            </button>
+                        @endif
+                    </div>
+                </div>
+            </div>
+        @endif
+
+        {{-- Reopening. Deliberately not a status dropdown: the dates released
+             when completion was requested are gone for good and may already
+             have been taken by other work, so resuming a project means saying
+             when the remaining work actually happens. The reason is required
+             because "why is this project open again?" is the first thing
+             anybody reading the audit trail will ask. --}}
+        @if ($canReopen)
+            @php
+                $partialDayAllowed = $project->isResidential();
+                $today = \App\Models\Schedule::businessToday()->format('Y-m-d');
+            @endphp
+
+            <div class="modal fade" id="reopenProjectModal" tabindex="-1" aria-labelledby="reopenProjectModalLabel"
+                aria-hidden="true">
+                <div class="modal-dialog modal-lg modal-dialog-centered">
+                    <div class="modal-content">
+                        <form method="POST" action="{{ route('super-admin.projects.reopen', $project->project_id) }}"
+                            data-reopen-form>
+                            @csrf
+
+                            <div class="modal-header bg-dark text-white">
+                                <h5 class="modal-title" id="reopenProjectModalLabel">
+                                    <i class="bi bi-arrow-counterclockwise me-2" aria-hidden="true"></i>
+                                    Reopen Project &mdash; {{ $project->reference_no }}
+                                </h5>
+                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
+                                    aria-label="Close"></button>
+                            </div>
+
+                            <div class="modal-body">
+                                <div class="mb-3">
+                                    <span class="form-label fw-semibold d-block mb-1">Current status</span>
+                                    <x-project-status-badge :project="$project" />
+                                </div>
+
+                                <div class="alert alert-secondary small mb-4">
+                                    <i class="bi bi-info-circle me-1" aria-hidden="true"></i>
+                                    The dates released when this project was completed were freed for other work and
+                                    are not restored. Book the remaining work below; the project becomes
+                                    <strong>Ongoing</strong> and editable again.
+                                    @if ($project->schedules->isNotEmpty())
+                                        Its recorded work
+                                        ({{ $project->schedules->map(fn($schedule) => $schedule->describe())->join('; ') }})
+                                        is kept as history.
+                                    @endif
+                                </div>
+
+                                <h6 class="fw-bold mb-2">New schedule</h6>
+
+                                @if ($partialDayAllowed)
+                                    <div class="mb-3">
+                                        <label class="form-label fw-semibold" for="reopenSchedulingMode">
+                                            Scheduling mode
+                                        </label>
+                                        <select class="form-select" id="reopenSchedulingMode" name="scheduling_mode"
+                                            data-reopen-mode>
+                                            <option value="{{ \App\Models\Schedule::MODE_DATE_BASED }}">Date-Based
+                                            </option>
+                                            <option value="{{ \App\Models\Schedule::MODE_PARTIAL_DAY }}">Partial Day
+                                            </option>
+                                        </select>
+                                    </div>
+                                @else
+                                    {{-- Partial days are a Residential offering, so a Commercial
+                                         project simply books whole days, exactly as elsewhere. --}}
+                                    <input type="hidden" name="scheduling_mode"
+                                        value="{{ \App\Models\Schedule::MODE_DATE_BASED }}">
+                                @endif
+
+                                {{-- The two field groups. The one not in use is hidden AND
+                                     disabled, so the browser neither validates nor submits it -
+                                     the same rule the schedules page follows. --}}
+                                <div class="row g-3" data-reopen-date-based>
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-semibold" for="reopenStartDate">Start date</label>
+                                        <input type="date" class="form-control" id="reopenStartDate" name="start_date"
+                                            min="{{ $today }}" required>
+                                    </div>
+
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-semibold" for="reopenEndDate">End date</label>
+                                        <input type="date" class="form-control" id="reopenEndDate" name="end_date"
+                                            min="{{ $today }}" required>
+                                    </div>
+                                </div>
+
+                                @if ($partialDayAllowed)
+                                    <div class="row g-3" data-reopen-partial-day hidden>
+                                        <div class="col-md-4">
+                                            <label class="form-label fw-semibold" for="reopenProjectDate">Date</label>
+                                            <input type="date" class="form-control" id="reopenProjectDate"
+                                                name="project_date" min="{{ $today }}" disabled>
+                                        </div>
+
+                                        <div class="col-md-4">
+                                            <label class="form-label fw-semibold" for="reopenStartTime">Start
+                                                time</label>
+                                            <select class="form-select" id="reopenStartTime" name="start_time" disabled>
+                                                <option value="">Select</option>
+                                                @foreach ($workingHours as $hour)
+                                                    <option value="{{ $hour['value'] }}">{{ $hour['label'] }}</option>
+                                                @endforeach
+                                            </select>
+                                        </div>
+
+                                        <div class="col-md-4">
+                                            <label class="form-label fw-semibold" for="reopenEndTime">End time</label>
+                                            <select class="form-select" id="reopenEndTime" name="end_time" disabled>
+                                                <option value="">Select</option>
+                                                @foreach ($workingHours as $hour)
+                                                    <option value="{{ $hour['value'] }}">{{ $hour['label'] }}</option>
+                                                @endforeach
+                                            </select>
+                                        </div>
+                                    </div>
+                                @endif
+
+                                @if ($project->projectTechnicians->isNotEmpty())
+                                    <div class="form-text mt-2">
+                                        The assigned team
+                                        ({{ $project->projectTechnicians->map(fn($assignment) => $assignment->technician?->name)->filter()->join(', ') }})
+                                        is booked onto these dates. Anyone already committed elsewhere will be
+                                        reported and the reopen refused.
+                                    </div>
+                                @endif
+
+                                <hr class="my-4">
+
+                                <div class="mb-1">
+                                    <label class="form-label fw-semibold" for="reopenReason">
+                                        Reason for reopening
+                                    </label>
+                                    <textarea class="form-control" id="reopenReason" name="reopen_reason" rows="3" minlength="10"
+                                        maxlength="500" required placeholder="e.g. Additional installation work is required."></textarea>
+                                    <div class="form-text">
+                                        Recorded in the activity log and shown to the client. At least 10 characters.
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                <button type="submit" class="btn btn-dark">
+                                    <i class="bi bi-arrow-counterclockwise me-1" aria-hidden="true"></i>
+                                    Reopen &amp; Schedule
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            @if ($partialDayAllowed)
+                @push('scripts')
+                    <script>
+                        // Swapping the mode swaps which fields are live. Disabling the
+                        // hidden group is what stops the browser demanding a start date
+                        // nobody can see, and stops it being submitted alongside the
+                        // hours - the server would then have two readings to choose from.
+                        document.addEventListener('DOMContentLoaded', function() {
+                            const form = document.querySelector('[data-reopen-form]');
+                            const mode = form && form.querySelector('[data-reopen-mode]');
+
+                            if (!form || !mode) {
+                                return;
+                            }
+
+                            const groups = {
+                                date_based: form.querySelector('[data-reopen-date-based]'),
+                                partial_day: form.querySelector('[data-reopen-partial-day]'),
+                            };
+
+                            function apply() {
+                                Object.keys(groups).forEach(function(key) {
+                                    const group = groups[key];
+
+                                    if (!group) {
+                                        return;
+                                    }
+
+                                    const active = mode.value === key;
+
+                                    group.hidden = !active;
+
+                                    group.querySelectorAll('input, select').forEach(function(field) {
+                                        field.disabled = !active;
+                                        field.required = active;
+                                    });
+                                });
+                            }
+
+                            mode.addEventListener('change', apply);
+                            apply();
+                        });
+                    </script>
+                @endpush
+            @endif
+        @endif
+
+        {{-- How the project was finally closed. Shown only once it is, and it
+             is the one place the difference between "the client agreed" and
+             "nobody answered for a week" is visible. --}}
+        @if ($project->isCompleted() && $project->completionMethodLabel())
+            <div class="alert alert-light border shadow-sm mb-4" role="status">
+                <i class="bi bi-check2-circle me-2 text-success" aria-hidden="true"></i>
+                <strong>{{ $project->completionMethodLabel() }}</strong>
+                @if ($project->client_confirmed_at)
+                    on {{ $project->client_confirmed_at->format('F j, Y') }}
+                @endif
+                . A completed project is a historical record and cannot be reopened.
+            </div>
+        @endif
 
         {{-- Overdue: the last scheduled day has passed but the project is
              still open. Offer the only two ways out - extend the schedule, or
@@ -110,7 +378,8 @@
                                 <div class="mb-3">
                                     <label class="form-label fw-semibold">Completion Date</label>
                                     <input type="date" class="form-control" name="completion_date"
-                                        value="{{ now()->format('Y-m-d') }}" required>
+                                        value="{{ now()->format('Y-m-d') }}"
+                                        max="{{ now()->format('Y-m-d') }}" required>
                                 </div>
 
                                 <div class="mb-3">
@@ -221,41 +490,29 @@
                         @endforeach
                     </div>
                     <div>
-                        @php
-                            $statusClass = match ($project->status) {
-                                'unscheduled' => 'bg-info text-dark',
-                                'pending' => 'bg-warning text-dark',
-                                'ongoing' => 'bg-primary',
-                                'completed' => 'bg-success',
-                                'cancelled' => 'bg-danger',
-                                'archived' => 'bg-dark',
-                                default => 'bg-secondary',
-                            };
-                            $statusLabel = ucwords(str_replace('_', ' ', $project->status));
-                        @endphp
-
-
-                        @if ($project->on_hold === true)
-                            <span class="badge rounded-pill fs-6 px-4 py-3 bg-secondary text-white">
-                                On Hold
-                            </span>
-                        @else
-                            <span class="badge rounded-pill fs-6 px-4 py-3 {{ $statusClass }}">
-                                {{ $statusLabel }}
-                            </span>
-                        @endif
-                        </span>
-
+                        {{-- The model decides the label and the colour, so this
+                             page cannot disagree with the projects table, the
+                             calendars or the client's own copy of it. It had its
+                             own match() here, which is how a new status ends up
+                             reading as "Awaiting_client_confirmation". --}}
+                        <x-project-status-badge :project="$project" class="rounded-pill fs-6 px-4 py-3" />
                     </div>
 
                 </div>
 
-                @if ($project->isCompleted())
+                {{-- Shown from the moment completion is requested, not only
+                     once the client has signed it off: the client is being
+                     asked to review this very report, so everybody has to be
+                     able to read it while they decide. --}}
+                @if ($project->hasCompletionReport() && ! $project->isCancelled())
                     <hr>
                     <div class="completion-report">
                         <h5 class="fw-bold text-success mb-3">
                             <i class="bi bi-check-circle me-2"></i>
                             Completion Report
+                            @unless ($project->isCompleted())
+                                <span class="badge bg-secondary align-middle ms-2">Awaiting client confirmation</span>
+                            @endunless
                         </h5>
 
                         <div class="mb-2">
@@ -1476,7 +1733,7 @@
 
                             <div class="col-12 mb-3">
                                 <div class="form-text">
-                                    Allowed: {{ $taskDateWindowLabel ?: 'No schedule set' }}@if ($scheduleRanges->count() > 1). This project is booked {{ $scheduleRangesLabel }}, and a task may span the gap between those dates.@endif
+                                    {{ $taskDateHint }}
                                 </div>
                             </div>
 

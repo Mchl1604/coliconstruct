@@ -10,6 +10,7 @@ use App\Models\Technician;
 use App\Services\ActivityLogger;
 use App\Services\NotificationService;
 use App\Services\ProjectTeam;
+use App\Services\ScheduleConsolidation;
 use App\Services\ScheduleDateRemoval;
 use App\Services\ScheduleModeRules;
 use App\Services\TaskScheduleRules;
@@ -88,6 +89,16 @@ class ScheduleController extends Controller
         $calendarEvents = $this->buildCalendarEvents($scheduledProjects);
         $technicianSchedules = $this->buildTechnicianSchedules();
         $technicianNames = $this->buildTechnicianNames();
+        // project_id => reference number, so a clash can say WHICH job is
+        // holding the technician. Without it the browser can only report that
+        // somebody is unavailable, which reads as an unexplained refusal - and
+        // when the date falls inside the range being edited, reads as the
+        // project blocking itself.
+        $projectLabels = $projects
+            ->mapWithKeys(fn (Project $project): array => [
+                (int) $project->project_id => $project->reference_no ?: $project->name,
+            ])
+            ->all();
         // Stated by the model so the dropdowns and the server agree on which
         // hours exist without the list being written out twice.
         $workingHours = Schedule::workingHourOptions();
@@ -99,6 +110,7 @@ class ScheduleController extends Controller
             'calendarEvents',
             'technicianSchedules',
             'technicianNames',
+            'projectLabels',
             'workingHours'
         ));
     }
@@ -433,6 +445,11 @@ class ScheduleController extends Controller
 
                     $this->projectTeam->linkScheduleToTeam($schedule, $project);
 
+                    // A date booked from the calendar often butts straight onto
+                    // what the project already holds, which is one booking
+                    // rather than two.
+                    app(ScheduleConsolidation::class)->consolidate($project);
+
                     $this->promoteStatusAfterScheduling($project);
 
                     // Queued inside the transaction but only written once it
@@ -638,7 +655,13 @@ class ScheduleController extends Controller
                     $this->projectTeam->linkScheduleToTeam($schedule, $project);
                 });
 
-                $this->syncTaskDatesWithSchedule($project, $ranges);
+                // Ranges that run into each other are one booking, so they are
+                // merged before anything downstream reads them - including the
+                // task sync just below, which must measure tasks against the
+                // shape that was actually stored.
+                app(ScheduleConsolidation::class)->consolidate($project);
+
+                $this->syncTaskDatesWithSchedule($project, $this->storedRanges($project));
                 $this->promoteStatusAfterScheduling($project);
                 // Status follows the dates in both directions, so giving the
                 // last one up here reads the same as giving it up from the
@@ -1072,7 +1095,8 @@ class ScheduleController extends Controller
                 continue;
             }
 
-            $color = $project->calendarColor();
+            // Outlined rather than filled - see Project::calendarEventColors().
+            $colors = $project->calendarEventColors();
 
             foreach ($project->schedules as $schedule) {
                 $events[] = [
@@ -1081,7 +1105,7 @@ class ScheduleController extends Controller
                     // A partial day comes back as a timed event, so the bar
                     // carries its hours instead of reading as a whole day.
                     ...$schedule->toCalendarTimes(),
-                    'color' => $color,
+                    ...$colors,
                     'extendedProps' => [
                         'projectId' => $project->project_id,
                         'scheduleId' => $schedule->schedule_id,

@@ -7,7 +7,6 @@ use App\Models\ActivityLog;
 use App\Models\Client;
 use App\Models\Document;
 use App\Models\Project;
-use App\Models\ProjectCompletionPhoto;
 use App\Models\ProjectTechnician;
 use App\Models\ProjectType;
 use App\Models\Schedule;
@@ -20,10 +19,12 @@ use App\Services\ImportableTeamSources;
 use App\Services\NotificationService;
 use App\Services\ProjectCompletion;
 use App\Services\ProjectEmails;
+use App\Services\ProjectReopen;
 use App\Services\ProjectTeam;
 use App\Services\ProjectTeamCandidates;
 use App\Services\ScheduleModeRules;
 use App\Services\TechnicianAvailabilityService;
+use App\Services\TechnicianTaskLoad;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
@@ -570,7 +571,10 @@ class ProjectController extends Controller
             return 0;
         }
 
-        $directory = public_path('uploads/'.$folder);
+        // Written to the configured root, which the test suite points at a
+        // throwaway directory - move() is not something Storage::fake() can
+        // intercept, so without this the suite fills public/uploads.
+        $directory = config('uploads.root').'/'.$folder;
 
         File::ensureDirectoryExists($directory);
 
@@ -589,7 +593,8 @@ class ProjectController extends Controller
                 // to what the column holds: the name is a label here, and the
                 // file on disk is found by document_path either way.
                 'document_name' => mb_substr($uploadedFile->getClientOriginalName(), 0, 255),
-                'document_path' => 'uploads/'.$folder.'/'.$fileName,
+                // Relative to public/, because asset() reads it back.
+                'document_path' => config('uploads.public_prefix').'/'.$folder.'/'.$fileName,
                 'uploaded_at' => now(),
             ]);
         });
@@ -609,16 +614,12 @@ class ProjectController extends Controller
 
                 // `skills` is loaded because the Assigned Team panel now lists
                 // each technician's approved specialties beside their name.
-                $query->with(['account', 'skills'])
-                    ->withCount([
-                        'tasks as tasks_count' => function ($q) {
-
-                            $q->whereIn('status', [
-                                'pending',
-                                'ongoing',
-                            ]);
-                        },
-                    ]);
+                //
+                // A `tasks_count` was withCount()ed here too, counting every
+                // project's tasks rather than this one's. Nothing read it, and
+                // it was a second way to get the same figure wrong, so the
+                // count now comes from TechnicianTaskLoad and only from there.
+                $query->with(['account', 'skills']);
             },
 
         ])->findOrFail($id);
@@ -676,14 +677,22 @@ class ProjectController extends Controller
 
         $isReadOnly = $project->isReadOnly();
 
-        $assignedTeamTechnicianIds = $project->projectTechnicians->pluck('technician_id')->filter()->values();
+        // Scoped to this project: the picker below lists this project's team
+        // and is answering "how much of THIS job is already on them?". Counted
+        // across every project, somebody busy elsewhere read as busy here.
+        $technicianActiveTaskCounts = app(TechnicianTaskLoad::class)
+            ->forProject($project->project_id);
 
-        $technicianActiveTaskCounts = Task::query()
-            ->whereIn('technician_id', $assignedTeamTechnicianIds)
-            ->whereIn('status', ['pending', 'ongoing'])
-            ->selectRaw('technician_id, count(*) as active_count')
-            ->groupBy('technician_id')
-            ->pluck('active_count', 'technician_id');
+        // Reopening is an administrator's move, and only on a project still
+        // waiting for its client - the model settles which, so the button and
+        // the endpoint cannot disagree about it.
+        $canReopen = $project->canBeReopened()
+            && (bool) $request->user()?->isEmployee()
+            && in_array($request->user()?->role, [User::ROLE_SUPER_ADMIN, User::ROLE_ADMIN], true);
+
+        // The reopen dialog books new dates, so it needs the same bookable
+        // hours every other scheduling screen offers.
+        $workingHours = Schedule::workingHourOptions();
 
         return view('super-admin.projectDetails', compact(
             'project',
@@ -695,7 +704,9 @@ class ProjectController extends Controller
             'currentTeamTechnicianIds',
             'isReadOnly',
             'assignedTeamLookup',
-            'technicianActiveTaskCounts'
+            'technicianActiveTaskCounts',
+            'canReopen',
+            'workingHours'
         ));
 
     }
@@ -886,7 +897,9 @@ class ProjectController extends Controller
 
         $name = $document->document_name;
         $type = $document->document_type;
-        $path = public_path($document->document_path);
+        // Asked of the document rather than assumed to be under public/ - the
+        // write root is configurable, and the two only agree outside tests.
+        $path = $document->diskPath();
 
         $document->delete();
 
@@ -992,10 +1005,16 @@ class ProjectController extends Controller
     }
 
     /**
-     * Show the completion confirmation modal's data validation, mark a
-     * project as Complete, and store the completion report. Completed
-     * projects keep every schedule/technician/task record for auditing;
-     * only their editability changes.
+     * Hand a finished project over to its client for confirmation.
+     *
+     * This used to close the project outright. It no longer does: the company
+     * saying the work is done and the client signing it off are two different
+     * statements, and only the second one closes a project. What has not
+     * changed is everything else this step does - the completion report, the
+     * photographs, and releasing the dates booked past the completion date.
+     *
+     * The project is locked from here. An administrator's one remaining move
+     * is Reopen Project, which is a different action with a schedule attached.
      */
     public function complete(Request $request, int $id)
     {
@@ -1004,79 +1023,161 @@ class ProjectController extends Controller
         if ($project->isReadOnly()) {
             return redirect()
                 ->route('super-admin.projects')
-                ->with('error', 'This project is already '.$project->status.' and cannot be completed.');
+                ->with('error', sprintf(
+                    'This project is %s and cannot be completed.',
+                    $project->statusLabel()
+                ));
         }
 
-        $validated = $request->validate([
-            'completion_date' => ['required', 'date'],
-            'completion_summary' => ['required', 'string'],
-            'completion_remarks' => ['nullable', 'string'],
-            'completion_photos' => ['nullable', 'array', 'max:20'],
-            // Matched to every other photo upload in the system, so a phone
-            // picture is always accepted and nothing arrives that the browser
-            // then struggles to show.
-            'completion_photos.*' => ['file', 'mimes:jpg,jpeg,png', 'max:5120'],
-        ], [
-            'completion_photos.max' => 'Up to 20 completion photos can be uploaded at once.',
-            'completion_photos.*.max' => 'Each completion photo must be 5 MB or smaller.',
-        ]);
+        $completion = app(ProjectCompletion::class);
+
+        $validated = $request->validate($completion->rules(), $completion->messages());
 
         try {
-            DB::transaction(function () use ($validated, $project, $request): void {
-                $project->update([
-                    'status' => 'completed',
-                    'on_hold' => false,
-                    'completed_at' => CarbonImmutable::parse($validated['completion_date']),
-                    'completion_summary' => $validated['completion_summary'],
-                    'completion_remarks' => $validated['completion_remarks'] ?? null,
-                ]);
-
-                if ($request->hasFile('completion_photos')) {
-                    $directory = public_path('uploads/completion');
-                    File::ensureDirectoryExists($directory);
-
-                    foreach ($request->file('completion_photos') as $photo) {
-                        $fileName = Str::uuid()->toString().'.'.$photo->getClientOriginalExtension();
-                        $photo->move($directory, $fileName);
-
-                        ProjectCompletionPhoto::create([
-                            'project_id' => $project->project_id,
-                            'photo_path' => 'uploads/completion/'.$fileName,
-                            'uploaded_at' => now(),
-                        ]);
-                    }
-                }
-
-                // Dates booked past the completion date are released: the work
-                // is done, so the project must stop reading as booked and its
-                // technicians must stop reading as busy.
-                app(ProjectCompletion::class)->releaseFutureSchedules(
+            DB::transaction(function () use ($validated, $project, $request, $completion): void {
+                $completion->requestCompletion(
                     $project,
-                    CarbonImmutable::parse($validated['completion_date'])
+                    $validated,
+                    $request->file('completion_photos'),
+                    $request->user()
                 );
-
-                // Everything else (technicians, task history, and the days
-                // already worked) is intentionally left untouched for
-                // auditing and reporting.
             });
 
-            $this->activityLogger->record(
-                ActivityLog::PROJECT_COMPLETED,
-                null,
-                sprintf("Marked project '%s' as completed.", $project->reference_no),
-                $project
-            );
-
-            $this->notifications->projectCompleted($project);
-            $this->clientEmails->projectCompleted($project->refresh());
+            $this->announceCompletionRequest($project, $completion);
 
             return redirect()
                 ->route('super-admin.projects')
-                ->with('success', 'Project marked as completed.');
+                ->with('success', sprintf(
+                    'Completion recorded. %s is now awaiting the client\'s confirmation, and completes '
+                        .'automatically in %d days if they do not reply.',
+                    $project->reference_no ?? $project->name,
+                    Project::COMPLETION_CONFIRMATION_DAYS
+                ));
         } catch (Throwable $e) {
             return redirect()
                 ->route('super-admin.projects')
                 ->with('error', 'An error occurred while completing the project: '.$e->getMessage());
+        }
+    }
+
+    /**
+     * Put a project that is waiting on its client back to work.
+     *
+     * Admin and Super Admin only, and only from Awaiting Client Confirmation -
+     * ProjectReopen refuses a Completed project by name, so the rule holds
+     * whatever page the request came from.
+     *
+     * A reopen is a new schedule, not a status change: the dates released at
+     * completion were free for other work from that moment, and the
+     * administrator has to say when the remaining work actually happens.
+     */
+    public function reopen(Request $request, int $id)
+    {
+        $project = Project::with(['schedules', 'projectTechnicians'])->findOrFail($id);
+        $back = redirect()->route('super-admin.projects.show', $id);
+
+        if (! $project->canBeReopened()) {
+            return $back->with('error', $project->isCompleted()
+                ? 'This project is completed and cannot be reopened.'
+                : sprintf('Only a project awaiting client confirmation can be reopened. This one is %s.', $project->statusLabel()));
+        }
+
+        $scheduleRules = app(ScheduleModeRules::class);
+
+        $validated = $request->validate([
+            'reopen_reason' => ['required', 'string', 'min:10', 'max:500'],
+            ...$scheduleRules->rules(),
+        ], [
+            'reopen_reason.required' => 'A reason for reopening this project is required.',
+            'reopen_reason.min' => 'Please describe why the project is being reopened, in at least 10 characters.',
+            ...$scheduleRules->messages(),
+        ]);
+
+        // Interpreted by the same rules every other scheduling screen uses, so
+        // a partial day means here exactly what it means on the calendar.
+        $validator = Validator::make([], []);
+
+        $entry = $scheduleRules->validateEntry(
+            $validator,
+            $request->only(['scheduling_mode', 'start_date', 'end_date', 'project_date', 'start_time', 'end_time']),
+            '',
+            $project->isResidential()
+        );
+
+        if (! $entry) {
+            return $back->withInput()->with('error', $validator->errors()->first()
+                ?: 'That schedule could not be read, so the project was not reopened.');
+        }
+
+        $reopen = app(ProjectReopen::class);
+        $reason = trim($validated['reopen_reason']);
+        $previousStatus = $project->statusLabel();
+        $schedule = null;
+
+        try {
+            DB::transaction(function () use ($reopen, $project, $entry, $reason, $request, &$schedule): void {
+                $schedule = $reopen->reopen($project, $entry, $reason, $request->user());
+            });
+        } catch (Throwable $e) {
+            // Nothing was written: the schedule and the status change share one
+            // transaction, so the project cannot be left Ongoing without dates.
+            return $back->withInput()->with('error', $e->getMessage());
+        }
+
+        $ranges = $schedule->describe();
+
+        $this->activityLogger->record(
+            ActivityLog::PROJECT_REOPENED,
+            null,
+            sprintf(
+                "Reopened project '%s' (%s -> Ongoing) and scheduled it for %s. Reason: %s",
+                $project->reference_no ?? $project->name,
+                $previousStatus,
+                $ranges,
+                $reason
+            ),
+            $project
+        );
+
+        $this->notifications->projectReopened($project, $reason);
+        $this->notifications->projectReopenedSchedule($project, $ranges);
+        $this->clientEmails->projectReopened($project->refresh());
+
+        return $back->with('success', sprintf(
+            'Project reopened and scheduled for %s. It is Ongoing and editable again.',
+            $ranges
+        ));
+    }
+
+    /**
+     * Everything that happens because completion was requested, as opposed to
+     * everything that records it.
+     *
+     * Kept apart from complete() and unable to fail it, for the same reason
+     * announceNewProject() is: the transaction has already committed, and a
+     * mail server being down is not a reason to tell an administrator that the
+     * completion they just recorded did not happen.
+     */
+    private function announceCompletionRequest(Project $project, ProjectCompletion $completion): void
+    {
+        try {
+            $this->activityLogger->record(
+                ActivityLog::PROJECT_COMPLETION_REQUESTED,
+                null,
+                sprintf(
+                    "Marked project '%s' complete as of %s and sent it for client confirmation "
+                        .'(Ongoing -> Awaiting Client Confirmation). Its schedule now holds %s.',
+                    $project->reference_no ?? $project->name,
+                    $project->completed_at?->format('F j, Y') ?? 'today',
+                    $completion->describeRemainingSchedule($project)
+                ),
+                $project
+            );
+
+            $this->notifications->projectAwaitingClientConfirmation($project);
+            $this->clientEmails->projectAwaitingConfirmation($project->refresh());
+        } catch (Throwable $exception) {
+            report($exception);
         }
     }
 
@@ -1089,10 +1190,16 @@ class ProjectController extends Controller
     {
         $project = Project::findOrFail($id);
 
-        if ($project->isCompleted()) {
+        // Work that is finished cannot be cancelled, on either side of the
+        // client's reply: cancelling a job that has already been carried out
+        // would deny it happened. A project awaiting confirmation that should
+        // not have been completed is reopened instead.
+        if ($project->isWorkFinished()) {
             return redirect()
                 ->route('super-admin.projects.show', $id)
-                ->with('error', 'A completed project cannot be cancelled.');
+                ->with('error', $project->isCompleted()
+                    ? 'A completed project cannot be cancelled.'
+                    : 'This project is awaiting client confirmation. Reopen it first if the work is not finished.');
         }
 
         if ($project->isCancelled() || $project->isArchived()) {

@@ -47,6 +47,11 @@ document.addEventListener("DOMContentLoaded", function () {
     const calendarEvents = Array.isArray(window.scheduleCalendarEvents)
         ? window.scheduleCalendarEvents
         : [];
+    const projectLabels =
+        window.scheduleProjectLabels &&
+        typeof window.scheduleProjectLabels === "object"
+            ? window.scheduleProjectLabels
+            : {};
     const technicianNames =
         window.scheduleTechnicianNames &&
         typeof window.scheduleTechnicianNames === "object"
@@ -154,17 +159,61 @@ document.addEventListener("DOMContentLoaded", function () {
             );
         }
 
-        if (labels.length === 1) {
-            return labels[0];
+        return formatList(labels);
+    }
+
+    /**
+     * "A", "A and B", "A, B, and C" - the wording the dates already used,
+     * pulled out so the project list reads the same way. Matches the server's
+     * TechnicianAvailabilityService::joinList().
+     */
+    function formatList(items) {
+        if (items.length === 1) {
+            return items[0];
         }
 
-        if (labels.length === 2) {
-            return labels[0] + " and " + labels[1];
+        if (items.length === 2) {
+            return items[0] + " and " + items[1];
         }
 
-        const last = labels.pop();
+        const rest = items.slice();
+        const last = rest.pop();
 
-        return labels.join(", ") + ", and " + last;
+        return rest.join(", ") + ", and " + last;
+    }
+
+    /**
+     * The projects standing in the way, named the way people quote them.
+     *
+     * A project's own bookings never reach here - busyIntervalsOn() drops them
+     * - so anything listed is genuinely other work. Saying which turns "the
+     * system is wrong about my own project" into "Kevin is on PRJ-000020 that
+     * day", which somebody can actually act on.
+     */
+    function blockingProjects(intervals) {
+        const seen = [];
+
+        intervals.forEach(function (interval) {
+            const label = projectLabels[interval.projectId];
+
+            if (label && seen.indexOf(label) === -1) {
+                seen.push(label);
+            }
+        });
+
+        return seen.sort();
+    }
+
+    /**
+     * " (booked on PRJ-000020)", matching the server's wording exactly - see
+     * TechnicianAvailabilityService::describeBlockers().
+     */
+    function describeBlockers(projects) {
+        if (!projects || !projects.length) {
+            return "";
+        }
+
+        return " (booked on " + formatList(projects) + ")";
     }
 
     function conflictMessage(conflicts) {
@@ -189,6 +238,7 @@ document.addEventListener("DOMContentLoaded", function () {
                             conflict.labels.join(" and ") +
                             " on " +
                             formatDateList([conflict.date]) +
+                            describeBlockers(conflict.projects) +
                             "."
                         );
                     })
@@ -205,6 +255,7 @@ document.addEventListener("DOMContentLoaded", function () {
                         conflict.name +
                         " is unavailable on " +
                         formatDateList(conflict.dates) +
+                        describeBlockers(conflict.projects) +
                         "."
                     );
                 })
@@ -238,14 +289,18 @@ document.addEventListener("DOMContentLoaded", function () {
                 const to = minutesFromTime(range.end_time);
 
                 if (from !== null && to !== null) {
-                    intervals.push({ from: from, to: to });
+                    intervals.push({ from: from, to: to, projectId: range.project_id });
                 }
 
                 return;
             }
 
             if (date >= range.start && date <= range.end) {
-                intervals.push({ from: 0, to: MINUTES_PER_DAY });
+                intervals.push({
+                    from: 0,
+                    to: MINUTES_PER_DAY,
+                    projectId: range.project_id,
+                });
             }
         });
 
@@ -302,6 +357,7 @@ document.addEventListener("DOMContentLoaded", function () {
                             technicianNames[technicianId] ||
                             "A selected technician",
                         date: entry.date,
+                        projects: blockingProjects(clashes),
                         labels: clashes.some(function (interval) {
                             return (
                                 interval.from <= 0 &&
@@ -324,11 +380,20 @@ document.addEventListener("DOMContentLoaded", function () {
         const selectedDays = eachDate(entry.start, entry.end);
 
         return technicianIds.reduce(function (conflicts, technicianId) {
+            const clashes = [];
+
             const hits = selectedDays.filter(function (day) {
-                return (
-                    busyIntervalsOn(technicianId, day, excludeProjectId).length >
-                    0
+                const intervals = busyIntervalsOn(
+                    technicianId,
+                    day,
+                    excludeProjectId,
                 );
+
+                intervals.forEach(function (interval) {
+                    clashes.push(interval);
+                });
+
+                return intervals.length > 0;
             });
 
             if (hits.length) {
@@ -337,6 +402,7 @@ document.addEventListener("DOMContentLoaded", function () {
                         technicianNames[technicianId] ||
                         "A selected technician",
                     dates: hits,
+                    projects: blockingProjects(clashes),
                 });
             }
 

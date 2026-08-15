@@ -7,19 +7,25 @@ use Carbon\Carbon;
 use Illuminate\Validation\Validator;
 
 /**
- * The "a task must sit inside its project's scheduled period" rule.
+ * The "a task must start and finish on a day the project is booked" rule.
  *
  * A project can hold several date ranges with gaps between them - booked
- * Aug 10-15 and Aug 25-30, say. A task is measured against the whole period
- * those ranges span, from the earliest booked date to the latest: Aug 10
- * through Aug 30. Anything starting on or after the first and ending on or
- * before the last is allowed, whether or not every day in between is booked.
+ * Aug 10-15 and Aug 25-30, say. A task may SPAN such a gap: start Aug 14,
+ * finish Aug 26. A task is a piece of work with a deadline, not a claim on a
+ * day, and "start when we arrive, finish before we leave" has to be
+ * expressible on a project that runs in two visits.
  *
- * A task is a piece of work with a deadline, not a claim on a day. Fitting
- * one inside a single range used to be the rule, which made a perfectly
- * sensible task - "start when we arrive, finish before we leave" - impossible
- * to express on a project that runs in two visits, and made a task vanish from
- * the board whenever a range it happened to sit in was split.
+ * What it may not do is BEGIN or END on a day nobody is booked. Aug 20 is not
+ * a day this project exists on: nobody is on site, so a task cannot sensibly
+ * start then, and a deadline that falls then is a deadline on a day no work
+ * can be done. Both endpoints therefore have to land inside one of the ranges;
+ * everything between them is free to be gap.
+ *
+ *   booked   Aug 10-15        Aug 25-30
+ *   Aug 14 -> Aug 26          allowed   - spans the gap, both ends booked
+ *   Aug 12 -> Aug 14          allowed   - inside one range
+ *   Aug 20 -> Aug 26          refused   - starts on an unbooked day
+ *   Aug 14 -> Aug 20          refused   - ends on an unbooked day
  *
  * Extracted from TaskController so the technician portal enforces exactly the
  * same thing rather than a second, drifting copy of it. ScheduleController
@@ -70,23 +76,46 @@ class TaskScheduleRules
     }
 
     /**
-     * Whether the given dates sit inside that period.
+     * Whether one date falls on a day the project is actually booked.
+     *
+     * @param  array<int, array{start: string, end: string}>  $ranges
+     */
+    public function isBookedDate(array $ranges, ?string $date): bool
+    {
+        if (! $date) {
+            return false;
+        }
+
+        foreach ($ranges as $range) {
+            if ($date >= $range['start'] && $date <= $range['end']) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Whether a task's dates are allowed: both endpoints on booked days, and
+     * finishing no earlier than it starts.
+     *
+     * The days in between are deliberately not checked - that is what lets a
+     * task span the gap between two visits.
      *
      * @param  array<int, array{start: string, end: string}>  $ranges
      */
     public function windowCovers(array $ranges, ?string $startDate, ?string $dueDate): bool
     {
-        if (! $startDate || ! $dueDate) {
+        if (! $startDate || ! $dueDate || $ranges === []) {
             return false;
         }
 
-        $window = $this->window($ranges);
-
-        if (! $window) {
+        if ($dueDate < $startDate) {
             return false;
         }
 
-        return $startDate >= $window['start'] && $dueDate <= $window['end'];
+        return $this->isBookedDate($ranges, $startDate)
+            && $this->isBookedDate($ranges, $dueDate);
     }
 
     /**
@@ -124,7 +153,37 @@ class TaskScheduleRules
     }
 
     /**
-     * Add the "inside the project's scheduled period" check to a validator.
+     * The hint under the date pickers, in one place so the two portals and the
+     * Tasks page cannot describe the same rule three different ways.
+     *
+     * A project booked in one stretch needs no explanation - the picker simply
+     * offers those days. One booked in several does: the gap days are greyed
+     * out, and somebody who wants a task running across a gap has to be told
+     * that is allowed rather than left assuming it is not.
+     *
+     * @param  array<int, array{start: string, end: string}>  $ranges
+     */
+    public function describeSelectable(array $ranges): string
+    {
+        if ($ranges === []) {
+            return 'No schedule set, so this project cannot take dated tasks yet.';
+        }
+
+        $booked = 'Booked: '.$this->describe($ranges).'.';
+
+        if (count($ranges) === 1) {
+            return $booked;
+        }
+
+        return $booked.' A task must start and be due on a booked day, but may run across the gap between them.';
+    }
+
+    /**
+     * Add the "starts and finishes on a booked day" check to a validator.
+     *
+     * The two endpoints are reported separately, so somebody who picked a good
+     * start and a bad deadline is told which of the two to change rather than
+     * being handed one message about both.
      *
      * @param  array<int, array{start: string, end: string}>  $ranges
      */
@@ -136,16 +195,47 @@ class TaskScheduleRules
             }
 
             $data = $validator->getData();
+            $startDate = $data['start_date'] ?? null;
+            $dueDate = $data['due_date'] ?? null;
 
-            if ($this->windowCovers($ranges, $data['start_date'] ?? null, $data['due_date'] ?? null)) {
+            if (! $startDate || ! $dueDate) {
                 return;
             }
 
-            $message = 'The task dates must fall inside the project\'s scheduled period ('
-                .$this->describeWindow($ranges).').';
+            if ($ranges === []) {
+                $message = 'This project has no scheduled dates, so a task cannot be given any.';
 
-            $validator->errors()->add('start_date', $message);
-            $validator->errors()->add('due_date', $message);
+                $validator->errors()->add('start_date', $message);
+                $validator->errors()->add('due_date', $message);
+
+                return;
+            }
+
+            $booked = 'The project is booked '.$this->describe($ranges).'.';
+
+            if (! $this->isBookedDate($ranges, $startDate)) {
+                $validator->errors()->add(
+                    'start_date',
+                    'A task must start on a day the project is booked. '.$booked
+                );
+            }
+
+            if (! $this->isBookedDate($ranges, $dueDate)) {
+                $validator->errors()->add(
+                    'due_date',
+                    'A task must be due on a day the project is booked. '.$booked
+                );
+            }
+
+            // Only worth saying once both dates are otherwise usable; a bad
+            // date is the more useful complaint.
+            if ($validator->errors()->hasAny(['start_date', 'due_date'])) {
+                return;
+            }
+
+            if ($dueDate < $startDate) {
+                $validator->errors()->add('due_date', 'The task cannot be due before it starts.');
+            }
         });
     }
 }

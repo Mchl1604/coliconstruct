@@ -175,6 +175,22 @@ class ActivityLog extends Model
 
     public const PROJECT_COMPLETED = 'Project Completed';
 
+    /**
+     * The confirmation workflow.
+     *
+     * Four entries rather than one, because four different things happen and
+     * an auditor needs to tell them apart: the company said the work was done,
+     * the client agreed, nobody answered for a week, or an administrator put
+     * the project back to work instead.
+     */
+    public const PROJECT_COMPLETION_REQUESTED = 'Project Completion Requested';
+
+    public const PROJECT_COMPLETION_CONFIRMED = 'Project Completion Confirmed';
+
+    public const PROJECT_AUTO_COMPLETED = 'Project Automatically Completed';
+
+    public const PROJECT_REOPENED = 'Project Reopened';
+
     public const PROJECT_CANCELLED = 'Project Cancelled';
 
     public const PROJECT_ARCHIVED = 'Project Archived';
@@ -299,6 +315,10 @@ class ActivityLog extends Model
         self::PROJECT_CREATED => self::MODULE_PROJECTS,
         self::PROJECT_UPDATED => self::MODULE_PROJECTS,
         self::PROJECT_COMPLETED => self::MODULE_PROJECTS,
+        self::PROJECT_COMPLETION_REQUESTED => self::MODULE_PROJECTS,
+        self::PROJECT_COMPLETION_CONFIRMED => self::MODULE_PROJECTS,
+        self::PROJECT_AUTO_COMPLETED => self::MODULE_PROJECTS,
+        self::PROJECT_REOPENED => self::MODULE_PROJECTS,
         self::PROJECT_CANCELLED => self::MODULE_PROJECTS,
         self::PROJECT_ARCHIVED => self::MODULE_PROJECTS,
         self::PROJECT_RESTORED => self::MODULE_PROJECTS,

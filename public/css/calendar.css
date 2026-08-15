@@ -88,3 +88,79 @@
     background: #fff;
     color: #1f2937;
 }
+
+/* ---- Events: outlined, not filled ----
+ *
+ * A month of solid colour bars is hard to read. The fills dominate the grid,
+ * the date numbers disappear behind them, and several projects on one day
+ * become a stack of blocks rather than a list you can scan. Outlining carries
+ * the same status colour at a fraction of the ink.
+ *
+ * The colours come from the event itself - see Project::calendarEventColors().
+ * FullCalendar writes them inline: `border-color` and `background-color` onto
+ * the event element, and `color` onto the `.fc-event-main` inside it. So this
+ * file sets the treatment - the border width, the radius, the weight - and
+ * deliberately does NOT set the colours, because anything written here would
+ * beat the per-event values and repaint every booking the same shade.
+ */
+.calendar-standard .fc-event {
+    cursor: pointer;
+    border-style: solid;
+    /* 2px, not a hairline. At 1px an outlined bar reads as a faint box rather
+       than as a booking, which is the whole failure mode of this treatment -
+       the colours are also taken down a shade for the same reason, see
+       Project::CALENDAR_INK. */
+    border-width: 2px;
+    border-radius: 0.35rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+/*
+ * The lettering takes the outline's colour rather than white, which is what
+ * makes an unfilled bar readable at all.
+ *
+ * `inherit`, not a colour: FullCalendar has already put the right one inline
+ * on `.fc-event-main`, and both its own stylesheet and an earlier version of
+ * this rule set these children to `var(--fc-event-text-color)` - the GLOBAL
+ * default, white - which painted white text onto a transparent bar and made
+ * every event look empty.
+ */
+.calendar-standard .fc-event .fc-event-main-frame,
+.calendar-standard .fc-event .fc-event-title-container,
+.calendar-standard .fc-event .fc-event-title,
+.calendar-standard .fc-event .fc-event-time {
+    color: inherit;
+}
+
+.calendar-standard .fc-daygrid-event {
+    margin: 1px 2px;
+    padding: 0.1rem 0.4rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.calendar-standard .fc-daygrid-event .fc-event-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/*
+ * Hover tints faintly rather than darkening. `filter: brightness()` was the
+ * old hover and does nothing to a transparent bar, and a coloured tint cannot
+ * be written here for the same reason the text colour cannot - so it is a
+ * neutral wash, which reads the same against every status colour.
+ */
+.calendar-standard .fc-event:hover {
+    background-color: rgba(15, 23, 42, 0.06) !important;
+}
+
+/*
+ * Read-only work stays clickable and only reads as quieter than live work.
+ * Barely faded rather than 0.7: an outline is already lighter than a fill, and
+ * stacking a fade on top of it took completed bookings close to invisible.
+ */
+.calendar-standard .fc-event.fc-event-readonly {
+    opacity: 0.88;
+}

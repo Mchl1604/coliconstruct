@@ -27,6 +27,11 @@
         <env name="DB_DATABASE" value=":memory:"/>
         <env name="DB_URL" value=""/>
         <env name="MAIL_MAILER" value="array"/>
+        <!-- Uploads are moved onto disk with UploadedFile::move(), which
+             Storage::fake() cannot intercept, so the suite has to be sent
+             somewhere disposable or it writes real files into public/uploads
+             and leaves them there. See config/uploads.php. -->
+        <env name="UPLOAD_ROOT" value="storage/framework/testing/uploads"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>
         <env name="PULSE_ENABLED" value="false"/>

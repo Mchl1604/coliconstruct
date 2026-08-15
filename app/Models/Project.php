@@ -17,16 +17,61 @@ class Project extends Model
     protected $primaryKey = 'project_id';
 
     /**
+     * The work is finished and the client has been asked to confirm it.
+     *
+     * Deliberately a status of its own rather than a flag on Completed. The
+     * two mean different things and grant different powers: this one can be
+     * reopened by an administrator, and Completed can never be.
+     */
+    public const STATUS_AWAITING_CLIENT_CONFIRMATION = 'awaiting_client_confirmation';
+
+    /**
+     * How long a client has to confirm before the system closes the project
+     * for them, and when they are reminded that the clock is running.
+     */
+    public const COMPLETION_CONFIRMATION_DAYS = 7;
+
+    public const COMPLETION_REMINDER_DAYS = 5;
+
+    /**
+     * How a project came to be Completed.
+     *
+     * Recorded rather than inferred: "the client agreed" and "nobody answered
+     * for a week" are the same status and very different facts, and only the
+     * stored method can tell them apart afterwards.
+     */
+    public const METHOD_CLIENT_CONFIRMED = 'client_confirmed';
+
+    public const METHOD_AUTO_COMPLETED = 'auto_completed';
+
+    /**
      * Statuses that count as "locked" / view-only records.
+     *
+     * Awaiting Client Confirmation is one of them, and that single line is
+     * what locks the project everywhere: every controller guard, every policy
+     * and every page already asks isReadOnly() rather than naming statuses of
+     * its own. Reopening is the one action that looks past it, and it does so
+     * by asking for this status by name.
      *
      * @var array<int, string>
      */
-    public const READ_ONLY_STATUSES = ['completed', 'cancelled', 'archived'];
+    public const READ_ONLY_STATUSES = [
+        self::STATUS_AWAITING_CLIENT_CONFIRMATION,
+        'completed',
+        'cancelled',
+        'archived',
+    ];
 
     /**
      * Statuses that DO count as a scheduling conflict for a technician.
-     * Everything else (unscheduled, on_hold, completed, cancelled,
-     * archived) must be ignored by the technician availability checker.
+     * Everything else (unscheduled, on_hold, awaiting_client_confirmation,
+     * completed, cancelled, archived) must be ignored by the technician
+     * availability checker.
+     *
+     * Awaiting Client Confirmation is excluded on purpose. Asking for
+     * completion is what releases the dates past the completion date, so the
+     * crew is free from that moment - waiting on the client's reply must not
+     * keep them booked.
      *
      * @var array<int, string>
      */
@@ -58,6 +103,15 @@ class Project extends Model
         'completed_at',
         'completion_summary',
         'completion_remarks',
+        'completion_requested_at',
+        'completion_requested_by',
+        'completion_reminder_sent_at',
+        'client_confirmed_at',
+        'client_confirmed_by',
+        'completion_method',
+        'reopened_at',
+        'reopened_by',
+        'reopen_reason',
         'cancelled_at',
         'cancellation_reason',
         'cancellation_remarks',
@@ -70,6 +124,10 @@ class Project extends Model
         'on_hold' => 'boolean',
         'is_archived' => 'boolean',
         'completed_at' => 'datetime',
+        'completion_requested_at' => 'datetime',
+        'completion_reminder_sent_at' => 'datetime',
+        'client_confirmed_at' => 'datetime',
+        'reopened_at' => 'datetime',
         'cancelled_at' => 'datetime',
         'archived_at' => 'datetime',
     ];
@@ -138,6 +196,30 @@ class Project extends Model
     }
 
     /**
+     * Whoever pressed Complete Project - a lead technician, an admin or a
+     * super admin. Null on work completed before this workflow existed.
+     */
+    public function completionRequestedByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'completion_requested_by', 'id');
+    }
+
+    /**
+     * The client account that confirmed. Null when the seven days ran out and
+     * the system closed the project instead - which is exactly the case
+     * completion_method is there to distinguish.
+     */
+    public function clientConfirmedByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'client_confirmed_by', 'id');
+    }
+
+    public function reopenedByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'reopened_by', 'id');
+    }
+
+    /**
      * Residential or Commercial, as recorded on the project's client.
      *
      * There is no type column on the project itself: the distinction is set
@@ -170,6 +252,116 @@ class Project extends Model
     public function isCompleted(): bool
     {
         return $this->status === 'completed';
+    }
+
+    public function isAwaitingClientConfirmation(): bool
+    {
+        return $this->status === self::STATUS_AWAITING_CLIENT_CONFIRMATION;
+    }
+
+    /**
+     * Whether the work is finished, whichever side of the client's reply the
+     * project currently sits on.
+     *
+     * What the two states share is that the job is done - which is what the
+     * projects tables, the client's own list and the reports group on. What
+     * they do not share is whether anything can still be done about it, and
+     * that question is isAwaitingClientConfirmation() / canBeReopened().
+     */
+    public function isWorkFinished(): bool
+    {
+        return $this->isCompleted() || $this->isAwaitingClientConfirmation();
+    }
+
+    /**
+     * Only a project still waiting on its client may be reopened.
+     *
+     * A Completed project never can be, by either route into it: the client
+     * agreed, or the seven days ran out and the system closed it. Either way
+     * it is a historical record, and further work is a new project.
+     */
+    public function canBeReopened(): bool
+    {
+        return $this->isAwaitingClientConfirmation();
+    }
+
+    /**
+     * The moment the system will complete this project if nobody answers.
+     *
+     * Measured from when completion was requested, never from the completion
+     * date: work often finishes days before anybody records it, and the client
+     * cannot be held to a clock that started before they were told.
+     */
+    public function confirmationDeadline(): ?CarbonImmutable
+    {
+        if (! $this->completion_requested_at) {
+            return null;
+        }
+
+        return CarbonImmutable::parse($this->completion_requested_at)
+            ->addDays(self::COMPLETION_CONFIRMATION_DAYS);
+    }
+
+    /**
+     * Whole days left before the project completes itself, floored at zero -
+     * a deadline that has passed but not yet been swept up reads as "0 days
+     * left" rather than as a negative number.
+     */
+    public function confirmationDaysRemaining(): ?int
+    {
+        $deadline = $this->confirmationDeadline();
+
+        if (! $deadline) {
+            return null;
+        }
+
+        return max(0, (int) ceil(CarbonImmutable::now()->diffInDays($deadline, false)));
+    }
+
+    /**
+     * How the confirmation window reads to the client: "3 days left", and the
+     * two ends of the range spelled out rather than left to arithmetic.
+     */
+    public function confirmationCountdown(): ?string
+    {
+        $remaining = $this->confirmationDaysRemaining();
+
+        if ($remaining === null) {
+            return null;
+        }
+
+        return match (true) {
+            $remaining === 0 => 'Less than a day left',
+            $remaining === 1 => '1 day left',
+            default => $remaining.' days left',
+        };
+    }
+
+    /**
+     * Whether this project has a completion report worth showing - which is
+     * true from the moment completion is requested, not only once it is
+     * confirmed. The client is being asked to review that report, so they have
+     * to be able to read it first.
+     */
+    public function hasCompletionReport(): bool
+    {
+        return $this->completed_at !== null || filled($this->completion_summary);
+    }
+
+    /**
+     * "Confirmed by the client" / "Completed automatically after 7 days", for
+     * the project pages and the reports.
+     */
+    public function completionMethodLabel(): ?string
+    {
+        return match ($this->completion_method) {
+            self::METHOD_CLIENT_CONFIRMED => 'Confirmed by the client',
+            self::METHOD_AUTO_COMPLETED => sprintf(
+                'Completed automatically after %d days without a reply',
+                self::COMPLETION_CONFIRMATION_DAYS
+            ),
+            default => null,
+        };
     }
 
     public function isCancelled(): bool
@@ -252,11 +444,25 @@ class Project extends Model
             'unscheduled' => 'Unscheduled',
             'pending' => 'Pending',
             'ongoing' => 'Ongoing',
+            self::STATUS_AWAITING_CLIENT_CONFIRMATION => 'Awaiting Client Confirmation',
             'completed' => 'Completed',
             'cancelled' => 'Cancelled',
             'archived' => 'Archived',
             default => ucfirst((string) $this->status),
         };
+    }
+
+    /**
+     * The same state in the few places a full sentence will not fit - a table
+     * cell, a card header, a calendar tooltip.
+     */
+    public function shortStatusLabel(): string
+    {
+        if ($this->isAwaitingClientConfirmation() && ! $this->on_hold && ! $this->isOverdue()) {
+            return 'Awaiting Confirmation';
+        }
+
+        return $this->statusLabel();
     }
 
     /**
@@ -276,6 +482,10 @@ class Project extends Model
             'unscheduled' => 'bg-info text-dark',
             'pending' => 'bg-warning',
             'ongoing' => 'bg-primary',
+            // A lighter green than Completed: the work is done, but the
+            // project is not closed yet, and the two must not look identical
+            // at a glance.
+            self::STATUS_AWAITING_CLIENT_CONFIRMATION => 'bg-success-subtle text-success-emphasis border border-success-subtle',
             'completed' => 'bg-success',
             'cancelled' => 'bg-danger',
             'archived' => 'bg-dark',
@@ -295,13 +505,104 @@ class Project extends Model
         return match ($this->status) {
             'pending' => '#f0ad4e',
             'ongoing' => '#0d6efd',
+            self::STATUS_AWAITING_CLIENT_CONFIRMATION => '#6ea67f',
             'completed' => '#198754',
             default => '#0d6efd',
         };
     }
 
     /**
+     * The darker cut of each status colour, for use as ink rather than as a
+     * fill.
+     *
+     * A colour chosen to sit BEHIND white lettering is the wrong colour to
+     * write with. The fills above were picked on exactly that basis, and used
+     * unchanged as an outline they come out weak - the amber especially, which
+     * is close to invisible as a hairline on white. These are the same hues
+     * taken down to roughly 5:1 against white, which is what an outlined
+     * booking needs to read at a glance.
+     *
+     * @var array<string, string>
+     */
+    public const CALENDAR_INK = [
+        'pending' => '#b26b00',
+        'ongoing' => '#0a58ca',
+        'overdue' => '#b45309',
+        self::STATUS_AWAITING_CLIENT_CONFIRMATION => '#3f7d53',
+        'completed' => '#146c43',
+    ];
+
+    /**
+     * The colour this project's bookings are drawn WITH, as opposed to filled
+     * with - see CALENDAR_INK.
+     */
+    public function calendarInkColor(): string
+    {
+        if ($this->isOverdue()) {
+            return self::CALENDAR_INK['overdue'];
+        }
+
+        return self::CALENDAR_INK[$this->status] ?? self::CALENDAR_INK['ongoing'];
+    }
+
+    /**
+     * How a booking is painted on a calendar: outlined, not filled.
+     *
+     * A month of solid colour bars is hard to read - the fills dominate the
+     * grid, dates disappear behind them, and several projects on one day
+     * become a stack of blocks rather than a list you can scan. Outlining
+     * gives the same colour coding at a fraction of the ink: the border and
+     * the lettering carry the status, and the day underneath stays legible.
+     *
+     * Stated here rather than in each of the three calendars so they cannot
+     * drift into looking like three different products.
+     *
+     * @return array{backgroundColor: string, borderColor: string, textColor: string}
+     */
+    public function calendarEventColors(): array
+    {
+        $ink = $this->calendarInkColor();
+
+        return [
+            // Transparent rather than white: the day cell behind it may be
+            // tinted - today's cell is - and a white bar would punch a hole
+            // in that tint.
+            'backgroundColor' => 'transparent',
+            'borderColor' => $ink,
+            'textColor' => $ink,
+        ];
+    }
+
+    /**
+     * The calendar legend: what each colour means, in the order it is read.
+     *
+     * Stated here so the key and the bookings cannot disagree. It was written
+     * out as four hard-coded hex values in the schedules page, which is how it
+     * came to be missing Awaiting Client Confirmation entirely.
+     *
+     * @return array<int, array{label: string, colour: string}>
+     */
+    public static function calendarLegend(): array
+    {
+        return [
+            ['label' => 'Pending', 'colour' => self::CALENDAR_INK['pending']],
+            ['label' => 'Ongoing', 'colour' => self::CALENDAR_INK['ongoing']],
+            ['label' => 'Overdue', 'colour' => self::CALENDAR_INK['overdue']],
+            [
+                'label' => 'Awaiting Confirmation',
+                'colour' => self::CALENDAR_INK[self::STATUS_AWAITING_CLIENT_CONFIRMATION],
+            ],
+            ['label' => 'Completed', 'colour' => self::CALENDAR_INK['completed']],
+        ];
+    }
+
+    /**
      * Cancelled and on-hold work is kept out of every calendar.
+     *
+     * A project awaiting confirmation stays on it. Its remaining dates are the
+     * days the crew actually worked, and a calendar that quietly dropped them
+     * the moment completion was requested would misreport what happened that
+     * week - which is the same reason completed work is still drawn.
      */
     public function showsOnCalendar(): bool
     {

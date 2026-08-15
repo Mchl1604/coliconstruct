@@ -6,9 +6,12 @@
  * tab list, `data-status-filter="<status>"` on each button, and
  * `data-status` / `data-overdue` on every row.
  *
- * Overdue is derived, not a stored status, so it gets its own tab and is taken
- * out of Pending and Ongoing - otherwise a late project would be counted
- * twice.
+ * A tab is not always one stored status. Overdue is derived rather than
+ * stored, so it gets a tab and is taken out of Pending and Ongoing - otherwise
+ * a late project would be counted twice. Unscheduled work reads as Pending,
+ * and work awaiting client confirmation reads as Completed: in both cases the
+ * tab is the question somebody is asking, and the stored status is the finer
+ * answer the row's badge gives.
  */
 document.addEventListener("DOMContentLoaded", function () {
     if (!window.jQuery || !window.jQuery.fn.DataTable) {
@@ -40,6 +43,18 @@ document.addEventListener("DOMContentLoaded", function () {
 
         if (status === "ongoing") {
             return rowStatus === "ongoing" && !isOverdue;
+        }
+
+        // A project waiting on its client has had its work finished, so it
+        // belongs with the completed work rather than in a tab of its own -
+        // somebody looking for a job that is done should find it there. The
+        // status badge on the row is what says the client has not signed it
+        // off yet.
+        if (status === "completed") {
+            return (
+                rowStatus === "completed" ||
+                rowStatus === "awaiting_client_confirmation"
+            );
         }
 
         return rowStatus === status;

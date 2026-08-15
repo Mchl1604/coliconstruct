@@ -22,10 +22,15 @@
                  you: the projects that have no dates to draw. --}}
             <div class="schedule-legend-bar mb-3">
                 <div class="schedule-legend">
-                    <span class="schedule-legend-item"><i class="schedule-dot" style="background:#f0ad4e"></i> Pending</span>
-                    <span class="schedule-legend-item"><i class="schedule-dot" style="background:#0d6efd"></i> Ongoing</span>
-                    <span class="schedule-legend-item"><i class="schedule-dot" style="background:#fd7e14"></i> Overdue</span>
-                    <span class="schedule-legend-item"><i class="schedule-dot" style="background:#198754"></i> Completed</span>
+                    {{-- Read from the model so the key and the bookings cannot
+                         disagree. Written out by hand it went stale, and never
+                         gained Awaiting Confirmation. --}}
+                    @foreach (\App\Models\Project::calendarLegend() as $entry)
+                        <span class="schedule-legend-item">
+                            <i class="schedule-dot" style="background:{{ $entry['colour'] }}"></i>
+                            {{ $entry['label'] }}
+                        </span>
+                    @endforeach
                 </div>
 
                 <button type="button" class="btn btn-sm btn-outline-primary schedule-unscheduled-btn"
@@ -671,6 +676,9 @@
             window.scheduleCalendarEvents = @json($calendarEvents);
             window.scheduleTechnicianAvailability = @json($technicianSchedules);
             window.scheduleTechnicianNames = @json($technicianNames);
+            {{-- Which job is holding a technician, so a clash names it rather
+                 than leaving somebody to guess whether it is their own. --}}
+            window.scheduleProjectLabels = @json($projectLabels);
         </script>
         <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
         <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>

@@ -416,30 +416,8 @@
     min-height: 88px;
 }
 
-#technicianCalendar .fc-event {
-    cursor: pointer;
-    border: 0;
-    border-radius: 0.35rem;
-    font-size: 0.72rem;
-}
-
-#technicianCalendar .fc-daygrid-event {
-    margin: 1px 2px;
-    padding: 0.1rem 0.4rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-#technicianCalendar .fc-daygrid-event .fc-event-title {
-    font-weight: 600;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-#technicianCalendar .fc-event:hover {
-    filter: brightness(0.93);
-}
+/* Event styling is shared by all three calendars and lives in calendar.css,
+   under `.calendar-standard`. */
 
 /* ---- Completion details inside a schedule panel task card ---- */
 

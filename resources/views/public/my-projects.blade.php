@@ -130,10 +130,27 @@
                                     <span class="project-card-reference">
                                         Reference: {{ $card['reference_no'] ?? 'Not assigned' }}
                                     </span>
-                                    <span class="project-card-status">{{ $card['status_label'] }}</span>
+                                    {{-- The short label: "Awaiting Client Confirmation" does not
+                                         fit a card header, and the banner below says the rest. --}}
+                                    <span class="project-card-status">{{ $card['short_status_label'] }}</span>
                                 </header>
 
                                 <div class="project-card-body">
+                                    {{-- The only card on this page asking for something, so it
+                                         says so before anything else about the project. These
+                                         cards sort to the top of the list as well - see
+                                         ClientProjects::STATUS_RANK. --}}
+                                    @if ($card['awaiting_confirmation'])
+                                        <div class="alert alert-success py-2 px-3 small mb-3" role="status">
+                                            <i class="bi bi-clipboard-check me-1" aria-hidden="true"></i>
+                                            <strong>Please confirm this completed project.</strong>
+                                            @if ($card['confirmation_countdown'])
+                                                {{ $card['confirmation_countdown'] }} before it completes
+                                                automatically.
+                                            @endif
+                                        </div>
+                                    @endif
+
                                     <h2 class="project-card-title">{{ $card['name'] }}</h2>
 
                                     @if ($card['service'])

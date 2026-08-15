@@ -212,6 +212,11 @@ class TechnicianAvailabilityService
 
             $hits = [];
             $busy = [];
+            // Which projects are actually standing in the way. Without this
+            // the message can only say somebody is unavailable, which reads as
+            // an unexplained refusal - and, when the clash falls inside the
+            // range being edited, reads as the project blocking itself.
+            $blockers = [];
             // Only when every clash came from an hours-only request can the
             // message talk about times; otherwise it has to speak in days.
             $partialOnly = true;
@@ -224,6 +229,13 @@ class TechnicianAvailabilityService
                         }
 
                         $hits[$day] = true;
+
+                        // project_id 0 is approved leave rather than a booking
+                        // - see unavailableDatesFromLeave(). It has no project
+                        // to name, so it is left out of the list.
+                        if ($interval['project_id'] > 0) {
+                            $blockers[$interval['project_id']] = true;
+                        }
 
                         if (! $request['partial']) {
                             $partialOnly = false;
@@ -249,6 +261,8 @@ class TechnicianAvailabilityService
                 'dates' => $dates,
                 'busy' => $this->tidyBusyLabels($busy),
                 'partial' => $partialOnly && $busy !== [],
+                'project_ids' => array_keys($blockers),
+                'projects' => [],
             ];
         }
 
@@ -257,9 +271,17 @@ class TechnicianAvailabilityService
         }
 
         $names = $this->technicianNames(array_column($conflicts, 'technician_id'));
+        $projectLabels = $this->projectLabels(
+            array_merge(...array_column($conflicts, 'project_ids')) ?: []
+        );
 
-        return collect($conflicts)->map(function (array $conflict) use ($names): array {
+        return collect($conflicts)->map(function (array $conflict) use ($names, $projectLabels): array {
             $conflict['technician_name'] = $names[$conflict['technician_id']] ?? 'A selected technician';
+            $conflict['projects'] = collect($conflict['project_ids'])
+                ->map(fn (int $projectId): ?string => $projectLabels[$projectId] ?? null)
+                ->filter()
+                ->values()
+                ->all();
 
             return $conflict;
         })->values();
@@ -295,7 +317,14 @@ class TechnicianAvailabilityService
      * An hours-only request is told which hours are taken; anything involving
      * whole days keeps the wording it has always had.
      *
-     * @param  Collection<int, array{technician_id: int, technician_name: string, dates: array<int, string>, busy?: array<string, array<int, string>>, partial?: bool}>  $conflicts
+     * Every clash names the project holding the technician. A project's own
+     * bookings are already excluded from the check - widening a range onto a
+     * free neighbouring day is allowed, and always was - so a date reported
+     * here always belongs to OTHER work. Saying which piece of work turns "the
+     * system is wrong about my own project" into "Kevin is on PRJ-000020 that
+     * day", which is a thing somebody can act on.
+     *
+     * @param  Collection<int, array{technician_id: int, technician_name: string, dates: array<int, string>, busy?: array<string, array<int, string>>, partial?: bool, projects?: array<int, string>}>  $conflicts
      */
     public function conflictMessage(Collection $conflicts): string
     {
@@ -307,18 +336,22 @@ class TechnicianAvailabilityService
             && ($conflict['busy'] ?? []) !== [];
 
         $parts = $conflicts->map(function (array $conflict) use ($isTimed): string {
+            $on = $this->describeBlockers($conflict['projects'] ?? []);
+
             if ($isTimed($conflict)) {
                 return sprintf(
-                    'Technician %s is already booked %s.',
+                    'Technician %s is already booked %s%s.',
                     $conflict['technician_name'],
-                    $this->describeBusy($conflict['busy'])
+                    $this->describeBusy($conflict['busy']),
+                    $on
                 );
             }
 
             return sprintf(
-                'Technician %s is unavailable on %s.',
+                'Technician %s is unavailable on %s%s.',
                 $conflict['technician_name'],
-                $this->formatDateList($conflict['dates'])
+                $this->formatDateList($conflict['dates']),
+                $on
             );
         })->all();
 
@@ -650,6 +683,67 @@ class TechnicianAvailabilityService
         string $windowEnd
     ): array {
         return [];
+    }
+
+    /**
+     * " (booked on PRJ-000020)", or nothing when the clash came from work with
+     * no project behind it - approved leave, once that exists.
+     *
+     * @param  array<int, string>  $projects
+     */
+    private function describeBlockers(array $projects): string
+    {
+        if ($projects === []) {
+            return '';
+        }
+
+        sort($projects);
+
+        return ' (booked on '.$this->joinList($projects).')';
+    }
+
+    /**
+     * "A", "A and B", "A, B, and C".
+     *
+     * @param  array<int, string>  $items
+     */
+    private function joinList(array $items): string
+    {
+        if (count($items) === 1) {
+            return $items[0];
+        }
+
+        if (count($items) === 2) {
+            return $items[0].' and '.$items[1];
+        }
+
+        $last = array_pop($items);
+
+        return implode(', ', $items).', and '.$last;
+    }
+
+    /**
+     * How each blocking project is named: its reference number, which is what
+     * people quote to each other, falling back to its name.
+     *
+     * @param  array<int, int>  $projectIds
+     * @return array<int, string>
+     */
+    private function projectLabels(array $projectIds): array
+    {
+        $projectIds = array_values(array_unique(array_filter($projectIds)));
+
+        if ($projectIds === []) {
+            return [];
+        }
+
+        return Project::query()
+            ->whereIn('project_id', $projectIds)
+            ->get(['project_id', 'reference_no', 'name'])
+            ->mapWithKeys(fn (Project $project): array => [
+                (int) $project->project_id => $project->reference_no ?: $project->name,
+            ])
+            ->all();
     }
 
     /**

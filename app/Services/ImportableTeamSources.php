@@ -35,11 +35,17 @@ class ImportableTeamSources
      *
      * Closed work is still worth importing from - it is where the crews that
      * have already finished a job together are recorded - so it is offered,
-     * just not first.
+     * just not first. Work awaiting a client's confirmation groups here for
+     * the same reason it groups under Completed everywhere else: the crew has
+     * finished, and they are free.
      *
      * @var array<int, string>
      */
-    public const CLOSED_STATUSES = ['completed', 'cancelled'];
+    public const CLOSED_STATUSES = [
+        Project::STATUS_AWAITING_CLIENT_CONFIRMATION,
+        'completed',
+        'cancelled',
+    ];
 
     public function __construct(
         private readonly TechnicianAvailabilityService $availability

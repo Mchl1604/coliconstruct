@@ -173,6 +173,30 @@ class TechnicianPortalTest extends TestCase
     }
 
     /**
+     * Bookings are outlined rather than filled, here as on every other
+     * calendar - the colour on the border and the lettering, the bar itself
+     * transparent. Pinned because this calendar is fed by its own controller
+     * and could quietly drift back to a filled bar.
+     */
+    public function test_the_portal_calendar_draws_outlined_bookings(): void
+    {
+        $this->actingAs($this->leadAccount);
+
+        $events = collect($this->get(route('technician.schedule'))->viewData('events'));
+
+        $this->assertTrue($events->isNotEmpty(), 'The lead has a booking to draw.');
+
+        $event = $events->first();
+
+        $this->assertSame('transparent', $event['backgroundColor']);
+        // The ink cut rather than the fill - a colour picked to sit behind
+        // white lettering is the wrong colour to write with.
+        $this->assertSame($this->project->fresh()->calendarInkColor(), $event['borderColor']);
+        $this->assertSame($event['borderColor'], $event['textColor']);
+        $this->assertArrayNotHasKey('color', $event);
+    }
+
+    /**
      * One card per project, one filter above them, and a single New Task
      * button that asks which project first.
      */
@@ -1005,7 +1029,12 @@ class TechnicianPortalTest extends TestCase
             $this->completionPayload()
         )->assertRedirect();
 
-        $this->assertSame('completed', $this->project->refresh()->status);
+        // Handed to the client rather than closed - but the dates go now,
+        // which is what "released rather than blocking" means.
+        $this->assertSame(
+            Project::STATUS_AWAITING_CLIENT_CONFIRMATION,
+            $this->project->refresh()->status
+        );
         $this->assertSame(0, $this->project->schedules()->count());
     }
 
@@ -1111,7 +1140,7 @@ class TechnicianPortalTest extends TestCase
         )->assertRedirect();
 
         $this->project->refresh();
-        $this->assertSame('completed', $this->project->status);
+        $this->assertSame(Project::STATUS_AWAITING_CLIENT_CONFIRMATION, $this->project->status);
         $this->assertSame('Client walked the site.', $this->project->completion_remarks);
         $this->assertSame('Everything on site is finished.', $this->project->completion_summary);
         $this->assertCount(1, $this->project->completionPhotos);

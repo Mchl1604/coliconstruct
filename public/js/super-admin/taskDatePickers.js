@@ -2,9 +2,11 @@
  * Shared task date pickers for the Tasks page and the Project Details page.
  *
  * A project's schedule can have gaps - booked Aug 10-15 and Aug 25-30, say. A
- * task is measured against the whole period those ranges span, Aug 10 through
- * Aug 30, so every day in that period is offered, including the ones between
- * the ranges. A task is a piece of work with a deadline, not a claim on a day.
+ * task may SPAN such a gap (start Aug 14, finish Aug 26): a task is a piece of
+ * work with a deadline, not a claim on a day. What it may not do is begin or
+ * end on a day nobody is booked, so only the booked days are selectable and
+ * the gap days are greyed out - the calendar shows the project's actual shape
+ * rather than one long block that is mostly untrue.
  *
  * The server re-checks the same rule (TaskScheduleRules), so this is a
  * convenience layer, not the source of truth.
@@ -45,6 +47,39 @@
         return window ? formatDate(window.start) + ' - ' + formatDate(window.end) : '';
     }
 
+    /**
+     * The hint under the pickers, word for word what
+     * TaskScheduleRules::describeSelectable() writes on the server-rendered
+     * forms - the Tasks page builds its own when a project is chosen, and the
+     * two must not describe the same rule differently.
+     */
+    function describeSelectable(ranges) {
+        if (!ranges || !ranges.length) {
+            return 'No schedule set, so this project cannot take dated tasks yet.';
+        }
+
+        const booked = 'Booked: ' + ranges.map(function (range) {
+            return formatDate(range.start) + ' - ' + formatDate(range.end);
+        }).join('; ') + '.';
+
+        if (ranges.length === 1) {
+            return booked;
+        }
+
+        return booked + ' A task must start and be due on a booked day, but may run across the gap between them.';
+    }
+
+    /**
+     * The booked ranges as flatpickr's `enable` list. Every other day in the
+     * calendar is then unselectable, which is what stops a gap day being
+     * chosen as a start or a deadline.
+     */
+    function enabledRanges(ranges) {
+        return (ranges || []).map(function (range) {
+            return { from: range.start, to: range.end };
+        });
+    }
+
     function applyScheduleRanges(startInput, dueInput, ranges) {
         if (!global.flatpickr || !startInput || !dueInput) {
             return;
@@ -62,18 +97,23 @@
             return;
         }
 
+        const enable = enabledRanges(ranges);
+
+        // `minDate` on the deadline is what keeps it at or after the start.
+        // It narrows the same enabled set rather than replacing it, so the gap
+        // days stay unselectable however the start moves - which is the whole
+        // point: a task may run across a gap, but not stop in one.
         const duePicker = global.flatpickr(dueInput, {
             dateFormat: 'Y-m-d',
             allowInput: false,
+            enable: enable,
             minDate: startInput.value || window.start,
-            maxDate: window.end,
         });
 
         global.flatpickr(startInput, {
             dateFormat: 'Y-m-d',
             allowInput: false,
-            minDate: window.start,
-            maxDate: window.end,
+            enable: enable,
             onChange: function (selectedDates, dateStr) {
                 // The only rule left between the two: a task cannot finish
                 // before it starts.
@@ -114,6 +154,7 @@
     global.taskDatePickers = {
         scheduleWindow: scheduleWindow,
         describeWindow: describeWindow,
+        describeSelectable: describeSelectable,
         applyScheduleRanges: applyScheduleRanges,
         initInlineRows: initInlineRows,
     };

@@ -100,4 +100,25 @@ class Document extends Model
     {
         return $this->belongsTo(Project::class, 'project_id', 'project_id');
     }
+
+    /**
+     * Where this file actually sits on disk.
+     *
+     * document_path is stored relative to public/ because asset() reads it
+     * back, but the directory it is WRITTEN to is configurable - the test
+     * suite points it somewhere disposable, because UploadedFile::move() is
+     * not something Storage::fake() can intercept. So public_path() is the
+     * right answer in every real environment and the wrong one under test,
+     * and anything that opens or deletes the file has to ask here rather than
+     * assume.
+     */
+    public function diskPath(): string
+    {
+        $prefix = config('uploads.public_prefix').'/';
+        $relative = str_starts_with($this->document_path, $prefix)
+            ? mb_substr($this->document_path, mb_strlen($prefix))
+            : $this->document_path;
+
+        return config('uploads.root').'/'.$relative;
+    }
 }

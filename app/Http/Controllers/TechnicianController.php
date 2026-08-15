@@ -216,7 +216,7 @@ class TechnicianController extends Controller
                 // A partial day comes back as a timed event, so the bar
                 // carries its hours instead of reading as a whole day.
                 ...$schedule->toCalendarTimes(),
-                'color' => $project->calendarColor(),
+                ...$project->calendarEventColors(),
                 'extendedProps' => [
                     'projectId' => $project->project_id,
                     'referenceNo' => $project->reference_no,

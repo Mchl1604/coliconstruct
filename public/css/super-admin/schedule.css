@@ -110,36 +110,10 @@
     min-height: 90px;
 }
 
-#schedulesCalendar .fc-event {
-    cursor: pointer;
-    border: 0;
-    border-radius: 0.35rem;
-    font-size: 0.72rem;
-}
-
-#schedulesCalendar .fc-daygrid-event {
-    margin: 1px 2px;
-    padding: 0.1rem 0.4rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-#schedulesCalendar .fc-daygrid-event .fc-event-title {
-    font-weight: 600;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-#schedulesCalendar .fc-event:hover {
-    filter: brightness(0.93);
-}
-
-/* A completed project opens the view-only panel rather than the editor, so it
-   stays clickable and only reads as quieter than live work. */
-#schedulesCalendar .fc-event.fc-event-readonly {
-    opacity: 0.75;
-}
+/* Event styling - outlined rather than filled, the lettering in the outline's
+   colour - is shared by all three calendars and lives in calendar.css, under
+   `.calendar-standard`. It used to be restated here with `border: 0`, which is
+   the one rule an outlined event cannot survive. */
 
 #schedulesCalendar .fc-daygrid-more-link {
     font-size: 0.72rem;

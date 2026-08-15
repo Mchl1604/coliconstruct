@@ -94,20 +94,28 @@ class PublicSiteController extends Controller
         // that does not exist.
         abort_unless($record, 404);
 
-        $tasks = $record->tasks->sortBy('due_date');
-
+        // The task list is not shown to a client: it is how the company
+        // organises its own crew, and what the client follows is the
+        // technicians' reports. The tasks relation is still loaded by
+        // ClientProjects, because progressFor() counts them for the progress
+        // bar - which is the one thing the list was really telling them.
         return view('public.project-details', [
             'project' => $record,
             'card' => $this->card($record),
             'client' => $record->clients->first(),
+            // Contact Support. There is no inquiries table to post to, so the
+            // client is pointed at the published channels rather than at a
+            // form that would silently drop what they typed - the same reason
+            // the Contact page's own form is disabled. Reaching support never
+            // changes the project's status and never pauses the seven days.
+            'supportEmail' => $this->content->get('contact.email'),
+            'supportPhone' => $this->content->get('contact.phone'),
             // The client's tracker, so it leads the page. Newest first, with
             // the most recently filed breaking a same-day tie - re-stated here
             // rather than trusting the order the relation arrived in.
             'reports' => $record->reports
                 ->sortByDesc(fn ($report): array => [$report->report_date, $report->id])
                 ->values(),
-            'completedTasks' => $tasks->where('status', 'completed')->values(),
-            'remainingTasks' => $tasks->whereNotIn('status', ['completed'])->values(),
             'ranges' => $record->schedules
                 ->sortBy('start_datetime')
                 ->map(fn ($schedule): array => [
@@ -160,8 +168,19 @@ class PublicSiteController extends Controller
             'description' => $project->description,
             'status' => $project->status,
             'status_label' => $project->statusLabel(),
+            'short_status_label' => $project->shortStatusLabel(),
             'status_badge_class' => $project->statusBadgeClass(),
             'header_class' => $this->headerClass($project),
+            // What the client has to do about this project, if anything. The
+            // card shows a prompt and the details page shows the buttons, and
+            // both read these rather than re-deriving the state.
+            'awaiting_confirmation' => $project->isAwaitingClientConfirmation(),
+            'confirmation_deadline' => $project->confirmationDeadline(),
+            'confirmation_countdown' => $project->confirmationCountdown(),
+            'completed_on' => $project->completed_at,
+            'completion_summary' => $project->completion_summary,
+            'completion_remarks' => $project->completion_remarks,
+            'completion_method_label' => $project->completionMethodLabel(),
             // What the My Projects filter bar matches on. Overdue is derived
             // rather than stored, so it travels as its own flag and the filter
             // key is the status the tab bar offers rather than the column.
@@ -187,7 +206,9 @@ class PublicSiteController extends Controller
      * Overdue is a tab of its own, so an overdue project is not also counted
      * as Ongoing - the same rule the Super Admin projects table applies.
      * "Not yet scheduled" work is booked but undated, which reads as Pending
-     * to the client who booked it.
+     * to the client who booked it. Work awaiting their confirmation is
+     * finished work, so it files under Completed rather than adding a tab -
+     * the card's own banner is what asks them to act on it.
      */
     private function filterStatus(Project $project): string
     {
@@ -198,7 +219,7 @@ class PublicSiteController extends Controller
         return match ($project->status) {
             'unscheduled', 'pending' => 'pending',
             'ongoing' => 'ongoing',
-            'completed' => 'completed',
+            Project::STATUS_AWAITING_CLIENT_CONFIRMATION, 'completed' => 'completed',
             'cancelled' => 'cancelled',
             default => $project->status,
         };
@@ -234,6 +255,7 @@ class PublicSiteController extends Controller
             'unscheduled' => 'project-card-header-pending',
             'pending' => 'project-card-header-scheduled',
             'ongoing' => 'project-card-header-progress',
+            Project::STATUS_AWAITING_CLIENT_CONFIRMATION => 'project-card-header-awaiting',
             'completed' => 'project-card-header-complete',
             'cancelled' => 'project-card-header-cancelled',
             default => 'project-card-header-pending',

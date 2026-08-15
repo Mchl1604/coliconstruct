@@ -18,6 +18,82 @@
                 <i class="bi bi-arrow-left me-1" aria-hidden="true"></i> Back to My Projects
             </a>
 
+            {{-- ------------------------------------- Confirm your completion --}}
+            {{-- The one thing on this whole site a client does rather than
+                 reads, so it leads the page: above the project itself, with the
+                 deadline stated rather than implied. Both buttons are shown
+                 together because a client who is unhappy with the work needs
+                 the second one as plainly as the first - and reaching support
+                 changes nothing about the project or the countdown. --}}
+            @if ($card['awaiting_confirmation'])
+                <div class="card client-card shadow-sm mb-4 border-success">
+                    <div class="card-body">
+                        <div class="d-flex flex-wrap align-items-start gap-3">
+                            <div class="fs-2 lh-1 text-success">
+                                <i class="bi bi-clipboard-check" aria-hidden="true"></i>
+                            </div>
+
+                            <div class="flex-grow-1">
+                                <h2 class="h5 fw-bold mb-1">This project is ready for your confirmation</h2>
+
+                                <p class="mb-2 text-secondary">
+                                    Our team has finished the work
+                                    @if ($card['completed_on'])
+                                        on
+                                        <strong>{{ \Carbon\CarbonImmutable::parse($card['completed_on'])->format('F j, Y') }}</strong>
+                                    @endif
+                                    . Please review the completion report below, including the photographs, and
+                                    confirm that you are happy with it.
+                                </p>
+
+                                @if ($card['confirmation_deadline'])
+                                    <p class="mb-3">
+                                        <span class="badge bg-warning text-dark me-2">
+                                            {{ $card['confirmation_countdown'] }}
+                                        </span>
+                                        If we do not hear from you by
+                                        <strong>{{ $card['confirmation_deadline']->format('F j, Y') }}</strong>
+                                        this project will be marked complete automatically.
+                                    </p>
+                                @endif
+
+                                <div class="d-flex flex-wrap gap-2">
+                                    <form method="POST"
+                                        action="{{ route('public.projects.confirm', $project->project_id) }}"
+                                        onsubmit="return confirm('Confirm that the work on this project is complete? This closes the project and cannot be undone.');">
+                                        @csrf
+                                        <button type="submit" class="btn btn-success px-4">
+                                            <i class="bi bi-check-lg me-1" aria-hidden="true"></i>
+                                            Confirm Completion
+                                        </button>
+                                    </form>
+
+                                    {{-- No inquiries table exists to post to, so this points at
+                                         the channels the company actually publishes rather than
+                                         at a form that would drop what was typed. --}}
+                                    <a class="btn btn-outline-secondary px-4"
+                                        @if ($supportEmail) href="mailto:{{ $supportEmail }}?subject={{ rawurlencode('Support request - ' . ($card['reference_no'] ?? $card['name'])) }}"
+                                        @else
+                                            href="{{ route('public.contact') }}" @endif>
+                                        <i class="bi bi-life-preserver me-1" aria-hidden="true"></i>
+                                        Contact Support
+                                    </a>
+                                </div>
+
+                                <p class="text-secondary small mb-0 mt-3">
+                                    Something not right? Contact us instead of confirming and we will put it right.
+                                    @if ($supportPhone)
+                                        You can also call <strong>{{ $supportPhone }}</strong>.
+                                    @endif
+                                    Getting in touch does not pause the
+                                    {{ \App\Models\Project::COMPLETION_CONFIRMATION_DAYS }} day confirmation period.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            @endif
+
             {{-- ---------------------------------------------- Project overview --}}
             <div class="card client-card shadow-sm mb-4">
                 <div class="card-body">
@@ -81,8 +157,11 @@
                         <p class="text-secondary public-prewrap mb-0">{{ $card['description'] }}</p>
                     @endif
 
-                    {{-- The closing report, once there is one. --}}
-                    @if ($project->isCompleted() && $project->completion_summary)
+                    {{-- The closing report. Shown from the moment the work is
+                         reported finished, not only once it is signed off: this
+                         is the very thing the client is being asked to review,
+                         so it cannot wait for them to have reviewed it. --}}
+                    @if ($project->hasCompletionReport() && $project->completion_summary && ! $project->isCancelled())
                         <div class="client-completion-panel mt-4">
                             <h2 class="h6 fw-bold text-success mb-2">
                                 <i class="bi bi-check-circle-fill me-1" aria-hidden="true"></i>
@@ -98,10 +177,37 @@
                             @endif
 
                             @if ($project->completed_at)
-                                <p class="text-secondary small mb-0">
-                                    Completed
+                                <p class="text-secondary small mb-1">
+                                    Work completed
                                     {{ \Carbon\CarbonImmutable::parse($project->completed_at)->format('M d, Y') }}
                                 </p>
+                            @endif
+
+                            @if ($card['completion_method_label'])
+                                <p class="text-secondary small mb-1">
+                                    {{ $card['completion_method_label'] }}@if ($project->client_confirmed_at)
+                                        on
+                                        {{ $project->client_confirmed_at->format('M d, Y') }}
+                                    @endif
+                                </p>
+                            @endif
+
+                            {{-- The evidence. A client asked to confirm the work
+                                 has to be able to see it, so the photographs sit
+                                 with the report rather than further down. --}}
+                            @if ($project->completionPhotos->isNotEmpty())
+                                <div class="row g-3 mt-2">
+                                    @foreach ($project->completionPhotos as $photo)
+                                        <div class="col-lg-3 col-md-4 col-6">
+                                            <a href="{{ asset($photo->photo_path) }}" target="_blank"
+                                                rel="noopener noreferrer">
+                                                <img src="{{ asset($photo->photo_path) }}"
+                                                    class="img-fluid rounded border" alt="Completion photo"
+                                                    style="height:150px;width:100%;object-fit:cover;">
+                                            </a>
+                                        </div>
+                                    @endforeach
+                                </div>
                             @endif
                         </div>
                     @endif
@@ -123,9 +229,17 @@
                         </div>
                     @endif
 
-                    {{-- Project documents. A button appears only for a document
-                         that exists: a disabled control that never becomes
-                         usable tells the client nothing. --}}
+                    {{-- Project documents, in the grouped cards the Super Admin
+                         project page uses. A row of loose buttons stopped
+                         reading as anything once a document could run to
+                         several files: "Quotation 1, Quotation 2, Contract 1"
+                         is a list of files pretending to be a list of
+                         documents. Grouping puts each document back together,
+                         with its own count, and the client reads the same
+                         shape the office does.
+
+                         What is deliberately not copied is the remove button:
+                         these are the client's to read, never to change. --}}
                     @php
                         $documentTitles = \App\Http\Controllers\PublicSiteController::DOCUMENT_TITLES;
 
@@ -134,35 +248,46 @@
                         // client only the last of them.
                         $clientDocuments = $project->documents
                             ->whereIn('document_type', array_keys($documentTitles))
-                            ->groupBy('document_type')
-                            ->all();
+                            ->groupBy('document_type');
                     @endphp
 
-                    @if ($clientDocuments !== [])
+                    @if ($clientDocuments->isNotEmpty())
                         <hr>
 
                         <h2 class="h6 fw-bold mb-2">Project Documents</h2>
 
-                        {{-- Straight to the file in a new tab, the way the
-                             administrative pages open the same documents: the
-                             client wants to read the document, not a page
-                             wrapped around it. --}}
-                        <div class="d-flex flex-wrap gap-2">
+                        <div class="project-document-groups">
                             @foreach ($documentTitles as $type => $label)
-                                @continue(! isset($clientDocuments[$type]))
+                                @php $files = $clientDocuments->get($type, collect()); @endphp
 
-                                {{-- A button per file, numbered when a document
-                                     runs to more than one, so the client can
-                                     reach every page rather than only the
-                                     first. --}}
-                                @foreach ($clientDocuments[$type] as $index => $document)
-                                    <a class="btn btn-outline-brand-blue"
-                                        href="{{ asset($document->document_path) }}" target="_blank"
-                                        rel="noopener noreferrer" title="{{ $document->document_name }}">
-                                        <i class="bi bi-file-earmark-text me-1" aria-hidden="true"></i>
-                                        {{ $label }}{{ count($clientDocuments[$type]) > 1 ? ' '.($index + 1) : '' }}
-                                    </a>
-                                @endforeach
+                                {{-- A type the project holds nothing for is left
+                                     out entirely rather than shown empty: an
+                                     administrator needs to see that a contract
+                                     is missing, a client does not. --}}
+                                @continue($files->isEmpty())
+
+                                <div class="project-document-group">
+                                    <div class="project-document-group-head">
+                                        <span class="fw-semibold">{{ $label }}</span>
+                                        <span class="badge project-document-count">{{ $files->count() }}</span>
+                                    </div>
+
+                                    {{-- Straight to the file in a new tab, the
+                                         way the administrative pages open the
+                                         same documents: the client wants to read
+                                         the document, not a page wrapped around
+                                         it. --}}
+                                    @foreach ($files as $document)
+                                        <div class="project-document-file">
+                                            <a href="{{ asset($document->document_path) }}" target="_blank"
+                                                rel="noopener noreferrer" class="project-document-link"
+                                                title="{{ $document->document_name }}">
+                                                <i class="bi bi-file-earmark-text" aria-hidden="true"></i>
+                                                <span>{{ $document->document_name }}</span>
+                                            </a>
+                                        </div>
+                                    @endforeach
+                                </div>
                             @endforeach
                         </div>
                     @endif
@@ -301,62 +426,12 @@
                         @endforelse
                     </div>
 
-                    {{-- Tasks, below the tracker. --}}
-                    <h3 class="h6 fw-bold mb-2">
-                        Tasks
-                        <span class="text-secondary fw-normal">
-                            ({{ $completedTasks->count() }} completed, {{ $remainingTasks->count() }} remaining)
-                        </span>
-                    </h3>
-
-                    @if ($completedTasks->isEmpty() && $remainingTasks->isEmpty())
-                        <p class="text-secondary small mb-0">No tasks have been scheduled yet.</p>
-                    @else
-                        <div class="row g-4">
-                            @if ($remainingTasks->isNotEmpty())
-                                <div class="col-md-6">
-                                    <div class="public-detail-label mb-2">Remaining</div>
-                                    <ul class="public-task-list">
-                                        @foreach ($remainingTasks as $task)
-                                            <li>
-                                                <i class="bi bi-circle text-secondary" aria-hidden="true"></i>
-                                                <span>
-                                                    {{ $task->task_title }}
-                                                    @if ($task->due_date)
-                                                        <span class="text-secondary small">
-                                                            &middot; due
-                                                            {{ \Carbon\CarbonImmutable::parse($task->due_date)->format('M j, Y') }}
-                                                        </span>
-                                                    @endif
-                                                </span>
-                                            </li>
-                                        @endforeach
-                                    </ul>
-                                </div>
-                            @endif
-
-                            @if ($completedTasks->isNotEmpty())
-                                <div class="col-md-6">
-                                    <div class="public-detail-label mb-2">Completed</div>
-                                    <ul class="public-task-list">
-                                        @foreach ($completedTasks as $task)
-                                            <li>
-                                                <i class="bi bi-check-circle-fill text-success" aria-hidden="true"></i>
-                                                <span>
-                                                    {{ $task->task_title }}
-                                                    @if ($task->completed_at)
-                                                        <span class="text-secondary small">
-                                                            &middot; {{ $task->completed_at->format('M j, Y') }}
-                                                        </span>
-                                                    @endif
-                                                </span>
-                                            </li>
-                                        @endforeach
-                                    </ul>
-                                </div>
-                            @endif
-                        </div>
-                    @endif
+                    {{-- Tasks are deliberately not listed here. They are how the
+                         company organises its own crew - who does what, and in
+                         what order - and a client following their project reads
+                         the technicians' reports above, which say what actually
+                         happened on site. The progress bar on the card already
+                         carries the one thing the task list was telling them. --}}
 
                     @if ($project->completionPhotos->isNotEmpty())
                         <hr class="my-4">

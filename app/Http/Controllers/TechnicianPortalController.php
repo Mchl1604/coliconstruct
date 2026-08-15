@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Models\ActivityLog;
 use App\Models\Project;
-use App\Models\ProjectCompletionPhoto;
 use App\Models\ProjectTechnician;
 use App\Models\Schedule;
 use App\Models\Task;
@@ -19,15 +18,14 @@ use App\Services\NotificationService;
 use App\Services\ProjectCompletion;
 use App\Services\ProjectEmails;
 use App\Services\TaskScheduleRules;
+use App\Services\TechnicianTaskLoad;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Exists;
 use Throwable;
@@ -189,12 +187,9 @@ class TechnicianPortalController extends Controller
             ))
             ->values();
 
-        $technicianActiveTaskCounts = Task::query()
-            ->whereIn('technician_id', $technicians->pluck('technician_id'))
-            ->whereIn('status', ['pending', 'ongoing'])
-            ->selectRaw('technician_id, count(*) as active_count')
-            ->groupBy('technician_id')
-            ->pluck('active_count', 'technician_id');
+        // This project's load, not the whole system's - see TechnicianTaskLoad.
+        $technicianActiveTaskCounts = app(TechnicianTaskLoad::class)
+            ->forProject($project->project_id);
 
         $user = $request->user();
 
@@ -245,12 +240,9 @@ class TechnicianPortalController extends Controller
             $project->project_id => collect($this->scheduleRules->ranges($project->project_id)),
         ]);
 
-        $technicianActiveTaskCounts = Task::query()
-            ->whereIn('technician_id', $techniciansByProject->flatten()->pluck('technician_id')->unique())
-            ->whereIn('status', ['pending', 'ongoing'])
-            ->selectRaw('technician_id, count(*) as active_count')
-            ->groupBy('technician_id')
-            ->pluck('active_count', 'technician_id');
+        // Keyed by project too: this page shows several boards at once.
+        $technicianActiveTaskCounts = app(TechnicianTaskLoad::class)
+            ->forProjects($projects->pluck('project_id'));
 
         $user = $request->user();
 
@@ -689,10 +681,15 @@ class TechnicianPortalController extends Controller
     }
 
     /**
-     * Mark a project complete once nothing is left open on it.
+     * Hand a finished project over to its client for confirmation.
      *
      * The policy decides whether it can; blockersFor() says why not, and the
      * confirmation dialog shows that list rather than a bare refusal.
+     *
+     * A lead no longer closes a project outright. Pressing this records the
+     * completion report, releases the dates booked past the completion date,
+     * and asks the client to confirm - after which the project is out of the
+     * lead's hands either way.
      */
     public function completeProject(Request $request, Project $project)
     {
@@ -714,21 +711,16 @@ class TechnicianPortalController extends Controller
             );
         }
 
-        // The same completion report the Super Admin portal collects, with one
-        // difference: a lead is on site, so the photographs are the evidence
-        // and are required rather than optional.
-        $validator = Validator::make($request->all(), [
-            'completion_date' => ['required', 'date'],
-            'completion_summary' => ['required', 'string'],
-            'completion_remarks' => ['nullable', 'string'],
-            'completion_photos' => ['required', 'array', 'min:1', 'max:20'],
-            'completion_photos.*' => ['file', 'mimes:jpg,jpeg,png', 'max:5120'],
-        ], [
-            'completion_photos.required' => 'At least one completion photo is required.',
-            'completion_photos.min' => 'At least one completion photo is required.',
-            'completion_photos.max' => 'Up to 20 completion photos can be uploaded at once.',
-            'completion_photos.*.max' => 'Each completion photo must be 5 MB or smaller.',
-        ]);
+        // The same completion report the Super Admin portal collects, from the
+        // same rule set, with one difference: a lead is on site, so the
+        // photographs are the evidence and are required rather than optional.
+        $completion = app(ProjectCompletion::class);
+
+        $validator = Validator::make(
+            $request->all(),
+            $completion->rules(photosRequired: true),
+            $completion->messages()
+        );
 
         if ($validator->fails()) {
             return $this->failed($request, $validator->errors()->first());
@@ -737,43 +729,54 @@ class TechnicianPortalController extends Controller
         $validated = $validator->validated();
 
         try {
-            DB::transaction(function () use ($request, $project, $validated): void {
-                $project->update([
-                    'status' => 'completed',
-                    'on_hold' => false,
-                    'completed_at' => CarbonImmutable::parse($validated['completion_date']),
-                    'completion_summary' => $validated['completion_summary'],
-                    'completion_remarks' => $validated['completion_remarks'] ?? null,
-                ]);
-
-                $this->storeCompletionPhotos($request, $project);
-
-                // Dates booked past the completion date are released: the work
-                // is done, so the project must stop reading as booked and its
-                // technicians must stop reading as busy.
-                app(ProjectCompletion::class)->releaseFutureSchedules(
+            DB::transaction(function () use ($request, $project, $validated, $completion): void {
+                $completion->requestCompletion(
                     $project,
-                    CarbonImmutable::parse($validated['completion_date'])
+                    $validated,
+                    $request->file('completion_photos'),
+                    $request->user()
                 );
             });
         } catch (Throwable $e) {
             return $this->failed($request, $e->getMessage());
         }
 
-        $this->notifications->projectCompleted($project);
+        // Recorded from this portal exactly as it is from the other one. The
+        // lead closing out their own project is the commonest route into
+        // completion, and it used to leave no audit entry at all.
+        $this->activityLogger->record(
+            ActivityLog::PROJECT_COMPLETION_REQUESTED,
+            null,
+            sprintf(
+                "Marked project '%s' complete as of %s and sent it for client confirmation "
+                    .'(Ongoing -> Awaiting Client Confirmation). Its schedule now holds %s.',
+                $project->reference_no ?? $project->name,
+                $project->completed_at?->format('F j, Y') ?? 'today',
+                $completion->describeRemainingSchedule($project)
+            ),
+            $project
+        );
+
+        $this->notifications->projectAwaitingClientConfirmation($project);
 
         // Completed from the portal is still completed, so the client hears
         // about it in exactly the same words as when an administrator does it.
-        app(ProjectEmails::class)->projectCompleted($project->refresh());
+        app(ProjectEmails::class)->projectAwaitingConfirmation($project->refresh());
+
+        $message = sprintf(
+            'Completion recorded. The client has been asked to confirm, and the project completes '
+                .'automatically in %d days if they do not reply.',
+            Project::COMPLETION_CONFIRMATION_DAYS
+        );
 
         if ($request->expectsJson()) {
-            return response()->json(['message' => 'Project marked as completed.']);
+            return response()->json(['message' => $message]);
         }
 
         // The project is view only now, so there is nothing left to stay on.
         return redirect()
             ->route('technician.projects')
-            ->with('success', 'Project marked as completed.');
+            ->with('success', $message);
     }
 
     // ------------------------------------------------------------------
@@ -783,28 +786,6 @@ class TechnicianPortalController extends Controller
     private function technician(Request $request): Technician
     {
         return $request->user()->technicianRecord();
-    }
-
-    /**
-     * Completion photographs, stored where ProjectController puts its own so
-     * both portals' reports read from one place.
-     */
-    private function storeCompletionPhotos(Request $request, Project $project): void
-    {
-        $directory = public_path('uploads/completion');
-
-        File::ensureDirectoryExists($directory);
-
-        foreach ($request->file('completion_photos') ?? [] as $photo) {
-            $fileName = Str::uuid()->toString().'.'.$photo->getClientOriginalExtension();
-            $photo->move($directory, $fileName);
-
-            ProjectCompletionPhoto::create([
-                'project_id' => $project->project_id,
-                'photo_path' => 'uploads/completion/'.$fileName,
-                'uploaded_at' => now(),
-            ]);
-        }
     }
 
     /**
@@ -898,7 +879,7 @@ class TechnicianPortalController extends Controller
             // A partial day comes back as a timed event, so the bar carries
             // its hours instead of reading as a whole day.
             ...$schedule->toCalendarTimes(),
-            'color' => $project->calendarColor(),
+            ...$project->calendarEventColors(),
             'extendedProps' => [
                 'projectId' => $project->project_id,
                 'referenceNo' => $project->reference_no,
@@ -918,14 +899,7 @@ class TechnicianPortalController extends Controller
      */
     private function taskFormData_(Project $project): array
     {
-        $technicianIds = $project->projectTechnicians->pluck('technician_id')->filter()->values();
-
-        $activeTaskCounts = Task::query()
-            ->whereIn('technician_id', $technicianIds)
-            ->whereIn('status', ['pending', 'ongoing'])
-            ->selectRaw('technician_id, count(*) as active_count')
-            ->groupBy('technician_id')
-            ->pluck('active_count', 'technician_id');
+        $activeTaskCounts = app(TechnicianTaskLoad::class)->forProject($project->project_id);
 
         $ranges = $this->scheduleRules->ranges($project->project_id);
 

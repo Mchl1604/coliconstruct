@@ -23,18 +23,24 @@ use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 class ClientProjects
 {
     /**
-     * The order the client's own page reads in: work that is happening, then
-     * work that is coming, then work that is finished, then work that is not.
+     * The order the client's own page reads in: work that needs them, then
+     * work that is happening, then work that is coming, then work that is
+     * finished, then work that is not.
+     *
+     * A project awaiting their confirmation leads the list. It is the only
+     * entry on the page asking them to do something, and it has a deadline -
+     * burying it below the ongoing work is how a client misses the seven days.
      *
      * @var array<string, int>
      */
     private const STATUS_RANK = [
-        'ongoing' => 0,
-        'pending' => 1,
-        'unscheduled' => 2,
-        'completed' => 3,
-        'cancelled' => 4,
-        'archived' => 5,
+        Project::STATUS_AWAITING_CLIENT_CONFIRMATION => 0,
+        'ongoing' => 1,
+        'pending' => 2,
+        'unscheduled' => 3,
+        'completed' => 4,
+        'cancelled' => 5,
+        'archived' => 6,
     ];
 
     public function normalise(?string $email): string
@@ -161,7 +167,10 @@ class ClientProjects
      */
     public function progressFor(Project $project): int
     {
-        if ($project->status === 'completed') {
+        // Awaiting confirmation counts as done: the work is finished, and a
+        // bar reading anything less would contradict the message asking the
+        // client to confirm that very thing.
+        if ($project->isWorkFinished()) {
             return 100;
         }
 

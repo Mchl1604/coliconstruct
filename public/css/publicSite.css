@@ -502,6 +502,13 @@
     background: linear-gradient(100deg, #475569 0%, #64748b 100%);
 }
 
+/* Awaiting the client's confirmation: the same green family as complete, held
+   a shade back so the two are told apart at a glance. The work is finished;
+   the project is not closed yet. */
+.project-card-header-awaiting {
+    background: linear-gradient(100deg, #3f7d53 0%, #6ea67f 100%);
+}
+
 .project-card-header-scheduled {
     background: linear-gradient(100deg, #0891b2 0%, #06b6d4 100%);
 }
@@ -995,4 +1002,87 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+/* ---- Project documents ----
+   The grouped cards from the Super Admin project page, so a client reads their
+   documents in the same shape the office does. A row of loose buttons stopped
+   reading as anything once one document could run to several files.
+
+   Copied rather than shared because the two pages load different stylesheets
+   and neither has a common one; the markup is identical, minus the remove
+   button, which is not a client's to press. */
+.project-document-groups {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.project-document-group {
+    flex: 1 1 15rem;
+    min-width: 0;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.55rem;
+    padding: 0.7rem 0.85rem;
+    background: #fff;
+}
+
+.project-document-group-head {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.5rem;
+    color: #0f172a;
+}
+
+.project-document-file {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.3rem 0;
+}
+
+.project-document-file + .project-document-file {
+    border-top: 1px dashed #e5e7eb;
+}
+
+/* The count is the one number on the card, so it wears yellow and is the
+   thing the eye lands on; the files themselves are blue, which is what says
+   they open. */
+.project-document-count {
+    background: #ffc107;
+    border: 1px solid #e0a800;
+    color: #3d2f00;
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+/* The name is the wide part and the only part that may be cut. */
+.project-document-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #2370b4;
+    text-decoration: none;
+}
+
+.project-document-link span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.project-document-link:hover {
+    color: #1b5688;
+    text-decoration: underline;
+}
+
+/* The file icon takes the lighter brand blue, so the row reads as one blue
+   thing rather than a grey mark beside a blue name. */
+.project-document-link i {
+    color: #2d8de1;
 }
