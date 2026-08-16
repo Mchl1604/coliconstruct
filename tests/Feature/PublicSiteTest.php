@@ -131,10 +131,21 @@ class PublicSiteTest extends TestCase
             ->assertSee('Contact Us');
     }
 
-    public function test_a_guest_is_offered_login_and_a_client_their_profile(): void
+    /**
+     * The header offers a guest one door - Get Started - and the registration
+     * form behind it carries the way through to Login, so somebody who
+     * already has an account is never stranded.
+     */
+    public function test_a_guest_is_offered_get_started_and_a_client_their_profile(): void
     {
         $this->get(route('landing.home'))
             ->assertOk()
+            ->assertSee('Get Started')
+            ->assertSee(route('auth.register'), escape: false);
+
+        $this->get(route('auth.register'))
+            ->assertOk()
+            ->assertSee('Already have an account?')
             ->assertSee(route('auth.login'), escape: false);
 
         $client = $this->account('client', 'client@example.test');
@@ -145,6 +156,178 @@ class PublicSiteTest extends TestCase
             // The bell replaces the Login button once somebody is signed in.
             ->assertSee('data-notification-bell', escape: false)
             ->assertSee($client->fullName());
+    }
+
+    /**
+     * The redesigned homepage: a hero with two doors, the numbered services
+     * grid, and the closing strip. Every word of it comes from the catalogue.
+     */
+    public function test_the_homepage_renders_every_editable_piece_of_itself(): void
+    {
+        $superAdmin = $this->account('super_admin', 'owner@example.test');
+
+        $this->content()->saveText('home', [
+            'home.hero_badge' => 'Badge words',
+            'home.hero_heading' => 'Heading words',
+            'home.hero_description' => 'Description words',
+            'home.hero_primary_label' => 'Primary words',
+            'home.hero_secondary_label' => 'Secondary words',
+            'home.services_eyebrow' => 'Eyebrow words',
+            'home.services_heading' => 'Services words',
+            'home.services_intro' => 'Intro words',
+            'home.services' => "First Service | First description\nSecond Service | Second description",
+            'home.promo_heading' => 'Strip heading',
+            'home.promo_body' => 'Strip text',
+            'home.promo_button_label' => 'Strip button',
+        ], $superAdmin);
+
+        $response = $this->get(route('landing.home'))->assertOk();
+
+        foreach ([
+            'Badge words', 'Heading words', 'Description words', 'Primary words',
+            'Secondary words', 'Eyebrow words', 'Services words', 'Intro words',
+            'First Service', 'First description', 'Second Service',
+            'Strip heading', 'Strip text', 'Strip button',
+        ] as $expected) {
+            $response->assertSee($expected);
+        }
+
+        // The services are numbered in the order they were typed.
+        $response->assertSee('01')->assertSee('02');
+    }
+
+    /**
+     * The yellow button is the one that used to say "Get a quote": it now
+     * takes a visitor to their own work.
+     */
+    public function test_the_hero_buttons_lead_to_my_projects_and_about(): void
+    {
+        $html = $this->get(route('landing.home'))->assertOk()->getContent();
+
+        $this->assertStringContainsString(route('public.projects'), $html);
+        $this->assertStringContainsString(route('public.about'), $html);
+        $this->assertStringContainsString(route('public.contact'), $html);
+    }
+
+    /**
+     * The redesigned About page: the introduction panel, the journey, the blue
+     * values band, the team and the closing strip.
+     */
+    public function test_the_about_page_renders_every_editable_piece_of_itself(): void
+    {
+        $superAdmin = $this->account('super_admin', 'owner@example.test');
+
+        $this->content()->saveText('about', [
+            'about.eyebrow' => 'About eyebrow',
+            'about.heading' => 'About heading',
+            'about.description' => 'About description',
+            'about.journey_eyebrow' => 'Journey eyebrow',
+            'about.journey_heading' => 'Journey heading',
+            'about.history' => 'Journey text',
+            'about.values_eyebrow' => 'Values eyebrow',
+            'about.values_heading' => 'Values heading',
+            'about.core_values' => "First Value | First meaning\nSecond Value | Second meaning",
+            'about.team_eyebrow' => 'Team eyebrow',
+            'about.team_heading' => 'Team heading',
+            'about.team' => "Fletcher Colico | Owner\nSecond Person | Engineer",
+            'about.cta_heading' => 'About strip heading',
+            'about.cta_body' => 'About strip text',
+            'about.cta_button_label' => 'About strip button',
+        ], $superAdmin);
+
+        $response = $this->get(route('public.about'))->assertOk();
+
+        foreach ([
+            'About eyebrow', 'About heading', 'About description',
+            'Journey eyebrow', 'Journey heading', 'Journey text',
+            'Values eyebrow', 'Values heading', 'First Value', 'First meaning',
+            'Second Value', 'Team eyebrow', 'Team heading',
+            'Fletcher Colico', 'Owner', 'Second Person', 'Engineer',
+            'About strip heading', 'About strip text', 'About strip button',
+        ] as $expected) {
+            $response->assertSee($expected);
+        }
+    }
+
+    /**
+     * The team is a "Name | Role" list paired with four image fields by
+     * position, so nobody has to add a table to name a colleague.
+     */
+    public function test_a_team_member_is_paired_with_the_photograph_in_their_position(): void
+    {
+        Storage::fake('public');
+
+        $superAdmin = $this->account('super_admin', 'owner@example.test');
+
+        $this->content()->saveText('about', [
+            'about.team' => "First Person | Owner\nSecond Person | Engineer",
+        ], $superAdmin);
+
+        $this->actingAs($superAdmin)->post(
+            route('super-admin.configuration.contents.images.store', 'about.team_photo_2'),
+            ['image' => UploadedFile::fake()->image('second.png')]
+        );
+
+        $team = $this->get(route('public.about'))->assertOk()->viewData('team');
+
+        $this->assertSame('First Person', $team[0]['name']);
+        $this->assertNull($team[0]['photo']);
+        $this->assertSame('Second Person', $team[1]['name']);
+        $this->assertNotNull($team[1]['photo']);
+    }
+
+    /**
+     * The team section is hidden entirely until somebody is listed - a row of
+     * placeholder faces says less than no section at all.
+     */
+    public function test_the_team_section_is_hidden_until_somebody_is_listed(): void
+    {
+        $this->get(route('public.about'))
+            ->assertOk()
+            ->assertDontSee(SystemContent::DEFINITIONS['about.team_heading']['default']);
+    }
+
+    /**
+     * The redesigned Contact page. The message form is shown but disabled:
+     * there is nowhere for an online inquiry to go, and the note says so.
+     */
+    public function test_the_contact_page_renders_every_editable_piece_of_itself(): void
+    {
+        $superAdmin = $this->account('super_admin', 'owner@example.test');
+
+        $this->content()->saveText('contact', [
+            'contact.heading' => 'Contact heading',
+            'contact.description' => 'Contact description',
+            'contact.form_heading' => 'Form heading',
+            'contact.form_intro' => 'Form intro',
+            'contact.form_button_label' => 'Form button',
+            'contact.form_note' => 'Form note',
+            'contact.info_heading' => 'Info heading',
+            'contact.info_intro' => 'Info intro',
+            'contact.phone' => '(+63) 900 000 0000',
+            'contact.email' => 'hello@example.test',
+            'contact.address' => 'An address',
+        ], $superAdmin);
+
+        $response = $this->get(route('public.contact'))->assertOk();
+
+        foreach ([
+            'Contact heading', 'Contact description', 'Form heading', 'Form intro',
+            'Form button', 'Form note', 'Info heading', 'Info intro',
+            'Mobile number', '(+63) 900 000 0000', 'Email', 'hello@example.test',
+            'Main office', 'An address',
+        ] as $expected) {
+            $response->assertSee($expected);
+        }
+
+        // Nothing on this form may accept a message it cannot deliver: four
+        // fields and the button, every one of them disabled, and no endpoint
+        // for the browser to post to.
+        $html = $response->getContent();
+
+        $this->assertSame(5, substr_count($html, 'disabled'));
+        $this->assertStringNotContainsString('<form method', $html);
+        $this->assertStringNotContainsString('action=', $html);
     }
 
     // ------------------------------------------------------------------
@@ -587,6 +770,58 @@ class PublicSiteTest extends TestCase
         $this->assertNotSame($first, $second);
     }
 
+    /**
+     * Every piece of the redesigned homepage - and of the redesigned footer -
+     * is offered by the editor, so nothing on the public site is only
+     * changeable by editing a view.
+     */
+    public function test_the_editor_offers_every_field_the_new_design_renders(): void
+    {
+        $superAdmin = $this->account('super_admin', 'owner@example.test');
+
+        foreach ([
+            'home' => [
+                'home.hero_badge', 'home.hero_heading', 'home.hero_description',
+                'home.hero_primary_label', 'home.hero_secondary_label', 'home.hero_image',
+                'home.services_eyebrow', 'home.services_heading', 'home.services_intro',
+                'home.services', 'home.promo_heading', 'home.promo_body',
+                'home.promo_button_label',
+            ],
+            'about' => [
+                'about.eyebrow', 'about.heading', 'about.description',
+                'about.journey_eyebrow', 'about.journey_heading', 'about.history',
+                'about.team_image', 'about.values_eyebrow', 'about.values_heading',
+                'about.core_values', 'about.team_eyebrow', 'about.team_heading',
+                'about.team', 'about.team_photo_1', 'about.team_photo_2',
+                'about.team_photo_3', 'about.team_photo_4', 'about.cta_heading',
+                'about.cta_body', 'about.cta_button_label',
+            ],
+            'contact' => [
+                'contact.heading', 'contact.description', 'contact.form_heading',
+                'contact.form_intro', 'contact.form_button_label', 'contact.form_note',
+                'contact.info_heading', 'contact.info_intro', 'contact.phone',
+                'contact.email', 'contact.address', 'contact.map_embed',
+                'contact.facebook', 'contact.telegram', 'contact.whatsapp',
+                'contact.instagram',
+            ],
+            'footer' => [
+                'footer.description', 'footer.links_heading', 'footer.quick_links',
+                'footer.contact_heading', 'footer.socials_heading', 'footer.copyright',
+            ],
+        ] as $section => $expected) {
+            $fields = $this->actingAs($superAdmin)
+                ->getJson(route('super-admin.configuration.contents.show', $section))
+                ->assertOk()
+                ->json('fields');
+
+            $keys = collect($fields)->pluck('key')->all();
+
+            foreach ($expected as $key) {
+                $this->assertContains($key, $keys, $key.' is not offered by the editor.');
+            }
+        }
+    }
+
     public function test_an_unknown_section_is_not_found(): void
     {
         $superAdmin = $this->account('super_admin', 'owner@example.test');
@@ -709,7 +944,7 @@ class PublicSiteTest extends TestCase
         $services = $this->content()->lines('home.services');
 
         $this->assertGreaterThan(0, $services->count());
-        $this->assertSame('Aircon Installation', $services->first()['title']);
+        $this->assertSame('HVAC Installation', $services->first()['title']);
         $this->assertNotSame('', $services->first()['description']);
     }
 }

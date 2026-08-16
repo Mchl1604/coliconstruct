@@ -4,9 +4,12 @@ namespace App\Http\Controllers;
 
 use App\Models\ActivityLog;
 use App\Models\Project;
+use App\Models\Technician;
 use App\Models\TechnicianReport;
+use App\Models\User;
 use App\Services\ActivityLogger;
 use App\Services\SystemReportService;
+use App\Support\DisplayCode;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
@@ -65,14 +68,14 @@ class ReportController extends Controller
      *
      * @var array<string, string>
      */
-    public const EXPORT_TYPES = [
-        'complete' => 'Complete System Report',
-        'projects' => 'Project Report',
-        'technicians' => 'Technician Report',
-        'schedules' => 'Schedule Report',
-        'tasks' => 'Task Report',
-        'quotations' => 'Quotation Report',
-    ];
+    public const EXPORT_TYPES = SystemReportService::EXPORT_TYPES;
+
+    /**
+     * How far either side of today a report may be asked for. Wide enough for
+     * the archive and next year's bookings, narrow enough that a typo in the
+     * year cannot ask the database for the year 90210.
+     */
+    private const YEAR_RANGE = 10;
 
     public function index()
     {
@@ -93,6 +96,19 @@ class ReportController extends Controller
             'reportTypes' => TechnicianReport::TYPES,
             'exportTypes' => self::EXPORT_TYPES,
             'quotationStatuses' => SystemReportService::QUOTATION_STATUSES,
+            'exportStatuses' => SystemReportService::REPORT_STATUSES,
+            'exportTechnicianKinds' => SystemReportService::TECHNICIAN_REPORT_KINDS,
+            'exportTechnicians' => Technician::query()
+                ->with('account')
+                ->whereHas('account', fn ($query) => $query->whereIn('role', User::TECHNICIAN_ROLES))
+                ->get()
+                ->sortBy(fn (Technician $technician): string => $technician->name)
+                ->map(fn (Technician $technician): array => [
+                    'id' => $technician->technician_id,
+                    'name' => $technician->name,
+                ])
+                ->values(),
+            'exportYears' => $this->exportYears(),
         ]);
     }
 
@@ -149,12 +165,21 @@ class ReportController extends Controller
         if (! empty($filters['search'])) {
             $term = '%'.$filters['search'].'%';
 
-            $query->where(function ($outer) use ($term): void {
+            // The table prints RPT-0007, so that is what somebody copies into
+            // the search box - null when the term is anything else, which
+            // leaves the key column out of the query entirely.
+            $searchedId = DisplayCode::toId(DisplayCode::REPORT, $filters['search']);
+
+            $query->where(function ($outer) use ($term, $searchedId): void {
                 $outer->where('report_title', 'like', $term)
                     ->orWhere('report_description', 'like', $term)
                     ->orWhereHas('project', fn ($q) => $q->where('name', 'like', $term)
                         ->orWhere('reference_no', 'like', $term))
                     ->orWhereHas('technician.account', fn ($q) => $q->where('name', 'like', $term));
+
+                if ($searchedId !== null) {
+                    $outer->orWhere('id', $searchedId);
+                }
             });
         }
 
@@ -288,24 +313,14 @@ class ReportController extends Controller
     /**
      * Build the PDF.
      *
-     * dompdf cannot run JavaScript, so the browser rasterises each visible
-     * chart to a PNG data URI and posts them along with the request. That is
-     * what puts real graphs in the document at full canvas resolution.
+     * The report is assembled entirely on the server: the browser sends the
+     * filters and gets a document back. Nothing is rasterised or posted from
+     * the page, so what the PDF says never depends on what happened to be
+     * drawn on screen when the button was pressed.
      */
     public function export(Request $request, SystemReportService $reports)
     {
-        $validator = Validator::make($request->all(), [
-            'report_type' => ['required', 'string', 'in:'.implode(',', array_keys(self::EXPORT_TYPES))],
-            'period' => ['required', 'string', 'in:weekly,monthly,yearly,custom'],
-            'start_date' => ['nullable', 'required_if:period,custom', 'date'],
-            'end_date' => ['nullable', 'required_if:period,custom', 'date', 'after_or_equal:start_date'],
-            'format' => ['nullable', 'string', 'in:pdf'],
-            'charts' => ['nullable', 'array'],
-            'charts.*' => ['nullable', 'string'],
-        ], [
-            'start_date.required_if' => 'A start date is required for a custom range.',
-            'end_date.required_if' => 'An end date is required for a custom range.',
-        ]);
+        $validator = $this->exportValidator($request);
 
         if ($validator->fails()) {
             return response()->json(['error' => $validator->errors()->first()], 422);
@@ -314,29 +329,28 @@ class ReportController extends Controller
         $input = $validator->validated();
         $reportType = $input['report_type'];
 
-        $period = $reports->resolvePeriod(
+        if ($message = $this->irrelevantFilterMessage($reportType, $input)) {
+            return response()->json(['error' => $message], 422);
+        }
+
+        $period = $reports->resolveExportPeriod(
             $input['period'],
-            $input['start_date'] ?? null,
-            $input['end_date'] ?? null
+            isset($input['month']) ? (int) $input['month'] : null,
+            (int) $input['year']
         );
 
-        // Only keep images that really are inline PNG data URIs.
-        $charts = collect($input['charts'] ?? [])
-            ->filter(fn ($value): bool => is_string($value) && str_starts_with($value, 'data:image/png;base64,'))
-            ->all();
+        $report = $reports->exportReport($reportType, $period, $input);
 
         $pdf = Pdf::loadView('super-admin.reports-pdf', [
-            'reportType' => $reportType,
-            'reportTitle' => self::EXPORT_TYPES[$reportType],
+            'report' => $report,
+            'reportTitle' => $report['title'],
             'period' => $period,
-            'summary' => $reports->summary($period),
-            'tables' => $reports->exportTables($reportType, $period),
-            'charts' => $charts,
+            'appliedFilters' => $this->appliedFilters($reportType, $input),
             'generatedBy' => auth()->user()->name ?? 'Super Admin',
             'generatedAt' => CarbonImmutable::now(),
             'logoData' => $this->logoDataUri(),
             'company' => self::COMPANY,
-        ])->setPaper('a4', 'portrait');
+        ])->setPaper('a4', 'landscape');
 
         $fileName = sprintf(
             '%s-%s.pdf',
@@ -358,6 +372,130 @@ class ReportController extends Controller
     }
 
     // ------------------------------------------------------------------
+    // Export internals
+    // ------------------------------------------------------------------
+
+    /**
+     * The years the dialog offers, newest first: back far enough to reach the
+     * archive, forward far enough to report on work already booked.
+     *
+     * @return array<int, int>
+     */
+    private function exportYears(): array
+    {
+        $thisYear = (int) CarbonImmutable::today()->format('Y');
+
+        return range($thisYear + 1, $thisYear - self::YEAR_RANGE);
+    }
+
+    /**
+     * What a valid export request looks like.
+     *
+     * Every filter is checked here rather than trusted from the dialog: the
+     * dialog hides what does not apply, but a request can be made without it.
+     */
+    private function exportValidator(Request $request): \Illuminate\Validation\Validator
+    {
+        $thisYear = (int) CarbonImmutable::today()->format('Y');
+
+        return Validator::make($request->all(), [
+            'report_type' => ['required', 'string', 'in:'.implode(',', array_keys(self::EXPORT_TYPES))],
+            'period' => ['required', 'string', 'in:'.SystemReportService::PERIOD_MONTHLY.','.SystemReportService::PERIOD_YEARLY],
+            'month' => ['nullable', 'required_if:period,'.SystemReportService::PERIOD_MONTHLY, 'integer', 'between:1,12'],
+            'year' => ['required', 'integer', 'between:'.($thisYear - self::YEAR_RANGE).','.($thisYear + self::YEAR_RANGE)],
+            'format' => ['nullable', 'string', 'in:pdf'],
+
+            // Project Report only. Archived is absent from REPORT_STATUSES, so
+            // asking for it fails here rather than returning a blank page.
+            'project_status' => [
+                'nullable',
+                'string',
+                'in:'.implode(',', array_keys(SystemReportService::REPORT_STATUSES)),
+            ],
+
+            // Technician Report only.
+            'technician_scope' => ['nullable', 'string', 'in:all,specific'],
+            'technician_id' => [
+                'nullable',
+                'required_if:technician_scope,specific',
+                'integer',
+                'exists:tbl_technicians,technician_id',
+            ],
+            'technician_kind' => [
+                'nullable',
+                'string',
+                'in:'.implode(',', array_keys(SystemReportService::TECHNICIAN_REPORT_KINDS)),
+            ],
+        ], [
+            'month.required_if' => 'Choose a month for a monthly report.',
+            'year.required' => 'Choose a year.',
+            'year.between' => 'Choose a year within ten years of today.',
+            'project_status.in' => 'That project status cannot be reported on.',
+            'technician_id.required_if' => 'Choose which technician to report on.',
+            'technician_id.exists' => 'That technician no longer exists.',
+        ]);
+    }
+
+    /**
+     * Refuse a filter that belongs to a different report rather than quietly
+     * ignoring it - a Project Status sent with a Schedule Report means the
+     * caller believes it will be applied, and it will not be.
+     *
+     * @param  array<string, mixed>  $input
+     */
+    private function irrelevantFilterMessage(string $reportType, array $input): ?string
+    {
+        $allowed = match ($reportType) {
+            'project' => ['project_status'],
+            'technician' => ['technician_scope', 'technician_id', 'technician_kind'],
+            default => [],
+        };
+
+        foreach (['project_status', 'technician_scope', 'technician_id', 'technician_kind'] as $filter) {
+            if (! in_array($filter, $allowed, true) && filled($input[$filter] ?? null)) {
+                return sprintf(
+                    'The %s filter does not apply to the %s.',
+                    str_replace('_', ' ', $filter),
+                    self::EXPORT_TYPES[$reportType]
+                );
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * The filters worth printing on the document, so a reader can tell what
+     * they are holding without being told separately.
+     *
+     * @param  array<string, mixed>  $input
+     * @return array<string, string>
+     */
+    private function appliedFilters(string $reportType, array $input): array
+    {
+        if ($reportType === 'project') {
+            $status = $input['project_status'] ?? 'all';
+
+            return ['Project Status' => SystemReportService::REPORT_STATUSES[$status] ?? 'All Statuses'];
+        }
+
+        if ($reportType !== 'technician') {
+            return [];
+        }
+
+        $kind = $input['technician_kind'] ?? 'all';
+
+        $technician = ($input['technician_scope'] ?? 'all') === 'specific'
+            ? Technician::with('account')->find($input['technician_id'] ?? 0)?->name ?? 'Unknown technician'
+            : 'All Technicians';
+
+        return [
+            'Technician' => $technician,
+            'Kind of Report' => SystemReportService::TECHNICIAN_REPORT_KINDS[$kind] ?? 'All',
+        ];
+    }
+
+    // ------------------------------------------------------------------
     // Internals
     // ------------------------------------------------------------------
 
@@ -368,6 +506,7 @@ class ReportController extends Controller
     {
         return [
             'id' => $report->id,
+            'display_code' => $report->displayCode(),
             'project_id' => $report->project_id,
             'reference_no' => $report->project?->reference_no ?? '—',
             'project_name' => $report->project?->name ?? 'Project removed',

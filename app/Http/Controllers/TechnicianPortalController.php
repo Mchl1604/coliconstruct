@@ -879,7 +879,7 @@ class TechnicianPortalController extends Controller
             // A partial day comes back as a timed event, so the bar carries
             // its hours instead of reading as a whole day.
             ...$schedule->toCalendarTimes(),
-            ...$project->calendarEventColors(),
+            ...$project->calendarEventColors($schedule->isDateBased()),
             'extendedProps' => [
                 'projectId' => $project->project_id,
                 'referenceNo' => $project->reference_no,
@@ -1017,6 +1017,7 @@ class TechnicianPortalController extends Controller
     {
         return [
             'id' => $report->id,
+            'display_code' => $report->displayCode(),
             'project_id' => $report->project_id,
             'project_name' => $report->project?->name ?? 'Project removed',
             'reference_no' => $report->project?->reference_no ?? '—',

@@ -1,4 +1,82 @@
-/* ---- Charts ---- */
+/* ---- System reports dashboard ---- */
+
+/*
+ * The dashboard reads as three groups - the work, the people leading it, and
+ * the calendar - so each one is announced rather than left to be inferred from
+ * a wall of identical cards. The heading is the only place colour is used
+ * structurally; the cards themselves stay quiet so the graphs carry the page.
+ */
+.report-section {
+    margin-bottom: 2rem;
+}
+
+.report-section-head {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding-bottom: 0.75rem;
+    margin-bottom: 1rem;
+    border-bottom: 1px solid #e8edf5;
+}
+
+.report-section-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    flex: 0 0 auto;
+    border-radius: 0.75rem;
+    background: linear-gradient(135deg, #2563eb, #4f46e5);
+    color: #fff;
+    font-size: 1rem;
+    box-shadow: 0 6px 16px rgba(37, 99, 235, 0.28);
+}
+
+.report-section-title {
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: #0f172a;
+}
+
+.report-section-subtitle {
+    display: block;
+    font-size: 0.78rem;
+    color: #94a3b8;
+}
+
+/* ---- Chart cards ---- */
+
+.report-card {
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+    border: 1px solid #eef1f6;
+    border-radius: 1rem;
+    padding: 1.1rem 1.15rem 1.15rem;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    transition:
+        box-shadow 0.18s ease,
+        transform 0.18s ease,
+        border-color 0.18s ease;
+}
+
+.report-card:hover {
+    border-color: #dfe6f2;
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.07);
+    transform: translateY(-2px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .report-card {
+        transition: none;
+    }
+
+    .report-card:hover {
+        transform: none;
+    }
+}
 
 /* Title on the left, the chart's own controls on the right, wrapping onto a
    second line rather than squeezing the toggle on a narrow screen. */
@@ -20,13 +98,46 @@
 .report-chart-select {
     width: auto;
     min-width: 9.5rem;
+    border-radius: 0.6rem;
+    border-color: #e2e8f0;
+    font-size: 0.8rem;
+}
+
+/* A segmented control rather than two outlined buttons: the pair is one
+   setting with two positions, and it should look like it. */
+.report-chart-toggle {
+    background: #f1f5f9;
+    border-radius: 0.65rem;
+    padding: 0.15rem;
+    gap: 0.15rem;
+}
+
+.report-chart-toggle .btn {
+    border: 0;
+    border-radius: 0.5rem !important;
+    padding: 0.2rem 0.7rem;
+    font-size: 0.76rem;
+    font-weight: 600;
+    color: #64748b;
+    background: transparent;
+}
+
+.report-chart-toggle .btn:hover {
+    color: #1e293b;
+}
+
+.report-chart-toggle .btn.active {
+    background: #fff;
+    color: #1d4ed8;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
 }
 
 .report-chart-title {
-    font-size: 0.9rem;
+    font-size: 0.92rem;
     font-weight: 700;
+    letter-spacing: -0.01em;
     color: #0f172a;
-    margin-bottom: 0.75rem;
+    margin-bottom: 0.15rem;
 }
 
 .report-chart-subtitle {
@@ -35,10 +146,28 @@
     color: #94a3b8;
 }
 
+/* The graph's headline figure - its total, or its average. Sized to be read
+   before the bars are, because on several of these charts it is the answer. */
+.report-chart-summary {
+    display: inline-flex;
+    align-items: center;
+    align-self: flex-start;
+    gap: 0.4rem;
+    margin-bottom: 0.75rem;
+    padding: 0.3rem 0.7rem;
+    border-radius: 999px;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-size: 0.82rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
 /* A fixed height keeps Chart.js from growing without bound on redraw. */
 .report-chart-wrap {
     position: relative;
     height: 260px;
+    margin-top: auto;
 }
 
 /* Ten horizontal bars need the extra room to stay legible. */
@@ -48,6 +177,99 @@
 
 .report-chart-wrap canvas {
     max-width: 100%;
+}
+
+/*
+ * A pie across the full width of the page is a small circle in a wide field of
+ * white, so the space to its side is given to the key: the same slices written
+ * out with their counts and shares, which is what the chart is read for.
+ */
+.report-chart-split {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1rem;
+    align-items: center;
+}
+
+@media (min-width: 768px) {
+    .report-chart-split {
+        grid-template-columns: minmax(0, 320px) minmax(0, 1fr);
+        gap: 2rem;
+    }
+
+    .report-chart-split .report-chart-wrap {
+        height: 300px;
+    }
+}
+
+.report-chart-legend {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 0.5rem;
+}
+
+.report-chart-legend li {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.6rem 0.8rem;
+    border: 1px solid #eef1f6;
+    border-radius: 0.7rem;
+    background: #fbfcfe;
+}
+
+.report-legend-dot {
+    width: 0.65rem;
+    height: 0.65rem;
+    flex: 0 0 auto;
+    border-radius: 999px;
+}
+
+.report-legend-label {
+    flex: 1 1 auto;
+    font-size: 0.83rem;
+    font-weight: 600;
+    color: #334155;
+}
+
+.report-legend-value {
+    display: flex;
+    align-items: baseline;
+    gap: 0.35rem;
+    font-size: 1rem;
+    font-weight: 700;
+    color: #0f172a;
+    font-variant-numeric: tabular-nums;
+}
+
+.report-legend-value small {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: #94a3b8;
+}
+
+/* Shown in place of the canvas, so an empty period reads as "nothing here
+   yet" rather than as a chart that failed to draw. */
+.report-chart-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 200px;
+    border: 1px dashed #e2e8f0;
+    border-radius: 0.75rem;
+    background: #f8fafc;
+    color: #94a3b8;
+    font-size: 0.83rem;
+}
+
+.report-chart-empty i {
+    font-size: 1.4rem;
+    color: #cbd5e1;
 }
 
 /* ---- Report viewer ---- */

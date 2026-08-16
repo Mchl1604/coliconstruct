@@ -35,6 +35,16 @@
                 autocomplete="tel">
         </div>
 
+        <div class="mb-3 text-start">
+            <label class="form-label" for="birthdate">Date of Birth</label>
+            {{-- The picker's own bounds match the rule the server applies, so
+                 an under-age date is refused before the form is even sent. --}}
+            <input type="date" id="birthdate" name="birthdate" class="form-control"
+                value="{{ old('birthdate') }}" min="{{ \App\Support\AccountAge::earliestAllowed() }}"
+                max="{{ \App\Support\AccountAge::latestAllowed() }}" required autocomplete="bday">
+            <span class="form-text text-muted">You must be at least 18 years old to register.</span>
+        </div>
+
         <x-password-input name="password" label="Password" placeholder="••••••••"
             autocomplete="new-password" minlength="8" role="new" />
 

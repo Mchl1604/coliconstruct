@@ -588,6 +588,7 @@ class NotificationEventsTest extends TestCase
             'last_name' => 'Technician',
             'email' => 'new.technician@example.test',
             'contact_number' => '0917 555 1234',
+            'birthdate' => '1990-05-04',
             'role' => 'technician',
             // A technician account is rejected without at least one specialty.
             'skill_ids' => [Skill::create(['skill_name' => 'Aircon Repair'])->skill_id],
@@ -610,6 +611,7 @@ class NotificationEventsTest extends TestCase
             'last_name' => 'Admin',
             'email' => 'new.admin@example.test',
             'contact_number' => '0917 555 1234',
+            'birthdate' => '1990-05-04',
             'role' => 'admin',
         ]);
 

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\DisplayCode;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -90,6 +91,52 @@ class Project extends Model
      * utility, so `badge-overdue` is defined in superAdminNav.css.
      */
     public const OVERDUE_COLOR = '#fd7e14';
+
+    /**
+     * The order statuses are reported in: roughly the order work moves
+     * through, with the two endings last. Alphabetical would put Cancelled
+     * first and Ongoing in the middle, which is no order at all.
+     *
+     * Archived is absent on purpose - it never appears in a report.
+     *
+     * @var array<int, string>
+     */
+    public const REPORT_STATUS_ORDER = [
+        'unscheduled',
+        self::STATUS_AWAITING_CLIENT_CONFIRMATION,
+        'pending',
+        'ongoing',
+        'on_hold',
+        'overdue',
+        'cancelled',
+        'completed',
+    ];
+
+    /**
+     * Every status as a printed badge: background, then the ink that stays
+     * legible on it.
+     *
+     * The backgrounds are the colours the application already uses - the
+     * calendar's, the dashboard breakdown's, OVERDUE_COLOR - gathered in one
+     * place so the pie, the badges and the exported PDF cannot drift into
+     * three different colour systems. Only the ink is chosen here, and only
+     * because a fill picked to sit behind white lettering is not always one
+     * white lettering can sit on: amber and cyan need dark ink to stay
+     * readable, which is the same call `bg-info text-dark` makes on screen.
+     *
+     * @var array<string, array{0: string, 1: string}>
+     */
+    public const STATUS_COLORS = [
+        'unscheduled' => ['#0dcaf0', '#053b45'],
+        self::STATUS_AWAITING_CLIENT_CONFIRMATION => ['#6ea67f', '#0f2e1c'],
+        'pending' => ['#f0ad4e', '#4a2c00'],
+        'ongoing' => ['#0d6efd', '#ffffff'],
+        'on_hold' => ['#6c757d', '#ffffff'],
+        'overdue' => [self::OVERDUE_COLOR, '#4a2100'],
+        'cancelled' => ['#dc3545', '#ffffff'],
+        'completed' => ['#198754', '#ffffff'],
+        'archived' => ['#212529', '#ffffff'],
+    ];
 
     protected $fillable = [
         'reference_no',
@@ -217,6 +264,18 @@ class Project extends Model
     public function reopenedByUser(): BelongsTo
     {
         return $this->belongsTo(User::class, 'reopened_by', 'id');
+    }
+
+    /**
+     * How the project's key is printed, e.g. PROJ-0007.
+     *
+     * Not the same thing as reference_no, which the client quotes and which
+     * carries the date the project was booked; this is the row's own id in a
+     * form somebody can read back.
+     */
+    public function displayCode(): string
+    {
+        return DisplayCode::format(DisplayCode::PROJECT, $this->project_id);
     }
 
     /**
@@ -453,6 +512,43 @@ class Project extends Model
     }
 
     /**
+     * The state this project reads as, as a key rather than a sentence.
+     *
+     * The same precedence statusLabel() uses - paused beats late, late beats
+     * the stored status - so a label and a key never describe two different
+     * things. Reports group, order and colour by this.
+     */
+    public function statusKey(): string
+    {
+        // A safety net rather than a real case: archived work is filtered out
+        // of every report before this is asked. It is here so that a project
+        // that somehow reaches a table cannot borrow another status's colour.
+        if ($this->isArchived()) {
+            return 'archived';
+        }
+
+        if ($this->on_hold) {
+            return 'on_hold';
+        }
+
+        if ($this->isOverdue()) {
+            return 'overdue';
+        }
+
+        return (string) $this->status;
+    }
+
+    /**
+     * The background and ink a status is printed with.
+     *
+     * @return array{0: string, 1: string}
+     */
+    public static function statusColor(string $key): array
+    {
+        return self::STATUS_COLORS[$key] ?? ['#6c757d', '#ffffff'];
+    }
+
+    /**
      * The same state in the few places a full sentence will not fit - a table
      * cell, a card header, a calendar tooltip.
      */
@@ -546,22 +642,34 @@ class Project extends Model
     }
 
     /**
-     * How a booking is painted on a calendar: outlined, not filled.
+     * How a booking is painted on a calendar.
      *
-     * A month of solid colour bars is hard to read - the fills dominate the
-     * grid, dates disappear behind them, and several projects on one day
-     * become a stack of blocks rather than a list you can scan. Outlining
-     * gives the same colour coding at a fraction of the ink: the border and
-     * the lettering carry the status, and the day underneath stays legible.
+     * A whole-day booking is filled: it owns every hour of the days it
+     * covers, and a solid bar says so at a glance. A partial day is outlined,
+     * because it does not - it books a few hours and leaves the rest of that
+     * date free, and a solid bar would claim the whole of it. The two are
+     * different kinds of booking, so they are drawn as different kinds of
+     * mark rather than as the same mark in different colours.
      *
      * Stated here rather than in each of the three calendars so they cannot
      * drift into looking like three different products.
      *
+     * @param  bool  $filled  whether this booking occupies whole days
      * @return array{backgroundColor: string, borderColor: string, textColor: string}
      */
-    public function calendarEventColors(): array
+    public function calendarEventColors(bool $filled = false): array
     {
         $ink = $this->calendarInkColor();
+
+        if ($filled) {
+            return [
+                'backgroundColor' => $ink,
+                'borderColor' => $ink,
+                // The ink colours sit at roughly 5:1 against white, so white
+                // lettering on them is comfortably readable.
+                'textColor' => '#ffffff',
+            ];
+        }
 
         return [
             // Transparent rather than white: the day cell behind it may be

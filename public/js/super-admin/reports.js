@@ -165,8 +165,8 @@ document.addEventListener("DOMContentLoaded", function () {
             .map(function (report) {
                 return (
                     "<tr>" +
-                    '<td class="report-id-cell">#' +
-                    report.id +
+                    '<td class="report-id-cell">' +
+                    escapeHtml(report.display_code) +
                     "</td>" +
                     "<td>" +
                     escapeHtml(report.reference_no) +
@@ -618,13 +618,34 @@ document.addEventListener("DOMContentLoaded", function () {
         "#6c757d",
     ];
 
+    /**
+     * Every chart arrives either as one series of values or as several named
+     * ones. Normalising here is what lets a grouped bar chart and a plain one
+     * share the whole of the configuration below.
+     */
+    function seriesOf(data) {
+        if (!data) {
+            return [];
+        }
+
+        if (Array.isArray(data.datasets) && data.datasets.length) {
+            return data.datasets;
+        }
+
+        return [{ label: data.label, values: data.values || [], colors: data.colors }];
+    }
+
     function isEmptySeries(data) {
-        if (!data || !data.values || !data.values.length) {
+        const series = seriesOf(data);
+
+        if (!series.length) {
             return true;
         }
 
-        return data.values.every(function (value) {
-            return !value;
+        return series.every(function (entry) {
+            return (entry.values || []).every(function (value) {
+                return !value;
+            });
         });
     }
 
@@ -636,7 +657,14 @@ document.addEventListener("DOMContentLoaded", function () {
         const categorical = canvas.dataset.chartCategorical === "1";
         const title = canvas.dataset.chartTitle || "";
         const labels = data.labels || [];
-        const values = data.values || [];
+        const series = seriesOf(data);
+        const values = series[0] ? series[0].values || [] : [];
+        // One series is a single trend and reads better without a key; two or
+        // more have to be told apart. A chart with a written-out key beside it
+        // needs neither.
+        const showLegend =
+            canvas.dataset.chartLegend !== "list" &&
+            (type === "doughnut" || type === "pie" || series.length > 1);
 
         const valueTick = function (value) {
             return isMoney ? pesos.format(value) : numbers.format(value);
@@ -667,17 +695,28 @@ document.addEventListener("DOMContentLoaded", function () {
                             label: title,
                             data: values,
                             backgroundColor: data.colors || palette,
-                            borderWidth: 1,
+                            borderWidth: 3,
                             borderColor: "#fff",
+                            hoverOffset: 8,
                         },
                     ],
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
+                    cutout: type === "doughnut" ? "62%" : 0,
                     plugins: {
                         title: { display: false },
-                        legend: { display: true, position: "bottom" },
+                        legend: {
+                            display: showLegend,
+                            position: "bottom",
+                            labels: {
+                                usePointStyle: true,
+                                pointStyle: "circle",
+                                boxWidth: 8,
+                                padding: 16,
+                            },
+                        },
                         tooltip: {
                             callbacks: {
                                 label: function (context) {
@@ -710,31 +749,52 @@ document.addEventListener("DOMContentLoaded", function () {
 
         const horizontal = type === "horizontalBar";
 
+        /**
+         * A series' own colour where the server named one, a colour per bar for
+         * a categorical single series, otherwise its place in the palette.
+         */
+        function colorFor(entry, index) {
+            if (type === "line") {
+                return "rgba(37, 99, 235, 0.15)";
+            }
+
+            if (entry.color) {
+                return entry.color;
+            }
+
+            if (entry.colors) {
+                return entry.colors;
+            }
+
+            if (series.length > 1) {
+                return palette[index % palette.length];
+            }
+
+            return categorical
+                ? labels.map(function (label, barIndex) {
+                      return palette[barIndex % palette.length];
+                  })
+                : "#2563eb";
+        }
+
         return {
             type: horizontal ? "bar" : type,
             data: {
                 labels: labels,
-                datasets: [
-                    {
-                        label: data.label || title,
-                        data: values,
-                        backgroundColor:
-                            type === "line"
-                                ? "rgba(37, 99, 235, 0.15)"
-                                : data.colors ||
-                                  (categorical
-                                      ? labels.map(function (label, index) {
-                                            return palette[index % palette.length];
-                                        })
-                                      : "#2563eb"),
+                datasets: series.map(function (entry, index) {
+                    return {
+                        label: entry.label || data.label || title,
+                        data: entry.values || [],
+                        backgroundColor: colorFor(entry, index),
                         borderColor: type === "line" ? "#2563eb" : "transparent",
                         borderWidth: type === "line" ? 2 : 0,
                         fill: type === "line",
                         tension: 0.3,
                         pointRadius: 3,
-                        borderRadius: type === "line" ? 0 : 4,
-                    },
-                ],
+                        borderRadius: type === "line" ? 0 : 6,
+                        maxBarThickness: horizontal ? 26 : 42,
+                    };
+                }),
             },
             options: {
                 indexAxis: horizontal ? "y" : "x",
@@ -742,7 +802,16 @@ document.addEventListener("DOMContentLoaded", function () {
                 maintainAspectRatio: false,
                 plugins: {
                     title: { display: false },
-                    legend: { display: true, position: "bottom" },
+                    legend: {
+                        display: showLegend,
+                        position: "bottom",
+                        labels: {
+                            usePointStyle: true,
+                            pointStyle: "circle",
+                            boxWidth: 8,
+                            padding: 16,
+                        },
+                    },
                     tooltip: { callbacks: { label: tooltipLabel } },
                 },
                 scales: {
@@ -750,16 +819,83 @@ document.addEventListener("DOMContentLoaded", function () {
                         ticks: horizontal
                             ? { callback: valueTick }
                             : { autoSkip: true, maxRotation: 0 },
-                        grid: { display: horizontal },
+                        grid: { display: horizontal, color: "rgba(148, 163, 184, 0.18)" },
+                        border: { display: false },
                     },
                     y: {
                         beginAtZero: true,
                         ticks: horizontal ? {} : { callback: valueTick },
-                        grid: { display: !horizontal },
+                        grid: { display: !horizontal, color: "rgba(148, 163, 184, 0.18)" },
+                        border: { display: false },
                     },
                 },
             },
         };
+    }
+
+    /**
+     * The headline figure under a graph - its total, or its average. Written
+     * by the service alongside the series it describes, so the two can never
+     * be computed from different rules.
+     */
+    function setChartSummary(key, data) {
+        const summaryEl = document.querySelector(
+            '[data-chart-summary="' + key + '"]',
+        );
+
+        if (!summaryEl) {
+            return;
+        }
+
+        const summary = data && data.summary ? data.summary : "";
+
+        summaryEl.textContent = summary;
+        summaryEl.classList.toggle("d-none", !summary);
+    }
+
+    /**
+     * The key beside a full-width pie, as real markup rather than Chart.js's
+     * own legend: it can carry the count and the share for each slice, which
+     * is most of what somebody opens this chart to read.
+     */
+    function renderChartLegend(key, data) {
+        const listEl = document.querySelector(
+            '[data-chart-legend-list="' + key + '"]',
+        );
+
+        if (!listEl) {
+            return;
+        }
+
+        const labels = (data && data.labels) || [];
+        const values = (data && data.values) || [];
+        const colors = (data && data.colors) || palette;
+        const total = values.reduce(function (sum, value) {
+            return sum + (value || 0);
+        }, 0);
+
+        listEl.innerHTML = labels
+            .map(function (label, index) {
+                const value = values[index] || 0;
+                const share = total ? Math.round((value / total) * 100) : 0;
+
+                return (
+                    "<li>" +
+                    '<span class="report-legend-dot" style="background:' +
+                    escapeHtml(colors[index % colors.length]) +
+                    '"></span>' +
+                    '<span class="report-legend-label">' +
+                    escapeHtml(label) +
+                    "</span>" +
+                    '<span class="report-legend-value">' +
+                    numbers.format(value) +
+                    '<small>' +
+                    share +
+                    "%</small></span>" +
+                    "</li>"
+                );
+            })
+            .join("");
     }
 
     function renderChart(key, data) {
@@ -778,11 +914,23 @@ document.addEventListener("DOMContentLoaded", function () {
 
         const empty = isEmptySeries(data);
 
+        setChartSummary(key, empty ? null : data);
+        renderChartLegend(key, empty ? null : data);
+
         if (emptyEl) {
             emptyEl.classList.toggle("d-none", !empty);
         }
 
-        canvas.classList.toggle("d-none", empty);
+        // The wrap reserves the chart's height, so hiding the canvas alone
+        // would leave the empty state sitting under a blank panel.
+        const wrap = canvas.closest(".report-chart-wrap") || canvas;
+        const split = canvas.closest(".report-chart-split");
+
+        wrap.classList.toggle("d-none", empty);
+
+        if (split) {
+            split.classList.toggle("d-none", empty);
+        }
 
         if (empty || !window.Chart) {
             return;
@@ -961,92 +1109,112 @@ document.addEventListener("DOMContentLoaded", function () {
     if (exportModalEl) {
         const typeSelect = exportModalEl.querySelector("[data-export-type]");
         const periodSelect = exportModalEl.querySelector("[data-export-period]");
-        const customWrap = exportModalEl.querySelector("[data-export-custom]");
-        const startInput = exportModalEl.querySelector("[data-export-start]");
-        const endInput = exportModalEl.querySelector("[data-export-end]");
-        const formatSelect = exportModalEl.querySelector("[data-export-format]");
-        const includeCharts = exportModalEl.querySelector(
-            "[data-export-include-charts]",
+        const monthWrap = exportModalEl.querySelector("[data-export-month-wrap]");
+        const monthSelect = exportModalEl.querySelector("[data-export-month]");
+        const yearSelect = exportModalEl.querySelector("[data-export-year]");
+        const statusSelect = exportModalEl.querySelector("[data-export-status]");
+        const scopeSelect = exportModalEl.querySelector(
+            "[data-export-technician-scope]",
         );
+        const technicianWrap = exportModalEl.querySelector(
+            "[data-export-technician-wrap]",
+        );
+        const technicianSelect = exportModalEl.querySelector(
+            "[data-export-technician]",
+        );
+        const kindSelect = exportModalEl.querySelector("[data-export-kind]");
+        const formatSelect = exportModalEl.querySelector("[data-export-format]");
         const submitBtn = exportModalEl.querySelector("[data-export-submit]");
         const spinner = exportModalEl.querySelector("[data-export-spinner]");
         const errorEl = exportModalEl.querySelector("[data-export-error]");
 
-        if (window.flatpickr) {
-            [startInput, endInput].forEach(function (input) {
-                window.flatpickr(input, {
-                    dateFormat: "Y-m-d",
-                    allowInput: false,
+        /**
+         * Show the filters the chosen report uses and reset the rest.
+         *
+         * Resetting matters as much as hiding: picking Completed on a Project
+         * Report and then switching to a Schedule Report must not leave that
+         * choice behind, where it would be sent with a request that has no
+         * business carrying it.
+         */
+        function applyReportType() {
+            const type = typeSelect.value;
+
+            exportModalEl
+                .querySelectorAll("[data-export-field]")
+                .forEach(function (field) {
+                    const applies = field.dataset.exportField === type;
+
+                    field.classList.toggle("d-none", !applies);
+
+                    if (!applies) {
+                        field.querySelectorAll("select").forEach(function (select) {
+                            select.selectedIndex = 0;
+                        });
+                    }
                 });
-            });
+
+            applyTechnicianScope();
+            setAlert(errorEl, "");
         }
 
-        periodSelect.addEventListener("change", function () {
-            customWrap.classList.toggle(
+        function applyTechnicianScope() {
+            const showsTechnician =
+                typeSelect.value === "technician" &&
+                scopeSelect.value === "specific";
+
+            technicianWrap.classList.toggle("d-none", !showsTechnician);
+        }
+
+        function applyPeriod() {
+            // A yearly report names a year and nothing narrower.
+            monthWrap.classList.toggle(
                 "d-none",
-                periodSelect.value !== "custom",
+                periodSelect.value !== "monthly",
             );
+        }
+
+        typeSelect.addEventListener("change", applyReportType);
+        scopeSelect.addEventListener("change", applyTechnicianScope);
+        periodSelect.addEventListener("change", function () {
+            applyPeriod();
             setAlert(errorEl, "");
         });
 
-        /**
-         * dompdf can't execute JavaScript, so each rendered chart is
-         * rasterised here and posted alongside the request.
-         */
-        function collectChartImages() {
-            const images = {};
-
-            if (!includeCharts.checked) {
-                return images;
-            }
-
-            Object.keys(chartInstances).forEach(function (key) {
-                const canvas = chartInstances[key].canvas;
-
-                if (!canvas) {
-                    return;
-                }
-
-                try {
-                    images[key] = canvas.toDataURL("image/png", 1.0);
-                } catch (error) {
-                    // A tainted canvas simply means no image for that chart.
-                }
-            });
-
-            return images;
-        }
+        applyReportType();
+        applyPeriod();
 
         submitBtn.addEventListener("click", function () {
-            if (
-                periodSelect.value === "custom" &&
-                (!startInput.value || !endInput.value)
-            ) {
-                setAlert(errorEl, "Choose both a start and an end date.");
-
-                return;
-            }
-
             setAlert(errorEl, "");
             submitBtn.disabled = true;
             spinner.classList.remove("d-none");
 
+            const type = typeSelect.value;
             const payload = new FormData();
+
             payload.set("_token", csrfToken());
-            payload.set("report_type", typeSelect.value);
+            payload.set("report_type", type);
             payload.set("period", periodSelect.value);
+            payload.set("year", yearSelect.value);
             payload.set("format", formatSelect.value);
 
-            if (periodSelect.value === "custom") {
-                payload.set("start_date", startInput.value);
-                payload.set("end_date", endInput.value);
+            if (periodSelect.value === "monthly") {
+                payload.set("month", monthSelect.value);
             }
 
-            const images = collectChartImages();
+            // Only the filters this report owns are sent; the server refuses
+            // the rest rather than ignoring them.
+            if (type === "project") {
+                payload.set("project_status", statusSelect.value);
+            }
 
-            Object.keys(images).forEach(function (key) {
-                payload.set("charts[" + key + "]", images[key]);
-            });
+            if (type === "technician") {
+                payload.set("technician_scope", scopeSelect.value);
+                payload.set("technician_kind", kindSelect.value);
+
+                if (scopeSelect.value === "specific") {
+                    payload.set("technician_id", technicianSelect.value);
+                }
+            }
 
             fetch(routes.export, {
                 method: "POST",

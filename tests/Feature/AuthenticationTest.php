@@ -211,6 +211,7 @@ class AuthenticationTest extends TestCase
             'full_name' => 'Jose Garcia',
             'email' => 'jose@example.test',
             'contact_number' => '09175551234',
+            'birthdate' => '1990-05-04',
             'password' => 'my-own-password',
             'password_confirmation' => 'my-own-password',
         ]);
@@ -250,6 +251,7 @@ class AuthenticationTest extends TestCase
             'full_name' => 'Jose Garcia',
             'email' => 'jose@example.test',
             'contact_number' => '09175551234',
+            'birthdate' => '1990-05-04',
             'password' => 'my-own-password',
             'password_confirmation' => 'my-own-password',
         ]);
@@ -282,6 +284,7 @@ class AuthenticationTest extends TestCase
             'full_name' => 'Jose Garcia',
             'email' => 'jose@example.test',
             'contact_number' => '09175551234',
+            'birthdate' => '1990-05-04',
             'password' => 'my-own-password',
             'password_confirmation' => 'my-own-password',
         ]);
@@ -316,6 +319,7 @@ class AuthenticationTest extends TestCase
             'full_name' => 'Jose Garcia',
             'email' => 'jose@example.test',
             'contact_number' => '09175551234',
+            'birthdate' => '1990-05-04',
             'password' => 'my-own-password',
             'password_confirmation' => 'my-own-password',
         ]);
@@ -384,6 +388,7 @@ class AuthenticationTest extends TestCase
             'full_name' => 'Sneaky Person',
             'email' => 'sneaky@example.test',
             'contact_number' => '09175551234',
+            'birthdate' => '1990-05-04',
             'password' => 'my-own-password',
             'password_confirmation' => 'my-own-password',
             'role' => 'super_admin',
@@ -404,9 +409,59 @@ class AuthenticationTest extends TestCase
             'full_name' => 'Jose Garcia',
             'email' => 'taken@example.test',
             'contact_number' => '09175551234',
+            'birthdate' => '1990-05-04',
             'password' => 'my-own-password',
             'password_confirmation' => 'my-own-password',
         ])->assertSessionHasErrors('email');
+    }
+
+    /**
+     * Nobody under 18 may hold an account, so the birthdate is asked for and
+     * checked rather than merely collected.
+     */
+    public function test_registration_refuses_anybody_under_eighteen(): void
+    {
+        $underage = CarbonImmutable::today()->subYears(17)->toDateString();
+
+        $this->post(route('auth.register.store'), [
+            'full_name' => 'Young Person',
+            'email' => 'young@example.test',
+            'contact_number' => '09175551234',
+            'birthdate' => $underage,
+            'password' => 'my-own-password',
+            'password_confirmation' => 'my-own-password',
+        ])->assertSessionHasErrors('birthdate');
+
+        $this->assertSame(0, User::where('email', 'young@example.test')->count());
+
+        // The form asks for it in the first place.
+        $this->get(route('auth.register'))
+            ->assertOk()
+            ->assertSee('name="birthdate"', escape: false)
+            ->assertSee('at least 18 years old', escape: false);
+    }
+
+    /**
+     * Somebody who turns 18 today is old enough, and the date is kept.
+     */
+    public function test_registration_accepts_somebody_who_is_exactly_eighteen(): void
+    {
+        Mail::fake();
+
+        $birthdate = CarbonImmutable::today()->subYears(18)->toDateString();
+
+        $this->post(route('auth.register.store'), [
+            'full_name' => 'Just Eighteen',
+            'email' => 'eighteen@example.test',
+            'contact_number' => '09175551234',
+            'birthdate' => $birthdate,
+            'password' => 'my-own-password',
+            'password_confirmation' => 'my-own-password',
+        ])->assertRedirect(route('auth.verify'));
+
+        $user = User::where('email', 'eighteen@example.test')->firstOrFail();
+
+        $this->assertSame($birthdate, $user->birthdate->toDateString());
     }
 
     public function test_registration_requires_matching_passwords(): void
@@ -415,6 +470,7 @@ class AuthenticationTest extends TestCase
             'full_name' => 'Jose Garcia',
             'email' => 'jose@example.test',
             'contact_number' => '09175551234',
+            'birthdate' => '1990-05-04',
             'password' => 'my-own-password',
             'password_confirmation' => 'something-else',
         ])->assertSessionHasErrors('password');
@@ -694,8 +750,8 @@ class AuthenticationTest extends TestCase
     // ------------------------------------------------------------------
 
     /**
-     * Signing out lands on the public website, where the header offers Login
-     * again - not on the sign-in form itself.
+     * Signing out lands on the public website, where the header offers a way
+     * back in again - not on the sign-in form itself.
      */
     public function test_signing_out_ends_the_session(): void
     {
@@ -707,7 +763,7 @@ class AuthenticationTest extends TestCase
         $this->get(route('super-admin.dashboard'))->assertRedirect(route('auth.login'));
     }
 
-    public function test_the_page_reached_after_signing_out_offers_login(): void
+    public function test_the_page_reached_after_signing_out_offers_a_way_back_in(): void
     {
         $this->actingAs($this->account('admin'));
 
@@ -715,7 +771,10 @@ class AuthenticationTest extends TestCase
 
         $this->get(route('landing.home'))
             ->assertOk()
-            ->assertSee(route('auth.login'), escape: false)
+            // The guest header's one button, which leads to the registration
+            // form and from there to Login.
+            ->assertSee('Get Started')
+            ->assertSee(route('auth.register'), escape: false)
             // No signed-in chrome survives the sign-out.
             ->assertDontSee('data-notification-bell', escape: false);
     }

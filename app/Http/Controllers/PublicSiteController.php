@@ -30,7 +30,6 @@ class PublicSiteController extends Controller
     {
         return view('public.home', [
             'services' => $this->content->lines('home.services'),
-            'gallery' => $this->galleryImages(),
         ]);
     }
 
@@ -38,10 +37,7 @@ class PublicSiteController extends Controller
     {
         return view('public.about', [
             'coreValues' => $this->content->lines('about.core_values'),
-            'photos' => collect(['about.photo_1', 'about.photo_2', 'about.photo_3'])
-                ->map(fn (string $key): ?string => $this->content->image($key))
-                ->filter()
-                ->values(),
+            'team' => $this->teamMembers(),
         ]);
     }
 
@@ -132,6 +128,26 @@ class PublicSiteController extends Controller
     // ------------------------------------------------------------------
     // Internals
     // ------------------------------------------------------------------
+
+    /**
+     * The people shown on the About page.
+     *
+     * The names are one "Name | Role" list and the photographs are four image
+     * fields, paired by position - the same arrangement the rest of the site
+     * uses for repeatable content, so nobody has to add a table to name a
+     * fifth person. A member listed beyond the fourth simply has no picture.
+     *
+     * @return Collection<int, array{name: string, role: string, photo: string|null}>
+     */
+    private function teamMembers(): Collection
+    {
+        return $this->content->lines('about.team')
+            ->map(fn (array $member, int $index): array => [
+                'name' => $member['title'],
+                'role' => $member['description'],
+                'photo' => $this->content->image('about.team_photo_'.($index + 1)),
+            ]);
+    }
 
     /**
      * The documents a client may open on their own project, in the order the
@@ -260,16 +276,5 @@ class PublicSiteController extends Controller
             'cancelled' => 'project-card-header-cancelled',
             default => 'project-card-header-pending',
         };
-    }
-
-    /**
-     * @return Collection<int, string>
-     */
-    private function galleryImages()
-    {
-        return collect(range(1, 6))
-            ->map(fn (int $index): ?string => $this->content->image('home.gallery_'.$index))
-            ->filter()
-            ->values();
     }
 }

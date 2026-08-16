@@ -102,8 +102,10 @@
                                 </dd>
                             </div>
                             <div>
-                                <dt>Contact Number</dt>
-                                <dd>{{ $account->contact_number ?: 'Not set' }}</dd>
+                                <dt>Date of Birth</dt>
+                                {{-- Blank on an account opened before the
+                                     birthdate was collected. --}}
+                                <dd>{{ $account->birthdate?->format('M j, Y') ?? 'Not set' }}</dd>
                             </div>
                             <div>
                                 <dt>Member Since</dt>
@@ -112,7 +114,8 @@
                         </dl>
 
                         <p class="text-secondary small mb-0 mt-3 text-start">
-                            Your role, status and contact number are set by an administrator.
+                            Your role, status and date of birth cannot be changed here - ask an
+                            administrator if one of them is wrong.
                         </p>
                     </div>
                 </div>
@@ -168,6 +171,20 @@
                                         id="lastName" name="last_name" maxlength="100" required
                                         value="{{ old('last_name', $account->last_name) }}">
                                     @error('last_name', 'information')
+                                        <div class="invalid-feedback">{{ $message }}</div>
+                                    @enderror
+                                </div>
+
+                                <div class="col-md-4">
+                                    <label class="form-label small fw-semibold mb-1" for="contactNumber">
+                                        Contact Number <span class="text-danger">*</span>
+                                    </label>
+                                    <input type="tel"
+                                        class="form-control @error('contact_number', 'information') is-invalid @enderror"
+                                        id="contactNumber" name="contact_number" maxlength="32"
+                                        placeholder="09XX XXX XXXX" autocomplete="tel"
+                                        value="{{ old('contact_number', $account->contact_number) }}" required>
+                                    @error('contact_number', 'information')
                                         <div class="invalid-feedback">{{ $message }}</div>
                                     @enderror
                                 </div>

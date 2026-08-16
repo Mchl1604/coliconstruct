@@ -120,6 +120,24 @@ class TechnicianManagementTest extends TestCase
         $response->assertSee('Aircon Repair');
     }
 
+    /**
+     * The table and the picker print a code, not the bare key, so a
+     * technician can be quoted out loud.
+     */
+    public function test_the_page_prints_technicians_by_their_code(): void
+    {
+        $technician = $this->technician('Ana Mendoza');
+        $code = sprintf('TECH-%04d', $technician->technician_id);
+
+        $response = $this->get(route('super-admin.technicians.index'));
+
+        $response->assertOk();
+        $response->assertSee($code);
+        // The picker's datalist entry, which the page's script matches on.
+        $response->assertSee($code.' — Ana Mendoza', escape: false);
+        $response->assertSee('"display_code":"'.$code.'"', escape: false);
+    }
+
     public function test_it_returns_technician_details(): void
     {
         $technician = $this->technician('Ana Mendoza');
@@ -130,6 +148,7 @@ class TechnicianManagementTest extends TestCase
 
         $response->assertOk();
         $response->assertJsonPath('name', 'Ana Mendoza');
+        $response->assertJsonPath('display_code', sprintf('TECH-%04d', $technician->technician_id));
         $response->assertJsonPath('position', 'Technician');
         $response->assertJsonPath('specialties.0.skill_name', 'Aircon Cleaning');
     }

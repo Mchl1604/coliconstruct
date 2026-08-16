@@ -95,16 +95,21 @@ class ProfileManagementTest extends TestCase
             ->assertDontSee('data-user-menu-toggle', escape: false);
     }
 
-    public function test_a_guest_header_offers_sign_up_and_login(): void
+    /**
+     * One button, not two. Get Started opens an account, and the form behind
+     * it is where somebody who already has one is sent to Login.
+     */
+    public function test_a_guest_header_offers_get_started(): void
     {
         $this->get(route('landing.home'))
             ->assertOk()
-            // Sign Up opens an account; Login is for people who have one.
-            ->assertSee('Sign Up')
-            ->assertSee(route('auth.register'), escape: false)
-            ->assertSee('Login')
-            ->assertSee(route('auth.login'), escape: false)
-            ->assertSee('btn-sign-up', escape: false);
+            ->assertSee('Get Started')
+            ->assertSee(route('auth.register'), escape: false);
+
+        $this->get(route('auth.register'))
+            ->assertOk()
+            ->assertSee('Already have an account?')
+            ->assertSee(route('auth.login'), escape: false);
     }
 
     /**
@@ -277,6 +282,7 @@ class ProfileManagementTest extends TestCase
                 'first_name' => 'Maria',
                 'middle_name' => 'Santos',
                 'last_name' => 'Reyes',
+                'contact_number' => '09171234567',
                 'email' => 'maria@example.test',
             ])
             ->assertSessionHas('success');
@@ -313,6 +319,7 @@ class ProfileManagementTest extends TestCase
         $this->actingAs($technician)->put(route('profile.information'), [
             'first_name' => 'Juan',
             'last_name' => 'Dela Cruz',
+            'contact_number' => '09171234567',
             'email' => 'maria@example.test',
         ]);
 
@@ -346,6 +353,7 @@ class ProfileManagementTest extends TestCase
         $this->actingAs($technician)->put(route('profile.information'), [
             'first_name' => 'Juan',
             'last_name' => 'Dela Cruz',
+            'contact_number' => '09171234567',
             'email' => 'maria@example.test',
         ]);
 
@@ -369,6 +377,7 @@ class ProfileManagementTest extends TestCase
         $this->actingAs($technician)->put(route('profile.information'), [
             'first_name' => 'Juan',
             'last_name' => 'Dela Cruz',
+            'contact_number' => '09171234567',
             'email' => 'maria@example.test',
         ]);
 
@@ -399,6 +408,68 @@ class ProfileManagementTest extends TestCase
         return (string) $code;
     }
 
+    /**
+     * A number that has changed is the account holder's own to correct, and
+     * it takes effect at once - unlike the email, which has to be proved.
+     */
+    public function test_a_user_changes_their_own_contact_number(): void
+    {
+        $technician = $this->account('technician', 'tech@example.test');
+        $this->technicianFor($technician);
+
+        $this->actingAs($technician)
+            ->put(route('profile.information'), [
+                'first_name' => 'Juan',
+                'last_name' => 'Dela Cruz',
+                'contact_number' => '0918 222 3344',
+                'email' => 'tech@example.test',
+            ])
+            ->assertSessionHas('success');
+
+        $this->assertSame('0918 222 3344', $technician->refresh()->contact_number);
+
+        $this->assertDatabaseHas('tbl_activity_logs', [
+            'action' => ActivityLog::PROFILE_UPDATED,
+            'subject_id' => $technician->id,
+        ]);
+    }
+
+    public function test_a_contact_number_that_is_not_one_is_refused(): void
+    {
+        $technician = $this->account('technician', 'tech@example.test');
+        $this->technicianFor($technician);
+
+        $this->actingAs($technician)
+            ->put(route('profile.information'), [
+                'first_name' => 'Juan',
+                'last_name' => 'Dela Cruz',
+                'contact_number' => 'call me maybe',
+                'email' => 'tech@example.test',
+            ])
+            ->assertSessionHasErrors(['contact_number' => 'Enter a valid contact number.'], null, 'information');
+
+        $this->assertSame('09171234567', $technician->refresh()->contact_number);
+    }
+
+    /**
+     * The number is editable on the page; the birthdate is shown but is an
+     * administrator's to set.
+     */
+    public function test_the_page_edits_the_contact_number_and_shows_the_birthdate(): void
+    {
+        $technician = $this->account('technician', 'tech@example.test', [
+            'birthdate' => '1990-05-04',
+        ]);
+        $this->technicianFor($technician);
+
+        $response = $this->actingAs($technician)->get(route('profile.edit'))->assertOk();
+
+        $response->assertSee('name="contact_number"', escape: false);
+        $response->assertSee('value="09171234567"', escape: false);
+        $response->assertSee('Date of Birth');
+        $response->assertSee('May 4, 1990');
+    }
+
     public function test_an_email_already_in_use_is_refused(): void
     {
         $this->account('admin', 'taken@example.test');
@@ -409,6 +480,7 @@ class ProfileManagementTest extends TestCase
             ->put(route('profile.information'), [
                 'first_name' => 'Juan',
                 'last_name' => 'Dela Cruz',
+                'contact_number' => '09171234567',
                 'email' => 'taken@example.test',
             ])
             ->assertSessionHasErrors(['email' => 'Another account already uses that email address.'], null, 'information');
@@ -674,6 +746,7 @@ class ProfileManagementTest extends TestCase
                 'first_name' => 'New',
                 'last_name' => 'Technician',
                 'contact_number' => '09171234567',
+                'birthdate' => '1990-05-04',
                 'email' => 'new@example.test',
                 'role' => 'technician',
                 'skill_ids' => [Skill::firstOrCreate(['skill_name' => 'Electrical'])->skill_id],
@@ -696,6 +769,7 @@ class ProfileManagementTest extends TestCase
                 'first_name' => 'Second',
                 'last_name' => 'Admin',
                 'contact_number' => '09171234567',
+                'birthdate' => '1990-05-04',
                 'email' => 'second@example.test',
                 'role' => 'admin',
             ])
@@ -721,6 +795,7 @@ class ProfileManagementTest extends TestCase
                 'first_name' => 'Second',
                 'last_name' => 'Admin',
                 'contact_number' => '09171234567',
+                'birthdate' => '1990-05-04',
                 'email' => 'second@example.test',
                 'role' => 'admin',
             ])

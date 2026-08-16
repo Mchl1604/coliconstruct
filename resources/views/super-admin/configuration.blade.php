@@ -585,7 +585,7 @@
                             </div>
 
                             <div class="row g-3 mb-3">
-                                <div class="col-md-6">
+                                <div class="col-md-4">
                                     <label class="form-label small fw-semibold mb-1" for="userContactNumber">
                                         Contact Number <span class="text-danger">*</span>
                                     </label>
@@ -593,7 +593,20 @@
                                         name="contact_number" maxlength="32" placeholder="09XX XXX XXXX"
                                         autocomplete="off">
                                 </div>
-                                <div class="col-md-6" data-email-field>
+                                <div class="col-md-4">
+                                    <label class="form-label small fw-semibold mb-1" for="userBirthdate">
+                                        Date of Birth <span class="text-danger">*</span>
+                                    </label>
+                                    {{-- The picker's bounds are the rule the
+                                         server applies, so an under-age date
+                                         is refused before the dialog is even
+                                         submitted. --}}
+                                    <input type="date" id="userBirthdate" class="form-control" name="birthdate"
+                                        min="{{ \App\Support\AccountAge::earliestAllowed() }}"
+                                        max="{{ \App\Support\AccountAge::latestAllowed() }}" autocomplete="off">
+                                    <div class="form-text">Must be at least 18 years old.</div>
+                                </div>
+                                <div class="col-md-4" data-email-field>
                                     <label class="form-label small fw-semibold mb-1" for="userEmail">
                                         Email Address <span class="text-danger">*</span>
                                     </label>

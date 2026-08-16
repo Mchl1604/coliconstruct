@@ -173,12 +173,12 @@ class TechnicianPortalTest extends TestCase
     }
 
     /**
-     * Bookings are outlined rather than filled, here as on every other
-     * calendar - the colour on the border and the lettering, the bar itself
-     * transparent. Pinned because this calendar is fed by its own controller
-     * and could quietly drift back to a filled bar.
+     * A whole-day booking is drawn filled, here as on every other calendar:
+     * it owns every hour of the days it covers, and a solid bar says so.
+     * Pinned because this calendar is fed by its own controller and could
+     * quietly drift away from the shared treatment.
      */
-    public function test_the_portal_calendar_draws_outlined_bookings(): void
+    public function test_the_portal_calendar_fills_whole_day_bookings(): void
     {
         $this->actingAs($this->leadAccount);
 
@@ -188,11 +188,12 @@ class TechnicianPortalTest extends TestCase
 
         $event = $events->first();
 
-        $this->assertSame('transparent', $event['backgroundColor']);
-        // The ink cut rather than the fill - a colour picked to sit behind
-        // white lettering is the wrong colour to write with.
-        $this->assertSame($this->project->fresh()->calendarInkColor(), $event['borderColor']);
-        $this->assertSame($event['borderColor'], $event['textColor']);
+        // The ink cut rather than the badge fill - see Project::CALENDAR_INK.
+        $ink = $this->project->fresh()->calendarInkColor();
+
+        $this->assertSame($ink, $event['backgroundColor']);
+        $this->assertSame($ink, $event['borderColor']);
+        $this->assertSame('#ffffff', $event['textColor']);
         $this->assertArrayNotHasKey('color', $event);
     }
 

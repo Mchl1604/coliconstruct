@@ -6,9 +6,9 @@ use App\Http\Controllers\ReportController;
 use App\Models\Client;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
+use App\Models\ProjectType;
 use App\Models\Schedule;
 use App\Models\ScheduleTechnician;
-use App\Models\Skill;
 use App\Models\Task;
 use App\Models\Technician;
 use App\Models\TechnicianReport;
@@ -35,16 +35,24 @@ class ReportsPageTest extends TestCase
         $this->actingAsSuperAdmin();
     }
 
-    private function technician(string $name, string $role = 'technician'): Technician
-    {
+    private function technician(
+        string $name,
+        string $role = 'technician',
+        string $status = User::STATUS_ACTIVE
+    ): Technician {
         $user = User::factory()->create([
             'name' => $name,
             'email' => strtolower(str_replace(' ', '.', $name)).'@example.test',
         ]);
 
-        $user->forceFill(['role' => $role])->save();
+        $user->forceFill(['role' => $role, 'status' => $status])->save();
 
         return Technician::create(['account_id' => $user->id, 'role' => $role]);
+    }
+
+    private function lead(string $name, string $status = User::STATUS_ACTIVE): Technician
+    {
+        return $this->technician($name, User::ROLE_LEAD_TECHNICIAN, $status);
     }
 
     /**
@@ -140,6 +148,30 @@ class ReportsPageTest extends TestCase
         return CarbonImmutable::today()->addDays($offset)->toDateString();
     }
 
+    /**
+     * A fixed month and day in the current year, which is the window the
+     * monthly charts draw.
+     */
+    private function dateThisYear(string $monthDay): string
+    {
+        return CarbonImmutable::today()->format('Y').'-'.$monthDay;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function chartData(string $chart, array $params = []): array
+    {
+        $response = $this->getJson(route(
+            'super-admin.reports.system.chart',
+            array_merge(['chart' => $chart], $params)
+        ));
+
+        $response->assertOk();
+
+        return $response->json('data');
+    }
+
     // ------------------------------------------------------------------
     // Page
     // ------------------------------------------------------------------
@@ -206,6 +238,30 @@ class ReportsPageTest extends TestCase
         $this->assertContains('Report On First', $titles);
         // Reports outlive their project's status; the repository shows them all.
         $this->assertContains('Report On Second', $titles);
+    }
+
+    /**
+     * The Report ID column prints a code, and the search box has to find a
+     * report by the very thing the column showed.
+     */
+    public function test_reports_carry_a_code_that_search_matches(): void
+    {
+        $tech = $this->technician('Ana Mendoza');
+        $project = $this->project('Roofing Works', 'ongoing', [$tech]);
+
+        $report = $this->report($project, $tech, 'Weekly update');
+        $code = sprintf('RPT-%04d', $report->id);
+
+        $this->getJson(route('super-admin.reports.technician'))
+            ->assertOk()
+            ->assertJsonPath('reports.0.display_code', $code);
+
+        foreach ([$code, strtolower($code), (string) $report->id] as $term) {
+            $this->getJson(route('super-admin.reports.technician', ['search' => $term]))
+                ->assertOk()
+                ->assertJsonPath('meta.total', 1)
+                ->assertJsonPath('reports.0.report_title', 'Weekly update');
+        }
     }
 
     /**
@@ -632,63 +688,6 @@ class ReportsPageTest extends TestCase
     }
 
     /**
-     * The summary figures no longer appear on screen, but the exported PDF
-     * still opens with them, so they have to stay correct.
-     */
-    public function test_the_export_summary_still_reports_every_group(): void
-    {
-        $lead = $this->technician('Jose Garcia', 'lead_technician');
-        $ana = $this->technician('Ana Mendoza');
-        $skill = Skill::create(['skill_name' => 'Aircon Repair']);
-        $ana->skills()->attach($skill->skill_id);
-
-        $ongoing = $this->project('Ongoing Project', 'ongoing', [$lead, $ana], 500000);
-        $this->schedule($ongoing, $this->day(-2), $this->day(4));
-
-        $late = $this->project('Late Project', 'ongoing', [$ana], 250000);
-        $this->schedule($late, $this->day(-20), $this->day(-10));
-
-        Task::create([
-            'project_id' => $ongoing->project_id,
-            'technician_id' => $ana->technician_id,
-            'task_title' => 'Some Task',
-            'task_description' => 'Description',
-            'start_date' => $this->day(-2),
-            'due_date' => $this->day(1),
-            'status' => 'completed',
-        ]);
-
-        $service = app(SystemReportService::class);
-        $summary = $service->summary($service->resolvePeriod('monthly'));
-
-        foreach (['projects', 'quotations', 'technicians', 'schedules', 'tasks'] as $group) {
-            $this->assertIsArray($summary[$group] ?? null, "Missing {$group} summary.");
-        }
-
-        // The overdue project is counted, and reuses Project::overdue().
-        $this->assertSame(1, $summary['projects']['overdue']);
-        $this->assertSame(2, $summary['quotations']['total_approved']);
-        $this->assertSame(750000.0, $summary['quotations']['total_value']);
-        $this->assertSame(2, $summary['technicians']['total']);
-        $this->assertSame(2, $summary['technicians']['assigned']);
-        $this->assertSame(100.0, $summary['technicians']['utilization']);
-        $this->assertSame(1, $summary['tasks']['completed']);
-    }
-
-    /**
-     * The export period keeps its own bucket sizes, otherwise a yearly report
-     * would try to plot 365 daily points.
-     */
-    public function test_the_export_period_controls_its_bucket(): void
-    {
-        $service = app(SystemReportService::class);
-
-        $this->assertSame('day', $service->resolvePeriod('weekly')['bucket']);
-        $this->assertSame('day', $service->resolvePeriod('monthly')['bucket']);
-        $this->assertSame('month', $service->resolvePeriod('yearly')['bucket']);
-    }
-
-    /**
      * Each chart's own toggle picks its granularity: monthly draws the current
      * year month by month, yearly the last five whole years.
      */
@@ -717,7 +716,7 @@ class ReportsPageTest extends TestCase
      * The pie splits On Hold and Overdue out of the stored statuses they are
      * hidden inside, so the slices read the way the rest of the app does.
      */
-    public function test_the_current_breakdown_counts_derived_statuses(): void
+    public function test_the_active_breakdown_counts_derived_statuses(): void
     {
         $ongoing = $this->project('Ongoing Project', 'ongoing');
         $this->schedule($ongoing, $this->day(-1), $this->day(5));
@@ -728,26 +727,356 @@ class ReportsPageTest extends TestCase
         $paused = $this->project('Paused Project', 'pending');
         $paused->forceFill(['on_hold' => true])->save();
 
-        $this->project('Done Project', 'completed');
+        $this->project('Fresh Project', 'unscheduled');
 
-        $response = $this->getJson(route('super-admin.reports.system.chart', [
-            'chart' => 'currentProjectBreakdown',
-        ]));
+        $data = $this->chartData('activeProjectBreakdown');
+        $slices = array_combine($data['labels'], $data['values']);
 
-        $response->assertOk();
-
-        $slices = array_combine(
-            $response->json('data.labels'),
-            $response->json('data.values')
-        );
-
+        $this->assertSame(1, $slices['Unscheduled']);
         $this->assertSame(1, $slices['Ongoing']);
         $this->assertSame(1, $slices['Overdue']);
         $this->assertSame(1, $slices['On Hold']);
-        $this->assertSame(1, $slices['Completed']);
         // The overdue and paused projects were moved out of their stored
         // status rather than counted twice.
         $this->assertArrayNotHasKey('Pending', $slices);
+    }
+
+    /**
+     * The chart is about work that is still somebody's problem. Finished,
+     * abandoned and filed-away projects are not drawn, and - the part that
+     * matters - they cannot reach the total either.
+     */
+    public function test_the_active_breakdown_leaves_out_finished_and_closed_work(): void
+    {
+        $ongoing = $this->project('Ongoing Project', 'ongoing');
+        $this->schedule($ongoing, $this->day(-1), $this->day(5));
+
+        $this->project('Done Project', 'completed');
+        $this->project('Waiting Project', Project::STATUS_AWAITING_CLIENT_CONFIRMATION);
+        $this->project('Dead Project', 'cancelled');
+        $this->project('Filed Project', 'archived', [], 100, true);
+
+        $data = $this->chartData('activeProjectBreakdown');
+
+        $this->assertSame(['Ongoing'], $data['labels']);
+        $this->assertSame([1], $data['values']);
+        // The excluded statuses carry no weight in the headline figure.
+        $this->assertSame(1, array_sum($data['values']));
+        $this->assertSame('Active projects: 1', $data['summary']);
+    }
+
+    /**
+     * Residential and commercial work are two series against one timeline, so
+     * a month with neither still has a column under both.
+     */
+    public function test_residential_and_commercial_are_drawn_as_two_series(): void
+    {
+        $residential = $this->project('House Job', 'ongoing');
+        $residential->clients()->update(['client_type' => 'Residential']);
+
+        $this->project('Office Job', 'ongoing');
+        $this->project('Warehouse Job', 'ongoing');
+
+        $monthly = $this->chartData('residentialVsCommercial');
+
+        $this->assertCount(12, $monthly['labels']);
+        $this->assertCount(2, $monthly['datasets']);
+        $this->assertSame('Residential', $monthly['datasets'][0]['label']);
+        $this->assertSame('Commercial', $monthly['datasets'][1]['label']);
+        $this->assertCount(12, $monthly['datasets'][0]['values']);
+        $this->assertSame(1, array_sum($monthly['datasets'][0]['values']));
+        $this->assertSame(2, array_sum($monthly['datasets'][1]['values']));
+
+        $yearly = $this->chartData('residentialVsCommercial', ['granularity' => 'yearly']);
+
+        $this->assertCount(5, $yearly['labels']);
+        $this->assertCount(5, $yearly['datasets'][1]['values']);
+    }
+
+    /**
+     * The figure printed under the graph is the graph's own total, so the two
+     * move together whichever filter is changed.
+     */
+    public function test_the_quotation_chart_reports_the_total_it_draws(): void
+    {
+        $ongoing = $this->project('Ongoing Project', 'ongoing', [], 100000);
+        $this->schedule($ongoing, $this->day(-1), $this->day(5));
+
+        $this->project('Done Project', 'completed', [], 250000);
+
+        $all = $this->chartData('totalQuotation');
+
+        $this->assertEquals(350000, array_sum($all['values']));
+        $this->assertSame('Total Quotation: ₱350,000.00', $all['summary']);
+
+        $completed = $this->chartData('totalQuotation', ['quotation_status' => 'completed']);
+
+        $this->assertSame('Total Quotation: ₱250,000.00', $completed['summary']);
+    }
+
+    // ------------------------------------------------------------------
+    // Lead technician charts
+    // ------------------------------------------------------------------
+
+    /**
+     * The dashboard follows the people answerable for the work. A regular
+     * technician on the same project is not one of them, and a deactivated
+     * lead is nobody's current capacity.
+     */
+    public function test_the_distribution_chart_shows_active_lead_technicians_only(): void
+    {
+        $lead = $this->lead('Jose Garcia');
+        $quiet = $this->lead('Rita Cruz');
+        $retired = $this->lead('Ex Lead', User::STATUS_DEACTIVATED);
+        $crew = $this->technician('Ana Mendoza');
+
+        $first = $this->project('First Job', 'ongoing', [$lead, $crew]);
+        $this->schedule($first, $this->day(-1), $this->day(3));
+        $second = $this->project('Second Job', 'pending', [$lead]);
+        $this->schedule($second, $this->day(2), $this->day(6));
+
+        $old = $this->project('Old Job', 'ongoing', [$retired]);
+        $this->schedule($old, $this->day(-1), $this->day(3));
+
+        $data = $this->chartData('leadTechnicianProjects');
+
+        $this->assertSame(['Jose Garcia'], $data['labels']);
+        $this->assertSame([2], $data['values']);
+
+        // The lead with nothing on, and the deactivated one, are both absent.
+        $this->assertNotContains('Rita Cruz', $data['labels']);
+        $this->assertNotContains('Ex Lead', $data['labels']);
+        $this->assertNotContains('Ana Mendoza', $data['labels']);
+
+        // But the idle lead is still counted as capacity.
+        $availability = $this->chartData('leadTechnicianAvailability');
+
+        $this->assertSame(['Assigned to Active Project', 'Available'], $availability['labels']);
+        $this->assertSame([1, 1], $availability['values']);
+        $this->assertSame('Active lead technicians: 2', $availability['summary']);
+    }
+
+    /**
+     * A project handed to a lead before its dates are set is already theirs,
+     * so it counts towards their load and towards the breakdown alike - the
+     * two charts answer to one definition of an active project.
+     */
+    public function test_unscheduled_work_counts_towards_a_lead_s_load(): void
+    {
+        $lead = $this->lead('Jose Garcia');
+
+        $booked = $this->project('Booked Job', 'ongoing', [$lead]);
+        $this->schedule($booked, $this->day(-1), $this->day(4));
+
+        $this->project('Not Yet Booked', 'unscheduled', [$lead]);
+
+        $breakdown = $this->chartData('activeProjectBreakdown');
+        $slices = array_combine($breakdown['labels'], $breakdown['values']);
+
+        $this->assertSame(1, $slices['Unscheduled']);
+        $this->assertSame(2, array_sum($breakdown['values']));
+
+        // The distribution counts both, exactly as the breakdown does.
+        $distribution = $this->chartData('leadTechnicianProjects');
+
+        $this->assertSame(['Jose Garcia'], $distribution['labels']);
+        $this->assertSame([2], $distribution['values']);
+
+        // And a lead holding only unscheduled work is not free.
+        $spare = $this->lead('Rita Cruz');
+        $this->project('Rita Unscheduled', 'unscheduled', [$spare]);
+
+        $this->assertSame([2, 0], $this->chartData('leadTechnicianAvailability')['values']);
+    }
+
+    /**
+     * A project booked in several blocks, with several people on it, is still
+     * one project for the lead carrying it.
+     */
+    public function test_a_lead_is_not_counted_twice_for_one_project(): void
+    {
+        $lead = $this->lead('Jose Garcia');
+        $crew = $this->technician('Ana Mendoza');
+
+        $project = $this->project('Long Job', 'ongoing', [$lead, $crew]);
+        $this->schedule($project, $this->dateThisYear('03-03'), $this->dateThisYear('03-07'));
+        $this->schedule($project, $this->dateThisYear('03-20'), $this->dateThisYear('03-24'));
+
+        $this->assertSame([1], $this->chartData('leadTechnicianProjects')['values']);
+
+        $workload = $this->chartData('leadTechnicianWorkload');
+
+        $this->assertCount(12, $workload['labels']);
+        $this->assertSame(1, array_sum($workload['datasets'][0]['values']));
+    }
+
+    /**
+     * Work that has ended releases the lead who ran it, however long the
+     * project sat on their name.
+     */
+    public function test_finished_work_does_not_keep_a_lead_busy(): void
+    {
+        $lead = $this->lead('Jose Garcia');
+
+        foreach (['completed', 'cancelled', Project::STATUS_AWAITING_CLIENT_CONFIRMATION] as $status) {
+            $project = $this->project('Closed '.$status, $status, [$lead]);
+            $this->schedule($project, $this->day(-10), $this->day(-5));
+        }
+
+        $archived = $this->project('Filed Job', 'ongoing', [$lead], 100, true);
+        $this->schedule($archived, $this->day(-2), $this->day(2));
+
+        $this->assertSame([], $this->chartData('leadTechnicianProjects')['labels']);
+        $this->assertSame([0, 1], $this->chartData('leadTechnicianAvailability')['values']);
+    }
+
+    /**
+     * Deactivating an account removes it from today's capacity without
+     * touching what it did - the assignment rows stay exactly where they are.
+     */
+    public function test_deactivating_a_lead_keeps_their_history(): void
+    {
+        $lead = $this->lead('Jose Garcia');
+        $project = $this->project('Live Job', 'ongoing', [$lead]);
+        $this->schedule($project, $this->day(-1), $this->day(4));
+
+        $this->assertSame([1], $this->chartData('leadTechnicianProjects')['values']);
+
+        $lead->account->forceFill(['status' => User::STATUS_DEACTIVATED])->save();
+
+        $this->assertSame([], $this->chartData('leadTechnicianProjects')['values']);
+        $this->assertSame('Active lead technicians: 0', $this->chartData('leadTechnicianAvailability')['summary']);
+        $this->assertSame(
+            1,
+            ProjectTechnician::where('project_id', $project->project_id)->count(),
+            'The historical assignment must survive the deactivation.'
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // Schedule charts
+    // ------------------------------------------------------------------
+
+    /**
+     * Booked days are counted range by range, and the days between two
+     * separate bookings were never booked: Aug 10-15 and Aug 25-30 is twelve
+     * days, not the twenty-one the two ends span.
+     */
+    public function test_booked_days_skip_the_gaps_between_ranges(): void
+    {
+        $project = $this->project('Split Job', 'ongoing');
+        $this->schedule($project, $this->dateThisYear('08-10'), $this->dateThisYear('08-15'));
+        $this->schedule($project, $this->dateThisYear('08-25'), $this->dateThisYear('08-30'));
+
+        // One project, so its average duration is its own booked days.
+        $data = $this->chartData('averageProjectDuration');
+        $august = array_combine($data['labels'], $data['values'])[
+            CarbonImmutable::parse($this->dateThisYear('08-01'))->format('M Y')
+        ];
+
+        $this->assertEquals(12, $august);
+        $this->assertSame('Average: 12.0 days', $data['summary']);
+
+        // And the project itself is one project, however it was booked.
+        $trend = $this->chartData('scheduledProjectsTrend');
+
+        $this->assertSame(1, array_sum($trend['values']));
+        $this->assertCount(12, $trend['labels']);
+    }
+
+    /**
+     * A partial day books hours on one date, so it is one scheduled day - not
+     * a fraction, and not four days because it ran four hours.
+     */
+    public function test_a_partial_day_counts_as_a_single_scheduled_day(): void
+    {
+        $project = $this->project('Morning Call', 'ongoing');
+
+        Schedule::create([
+            'project_id' => $project->project_id,
+            'start_datetime' => $this->dateThisYear('08-20').' 08:00:00',
+            'end_datetime' => $this->dateThisYear('08-20').' 12:00:00',
+            'scheduling_mode' => Schedule::MODE_PARTIAL_DAY,
+            'status' => 'scheduled',
+        ]);
+
+        $this->assertSame('Average: 1.0 days', $this->chartData('averageProjectDuration')['summary']);
+
+        $types = $this->chartData('scheduleTypeDistribution');
+
+        $this->assertSame(['Date Based', 'Partial Day'], $types['labels']);
+        $this->assertSame([0, 1], $types['values']);
+    }
+
+    /**
+     * The mode is read from the column, never inferred from the times.
+     */
+    public function test_the_schedule_type_distribution_reads_the_stored_mode(): void
+    {
+        $project = $this->project('Mixed Job', 'ongoing');
+        $this->schedule($project, $this->dateThisYear('08-10'), $this->dateThisYear('08-12'));
+
+        Schedule::create([
+            'project_id' => $project->project_id,
+            'start_datetime' => $this->dateThisYear('08-20').' 08:00:00',
+            'end_datetime' => $this->dateThisYear('08-20').' 12:00:00',
+            'scheduling_mode' => Schedule::MODE_PARTIAL_DAY,
+            'status' => 'scheduled',
+        ]);
+
+        $data = $this->chartData('scheduleTypeDistribution');
+
+        $this->assertSame([1, 1], $data['values']);
+        $this->assertSame('Bookings: 2', $data['summary']);
+    }
+
+    /**
+     * Each project's duration is the sum of its own ranges, and the chart
+     * averages those across the projects starting in the bucket.
+     */
+    public function test_average_duration_averages_the_booked_days_per_project(): void
+    {
+        $split = $this->project('Split Job', 'ongoing');
+        $this->schedule($split, $this->dateThisYear('08-10'), $this->dateThisYear('08-15'));
+        $this->schedule($split, $this->dateThisYear('08-25'), $this->dateThisYear('08-30'));
+
+        $short = $this->project('Short Job', 'ongoing');
+        $this->schedule($short, $this->dateThisYear('08-04'), $this->dateThisYear('08-07'));
+
+        $data = $this->chartData('averageProjectDuration');
+        $august = array_combine($data['labels'], $data['values'])[
+            CarbonImmutable::parse($this->dateThisYear('08-01'))->format('M Y')
+        ];
+
+        // Twelve booked days and four, over two projects.
+        $this->assertEquals(8, $august);
+        $this->assertSame('Average: 8.0 days', $data['summary']);
+        $this->assertCount(12, $data['labels']);
+    }
+
+    /**
+     * Every time-based chart draws the whole timeline, so an empty month is a
+     * zero rather than a missing column.
+     */
+    public function test_every_time_based_chart_covers_the_whole_timeline(): void
+    {
+        $timeBased = [
+            'completedProjects',
+            'residentialVsCommercial',
+            'totalQuotation',
+            'leadTechnicianWorkload',
+            'scheduledProjectsTrend',
+            'averageProjectDuration',
+        ];
+
+        foreach ($timeBased as $chart) {
+            $this->assertCount(12, $this->chartData($chart)['labels'], "{$chart} monthly");
+            $this->assertCount(
+                5,
+                $this->chartData($chart, ['granularity' => 'yearly'])['labels'],
+                "{$chart} yearly"
+            );
+        }
     }
 
     /**
@@ -818,91 +1147,779 @@ class ReportsPageTest extends TestCase
             ->assertStatus(422);
     }
 
-    public function test_a_custom_period_uses_the_supplied_window(): void
+    // ------------------------------------------------------------------
+    // Export - period and filters
+    // ------------------------------------------------------------------
+
+    /**
+     * A report covers one named month or one named year, both ends inclusive.
+     */
+    public function test_the_export_period_is_the_month_or_year_that_was_chosen(): void
     {
         $service = app(SystemReportService::class);
 
-        $period = $service->resolvePeriod('custom', $this->day(-5), $this->day(-1));
+        $monthly = $service->resolveExportPeriod('monthly', 8, 2026);
 
-        $this->assertSame($this->day(-5), $period['start']->toDateString());
-        $this->assertSame($this->day(-1), $period['end']->toDateString());
-        $this->assertSame('day', $period['bucket']);
+        $this->assertSame('August 2026', $monthly['label']);
+        $this->assertSame('2026-08-01', $monthly['start']->toDateString());
+        $this->assertSame('2026-08-31', $monthly['end']->toDateString());
 
-        // Reversed dates are corrected rather than producing an empty range.
-        $flipped = $service->resolvePeriod('custom', $this->day(-1), $this->day(-5));
+        $yearly = $service->resolveExportPeriod('yearly', null, 2026);
 
-        $this->assertSame($this->day(-5), $flipped['start']->toDateString());
+        $this->assertSame('2026', $yearly['label']);
+        $this->assertSame('2026-01-01', $yearly['start']->toDateString());
+        $this->assertSame('2026-12-31', $yearly['end']->toDateString());
     }
-
-    // ------------------------------------------------------------------
-    // Export
-    // ------------------------------------------------------------------
 
     public function test_it_exports_a_pdf_for_every_report_type(): void
     {
         $tech = $this->technician('Ana Mendoza');
         $project = $this->project('Some Project', 'ongoing', [$tech], 400000);
-        $this->schedule($project, $this->day(-2), $this->day(3));
+        $this->schedule($project, $this->dateThisYear('08-02'), $this->dateThisYear('08-06'));
 
         foreach (array_keys(ReportController::EXPORT_TYPES) as $type) {
-            $response = $this->post(route('super-admin.reports.export'), [
+            $response = $this->post(route('super-admin.reports.export'), $this->exportPayload([
                 'report_type' => $type,
-                'period' => 'monthly',
-            ]);
+            ]));
 
             $response->assertOk();
             $response->assertHeader('content-type', 'application/pdf');
-
-            $body = $response->getContent();
-
-            $this->assertStringStartsWith('%PDF-', $body, "{$type} did not produce a PDF.");
+            $this->assertStringStartsWith('%PDF-', $response->getContent(), "{$type} did not produce a PDF.");
         }
     }
 
-    public function test_a_custom_export_requires_both_dates(): void
+    /**
+     * A filter that belongs to another report is refused rather than quietly
+     * ignored: the caller believes it will be applied, and it will not be.
+     */
+    public function test_filters_from_another_report_are_rejected(): void
     {
-        $response = $this->postJson(route('super-admin.reports.export'), [
-            'report_type' => 'projects',
-            'period' => 'custom',
-        ]);
+        $technician = $this->technician('Ana Mendoza');
+
+        $combinations = [
+            ['report_type' => 'schedule', 'project_status' => 'completed'],
+            ['report_type' => 'technician', 'project_status' => 'completed'],
+            ['report_type' => 'project', 'technician_scope' => 'all'],
+            ['report_type' => 'project', 'technician_kind' => 'tasks'],
+            ['report_type' => 'schedule', 'technician_id' => $technician->technician_id],
+        ];
+
+        foreach ($combinations as $payload) {
+            $response = $this->postJson(
+                route('super-admin.reports.export'),
+                $this->exportPayload($payload)
+            );
+
+            $response->assertStatus(422);
+            $this->assertStringContainsString('does not apply', $response->json('error'));
+        }
+    }
+
+    /**
+     * Archived work never appears, so it is not offered as something to
+     * report on either.
+     */
+    public function test_archived_cannot_be_asked_for_as_a_project_status(): void
+    {
+        $this->assertArrayNotHasKey('archived', SystemReportService::REPORT_STATUSES);
+
+        $response = $this->postJson(route('super-admin.reports.export'), $this->exportPayload([
+            'report_type' => 'project',
+            'project_status' => 'archived',
+        ]));
 
         $response->assertStatus(422);
-        $this->assertStringContainsString('start date is required', $response->json('error'));
+    }
+
+    public function test_a_monthly_export_requires_a_month_and_a_valid_year(): void
+    {
+        $noMonth = $this->postJson(route('super-admin.reports.export'), [
+            'report_type' => 'project',
+            'period' => 'monthly',
+            'year' => CarbonImmutable::today()->format('Y'),
+        ]);
+
+        $noMonth->assertStatus(422);
+        $this->assertStringContainsString('month', $noMonth->json('error'));
+
+        $badYear = $this->postJson(route('super-admin.reports.export'), $this->exportPayload([
+            'report_type' => 'project',
+            'year' => 1990,
+        ]));
+
+        $badYear->assertStatus(422);
+
+        // A yearly report needs no month.
+        $this->postJson(route('super-admin.reports.export'), [
+            'report_type' => 'project',
+            'period' => 'yearly',
+            'year' => CarbonImmutable::today()->format('Y'),
+        ])->assertOk();
     }
 
     public function test_an_unknown_report_type_is_rejected(): void
     {
-        $response = $this->postJson(route('super-admin.reports.export'), [
+        $this->postJson(route('super-admin.reports.export'), $this->exportPayload([
             'report_type' => 'everything',
-            'period' => 'monthly',
-        ]);
-
-        $response->assertStatus(422);
+        ]))->assertStatus(422);
     }
 
     /**
-     * Only inline PNG data URIs are accepted as chart images, so a crafted
-     * value can't reach dompdf's image loader.
+     * Nothing to report is still a report: the header, the filters and a
+     * summary of zeros, rather than a failed download.
      */
-    public function test_only_png_data_uris_are_accepted_as_chart_images(): void
+    public function test_an_empty_period_still_produces_a_report(): void
     {
-        $this->project('Some Project', 'ongoing', [], 100000);
+        $report = $this->exportReport('project');
 
-        $png = 'data:image/png;base64,'
-            .'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==';
+        $this->assertTrue($report['is_empty']);
+        $this->assertCount(0, $report['sections'][0]['rows']);
+        $this->assertSame(
+            'Total Quotation: ₱0.00',
+            $this->summaryLine($report['sections'][0], 'Total Quotation')
+        );
 
-        $response = $this->post(route('super-admin.reports.export'), [
-            'report_type' => 'projects',
-            'period' => 'monthly',
-            'charts' => [
-                'projectsOverTime' => $png,
-                // Both of these must be discarded.
-                'projectsByStatus' => 'https://example.test/evil.png',
-                'projectCompletionTrend' => '/etc/passwd',
-            ],
+        $this->post(route('super-admin.reports.export'), $this->exportPayload([
+            'report_type' => 'project',
+        ]))->assertOk();
+    }
+
+    // ------------------------------------------------------------------
+    // Export - Project Report
+    // ------------------------------------------------------------------
+
+    /**
+     * One row per project, however many types or bookings it carries, with
+     * both stacked inside their own cell.
+     */
+    public function test_the_project_report_keeps_one_row_per_project(): void
+    {
+        $project = $this->project('Busy Project', 'ongoing');
+        $this->schedule($project, $this->dateThisYear('08-05'), $this->dateThisYear('08-07'));
+        $this->schedule($project, $this->dateThisYear('08-12'), $this->dateThisYear('08-14'));
+
+        foreach (['Aircon Installation', 'Preventive Maintenance'] as $name) {
+            $project->projectTypes()->attach(ProjectType::create(['type_name' => $name])->type_id);
+        }
+
+        $rows = $this->exportReport('project')['sections'][0]['rows'];
+
+        $this->assertCount(1, $rows);
+        $this->assertCount(2, $rows[0]['project_types']);
+        $this->assertCount(2, $rows[0]['schedules']);
+        $this->assertSame('Commercial', $rows[0]['client_type']);
+        $this->assertSame($project->reference_no, $rows[0]['reference_no']);
+    }
+
+    /**
+     * The two reports answer different questions, and the Schedules column is
+     * where that shows.
+     *
+     * The Project Report is about the project: the period decides whether it
+     * is listed, and once it is, its whole schedule is shown. The Schedule
+     * Report is about the period: only the bookings that touch it are listed.
+     */
+    public function test_the_project_report_shows_every_schedule_the_schedule_report_filters(): void
+    {
+        $project = $this->project('Long Job', 'ongoing');
+
+        foreach ([
+            ['07-20', '07-22'],
+            ['07-28', '08-01'],
+            ['08-10', '08-12'],
+            ['08-20', '08-23'],
+            ['09-05', '09-07'],
+        ] as [$start, $end]) {
+            $this->schedule($project, $this->dateThisYear($start), $this->dateThisYear($end));
+        }
+
+        $august = $this->monthOf($this->dateThisYear('08-01'));
+
+        // Project Report: all five, July and September included.
+        $projectRow = $this->exportReport('project', [], $august)['sections'][0]['rows'][0];
+
+        $this->assertCount(5, $projectRow['schedules']);
+        $this->assertStringContainsString('Jul 20', implode(' ', $projectRow['schedules']));
+        $this->assertStringContainsString('Sep 5', implode(' ', $projectRow['schedules']));
+
+        // Schedule Report: only the three that touch August.
+        $scheduleRow = $this->exportReport('schedule', [], $august)['sections'][0]['rows'][0];
+
+        $this->assertCount(3, $scheduleRow['schedules']);
+        $this->assertStringNotContainsString('Jul 20', implode(' ', $scheduleRow['schedules']));
+        $this->assertStringNotContainsString('Sep 5', implode(' ', $scheduleRow['schedules']));
+    }
+
+    public function test_a_project_with_no_schedule_says_so(): void
+    {
+        $this->project('Fresh Project', 'unscheduled');
+
+        $rows = $this->exportReport('project')['sections'][0]['rows'];
+
+        $this->assertSame([], $rows[0]['schedules']);
+        $this->assertSame([], $rows[0]['project_types']);
+    }
+
+    /**
+     * Unscheduled first, Completed last, and never alphabetical.
+     */
+    public function test_the_project_report_orders_statuses_by_the_reporting_order(): void
+    {
+        $this->project('Fresh', 'unscheduled');
+        $this->project('Waiting', Project::STATUS_AWAITING_CLIENT_CONFIRMATION);
+        $this->project('Done', 'completed');
+        $this->project('Dead', 'cancelled');
+
+        $ongoing = $this->project('Live', 'ongoing');
+        $this->schedule($ongoing, $this->dateThisYear('08-10'), $this->dateThisYear('08-14'));
+
+        $late = $this->project('Late', 'ongoing');
+        $this->schedule($late, $this->dateThisYear('08-01'), $this->dateThisYear('08-03'));
+        $late->forceFill(['status' => 'ongoing'])->save();
+
+        $paused = $this->project('Paused', 'pending');
+        $paused->forceFill(['on_hold' => true])->save();
+
+        $rows = $this->exportReport('project')['sections'][0]['rows'];
+        $order = $rows->pluck('status_key')->all();
+
+        $this->assertSame('unscheduled', $order[0]);
+        $this->assertSame('completed', end($order));
+        $this->assertNotContains('archived', $order);
+
+        // Each status appears where the reporting order puts it.
+        $expected = array_values(array_filter(
+            Project::REPORT_STATUS_ORDER,
+            fn (string $status): bool => in_array($status, $order, true)
+        ));
+
+        $this->assertSame($expected, array_values(array_unique($order)));
+    }
+
+    /**
+     * The status filter reads the status the row will actually print, which
+     * for a paused or late project is not the status stored on it.
+     */
+    public function test_the_project_status_filter_matches_the_printed_status(): void
+    {
+        $paused = $this->project('Paused Project', 'pending');
+        $paused->forceFill(['on_hold' => true])->save();
+
+        $late = $this->project('Late Project', 'ongoing');
+        $this->schedule($late, $this->dateThisYear('08-01'), $this->dateThisYear('08-04'));
+        $late->forceFill(['status' => 'ongoing'])->save();
+        // Push the booking into the past so the project reads as Overdue.
+        $late->schedules()->update([
+            'start_datetime' => $this->day(-20).' 00:00:00',
+            'end_datetime' => $this->day(-10).' 23:59:59',
         ]);
 
-        $response->assertOk();
-        $this->assertStringStartsWith('%PDF-', $response->getContent());
+        $onHold = $this->exportReport('project', ['project_status' => 'on_hold'])['sections'][0]['rows'];
+        $this->assertCount(1, $onHold);
+        $this->assertSame('Paused Project Holdings', $onHold[0]['client']);
+
+        $overdue = $this->exportReport(
+            'project',
+            ['project_status' => 'overdue'],
+            $this->monthOf($this->day(-20))
+        )['sections'][0]['rows'];
+
+        $this->assertCount(1, $overdue);
+        $this->assertSame('overdue', $overdue[0]['status_key']);
+
+        // And the stored status no longer matches either of them.
+        $pending = $this->exportReport('project', ['project_status' => 'pending'])['sections'][0]['rows'];
+        $this->assertCount(0, $pending);
+    }
+
+    /**
+     * A cancelled project is part of the record and is shown, but its money
+     * was never committed and must not reach the total.
+     */
+    public function test_cancelled_work_is_listed_but_never_billed(): void
+    {
+        $this->project('Pending Job', 'pending', [], 100000);
+        $this->project('Ongoing Job', 'ongoing', [], 150000);
+        $this->project('Done Job', 'completed', [], 200000);
+        $this->project('Dead Job', 'cancelled', [], 100000);
+
+        $section = $this->exportReport('project')['sections'][0];
+
+        $this->assertCount(4, $section['rows']);
+        $this->assertSame('Total Quotation: ₱450,000.00', $this->summaryLine($section, 'Total Quotation'));
+
+        // It still counts as a project, because it is shown as one.
+        $this->assertSame('Cancelled: 1', $this->summaryLine($section, 'Cancelled'));
+    }
+
+    /**
+     * Archived work is gone from the rows, the counts and the money.
+     */
+    public function test_archived_projects_are_absent_from_the_project_report(): void
+    {
+        $this->project('Live Job', 'ongoing', [], 100000);
+
+        $archived = $this->project('Filed Job', 'ongoing', [], 900000, true);
+        $this->schedule($archived, $this->dateThisYear('08-01'), $this->dateThisYear('08-09'));
+
+        $section = $this->exportReport('project')['sections'][0];
+
+        $this->assertCount(1, $section['rows']);
+        $this->assertSame('Live Job Holdings', $section['rows'][0]['client']);
+        $this->assertSame('Total Quotation: ₱100,000.00', $this->summaryLine($section, 'Total Quotation'));
+    }
+
+    /**
+     * The summary is counted from the rows themselves, so it cannot describe
+     * a different set of projects than the table above it.
+     */
+    public function test_the_project_summary_counts_the_rows_it_sits_under(): void
+    {
+        $this->project('One', 'pending', [], 50000);
+        $this->project('Two', 'pending', [], 50000);
+        $this->project('Three', 'completed', [], 75000);
+
+        $section = $this->exportReport('project')['sections'][0];
+
+        $this->assertSame('Pending: 2', $this->summaryLine($section, 'Pending'));
+        $this->assertSame('Completed: 1', $this->summaryLine($section, 'Completed'));
+        $this->assertSame('Total Quotation: ₱175,000.00', $this->summaryLine($section, 'Total Quotation'));
+    }
+
+    // ------------------------------------------------------------------
+    // Export - Schedule Report
+    // ------------------------------------------------------------------
+
+    /**
+     * A booking is printed whole even where it runs outside the period - that
+     * is the booking, and trimming the printed dates would describe a visit
+     * that never happened. The duration is the part that was August.
+     */
+    public function test_a_crossing_booking_is_printed_whole_but_counted_in_period(): void
+    {
+        $project = $this->project('Crossing Job', 'ongoing');
+        $this->schedule($project, $this->dateThisYear('07-28'), $this->dateThisYear('08-01'));
+        $this->schedule($project, $this->dateThisYear('08-30'), $this->dateThisYear('09-03'));
+
+        $section = $this->exportReport('schedule', [], $this->monthOf($this->dateThisYear('08-01')))['sections'][0];
+        $row = $section['rows'][0];
+
+        // Both ends of each range survive into the printed cell.
+        $this->assertStringContainsString('Jul 28', $row['schedules'][0]);
+        $this->assertStringContainsString('Aug 1', $row['schedules'][0]);
+        $this->assertStringContainsString('Aug 30', $row['schedules'][1]);
+        $this->assertStringContainsString('Sep 3', $row['schedules'][1]);
+
+        // Aug 1 is one day; Aug 30-31 is two.
+        $this->assertSame(3, $row['duration']);
+        $this->assertSame('Total Scheduled Days: 3', $this->summaryLine($section, 'Total Scheduled Days'));
+    }
+
+    /**
+     * Only bookings with a date inside the period are listed, and every one
+     * of them is - never just the first.
+     */
+    public function test_the_schedule_report_lists_every_overlapping_range(): void
+    {
+        $project = $this->project('Busy Job', 'ongoing');
+
+        foreach ([
+            ['07-20', '07-25'],   // wholly before August
+            ['07-28', '08-01'],   // crosses in
+            ['08-05', '08-07'],
+            ['08-15', '08-18'],
+            ['08-25', '08-27'],
+            ['09-05', '09-07'],   // wholly after August
+        ] as [$start, $end]) {
+            $this->schedule($project, $this->dateThisYear($start), $this->dateThisYear($end));
+        }
+
+        $section = $this->exportReport('schedule', [], $this->monthOf($this->dateThisYear('08-01')))['sections'][0];
+
+        // One row for the project, carrying every August booking.
+        $this->assertCount(1, $section['rows']);
+        $this->assertCount(4, $section['rows'][0]['schedules']);
+
+        $printed = implode(' | ', $section['rows'][0]['schedules']);
+
+        $this->assertStringContainsString('Jul 28', $printed);
+        $this->assertStringNotContainsString('Jul 20', $printed);
+        $this->assertStringNotContainsString('Sep 5', $printed);
+
+        // 1 + 3 + 4 + 3, never the 31 the four ends span.
+        $this->assertSame(11, $section['rows'][0]['duration']);
+        $this->assertSame('Total Schedule Entries: 4', $this->summaryLine($section, 'Total Schedule Entries'));
+        $this->assertSame('Total Scheduled Projects: 1', $this->summaryLine($section, 'Total Scheduled Projects'));
+        $this->assertSame('Total Scheduled Days: 11', $this->summaryLine($section, 'Total Scheduled Days'));
+    }
+
+    /**
+     * Ranges inside one cell run in date order.
+     */
+    public function test_a_project_s_ranges_are_listed_chronologically(): void
+    {
+        $project = $this->project('Split Job', 'ongoing');
+        $this->schedule($project, $this->dateThisYear('08-15'), $this->dateThisYear('08-18'));
+        $this->schedule($project, $this->dateThisYear('08-05'), $this->dateThisYear('08-07'));
+
+        $schedules = $this->exportReport(
+            'schedule',
+            [],
+            $this->monthOf($this->dateThisYear('08-01'))
+        )['sections'][0]['rows'][0]['schedules'];
+
+        $this->assertStringContainsString('Aug 5', $schedules[0]);
+        $this->assertStringContainsString('Aug 15', $schedules[1]);
+    }
+
+    /**
+     * A yearly report follows the same rule against a year-wide window.
+     */
+    public function test_a_yearly_report_counts_only_that_year_s_days(): void
+    {
+        $year = (int) CarbonImmutable::today()->format('Y');
+        $project = $this->project('New Year Job', 'ongoing');
+
+        $this->schedule(
+            $project,
+            CarbonImmutable::create($year - 1, 12, 28)->toDateString(),
+            CarbonImmutable::create($year, 1, 5)->toDateString()
+        );
+
+        $period = app(SystemReportService::class)->resolveExportPeriod('yearly', null, $year);
+        $row = $this->exportReport('schedule', [], $period)['sections'][0]['rows'][0];
+
+        // The booking is shown whole, across the new year.
+        $this->assertStringContainsString('Dec 28', $row['schedules'][0]);
+        $this->assertStringContainsString('Jan 5', $row['schedules'][0]);
+        // Only Jan 1 to Jan 5 belongs to this year.
+        $this->assertSame(5, $row['duration']);
+    }
+
+    /**
+     * Hours booked on a date are one scheduled day, whatever the stored times
+     * say - not a fraction, and not several days.
+     */
+    public function test_a_partial_day_is_one_scheduled_day_in_the_schedule_report(): void
+    {
+        $project = $this->project('Morning Call', 'ongoing');
+
+        Schedule::create([
+            'project_id' => $project->project_id,
+            'start_datetime' => $this->dateThisYear('08-20').' 08:00:00',
+            'end_datetime' => $this->dateThisYear('08-20').' 12:00:00',
+            'scheduling_mode' => Schedule::MODE_PARTIAL_DAY,
+            'status' => 'scheduled',
+        ]);
+
+        $section = $this->exportReport('schedule', [], $this->monthOf($this->dateThisYear('08-01')))['sections'][0];
+
+        $this->assertSame(1, $section['rows'][0]['duration']);
+        $this->assertStringContainsString('8:00 AM', $section['rows'][0]['schedules'][0]);
+        $this->assertSame('Total Scheduled Days: 1', $this->summaryLine($section, 'Total Scheduled Days'));
+    }
+
+    /**
+     * Projects run in the order their work starts, so the last row is the
+     * latest the period saw - never by client or reference.
+     */
+    public function test_the_schedule_report_runs_in_date_order(): void
+    {
+        $late = $this->project('Zulu Job', 'ongoing');
+        $this->schedule($late, $this->dateThisYear('08-20'), $this->dateThisYear('08-22'));
+
+        $early = $this->project('Alpha Job', 'ongoing');
+        $this->schedule($early, $this->dateThisYear('08-02'), $this->dateThisYear('08-04'));
+
+        $rows = $this->exportReport('schedule', [], $this->monthOf($this->dateThisYear('08-01')))['sections'][0]['rows'];
+
+        $this->assertStringContainsString('Aug 2', $rows[0]['schedules'][0]);
+        $this->assertStringContainsString('Aug 20', $rows->last()['schedules'][0]);
+    }
+
+    public function test_the_schedule_report_excludes_archived_projects(): void
+    {
+        $archived = $this->project('Filed Job', 'ongoing', [], 100, true);
+        $this->schedule($archived, $this->dateThisYear('08-05'), $this->dateThisYear('08-07'));
+
+        $report = $this->exportReport('schedule', [], $this->monthOf($this->dateThisYear('08-01')));
+
+        $this->assertTrue($report['is_empty']);
+        $this->assertSame('Total Scheduled Days: 0', $this->summaryLine($report['sections'][0], 'Total Scheduled Days'));
+    }
+
+    // ------------------------------------------------------------------
+    // Export - Technician Report
+    // ------------------------------------------------------------------
+
+    /**
+     * A project counts once for a technician however many times it is booked,
+     * and archived work is not theirs to answer for.
+     */
+    public function test_assigned_projects_count_each_project_once(): void
+    {
+        $ana = $this->technician('Ana Mendoza');
+
+        $busy = $this->project('Busy Job', 'ongoing', [$ana]);
+        $this->schedule($busy, $this->dateThisYear('08-01'), $this->dateThisYear('08-03'));
+        $this->schedule($busy, $this->dateThisYear('08-10'), $this->dateThisYear('08-12'));
+
+        $second = $this->project('Second Job', 'ongoing', [$ana]);
+        $this->schedule($second, $this->dateThisYear('08-05'), $this->dateThisYear('08-06'));
+
+        $archived = $this->project('Filed Job', 'ongoing', [$ana], 100, true);
+        $this->schedule($archived, $this->dateThisYear('08-08'), $this->dateThisYear('08-09'));
+
+        $section = $this->technicianSection('assigned', 'assigned');
+
+        $this->assertCount(1, $section['rows']);
+        // Two projects, not three bookings and not three projects.
+        $this->assertCount(2, $section['rows'][0]['projects']);
+        $this->assertSame('Technician', $section['rows'][0]['position']);
+        $this->assertSame('Total Assigned Projects: 2', $this->summaryLine($section, 'Total Assigned Projects'));
+
+        foreach ($section['rows'][0]['projects'] as $entry) {
+            $this->assertStringNotContainsString('Filed Job', $entry);
+            $this->assertStringContainsString(' - ', $entry);
+        }
+    }
+
+    public function test_a_lead_technician_reports_their_position(): void
+    {
+        $lead = $this->lead('Jose Garcia');
+        $project = $this->project('Led Job', 'ongoing', [$lead]);
+        $this->schedule($project, $this->dateThisYear('08-01'), $this->dateThisYear('08-03'));
+
+        $section = $this->technicianSection('assigned', 'assigned');
+
+        $this->assertSame('Lead Technician', $section['rows'][0]['position']);
+    }
+
+    /**
+     * Asking for one technician returns that technician and nobody else.
+     */
+    public function test_a_specific_technician_report_covers_only_them(): void
+    {
+        $ana = $this->technician('Ana Mendoza');
+        $ben = $this->technician('Ben Santos');
+
+        foreach ([$ana, $ben] as $technician) {
+            $project = $this->project($technician->name.' Job', 'ongoing', [$technician]);
+            $this->schedule($project, $this->dateThisYear('08-01'), $this->dateThisYear('08-03'));
+        }
+
+        $section = $this->technicianSection('assigned', 'assigned', [
+            'technician_scope' => 'specific',
+            'technician_id' => $ana->technician_id,
+        ]);
+
+        $this->assertCount(1, $section['rows']);
+        $this->assertSame('Ana Mendoza', $section['rows'][0]['technician']);
+    }
+
+    /**
+     * The technician schedule section obeys the same clipping and duration
+     * rules as the Schedule Report.
+     */
+    public function test_the_technician_schedule_uses_the_schedule_report_rules(): void
+    {
+        $ana = $this->technician('Ana Mendoza');
+        $project = $this->project('Crossing Job', 'ongoing', [$ana]);
+
+        foreach ([
+            ['07-28', '08-01'],   // crosses in: one August day
+            ['08-05', '08-07'],
+            ['08-15', '08-18'],
+            ['09-05', '09-07'],   // outside August
+        ] as [$start, $end]) {
+            $this->schedule($project, $this->dateThisYear($start), $this->dateThisYear($end));
+        }
+
+        $section = $this->technicianSection('schedule', 'technician_schedule');
+        $row = $section['groups'][0]['rows'][0];
+
+        $this->assertCount(1, $section['groups']);
+        $this->assertSame('Ana Mendoza', $section['groups'][0]['technician']);
+
+        // Every overlapping range, never just the first, and not September.
+        $this->assertCount(3, $row['schedules']);
+        $this->assertStringNotContainsString('Sep', implode(' ', $row['schedules']));
+
+        // 1 + 3 + 4, not the 22 days from July 28 to August 18.
+        $this->assertSame(8, $row['duration']);
+        $this->assertSame('Total Scheduled Days: 8', $this->summaryLine($section, 'Total Scheduled Days'));
+        $this->assertSame('Total Schedule Entries: 3', $this->summaryLine($section, 'Total Schedule Entries'));
+    }
+
+    /**
+     * Tasks are grouped under the technician holding them, and a task on an
+     * archived project is not reported at all.
+     */
+    public function test_the_task_section_groups_by_technician_and_skips_archived_work(): void
+    {
+        $ana = $this->technician('Ana Mendoza');
+        $live = $this->project('Live Job', 'ongoing', [$ana]);
+        $archived = $this->project('Filed Job', 'ongoing', [$ana], 100, true);
+
+        $this->task($live, $ana, 'Pull the wiring', $this->dateThisYear('08-04'), 'ongoing');
+        $this->task($live, $ana, 'Close the ceiling', $this->dateThisYear('08-02'), 'completed');
+        $this->task($archived, $ana, 'Should not appear', $this->dateThisYear('08-06'), 'ongoing');
+
+        $section = $this->technicianSection('tasks', 'technician_tasks');
+
+        $this->assertCount(1, $section['groups']);
+        $this->assertCount(2, $section['groups'][0]['rows']);
+        // Oldest deadline first.
+        $this->assertSame('Close the ceiling', $section['groups'][0]['rows'][0]['task']);
+        $this->assertSame('Total Tasks: 2', $this->summaryLine($section, 'Total Tasks'));
+        $this->assertSame('Completed: 1', $this->summaryLine($section, 'Completed'));
+
+        $titles = collect($section['groups'][0]['rows'])->pluck('task')->all();
+        $this->assertNotContains('Should not appear', $titles);
+    }
+
+    /**
+     * "All" carries the three sections, each with its own table and its own
+     * summary - and no utilization anywhere.
+     */
+    public function test_the_all_technician_report_carries_every_section(): void
+    {
+        $ana = $this->technician('Ana Mendoza');
+        $project = $this->project('Live Job', 'ongoing', [$ana]);
+        $this->schedule($project, $this->dateThisYear('08-01'), $this->dateThisYear('08-03'));
+        $this->task($project, $ana, 'Pull the wiring', $this->dateThisYear('08-02'), 'ongoing');
+
+        $report = $this->exportReport('technician', ['technician_kind' => 'all']);
+
+        $this->assertSame(
+            ['assigned', 'technician_schedule', 'technician_tasks'],
+            collect($report['sections'])->pluck('key')->all()
+        );
+
+        // Every section carries its own summary rather than one at the top.
+        foreach ($report['sections'] as $section) {
+            $this->assertNotEmpty($section['summary']);
+        }
+
+        $labels = collect($report['sections'])
+            ->flatMap(fn (array $section) => collect($section['summary'])->pluck('label'))
+            ->implode(' ');
+
+        foreach (['Utilization', 'Capacity', 'Available Hours'] as $banned) {
+            $this->assertStringNotContainsString($banned, $labels);
+        }
+    }
+
+    /**
+     * The technician sections are the only place assignments are read from,
+     * and they read the project relationship - not the schedule rows.
+     */
+    public function test_a_technician_with_only_archived_work_is_not_reported(): void
+    {
+        $ana = $this->technician('Ana Mendoza');
+        $archived = $this->project('Filed Job', 'ongoing', [$ana], 100, true);
+        $this->schedule($archived, $this->dateThisYear('08-01'), $this->dateThisYear('08-03'));
+
+        $report = $this->exportReport('technician', ['technician_kind' => 'all']);
+
+        $this->assertTrue($report['is_empty']);
+    }
+
+    // ------------------------------------------------------------------
+    // Export helpers
+    // ------------------------------------------------------------------
+
+    /**
+     * A valid export request, with only the fields the report needs.
+     *
+     * @param  array<string, mixed>  $overrides
+     * @return array<string, mixed>
+     */
+    private function exportPayload(array $overrides = []): array
+    {
+        return array_merge([
+            'report_type' => 'project',
+            'period' => 'monthly',
+            'month' => CarbonImmutable::today()->format('n'),
+            'year' => CarbonImmutable::today()->format('Y'),
+        ], $overrides);
+    }
+
+    /**
+     * The month a date falls in, as a resolved reporting period.
+     *
+     * @return array<string, mixed>
+     */
+    private function monthOf(string $date): array
+    {
+        $day = CarbonImmutable::parse($date);
+
+        return app(SystemReportService::class)->resolveExportPeriod(
+            'monthly',
+            (int) $day->format('n'),
+            (int) $day->format('Y')
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     * @param  array<string, mixed>|null  $period
+     * @return array<string, mixed>
+     */
+    private function exportReport(string $type, array $filters = [], ?array $period = null): array
+    {
+        return app(SystemReportService::class)->exportReport(
+            $type,
+            $period ?? $this->monthOf(CarbonImmutable::today()->toDateString()),
+            $filters
+        );
+    }
+
+    /**
+     * One section of a Technician Report, by the kind that produces it.
+     *
+     * @param  array<string, mixed>  $filters
+     * @return array<string, mixed>
+     */
+    private function technicianSection(string $kind, string $key, array $filters = []): array
+    {
+        $report = $this->exportReport(
+            'technician',
+            array_merge(['technician_kind' => $kind], $filters),
+            $this->monthOf($this->dateThisYear('08-01'))
+        );
+
+        return collect($report['sections'])->firstWhere('key', $key);
+    }
+
+    /**
+     * "Total Quotation: ₱450,000.00" - a summary line as it will be printed,
+     * so the assertion reads the way the PDF does.
+     *
+     * @param  array<string, mixed>  $section
+     */
+    private function summaryLine(array $section, string $label): ?string
+    {
+        $line = collect($section['summary'])->firstWhere('label', $label);
+
+        return $line ? $line['label'].': '.$line['value'] : null;
+    }
+
+    private function task(
+        Project $project,
+        Technician $technician,
+        string $title,
+        string $dueDate,
+        string $status = 'ongoing'
+    ): Task {
+        return Task::create([
+            'project_id' => $project->project_id,
+            'technician_id' => $technician->technician_id,
+            'task_title' => $title,
+            'task_description' => 'Description',
+            'start_date' => CarbonImmutable::parse($dueDate)->subDay()->toDateString(),
+            'due_date' => $dueDate,
+            'status' => $status,
+        ]);
     }
 }

@@ -338,6 +338,48 @@ class PartialDayScheduleTest extends TestCase
         $this->assertSame($expectedLabel, $technicianEvent['extendedProps']['rangeLabel']);
     }
 
+    /**
+     * The mark says which kind of booking it is.
+     *
+     * A whole-day range owns every hour of the days it covers and is drawn
+     * filled. A partial day books a few hours and leaves the rest of that
+     * date free, so it stays outlined - a solid bar would claim a day nobody
+     * booked. Both calendars have to agree about it.
+     */
+    public function test_a_partial_day_stays_outlined_while_whole_days_are_filled(): void
+    {
+        $technician = $this->createTechnician('technician', 'Rosa Cruz');
+
+        $partial = $this->residentialProject(
+            $technician,
+            Schedule::MODE_PARTIAL_DAY,
+            $this->day(10).' 08:00:00',
+            $this->day(10).' 12:00:00'
+        );
+
+        $whole = $this->residentialProject(
+            $technician,
+            Schedule::MODE_DATE_BASED,
+            $this->day(20).' 00:00:00',
+            $this->day(22).' 23:59:59'
+        );
+
+        $events = collect($this->get(route('super-admin.schedules.index'))->viewData('calendarEvents'))
+            ->keyBy('id');
+
+        $partialEvent = $events[$partial->schedules->first()->schedule_id];
+        $wholeEvent = $events[$whole->schedules->first()->schedule_id];
+
+        // Outlined: the bar itself carries no fill.
+        $this->assertSame('transparent', $partialEvent['backgroundColor']);
+        $this->assertSame($partialEvent['borderColor'], $partialEvent['textColor']);
+
+        // Filled: the bar carries the colour, the lettering is white on it.
+        $this->assertSame($wholeEvent['borderColor'], $wholeEvent['backgroundColor']);
+        $this->assertSame('#ffffff', $wholeEvent['textColor']);
+        $this->assertNotSame('transparent', $wholeEvent['backgroundColor']);
+    }
+
     // -----------------------------------------------------------------
     // The screens that write schedules
     // -----------------------------------------------------------------

@@ -91,7 +91,7 @@
                         <div class="text-muted">
                             <span class="me-2">
                                 <i class="bi bi-file-earmark-text text-brand-blue" aria-hidden="true"></i>
-                                Project ID: {{ $project->project_id }}
+                                Project ID: {{ $project->displayCode() }}
                             </span>
 
                             <span>

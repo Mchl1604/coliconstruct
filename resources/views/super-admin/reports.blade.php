@@ -180,123 +180,232 @@
 
             <div class="alert alert-danger d-none" role="alert" data-system-error></div>
 
-            {{-- Charts. Each one carries its own Monthly/Yearly toggle:
-                 Monthly draws the current year month by month, Yearly the last
-                 five years. Charts with no time axis use the same window. --}}
+            {{-- Charts, in the three sections the page reads as: the work, the
+                 people leading it, and the calendar. Each time-based chart
+                 carries its own Monthly/Yearly toggle - Monthly draws the
+                 current year month by month, Yearly the last five years -
+                 while the snapshots ignore it and show today. --}}
             @php
-                $systemCharts = [
+                $reportSections = [
                     [
-                        'id' => 'currentProjectBreakdown',
-                        'title' => 'Current Project Breakdown',
-                        'subtitle' => 'Every project as it stands today',
-                        'type' => 'pie',
-                        'col' => 'col-12 col-xl-5',
-                        'categorical' => true,
+                        'title' => 'Project Reports',
+                        'subtitle' => 'Where the work stands and what it is worth',
+                        'icon' => 'bi-kanban',
+                        'charts' => [
+                            [
+                                'id' => 'activeProjectBreakdown',
+                                'title' => 'Active Projects Breakdown',
+                                'subtitle' => 'Unscheduled, Pending, Ongoing, On Hold and Overdue work only',
+                                'type' => 'pie',
+                                'col' => 'col-12',
+                                'categorical' => true,
+                                // Full width, so the slices sit beside a
+                                // readable key rather than in a field of white.
+                                'legend' => true,
+                            ],
+                            [
+                                'id' => 'completedProjects',
+                                'title' => 'Completed Projects',
+                                'subtitle' => 'Counted on the date each project was completed',
+                                'type' => 'bar',
+                                'col' => 'col-12 col-xl-6',
+                                'granularity' => true,
+                            ],
+                            [
+                                'id' => 'projectsByType',
+                                'title' => 'Projects by Project Type',
+                                'subtitle' => 'A project carrying several types is counted under each',
+                                'type' => 'bar',
+                                'col' => 'col-12 col-xl-6',
+                                'granularity' => true,
+                                'categorical' => true,
+                            ],
+                            [
+                                'id' => 'residentialVsCommercial',
+                                'title' => 'Residential vs Commercial Projects',
+                                'subtitle' => 'Read from the client on each project',
+                                'type' => 'bar',
+                                'col' => 'col-12',
+                                'granularity' => true,
+                            ],
+                            [
+                                'id' => 'totalQuotation',
+                                'title' => 'Total Quotation',
+                                'type' => 'bar',
+                                'col' => 'col-12',
+                                'granularity' => true,
+                                'money' => true,
+                                'statusFilter' => true,
+                            ],
+                            [
+                                'id' => 'topClients',
+                                'title' => 'Top 10 Clients by Quotation',
+                                'subtitle' => 'A client\'s projects are summed together',
+                                'type' => 'horizontalBar',
+                                'col' => 'col-12',
+                                'granularity' => true,
+                                'money' => true,
+                                'categorical' => true,
+                                'tall' => true,
+                            ],
+                        ],
                     ],
                     [
-                        'id' => 'completedProjects',
-                        'title' => 'Completed Projects',
-                        'type' => 'bar',
-                        'col' => 'col-12 col-xl-7',
-                        'granularity' => true,
+                        'title' => 'Technician Reports',
+                        'subtitle' => 'The lead technicians answerable for the live work',
+                        'icon' => 'bi-people',
+                        'charts' => [
+                            [
+                                'id' => 'leadTechnicianProjects',
+                                'title' => 'Active Project Distribution by Lead Technician',
+                                'subtitle' => 'Unscheduled, Pending, Ongoing, On Hold and Overdue work, counted once each',
+                                'type' => 'pie',
+                                'col' => 'col-12 col-xl-7',
+                                'categorical' => true,
+                                // Names never fit around a pie, so each lead is
+                                // named in the key beside it with their share.
+                                'legend' => true,
+                            ],
+                            [
+                                'id' => 'leadTechnicianAvailability',
+                                'title' => 'Lead Technician Availability',
+                                'subtitle' => 'Active accounts only',
+                                'type' => 'doughnut',
+                                'col' => 'col-12 col-xl-5',
+                            ],
+                            [
+                                'id' => 'leadTechnicianWorkload',
+                                'title' => 'Lead Technician Workload',
+                                'subtitle' => 'Active assignments by when the work is booked, so unscheduled work has no month yet',
+                                'type' => 'bar',
+                                'col' => 'col-12',
+                                'granularity' => true,
+                            ],
+                        ],
                     ],
                     [
-                        'id' => 'projectsByType',
-                        'title' => 'Projects by Project Type',
-                        'type' => 'bar',
-                        'col' => 'col-12 col-xl-6',
-                        'granularity' => true,
-                        'categorical' => true,
-                    ],
-                    [
-                        'id' => 'residentialVsCommercial',
-                        'title' => 'Residential vs Commercial Projects',
-                        'type' => 'bar',
-                        'col' => 'col-12 col-xl-6',
-                        'granularity' => true,
-                        'categorical' => true,
-                    ],
-                    [
-                        'id' => 'totalQuotation',
-                        'title' => 'Total Quotation',
-                        'type' => 'line',
-                        'col' => 'col-12',
-                        'granularity' => true,
-                        'money' => true,
-                        'statusFilter' => true,
-                    ],
-                    [
-                        'id' => 'topClients',
-                        'title' => 'Top 10 Clients by Total Quotation',
-                        'subtitle' => 'A client\'s projects are summed together',
-                        'type' => 'horizontalBar',
-                        'col' => 'col-12',
-                        'granularity' => true,
-                        'money' => true,
-                        'categorical' => true,
-                        'tall' => true,
+                        'title' => 'Schedule Reports',
+                        'subtitle' => 'What is on the calendar, and how long it runs',
+                        'icon' => 'bi-calendar-week',
+                        'charts' => [
+                            [
+                                'id' => 'scheduledProjectsTrend',
+                                'title' => 'Scheduled Projects Trend',
+                                'subtitle' => 'Projects with work booked, counted once each',
+                                'type' => 'bar',
+                                'col' => 'col-12 col-xl-7',
+                                'granularity' => true,
+                            ],
+                            [
+                                'id' => 'scheduleTypeDistribution',
+                                'title' => 'Schedule Type Distribution',
+                                'subtitle' => 'As recorded on each booking',
+                                'type' => 'doughnut',
+                                'col' => 'col-12 col-xl-5',
+                            ],
+                            [
+                                'id' => 'averageProjectDuration',
+                                'title' => 'Average Scheduled Project Duration',
+                                'subtitle' => 'Booked days per project, gaps excluded',
+                                'type' => 'bar',
+                                'col' => 'col-12',
+                                'granularity' => true,
+                            ],
+                        ],
                     ],
                 ];
             @endphp
 
-            <div class="row g-3 mb-4">
-                @foreach ($systemCharts as $chart)
-                    <div class="{{ $chart['col'] }}">
-                        <div class="card shadow-sm border-0 rounded-2 h-100">
-                            <div class="card-body p-3">
-
-                                <div class="report-chart-header">
-                                    <div>
-                                        <h6 class="report-chart-title mb-0">{{ $chart['title'] }}</h6>
-                                        @if (! empty($chart['subtitle']))
-                                            <span class="report-chart-subtitle">{{ $chart['subtitle'] }}</span>
-                                        @endif
-                                    </div>
-
-                                    <div class="report-chart-controls">
-                                        <span class="spinner-border spinner-border-sm text-secondary d-none"
-                                            role="status" aria-hidden="true"
-                                            data-chart-loading="{{ $chart['id'] }}"></span>
-
-                                        @if (! empty($chart['statusFilter']))
-                                            <select class="form-select form-select-sm report-chart-select"
-                                                aria-label="Project status" data-chart-status="{{ $chart['id'] }}">
-                                                @foreach ($quotationStatuses as $value => $label)
-                                                    <option value="{{ $value }}">{{ $label }}</option>
-                                                @endforeach
-                                            </select>
-                                        @endif
-
-                                        @if (! empty($chart['granularity']))
-                                            <div class="btn-group btn-group-sm" role="group"
-                                                aria-label="{{ $chart['title'] }} granularity">
-                                                <button type="button" class="btn btn-outline-primary active"
-                                                    data-chart-granularity="monthly"
-                                                    data-chart-target="{{ $chart['id'] }}">Monthly</button>
-                                                <button type="button" class="btn btn-outline-primary"
-                                                    data-chart-granularity="yearly"
-                                                    data-chart-target="{{ $chart['id'] }}">Yearly</button>
-                                            </div>
-                                        @endif
-                                    </div>
-                                </div>
-
-                                <div class="report-chart-wrap @if (! empty($chart['tall'])) is-tall @endif">
-                                    <canvas data-chart="{{ $chart['id'] }}"
-                                        data-chart-type="{{ $chart['type'] }}"
-                                        data-chart-title="{{ $chart['title'] }}"
-                                        @if (! empty($chart['money'])) data-chart-money="1" @endif
-                                        @if (! empty($chart['categorical'])) data-chart-categorical="1" @endif></canvas>
-                                </div>
-
-                                <div class="schedule-empty-state mt-2 d-none" data-chart-empty="{{ $chart['id'] }}">
-                                    No data for this period.
-                                </div>
-                            </div>
+            @foreach ($reportSections as $section)
+                <section class="report-section">
+                    <div class="report-section-head">
+                        <span class="report-section-icon" aria-hidden="true">
+                            <i class="bi {{ $section['icon'] }}"></i>
+                        </span>
+                        <div>
+                            <h6 class="report-section-title mb-0">{{ $section['title'] }}</h6>
+                            <span class="report-section-subtitle">{{ $section['subtitle'] }}</span>
                         </div>
                     </div>
-                @endforeach
-            </div>
+
+                    <div class="row g-3">
+                        @foreach ($section['charts'] as $chart)
+                            <div class="{{ $chart['col'] }}">
+                                <div class="report-card h-100">
+
+                                    <div class="report-chart-header">
+                                        <div>
+                                            <h6 class="report-chart-title mb-0">{{ $chart['title'] }}</h6>
+                                            @if (! empty($chart['subtitle']))
+                                                <span class="report-chart-subtitle">{{ $chart['subtitle'] }}</span>
+                                            @endif
+                                        </div>
+
+                                        <div class="report-chart-controls">
+                                            <span class="spinner-border spinner-border-sm text-secondary d-none"
+                                                role="status" aria-hidden="true"
+                                                data-chart-loading="{{ $chart['id'] }}"></span>
+
+                                            @if (! empty($chart['statusFilter']))
+                                                <select class="form-select form-select-sm report-chart-select"
+                                                    aria-label="Project status"
+                                                    data-chart-status="{{ $chart['id'] }}">
+                                                    @foreach ($quotationStatuses as $value => $label)
+                                                        <option value="{{ $value }}">{{ $label }}</option>
+                                                    @endforeach
+                                                </select>
+                                            @endif
+
+                                            @if (! empty($chart['granularity']))
+                                                <div class="btn-group btn-group-sm report-chart-toggle" role="group"
+                                                    aria-label="{{ $chart['title'] }} granularity">
+                                                    <button type="button" class="btn active"
+                                                        data-chart-granularity="monthly"
+                                                        data-chart-target="{{ $chart['id'] }}">Monthly</button>
+                                                    <button type="button" class="btn"
+                                                        data-chart-granularity="yearly"
+                                                        data-chart-target="{{ $chart['id'] }}">Yearly</button>
+                                                </div>
+                                            @endif
+                                        </div>
+                                    </div>
+
+                                    {{-- The graph's own total or average, written by the
+                                         service alongside the series it describes. --}}
+                                    <div class="report-chart-summary d-none"
+                                        data-chart-summary="{{ $chart['id'] }}"></div>
+
+                                    <div @class([
+                                        'report-chart-split' => ! empty($chart['legend']),
+                                    ])>
+                                        <div class="report-chart-wrap @if (! empty($chart['tall'])) is-tall @endif">
+                                            <canvas data-chart="{{ $chart['id'] }}"
+                                                data-chart-type="{{ $chart['type'] }}"
+                                                data-chart-title="{{ $chart['title'] }}"
+                                                @if (! empty($chart['legend'])) data-chart-legend="list" @endif
+                                                @if (! empty($chart['money'])) data-chart-money="1" @endif
+                                                @if (! empty($chart['categorical'])) data-chart-categorical="1" @endif></canvas>
+                                        </div>
+
+                                        @if (! empty($chart['legend']))
+                                            {{-- Filled in from the same payload the
+                                                 canvas is drawn from, so the key and
+                                                 the slices cannot disagree. --}}
+                                            <ul class="report-chart-legend"
+                                                data-chart-legend-list="{{ $chart['id'] }}"></ul>
+                                        @endif
+                                    </div>
+
+                                    <div class="report-chart-empty d-none" data-chart-empty="{{ $chart['id'] }}">
+                                        <i class="bi bi-bar-chart-line" aria-hidden="true"></i>
+                                        <span>No data for this period yet.</span>
+                                    </div>
+                                </div>
+                            </div>
+                        @endforeach
+                    </div>
+                </section>
+            @endforeach
         </div>
     </div>
 
@@ -483,6 +592,10 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
 
+                {{-- Only the filters the chosen report actually uses are shown.
+                     Each one is tagged with the reports it belongs to, and the
+                     script reveals them on that basis - so a filter that is
+                     hidden is also cleared, and cannot reach the request. --}}
                 <div class="modal-body">
                     <div class="mb-3">
                         <label class="form-label fw-semibold" for="exportReportType">Report Type</label>
@@ -493,43 +606,80 @@
                         </select>
                     </div>
 
-                    <div class="mb-3">
-                        <label class="form-label fw-semibold" for="exportPeriod">Reporting Period</label>
-                        <select id="exportPeriod" class="form-select" data-export-period>
-                            <option value="weekly">Weekly</option>
-                            <option value="monthly" selected>Monthly</option>
-                            <option value="yearly">Yearly</option>
-                            <option value="custom">Custom Date Range</option>
+                    <div class="row g-2 mb-3">
+                        <div class="col-sm-4">
+                            <label class="form-label fw-semibold" for="exportPeriod">Reporting Period</label>
+                            <select id="exportPeriod" class="form-select" data-export-period>
+                                <option value="monthly" selected>Monthly</option>
+                                <option value="yearly">Yearly</option>
+                            </select>
+                        </div>
+
+                        <div class="col-sm-4" data-export-month-wrap>
+                            <label class="form-label fw-semibold" for="exportMonth">Month</label>
+                            <select id="exportMonth" class="form-select" data-export-month>
+                                @foreach (range(1, 12) as $month)
+                                    <option value="{{ $month }}"
+                                        @selected($month === (int) now()->format('n'))>
+                                        {{ \Carbon\CarbonImmutable::create(2000, $month, 1)->format('F') }}
+                                    </option>
+                                @endforeach
+                            </select>
+                        </div>
+
+                        <div class="col-sm-4">
+                            <label class="form-label fw-semibold" for="exportYear">Year</label>
+                            <select id="exportYear" class="form-select" data-export-year>
+                                @foreach ($exportYears as $year)
+                                    <option value="{{ $year }}" @selected($year === (int) now()->format('Y'))>
+                                        {{ $year }}
+                                    </option>
+                                @endforeach
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="mb-3 d-none" data-export-field="project">
+                        <label class="form-label fw-semibold" for="exportStatus">Project Status</label>
+                        <select id="exportStatus" class="form-select" data-export-status>
+                            @foreach ($exportStatuses as $value => $label)
+                                <option value="{{ $value }}">{{ $label }}</option>
+                            @endforeach
                         </select>
                     </div>
 
-                    <div class="row g-2 d-none" data-export-custom>
-                        <div class="col-6">
-                            <label class="form-label small fw-semibold mb-1" for="exportStartDate">Start Date</label>
-                            <input type="text" id="exportStartDate" class="form-control" placeholder="Start date"
-                                data-export-start>
-                        </div>
-                        <div class="col-6">
-                            <label class="form-label small fw-semibold mb-1" for="exportEndDate">End Date</label>
-                            <input type="text" id="exportEndDate" class="form-control" placeholder="End date"
-                                data-export-end>
-                        </div>
+                    <div class="mb-3 d-none" data-export-field="technician">
+                        <label class="form-label fw-semibold" for="exportTechnicianScope">Technician</label>
+                        <select id="exportTechnicianScope" class="form-select" data-export-technician-scope>
+                            <option value="all" selected>All Technicians</option>
+                            <option value="specific">Specific Technician</option>
+                        </select>
                     </div>
 
-                    <div class="mb-0 mt-3">
+                    <div class="mb-3 d-none" data-export-technician-wrap>
+                        <label class="form-label fw-semibold" for="exportTechnician">Select Technician</label>
+                        <select id="exportTechnician" class="form-select" data-export-technician>
+                            @foreach ($exportTechnicians as $technician)
+                                <option value="{{ $technician['id'] }}">{{ $technician['name'] }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+
+                    <div class="mb-3 d-none" data-export-field="technician">
+                        <label class="form-label fw-semibold" for="exportKind">Kind of Report</label>
+                        <select id="exportKind" class="form-select" data-export-kind>
+                            @foreach ($exportTechnicianKinds as $value => $label)
+                                <option value="{{ $value }}">{{ $label }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+
+                    <div class="mb-0">
                         <label class="form-label fw-semibold" for="exportFormat">Format</label>
                         <select id="exportFormat" class="form-select" data-export-format>
                             <option value="pdf" selected>PDF</option>
                         </select>
-                        <div class="form-text">Excel export can be added later without changing this dialog.</div>
-                    </div>
-
-                    <div class="form-check mt-3">
-                        <input class="form-check-input" type="checkbox" id="exportIncludeCharts" checked
-                            data-export-include-charts>
-                        <label class="form-check-label" for="exportIncludeCharts">
-                            Include graphs
-                        </label>
+                        <div class="form-text">Archived projects are excluded from every report.</div>
                     </div>
 
                     <div class="alert alert-danger mt-3 mb-0 d-none" role="alert" data-export-error></div>

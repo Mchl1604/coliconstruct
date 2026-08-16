@@ -8,6 +8,7 @@ use App\Models\ProjectTechnician;
 use App\Models\Skill;
 use App\Models\Technician;
 use App\Models\User;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
@@ -44,6 +45,7 @@ class ConfigurationUserManagementTest extends TestCase
             'middle_name' => 'B',
             'last_name' => 'Mendoza',
             'contact_number' => '0917 555 1234',
+            'birthdate' => '1990-05-04',
             'email' => 'ana.mendoza@example.test',
             'role' => 'admin',
         ], $overrides);
@@ -61,6 +63,7 @@ class ConfigurationUserManagementTest extends TestCase
         return array_merge([
             'full_name' => 'Jose Garcia',
             'contact_number' => '09175551234',
+            'birthdate' => '1988-11-20',
             'email' => 'jose.garcia@example.test',
         ], $overrides);
     }
@@ -328,6 +331,72 @@ class ConfigurationUserManagementTest extends TestCase
 
         $response->assertStatus(422);
         $this->assertStringContainsString('already uses that email', $response->json('error'));
+    }
+
+    /**
+     * The minimum age applies to an account an administrator opens exactly as
+     * it does to one somebody registers for themselves - and to both kinds of
+     * account, employee and client.
+     */
+    public function test_an_account_cannot_be_opened_for_anybody_under_eighteen(): void
+    {
+        $underage = CarbonImmutable::today()->subYears(17)->toDateString();
+
+        $employee = $this->postJson(
+            route('super-admin.configuration.users.employees.store'),
+            $this->employeePayload(['birthdate' => $underage])
+        );
+
+        $employee->assertStatus(422);
+        $this->assertStringContainsString('at least 18 years old', $employee->json('error'));
+
+        $client = $this->postJson(
+            route('super-admin.configuration.users.clients.store'),
+            $this->clientPayload(['birthdate' => $underage])
+        );
+
+        $client->assertStatus(422);
+        $this->assertStringContainsString('at least 18 years old', $client->json('error'));
+
+        $this->assertSame(0, User::where('email', 'ana.mendoza@example.test')->count());
+        $this->assertSame(0, User::where('email', 'jose.garcia@example.test')->count());
+    }
+
+    /**
+     * A missing birthdate is refused too, so the check cannot be skipped by
+     * leaving the field out of the request.
+     */
+    public function test_an_account_cannot_be_opened_without_a_birthdate(): void
+    {
+        foreach ([
+            'super-admin.configuration.users.employees.store' => $this->employeePayload(['birthdate' => '']),
+            'super-admin.configuration.users.clients.store' => $this->clientPayload(['birthdate' => '']),
+        ] as $route => $payload) {
+            $this->postJson(route($route), $payload)->assertStatus(422);
+        }
+
+        $this->assertSame(0, User::where('email', 'ana.mendoza@example.test')->count());
+        $this->assertSame(0, User::where('email', 'jose.garcia@example.test')->count());
+    }
+
+    /**
+     * The date is stored and comes back on the record behind the edit form,
+     * in the format a date input expects.
+     */
+    public function test_a_birthdate_is_stored_and_returned_for_editing(): void
+    {
+        $this->postJson(
+            route('super-admin.configuration.users.employees.store'),
+            $this->employeePayload(['birthdate' => '1990-05-04'])
+        )->assertCreated();
+
+        $user = User::where('email', 'ana.mendoza@example.test')->firstOrFail();
+
+        $this->assertSame('1990-05-04', $user->birthdate->toDateString());
+
+        $this->getJson(route('super-admin.configuration.users.show', $user->id))
+            ->assertOk()
+            ->assertJsonPath('account.birthdate', '1990-05-04');
     }
 
     public function test_an_invalid_contact_number_is_rejected(): void

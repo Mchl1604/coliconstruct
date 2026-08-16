@@ -439,7 +439,7 @@
                         <div class="text-muted">
                             <span class="me-2">
                                 <i class="bi bi-file-earmark-text text-brand-blue"></i>
-                                Project ID: {{ $project->project_id }}
+                                Project ID: {{ $project->displayCode() }}
                             </span>
 
                             <span>
@@ -869,6 +869,20 @@
                                         <h5 class="mt-2 mb-0">
                                             {{ $report->report_title }}
                                         </h5>
+
+                                        {{-- Who filed it, beside their picture.
+                                             A report is a person's account of a
+                                             visit, so it is signed. --}}
+                                        <div class="d-flex align-items-center gap-2 mt-1">
+                                            @if ($report->submitterAvatarUrl())
+                                                <img class="user-avatar user-avatar-xs"
+                                                    src="{{ $report->submitterAvatarUrl() }}" alt=""
+                                                    loading="lazy">
+                                            @endif
+                                            <small class="text-muted">
+                                                by {{ $report->submitterName() }}
+                                            </small>
+                                        </div>
 
                                     </div>
 

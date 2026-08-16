@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\DisplayCode;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -35,6 +36,14 @@ class TechnicianReport extends Model
         'progress' => 'Progress Report',
         'incident' => 'Incident Report',
     ];
+
+    /**
+     * How the report's key is printed, e.g. RPT-0007.
+     */
+    public function displayCode(): string
+    {
+        return DisplayCode::format(DisplayCode::REPORT, $this->id);
+    }
 
     public function images(): HasMany
     {

@@ -102,20 +102,22 @@ class ProfileService
     // ------------------------------------------------------------------
 
     /**
-     * Name and email. The role, status, user code and contact history are all
-     * absent on purpose - none of them is the account's own to change.
+     * Name, contact number and email. The role, status, user code and
+     * birthdate are all absent on purpose - none of them is the account's own
+     * to change.
      *
-     * The name is applied at once. The email is not: a new address is parked
-     * on the account and a code is sent to it, and only that code moves the
-     * address the person signs in with. A typo therefore costs an unread
-     * email rather than an account.
+     * The name and the number are applied at once. The email is not: a new
+     * address is parked on the account and a code is sent to it, and only that
+     * code moves the address the person signs in with. A typo therefore costs
+     * an unread email rather than an account.
      *
-     * @param  array{first_name: string, middle_name?: ?string, last_name: string, email: string}  $data
+     * @param  array{first_name: string, middle_name?: ?string, last_name: string, contact_number: string, email: string}  $data
      * @return array{user: User, email_pending: bool}
      */
     public function updateInformation(User $user, array $data): array
     {
         $nameBefore = $user->fullName();
+        $numberBefore = (string) $user->contact_number;
         $emailBefore = mb_strtolower((string) $user->email);
         $requestedEmail = mb_strtolower(trim($data['email']));
 
@@ -124,6 +126,7 @@ class ProfileService
                 'first_name' => trim($data['first_name']),
                 'middle_name' => filled($data['middle_name'] ?? null) ? trim((string) $data['middle_name']) : null,
                 'last_name' => trim($data['last_name']),
+                'contact_number' => trim($data['contact_number']),
             ]);
 
             // `name` is what the topbar, technician listings and report joins
@@ -137,6 +140,18 @@ class ProfileService
                 ActivityLog::PROFILE_NAME_UPDATED,
                 $user,
                 sprintf('Changed their name from %s to %s.', $nameBefore, $user->fullName())
+            );
+        }
+
+        if ((string) $user->contact_number !== $numberBefore) {
+            $this->activityLogger->record(
+                ActivityLog::PROFILE_UPDATED,
+                $user,
+                sprintf(
+                    'Changed their contact number from %s to %s.',
+                    $numberBefore !== '' ? $numberBefore : 'none on file',
+                    $user->contact_number
+                )
             );
         }
 

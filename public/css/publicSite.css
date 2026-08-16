@@ -16,11 +16,32 @@
     --brand-yellow-soft: #fefbdc;
     --brand-yellow-deep: #d9cc17;
     --brand-ink: #1b3a52;
+
+    /* The redesign's own three: the pale grey the services sit on, the softer
+       yellow of the closing strip, and the near-black of the footer. */
+    --surface-muted: #ececec;
+    --brand-yellow-band: #fbf273;
+    --footer-ink: #262626;
 }
 
 .public-body {
     background: #ffffff;
     color: #1e293b;
+}
+
+/*
+ * The public site runs close to the edges of the window rather than inside
+ * Bootstrap's fixed-width container: in the design the logo sits a little in
+ * from the left of the screen and the header's button a little in from the
+ * right, and the footer's four columns spread across the same width.
+ *
+ * A percentage gutter rather than a max-width keeps that proportion at every
+ * window size, and the floor and ceiling stop it from crushing the content on
+ * a phone or drifting apart on a very wide monitor.
+ */
+.public-body .container {
+    max-width: none;
+    padding-inline: clamp(1.25rem, 4vw, 4rem);
 }
 
 .text-brand-blue {
@@ -65,37 +86,42 @@
     font-weight: 600;
 }
 
-/* The guest header's Sign Up: blue outline, white fill, blue lettering. A
-   solid white rather than transparent, so it keeps its shape over the hero
-   photograph as well as over the white navbar. */
-.btn-sign-up {
-    background: #fff;
-    border: 1px solid var(--brand-blue);
-    color: var(--brand-blue-deep);
-    font-weight: 600;
-}
-
-.btn-sign-up:hover,
-.btn-sign-up:focus {
-    background: var(--brand-blue-soft);
-    border-color: var(--brand-blue-deep);
-    color: var(--brand-blue-dark);
-}
-
 .btn-outline-brand-blue:hover,
 .btn-outline-brand-blue:focus {
     background: var(--brand-blue);
     color: #fff;
 }
 
+/* Fully rounded, which is the shape every call to action wears in the
+   redesign - in the header, in the hero and on the closing strip. */
+.btn-pill {
+    border-radius: 999px;
+}
+
+/* The hero's quiet button: white outline on blue, filling white on hover so
+   it never competes with the yellow one beside it. */
+.btn-hero-ghost {
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, .85);
+    color: #fff;
+    font-weight: 600;
+}
+
+.btn-hero-ghost:hover,
+.btn-hero-ghost:focus {
+    background: #fff;
+    border-color: #fff;
+    color: var(--brand-blue-deep);
+}
+
 /* ---- Header ---- */
 
+/* A pale bar rather than a white one with a blue rule under it: the hero
+   below is a solid slab of blue, and two blue edges meeting read as a seam. */
 .public-navbar {
-    background: #ffffff;
-    /* A deep blue rule under the header. */
-    border-bottom: 3px solid var(--brand-blue-deep);
-    box-shadow: 0 1px 6px rgba(27, 86, 136, .08);
-    padding-block: .6rem;
+    background: #f6f8fa;
+    border-bottom: 1px solid #e3e8ee;
+    padding-block: .55rem;
 }
 
 .public-brand-logo {
@@ -125,9 +151,10 @@
 }
 
 .public-navbar .nav-link {
+    position: relative;
     font-weight: 500;
-    color: #475569;
-    padding-inline: 1rem;
+    color: #3f4c5a;
+    padding-inline: 1.25rem;
 }
 
 .public-navbar .nav-link:hover {
@@ -135,8 +162,21 @@
 }
 
 .public-navbar .nav-link.active {
-    color: var(--brand-blue-deep);
+    color: var(--brand-blue);
     font-weight: 600;
+}
+
+/* The current page is underlined rather than merely tinted, which is how the
+   design marks it. */
+.public-navbar .nav-link.active::after {
+    content: "";
+    position: absolute;
+    left: 1.25rem;
+    right: 1.25rem;
+    bottom: .1rem;
+    height: 2px;
+    border-radius: 999px;
+    background: var(--brand-blue);
 }
 
 /* The bell is centred in the topbar of the portals; here it sits inline. */
@@ -144,56 +184,418 @@
     margin-left: 0;
 }
 
-/* ---- Hero ---- */
+/* ---- Home: hero ----
+   One flat blue field, centred, ending in the framed photograph. Flat rather
+   than a gradient because the photograph is the only thing in it meant to
+   hold the eye. */
 
-.public-hero {
-    position: relative;
-    display: flex;
-    align-items: center;
-    min-height: 520px;
-    padding-block: 5rem;
-    background: linear-gradient(135deg, var(--brand-blue-dark) 0%, var(--brand-blue) 100%);
-    background-size: cover;
-    background-position: center;
+.home-hero {
+    background: var(--brand-blue-deep);
     color: #fff;
-    overflow: hidden;
+    padding-block: 4rem 5rem;
+    text-align: center;
 }
 
-/* Keeps the heading legible over any uploaded photograph. */
-.public-hero::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(100deg, rgba(27, 86, 136, .92) 0%, rgba(45, 141, 225, .72) 100%);
+.home-hero-badge {
+    display: inline-block;
+    background: var(--brand-yellow);
+    color: var(--brand-ink);
+    border-radius: 999px;
+    padding: .45rem 1.4rem;
+    font-size: .88rem;
+    font-weight: 600;
+    margin-bottom: 1.6rem;
 }
 
-.public-hero > .container {
-    position: relative;
-}
-
-.public-hero-heading {
-    font-size: clamp(2rem, 4vw, 3.25rem);
+.home-hero-heading {
+    font-size: clamp(2.1rem, 5vw, 3.5rem);
     font-weight: 800;
     line-height: 1.15;
     max-width: 18ch;
+    margin: 0 auto;
 }
 
-/* A pale blue underline tying the hero to the logo. */
-.public-hero-heading::after {
-    content: "";
-    display: block;
-    width: 5rem;
-    height: 5px;
-    border-radius: 999px;
-    background: var(--brand-blue-line);
-    margin-top: 1.1rem;
-}
-
-.public-hero-description {
+.home-hero-description {
     font-size: 1.05rem;
+    color: rgba(255, 255, 255, .88);
+    max-width: 58ch;
+    margin: 1.4rem auto 0;
+}
+
+.home-hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: .75rem;
+    margin-top: 1.9rem;
+}
+
+.home-hero-figure {
+    max-width: 62rem;
+    margin: 3.5rem auto 0;
+    border-radius: .9rem;
+    overflow: hidden;
+    box-shadow: 0 18px 44px rgba(9, 41, 70, .32);
+    background: rgba(255, 255, 255, .08);
+}
+
+.home-hero-figure img {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+
+/* Before a photograph is uploaded the frame keeps its proportions, so the
+   hero does not change height the day branding is filled in. */
+.home-hero-figure-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: .5rem;
+    aspect-ratio: 16 / 7;
+    border: 1px dashed rgba(255, 255, 255, .45);
+    border-radius: .9rem;
+    color: rgba(255, 255, 255, .75);
+    font-size: .9rem;
+}
+
+.home-hero-figure-empty i {
+    font-size: 1.8rem;
+}
+
+/* ---- Home: services ---- */
+
+.home-services {
+    background: var(--surface-muted);
+}
+
+.home-services-head {
+    margin-bottom: 3.5rem;
+}
+
+/* The centred headings on the homepage carry no rule under them - the
+   eyebrow above already separates them from what came before. */
+.home-section-heading {
+    font-size: clamp(1.6rem, 3vw, 2.2rem);
+    font-weight: 800;
+    color: #3b4551;
+}
+
+.home-service-card {
+    position: relative;
+    height: 100%;
+    background: #fff;
+    border-radius: 1.1rem;
+    padding: 3rem 1.75rem 2.25rem;
+    text-align: center;
+    box-shadow: 0 6px 20px rgba(15, 42, 68, .07);
+    transition: transform .18s ease, box-shadow .18s ease;
+}
+
+.home-service-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 16px 34px rgba(15, 42, 68, .14);
+}
+
+/* The number straddles the card's top edge, which is what gives the row its
+   rhythm; the card's own padding leaves the room for it. */
+.home-service-number {
+    position: absolute;
+    top: -1.6rem;
+    left: 50%;
+    transform: translateX(-50%);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 3.2rem;
+    height: 3.2rem;
+    border-radius: 50%;
+    background: #cfe2f4;
+    color: var(--brand-blue-deep);
+    font-weight: 700;
+    font-size: 1.05rem;
+}
+
+.home-service-title {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: #3b4551;
+    margin-bottom: .9rem;
+}
+
+.home-service-text {
+    color: #6b7683;
+    font-size: .92rem;
+    margin-bottom: 0;
+}
+
+/* ---- The closing strip ----
+   Shared by Home and About: the same yellow band, a different sentence. Named
+   for what it is rather than for the first page that used it. */
+
+.public-cta {
+    background: var(--brand-yellow-band);
+    padding-block: 2.5rem;
+}
+
+.public-cta-inner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.25rem;
+}
+
+.public-cta-heading {
+    font-size: 1.4rem;
+    font-weight: 800;
+    color: var(--brand-blue-dark);
+    margin-bottom: .3rem;
+}
+
+.public-cta-text {
+    color: #4b5563;
+    margin-bottom: 0;
+    font-size: .95rem;
+}
+
+/* ---- About ---- */
+
+.about-journey-figure {
+    border-radius: 1rem;
+    overflow: hidden;
+    background: #f1f5f9;
+    box-shadow: 0 8px 24px rgba(15, 42, 68, .12);
+}
+
+.about-journey-figure img {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+
+/* Lighter than a section heading elsewhere: the paragraph beside it is the
+   point, and a heavy title would talk over it. */
+.about-journey-heading {
+    font-size: clamp(1.4rem, 2.6vw, 1.9rem);
+    font-weight: 500;
+    color: #3b4551;
+    margin-bottom: 1rem;
+}
+
+.about-journey-text {
+    color: #6b7683;
+    line-height: 1.75;
+}
+
+.about-values {
+    background: var(--brand-blue-deep);
+    color: #fff;
+    padding-block: 4rem;
+}
+
+.about-values-head {
+    margin-bottom: 3rem;
+}
+
+/* The eyebrow turns yellow on the blue band. Qualified by the section so it
+   outranks the base .public-eyebrow colour, which is declared later. */
+.about-values .about-values-eyebrow {
+    color: var(--brand-yellow);
+}
+
+.about-values-heading {
+    font-size: clamp(1.5rem, 3vw, 2.1rem);
+    font-weight: 500;
+    color: #fff;
+}
+
+.about-value-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 3.1rem;
+    height: 3.1rem;
+    border-radius: .75rem;
+    background: #dde9f5;
+    color: var(--brand-blue-deep);
+    font-size: 1.4rem;
+    margin-bottom: 1.1rem;
+}
+
+.about-value-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: .6rem;
+}
+
+.about-value-text {
+    color: rgba(255, 255, 255, .82);
+    font-size: .92rem;
+    margin-bottom: 0;
+}
+
+.about-team {
+    background: #f4f6f9;
+}
+
+.about-team-head {
+    margin-bottom: 3rem;
+}
+
+.about-team-heading {
+    font-size: clamp(1.5rem, 3vw, 2.1rem);
+    font-weight: 500;
+    color: #3b4551;
+}
+
+.about-team-photo {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 8.5rem;
+    height: 8.5rem;
+    border-radius: 50%;
+    object-fit: cover;
+    background: #e2e8f0;
+    margin-bottom: 1.1rem;
+}
+
+.about-team-photo-empty {
+    color: #9aa7b4;
+    font-size: 3rem;
+}
+
+.about-team-name {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #3b4551;
+    margin-bottom: .2rem;
+}
+
+.about-team-role {
+    color: #6b7683;
+    font-size: .88rem;
+    margin-bottom: 0;
+}
+
+/* ---- Contact ---- */
+
+.contact-hero {
+    background: #d3e3f5;
+    padding-block: 4.5rem;
+}
+
+.contact-hero-heading {
+    font-size: clamp(2rem, 4.5vw, 3rem);
+    font-weight: 800;
+    color: var(--brand-blue-deep);
+    margin-bottom: 1rem;
+}
+
+.contact-hero-text {
+    color: var(--brand-blue);
+    font-size: 1.05rem;
+    max-width: 56ch;
+    margin-inline: auto;
+}
+
+.contact-body {
+    background: var(--surface-muted);
+}
+
+.contact-form-card {
+    background: #fff;
+    border-radius: 1.5rem;
+    padding: 2.5rem;
+    margin-bottom: 3.5rem;
+}
+
+.contact-form-heading {
+    font-size: 1.6rem;
+    font-weight: 800;
+    color: var(--brand-blue-deep);
+    margin-bottom: .75rem;
+}
+
+.contact-form-intro {
+    color: #4b5563;
+    max-width: 62ch;
+    margin-bottom: 0;
+}
+
+.contact-form-card .form-label {
+    color: #4b5563;
+    font-size: .95rem;
+}
+
+/* Filled rather than outlined, which is how the design draws them - and it
+   reads as "not open yet" without the flat grey of a plain disabled field. */
+.contact-field:disabled,
+.contact-field[disabled] {
+    background: #d6e4f5;
+    border: 1px solid #a9c8e8;
+    border-radius: .55rem;
+    opacity: 1;
+}
+
+.contact-form-note {
+    color: #6b7683;
+    font-size: .92rem;
+    margin-top: 1.25rem;
+}
+
+.contact-info-heading {
+    font-size: 1.6rem;
+    font-weight: 800;
+    color: var(--brand-blue-deep);
+    margin-bottom: .5rem;
+}
+
+.contact-info-intro {
+    color: #4b5563;
+    margin-bottom: 1.5rem;
+}
+
+/* One blue card per way of reaching the company: the icon leads, the label
+   names it, the value sits under both. */
+.contact-info-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    height: 100%;
+}
+
+.contact-info-card {
+    flex: 1 1 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    background: var(--brand-blue-deep);
+    color: #fff;
+    border-radius: .5rem;
+    padding: 1.75rem 1.25rem;
+    text-align: center;
+}
+
+.contact-info-icon {
+    display: block;
+    font-size: 2.4rem;
+    line-height: 1;
+    margin-bottom: .6rem;
+}
+
+.contact-info-label {
+    font-size: 1.35rem;
+    font-weight: 700;
+    margin-bottom: .3rem;
+}
+
+.contact-info-value {
+    font-size: .95rem;
     color: rgba(255, 255, 255, .9);
-    max-width: 52ch;
-    margin-top: 1.1rem;
 }
 
 /* ---- Sections ---- */
@@ -202,133 +604,17 @@
     padding-block: 4.5rem;
 }
 
-.public-section-tinted {
-    background: var(--brand-blue-tint);
-}
-
-.public-section-heading {
-    font-size: clamp(1.5rem, 2.5vw, 2.1rem);
-    font-weight: 700;
-    color: var(--brand-blue-dark);
-}
-
-/* A short blue rule under centred section headings. */
-.text-center > .public-section-heading::after {
-    content: "";
-    display: block;
-    width: 3.5rem;
-    height: 4px;
-    border-radius: 999px;
-    background: var(--brand-blue-deep);
-    margin: .75rem auto 0;
-}
-
 .public-section-intro {
     color: #64748b;
     max-width: 60ch;
 }
 
+/* Set in sentence case rather than small capitals: it reads as the first line
+   of the heading, not as a label. */
 .public-eyebrow {
-    font-size: .75rem;
+    font-size: .95rem;
     font-weight: 700;
-    letter-spacing: .12em;
-    text-transform: uppercase;
     color: var(--brand-blue-deep);
-}
-
-/* On blue panels the eyebrow turns yellow instead. */
-.public-hero .public-eyebrow,
-.public-page-banner .public-eyebrow,
-.public-promo .public-eyebrow {
-    color: var(--brand-yellow);
-}
-
-/* ---- Service cards ---- */
-
-.public-service-card {
-    height: 100%;
-    padding: 1.6rem;
-    border: 1px solid #e5e7eb;
-    border-radius: 1rem;
-    background: #fff;
-    transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
-}
-
-.public-service-card:hover {
-    transform: translateY(-4px);
-    border-color: var(--brand-blue);
-    box-shadow: 0 12px 28px rgba(45, 141, 225, .18);
-}
-
-.public-service-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 3rem;
-    height: 3rem;
-    border-radius: .9rem;
-    background: var(--brand-blue-soft);
-    color: var(--brand-blue-deep);
-    font-size: 1.35rem;
-    margin-bottom: 1rem;
-}
-
-/* Alternate cards wear the yellow, so a grid reads as both brand colours
-   rather than a wall of blue. */
-.public-alt-accent .public-service-icon {
-    background: var(--brand-yellow-soft);
-    color: #8a7f06;
-}
-
-.public-alt-accent:hover {
-    border-color: var(--brand-yellow-deep);
-    box-shadow: 0 12px 28px rgba(217, 204, 23, .22);
-}
-
-.public-service-title {
-    font-weight: 700;
-    color: var(--brand-blue-dark);
-    margin-bottom: .35rem;
-}
-
-.public-service-text {
-    color: #64748b;
-    font-size: .92rem;
-    margin-bottom: 0;
-}
-
-/* ---- Mission / vision / values ---- */
-
-.public-pillar {
-    height: 100%;
-    padding: 1.75rem;
-    border-radius: 1rem;
-    background: #fff;
-    border: 1px solid #e5e7eb;
-    border-top: 4px solid var(--brand-blue);
-}
-
-.public-pillar-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 2.75rem;
-    height: 2.75rem;
-    border-radius: 50%;
-    background: var(--brand-blue);
-    color: #fff;
-    font-size: 1.2rem;
-    margin-bottom: .9rem;
-}
-
-/* Vision keeps the yellow icon; its edge stays blue like the rest. */
-.public-pillar-yellow {
-    border-top-color: var(--brand-blue-deep);
-}
-
-.public-pillar-yellow .public-pillar-icon {
-    background: var(--brand-yellow);
-    color: var(--brand-ink);
 }
 
 .public-prewrap {
@@ -336,19 +622,6 @@
 }
 
 /* ---- Media ---- */
-
-.public-figure {
-    border-radius: 1rem;
-    overflow: hidden;
-    background: #f1f5f9;
-}
-
-.public-figure img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-}
 
 /* Holds the space an image would take, so a page with nothing uploaded still
    reads as a designed layout rather than a gap. */
@@ -368,108 +641,91 @@
     padding: 1rem;
 }
 
-.public-gallery-item {
-    aspect-ratio: 4 / 3;
-}
-
-/* ---- Banner strip ---- */
-
-.public-promo {
-    position: relative;
-    border-radius: 1.25rem;
-    overflow: hidden;
-    background: linear-gradient(120deg, var(--brand-blue) 0%, var(--brand-blue-dark) 100%);
-    background-size: cover;
-    background-position: center;
-    color: #fff;
-    padding: 3rem;
-    border-left: 6px solid var(--brand-blue-deep);
-}
-
-.public-promo::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(120deg, rgba(45, 141, 225, .92) 0%, rgba(27, 86, 136, .9) 100%);
-}
-
-.public-promo > * {
-    position: relative;
-}
-
-/* ---- Page banner ---- */
-
-.public-page-banner {
-    position: relative;
-    padding-block: 4.5rem;
-    background: linear-gradient(135deg, var(--brand-blue-dark) 0%, var(--brand-blue) 100%);
-    background-size: cover;
-    background-position: center;
-    color: #fff;
-    border-bottom: 4px solid var(--brand-blue-deep);
-}
-
-.public-page-banner::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(100deg, rgba(27, 86, 136, .9) 0%, rgba(45, 141, 225, .74) 100%);
-}
-
-.public-page-banner > .container {
-    position: relative;
-}
-
-/* ---- Contact ---- */
-
-.public-contact-card {
-    display: flex;
-    gap: 1rem;
-    padding: 1.35rem;
-    border: 1px solid #e5e7eb;
-    border-radius: 1rem;
-    background: #fff;
-    height: 100%;
-    border-bottom: 3px solid var(--brand-blue);
-}
-
-.public-contact-icon {
-    flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 2.75rem;
-    height: 2.75rem;
-    border-radius: .8rem;
-    background: var(--brand-blue-soft);
-    color: var(--brand-blue-deep);
-    font-size: 1.15rem;
-}
-
+/* Fills the column beside the contact cards rather than standing at a fixed
+   height, so the map and the details end together. */
 .public-map {
     width: 100%;
-    height: 380px;
+    height: 100%;
+    min-height: 420px;
     border: 0;
-    border-radius: 1rem;
+    border-radius: .75rem;
+}
+
+/* ---- Page introduction panel ----
+   The rounded grey slab the redesign opens an inner page with. Stated here
+   rather than on My Projects alone, so any other page that needs a title band
+   in the new style has one. */
+
+.public-page-head {
+    padding-block: 1.25rem 2.5rem;
+}
+
+.public-page-head-panel {
+    position: relative;
+    background: var(--surface-muted);
+    border-radius: 1.25rem;
+    padding: 3rem 1.5rem;
+    text-align: center;
+}
+
+.public-page-head-heading {
+    font-size: clamp(1.9rem, 4vw, 2.8rem);
+    font-weight: 500;
+    color: #3b4551;
+    margin-bottom: 1rem;
+}
+
+.public-page-head-text {
+    color: #6b7683;
+    font-size: 1.05rem;
+    max-width: 60ch;
+    margin-inline: auto;
+}
+
+/* The count sits in the corner of the panel rather than beside the title:
+   it is a fact about the list below, not part of the heading. */
+.public-page-head-count {
+    position: absolute;
+    top: 1.1rem;
+    right: 1.25rem;
+    background: #fff;
+    color: var(--brand-blue-deep);
+    border-radius: 999px;
+    padding: .3rem .9rem;
+    font-size: .78rem;
+    font-weight: 700;
+}
+
+/* ---- My Projects: the filter bar ---- */
+
+.project-filter-card {
+    border: 0;
+    border-radius: 1.1rem;
+    box-shadow: 0 6px 20px rgba(15, 42, 68, .07);
+}
+
+.project-filter-card .form-control,
+.project-filter-card .input-group-text {
+    border-color: #e3e8ee;
 }
 
 /* ---- Project cards (Figure 11) ---- */
 
 .project-card {
     height: 100%;
-    border: 1px solid #e5e7eb;
-    border-radius: .6rem;
+    border: 0;
+    border-radius: 1.1rem;
     background: #fff;
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    box-shadow: 0 1px 3px rgba(27, 86, 136, .08);
+    box-shadow: 0 6px 20px rgba(15, 42, 68, .07);
     transition: transform .18s ease, box-shadow .18s ease;
 }
 
 .project-card:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 12px 24px rgba(27, 86, 136, .14);
+    transform: translateY(-4px);
+    box-shadow: 0 16px 34px rgba(15, 42, 68, .14);
 }
 
 .project-card-header {
@@ -639,12 +895,12 @@
 }
 
 .public-empty-state {
-    border: 1px dashed var(--brand-blue);
-    border-radius: 1rem;
+    border: 1px dashed #cfd8e2;
+    border-radius: 1.25rem;
     background: var(--brand-blue-tint);
     padding: 3.5rem 1.5rem;
     text-align: center;
-    color: #5b7f9e;
+    color: #6b7683;
 }
 
 /* ---- Client project details ---- */
@@ -814,41 +1070,16 @@
     border-radius: .6rem;
 }
 
-.public-detail-label {
-    font-size: .74rem;
-    font-weight: 700;
-    letter-spacing: .06em;
-    text-transform: uppercase;
-    color: #7ba9cf;
-}
-
-.public-task-list {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-}
-
-.public-task-list li {
-    display: flex;
-    align-items: flex-start;
-    gap: .6rem;
-    padding: .55rem 0;
-    border-bottom: 1px solid #f1f5f9;
-    font-size: .9rem;
-}
-
-.public-task-list li:last-child {
-    border-bottom: 0;
-}
-
 /* ---- Footer ---- */
 
+/* Near-black rather than deep blue: the closing yellow strip sits directly on
+   top of it on the homepage, and blue under yellow reads as a third band of
+   colour rather than as the end of the page. */
 .public-footer {
-    background: var(--brand-blue-dark);
-    color: #d5e7f6;
+    background: var(--footer-ink);
+    color: #cfd3d8;
     padding-block: 3.5rem 2rem;
-    margin-top: 4rem;
-    border-top: 4px solid var(--brand-blue-deep);
+    margin-top: 0;
 }
 
 .public-footer-logo {
@@ -863,17 +1094,16 @@
 }
 
 .public-footer-text {
-    font-size: .9rem;
-    color: #b9d5ec;
+    font-size: .88rem;
+    color: #a8adb4;
     max-width: 42ch;
+    text-align: justify;
 }
 
 .public-footer-heading {
-    color: var(--brand-yellow);
-    font-size: .82rem;
+    color: #fff;
+    font-size: 1rem;
     font-weight: 700;
-    letter-spacing: .08em;
-    text-transform: uppercase;
     margin-bottom: 1rem;
 }
 
@@ -885,13 +1115,13 @@
 }
 
 .public-footer-links li {
-    margin-bottom: .55rem;
+    margin-bottom: .45rem;
 }
 
 .public-footer-links a {
-    color: #d5e7f6;
+    color: #cfd3d8;
     text-decoration: none;
-    font-size: .9rem;
+    font-size: .88rem;
 }
 
 .public-footer-links a:hover {
@@ -899,43 +1129,40 @@
 }
 
 .public-footer-contact li {
-    display: flex;
-    gap: .6rem;
-    margin-bottom: .7rem;
-    font-size: .9rem;
-    color: #b9d5ec;
+    margin-bottom: .45rem;
+    font-size: .88rem;
+    color: #cfd3d8;
 }
 
-.public-footer-contact i {
-    color: var(--brand-yellow);
-    margin-top: .15rem;
-}
-
+/* The glyphs themselves rather than icons inside grey buttons, so the column
+   reads as one row of marks. */
 .public-social {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 2.25rem;
-    height: 2.25rem;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, .1);
-    color: #d5e7f6;
+    color: #dcdfe3;
+    font-size: 1.75rem;
+    line-height: 1;
     text-decoration: none;
+    transition: color .15s ease;
 }
 
 .public-social:hover {
-    background: var(--brand-yellow);
-    color: var(--brand-ink);
+    color: var(--brand-yellow);
 }
 
+/* Inset from the columns above it, which is what makes the copyright read as
+   a closing line rather than a fifth column. */
 .public-footer-rule {
-    border-color: rgba(255, 255, 255, .16);
-    margin-block: 2.5rem 1.5rem;
+    border-color: rgba(255, 255, 255, .3);
+    opacity: 1;
+    width: 72%;
+    margin: 2.75rem auto 1.5rem;
 }
 
 .public-footer-copyright {
     font-size: .85rem;
-    color: #8fb8d8;
+    color: #a8adb4;
     text-align: center;
 }
 
@@ -946,21 +1173,45 @@
         padding-inline: 0;
     }
 
+    .public-navbar .nav-link.active::after {
+        display: none;
+    }
+
     .public-nav-actions {
         margin-top: .75rem;
     }
 
-    .public-hero {
-        min-height: auto;
-        padding-block: 3.5rem;
+    .home-hero {
+        padding-block: 3rem 3.5rem;
+    }
+
+    .home-hero-figure {
+        margin-top: 2.5rem;
     }
 
     .public-section {
         padding-block: 3rem;
     }
 
-    .public-promo {
-        padding: 2rem;
+    .home-services-head {
+        margin-bottom: 3rem;
+    }
+
+    .public-page-head-panel {
+        padding: 2.25rem 1.25rem;
+    }
+
+    .contact-hero {
+        padding-block: 3rem;
+    }
+
+    .contact-form-card {
+        padding: 1.5rem;
+        border-radius: 1rem;
+    }
+
+    .about-values {
+        padding-block: 3rem;
     }
 
     .client-tracker {

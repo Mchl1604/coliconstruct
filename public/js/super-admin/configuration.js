@@ -975,6 +975,9 @@ document.addEventListener("DOMContentLoaded", function () {
 
         userForm.querySelector('[name="contact_number"]').value =
             account.contact_number || "";
+        // Empty for an account opened before birthdates were collected; the
+        // server treats it as optional on an edit for exactly that reason.
+        userForm.querySelector('[name="birthdate"]').value = account.birthdate || "";
         emailInput.value = account.email || "";
 
         if (account.is_client) {
@@ -1083,6 +1086,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const payload = new FormData();
 
         payload.set("contact_number", userForm.querySelector('[name="contact_number"]').value);
+        payload.set("birthdate", userForm.querySelector('[name="birthdate"]').value);
 
         if (accountType === "client") {
             payload.set("full_name", userForm.querySelector('[name="full_name"]').value);

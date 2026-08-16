@@ -67,7 +67,7 @@
                     <tbody>
                         @foreach ($scheduledProjects as $project)
                             <tr>
-                                <td>{{ $project->project_id }}</td>
+                                <td>{{ $project->displayCode() }}</td>
                                 <td>{{ $project->reference_no }}</td>
                                 <td>{{ $project->name }}</td>
                                 <td>

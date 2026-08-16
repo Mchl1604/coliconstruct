@@ -3,29 +3,34 @@
 @section('title', 'My Projects - ' . $content->siteTitle())
 
 @section('content')
-    <section class="public-section">
+    {{-- The same rounded introduction panel the redesign gives every page that
+         is not the homepage: eyebrow, title, one line saying what is here. --}}
+    <section class="public-page-head">
         <div class="container">
-
-            <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-4">
-                <div>
-                    <h1 class="public-section-heading mb-1">My Projects</h1>
-                    <p class="text-secondary mb-0">
-                        @if ($isClient)
-                            Work Coliconstruct is carrying out for you, newest first.
-                        @elseif ($isGuest)
-                            Sign in to follow the work booked under your email address.
-                        @else
-                            This page shows a client's own projects.
-                        @endif
-                    </p>
-                </div>
+            <div class="public-page-head-panel">
+                <p class="public-eyebrow mb-2">Your account</p>
+                <h1 class="public-page-head-heading">My Projects</h1>
+                <p class="public-page-head-text mb-0">
+                    @if ($isClient)
+                        Work {{ $content->get('branding.short_name') }} is carrying out for you, newest first.
+                    @elseif ($isGuest)
+                        Sign in to follow the work booked under your email address.
+                    @else
+                        This page shows a client's own projects.
+                    @endif
+                </p>
 
                 @if ($isClient && $projects->isNotEmpty())
-                    <span class="badge bg-secondary" data-project-count>
+                    <span class="public-page-head-count" data-project-count>
                         {{ $projects->count() }} {{ Str::plural('project', $projects->count()) }}
                     </span>
                 @endif
             </div>
+        </div>
+    </section>
+
+    <section class="public-section pt-0">
+        <div class="container">
 
             @if (! $isClient)
                 {{-- Nobody without a client account is shown project information
@@ -38,7 +43,7 @@
                             Your projects appear here once you sign in with the email address they were booked
                             under.
                         </p>
-                        <a class="btn btn-brand-blue px-4" href="{{ route('auth.login') }}">Client Login</a>
+                        <a class="btn btn-brand-blue btn-pill px-4" href="{{ route('auth.login') }}">Client Login</a>
                     @else
                         {{-- Signed in, but as staff: telling them to log in would
                              be nonsense, so they are pointed at their own portal. --}}
@@ -48,7 +53,7 @@
                             You are signed in as {{ auth()->user()->roleLabel() }}. Your work lives in your own
                             portal.
                         </p>
-                        <a class="btn btn-brand-blue px-4"
+                        <a class="btn btn-brand-blue btn-pill px-4"
                             href="{{ \App\Support\PortalHome::url(auth()->user()) }}">Go to My Portal</a>
                     @endif
                 </div>
@@ -77,8 +82,8 @@
                     $filterCounts = collect($cards)->countBy('filter_status');
                 @endphp
 
-                <div class="card client-card shadow-sm mb-4" data-project-filters>
-                    <div class="card-body">
+                <div class="card project-filter-card mb-4" data-project-filters>
+                    <div class="card-body p-3 p-lg-4">
                         <div class="row g-3 align-items-center">
                             <div class="col-lg-7">
                                 <div class="project-filter-tabs" role="group" aria-label="Filter projects by status">

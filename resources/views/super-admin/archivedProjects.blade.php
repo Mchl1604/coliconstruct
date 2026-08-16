@@ -54,7 +54,7 @@
                             @endphp
 
                             <tr>
-                                <td>{{ $project->project_id }}</td>
+                                <td>{{ $project->displayCode() }}</td>
                                 <td>{{ $project->reference_no ?? 'N/A' }}</td>
                                 <td>{{ $clientName ?: 'N/A' }}</td>
                                 <td>{{ $client?->client_type ?? 'N/A' }}</td>

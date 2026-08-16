@@ -87,7 +87,7 @@
                         @foreach ($projects as $project)
                             <tr data-status="{{ $project->status }}"
                                 data-overdue="{{ $project->isOverdue() ? '1' : '0' }}">
-                                <td>{{ $project->project_id }}</td>
+                                <td>{{ $project->displayCode() }}</td>
                                 <td>{{ $project->reference_no }}</td>
                                 <td>
                                     @php
@@ -170,9 +170,11 @@
                                         </div>
 
                                         <div class="modal-body">
-                                            Are you sure you want to put
-                                            <strong>{{ $project->reference_no }}</strong>
-                                            on hold?
+                                            Put <strong>{{ $project->reference_no }}</strong> on hold? Dates from
+                                            tomorrow onwards will be released so the crew reads as free, and its
+                                            task dates cleared. Days already worked - up to and including today -
+                                            are kept on the project's record. The assigned technicians stay on the
+                                            project, ready for it to be rescheduled.
                                         </div>
 
                                         <div class="modal-footer">

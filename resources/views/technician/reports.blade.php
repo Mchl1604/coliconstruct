@@ -134,7 +134,7 @@
                             <tr data-report-date="{{ $report->report_date?->toDateString() }}"
                                 data-project-id="{{ $report->project_id }}"
                                 data-report-type="{{ $report->report_type }}">
-                                <td>#{{ $report->id }}</td>
+                                <td>{{ $report->displayCode() }}</td>
                                 <td>{{ $report->project?->reference_no ?? '—' }}</td>
                                 <td class="fw-semibold">
                                     {{ $reportClient?->company_name ?: ($reportClient?->fullname ?: '—') }}

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\DisplayCode;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -41,18 +42,28 @@ class Technician extends Model
             'skill_id'
         );
     }
+
     public function tasks()
-{
-    return $this->hasMany(
-        Task::class,
-        'technician_id',
-        'technician_id'
-    );
-}
+    {
+        return $this->hasMany(
+            Task::class,
+            'technician_id',
+            'technician_id'
+        );
+    }
 
     public function projectTechnicians(): HasMany
     {
         return $this->hasMany(ProjectTechnician::class, 'technician_id', 'technician_id');
+    }
+
+    /**
+     * How the technician's key is printed, e.g. TECH-0007. Their staff
+     * account code (EMP-0001) is a separate thing and stays as it is.
+     */
+    public function displayCode(): string
+    {
+        return DisplayCode::format(DisplayCode::TECHNICIAN, $this->technician_id);
     }
 
     public function getNameAttribute(): string

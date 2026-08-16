@@ -337,8 +337,8 @@ document.addEventListener("DOMContentLoaded", function () {
         row.setAttribute("data-report-type", report.type || "");
 
         row.innerHTML =
-            "<td>#" +
-            portal.escapeHtml(report.id) +
+            "<td>" +
+            portal.escapeHtml(report.display_code) +
             "</td>" +
             "<td>" +
             portal.escapeHtml(report.reference_no) +

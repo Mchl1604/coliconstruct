@@ -1095,9 +1095,6 @@ class ScheduleController extends Controller
                 continue;
             }
 
-            // Outlined rather than filled - see Project::calendarEventColors().
-            $colors = $project->calendarEventColors();
-
             foreach ($project->schedules as $schedule) {
                 $events[] = [
                     'id' => $schedule->schedule_id,
@@ -1105,7 +1102,9 @@ class ScheduleController extends Controller
                     // A partial day comes back as a timed event, so the bar
                     // carries its hours instead of reading as a whole day.
                     ...$schedule->toCalendarTimes(),
-                    ...$colors,
+                    // Filled for a whole-day booking, outlined for a partial
+                    // one - see Project::calendarEventColors().
+                    ...$project->calendarEventColors($schedule->isDateBased()),
                     'extendedProps' => [
                         'projectId' => $project->project_id,
                         'scheduleId' => $schedule->schedule_id,

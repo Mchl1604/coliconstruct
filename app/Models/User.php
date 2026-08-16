@@ -21,6 +21,7 @@ use Illuminate\Notifications\Notifiable;
     'middle_name',
     'last_name',
     'contact_number',
+    'birthdate',
     'profile_photo_path',
     'position',
     'company_name',
@@ -47,6 +48,14 @@ class User extends Authenticatable
     public const STATUS_ACTIVE = 'active';
 
     public const STATUS_DEACTIVATED = 'deactivated';
+
+    /**
+     * The shape a contact number has to take, wherever one is entered -
+     * registration, the Configuration dialogs, and a person editing their own
+     * profile. One copy, so a number accepted by one form is not rejected by
+     * the next.
+     */
+    public const CONTACT_NUMBER_RULE = 'regex:/^\+?[0-9][0-9\s\-().]{5,20}$/';
 
     /**
      * Every role the RBAC enum accepts, with the label the interface shows.
@@ -124,6 +133,7 @@ class User extends Authenticatable
     {
         return [
             'email_verified_at' => 'datetime',
+            'birthdate' => 'date',
             'password' => 'hashed',
             'is_archived' => 'boolean',
             'must_change_password' => 'boolean',

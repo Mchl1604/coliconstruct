@@ -54,6 +54,7 @@ class UserAccountService
                 'middle_name' => $data['middle_name'] ?? null,
                 'last_name' => $data['last_name'],
                 'contact_number' => $data['contact_number'],
+                'birthdate' => $data['birthdate'],
                 'email' => $data['email'],
                 'role' => $data['role'],
                 'status' => User::STATUS_ACTIVE,
@@ -99,6 +100,7 @@ class UserAccountService
                 'middle_name' => $middle,
                 'last_name' => $last,
                 'contact_number' => $data['contact_number'],
+                'birthdate' => $data['birthdate'],
                 'email' => $data['email'],
                 // The company details are collected when the account is
                 // edited, not when it is opened.
@@ -148,6 +150,7 @@ class UserAccountService
                 'middle_name' => $middle,
                 'last_name' => $last,
                 'contact_number' => $data['contact_number'],
+                'birthdate' => $data['birthdate'],
                 'email' => $data['email'],
                 'role' => User::ROLE_CLIENT,
                 'status' => User::STATUS_ACTIVE,
@@ -199,6 +202,10 @@ class UserAccountService
                 'middle_name' => $data['middle_name'] ?? null,
                 'last_name' => $data['last_name'],
                 'contact_number' => $data['contact_number'],
+                // Left alone when the form sends nothing, so editing an
+                // account opened before birthdates were collected cannot
+                // blank out one that was filled in since.
+                'birthdate' => $data['birthdate'] ?? $user->birthdate,
                 'email' => $data['email'],
                 // Saving the role is what applies the permission change; the
                 // RBAC system reads this column on every request. A Super
@@ -235,6 +242,7 @@ class UserAccountService
                 'middle_name' => $middle,
                 'last_name' => $last,
                 'contact_number' => $data['contact_number'],
+                'birthdate' => $data['birthdate'] ?? $user->birthdate,
             ]);
 
             $user->save();

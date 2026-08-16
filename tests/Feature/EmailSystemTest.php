@@ -328,6 +328,7 @@ class EmailSystemTest extends TestCase
             'first_name' => 'Ana',
             'last_name' => 'Reyes',
             'contact_number' => '09171234567',
+            'birthdate' => '1990-05-04',
             'email' => 'ana@example.test',
             'role' => 'technician',
             'skill_ids' => [$skill->skill_id],

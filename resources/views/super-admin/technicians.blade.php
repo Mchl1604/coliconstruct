@@ -89,7 +89,7 @@
 
                                     <tr data-technician-row="{{ $technician->technician_id }}"
                                         class="{{ $awaitingDecision ? 'technician-row-pending' : '' }}">
-                                        <td>{{ $technician->technician_id }}</td>
+                                        <td>{{ $technician->displayCode() }}</td>
                                         {{-- The code on their staff account,
                                              which is how they are referred to
                                              everywhere outside this page. --}}
@@ -162,7 +162,7 @@
                                 data-technician-picker>
                             <datalist id="technicianPickerOptions">
                                 @foreach ($technicians as $technician)
-                                    <option value="{{ $technician->technician_id }} — {{ $technician->name }}"></option>
+                                    <option value="{{ $technician->displayCode() }} — {{ $technician->name }}"></option>
                                 @endforeach
                             </datalist>
                             <div class="form-text" data-technician-picker-hint>
@@ -553,12 +553,24 @@
     </div>
 
     @push('scripts')
+        @php
+            // Built here rather than inside @json(): a multi-line array
+            // literal in a directive's arguments is compiled as PHP that
+            // stops at the wrong bracket.
+            $technicianDirectory = $technicians
+                ->map(
+                    fn($technician) => [
+                        'technician_id' => $technician->technician_id,
+                        // What the picker prints and matches on.
+                        'display_code' => $technician->displayCode(),
+                        'name' => $technician->name,
+                    ],
+                )
+                ->values();
+        @endphp
+
         <script>
-            window.technicianDirectory = @json(
-                $technicians->map(fn($technician) => [
-                    'technician_id' => $technician->technician_id,
-                    'name' => $technician->name,
-                ])->values());
+            window.technicianDirectory = @json($technicianDirectory);
         </script>
         <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
         <script src="/js/calendarHeader.js"></script>

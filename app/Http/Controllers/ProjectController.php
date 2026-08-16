@@ -22,6 +22,7 @@ use App\Services\ProjectEmails;
 use App\Services\ProjectReopen;
 use App\Services\ProjectTeam;
 use App\Services\ProjectTeamCandidates;
+use App\Services\ScheduleHoldCutoff;
 use App\Services\ScheduleModeRules;
 use App\Services\TechnicianAvailabilityService;
 use App\Services\TechnicianTaskLoad;
@@ -44,7 +45,8 @@ class ProjectController extends Controller
         private readonly ActivityLogger $activityLogger,
         private readonly NotificationService $notifications,
         private readonly ProjectEmails $clientEmails,
-        private readonly ProjectTeam $projectTeam
+        private readonly ProjectTeam $projectTeam,
+        private readonly ScheduleHoldCutoff $holdCutoff
     ) {}
 
     public function index()
@@ -659,8 +661,10 @@ class ProjectController extends Controller
             ->orderBy('type_name', 'asc')
             ->get();
 
-        // Get technician reports for this project
-        $reports = TechnicianReport::with('images')
+        // Get technician reports for this project. `submitter` and the
+        // technician's account are loaded because every card names who filed
+        // the report - asked per row, that is a query per report.
+        $reports = TechnicianReport::with(['images', 'submitter', 'technician.account'])
             ->where('project_id', $id);
 
         $tasks = Task::with(['technician', 'images', 'completedBy'])
@@ -943,18 +947,21 @@ class ProjectController extends Controller
                 ->with('error', 'This project has no schedule yet.');
         }
 
-        // Read the team before the hold releases it, or there would be
-        // nobody left to tell.
+        // Read up front so the crew is told whatever the hold does to the
+        // records underneath them.
         $team = $this->notifications->projectTeam($project);
 
         try {
-            DB::transaction(function () use ($project): void {
+            $summary = DB::transaction(function () use ($project): array {
                 $project->update([
                     'on_hold' => true,
+                    // Whatever dates it keeps are days that have already been
+                    // worked; it holds nothing ahead of it, so it needs a new
+                    // schedule before it can run again.
                     'status' => 'unscheduled',
                 ]);
 
-                $this->releaseScheduleAndTechnicians($project);
+                return $this->releaseScheduleOnly($project);
             });
 
             $this->notifications->projectPutOnHold($project, $team);
@@ -963,13 +970,19 @@ class ProjectController extends Controller
             $this->activityLogger->record(
                 ActivityLog::PROJECT_PUT_ON_HOLD,
                 null,
-                sprintf("Put project '%s' on hold, releasing its schedule and technicians.", $project->reference_no),
+                sprintf(
+                    "Put project '%s' on hold as of %s. %s Its team was kept.",
+                    $project->reference_no,
+                    Schedule::businessToday()->format('F j, Y'),
+                    $this->describeHoldCutoff($summary)
+                ),
                 $project
             );
 
             return redirect()
                 ->route('super-admin.projects', $id)
-                ->with('success', 'Project has been put on hold. Its schedule and technicians were released.');
+                ->with('success', 'Project has been put on hold. '.$this->describeHoldCutoff($summary)
+                    .' Its assigned technicians were kept.');
         } catch (Throwable $e) {
             return redirect()
                 ->route('super-admin.projects', $id)
@@ -1341,6 +1354,79 @@ class ProjectController extends Controller
                 ->route('super-admin.projects.archived')
                 ->with('error', 'An error occurred while restoring the project: '.$e->getMessage());
         }
+    }
+
+    /**
+     * Give a paused project's remaining dates back without breaking up its
+     * crew.
+     *
+     * A hold is a pause, not an ending: the work is expected to resume, and
+     * the same people are expected to do it. So the team stays exactly as
+     * assigned, ready for the project to be rescheduled rather than rebuilt,
+     * while the days still to come are handed back - those were promises about
+     * dates that are no longer promised, and the crew must read as free for
+     * other work on them.
+     *
+     * What the hold does NOT touch is the record of days already worked.
+     * ScheduleHoldCutoff draws that line at today and keeps everything on the
+     * near side of it, the day of the hold included.
+     *
+     * Tasks keep their technician for the same reason the team does. Any that
+     * are still open lose their dates: an open task is work still to be done,
+     * and there is no longer a booking ahead of it to do it in.
+     *
+     * @return array{kept: int, shortened: int, released: int}
+     */
+    private function releaseScheduleOnly(Project $project): array
+    {
+        $summary = $this->holdCutoff->apply($project);
+
+        Task::where('project_id', $project->project_id)
+            ->where('status', '!=', 'completed')
+            ->update([
+                'start_date' => null,
+                'due_date' => null,
+            ]);
+
+        return $summary;
+    }
+
+    /**
+     * What the cutoff did, as a sentence for the toast and the audit trail.
+     *
+     * @param  array{kept: int, shortened: int, released: int}  $summary
+     */
+    private function describeHoldCutoff(array $summary): string
+    {
+        $parts = [];
+
+        if ($summary['kept'] > 0) {
+            $parts[] = sprintf(
+                '%d past %s kept',
+                $summary['kept'],
+                $summary['kept'] === 1 ? 'schedule was' : 'schedules were'
+            );
+        }
+
+        if ($summary['shortened'] > 0) {
+            $parts[] = sprintf(
+                '%d %s shortened to today',
+                $summary['shortened'],
+                $summary['shortened'] === 1 ? 'schedule was' : 'schedules were'
+            );
+        }
+
+        if ($summary['released'] > 0) {
+            $parts[] = sprintf(
+                '%d future %s released',
+                $summary['released'],
+                $summary['released'] === 1 ? 'schedule was' : 'schedules were'
+            );
+        }
+
+        return $parts === []
+            ? 'It held no schedules.'
+            : ucfirst(implode(', ', $parts)).'.';
     }
 
     /**

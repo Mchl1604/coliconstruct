@@ -276,15 +276,15 @@ class OverdueProjectTest extends TestCase
         $this->assertNotContains('Cancelled Project', $names);
         $this->assertNotContains('Paused Project', $names);
 
-        // Overdue events are orange and labelled Overdue. Bookings are drawn
-        // outlined rather than filled, so the colour is on the border and the
-        // lettering and the bar itself is transparent.
+        // Overdue events are orange and labelled Overdue. These are whole-day
+        // bookings, so they are drawn filled - the bar carries the colour and
+        // the lettering is white on it.
         $lateEvent = $events->firstWhere('extendedProps.projectName', 'Late Project');
         // The ink cut, not the fill: OVERDUE_COLOR is the badge background and
         // is too pale to write with - see Project::CALENDAR_INK.
         $this->assertSame(Project::CALENDAR_INK['overdue'], $lateEvent['borderColor']);
-        $this->assertSame(Project::CALENDAR_INK['overdue'], $lateEvent['textColor']);
-        $this->assertSame('transparent', $lateEvent['backgroundColor']);
+        $this->assertSame(Project::CALENDAR_INK['overdue'], $lateEvent['backgroundColor']);
+        $this->assertSame('#ffffff', $lateEvent['textColor']);
         $this->assertSame('Overdue', $lateEvent['extendedProps']['statusLabel']);
     }
 
@@ -314,10 +314,10 @@ class OverdueProjectTest extends TestCase
         $names = $events->pluck('extendedProps.projectName')->unique()->values()->all();
 
         $this->assertSame(['Late Project'], $names);
-        // Outlined rather than filled, the same as every other calendar.
+        // Filled for a whole-day booking, the same as every other calendar.
         $this->assertSame(Project::CALENDAR_INK['overdue'], $events->first()['borderColor']);
-        $this->assertSame(Project::CALENDAR_INK['overdue'], $events->first()['textColor']);
-        $this->assertSame('transparent', $events->first()['backgroundColor']);
+        $this->assertSame(Project::CALENDAR_INK['overdue'], $events->first()['backgroundColor']);
+        $this->assertSame('#ffffff', $events->first()['textColor']);
         $this->assertSame('Overdue', $events->first()['extendedProps']['statusLabel']);
 
         // Cancelled work is dropped from the assignments table and its count

@@ -17,9 +17,9 @@
     $quickLinks = $content->lines('footer.quick_links');
     $socials = collect([
         ['key' => 'contact.facebook', 'icon' => 'bi-facebook', 'label' => 'Facebook'],
+        ['key' => 'contact.telegram', 'icon' => 'bi-telegram', 'label' => 'Telegram'],
+        ['key' => 'contact.whatsapp', 'icon' => 'bi-whatsapp', 'label' => 'WhatsApp'],
         ['key' => 'contact.instagram', 'icon' => 'bi-instagram', 'label' => 'Instagram'],
-        ['key' => 'contact.linkedin', 'icon' => 'bi-linkedin', 'label' => 'LinkedIn'],
-        ['key' => 'contact.other_social', 'icon' => 'bi-globe', 'label' => 'Website'],
     ])->filter(fn (array $social): bool => $content->has($social['key']));
 @endphp
 <!DOCTYPE html>
@@ -134,12 +134,14 @@
                             </ul>
                         </div>
                     @else
-                        {{-- A guest gets both doors: the one that opens them
-                             an account, and the one for people who already
-                             have one. --}}
-                        <a class="btn btn-sign-up px-3" href="{{ route('auth.register') }}">Sign Up</a>
-
-                        <a class="btn btn-brand-blue px-3" href="{{ route('auth.login') }}">Login</a>
+                        {{-- One door for a guest, not two. Get Started opens
+                             the registration form, and that form carries the
+                             way through to Login for people who already have
+                             an account - so the header stays a single button
+                             without shutting anybody out. --}}
+                        <a class="btn btn-brand-blue btn-pill px-4" href="{{ route('auth.register') }}">
+                            Get Started
+                        </a>
                     @endif
                 </div>
             </div>
@@ -159,7 +161,7 @@
 
     <footer class="public-footer">
         <div class="container">
-            <div class="row g-4">
+            <div class="row g-4 g-lg-5">
 
                 <div class="col-lg-4">
                     <div class="d-flex align-items-center gap-2 mb-3">
@@ -170,22 +172,11 @@
                     </div>
 
                     <p class="public-footer-text">{{ $content->get('footer.description') }}</p>
-
-                    @if ($socials->isNotEmpty())
-                        <div class="d-flex gap-2 mt-3">
-                            @foreach ($socials as $social)
-                                <a class="public-social" href="{{ $content->get($social['key']) }}"
-                                    target="_blank" rel="noopener noreferrer" aria-label="{{ $social['label'] }}">
-                                    <i class="bi {{ $social['icon'] }}" aria-hidden="true"></i>
-                                </a>
-                            @endforeach
-                        </div>
-                    @endif
                 </div>
 
                 @if ($quickLinks->isNotEmpty())
-                    <div class="col-6 col-lg-3">
-                        <h6 class="public-footer-heading">Quick Links</h6>
+                    <div class="col-6 col-lg-2">
+                        <h6 class="public-footer-heading">{{ $content->get('footer.links_heading') }}</h6>
                         <ul class="public-footer-links">
                             @foreach ($quickLinks as $link)
                                 <li>
@@ -196,35 +187,38 @@
                     </div>
                 @endif
 
-                <div class="col-6 col-lg-5">
-                    <h6 class="public-footer-heading">Contact</h6>
+                {{-- The three ways to reach the company. Office hours are not
+                     one of them: they belong to the Contact page, and a fourth
+                     line here pushes the column out of step with its
+                     neighbours. --}}
+                <div class="col-6 col-lg-3">
+                    <h6 class="public-footer-heading">{{ $content->get('footer.contact_heading') }}</h6>
                     <ul class="public-footer-contact">
-                        @if ($content->has('contact.address'))
-                            <li>
-                                <i class="bi bi-geo-alt" aria-hidden="true"></i>
-                                <span>{{ $content->get('contact.address') }}</span>
-                            </li>
-                        @endif
                         @if ($content->has('contact.phone'))
-                            <li>
-                                <i class="bi bi-telephone" aria-hidden="true"></i>
-                                <span>{{ $content->get('contact.phone') }}</span>
-                            </li>
+                            <li><span>{{ $content->get('contact.phone') }}</span></li>
                         @endif
                         @if ($content->has('contact.email'))
-                            <li>
-                                <i class="bi bi-envelope" aria-hidden="true"></i>
-                                <span>{{ $content->get('contact.email') }}</span>
-                            </li>
+                            <li><span>{{ $content->get('contact.email') }}</span></li>
                         @endif
-                        @if ($content->has('contact.office_hours'))
-                            <li>
-                                <i class="bi bi-clock" aria-hidden="true"></i>
-                                <span class="public-prewrap">{{ $content->get('contact.office_hours') }}</span>
-                            </li>
+                        @if ($content->has('contact.address'))
+                            <li><span>{{ $content->get('contact.address') }}</span></li>
                         @endif
                     </ul>
                 </div>
+
+                @if ($socials->isNotEmpty())
+                    <div class="col-lg-3">
+                        <h6 class="public-footer-heading">{{ $content->get('footer.socials_heading') }}</h6>
+                        <div class="d-flex flex-wrap gap-3">
+                            @foreach ($socials as $social)
+                                <a class="public-social" href="{{ $content->get($social['key']) }}"
+                                    target="_blank" rel="noopener noreferrer" aria-label="{{ $social['label'] }}">
+                                    <i class="bi {{ $social['icon'] }}" aria-hidden="true"></i>
+                                </a>
+                            @endforeach
+                        </div>
+                    </div>
+                @endif
 
             </div>
 

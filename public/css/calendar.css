@@ -89,12 +89,12 @@
     color: #1f2937;
 }
 
-/* ---- Events: outlined, not filled ----
+/* ---- Events: filled for whole days, outlined for partial ones ----
  *
- * A month of solid colour bars is hard to read. The fills dominate the grid,
- * the date numbers disappear behind them, and several projects on one day
- * become a stack of blocks rather than a list you can scan. Outlining carries
- * the same status colour at a fraction of the ink.
+ * The mark says what kind of booking it is. A whole-day booking owns every
+ * hour of the days it covers, and a solid bar says so. A partial day books a
+ * few hours and leaves the rest of that date free, so it is outlined - a
+ * solid bar would claim a day nobody booked.
  *
  * The colours come from the event itself - see Project::calendarEventColors().
  * FullCalendar writes them inline: `border-color` and `background-color` onto
@@ -147,13 +147,17 @@
 }
 
 /*
- * Hover tints faintly rather than darkening. `filter: brightness()` was the
- * old hover and does nothing to a transparent bar, and a coloured tint cannot
- * be written here for the same reason the text colour cannot - so it is a
- * neutral wash, which reads the same against every status colour.
+ * Hover draws a ring around the bar rather than repainting it.
+ *
+ * The two earlier attempts both assumed one treatment: `filter: brightness()`
+ * does nothing to a transparent bar, and a neutral background wash had to be
+ * `!important` to land - which then flattened the filled whole-day bars into
+ * near-transparent ones the moment the pointer touched them. A ring sits
+ * outside the fill entirely, so it reads the same on a solid bar and an
+ * outlined one and needs to override neither.
  */
 .calendar-standard .fc-event:hover {
-    background-color: rgba(15, 23, 42, 0.06) !important;
+    box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.22);
 }
 
 /*

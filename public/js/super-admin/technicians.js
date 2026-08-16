@@ -344,7 +344,7 @@ document.addEventListener("DOMContentLoaded", function () {
             metaEl.textContent =
                 technician.position +
                 (technician.email ? " · " + technician.email : "");
-            idEl.textContent = technician.technician_id;
+            idEl.textContent = technician.display_code;
             positionEl.textContent = technician.position;
             emailEl.textContent = technician.email || "Not on file";
 
@@ -628,8 +628,10 @@ document.addEventListener("DOMContentLoaded", function () {
     let selectedTechnician = null;
 
     /**
-     * The picker is a datalist, so the value arrives as "12 — Jane Doe".
-     * Match on the leading id first, then fall back to an exact name.
+     * The picker is a datalist, so the value arrives as "TECH-0012 — Jane
+     * Doe". Match on the leading code first, then fall back to an exact name.
+     * The prefix is optional so somebody who types the bare number still
+     * lands on the right technician.
      */
     function resolveTechnician(rawValue) {
         const value = String(rawValue || "").trim();
@@ -638,7 +640,7 @@ document.addEventListener("DOMContentLoaded", function () {
             return null;
         }
 
-        const idMatch = value.match(/^\s*(\d+)\s*(?:[—-]|$)/);
+        const idMatch = value.match(/^\s*(?:TECH[\s-]*)?0*(\d+)/i);
 
         if (idMatch) {
             const byId = directory.find(function (item) {
@@ -899,7 +901,7 @@ document.addEventListener("DOMContentLoaded", function () {
             }
 
             selectedTechnician = match;
-            picker.value = match.technician_id + " — " + match.name;
+            picker.value = match.display_code + " — " + match.name;
             pickerHint.textContent = "Showing schedule for " + match.name + ".";
             addOpenBtn.classList.remove("d-none");
 

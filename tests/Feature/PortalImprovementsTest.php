@@ -241,7 +241,7 @@ class PortalImprovementsTest extends TestCase
             ->assertSee('project-details-page', escape: false)
             ->assertSee('project-type-badge', escape: false)
             ->assertSee('project-reference', escape: false)
-            ->assertSee('Project ID: '.$project->project_id)
+            ->assertSee('Project ID: '.sprintf('PROJ-%04d', $project->project_id))
             ->assertSee('PRJ-1')
             ->assertSee('Project Details')
             ->assertSee('Assigned Team')
@@ -257,7 +257,7 @@ class PortalImprovementsTest extends TestCase
             ->assertOk()
             ->assertSee('project-details-page', escape: false)
             ->assertSee('project-type-badge', escape: false)
-            ->assertSee('Project ID: '.$project->project_id)
+            ->assertSee('Project ID: '.sprintf('PROJ-%04d', $project->project_id))
             ->assertSee('Assigned Team')
             // The assigned team still carries the picture, role and approved
             // specialties the profile work added.

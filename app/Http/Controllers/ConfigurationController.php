@@ -8,6 +8,7 @@ use App\Models\SystemContent;
 use App\Models\User;
 use App\Services\CredentialDelivery;
 use App\Services\UserAccountService;
+use App\Support\AccountAge;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -54,7 +55,7 @@ class ConfigurationController extends Controller
      * digits covers local and international numbers alike (ITU E.164 caps at
      * 15), without rejecting a valid number for its formatting.
      */
-    private const CONTACT_NUMBER_RULE = 'regex:/^\+?[0-9][0-9\s\-().]{5,20}$/';
+    private const CONTACT_NUMBER_RULE = User::CONTACT_NUMBER_RULE;
 
     public function __construct(
         private readonly UserAccountService $accounts,
@@ -428,6 +429,10 @@ class ConfigurationController extends Controller
         $validator = Validator::make($request->all(), [
             'full_name' => ['required', 'string', 'max:255'],
             'contact_number' => ['required', 'string', 'max:32', self::CONTACT_NUMBER_RULE],
+            // Optional here for the same reason it is on the employee form:
+            // an older account has none on file, but one that is supplied is
+            // still held to the minimum age.
+            'birthdate' => AccountAge::rules(required: false),
         ], $this->messages());
 
         if ($validator->fails()) {
@@ -526,6 +531,10 @@ class ConfigurationController extends Controller
             'middle_name' => ['nullable', 'string', 'max:100'],
             'last_name' => ['required', 'string', 'max:100'],
             'contact_number' => ['required', 'string', 'max:32', self::CONTACT_NUMBER_RULE],
+            // Demanded when the account is opened; optional when an existing
+            // one is edited, because accounts predating this field have none
+            // on file and the rest of the form must still be saveable.
+            'birthdate' => AccountAge::rules(required: $user === null),
             'email' => [
                 'required', 'string', 'email', 'max:255',
                 Rule::unique('users', 'email')->ignore($user?->id),
@@ -566,6 +575,7 @@ class ConfigurationController extends Controller
         return [
             'full_name' => ['required', 'string', 'max:255'],
             'contact_number' => ['required', 'string', 'max:32', self::CONTACT_NUMBER_RULE],
+            'birthdate' => AccountAge::rules(),
             'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users', 'email')],
             'password' => ['nullable', 'string', 'min:8', 'max:72'],
         ];
@@ -605,7 +615,7 @@ class ConfigurationController extends Controller
             'contact_number.regex' => 'Enter a valid contact number.',
             'password.min' => 'The password must be at least 8 characters.',
             'skill_ids.*.exists' => 'One of the selected specialties no longer exists.',
-        ];
+        ] + AccountAge::messages();
     }
 
     // ------------------------------------------------------------------
@@ -747,6 +757,8 @@ class ConfigurationController extends Controller
             'middle_name' => $user->middle_name,
             'last_name' => $user->last_name,
             'contact_number' => $user->contact_number,
+            // Y-m-d, which is what a date input expects back.
+            'birthdate' => $user->birthdate?->toDateString(),
             'position' => $user->position,
             'company_address' => $user->company_address,
             'is_client' => $user->isClient(),

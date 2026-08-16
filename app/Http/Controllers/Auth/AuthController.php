@@ -10,6 +10,7 @@ use App\Services\ActivityLogger;
 use App\Services\NotificationService;
 use App\Services\OtpService;
 use App\Services\UserAccountService;
+use App\Support\AccountAge;
 use App\Support\PortalHome;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -187,14 +188,16 @@ class AuthController extends Controller
     {
         $validated = $request->validate([
             'full_name' => ['required', 'string', 'max:255'],
-            'contact_number' => ['required', 'string', 'max:32', 'regex:/^\+?[0-9][0-9\s\-().]{5,20}$/'],
+            'contact_number' => ['required', 'string', 'max:32', User::CONTACT_NUMBER_RULE],
+            // Nobody under 18 gets an account, whichever form opens it.
+            'birthdate' => AccountAge::rules(),
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
             'password' => ['required', 'string', 'min:8', 'max:72', 'confirmed'],
         ], [
             'email.unique' => 'An account already exists for that email address.',
             'contact_number.regex' => 'Enter a valid contact number.',
             'password.confirmed' => 'The two passwords do not match.',
-        ]);
+        ] + AccountAge::messages());
 
         $user = app(UserAccountService::class)->registerClient($validated);
 
