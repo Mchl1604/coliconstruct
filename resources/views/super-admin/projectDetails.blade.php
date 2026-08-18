@@ -375,6 +375,35 @@
                                     technicians and task history stay on record, but the project becomes view only.
                                 </p>
 
+                                {{-- What the completion rules object to. A lead technician is
+                                     refused outright; an administrator may go ahead, but the
+                                     reason is written onto the project and into the activity
+                                     log, so the decision is never a silent one. --}}
+                                @if (! empty($completionBlockers))
+                                    <div class="alert alert-warning" role="alert">
+                                        <p class="fw-semibold mb-2">
+                                            <i class="bi bi-exclamation-triangle me-1"></i>
+                                            This project is not ready to be completed
+                                        </p>
+                                        <ul class="mb-2 ps-3">
+                                            @foreach ($completionBlockers as $blocker)
+                                                <li>{{ $blocker }}</li>
+                                            @endforeach
+                                        </ul>
+                                        <label class="form-label fw-semibold mb-1" for="completionOverrideReason">
+                                            Reason for completing it anyway
+                                        </label>
+                                        <textarea class="form-control" id="completionOverrideReason"
+                                            name="completion_override_reason" rows="2" minlength="10" maxlength="500"
+                                            required
+                                            placeholder="Why is this being completed with the above outstanding?"></textarea>
+                                        <div class="form-text">
+                                            Recorded against the project and in the activity log, and the other
+                                            administrators are notified.
+                                        </div>
+                                    </div>
+                                @endif
+
                                 <div class="mb-3">
                                     <label class="form-label fw-semibold">Completion Date</label>
                                     <input type="date" class="form-control" name="completion_date"
@@ -532,6 +561,31 @@
                             </div>
                         @endif
 
+                        {{-- A project closed over its own completion rules says so on its
+                             record, not only in the activity log. What was outstanding is
+                             printed as it read at the time - the tasks it names may since
+                             have been finished or deleted. --}}
+                        @if ($project->completionWasOverridden())
+                            <div class="alert alert-warning mt-3 mb-0" role="alert">
+                                <p class="fw-semibold mb-2">
+                                    <i class="bi bi-exclamation-triangle me-1"></i>
+                                    Completed over its blockers by
+                                    {{ $project->completionOverriddenByUser?->fullName() ?? 'an administrator' }}
+                                </p>
+
+                                @if (! empty($project->completion_override_blockers))
+                                    <ul class="mb-2 ps-3">
+                                        @foreach ($project->completion_override_blockers as $blocker)
+                                            <li>{{ $blocker }}</li>
+                                        @endforeach
+                                    </ul>
+                                @endif
+
+                                <span class="fw-semibold d-block">Reason given:</span>
+                                <p class="mb-0">{{ $project->completion_override_reason }}</p>
+                            </div>
+                        @endif
+
                         @if ($project->completionPhotos->isNotEmpty())
                             <div class="mt-3">
                                 <span class="fw-semibold d-block mb-2">Completion Photos:</span>
@@ -675,6 +729,20 @@
 
                     <div class="card-body p-0">
 
+                        {{-- Deactivating a technician keeps their bookings rather than
+                             handing the dates back silently, so the project has to say
+                             who can no longer work it. Derived, so it clears itself when
+                             the account is restored or the person is taken off. --}}
+                        @if ($project->needsRecrew())
+                            <div class="alert alert-warning rounded-0 border-0 border-bottom mb-0" role="alert">
+                                <i class="bi bi-person-exclamation me-1"></i>
+                                <strong>This team needs attention.</strong>
+                                {{ $project->inactiveCrew()->map(fn ($assignment) => $assignment->technician?->name)->filter()->join(', ', ' and ') }}
+                                can no longer sign in, but their dates are still booked.
+                                Reassign the work or take them off the team.
+                            </div>
+                        @endif
+
                         <ul class="list-group list-group-flush">
 
                             @forelse($project->projectTechnicians as $projectTechnician)
@@ -696,6 +764,10 @@
                                                 @else
                                                     <span class="badge bg-secondary">Technician</span>
                                                 @endif
+
+                                                @unless ($technician->isAssignable())
+                                                    <span class="badge bg-warning text-dark">Account inactive</span>
+                                                @endunless
                                             </div>
 
                                             <div class="d-flex flex-wrap gap-1 mt-1">

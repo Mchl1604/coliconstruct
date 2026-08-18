@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Support\DisplayCode;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -29,6 +30,51 @@ class Technician extends Model
     public function account(): BelongsTo
     {
         return $this->belongsTo(User::class, 'account_id', 'id');
+    }
+
+    /**
+     * The technicians who may be given work.
+     *
+     * A technician record outlives the account's job title on purpose - see
+     * UserAccountService::syncTechnicianRecord() - so "is this a technician?"
+     * and "may this person be sent to a site?" are two different questions.
+     * This one is the second: the account still holds a technician role, and
+     * it can still sign in. An account that has been switched off or archived
+     * cannot open the project, cannot close a task, and cannot be told it has
+     * been assigned anything, so it is not work anybody can hand out.
+     *
+     * Somebody already on a team is a separate matter and is not filtered by
+     * this: taking work away is a decision for a person to make, not a side
+     * effect of an account being disabled. See ProjectTeamRules.
+     *
+     * @param  Builder<Technician>  $query
+     * @return Builder<Technician>
+     */
+    public function scopeAssignable(Builder $query): Builder
+    {
+        return $query->whereHas('account', fn (Builder $account): Builder => $account
+            ->whereIn('role', User::TECHNICIAN_ROLES)
+            ->loginable());
+    }
+
+    /**
+     * The same question asked of one record that is already in hand.
+     */
+    public function isAssignable(): bool
+    {
+        return $this->account !== null
+            && in_array($this->account->role, User::TECHNICIAN_ROLES, true)
+            && $this->account->canLogin();
+    }
+
+    /**
+     * Whether this technician is a lead. There is no per-project lead column:
+     * a project's lead is the member whose account role says so, which is why
+     * a project may only ever carry one of them.
+     */
+    public function isLead(): bool
+    {
+        return $this->account?->role === User::ROLE_LEAD_TECHNICIAN;
     }
 
     public function skills(): BelongsToMany

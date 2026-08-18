@@ -344,14 +344,20 @@ class ScheduleDateRemovalTest extends TestCase
         $this->assertDatabaseHas('tbl_project_technicians', ['project_id' => $project->project_id]);
     }
 
-    public function test_a_project_that_still_holds_dates_keeps_its_status(): void
+    /**
+     * Status follows the dates in every direction now, not only downwards into
+     * Unscheduled. A project whose remaining work is entirely ahead of it is
+     * Pending - "booked, not started" - however it was labelled before, which
+     * is the same rule Resume and the projects listing apply.
+     */
+    public function test_a_project_left_with_only_future_dates_reads_as_pending(): void
     {
         $project = $this->createProject([$this->createTechnician('Jose Garcia')]);
         $schedule = $this->book($project, $this->day(10), $this->day(15));
 
         $this->removeDate($schedule, $this->day(13))->assertOk();
 
-        $this->assertSame('ongoing', $project->fresh()->status);
+        $this->assertSame('pending', $project->fresh()->status);
     }
 
     /**

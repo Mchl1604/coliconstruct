@@ -448,6 +448,9 @@ class ReportController extends Controller
         $allowed = match ($reportType) {
             'project' => ['project_status'],
             'technician' => ['technician_scope', 'technician_id', 'technician_kind'],
+            // The New Projects Report counts intake, and everything opened in
+            // the period is in it whatever became of it since - so there is
+            // nothing to narrow it by.
             default => [],
         };
 

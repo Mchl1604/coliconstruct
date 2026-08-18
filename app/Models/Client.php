@@ -15,6 +15,7 @@ class Client extends Model
 
     protected $fillable = [
         'project_id',
+        'user_id',
         'client_type',
         'company_name',
         'surname',
@@ -28,5 +29,17 @@ class Client extends Model
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class, 'project_id', 'project_id');
+    }
+
+    /**
+     * The client account this contact belongs to, once there is one.
+     *
+     * Null while a project has been booked for somebody who has not registered
+     * yet, which is the ordinary case at the start: the address is what
+     * connects them until they do.
+     */
+    public function account(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'user_id', 'id');
     }
 }

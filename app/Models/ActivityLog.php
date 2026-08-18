@@ -185,6 +185,17 @@ class ActivityLog extends Model
      */
     public const PROJECT_COMPLETION_REQUESTED = 'Project Completion Requested';
 
+    /**
+     * An administrator closed a project the completion rules would have
+     * refused - open tasks, no schedule, paused work - and said why.
+     *
+     * An entry of its own rather than a longer sentence on the one above,
+     * because it is the entry somebody goes looking for: "which projects were
+     * signed off with work still open, and on whose say-so?" is a question a
+     * filter should be able to answer.
+     */
+    public const PROJECT_COMPLETION_OVERRIDDEN = 'Project Completion Overridden';
+
     public const PROJECT_COMPLETION_CONFIRMED = 'Project Completion Confirmed';
 
     public const PROJECT_AUTO_COMPLETED = 'Project Automatically Completed';
@@ -253,6 +264,15 @@ class ActivityLog extends Model
 
     // The catalogue of work the company does. A project type and a technician
     // specialty are the same entry, so one action covers both halves.
+    /**
+     * Somebody wrote in through the public website's Contact page.
+     *
+     * Filed under Configuration, which is where the public site's own content
+     * is administered. There is no inquiries table, so this entry is the only
+     * record the enquiry leaves behind - which is exactly why it is written.
+     */
+    public const CONTACT_INQUIRY_SENT = 'Website Enquiry Sent';
+
     public const PROJECT_TYPE_CREATED = 'Project Type Created';
 
     public const PROJECT_TYPE_UPDATED = 'Project Type Renamed';
@@ -316,6 +336,7 @@ class ActivityLog extends Model
         self::PROJECT_UPDATED => self::MODULE_PROJECTS,
         self::PROJECT_COMPLETED => self::MODULE_PROJECTS,
         self::PROJECT_COMPLETION_REQUESTED => self::MODULE_PROJECTS,
+        self::PROJECT_COMPLETION_OVERRIDDEN => self::MODULE_PROJECTS,
         self::PROJECT_COMPLETION_CONFIRMED => self::MODULE_PROJECTS,
         self::PROJECT_AUTO_COMPLETED => self::MODULE_PROJECTS,
         self::PROJECT_REOPENED => self::MODULE_PROJECTS,
@@ -344,6 +365,7 @@ class ActivityLog extends Model
         self::REPORT_PRINTED => self::MODULE_REPORTS,
 
         self::SYSTEM_SETTINGS_UPDATED => self::MODULE_CONFIGURATION,
+        self::CONTACT_INQUIRY_SENT => self::MODULE_CONFIGURATION,
         self::PROJECT_TYPE_CREATED => self::MODULE_CONFIGURATION,
         self::PROJECT_TYPE_UPDATED => self::MODULE_CONFIGURATION,
         self::PROJECT_TYPE_DELETED => self::MODULE_CONFIGURATION,

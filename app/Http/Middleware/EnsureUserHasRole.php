@@ -27,17 +27,9 @@ class EnsureUserHasRole
             return redirect()->guest(route('auth.login'));
         }
 
-        // A deactivated or archived account is turned away mid-session too,
-        // not only at the door: an administrator may have just locked it.
-        if (! $user->canLogin()) {
-            auth()->logout();
-            $request->session()->invalidate();
-            $request->session()->regenerateToken();
-
-            return redirect()
-                ->route('auth.login')
-                ->with('error', 'That account is no longer active.');
-        }
+        // Whether the account may still be here at all is EnsureAccountIsActive's
+        // question, and it is asked of the whole web group - this middleware
+        // is only about which portal a role belongs in.
 
         if (in_array($user->role, $roles, true)) {
             return $next($request);

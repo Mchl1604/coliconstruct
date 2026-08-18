@@ -9,6 +9,7 @@ use App\Models\Task;
 use App\Models\Technician;
 use App\Services\ActivityLogger;
 use App\Services\NotificationService;
+use App\Services\ProjectStatusRules;
 use App\Services\ProjectTeam;
 use App\Services\ScheduleConsolidation;
 use App\Services\ScheduleDateRemoval;
@@ -450,7 +451,7 @@ class ScheduleController extends Controller
                     // rather than two.
                     app(ScheduleConsolidation::class)->consolidate($project);
 
-                    $this->promoteStatusAfterScheduling($project);
+                    $this->syncStatusWithSchedule($project);
 
                     // Queued inside the transaction but only written once it
                     // commits, so a later project failing takes this with it.
@@ -469,7 +470,9 @@ class ScheduleController extends Controller
                 }
             });
         } catch (Throwable $e) {
-            return response()->json(['error' => $e->getMessage()], 422);
+            return response()->json([
+                'error' => $this->safeErrorMessage($e, 'That schedule could not be saved. Nothing was changed.'),
+            ], 422);
         }
 
         return response()->json([
@@ -662,11 +665,9 @@ class ScheduleController extends Controller
                 app(ScheduleConsolidation::class)->consolidate($project);
 
                 $this->syncTaskDatesWithSchedule($project, $this->storedRanges($project));
-                $this->promoteStatusAfterScheduling($project);
-                // Status follows the dates in both directions, so giving the
-                // last one up here reads the same as giving it up from the
-                // calendar: the project is Unscheduled again.
-                $this->releaseStatusWhenNoDatesRemain($project);
+                // Status follows the dates in every direction: given up
+                // entirely, moved forward, or moved into the past.
+                $this->syncStatusWithSchedule($project);
             });
 
             $project->unsetRelation('schedules');
@@ -700,7 +701,7 @@ class ScheduleController extends Controller
         } catch (Throwable $e) {
             return redirect()
                 ->route('super-admin.schedules.index')
-                ->with('error', $e->getMessage());
+                ->with('error', $this->safeErrorMessage($e, 'The schedule could not be saved. Nothing was changed.'));
         }
     }
 
@@ -752,10 +753,12 @@ class ScheduleController extends Controller
                 // same code that applies it.
                 $clearedTasks = $this->syncTaskDatesWithSchedule($project, $this->storedRanges($project));
 
-                $this->releaseStatusWhenNoDatesRemain($project);
+                $this->syncStatusWithSchedule($project);
             });
         } catch (Throwable $e) {
-            return response()->json(['error' => $e->getMessage()], 422);
+            return response()->json([
+                'error' => $this->safeErrorMessage($e, 'That schedule could not be saved. Nothing was changed.'),
+            ], 422);
         }
 
         $project->unsetRelation('schedules');
@@ -875,47 +878,23 @@ class ScheduleController extends Controller
     }
 
     /**
-     * A project that has just lost its last date is Unscheduled again.
+     * Bring the project's status into line with the dates it now holds.
      *
-     * The mirror of promoteStatusAfterScheduling(): a project's status follows
-     * whether it holds any dates, in both directions. A project that still
-     * holds dates is left exactly as it is - an ongoing project with work
-     * still ahead of it has not stopped being ongoing because one day came
-     * off, and one whose remaining dates have all passed is overdue, which the
-     * model derives without a status of its own.
+     * Replaces the pair of half-rules this page used to carry - one that
+     * promoted out of Unscheduled and one that dropped back into it - with the
+     * single answer ProjectStatusRules gives, so the schedules page, the
+     * projects listing and Resume cannot disagree about what a set of dates
+     * means. It handles both directions and the middle: dates given up
+     * entirely leave the project Unscheduled, dates still to come leave it
+     * Pending, dates that have arrived leave it Ongoing, and dates that have
+     * all passed leave it Ongoing with nothing left to reach - which is what
+     * Overdue is derived from.
      */
-    private function releaseStatusWhenNoDatesRemain(Project $project): void
+    private function syncStatusWithSchedule(Project $project): void
     {
-        if ($project->isReadOnly() || $project->status === 'unscheduled') {
-            return;
-        }
+        $project->unsetRelation('schedules');
 
-        if ($project->schedules()->exists()) {
-            return;
-        }
-
-        $project->update(['status' => 'unscheduled']);
-    }
-
-    /**
-     * Promote an Unscheduled project once it receives a schedule from
-     * the schedules page, mirroring ProjectController's promotion rule.
-     */
-    private function promoteStatusAfterScheduling(Project $project): void
-    {
-        if ($project->status !== 'unscheduled') {
-            return;
-        }
-
-        $firstSchedule = $project->schedules()->orderBy('start_datetime')->first();
-
-        if (! $firstSchedule) {
-            return;
-        }
-
-        $status = now()->gte($firstSchedule->start_datetime) ? 'ongoing' : 'pending';
-
-        $project->update(['status' => $status]);
+        app(ProjectStatusRules::class)->apply($project);
     }
 
     /**
@@ -998,7 +977,11 @@ class ScheduleController extends Controller
                 $entry,
                 sprintf('ranges.%d.', $index),
                 $partialDayAllowed,
-                $schedule !== null
+                $schedule !== null,
+                // The stored row, so the rules can tell a booking being left
+                // alone from one being moved. Only the second is refused a
+                // date in the past.
+                $schedule
             );
 
             if (! $range) {

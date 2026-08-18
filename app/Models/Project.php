@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Collection;
 
 class Project extends Model
 {
@@ -77,6 +78,19 @@ class Project extends Model
      * @var array<int, string>
      */
     public const ACTIVE_PROJECT_STATUSES = ['pending', 'ongoing'];
+
+    /**
+     * The statuses a project is in while it is still live work.
+     *
+     * Wider than ACTIVE_PROJECT_STATUSES, which answers a different question:
+     * that one is about whether a technician's DATES are taken, and an
+     * unscheduled project has no dates to take. A project still belongs to
+     * whoever is on it, though - work not booked yet is somebody's to book -
+     * so it counts as live.
+     *
+     * @var array<int, string>
+     */
+    public const DERIVED_LIVE_STATUSES = ['unscheduled', 'pending', 'ongoing'];
 
     /**
      * Statuses a project can be in and still go overdue. A finished or
@@ -156,6 +170,9 @@ class Project extends Model
         'client_confirmed_at',
         'client_confirmed_by',
         'completion_method',
+        'completion_override_reason',
+        'completion_override_blockers',
+        'completion_overridden_by',
         'reopened_at',
         'reopened_by',
         'reopen_reason',
@@ -174,6 +191,7 @@ class Project extends Model
         'completion_requested_at' => 'datetime',
         'completion_reminder_sent_at' => 'datetime',
         'client_confirmed_at' => 'datetime',
+        'completion_override_blockers' => 'array',
         'reopened_at' => 'datetime',
         'cancelled_at' => 'datetime',
         'archived_at' => 'datetime',
@@ -267,6 +285,24 @@ class Project extends Model
     }
 
     /**
+     * The administrator who closed this project over the completion rules.
+     * Null on every project completed normally, which is what tells the two
+     * apart.
+     */
+    public function completionOverriddenByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'completion_overridden_by', 'id');
+    }
+
+    /**
+     * Whether this project was signed off against the rules.
+     */
+    public function completionWasOverridden(): bool
+    {
+        return filled($this->completion_override_reason);
+    }
+
+    /**
      * How the project's key is printed, e.g. PROJ-0007.
      *
      * Not the same thing as reference_no, which the client quotes and which
@@ -298,6 +334,42 @@ class Project extends Model
     public function isResidential(): bool
     {
         return mb_strtolower(trim((string) $this->clientType())) === 'residential';
+    }
+
+    /**
+     * Team members whose account can no longer be used.
+     *
+     * Deactivating a technician deliberately does NOT release the dates they
+     * are holding: those bookings are real commitments and handing them back
+     * silently would leave a project short-crewed with nobody told. What it
+     * does instead is make the project say so, which is what this answers.
+     *
+     * Derived rather than stored, for the same reason Overdue is: it corrects
+     * itself. Reactivate the account, or take the person off the team, and the
+     * project stops being flagged with nothing to migrate.
+     *
+     * @return Collection<int, ProjectTechnician>
+     */
+    public function inactiveCrew(): Collection
+    {
+        $this->loadMissing('projectTechnicians.technician.account');
+
+        return $this->projectTechnicians
+            ->filter(fn (ProjectTechnician $assignment): bool => $assignment->technician !== null
+                && ! $assignment->technician->isAssignable())
+            ->values();
+    }
+
+    /**
+     * Whether somebody on this project's team can no longer work it.
+     */
+    public function needsRecrew(): bool
+    {
+        if ($this->isReadOnly() || $this->isArchived()) {
+            return false;
+        }
+
+        return $this->inactiveCrew()->isNotEmpty();
     }
 
     /**
@@ -462,7 +534,10 @@ class Project extends Model
 
         $endsOn = $this->scheduleEndsOn();
 
-        return $endsOn !== null && $endsOn->lt(CarbonImmutable::today());
+        // The office's today, not the server's. A schedule is a promise about
+        // the working day in Manila, and measuring it against a UTC date calls
+        // a project late for the eight hours the two disagree by.
+        return $endsOn !== null && $endsOn->lt(Schedule::businessToday());
     }
 
     /**
@@ -481,7 +556,7 @@ class Project extends Model
             })
             ->whereHas('schedules')
             ->whereDoesntHave('schedules', function (Builder $scheduleQuery): void {
-                $scheduleQuery->whereDate('end_datetime', '>=', CarbonImmutable::today()->toDateString());
+                $scheduleQuery->whereDate('end_datetime', '>=', Schedule::businessToday()->toDateString());
             });
     }
 

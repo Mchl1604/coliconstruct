@@ -637,6 +637,152 @@ class ConfigurationUserManagementTest extends TestCase
     }
 
     // ------------------------------------------------------------------
+    // What an Admin may not do to a Super Admin
+    //
+    // The password reset has always been refused, on the grounds that it
+    // hands the new value straight back to whoever asked. But an Admin who
+    // can write to the row does not need the password: moving the address the
+    // account signs in with is enough, because the forgotten-password page
+    // will then email a code to an inbox they own. And an Admin who can
+    // deactivate the row can lock the system's owner out of the only account
+    // able to undo it. So the whole row is theirs alone.
+    // ------------------------------------------------------------------
+
+    /**
+     * Sign in as an Admin, with a separate Super Admin to act against.
+     *
+     * @return array{0: User, 1: User} the admin, and the owner they are aimed at
+     */
+    private function adminAimedAtASuperAdmin(): array
+    {
+        $owner = $this->makeEmployee('super_admin', [
+            'name' => 'System Owner',
+            'first_name' => 'System',
+            'last_name' => 'Owner',
+            'email' => 'owner@coliconstruct.test',
+        ]);
+
+        $admin = $this->makeEmployee('admin');
+
+        $this->actingAs($admin);
+
+        return [$admin, $owner];
+    }
+
+    public function test_an_admin_cannot_move_a_super_admins_login_email(): void
+    {
+        [, $owner] = $this->adminAimedAtASuperAdmin();
+
+        $this->postJson(
+            route('super-admin.configuration.users.employees.update', $owner),
+            $this->employeePayload(['email' => 'attacker@evil.test', 'role' => 'admin'])
+        )->assertStatus(422);
+
+        $owner->refresh();
+
+        $this->assertSame('owner@coliconstruct.test', $owner->email);
+        $this->assertSame('super_admin', $owner->role);
+        $this->assertSame('System Owner', $owner->name);
+    }
+
+    public function test_an_admin_cannot_deactivate_a_super_admin(): void
+    {
+        [, $owner] = $this->adminAimedAtASuperAdmin();
+
+        $this->putJson(
+            route('super-admin.configuration.users.status', $owner),
+            ['status' => User::STATUS_DEACTIVATED]
+        )->assertStatus(422);
+
+        $this->assertTrue($owner->refresh()->isActive());
+        $this->assertTrue($owner->canLogin());
+    }
+
+    /**
+     * The row is still listed - the system's owner is not hidden from the
+     * people they manage - but it offers an Admin no actions, so the
+     * interface never draws a button the endpoint will refuse.
+     */
+    public function test_an_admin_sees_a_super_admin_row_without_any_actions(): void
+    {
+        [, $owner] = $this->adminAimedAtASuperAdmin();
+
+        $response = $this->getJson(
+            route('super-admin.configuration.users.employees', ['role' => 'super_admin'])
+        );
+
+        $response->assertOk();
+
+        $row = collect($response->json('rows'))->firstWhere('id', $owner->id);
+
+        $this->assertNotNull($row, 'The Super Admin is still listed.');
+        $this->assertFalse($row['manageable']);
+
+        // An account the Admin does outrank still offers its actions.
+        $technician = $this->makeEmployee('technician', ['email' => 'tech@example.test']);
+
+        $rows = $this->getJson(
+            route('super-admin.configuration.users.employees', ['role' => 'technician'])
+        )->assertOk()->json('rows');
+
+        $this->assertTrue(collect($rows)->firstWhere('id', $technician->id)['manageable']);
+    }
+
+    /**
+     * The rule is about rank, not about the role being untouchable: the tier
+     * that owns the system still manages its own.
+     */
+    public function test_a_super_admin_may_still_edit_and_deactivate_another_super_admin(): void
+    {
+        $owner = $this->makeEmployee('super_admin', ['email' => 'owner@coliconstruct.test']);
+
+        // setUp() already signed us in as a super admin.
+        $this->postJson(
+            route('super-admin.configuration.users.employees.update', $owner),
+            $this->employeePayload(['email' => 'moved@coliconstruct.test'])
+        )->assertOk();
+
+        $this->putJson(
+            route('super-admin.configuration.users.status', $owner),
+            ['status' => User::STATUS_DEACTIVATED]
+        )->assertOk();
+
+        $owner->refresh();
+
+        $this->assertSame('moved@coliconstruct.test', $owner->email);
+        $this->assertSame('super_admin', $owner->role);
+        $this->assertFalse($owner->isActive());
+    }
+
+    /**
+     * An Admin manages every other account exactly as before - the guard is
+     * narrow, and this is what proves it did not widen into a lockout.
+     */
+    public function test_an_admin_can_still_edit_and_deactivate_ordinary_employees(): void
+    {
+        $admin = $this->makeEmployee('admin');
+        $technician = $this->makeEmployee('technician', ['email' => 'tech@example.test']);
+
+        $this->actingAs($admin);
+
+        $this->postJson(
+            route('super-admin.configuration.users.employees.update', $technician),
+            $this->employeePayload([
+                'email' => 'tech@example.test',
+                'role' => 'technician',
+                'skill_ids' => [$this->skill('Aircon Repair')->skill_id],
+            ])
+        )->assertOk();
+
+        $this->putJson(
+            route('super-admin.configuration.users.status', $technician),
+            ['status' => User::STATUS_DEACTIVATED]
+        )->assertOk();
+
+        $this->assertFalse($technician->refresh()->isActive());
+    }
+
+    // ------------------------------------------------------------------
     // Password reset
     // ------------------------------------------------------------------
 

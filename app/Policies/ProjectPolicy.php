@@ -99,9 +99,16 @@ class ProjectPolicy
             return [sprintf('A %s project cannot be completed.', $project->statusLabel())];
         }
 
-        $openTasks = $project->tasks()
-            ->whereIn('status', Task::OPEN_STATUSES)
-            ->count();
+        // Read from a count the caller loaded where there is one. The projects
+        // listing asks this of every row at once, and two queries per project
+        // on the busiest page in the portal is a cost worth not paying.
+        $openTasks = $project->open_tasks_count !== null
+            ? (int) $project->open_tasks_count
+            : $project->tasks()->whereIn('status', Task::OPEN_STATUSES)->count();
+
+        $allTasks = $project->tasks_count !== null
+            ? (int) $project->tasks_count
+            : $project->tasks()->count();
 
         if ($openTasks > 0) {
             $blockers[] = $openTasks === 1
@@ -109,7 +116,7 @@ class ProjectPolicy
                 : $openTasks.' tasks are still open. Every task has to be completed first.';
         }
 
-        if ($project->tasks()->count() === 0) {
+        if ($allTasks === 0) {
             $blockers[] = 'This project has no tasks yet, so there is no completed work to close out.';
         }
 

@@ -4,8 +4,11 @@ namespace App\Services;
 
 use App\Mail\AccountStatusMail;
 use App\Models\ActivityLog;
+use App\Models\Client;
+use App\Models\Project;
 use App\Models\Technician;
 use App\Models\User;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -119,6 +122,8 @@ class UserAccountService
             ]);
         });
 
+        $this->linkExistingProjectContacts($user);
+
         $this->activityLogger->record(ActivityLog::CLIENT_CREATED, $user);
         $this->notifications->clientAccountRegistered($user);
 
@@ -165,6 +170,8 @@ class UserAccountService
             ]);
         });
 
+        $this->linkExistingProjectContacts($user);
+
         $this->activityLogger->record(
             ActivityLog::CLIENT_CREATED,
             $user,
@@ -194,6 +201,7 @@ class UserAccountService
     public function updateEmployee(User $user, array $data, array $skillIds = []): User
     {
         $this->guardEditable($user);
+        $this->guardMayEdit($user);
 
         DB::transaction(function () use ($user, $data, $skillIds): void {
             $user->fill([
@@ -268,6 +276,15 @@ class UserAccountService
         }
 
         $this->guardNotSelf($user, 'You cannot change the status of your own account.');
+        $this->guardMayChangeAccess(
+            $user,
+            "A Super Admin's account can only be activated or deactivated by another Super Admin."
+        );
+
+        // Read before the status changes: once the account cannot sign in, the
+        // very query that finds its live work would have to know to ignore
+        // that fact.
+        $liveWork = $active ? collect() : $this->liveWorkHeldBy($user);
 
         $user->status = $active ? User::STATUS_ACTIVE : User::STATUS_DEACTIVATED;
         $user->save();
@@ -280,6 +297,13 @@ class UserAccountService
         );
 
         $this->notifications->accountStatusChanged($user, $active);
+
+        // The dates this technician was holding are deliberately kept: they
+        // are real commitments, and releasing them quietly would leave a
+        // project short-crewed with nobody told. So the projects are named
+        // instead, and each of them reads as needing a re-crew until somebody
+        // acts - see Project::needsRecrew().
+        $this->notifications->technicianDeactivatedWithWork($user, $liveWork);
 
         // The account holder is told directly. A bell notification is no use
         // to somebody who has just been locked out of the system it lives in.
@@ -299,12 +323,20 @@ class UserAccountService
     public function archive(User $user): User
     {
         $this->guardNotSelf($user, 'You cannot archive your own account.');
+        // Archiving deactivates as well, so it is held to the same rule as
+        // deactivating. The route is already Super Admin only; this is the
+        // same rule stated where it cannot be routed around.
+        $this->guardMayChangeAccess(
+            $user,
+            "A Super Admin's account can only be archived by another Super Admin."
+        );
 
         if ($user->is_archived) {
             throw new RuntimeException('That account is already archived.');
         }
 
         $wasActive = $user->isActive();
+        $liveWork = $this->liveWorkHeldBy($user);
 
         $user->is_archived = true;
         $user->archived_at = now();
@@ -321,6 +353,7 @@ class UserAccountService
         );
 
         $this->notifications->accountArchived($user);
+        $this->notifications->technicianDeactivatedWithWork($user, $liveWork);
 
         // Archiving takes an account's access away exactly as deactivating
         // does, so the holder is told in the same words. An account that was
@@ -382,6 +415,12 @@ class UserAccountService
         $user->password = $password;
         $user->must_change_password = true;
         $user->save();
+
+        // An administrator resetting somebody else's password is often doing
+        // it because that account is compromised or has changed hands. Every
+        // session it had open goes with the old password - none of them is
+        // this administrator's, so none is spared.
+        app(SessionGuard::class)->logOutOtherSessions($user, exceptCurrent: false);
 
         $this->activityLogger->record(
             $user->isClient() ? ActivityLog::CLIENT_PASSWORD_RESET : ActivityLog::EMPLOYEE_PASSWORD_RESET,
@@ -492,6 +531,61 @@ class UserAccountService
     }
 
     /**
+     * Claim the project contacts already booked under this account's address.
+     *
+     * A project is very often created before its client opens an account, so
+     * the address is the only thing connecting the two until this runs.
+     * Registering - or being registered by an administrator - is the moment
+     * that stops being true, and from then on the id is what holds the
+     * projects rather than the address.
+     *
+     * @return int how many contacts were claimed
+     */
+    private function linkExistingProjectContacts(User $user): int
+    {
+        if (! $user->isClient()) {
+            return 0;
+        }
+
+        $address = mb_strtolower(trim((string) $user->email));
+
+        if ($address === '') {
+            return 0;
+        }
+
+        return Client::query()
+            ->whereNull('user_id')
+            ->whereRaw('LOWER(TRIM(email_address)) = ?', [$address])
+            ->update(['user_id' => $user->id]);
+    }
+
+    /**
+     * The live projects this account is still booked on.
+     *
+     * Only open work, and only for an account that carries a technician
+     * record - a client or an administrator has no bookings to strand. The
+     * project is "live" on the same terms the rest of the system uses: not
+     * finished, not cancelled, not archived.
+     *
+     * @return Collection<int, Project>
+     */
+    private function liveWorkHeldBy(User $user): Collection
+    {
+        $technicianId = $user->technician?->technician_id;
+
+        if (! $technicianId) {
+            return collect();
+        }
+
+        return Project::query()
+            ->whereIn('status', Project::DERIVED_LIVE_STATUSES)
+            ->where('is_archived', false)
+            ->whereHas('projectTechnicians', fn ($assignment) => $assignment->where('technician_id', $technicianId))
+            ->orderBy('project_id')
+            ->get();
+    }
+
+    /**
      * An archived account is a historical record and stays read-only until it
      * is restored.
      */
@@ -514,6 +608,66 @@ class UserAccountService
     }
 
     /**
+     * Whether the signed-in administrator outranks the account they are acting
+     * on - which, with only two administrative tiers, means "a Super Admin's
+     * account is a Super Admin's to manage".
+     *
+     * The reason is account takeover rather than tidiness. An Admin who can
+     * write to a Super Admin's row does not need that row's password: they can
+     * move the address it signs in with and then ask the forgotten-password
+     * page to email a code to an inbox they own. So protecting the password
+     * alone protects nothing - every write has to be held to the same rule,
+     * and switching the account off has to be as well, or the system's owner
+     * can simply be locked out by the tier they govern.
+     *
+     * A caller with nobody signed in - a console command, a seeder - is left
+     * alone: there is no actor to rank, and those paths are the ones that
+     * repair an account when the interface cannot.
+     */
+    private function outranksTarget(User $user): bool
+    {
+        $actor = auth()->user();
+
+        return $actor === null || ! $user->isSuperAdmin() || $actor->isSuperAdmin();
+    }
+
+    /**
+     * Only a Super Admin may edit a Super Admin's details.
+     *
+     * The email address is the field that matters: it is what the account
+     * signs in with and what a password reset code is sent to, so an Admin who
+     * can change it can take the account. The rest of the form is refused
+     * alongside it rather than field by field - there is no half of a Super
+     * Admin's record that belongs to somebody else.
+     */
+    private function guardMayEdit(User $user): void
+    {
+        if ($this->outranksTarget($user)) {
+            return;
+        }
+
+        throw new RuntimeException("A Super Admin's account can only be edited by another Super Admin.");
+    }
+
+    /**
+     * Only a Super Admin may switch a Super Admin's account off - or archive
+     * it, which switches it off as well.
+     *
+     * Without this an Admin can deactivate the system's owner, and if that was
+     * the only Super Admin nobody can put it back: restoring and archiving are
+     * Super Admin privileges, so the account able to undo it is the account
+     * that was just locked out.
+     */
+    private function guardMayChangeAccess(User $user, string $message): void
+    {
+        if ($this->outranksTarget($user)) {
+            return;
+        }
+
+        throw new RuntimeException($message);
+    }
+
+    /**
      * Only a Super Admin may reset a Super Admin's password.
      *
      * A reset hands the new password straight back to whoever asked for it, so
@@ -523,9 +677,7 @@ class UserAccountService
      */
     private function guardMayResetPassword(User $user): void
     {
-        $actor = auth()->user();
-
-        if ($actor === null || ! $user->isSuperAdmin() || $actor->isSuperAdmin()) {
+        if ($this->outranksTarget($user)) {
             return;
         }
 

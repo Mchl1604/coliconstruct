@@ -56,6 +56,19 @@
                     </button>
                 </li>
                 <li class="nav-item">
+                    {{-- A hold is a state the badge already prints, so the table
+                         has to be able to list it. Held work files itself under
+                         Pending otherwise - its stored status is Unscheduled -
+                         which is a tab it does not belong in and a count it
+                         quietly inflates. --}}
+                    <button type="button" class="nav-link" data-status-filter="on_hold">
+                        On Hold
+                        @if ($onHoldCount > 0)
+                            <span class="badge bg-secondary ms-1">{{ $onHoldCount }}</span>
+                        @endif
+                    </button>
+                </li>
+                <li class="nav-item">
 
                     <button type="button" class="nav-link" data-status-filter="completed">Completed</button>
                 </li>
@@ -86,7 +99,8 @@
                     <tbody>
                         @foreach ($projects as $project)
                             <tr data-status="{{ $project->status }}"
-                                data-overdue="{{ $project->isOverdue() ? '1' : '0' }}">
+                                data-overdue="{{ $project->isOverdue() ? '1' : '0' }}"
+                                data-on-hold="{{ $project->on_hold ? '1' : '0' }}">
                                 <td>{{ $project->displayCode() }}</td>
                                 <td>{{ $project->reference_no }}</td>
                                 <td>
@@ -153,6 +167,21 @@
                                     </div>
                                 </td>
                             </tr>
+                        @endforeach
+
+
+                    </tbody>
+
+                </table>
+
+            {{-- The row dialogs, gathered here rather than written inside the
+                 table. A <div> is not valid as a child of <tbody>: a browser
+                 repairs that by lifting the markup out of the table entirely, so
+                 the rendered page stops matching its own source - and this table
+                 is redrawn by DataTables on every sort, search and page change.
+                 Outside the table there is nothing to repair and nothing to
+                 redraw. --}}
+            @foreach ($projects as $project)
                             <!-- ON HOLD MODAL -->
                             <div class="modal fade" id="onHoldModal{{ $project->project_id }}" tabindex="-1"
                                 aria-labelledby="onHoldModalLabel{{ $project->project_id }}" aria-hidden="true">
@@ -267,6 +296,39 @@
                                                     view only.
                                                 </p>
 
+                                                {{-- What the completion rules object to. A lead technician
+                                                     is refused outright; an administrator may go ahead, but
+                                                     the reason is written onto the project and into the
+                                                     activity log, so it is never a silent decision. --}}
+                                                @php($blockers = $completionBlockers[$project->project_id] ?? [])
+
+                                                @if (! empty($blockers))
+                                                    <div class="alert alert-warning" role="alert">
+                                                        <p class="fw-semibold mb-2">
+                                                            <i class="bi bi-exclamation-triangle me-1"></i>
+                                                            This project is not ready to be completed
+                                                        </p>
+                                                        <ul class="mb-2 ps-3">
+                                                            @foreach ($blockers as $blocker)
+                                                                <li>{{ $blocker }}</li>
+                                                            @endforeach
+                                                        </ul>
+                                                        <label class="form-label fw-semibold mb-1"
+                                                            for="overrideReason{{ $project->project_id }}">
+                                                            Reason for completing it anyway
+                                                        </label>
+                                                        <textarea class="form-control"
+                                                            id="overrideReason{{ $project->project_id }}"
+                                                            name="completion_override_reason" rows="2" minlength="10"
+                                                            maxlength="500" required
+                                                            placeholder="Why is this being completed with the above outstanding?"></textarea>
+                                                        <div class="form-text">
+                                                            Recorded against the project and in the activity log, and
+                                                            the other administrators are notified.
+                                                        </div>
+                                                    </div>
+                                                @endif
+
                                                 <div class="mb-3">
                                                     <label class="form-label fw-semibold">Completion Date</label>
                                                     <input type="date" class="form-control" name="completion_date"
@@ -349,12 +411,8 @@
                                 </div>
                             </div>
                             @endif
-                        @endforeach
+            @endforeach
 
-
-                    </tbody>
-
-                </table>
 
             </div>
 
@@ -416,6 +474,21 @@
                             const rowNode = table.row(dataIndex).node();
                             const rowStatus = rowNode && rowNode.getAttribute('data-status');
                             const isOverdue = rowNode && rowNode.getAttribute('data-overdue') === '1';
+                            const isOnHold = rowNode && rowNode.getAttribute('data-on-hold') === '1';
+
+                            // Paused work is paused whatever its dates say, so
+                            // this is asked first - the same precedence the
+                            // badge on the row itself uses. And a held project
+                            // appears under On Hold and nowhere else, so it
+                            // stops inflating the Pending tab it never
+                            // belonged in.
+                            if (status === 'on_hold') {
+                                return isOnHold;
+                            }
+
+                            if (isOnHold) {
+                                return false;
+                            }
 
                             if (status === 'overdue') {
                                 return isOverdue;

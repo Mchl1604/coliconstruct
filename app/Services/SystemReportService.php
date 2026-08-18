@@ -40,6 +40,7 @@ class SystemReportService
      */
     public const EXPORT_TYPES = [
         'project' => 'Project Report',
+        'new_projects' => 'New Projects Report',
         'schedule' => 'Schedule Report',
         'technician' => 'Technician Report',
     ];
@@ -872,6 +873,7 @@ class SystemReportService
         $report = match ($reportType) {
             'schedule' => $this->scheduleReport($period),
             'technician' => $this->technicianReport($period, $filters),
+            'new_projects' => $this->newProjectsReport($period),
             default => $this->projectReport($period, $filters['project_status'] ?? 'all'),
         };
 
@@ -937,6 +939,59 @@ class SystemReportService
                     // Cancelled work is shown but never billed, so the total
                     // is taken from the rows that survive that rule rather
                     // than from the table as a whole.
+                    ['label' => 'Total Quotation', 'value' => $this->money($this->billableTotal($rows))],
+                    ...$this->statusCounts($rows),
+                ],
+            ]],
+        ];
+    }
+
+    /**
+     * The work that was opened in the period, whatever became of it since.
+     *
+     * A report of its own because the Project Report now answers a different
+     * question. That one asks "what was the business carrying in August?" and
+     * so counts a project opened in May and still running; this one asks "what
+     * came in during August?", which is the intake figure - and the two are
+     * only the same in a month where nothing was carried over.
+     *
+     * Ordered by the day it arrived, because that is the thing being counted.
+     *
+     * @param  array{start: CarbonImmutable, end: CarbonImmutable}  $period
+     * @return array<string, mixed>
+     */
+    private function newProjectsReport(array $period): array
+    {
+        $projects = $this->excludeArchived(Project::query())
+            ->whereBetween('created_at', [$period['start'], $period['end']])
+            ->with(['clients', 'projectTypes', 'schedules'])
+            ->orderBy('created_at')
+            ->orderBy('project_id')
+            ->get();
+
+        $rows = $projects
+            ->map(fn (Project $project): array => [
+                'reference_no' => $project->reference_no ?: '—',
+                'opened_on' => $this->formatDate($project->created_at),
+                'client' => $this->clientName($project),
+                'client_type' => $project->clientType() ? ucfirst(mb_strtolower($project->clientType())) : '—',
+                'project_types' => $project->projectTypes->pluck('type_name')->all(),
+                'status_key' => $project->statusKey(),
+                'status_label' => $project->shortStatusLabel(),
+                'schedules' => $project->schedules
+                    ->map(fn (Schedule $schedule): string => $schedule->describe())
+                    ->all(),
+                'quotation' => (float) $project->quotation,
+            ])
+            ->values();
+
+        return [
+            'sections' => [[
+                'key' => 'new_projects',
+                'title' => 'Projects Opened',
+                'rows' => $rows,
+                'summary' => [
+                    ['label' => 'Projects Opened', 'value' => number_format($rows->count())],
                     ['label' => 'Total Quotation', 'value' => $this->money($this->billableTotal($rows))],
                     ...$this->statusCounts($rows),
                 ],
@@ -1158,6 +1213,15 @@ class SystemReportService
     private function scheduleRowsFor(array $period): Collection
     {
         $projects = $this->excludeArchived(Project::query())
+            // Cancelled work gave its dates back. The availability checker
+            // ignores those rows, the calendar does not draw them and the crew
+            // reads as free on them - so counting them here as scheduled time
+            // would be this page disagreeing with the rest of the system about
+            // days nobody worked. The rows are kept on the project for the
+            // record; they are simply not a booking any more. Cancelled
+            // projects still appear in the Project Report, which is about the
+            // work rather than about the calendar.
+            ->where('status', '!=', 'cancelled')
             ->whereHas('schedules', fn (Builder $schedule) => $this->applyOverlap($schedule, $period))
             // Every range, not only the matching ones: resolving Overdue reads
             // the whole schedule, and a constrained load would answer it from
@@ -1278,9 +1342,46 @@ class SystemReportService
             ->where(function (Builder $outer) use ($period): void {
                 $outer
                     ->whereHas('schedules', fn (Builder $schedule) => $this->applyOverlap($schedule, $period))
-                    ->orWhere(fn (Builder $unbooked) => $unbooked
-                        ->whereDoesntHave('schedules')
-                        ->whereBetween('created_at', [$period['start'], $period['end']]));
+                    ->orWhere(fn (Builder $unbooked) => $this->applyStillOpen($unbooked, $period));
+            });
+    }
+
+    /**
+     * Work with no dates on it, placed by the period it was open in.
+     *
+     * It used to be placed by the month it was created in and only that one,
+     * which meant a project opened in May and still waiting for dates in August
+     * appeared on no August report at all - and a project put on hold, whose
+     * future dates are released, vanished from the current period entirely. A
+     * monthly report is a statement about what the business was carrying that
+     * month, and unbooked work is part of it for as long as it is open.
+     *
+     * Open means: it existed by the end of the period, and it had not already
+     * been finished or cancelled before the period began.
+     *
+     * @param  Builder<Project>  $query
+     * @param  array{start: CarbonImmutable, end: CarbonImmutable}  $period
+     * @return Builder<Project>
+     */
+    private function applyStillOpen(Builder $query, array $period): Builder
+    {
+        return $query
+            ->whereDoesntHave('schedules')
+            ->where('created_at', '<=', $period['end'])
+            ->where(function (Builder $open) use ($period): void {
+                $open
+                    // Still live now, so it was live then.
+                    ->whereNotIn('status', ['completed', 'cancelled', Project::STATUS_AWAITING_CLIENT_CONFIRMATION])
+                    // Or it closed, but not before this period started.
+                    ->orWhere('completed_at', '>=', $period['start'])
+                    ->orWhere('cancelled_at', '>=', $period['start'])
+                    // Or it closed and nothing recorded when. Work finished
+                    // under older rules carries no closing date, and a row is
+                    // not dropped from a report on a guess about when it ended
+                    // - the reason it is being excluded has to be a fact.
+                    ->orWhere(fn (Builder $undated) => $undated
+                        ->whereNull('completed_at')
+                        ->whereNull('cancelled_at'));
             });
     }
 

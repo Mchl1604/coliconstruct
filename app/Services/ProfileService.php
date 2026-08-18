@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Mail\EmailChangedMail;
 use App\Mail\SpecialtyDecisionMail;
 use App\Models\ActivityLog;
+use App\Models\Client;
 use App\Models\OtpVerification;
 use App\Models\SpecialtyRequest;
 use App\Models\Technician;
@@ -243,6 +244,13 @@ class ProfileService
 
         $this->otp->clear($newEmail, OtpVerification::PURPOSE_EMAIL_CHANGE);
 
+        // The address on this client's own projects moves with them. Their
+        // work is held by the account rather than by the address, so the
+        // projects would follow either way - but a contact row still saying
+        // the old address is a project whose contact details are wrong, and
+        // it is what every outgoing email to that client is addressed to.
+        $this->carryProjectContactsToNewAddress($user, $newEmail);
+
         $this->activityLogger->record(
             ActivityLog::EMAIL_CHANGED,
             $user,
@@ -257,6 +265,27 @@ class ProfileService
         );
 
         return $user->refresh();
+    }
+
+    /**
+     * Move a client's project contact details onto their new address.
+     *
+     * Only their own: the rows are found by the account id, which is exactly
+     * the link that makes this safe. Rows still matched by the old address
+     * alone - a project booked for them before they registered - are claimed
+     * here too, because that address has just stopped being theirs.
+     *
+     * @return int how many contacts moved
+     */
+    private function carryProjectContactsToNewAddress(User $user, string $newEmail): int
+    {
+        if (! $user->isClient()) {
+            return 0;
+        }
+
+        return Client::query()
+            ->where('user_id', $user->id)
+            ->update(['email_address' => $newEmail]);
     }
 
     /**
@@ -306,6 +335,11 @@ class ProfileService
         // that they choose one.
         $user->must_change_password = false;
         $user->save();
+
+        // Anywhere else this account is signed in was signed in with the old
+        // password, which is exactly what changing it is meant to withdraw.
+        // The session making the request is kept - the person is using it.
+        app(SessionGuard::class)->logOutOtherSessions($user);
 
         $this->activityLogger->record(
             ActivityLog::PASSWORD_CHANGED,

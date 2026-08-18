@@ -26,6 +26,13 @@ use Illuminate\Support\Facades\Route;
 Route::get('/', [PublicSiteController::class, 'home'])->name('landing.home');
 Route::get('/about', [PublicSiteController::class, 'about'])->name('public.about');
 Route::get('/contact', [PublicSiteController::class, 'contact'])->name('public.contact');
+
+// The one thing a stranger can make this application do. Throttled because a
+// public endpoint that sends email is what a spam script looks for; the
+// controller adds a honeypot on top of it.
+Route::post('/contact', [PublicSiteController::class, 'sendInquiry'])
+    ->middleware('throttle:5,10')
+    ->name('public.contact.send');
 Route::get('/my-projects', [PublicSiteController::class, 'myProjects'])->name('public.projects');
 Route::get('/my-projects/{project}', [PublicSiteController::class, 'projectDetails'])
     ->whereNumber('project')

@@ -288,8 +288,9 @@ class PublicSiteTest extends TestCase
     }
 
     /**
-     * The redesigned Contact page. The message form is shown but disabled:
-     * there is nowhere for an online inquiry to go, and the note says so.
+     * The redesigned Contact page. The message form works when the system has
+     * a mailer behind it; the test suite deliberately has none, so this covers
+     * the other half - the form still renders, disabled, and the note says why.
      */
     public function test_the_contact_page_renders_every_editable_piece_of_itself(): void
     {
@@ -320,14 +321,15 @@ class PublicSiteTest extends TestCase
             $response->assertSee($expected);
         }
 
-        // Nothing on this form may accept a message it cannot deliver: four
-        // fields and the button, every one of them disabled, and no endpoint
-        // for the browser to post to.
+        // Nothing on this form may accept a message it cannot deliver. The
+        // suite runs on the `array` mailer, so there is nowhere for an enquiry
+        // to go: four fields and the button are disabled, and the note that
+        // explains it is shown.
         $html = $response->getContent();
 
+        $this->assertFalse($response->viewData('canSendInquiries'));
         $this->assertSame(5, substr_count($html, 'disabled'));
-        $this->assertStringNotContainsString('<form method', $html);
-        $this->assertStringNotContainsString('action=', $html);
+        $response->assertSee('Form note');
     }
 
     // ------------------------------------------------------------------

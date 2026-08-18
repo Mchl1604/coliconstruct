@@ -693,11 +693,27 @@ class ConfigurationController extends Controller
             'status_label' => $user->statusLabel(),
             'status_badge_class' => $user->statusBadgeClass(),
             'is_active' => $user->isActive(),
+            // Whether the administrator reading this row may act on it. A
+            // Super Admin's account is a Super Admin's to manage - see
+            // UserAccountService, which refuses the write either way. This is
+            // what stops the interface offering buttons that can only fail.
+            'manageable' => $this->mayManage($user),
             // Null for an account that never carries a picture, which is what
             // makes the listing fall back to initials for a client.
             'avatar_url' => $user->avatarUrl(),
             'initials' => $user->initials(),
         ];
+    }
+
+    /**
+     * Whether the signed-in administrator outranks this account.
+     *
+     * Stated the same way the service states it, so a row that draws its
+     * buttons is a row whose endpoints will actually answer.
+     */
+    private function mayManage(User $user): bool
+    {
+        return ! $user->isSuperAdmin() || (bool) request()->user()?->isSuperAdmin();
     }
 
     /**

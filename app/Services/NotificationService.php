@@ -502,6 +502,93 @@ class NotificationService
     }
 
     /**
+     * An administrator closed a project the completion rules would have
+     * refused, and said why.
+     *
+     * Addressed to the people who run the system rather than to the crew: the
+     * decision is an administrative one and the objection was administrative
+     * too, so this is oversight rather than news about the work. The client
+     * hears nothing different - from their side the project is finished and
+     * waiting on them either way, which is exactly what it is.
+     *
+     * @param  array<int, string>  $blockers
+     */
+    public function projectCompletionOverridden(Project $project, array $blockers, string $reason): void
+    {
+        $this->deliver(
+            $this->excludingActor($this->administrators()),
+            'Project Completed Over Its Blockers',
+            sprintf(
+                '%s was marked complete by %s even though it was not ready. %s Reason given: %s',
+                $this->projectLabel($project),
+                $this->actorName(),
+                implode(' ', $blockers),
+                $reason
+            ),
+            Notification::MODULE_PROJECTS,
+            $project,
+            $this->projectLink($project)
+        );
+    }
+
+    /**
+     * A technician whose account has just been switched off is still booked on
+     * live work.
+     *
+     * Deactivating does not release their dates - those are real commitments,
+     * and handing them back silently would leave a project short-crewed with
+     * nobody the wiser. So the projects are named here instead, to the people
+     * who can do something about them, at the moment the decision is taken.
+     *
+     * @param  Collection<int, Project>  $projects
+     */
+    public function technicianDeactivatedWithWork(User $account, Collection $projects): void
+    {
+        if ($projects->isEmpty()) {
+            return;
+        }
+
+        $this->deliver(
+            $this->excludingActor($this->administrators()),
+            'Deactivated Technician Still Assigned',
+            sprintf(
+                "%s's account was switched off, but they are still on %s. "
+                    .'Their bookings were kept - reassign the work or take them off the team.',
+                $account->fullName(),
+                $this->listProjects($projects)
+            ),
+            Notification::MODULE_PROJECTS,
+            $projects->first(),
+            $this->projectLink($projects->first())
+        );
+    }
+
+    /**
+     * "PRJ-000012", "PRJ-000012 and PRJ-000013", "A, B, and C".
+     *
+     * @param  Collection<int, Project>  $projects
+     */
+    private function listProjects(Collection $projects): string
+    {
+        $labels = $projects
+            ->map(fn (Project $project): string => $project->reference_no ?: $project->name)
+            ->values()
+            ->all();
+
+        if (count($labels) === 1) {
+            return $labels[0];
+        }
+
+        if (count($labels) === 2) {
+            return $labels[0].' and '.$labels[1];
+        }
+
+        $last = array_pop($labels);
+
+        return implode(', ', $labels).', and '.$last;
+    }
+
+    /**
      * Day five of seven. Addressed to the client alone: reminding the office
      * that a client has not replied yet is not something anybody can act on.
      */

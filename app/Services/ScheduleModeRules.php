@@ -87,9 +87,14 @@ class ScheduleModeRules
      * `$keyPrefix` is '' for a form whose fields sit at the top level, and
      * 'ranges.0.' for one row of the schedules page.
      *
-     * `$isExisting` marks a row that is already saved. Those keep whatever
-     * dates they hold, so an edit to one schedule is not blocked by another
-     * having quietly slipped into the past.
+     * `$isExisting` marks a row that is already saved, and `$existing` is that
+     * row when the caller has it. Together they say: a saved booking keeps
+     * whatever dates it holds, so editing one schedule is never blocked by
+     * another having quietly slipped into the past - but MOVING a saved
+     * booking is a new promise about new days, and a promise cannot be made
+     * about a day that has gone. Without the row itself to compare against,
+     * `$isExisting` alone still means "leave its dates alone", which is what
+     * the screening endpoints want.
      *
      * @param  array<string, mixed>  $entry
      * @return array{mode: string, start: CarbonImmutable, end: CarbonImmutable}|null
@@ -99,7 +104,8 @@ class ScheduleModeRules
         array $entry,
         string $keyPrefix = '',
         bool $partialDayAllowed = true,
-        bool $isExisting = false
+        bool $isExisting = false,
+        ?Schedule $existing = null
     ): ?array {
         $mode = $this->modeFor($entry);
 
@@ -113,8 +119,8 @@ class ScheduleModeRules
         }
 
         return $mode === Schedule::MODE_PARTIAL_DAY
-            ? $this->validatePartialDay($validator, $entry, $keyPrefix, $isExisting)
-            : $this->validateDateBased($validator, $entry, $keyPrefix, $isExisting);
+            ? $this->validatePartialDay($validator, $entry, $keyPrefix, $isExisting, $existing)
+            : $this->validateDateBased($validator, $entry, $keyPrefix, $isExisting, $existing);
     }
 
     /**
@@ -125,7 +131,8 @@ class ScheduleModeRules
         Validator $validator,
         array $entry,
         string $keyPrefix,
-        bool $isExisting
+        bool $isExisting,
+        ?Schedule $existing = null
     ): ?array {
         $startDate = $this->date($entry['start_date'] ?? null);
         $endDate = $this->date($entry['end_date'] ?? null);
@@ -151,8 +158,23 @@ class ScheduleModeRules
             return null;
         }
 
-        if (! $isExisting && $startDate->lt(Schedule::businessToday())) {
-            $validator->errors()->add($keyPrefix.'start_date', 'The start date cannot be in the past.');
+        // A saved row that is being left where it is keeps its dates however
+        // long ago they were. One that is being moved is making a new promise,
+        // and it cannot be made about a day that has already gone.
+        $unchanged = $existing !== null
+            && $existing->isDateBased()
+            && $existing->startsOn()->equalTo($startDate)
+            && $existing->endsOn()->equalTo($endDate);
+
+        $mayKeepPastDates = $unchanged || ($isExisting && $existing === null);
+
+        if (! $mayKeepPastDates && $startDate->lt(Schedule::businessToday())) {
+            $validator->errors()->add(
+                $keyPrefix.'start_date',
+                $existing !== null
+                    ? 'A schedule cannot be moved into the past. Choose a start date of today or later.'
+                    : 'The start date cannot be in the past.'
+            );
 
             return null;
         }
@@ -172,7 +194,8 @@ class ScheduleModeRules
         Validator $validator,
         array $entry,
         string $keyPrefix,
-        bool $isExisting
+        bool $isExisting,
+        ?Schedule $existing = null
     ): ?array {
         $date = $this->date($entry['project_date'] ?? null);
         $startTime = is_string($entry['start_time'] ?? null) ? $entry['start_time'] : null;
@@ -236,9 +259,23 @@ class ScheduleModeRules
             return null;
         }
 
-        if (! $isExisting) {
+        // The same rule as a whole-day range: hours already sat through cannot
+        // be re-promised, but a row nobody is moving keeps them.
+        $unchanged = $existing !== null
+            && $existing->isPartialDay()
+            && CarbonImmutable::parse($existing->start_datetime)->equalTo($start)
+            && CarbonImmutable::parse($existing->end_datetime ?? $existing->start_datetime)->equalTo($end);
+
+        $mayKeepPastDates = $unchanged || ($isExisting && $existing === null);
+
+        if (! $mayKeepPastDates) {
             if ($date->lt(Schedule::businessToday())) {
-                $validator->errors()->add($keyPrefix.'project_date', 'The project date cannot be in the past.');
+                $validator->errors()->add(
+                    $keyPrefix.'project_date',
+                    $existing !== null
+                        ? 'A schedule cannot be moved into the past. Choose a date of today or later.'
+                        : 'The project date cannot be in the past.'
+                );
 
                 return null;
             }

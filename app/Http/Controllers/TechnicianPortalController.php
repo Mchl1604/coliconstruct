@@ -536,7 +536,7 @@ class TechnicianPortalController extends Controller
                 }
             });
         } catch (Throwable $e) {
-            return $this->failed($request, $e->getMessage());
+            return $this->failed($request, $this->safeErrorMessage($e, 'That could not be saved. Nothing was changed.'));
         }
 
         $this->activityLogger->record(
@@ -577,7 +577,7 @@ class TechnicianPortalController extends Controller
                 $task->delete();
             });
         } catch (Throwable $e) {
-            return $this->failed($request, $e->getMessage());
+            return $this->failed($request, $this->safeErrorMessage($e, 'That could not be saved. Nothing was changed.'));
         }
 
         $this->activityLogger->record(
@@ -663,7 +663,7 @@ class TechnicianPortalController extends Controller
                 }
             });
         } catch (Throwable $e) {
-            return $this->failed($request, $e->getMessage());
+            return $this->failed($request, $this->safeErrorMessage($e, 'That could not be saved. Nothing was changed.'));
         }
 
         $this->activityLogger->record(
@@ -738,7 +738,7 @@ class TechnicianPortalController extends Controller
                 );
             });
         } catch (Throwable $e) {
-            return $this->failed($request, $e->getMessage());
+            return $this->failed($request, $this->safeErrorMessage($e, 'That could not be saved. Nothing was changed.'));
         }
 
         // Recorded from this portal exactly as it is from the other one. The

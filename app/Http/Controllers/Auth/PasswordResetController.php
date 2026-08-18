@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\ActivityLogger;
 use App\Services\EmailService;
 use App\Services\OtpService;
+use App\Services\SessionGuard;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -226,9 +227,15 @@ class PasswordResetController extends Controller
             // The password is now the account holder's own, so any outstanding
             // demand that they choose one is satisfied.
             'must_change_password' => false,
-            // Every other session this account has open is invalidated.
             'remember_token' => Str::random(60),
         ])->save();
+
+        // Every session this account had open is ended. Somebody resetting a
+        // forgotten password is often doing it because another person knows
+        // the old one, and until now the new password took effect while
+        // whoever was already signed in stayed signed in. None of them is the
+        // session making this request - a reset is done signed out.
+        app(SessionGuard::class)->logOutOtherSessions($account, exceptCurrent: false);
 
         // The code and the session that carried it are both spent.
         $this->otp->clear($address, OtpVerification::PURPOSE_FORGOT_PASSWORD);

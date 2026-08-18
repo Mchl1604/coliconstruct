@@ -423,7 +423,9 @@ class TechnicianController extends Controller
                 }
             });
         } catch (Throwable $e) {
-            return response()->json(['error' => $e->getMessage()], 422);
+            return response()->json([
+                'error' => $this->safeErrorMessage($e, 'That change could not be saved. Nothing was changed.'),
+            ], 422);
         }
 
         return response()->json([
@@ -559,6 +561,18 @@ class TechnicianController extends Controller
             return response()->json(['error' => $validator->errors()->first()], 422);
         }
 
+        // The other end of the same rule the team editor applies: an account
+        // that cannot sign in cannot be given work, and this page hands out
+        // work from the technician's side rather than the project's.
+        if (! $technician->isAssignable()) {
+            return response()->json([
+                'error' => sprintf(
+                    "%s's account is no longer active, so they cannot be assigned to a project.",
+                    $technician->name
+                ),
+            ], 422);
+        }
+
         $projects = Project::query()
             // technician.account is needed to spot an existing lead.
             ->with(['schedules', 'projectTechnicians.technician.account'])
@@ -660,7 +674,9 @@ class TechnicianController extends Controller
                 }
             });
         } catch (Throwable $e) {
-            return response()->json(['error' => $e->getMessage()], 422);
+            return response()->json([
+                'error' => $this->safeErrorMessage($e, 'That change could not be saved. Nothing was changed.'),
+            ], 422);
         }
 
         return response()->json([

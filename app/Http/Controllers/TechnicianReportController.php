@@ -84,7 +84,7 @@ class TechnicianReportController extends Controller
 
             DB::rollBack();
 
-            return back()->with('error', $e->getMessage());
+            return back()->with('error', $this->safeErrorMessage($e, 'The report could not be saved. Nothing was changed.'));
         }
     }
 

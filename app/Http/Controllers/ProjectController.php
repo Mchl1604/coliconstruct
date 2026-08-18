@@ -14,19 +14,22 @@ use App\Models\Task;
 use App\Models\Technician;
 use App\Models\TechnicianReport;
 use App\Models\User;
+use App\Policies\ProjectPolicy;
 use App\Services\ActivityLogger;
+use App\Services\ClientProjects;
 use App\Services\ImportableTeamSources;
 use App\Services\NotificationService;
 use App\Services\ProjectCompletion;
 use App\Services\ProjectEmails;
 use App\Services\ProjectReopen;
+use App\Services\ProjectStatusRules;
 use App\Services\ProjectTeam;
 use App\Services\ProjectTeamCandidates;
+use App\Services\ProjectTeamRules;
 use App\Services\ScheduleHoldCutoff;
 use App\Services\ScheduleModeRules;
 use App\Services\TechnicianAvailabilityService;
 use App\Services\TechnicianTaskLoad;
-use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -57,14 +60,36 @@ class ProjectController extends Controller
         // without it the status column would fire a query per row.
         $projects = Project::query()
             ->with(['clients', 'documents', 'schedule', 'schedules', 'projectTypes', 'projectTechnicians.technician'])
+            // What the completion rules will object to, per project, as two
+            // subqueries rather than two queries per row - see
+            // ProjectPolicy::blockersFor(), which reads these when they are
+            // here. The completion dialog on this page needs them: an
+            // administrator may complete a project the rules refuse, but only
+            // by saying why, and the dialog has to show what it is asking
+            // about before it asks.
+            ->withCount([
+                'tasks',
+                'tasks as open_tasks_count' => fn ($query) => $query->whereIn('status', Task::OPEN_STATUSES),
+            ])
             ->where('is_archived', false)
             ->where('status', '!=', 'archived')
             ->orderBy('project_id', 'desc')
             ->get();
 
         $overdueCount = $projects->filter->isOverdue()->count();
+        // Paused work now has a tab of its own, and a count beside it for the
+        // same reason Overdue has one.
+        $onHoldCount = $projects->filter(fn (Project $project): bool => (bool) $project->on_hold)->count();
 
-        return view('super-admin.projects', compact('projects', 'overdueCount'));
+        $policy = app(ProjectPolicy::class);
+
+        $completionBlockers = $projects
+            ->mapWithKeys(fn (Project $project): array => [
+                $project->project_id => $project->isReadOnly() ? [] : $policy->blockersFor($project),
+            ])
+            ->all();
+
+        return view('super-admin.projects', compact('projects', 'overdueCount', 'onHoldCount', 'completionBlockers'));
     }
 
     public function archivedIndex()
@@ -87,11 +112,13 @@ class ProjectController extends Controller
     public function create()
     {
         $projectTypes = ProjectType::query()->orderBy('type_name', 'asc')->get();
+        // Only technicians who can actually be given the work. A new project
+        // assigns everybody on it from scratch, so there is no existing member
+        // to make an exception for - see ProjectTeamRules, which refuses the
+        // same people on the way back in.
         $technicians = Technician::query()
             ->with(['account', 'skills'])
-            ->whereHas('account', function ($query): void {
-                $query->whereIn('role', ['technician', 'lead_technician']);
-            })
+            ->assignable()
             ->orderBy('technician_id')
             ->get();
 
@@ -231,6 +258,12 @@ class ProjectController extends Controller
 
                 Client::create([
                     'project_id' => $project->project_id,
+                    // Linked to the account behind the address when there is
+                    // one. Null when there is not, which is the ordinary case:
+                    // work is often booked before the client registers, and
+                    // registering is what fills this in.
+                    'user_id' => app(ClientProjects::class)
+                        ->accountFor($validated['client_email'])?->id,
                     'client_type' => $validated['client_type'],
                     'company_name' => $this->inputCompanyName($validated),
                     'surname' => $validated['surname'] ?? null,
@@ -277,7 +310,7 @@ class ProjectController extends Controller
                     $this->projectTeam->attach($project, $technicianId);
                 });
 
-                $this->promoteStatusAfterScheduling($project);
+                $this->syncStatusWithSchedule($project);
 
                 $this->storeDocuments(
                     $request->file('assessment_report'),
@@ -698,6 +731,15 @@ class ProjectController extends Controller
         // hours every other scheduling screen offers.
         $workingHours = Schedule::workingHourOptions();
 
+        // What the completion rules would object to, if anything. An
+        // administrator may complete a project regardless - unlike a lead
+        // technician, who is simply refused - but only by saying why, so the
+        // dialog has to show what it is being asked to override before it
+        // asks for a reason.
+        $completionBlockers = $project->isReadOnly()
+            ? []
+            : app(ProjectPolicy::class)->blockersFor($project);
+
         return view('super-admin.projectDetails', compact(
             'project',
             'projectTypes',
@@ -710,7 +752,8 @@ class ProjectController extends Controller
             'assignedTeamLookup',
             'technicianActiveTaskCounts',
             'canReopen',
-            'workingHours'
+            'workingHours',
+            'completionBlockers'
         ));
 
     }
@@ -874,7 +917,7 @@ class ProjectController extends Controller
 
             return redirect()
                 ->route('super-admin.projects.show', $id)
-                ->with('error', $e->getMessage());
+                ->with('error', $this->safeErrorMessage($e, 'The project could not be updated. Nothing was saved, so you can correct the details and try again.'));
         }
     }
 
@@ -986,7 +1029,7 @@ class ProjectController extends Controller
         } catch (Throwable $e) {
             return redirect()
                 ->route('super-admin.projects', $id)
-                ->with('error', 'An error occurred while putting the project on hold: '.$e->getMessage());
+                ->with('error', $this->safeErrorMessage($e, 'The project could not be put on hold. Nothing was changed.'));
         }
     }
 
@@ -1000,7 +1043,24 @@ class ProjectController extends Controller
                 ->with('error', 'This project is '.$project->status.' and cannot be resumed.');
         }
 
+        // Resuming something that was never paused is not a no-op: it emails
+        // the client that their project has resumed and tells the whole crew.
+        if (! $project->on_hold) {
+            return redirect()
+                ->route('super-admin.projects', $id)
+                ->with('error', 'This project is not on hold, so there is nothing to resume.');
+        }
+
+        // The hold is lifted first, then the status is worked out from the
+        // dates that are actually left - never assumed. A project resumed with
+        // nothing ahead of it must not read as work in progress just because
+        // the hold kept a record of the days already worked.
         $project->update(['on_hold' => false]);
+        $project->unsetRelation('schedules');
+
+        app(ProjectStatusRules::class)->apply($project);
+
+        $project->refresh();
 
         $this->notifications->projectResumed($project);
         $this->clientEmails->projectResumed($project);
@@ -1008,13 +1068,17 @@ class ProjectController extends Controller
         $this->activityLogger->record(
             ActivityLog::PROJECT_RESUMED,
             null,
-            sprintf("Resumed project '%s'.", $project->reference_no),
+            sprintf("Resumed project '%s'. It is now %s.", $project->reference_no, $project->statusLabel()),
             $project
         );
 
         return redirect()
             ->route('super-admin.projects', $id)
-            ->with('success', 'Project has been resumed. It is Unscheduled and must be scheduled again.');
+            ->with('success', sprintf(
+                'Project has been resumed. It is %s.%s',
+                $project->statusLabel(),
+                $project->status === 'unscheduled' ? ' It must be scheduled again.' : ''
+            ));
     }
 
     /**
@@ -1046,17 +1110,37 @@ class ProjectController extends Controller
 
         $validated = $request->validate($completion->rules(), $completion->messages());
 
+        // What the completion rules object to - open tasks, a project with no
+        // work recorded on it, one that is paused. A lead technician is simply
+        // refused; an administrator may go ahead, but only by saying why. The
+        // rules used to be asked on the technician's route and nowhere else,
+        // so from this page they were not applied at all.
+        $blockers = app(ProjectPolicy::class)->blockersFor($project);
+        $overrideReason = trim((string) ($validated['completion_override_reason'] ?? ''));
+
+        if ($blockers !== [] && $overrideReason === '') {
+            return redirect()
+                ->route('super-admin.projects.show', $id)
+                ->withInput()
+                ->with('error', sprintf(
+                    'This project is not ready to be completed. %s To complete it anyway, give a reason '
+                        .'for overriding - it is recorded against the project and in the activity log.',
+                    implode(' ', $blockers)
+                ));
+        }
+
         try {
-            DB::transaction(function () use ($validated, $project, $request, $completion): void {
+            DB::transaction(function () use ($validated, $project, $request, $completion, $blockers): void {
                 $completion->requestCompletion(
                     $project,
                     $validated,
                     $request->file('completion_photos'),
-                    $request->user()
+                    $request->user(),
+                    $blockers
                 );
             });
 
-            $this->announceCompletionRequest($project, $completion);
+            $this->announceCompletionRequest($project, $completion, $blockers, $overrideReason);
 
             return redirect()
                 ->route('super-admin.projects')
@@ -1069,7 +1153,7 @@ class ProjectController extends Controller
         } catch (Throwable $e) {
             return redirect()
                 ->route('super-admin.projects')
-                ->with('error', 'An error occurred while completing the project: '.$e->getMessage());
+                ->with('error', $this->safeErrorMessage($e, 'The completion could not be recorded. Nothing was saved.'));
         }
     }
 
@@ -1134,7 +1218,7 @@ class ProjectController extends Controller
         } catch (Throwable $e) {
             // Nothing was written: the schedule and the status change share one
             // transaction, so the project cannot be left Ongoing without dates.
-            return $back->withInput()->with('error', $e->getMessage());
+            return $back->withInput()->with('error', $this->safeErrorMessage($e, 'The project could not be reopened. Nothing was saved.'));
         }
 
         $ranges = $schedule->describe();
@@ -1171,8 +1255,12 @@ class ProjectController extends Controller
      * mail server being down is not a reason to tell an administrator that the
      * completion they just recorded did not happen.
      */
-    private function announceCompletionRequest(Project $project, ProjectCompletion $completion): void
-    {
+    private function announceCompletionRequest(
+        Project $project,
+        ProjectCompletion $completion,
+        array $overriddenBlockers = [],
+        string $overrideReason = ''
+    ): void {
         try {
             $this->activityLogger->record(
                 ActivityLog::PROJECT_COMPLETION_REQUESTED,
@@ -1186,6 +1274,32 @@ class ProjectController extends Controller
                 ),
                 $project
             );
+
+            // An entry of its own, so "which projects were closed with work
+            // still open, and on whose say-so?" is a question the log can be
+            // filtered for rather than read for.
+            if ($overriddenBlockers !== [] && $overrideReason !== '') {
+                $this->activityLogger->record(
+                    ActivityLog::PROJECT_COMPLETION_OVERRIDDEN,
+                    null,
+                    sprintf(
+                        "Completed project '%s' over the completion rules. Objections: %s Reason given: %s",
+                        $project->reference_no ?? $project->name,
+                        implode(' ', $overriddenBlockers),
+                        $overrideReason
+                    ),
+                    $project
+                );
+
+                // The people who run the system are told, because an override
+                // is the sort of thing somebody should be able to notice
+                // without going looking for it.
+                $this->notifications->projectCompletionOverridden(
+                    $project,
+                    $overriddenBlockers,
+                    $overrideReason
+                );
+            }
 
             $this->notifications->projectAwaitingClientConfirmation($project);
             $this->clientEmails->projectAwaitingConfirmation($project->refresh());
@@ -1259,7 +1373,7 @@ class ProjectController extends Controller
         } catch (Throwable $e) {
             return redirect()
                 ->route('super-admin.projects.show', $id)
-                ->with('error', 'An error occurred while cancelling the project: '.$e->getMessage());
+                ->with('error', $this->safeErrorMessage($e, 'The project could not be cancelled. Nothing was changed.'));
         }
     }
 
@@ -1305,7 +1419,7 @@ class ProjectController extends Controller
         } catch (Throwable $e) {
             return redirect()
                 ->route('super-admin.projects')
-                ->with('error', 'An error occurred while archiving the project: '.$e->getMessage());
+                ->with('error', $this->safeErrorMessage($e, 'The project could not be archived. Nothing was changed.'));
         }
     }
 
@@ -1352,7 +1466,7 @@ class ProjectController extends Controller
         } catch (Throwable $e) {
             return redirect()
                 ->route('super-admin.projects.archived')
-                ->with('error', 'An error occurred while restoring the project: '.$e->getMessage());
+                ->with('error', $this->safeErrorMessage($e, 'The project could not be restored. Nothing was changed.'));
         }
     }
 
@@ -1466,73 +1580,37 @@ class ProjectController extends Controller
     }
 
     /**
-     * Promote a freshly-scheduled project out of Unscheduled. Mirrors
-     * the same "pending vs ongoing" rule used by updateStatus().
+     * Bring a project's status into line with the dates it holds.
+     *
+     * Delegates to ProjectStatusRules so the wizard, the schedules page, the
+     * projects listing and Resume all reach the same answer - each of these
+     * used to work it out for itself, and the copies had already drifted.
      */
-    private function promoteStatusAfterScheduling(Project $project): void
+    private function syncStatusWithSchedule(Project $project): void
     {
-        if ($project->status !== 'unscheduled') {
-            return;
-        }
-
-        $firstSchedule = DB::table('tbl_schedule')
-            ->where('project_id', $project->project_id)
-            ->orderBy('start_datetime', 'asc')
-            ->first();
-
-        if (! $firstSchedule) {
-            return;
-        }
-
-        $status = now()->gte(Carbon::parse($firstSchedule->start_datetime))
-            ? 'ongoing'
-            : 'pending';
-
-        $project->update(['status' => $status]);
+        app(ProjectStatusRules::class)->apply($project);
     }
 
+    /**
+     * Bring every project's status into line with its dates.
+     *
+     * Runs when the projects listing is drawn, which is the only place a
+     * change of date would otherwise go unnoticed until somebody edited the
+     * project. Two things keep it honest: a project on hold, completed,
+     * cancelled or archived is not the calendar's to decide and
+     * ProjectStatusRules leaves it alone, and a row is only written when the
+     * answer actually differs from what is stored.
+     */
     public function updateStatus($projects = null)
     {
-        $projects = Project::all();
+        $rules = app(ProjectStatusRules::class);
+
+        $projects = $projects instanceof Collection
+            ? $projects
+            : Project::query()->with('schedules')->get();
 
         foreach ($projects as $project) {
-
-            if (in_array($project->status, Project::READ_ONLY_STATUSES, true)) {
-                continue;
-            }
-
-            $firstSchedule = DB::table('tbl_schedule')
-                ->select('*')
-                ->where('project_id', '=', $project->project_id)
-                ->orderBy('start_datetime', 'asc')
-                ->first();
-
-            if (! $firstSchedule) {
-                continue;
-            }
-
-            switch ($project->status) {
-
-                case 'unscheduled':
-                    $this->promoteStatusAfterScheduling($project);
-                    break;
-
-                case 'pending':
-                    if (now()->gte(Carbon::parse($firstSchedule->start_datetime))) {
-                        $project->update([
-                            'status' => 'ongoing',
-                        ]);
-                    }
-                    break;
-
-                case 'ongoing':
-                    // Check if project should become completed
-                    break;
-
-                case 'on_hold':
-                    // Do nothing while on hold
-                    break;
-            }
+            $rules->apply($project);
         }
     }
 
@@ -1544,13 +1622,31 @@ class ProjectController extends Controller
             return back()->with('error', 'This project is '.$project->status.' and its team can no longer be edited.');
         }
 
-        $validated = $request->validate([
+        $validator = Validator::make($request->all(), [
             'lead_tech' => ['required', 'integer', 'exists:tbl_technicians,technician_id'],
             'technicians' => ['nullable', 'array'],
             'technicians.*' => ['integer', 'exists:tbl_technicians,technician_id'],
         ], [
             'lead_tech.required' => 'A lead technician is required.',
         ]);
+
+        // The same three rules the wizard applies - a real Lead Technician,
+        // only one of them, and nobody whose account has been switched off.
+        // The crew already on the project is passed in so an existing member
+        // whose account was disabled after they were assigned does not make
+        // the form unsaveable: they can be kept or removed, but not re-added
+        // once gone.
+        $validator->after(fn (\Illuminate\Validation\Validator $validator) => app(ProjectTeamRules::class)->validate(
+            $validator,
+            $request->input('lead_tech'),
+            (array) $request->input('technicians', []),
+            $project->projectTechnicians
+                ->pluck('technician_id')
+                ->map(fn ($technicianId): int => (int) $technicianId)
+                ->all()
+        ));
+
+        $validated = $validator->validate();
 
         $technicianIds = collect([
             $validated['lead_tech'],

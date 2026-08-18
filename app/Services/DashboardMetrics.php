@@ -137,6 +137,12 @@ class DashboardMetrics
         // Shown only when something is actually sitting with a client, for the
         // same reason the specialty queue below is: a card reading zero is a
         // card in the way.
+        // Shown only when something is actually paused, on the same terms as
+        // the card below it: a figure reading zero is a card in the way.
+        if (($counts['on_hold'] ?? 0) > 0) {
+            $cards[] = $this->card('on_hold', 'On Hold', $counts['on_hold'], $projects.'?status=on_hold', 'muted');
+        }
+
         if ($counts['awaiting_confirmation'] > 0) {
             $cards[] = $this->card(
                 'awaiting_confirmation',
@@ -194,8 +200,31 @@ class DashboardMetrics
             $overdue = Project::query()->overdue()->count();
             $overdueOngoing = Project::query()->overdue()->where('status', 'ongoing')->count();
 
-            $pending = (int) ($byStatus['pending'] ?? 0) + (int) ($byStatus['unscheduled'] ?? 0);
-            $ongoing = (int) ($byStatus['ongoing'] ?? 0);
+            // Paused work is counted once, under On Hold, and taken back out of
+            // whichever figure its stored status would otherwise land it in.
+            // Putting a project on hold sets that status to Unscheduled, so
+            // without this every held project reads as Pending here while its
+            // badge - and now its own tab - say On Hold.
+            $onHold = Project::query()
+                ->where('is_archived', false)
+                ->where('on_hold', true)
+                ->whereNotIn('status', Project::READ_ONLY_STATUSES)
+                ->count();
+
+            $heldPending = Project::query()
+                ->where('is_archived', false)
+                ->where('on_hold', true)
+                ->whereIn('status', ['pending', 'unscheduled'])
+                ->count();
+
+            $heldOngoing = Project::query()
+                ->where('is_archived', false)
+                ->where('on_hold', true)
+                ->where('status', 'ongoing')
+                ->count();
+
+            $pending = (int) ($byStatus['pending'] ?? 0) + (int) ($byStatus['unscheduled'] ?? 0) - $heldPending;
+            $ongoing = (int) ($byStatus['ongoing'] ?? 0) - $heldOngoing;
             $awaiting = (int) ($byStatus[Project::STATUS_AWAITING_CLIENT_CONFIRMATION] ?? 0);
 
             return [
@@ -203,6 +232,7 @@ class DashboardMetrics
                 'pending' => max(0, $pending - ($overdue - $overdueOngoing)),
                 'ongoing' => max(0, $ongoing - $overdueOngoing),
                 'overdue' => $overdue,
+                'on_hold' => $onHold,
                 // Finished work, counted as finished. Excluding it would make
                 // the Completed figure disagree with the Completed tab on the
                 // projects table, which now lists both.
@@ -234,6 +264,11 @@ class DashboardMetrics
         return Project::query()
             ->where('is_archived', false)
             ->whereNotIn('status', Project::READ_ONLY_STATUSES)
+            // A paused project is not happening today whatever dates it still
+            // holds - a hold keeps the days already worked as the project's
+            // record, and this figure is about who has a crew on site now.
+            // The calendar has always hidden held work for the same reason.
+            ->where(fn ($paused) => $paused->where('on_hold', false)->orWhereNull('on_hold'))
             ->whereHas('schedules', fn ($query) => $query
                 ->whereDate('start_datetime', '<=', $today)
                 ->whereDate('end_datetime', '>=', $today))

@@ -170,6 +170,11 @@ class ImportableTeamSources
     {
         $technicianId = (int) $assignment->technician_id;
         $dates = $busyDates[$technicianId] ?? [];
+        // A crew recorded on an old project may include somebody who has since
+        // left. They are still shown - this is who did that job - but copying
+        // them onto new work is refused on the way in, so the modal has to say
+        // so rather than offer a team that cannot be saved.
+        $employable = $assignment->technician->isAssignable();
 
         return [
             'id' => $technicianId,
@@ -180,10 +185,12 @@ class ImportableTeamSources
             // A project's lead is the member whose account role says so;
             // there is no per-project lead column.
             'is_lead' => $assignment->technician->account?->role === 'lead_technician',
-            'available' => $dates === [],
-            'reason' => $dates === []
-                ? ''
-                : 'Booked on '.$this->availability->describeDates($dates),
+            'available' => $dates === [] && $employable,
+            'reason' => match (true) {
+                ! $employable => 'Account is no longer active',
+                $dates !== [] => 'Booked on '.$this->availability->describeDates($dates),
+                default => '',
+            },
         ];
     }
 }

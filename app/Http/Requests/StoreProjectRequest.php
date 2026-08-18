@@ -5,6 +5,7 @@ namespace App\Http\Requests;
 use App\Models\Document;
 use App\Models\ProjectType;
 use App\Models\Schedule;
+use App\Services\ProjectTeamRules;
 use App\Services\ScheduleModeRules;
 use App\Services\TechnicianAvailabilityService;
 use Carbon\CarbonImmutable;
@@ -114,6 +115,18 @@ class StoreProjectRequest extends FormRequest
     {
         return [
             function ($validator): void {
+                // Who the team may be made of - a real Lead Technician, only
+                // one of them, and nobody whose account has been switched off.
+                // Run before the availability check so a team that could never
+                // be assigned is refused on those grounds rather than on its
+                // dates. Every project here is new, so nobody is "already
+                // assigned" and no exemption applies.
+                app(ProjectTeamRules::class)->validate(
+                    $validator,
+                    $this->input('lead_tech'),
+                    (array) $this->input('technicians', [])
+                );
+
                 // Only run once the fields this check depends on are themselves
                 // valid, otherwise there is no team to check availability for.
                 if ($validator->errors()->hasAny(['lead_tech', 'technicians'])) {

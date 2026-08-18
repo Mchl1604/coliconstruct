@@ -212,6 +212,18 @@ document.addEventListener("DOMContentLoaded", function () {
         return actionButton("archive", id, "bi-trash", "Archive account", "danger");
     }
 
+    /**
+     * What an Admin sees beside a Super Admin's row.
+     *
+     * The account stays listed - the system's owner is not hidden from the
+     * people they manage - but none of the actions are drawn, because every
+     * one of them is refused server-side. A short reason reads better than a
+     * blank cell somebody would otherwise report as a missing button.
+     */
+    function outranksNote() {
+        return '<span class="text-muted small">Super Admin only</span>';
+    }
+
     const pageError = document.querySelector("[data-user-error]");
 
     // ---------------------------------------------------------------
@@ -432,30 +444,38 @@ document.addEventListener("DOMContentLoaded", function () {
                 statusCell(row) +
                 "</td>" +
                 '<td class="text-center"><div class="config-row-actions">' +
-                actionButton("edit", row.id, "bi-pencil", "Edit employee", "primary") +
-                actionButton(
-                    "reset-password",
-                    row.id,
-                    "bi-key",
-                    "Reset password",
-                    "secondary",
-                ) +
-                (row.is_active
-                    ? actionButton(
-                          "deactivate",
-                          row.id,
-                          "bi-lock",
-                          "Deactivate account",
-                          "warning",
-                      )
+                (row.manageable === false
+                    ? outranksNote()
                     : actionButton(
-                          "activate",
+                          "edit",
                           row.id,
-                          "bi-unlock",
-                          "Activate account",
-                          "success",
-                      )) +
-                archiveButton(row.id) +
+                          "bi-pencil",
+                          "Edit employee",
+                          "primary",
+                      ) +
+                      actionButton(
+                          "reset-password",
+                          row.id,
+                          "bi-key",
+                          "Reset password",
+                          "secondary",
+                      ) +
+                      (row.is_active
+                          ? actionButton(
+                                "deactivate",
+                                row.id,
+                                "bi-lock",
+                                "Deactivate account",
+                                "warning",
+                            )
+                          : actionButton(
+                                "activate",
+                                row.id,
+                                "bi-unlock",
+                                "Activate account",
+                                "success",
+                            )) +
+                      archiveButton(row.id)) +
                 "</div></td>" +
                 "</tr>"
             );

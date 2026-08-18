@@ -318,6 +318,34 @@
                     </table>
                 @endif
 
+                {{-- ------------- New Projects Report ------------- --}}
+                @if ($section['key'] === 'new_projects')
+                    <table class="data">
+                        <thead>
+                            <tr>
+                                <th style="width:12%">Reference No.</th>
+                                <th style="width:11%">Opened</th>
+                                <th style="width:20%">Client</th>
+                                <th style="width:10%">Client Type</th>
+                                <th style="width:20%">Project Type</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach ($rows as $row)
+                                <tr>
+                                    <td class="nowrap">{{ $row['reference_no'] }}</td>
+                                    <td class="nowrap">{{ $row['opened_on'] }}</td>
+                                    <td>{{ $row['client'] }}</td>
+                                    <td>{{ $row['client_type'] }}</td>
+                                    <td>{!! $stack($row['project_types'], 'No Project Type') !!}</td>
+                                    <td>{!! $badge($row['status_key'], $row['status_label']) !!}</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                @endif
+
                 {{-- ---------------- Schedule Report ---------------- --}}
                 @if ($section['key'] === 'schedules')
                     <table class="data">

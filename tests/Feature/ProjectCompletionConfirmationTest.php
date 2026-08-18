@@ -73,6 +73,20 @@ class ProjectCompletionConfirmationTest extends TestCase
             'contact_number' => '09123456789',
         ]);
 
+        // One finished task, because a project that is ready to be completed
+        // has work behind it: the completion rules refuse a project with
+        // nothing recorded on it, and an administrator getting past that needs
+        // a stated override. These tests are about what completion does to the
+        // dates and the client, so they start from a project the rules are
+        // happy with - the override itself is covered separately.
+        Task::create([
+            'project_id' => $project->project_id,
+            'task_title' => 'Work that was carried out',
+            'task_description' => 'Description',
+            'status' => 'completed',
+            'completed_at' => CarbonImmutable::now(),
+        ]);
+
         return $project;
     }
 
@@ -1025,6 +1039,10 @@ class ProjectCompletionConfirmationTest extends TestCase
             'task_description' => 'Should not be accepted.',
         ])->assertRedirect();
 
-        $this->assertSame(0, Task::where('project_id', $project->project_id)->count());
+        // The finished task the project was completed on is still there; what
+        // must not appear is a new one.
+        $this->assertSame(0, Task::where('project_id', $project->project_id)
+            ->where('task_title', 'One more thing')
+            ->count());
     }
 }

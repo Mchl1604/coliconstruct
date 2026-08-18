@@ -186,17 +186,26 @@
                             @endif
                         </div>
 
-                        @if ($task->completed_at)
-                            <div class="task-completion-field">
-                                <span class="task-completion-label">Completed On</span>
+                        <div class="task-completion-field">
+                            <span class="task-completion-label">Completed On</span>
+                            @if ($task->completed_at)
                                 <p class="mb-0">
                                     {{ $task->completed_at->format('M j, Y') }}
                                     @if ($closer && ! $closedOnBehalf)
                                         <span class="text-muted">&middot; by {{ $closer->fullName() }}</span>
                                     @endif
                                 </p>
-                            </div>
-                        @endif
+                            @else
+                                {{-- Work closed before this system recorded when and by whom.
+                                     Said plainly rather than left as an absent row: a missing
+                                     field reads as a page that forgot to draw something,
+                                     where "not recorded" is a fact about the record. --}}
+                                <p class="text-muted mb-0">
+                                    Not recorded &mdash; this task was completed before the system
+                                    kept a completion date.
+                                </p>
+                            @endif
+                        </div>
 
                         <span class="task-completion-label">
                             <i class="bi bi-images me-1" aria-hidden="true"></i>

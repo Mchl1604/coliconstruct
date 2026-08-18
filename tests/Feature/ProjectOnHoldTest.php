@@ -440,6 +440,154 @@ class ProjectOnHoldTest extends TestCase
     }
 
     /**
+     * A hold survives the status sweep that runs on every Projects page load.
+     *
+     * The sweep promotes anything Unscheduled that holds a schedule row, and
+     * a hold leaves exactly that behind: the days already worked, kept as the
+     * project's record. Reading those as work in progress put the project
+     * straight back to Ongoing - which is one of the two statuses that books a
+     * technician, so the crew the hold had just released was booked again for
+     * days nobody was working, and Resume then landed on Ongoing while telling
+     * the administrator the project was Unscheduled.
+     */
+    public function test_opening_the_projects_page_does_not_undo_a_hold(): void
+    {
+        $ana = $this->technician('Ana Mendoza');
+        $project = $this->projectWithTeam([$ana]);
+
+        // Started before today and running past it, so the cutoff keeps a
+        // range - which is what the sweep used to seize on.
+        $this->book($project, $this->day(-3), $this->day(3));
+
+        $this->put(route('super-admin.projects.hold', $project->project_id))
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame('unscheduled', $project->fresh()->status);
+        $this->assertNotSame([], $this->ranges($project), 'The worked days are kept.');
+
+        // Nothing but a page load.
+        $this->get(route('super-admin.projects'))->assertOk();
+
+        $held = $project->fresh();
+
+        $this->assertSame('unscheduled', $held->status);
+        $this->assertTrue((bool) $held->on_hold);
+        $this->assertSame('On Hold', $held->statusLabel());
+
+        // And the crew is still free on the days the hold kept, because a
+        // paused project is not one of the statuses that books anybody.
+        $conflicts = app(TechnicianAvailabilityService::class)->findConflicts(
+            [$ana->technician_id],
+            [['start' => $this->day(0), 'end' => $this->day(0)]]
+        );
+
+        $this->assertTrue($conflicts->isEmpty(), 'A held project must not hold its technicians.');
+    }
+
+    /**
+     * Resuming recalculates the status from the dates that are actually left,
+     * rather than promoting on the strength of rows the hold kept as a record.
+     *
+     * A hold releases everything still to come, so a resumed project holds
+     * only days that have been worked - which leaves three cases, and the
+     * status has to tell them apart.
+     */
+    public function test_resuming_recalculates_the_status_from_the_remaining_dates(): void
+    {
+        // Nothing left at all: every booking was still ahead of the hold.
+        $ana = $this->technician('Ana Mendoza');
+        $nothingLeft = $this->projectWithTeam([$ana]);
+        $this->book($nothingLeft, $this->day(2), $this->day(4));
+
+        $this->put(route('super-admin.projects.hold', $nothingLeft->project_id));
+        $this->get(route('super-admin.projects'));
+        $this->put(route('super-admin.projects.resume', $nothingLeft->project_id))
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame('unscheduled', $nothingLeft->fresh()->status);
+        $this->assertSame('Unscheduled', $nothingLeft->fresh()->statusLabel());
+
+        // Every remaining day has passed: the work is late, not under way.
+        $ben = $this->technician('Ben Cruz');
+        $allPast = $this->projectWithTeam([$ben]);
+        $this->book($allPast, $this->day(-6), $this->day(-2));
+
+        $this->put(route('super-admin.projects.hold', $allPast->project_id));
+        $this->put(route('super-admin.projects.resume', $allPast->project_id))
+            ->assertSessionHasNoErrors();
+
+        $this->assertTrue($allPast->fresh()->isOverdue());
+        $this->assertSame('Overdue', $allPast->fresh()->statusLabel());
+
+        // The remaining dates reach today, so the project really is under way.
+        $cara = $this->technician('Cara Lim');
+        $reachesToday = $this->projectWithTeam([$cara]);
+        $this->book($reachesToday, $this->day(-3), $this->day(3));
+
+        $this->put(route('super-admin.projects.hold', $reachesToday->project_id));
+        $this->put(route('super-admin.projects.resume', $reachesToday->project_id))
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame('ongoing', $reachesToday->fresh()->status);
+        $this->assertSame('Ongoing', $reachesToday->fresh()->statusLabel());
+    }
+
+    /**
+     * A resumed project whose days have all passed must not go on holding its
+     * crew: those dates are a record of work done, and the technician is free
+     * for anything booked from today onwards.
+     */
+    public function test_a_resumed_projects_past_dates_do_not_hold_the_crew(): void
+    {
+        $ana = $this->technician('Ana Mendoza');
+        $project = $this->projectWithTeam([$ana]);
+        $this->book($project, $this->day(-6), $this->day(-2));
+
+        $this->put(route('super-admin.projects.hold', $project->project_id));
+        $this->put(route('super-admin.projects.resume', $project->project_id));
+        $this->get(route('super-admin.projects'));
+
+        $conflicts = app(TechnicianAvailabilityService::class)->findConflicts(
+            [$ana->technician_id],
+            [['start' => $this->day(0), 'end' => $this->day(5)]]
+        );
+
+        $this->assertTrue($conflicts->isEmpty(), 'Days already worked are not a booking.');
+    }
+
+    /**
+     * Resuming something that was never paused is refused: it would otherwise
+     * email the client that their project had resumed and tell the whole crew.
+     */
+    public function test_a_project_that_is_not_on_hold_cannot_be_resumed(): void
+    {
+        $ana = $this->technician('Ana Mendoza');
+        $project = $this->projectWithTeam([$ana]);
+        $this->book($project, $this->day(0), $this->day(3));
+
+        $this->put(route('super-admin.projects.resume', $project->project_id))
+            ->assertSessionHas('error');
+
+        $this->assertSame('ongoing', $project->fresh()->status);
+    }
+
+    /**
+     * The guard is narrow: a project that is merely Unscheduled, with dates
+     * that have arrived, is still promoted exactly as it always was.
+     */
+    public function test_the_sweep_still_promotes_a_project_that_is_not_on_hold(): void
+    {
+        $ana = $this->technician('Ana Mendoza');
+        $project = $this->projectWithTeam([$ana], 'unscheduled');
+
+        $this->book($project, $this->day(-1), $this->day(3));
+
+        $this->get(route('super-admin.projects'))->assertOk();
+
+        $this->assertSame('ongoing', $project->fresh()->status);
+    }
+
+    /**
      * Archiving still breaks up the crew: that is an ending, not a pause, and
      * the people on it should not go on reading as committed to it.
      */

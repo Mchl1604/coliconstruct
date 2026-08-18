@@ -2,8 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Mail\ContactInquiryMail;
+use App\Models\ActivityLog;
 use App\Models\Project;
+use App\Services\ActivityLogger;
 use App\Services\ClientProjects;
+use App\Services\EmailService;
 use App\Services\SystemContentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -43,7 +47,102 @@ class PublicSiteController extends Controller
 
     public function contact()
     {
-        return view('public.contact');
+        return view('public.contact', [
+            // The form is only offered when there is somewhere for it to go.
+            // A form that silently drops what somebody typed is worse than no
+            // form, which is why this page carried a disabled one for so long.
+            'canSendInquiries' => $this->canSendInquiries(),
+        ]);
+    }
+
+    /**
+     * Send what somebody wrote on the Contact page.
+     *
+     * The one thing a stranger can make this application do, so it is the one
+     * endpoint with no account behind it at all. What guards it:
+     *
+     *   - A throttle on the route, because a public POST that sends email is
+     *     exactly what a spam script looks for.
+     *   - A honeypot field no person ever sees or fills in. A bot that fills
+     *     every input gives itself away, and is answered as though it had
+     *     succeeded so it has nothing to learn from and nothing to retry.
+     *   - Nothing is stored and nothing is trusted: the message is escaped
+     *     into the email, and the enquirer's address travels as Reply-To
+     *     rather than as the sender.
+     */
+    public function sendInquiry(Request $request)
+    {
+        if (! $this->canSendInquiries()) {
+            return back()
+                ->withInput()
+                ->with('error', 'Messages cannot be sent from this page at the moment. Please email or call us instead.');
+        }
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:120'],
+            'email' => ['required', 'string', 'email', 'max:255'],
+            'subject' => ['required', 'string', 'max:150'],
+            'message' => ['required', 'string', 'min:10', 'max:2000'],
+            // The honeypot. Named for something a browser will not autofill
+            // and a person will never see.
+            'company_website' => ['nullable', 'size:0'],
+        ], [
+            'message.min' => 'Please tell us a little more - at least 10 characters.',
+            'company_website.size' => 'That message could not be sent.',
+        ]);
+
+        // Answered as a success. A bot learns nothing, and a person who
+        // somehow tripped it has already been told by validation.
+        if (filled($request->input('company_website'))) {
+            return back()->with('success', $this->inquiryThanks());
+        }
+
+        $sent = app(EmailService::class)->send(
+            (string) config('mail.inquiries_to'),
+            new ContactInquiryMail(
+                trim($validated['name']),
+                trim($validated['email']),
+                trim($validated['subject']),
+                trim($validated['message']),
+            )
+        );
+
+        if (! $sent) {
+            return back()
+                ->withInput()
+                ->with('error', 'Your message could not be sent just now. Please email or call us instead.');
+        }
+
+        // Recorded like every other action a person outside the system takes -
+        // the same trail a failed sign-in leaves. It is the only record an
+        // enquiry has, since there is no inquiries table to write to.
+        app(ActivityLogger::class)->recordAnonymous(
+            ActivityLog::CONTACT_INQUIRY_SENT,
+            trim($validated['name']),
+            null,
+            sprintf(
+                'A website enquiry was sent by %s (%s): %s',
+                trim($validated['name']),
+                trim($validated['email']),
+                trim($validated['subject'])
+            )
+        );
+
+        return back()->with('success', $this->inquiryThanks());
+    }
+
+    /**
+     * Whether a message posted here would actually reach anybody.
+     */
+    private function canSendInquiries(): bool
+    {
+        return filled(config('mail.inquiries_to'))
+            && app(EmailService::class)->isDeliverable();
+    }
+
+    private function inquiryThanks(): string
+    {
+        return 'Thank you - your message has been sent. We will come back to you shortly.';
     }
 
     /**

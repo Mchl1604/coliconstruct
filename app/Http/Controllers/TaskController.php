@@ -15,6 +15,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Exists;
 
 class TaskController extends Controller
 {
@@ -181,14 +183,34 @@ class TaskController extends Controller
         $validator = Validator::make($request->all(), [
             'task_title' => 'required|string|max:255',
             'task_description' => 'required|string',
-            'technician_id' => 'required|exists:tbl_technicians,technician_id',
+            'technician_id' => ['required', 'integer', $this->assignedTechnicianRule($project)],
             'start_date' => ['required', 'date'],
             'due_date' => ['required', 'date', 'after_or_equal:start_date'],
+        ], [
+            'technician_id.exists' => 'Pick a technician who is assigned to this project.',
         ]);
 
         $this->attachRangeRule($validator, $ranges);
 
         $validated = $validator->validate();
+
+        // The same job twice is a scheduling mistake, and it is also what a
+        // double-clicked Save produces. The technician portal has always
+        // refused it; this board did not, so an impatient click made two
+        // identical tasks.
+        $duplicate = Task::query()
+            ->where('project_id', $project->project_id)
+            ->where('technician_id', $validated['technician_id'])
+            ->whereIn('status', Task::OPEN_STATUSES)
+            ->whereRaw('lower(task_title) = ?', [mb_strtolower($validated['task_title'])])
+            ->exists();
+
+        if ($duplicate) {
+            return redirect()
+                ->back()
+                ->withInput()
+                ->with('error', 'That technician already has an open task with this title on this project.');
+        }
 
         DB::beginTransaction();
 
@@ -224,7 +246,7 @@ class TaskController extends Controller
 
             return redirect()
                 ->back()
-                ->with('error', $e->getMessage());
+                ->with('error', $this->safeErrorMessage($e, 'The task could not be saved. Nothing was changed.'));
         }
     }
 
@@ -251,9 +273,11 @@ class TaskController extends Controller
         $validator = Validator::make($request->all(), [
             'task_title' => 'required|string|max:255',
             'task_description' => 'required|string',
-            'technician_id' => 'required|exists:tbl_technicians,technician_id',
+            'technician_id' => ['required', 'integer', $this->assignedTechnicianRule($project)],
             'start_date' => ['required', 'date'],
             'due_date' => ['required', 'date', 'after_or_equal:start_date'],
+        ], [
+            'technician_id.exists' => 'Pick a technician who is assigned to this project.',
         ]);
 
         $this->attachRangeRule($validator, $ranges);
@@ -300,7 +324,7 @@ class TaskController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
 
-            return back()->with('error', $e->getMessage());
+            return back()->with('error', $this->safeErrorMessage($e, 'The task could not be saved. Nothing was changed.'));
         }
     }
 
@@ -359,7 +383,7 @@ class TaskController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
 
-            return back()->with('error', $e->getMessage());
+            return back()->with('error', $this->safeErrorMessage($e, 'The task could not be saved. Nothing was changed.'));
         }
 
         $this->activityLogger->record(
@@ -423,9 +447,23 @@ class TaskController extends Controller
 
             return back()->with(
                 'error',
-                $e->getMessage()
+                $this->safeErrorMessage($e, 'The task could not be deleted. Nothing was changed.')
             );
         }
+    }
+
+    /**
+     * A task belongs to somebody on the project.
+     *
+     * The same rule the technician portal has always applied, stated the same
+     * way. Without it this board could hand work to a technician who is not on
+     * the team - and ProjectPolicy::viewAssigned() will then refuse them the
+     * project, so they are notified about a job they cannot open.
+     */
+    private function assignedTechnicianRule(Project $project): Exists
+    {
+        return Rule::exists('tbl_project_technicians', 'technician_id')
+            ->where('project_id', $project->project_id);
     }
 
     /**

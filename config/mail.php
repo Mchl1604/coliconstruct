@@ -110,6 +110,21 @@ return [
     |
     */
 
+    /*
+    |--------------------------------------------------------------------------
+    | Website Enquiries
+    |--------------------------------------------------------------------------
+    |
+    | Where the public Contact page sends what people write in. Separate from
+    | the address published ON that page, which is the one visitors are invited
+    | to write to themselves - the two are often the same and do not have to
+    | be. Falls back to the address the system sends from, so a deployment that
+    | never sets it still delivers somewhere real rather than nowhere.
+    |
+    */
+
+    'inquiries_to' => env('MAIL_INQUIRIES_TO', env('MAIL_FROM_ADDRESS')),
+
     'from' => [
         'address' => env('MAIL_FROM_ADDRESS', 'hello@example.com'),
         'name' => env('MAIL_FROM_NAME', env('APP_NAME', 'Laravel')),

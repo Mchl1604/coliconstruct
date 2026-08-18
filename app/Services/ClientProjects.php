@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Client;
 use App\Models\Project;
 use App\Models\User;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 
 /**
@@ -55,7 +56,7 @@ class ClientProjects
      */
     public function forUser(User $user): EloquentCollection
     {
-        return $this->forEmail($user->email);
+        return $this->forOwner($user);
     }
 
     /**
@@ -63,9 +64,24 @@ class ClientProjects
      */
     public function forEmail(?string $email): EloquentCollection
     {
-        $normalised = $this->normalise($email);
+        return $this->forOwner(null, $email);
+    }
 
-        if ($normalised === '') {
+    /**
+     * Work owned by an account, by an address, or by both.
+     *
+     * The account's own id is the real link and is checked first; the address
+     * is the fallback, and it still matters - a project booked before its
+     * client registered carries no id until they do. A caller with only an
+     * address (an invitation being sent, say) passes that alone.
+     *
+     * @return EloquentCollection<int, Project>
+     */
+    private function forOwner(?User $user, ?string $email = null): EloquentCollection
+    {
+        $normalised = $this->normalise($email ?? $user?->email);
+
+        if ($user === null && $normalised === '') {
             return Project::query()->whereRaw('1 = 0')->get();
         }
 
@@ -76,11 +92,7 @@ class ClientProjects
                 'projectTypes',
                 'projectTechnicians.technician.account',
             ])
-            ->whereHas('clients', function ($query) use ($normalised): void {
-                // Compared in SQL on both sides so the whole match stays a
-                // single indexed-ish scan rather than a filter in PHP.
-                $query->whereRaw('LOWER(TRIM(email_address)) = ?', [$normalised]);
-            })
+            ->whereHas('clients', fn ($query) => $this->applyOwnership($query, $user, $normalised))
             ->where('is_archived', false)
             ->get()
             // One sortable key rather than an array of closures: Collection's
@@ -106,10 +118,6 @@ class ClientProjects
     {
         $normalised = $this->normalise($user->email);
 
-        if ($normalised === '') {
-            return null;
-        }
-
         return Project::query()
             ->with([
                 'clients',
@@ -132,10 +140,30 @@ class ClientProjects
             ])
             ->where('project_id', $projectId)
             ->where('is_archived', false)
-            ->whereHas('clients', function ($query) use ($normalised): void {
-                $query->whereRaw('LOWER(TRIM(email_address)) = ?', [$normalised]);
-            })
+            ->whereHas('clients', fn ($query) => $this->applyOwnership($query, $user, $normalised))
             ->first();
+    }
+
+    /**
+     * "This contact is theirs": by account, or by address, or either.
+     *
+     * @param  \Illuminate\Contracts\Database\Query\Builder|Builder<Client>  $query
+     */
+    private function applyOwnership($query, ?User $user, string $normalisedEmail): void
+    {
+        $query->where(function ($owned) use ($user, $normalisedEmail): void {
+            if ($user !== null) {
+                $owned->where('user_id', $user->id);
+            }
+
+            if ($normalisedEmail !== '') {
+                // Compared in SQL on both sides so the whole match stays one
+                // scan rather than a filter in PHP. Still needed alongside the
+                // id: a project booked before its client registered carries no
+                // id until they do.
+                $owned->orWhereRaw('LOWER(TRIM(email_address)) = ?', [$normalisedEmail]);
+            }
+        });
     }
 
     /**

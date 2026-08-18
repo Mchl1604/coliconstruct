@@ -7,6 +7,7 @@ use App\Models\Project;
 use App\Models\ProjectTechnician;
 use App\Models\Schedule;
 use App\Models\ScheduleTechnician;
+use App\Models\Task;
 use App\Models\Technician;
 use App\Models\User;
 use Carbon\CarbonImmutable;
@@ -28,6 +29,24 @@ class OverdueProjectTest extends TestCase
 
         // Every administrative route is behind `auth` and a role check.
         $this->actingAsSuperAdmin();
+    }
+
+    /**
+     * One finished task, so the completion rules have work to close out.
+     *
+     * A project with nothing recorded on it is refused by those rules, and an
+     * administrator getting past them has to state an override - which is a
+     * different thing from what these tests are about.
+     */
+    private function finishedWork(Project $project): Task
+    {
+        return Task::create([
+            'project_id' => $project->project_id,
+            'task_title' => 'Work that was carried out',
+            'task_description' => 'Description',
+            'status' => 'completed',
+            'completed_at' => CarbonImmutable::now(),
+        ]);
     }
 
     private function technician(string $name, string $role = 'technician'): Technician
@@ -343,6 +362,7 @@ class OverdueProjectTest extends TestCase
     public function test_completing_a_project_releases_its_future_dates(): void
     {
         $project = $this->project('Finished Early');
+        $this->finishedWork($project);
         $this->schedule($project, $this->day(-2), $this->day(4));
         $future = $this->schedule($project, $this->day(20), $this->day(25));
 
@@ -371,6 +391,7 @@ class OverdueProjectTest extends TestCase
     public function test_releasing_dates_frees_the_technicians_booked_on_them(): void
     {
         $project = $this->project('Finished Early');
+        $this->finishedWork($project);
         $future = $this->schedule($project, $this->day(20), $this->day(25));
 
         $this->assertDatabaseHas('tbl_schedule_technicians', [

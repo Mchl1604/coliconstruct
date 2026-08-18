@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\ActivityLogger;
 use App\Services\NotificationService;
 use App\Services\OtpService;
+use App\Services\SessionGuard;
 use App\Services\UserAccountService;
 use App\Support\AccountAge;
 use App\Support\PortalHome;
@@ -301,6 +302,11 @@ class AuthController extends Controller
             'password' => $validated['password'],
             'must_change_password' => false,
         ])->save();
+
+        // Anywhere else this account is signed in was signed in with the
+        // temporary password an administrator handed over, so it does not get
+        // to carry on. This session is kept - the person is using it.
+        app(SessionGuard::class)->logOutOtherSessions($user);
 
         $this->activityLogger->record(
             ActivityLog::PASSWORD_CHANGED,

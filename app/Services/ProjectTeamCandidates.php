@@ -44,9 +44,16 @@ class ProjectTeamCandidates
     public function forProject(Project $project): Collection
     {
         // The picker cards show each technician's picture, so the account has
-        // to bring its photo path and name parts along with the role.
+        // to bring its photo path and name parts along with the role - and
+        // `status` / `is_archived` besides, because whether somebody may be
+        // given work is read off them. A column left out of this list reads as
+        // null on the model, and a null status is not an active one, so
+        // omitting them would report every technician as switched off.
         $technicians = Technician::query()
-            ->with(['account:id,name,first_name,middle_name,last_name,role,profile_photo_path', 'skills'])
+            ->with([
+                'account:id,name,first_name,middle_name,last_name,role,profile_photo_path,status,is_archived',
+                'skills',
+            ])
             ->whereHas('account', fn ($query) => $query->whereIn('role', ['technician', 'lead_technician']))
             ->get();
 
@@ -73,8 +80,13 @@ class ProjectTeamCandidates
 
                 // A booking made BY this project is excluded from the check, so
                 // a clash here is always with somebody else's work.
-                $available = ! isset($busyDates[$technicianId]);
+                $free = ! isset($busyDates[$technicianId]);
                 $assigned = in_array($technicianId, $assignedIds, true);
+                // An account that has been switched off cannot open the
+                // project or close a task, so it is not work anybody can be
+                // given - whatever the calendar says about their dates.
+                $employable = $technician->isAssignable();
+                $available = $free && $employable;
 
                 return [
                     'id' => $technicianId,
@@ -93,9 +105,15 @@ class ProjectTeamCandidates
                     'assigned' => $assigned,
                     'skills' => $skills,
                     'matched_skills' => $matched,
-                    'reason' => $available
-                        ? ''
-                        : 'Booked on '.$this->availability->describeDates($busyDates[$technicianId]),
+                    // Why they cannot be picked, in the order the reasons
+                    // matter: a switched-off account is a fact about the
+                    // person and outranks anything the calendar says about
+                    // their week.
+                    'reason' => match (true) {
+                        ! $employable => 'Account is no longer active',
+                        ! $free => 'Booked on '.$this->availability->describeDates($busyDates[$technicianId]),
+                        default => '',
+                    },
                 ];
             })
             // Suggested, then merely free, then booked - alphabetical inside

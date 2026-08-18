@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\EnsureAccountIsActive;
 use App\Http\Middleware\EnsurePasswordIsChanged;
 use App\Http\Middleware\EnsureUserHasRole;
 use Illuminate\Foundation\Application;
@@ -15,6 +16,14 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // A deactivated or archived account is turned away on every route it
+        // could still be holding a session on, not only on the ones that ask
+        // about a role. Appended to the whole web group because the routes
+        // that were missing the check - My Projects, the client's sign-off,
+        // Profile, Notifications - are exactly the ones with no role on them.
+        // It is a no-op for guests.
+        $middleware->web(append: [EnsureAccountIsActive::class]);
+
         $middleware->alias([
             'role' => EnsureUserHasRole::class,
             'password.changed' => EnsurePasswordIsChanged::class,

@@ -192,6 +192,17 @@ class NotificationEventsTest extends TestCase
         $technician = $this->technician('Bea Free');
         $this->assign($project, $technician);
 
+        // The completion rules refuse a project with no work recorded on it,
+        // and getting past them needs a stated override - which is not what
+        // this test is about.
+        Task::create([
+            'project_id' => $project->project_id,
+            'task_title' => 'Work that was carried out',
+            'task_description' => 'Description',
+            'status' => 'completed',
+            'completed_at' => CarbonImmutable::now(),
+        ]);
+
         $clientAccount = $this->employee('client', 'client@example.test');
         Client::create([
             'project_id' => $project->project_id,

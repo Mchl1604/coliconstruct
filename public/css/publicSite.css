@@ -1337,3 +1337,20 @@
 .project-document-link i {
     color: #2d8de1;
 }
+
+/*
+    The Contact form's honeypot.
+
+    Taken out of the layout entirely rather than hidden with `display:none`:
+    some bots skip anything display-none, and a field pushed off-screen while
+    still in the flow is one they will fill in. Nothing here is reachable by
+    keyboard - the input carries tabindex="-1" - and the wrapper is
+    aria-hidden, so no screen reader announces it either.
+*/
+.contact-honeypot {
+    position: absolute;
+    left: -9999px;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+}

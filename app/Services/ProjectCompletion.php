@@ -69,6 +69,14 @@ class ProjectCompletion
             // picture is always accepted and nothing arrives that the browser
             // then struggles to show.
             'completion_photos.*' => ['file', 'mimes:jpg,jpeg,png', 'max:5120'],
+
+            // Only ever filled in when the completion rules objected and an
+            // administrator went ahead anyway. Optional here because the rules
+            // are what decide whether it is needed - see
+            // ProjectController::complete(), which requires it once it knows
+            // there is something to override. A lead technician never sends
+            // it: their route refuses a project with blockers outright.
+            'completion_override_reason' => ['nullable', 'string', 'min:10', 'max:500'],
         ];
     }
 
@@ -102,11 +110,12 @@ class ProjectCompletion
         Project $project,
         array $validated,
         ?array $photos,
-        ?User $actor = null
+        ?User $actor = null,
+        array $overriddenBlockers = []
     ): void {
         $completedOn = CarbonImmutable::parse($validated['completion_date']);
 
-        $project->update([
+        $project->update($this->overrideColumns($validated, $actor, $overriddenBlockers) + [
             'status' => Project::STATUS_AWAITING_CLIENT_CONFIRMATION,
             'on_hold' => false,
             'completed_at' => $completedOn,
@@ -132,6 +141,43 @@ class ProjectCompletion
 
         // Everything else (technicians, task history, and the days already
         // worked) is intentionally left untouched for auditing and reporting.
+    }
+
+    /**
+     * What to write about an override, or what to clear when there is not one.
+     *
+     * Both halves matter. A project completed against the rules records the
+     * reason, what the rules objected to, and who decided - and one completed
+     * normally records that it was not overridden, rather than inheriting a
+     * note from a previous attempt. A project reopened and completed again is
+     * exactly that case: the second completion may be perfectly ordinary, and
+     * last time's override must not stay attached to it.
+     *
+     * The blockers are stored as the sentences that were shown rather than as
+     * task ids: those tasks may since be finished or gone, and the record has
+     * to keep saying what was true when somebody decided to go ahead.
+     *
+     * @param  array<string, mixed>  $validated
+     * @param  array<int, string>  $blockers
+     * @return array<string, mixed>
+     */
+    private function overrideColumns(array $validated, ?User $actor, array $blockers): array
+    {
+        $reason = trim((string) ($validated['completion_override_reason'] ?? ''));
+
+        if ($reason === '' || $blockers === []) {
+            return [
+                'completion_override_reason' => null,
+                'completion_override_blockers' => null,
+                'completion_overridden_by' => null,
+            ];
+        }
+
+        return [
+            'completion_override_reason' => $reason,
+            'completion_override_blockers' => array_values($blockers),
+            'completion_overridden_by' => $actor?->id,
+        ];
     }
 
     /**
