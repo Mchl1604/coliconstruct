@@ -3,14 +3,15 @@
 namespace App\Http\Controllers;
 
 use App\Mail\ContactInquiryMail;
-use App\Models\ActivityLog;
+use App\Models\Inquiry;
 use App\Models\Project;
-use App\Services\ActivityLogger;
 use App\Services\ClientProjects;
 use App\Services\EmailService;
+use App\Services\InquiryService;
 use App\Services\SystemContentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Throwable;
 
 /**
  * The public website: Home, About, Contact and My Projects.
@@ -45,44 +46,45 @@ class PublicSiteController extends Controller
         ]);
     }
 
+    /**
+     * The Contact page, whose form is always open.
+     *
+     * It used to be disabled unless a mailer was configured, because an
+     * enquiry that could not be emailed went nowhere at all. It is stored now,
+     * so a message reaches Configuration > Inquiries whether or not a mail
+     * server is reachable, and there is nothing left for a closed form to
+     * protect somebody from.
+     */
     public function contact()
     {
-        return view('public.contact', [
-            // The form is only offered when there is somewhere for it to go.
-            // A form that silently drops what somebody typed is worse than no
-            // form, which is why this page carried a disabled one for so long.
-            'canSendInquiries' => $this->canSendInquiries(),
-        ]);
+        return view('public.contact');
     }
 
     /**
-     * Send what somebody wrote on the Contact page.
+     * Take what somebody wrote on the Contact page.
      *
      * The one thing a stranger can make this application do, so it is the one
      * endpoint with no account behind it at all. What guards it:
      *
-     *   - A throttle on the route, because a public POST that sends email is
-     *     exactly what a spam script looks for.
+     *   - A throttle on the route, because a public POST that writes a row and
+     *     sends email is exactly what a spam script looks for.
      *   - A honeypot field no person ever sees or fills in. A bot that fills
      *     every input gives itself away, and is answered as though it had
      *     succeeded so it has nothing to learn from and nothing to retry.
-     *   - Nothing is stored and nothing is trusted: the message is escaped
-     *     into the email, and the enquirer's address travels as Reply-To
-     *     rather than as the sender.
+     *   - Length limits on every field, stated on the model so the form, the
+     *     validator and the columns cannot drift apart.
+     *
+     * What it does not do is as important as what it does: no account is
+     * opened, no project is created, and the enquiry is linked to neither.
+     * The record is the message.
      */
     public function sendInquiry(Request $request)
     {
-        if (! $this->canSendInquiries()) {
-            return back()
-                ->withInput()
-                ->with('error', 'Messages cannot be sent from this page at the moment. Please email or call us instead.');
-        }
-
         $validated = $request->validate([
-            'name' => ['required', 'string', 'max:120'],
-            'email' => ['required', 'string', 'email', 'max:255'],
-            'subject' => ['required', 'string', 'max:150'],
-            'message' => ['required', 'string', 'min:10', 'max:2000'],
+            'name' => ['required', 'string', 'max:'.Inquiry::MAX_NAME],
+            'email' => ['required', 'string', 'email', 'max:'.Inquiry::MAX_EMAIL],
+            'subject' => ['required', 'string', 'max:'.Inquiry::MAX_SUBJECT],
+            'message' => ['required', 'string', 'min:10', 'max:'.Inquiry::MAX_MESSAGE],
             // The honeypot. Named for something a browser will not autofill
             // and a person will never see.
             'company_website' => ['nullable', 'size:0'],
@@ -97,42 +99,39 @@ class PublicSiteController extends Controller
             return back()->with('success', $this->inquiryThanks());
         }
 
-        $sent = app(EmailService::class)->send(
-            (string) config('mail.inquiries_to'),
-            new ContactInquiryMail(
-                trim($validated['name']),
-                trim($validated['email']),
-                trim($validated['subject']),
-                trim($validated['message']),
-            )
-        );
+        try {
+            $inquiry = app(InquiryService::class)->record($validated);
+        } catch (Throwable $exception) {
+            // Whatever went wrong is the company's problem, not the visitor's,
+            // so it goes to the log and they are told something they can act
+            // on. A raw database error must never reach a public page.
+            report($exception);
 
-        if (! $sent) {
             return back()
                 ->withInput()
                 ->with('error', 'Your message could not be sent just now. Please email or call us instead.');
         }
 
-        // Recorded like every other action a person outside the system takes -
-        // the same trail a failed sign-in leaves. It is the only record an
-        // enquiry has, since there is no inquiries table to write to.
-        app(ActivityLogger::class)->recordAnonymous(
-            ActivityLog::CONTACT_INQUIRY_SENT,
-            trim($validated['name']),
-            null,
-            sprintf(
-                'A website enquiry was sent by %s (%s): %s',
-                trim($validated['name']),
-                trim($validated['email']),
-                trim($validated['subject'])
-            )
-        );
+        // A copy to the company inbox, on top of the record. Best effort: the
+        // enquiry is already saved and visible in Configuration, so a mail
+        // server that is down costs a convenience rather than the message.
+        if ($this->canSendInquiries()) {
+            app(EmailService::class)->send(
+                (string) config('mail.inquiries_to'),
+                new ContactInquiryMail(
+                    $inquiry->name,
+                    $inquiry->email,
+                    $inquiry->subject,
+                    $inquiry->message,
+                )
+            );
+        }
 
         return back()->with('success', $this->inquiryThanks());
     }
 
     /**
-     * Whether a message posted here would actually reach anybody.
+     * Whether a copy of an enquiry would actually reach the company's inbox.
      */
     private function canSendInquiries(): bool
     {

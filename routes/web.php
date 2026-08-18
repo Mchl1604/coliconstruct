@@ -6,6 +6,7 @@ use App\Http\Controllers\Auth\PasswordResetController;
 use App\Http\Controllers\ClientProjectController;
 use App\Http\Controllers\ConfigurationController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\InquiryController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ProjectController;
@@ -277,6 +278,36 @@ Route::prefix('super-admin')
 
             // Activity Logs.
             Route::get('/activity-logs', [ConfigurationController::class, 'activityLogs'])->name('activity-logs');
+
+            // Inquiries: the messages written in from the public Contact page.
+            // Admin and Super Admin both reach these - handling an enquiry is
+            // ordinary administrative work - and only the archive is narrowed
+            // further, exactly as archived accounts and projects are.
+            Route::prefix('inquiries')->name('inquiries.')->group(function () {
+                Route::get('/', [InquiryController::class, 'index'])->name('index');
+
+                // Declared before /{inquiry} so the literal segment wins.
+                Route::get('/archived', [InquiryController::class, 'archivedIndex'])
+                    ->middleware('role:super_admin')
+                    ->name('archived');
+
+                Route::get('/{inquiry}', [InquiryController::class, 'show'])
+                    ->whereNumber('inquiry')
+                    ->name('show');
+                Route::put('/{inquiry}/status', [InquiryController::class, 'updateStatus'])
+                    ->whereNumber('inquiry')
+                    ->name('status');
+                Route::post('/{inquiry}/reply', [InquiryController::class, 'reply'])
+                    ->whereNumber('inquiry')
+                    ->name('reply');
+                Route::delete('/{inquiry}', [InquiryController::class, 'archive'])
+                    ->whereNumber('inquiry')
+                    ->name('archive');
+                Route::put('/{inquiry}/restore', [InquiryController::class, 'restore'])
+                    ->whereNumber('inquiry')
+                    ->middleware('role:super_admin')
+                    ->name('restore');
+            });
 
             // System Contents: the public website's text and images. Admin
             // reaches this prefix but not these endpoints - the controller

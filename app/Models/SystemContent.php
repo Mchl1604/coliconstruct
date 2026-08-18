@@ -356,8 +356,12 @@ class SystemContent extends Model
             'label' => 'Message Form Note',
             'type' => self::TYPE_TEXTAREA,
             'section' => self::SECTION_CONTACT,
-            'help' => 'Shown under the button. The form is displayed but does not send: there is nowhere for an online inquiry to go yet.',
-            'default' => 'Note: Online inquiries are not being accepted yet.',
+            // The form sends for real now - every message is stored and shown
+            // in Configuration > Inquiries - so this line is no longer an
+            // apology for a disabled form. It is whatever the company wants a
+            // visitor to know before they write.
+            'help' => 'Shown under the Send button - for example, how soon somebody replies. Leave it empty to show nothing.',
+            'default' => 'We usually reply within one business day.',
         ],
         'contact.info_heading' => [
             'label' => 'Contact Information Heading',

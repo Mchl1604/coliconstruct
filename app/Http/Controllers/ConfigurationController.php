@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\ActivityLog;
+use App\Models\Inquiry;
 use App\Models\Skill;
 use App\Models\SystemContent;
 use App\Models\User;
@@ -80,6 +81,9 @@ class ConfigurationController extends Controller
             // ones, because a client's own actions are logged too.
             'logRoles' => User::ROLES,
             'logModules' => ActivityLog::MODULES,
+            // The Inquiries filter and the status picker inside its details
+            // dialog, both from the one list on the model.
+            'inquiryStatuses' => Inquiry::STATUSES,
             'contentSections' => SystemContent::SECTIONS,
             'skills' => Skill::query()->orderBy('skill_name')->get(['skill_id', 'skill_name']),
             // Whether the interface may promise that credentials were emailed.

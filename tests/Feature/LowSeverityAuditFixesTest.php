@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Mail\ContactInquiryMail;
 use App\Models\ActivityLog;
 use App\Models\Client;
+use App\Models\Inquiry;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
 use App\Models\Schedule;
@@ -275,23 +276,28 @@ class LowSeverityAuditFixesTest extends TestCase
     }
 
     /**
-     * And the other half: with no mailer there is nowhere for a message to go,
-     * so the form says so rather than silently dropping what somebody typed.
+     * And the other half, which has since changed.
+     *
+     * The form used to close itself when no mailer was configured, because an
+     * enquiry that could not be emailed went nowhere at all. Enquiries are
+     * stored now and read in Configuration > Inquiries, so the form stays open
+     * and the message still arrives - the company's copy is what is lost, not
+     * what somebody typed. See InquiryManagementTest for the rest of it.
      */
-    public function test_the_form_is_closed_when_there_is_no_mailer(): void
+    public function test_the_form_still_takes_a_message_when_there_is_no_mailer(): void
     {
         Config::set('mail.default', 'array');
 
-        $this->get(route('public.contact'))
-            ->assertOk()
-            ->assertViewHas('canSendInquiries', false);
+        $this->get(route('public.contact'))->assertOk();
 
         $this->post(route('public.contact.send'), [
             'name' => 'Rosa Villanueva',
             'email' => 'rosa@example.test',
             'subject' => 'Aircon installation quote',
             'message' => 'We need two split-type units installed at our office.',
-        ])->assertSessionHas('error');
+        ])->assertSessionHas('success');
+
+        $this->assertSame(1, Inquiry::count());
     }
 
     // ==================================================================

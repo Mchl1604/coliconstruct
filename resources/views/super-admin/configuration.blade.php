@@ -50,6 +50,16 @@
                 </button>
             </li>
         @endif
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="inquiriesTab" data-bs-toggle="tab" data-bs-target="#inquiriesPane"
+                type="button" role="tab" aria-controls="inquiriesPane" aria-selected="false">
+                <i class="bi bi-envelope-paper me-1" aria-hidden="true"></i>
+                Inquiries
+                {{-- How many messages nobody has picked up yet. Hidden until
+                     the table has been read once and there is a number. --}}
+                <span class="badge rounded-pill bg-danger ms-1 d-none" data-inquiry-new-count></span>
+            </button>
+        </li>
     </ul>
 
     <div class="tab-content">
@@ -500,6 +510,98 @@
                 </div>
             </div>
         @endif
+
+        {{-- ==================== TAB 4: INQUIRIES ==================== --}}
+        {{-- Messages written in from the public Contact page. Admin and Super
+             Admin both work this list; only the archive is the Super Admin's,
+             exactly as archived accounts are. --}}
+        <div class="tab-pane fade" id="inquiriesPane" role="tabpanel" aria-labelledby="inquiriesTab">
+
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                <div>
+                    <h5 class="fw-bold mb-0">Inquiries</h5>
+                    <span class="text-secondary small">
+                        Messages sent through the public Contact page. Nothing here is linked to a client
+                        or a project.
+                    </span>
+                </div>
+
+                @if ($isSuperAdmin)
+                    <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal"
+                        data-bs-target="#archivedInquiriesModal">
+                        <i class="bi bi-archive me-1" aria-hidden="true"></i>
+                        View Archived Inquiries
+                    </button>
+                @endif
+            </div>
+
+            <div class="card shadow-sm border-0 rounded-2">
+                <div class="card-body p-3">
+                    <div class="config-table-header">
+                        <div>
+                            <h6 class="config-table-title mb-0">
+                                <i class="bi bi-envelope-paper me-1" aria-hidden="true"></i>
+                                Received Messages
+                            </h6>
+                            <span class="text-secondary small" data-inquiry-count></span>
+                        </div>
+
+                        <div class="config-table-controls">
+                            <input type="search" class="form-control form-control-sm config-search"
+                                placeholder="Search inquiry ID, name, email or subject&hellip;"
+                                aria-label="Search inquiries" data-inquiry-search>
+
+                            <select class="form-select form-select-sm config-filter" aria-label="Filter by status"
+                                data-inquiry-status>
+                                <option value="all">All Statuses</option>
+                                @foreach ($inquiryStatuses as $value => $label)
+                                    <option value="{{ $value }}">{{ $label }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="alert alert-danger d-none" role="alert" data-inquiry-error></div>
+                    <div class="alert alert-success d-none" role="alert" data-inquiry-success></div>
+
+                    <div class="table-responsive">
+                        <table class="table table-hover table-striped align-middle mb-0">
+                            <thead class="table-info">
+                                <tr>
+                                    <th>Inquiry ID</th>
+                                    <th>Name</th>
+                                    <th>Email</th>
+                                    <th>Subject</th>
+                                    <th>Status</th>
+                                    {{-- Newest first by default; the button flips
+                                         it, and works from the keyboard as the
+                                         Activity Logs headings do. --}}
+                                    <th>
+                                        <button type="button" class="config-sort is-active" data-inquiry-sort>
+                                            Date Submitted
+                                            <i class="bi bi-caret-down-fill" aria-hidden="true"></i>
+                                        </button>
+                                    </th>
+                                    <th class="text-center">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody data-inquiry-body></tbody>
+                        </table>
+                    </div>
+
+                    <div class="text-secondary small py-3 px-1" data-inquiry-loading>
+                        <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                        Loading inquiries&hellip;
+                    </div>
+
+                    <div class="schedule-empty-state mt-2 d-none" data-inquiry-empty>
+                        No inquiries match these filters.
+                    </div>
+
+                    <nav class="config-pagination d-none" aria-label="Inquiry pages" data-inquiry-pagination></nav>
+                </div>
+            </div>
+        </div>
     </div>
 
     {{-- ==================== ADD / EDIT USER MODAL ==================== --}}
@@ -882,6 +984,265 @@
         </div>
     @endif
 
+    {{-- ==================== INQUIRY DETAILS MODAL ==================== --}}
+    {{-- Every value is written in by script with textContent, never as markup:
+         the whole record is a stranger's typing, and none of it may become an
+         element on an administrator's screen. --}}
+    <div class="modal fade" id="inquiryDetailsModal" tabindex="-1" aria-hidden="true"
+        aria-labelledby="inquiryDetailsModalLabel" data-inquiry-modal>
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content">
+
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title" id="inquiryDetailsModalLabel">
+                        <i class="bi bi-envelope-open me-2" aria-hidden="true"></i>
+                        Inquiry <span data-inquiry-detail-code></span>
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
+                        aria-label="Close"></button>
+                </div>
+
+                <div class="modal-body">
+
+                    <div class="text-secondary small py-3 px-1 d-none" data-inquiry-detail-loading>
+                        <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                        Loading this inquiry&hellip;
+                    </div>
+
+                    <div class="d-none" data-inquiry-detail-body>
+
+                        <div class="config-section-heading">
+                            <i class="bi bi-person-lines-fill me-1" aria-hidden="true"></i>
+                            Who wrote in
+                        </div>
+
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-6">
+                                <label class="form-label small fw-semibold mb-1">Name</label>
+                                <p class="mb-0" data-inquiry-detail-name></p>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label small fw-semibold mb-1">Email</label>
+                                <p class="mb-0" data-inquiry-detail-email></p>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label small fw-semibold mb-1">Date Submitted</label>
+                                <p class="mb-0" data-inquiry-detail-submitted></p>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label small fw-semibold mb-1">Date Updated</label>
+                                <p class="mb-0" data-inquiry-detail-updated></p>
+                            </div>
+                        </div>
+
+                        <div class="config-section-heading">
+                            <i class="bi bi-chat-left-text me-1" aria-hidden="true"></i>
+                            Their message
+                        </div>
+
+                        <div class="mb-2">
+                            <label class="form-label small fw-semibold mb-1">Subject</label>
+                            <p class="fw-semibold mb-2" data-inquiry-detail-subject></p>
+                        </div>
+
+                        {{-- Read only, always. The message is the record; it is
+                             never editable from this side. --}}
+                        <div class="config-inquiry-message" data-inquiry-detail-message></div>
+
+                        {{-- The reply, when one has been sent. It sits with the
+                             message it answers rather than on a page of its own. --}}
+                        <div class="d-none" data-inquiry-reply-record>
+                            <div class="config-section-heading mt-4">
+                                <i class="bi bi-reply me-1" aria-hidden="true"></i>
+                                Our reply
+                            </div>
+
+                            <p class="text-secondary small mb-2">
+                                Sent <span data-inquiry-replied-at></span> by <span data-inquiry-replied-by></span>.
+                            </p>
+
+                            {{-- Named apart from the reply box below it. Two
+                                 elements sharing one hook is how the Send
+                                 button came to read an empty message: the
+                                 script found this block first and asked a
+                                 <div> for its value. --}}
+                            <div class="config-inquiry-message config-inquiry-reply" data-inquiry-reply-text></div>
+                        </div>
+
+                        <div class="config-section-heading mt-4">
+                            <i class="bi bi-flag me-1" aria-hidden="true"></i>
+                            Status
+                        </div>
+
+                        <div class="row g-2 align-items-end mb-2">
+                            <div class="col-sm">
+                                <label class="form-label small fw-semibold mb-1" for="inquiryStatusSelect">
+                                    Current status
+                                </label>
+                                <select class="form-select" id="inquiryStatusSelect" data-inquiry-status-select>
+                                    @foreach ($inquiryStatuses as $value => $label)
+                                        <option value="{{ $value }}">{{ $label }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            <div class="col-sm-auto">
+                                <button type="button" class="btn btn-outline-primary px-4" data-inquiry-status-save>
+                                    <span class="spinner-border spinner-border-sm me-1 d-none" role="status"
+                                        aria-hidden="true" data-inquiry-status-spinner></span>
+                                    Update Status
+                                </button>
+                            </div>
+                        </div>
+
+                        <p class="text-secondary small mb-0">
+                            Any status may follow any other. Sending a reply sets it to Responded on its own.
+                        </p>
+
+                        {{-- Reply form. The recipient is shown but never typed:
+                             it is the address on the inquiry, and the server
+                             reads it from there rather than from this field. --}}
+                        <div data-inquiry-reply-form>
+                            <div class="config-section-heading mt-4">
+                                <i class="bi bi-send me-1" aria-hidden="true"></i>
+                                Reply
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label small fw-semibold mb-1" for="inquiryReplyTo">To</label>
+                                <input type="email" class="form-control" id="inquiryReplyTo" readonly
+                                    data-inquiry-reply-to>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label small fw-semibold mb-1" for="inquiryReplyMessage">
+                                    Message <span class="text-danger">*</span>
+                                </label>
+                                <textarea class="form-control" id="inquiryReplyMessage" rows="6"
+                                    maxlength="{{ \App\Models\Inquiry::MAX_REPLY }}"
+                                    placeholder="Write the reply that will be emailed to them&hellip;"
+                                    data-inquiry-reply-message></textarea>
+                            </div>
+
+                            <button type="button" class="btn btn-primary px-4" data-inquiry-reply-send>
+                                <span class="spinner-border spinner-border-sm me-1 d-none" role="status"
+                                    aria-hidden="true" data-inquiry-reply-spinner></span>
+                                <i class="bi bi-send me-1" aria-hidden="true"></i>
+                                Send Reply
+                            </button>
+                        </div>
+
+                        {{-- An archived inquiry is read-only until it is put
+                             back on the active list. --}}
+                        <div class="alert alert-secondary mt-4 mb-0 d-none" data-inquiry-archived-note>
+                            <i class="bi bi-archive me-1" aria-hidden="true"></i>
+                            This inquiry is archived. Restore it to change its status or reply.
+                        </div>
+                    </div>
+
+                    <div class="alert alert-danger mt-3 mb-0 d-none" role="alert" data-inquiry-detail-error></div>
+                    <div class="alert alert-success mt-3 mb-0 d-none" role="alert" data-inquiry-detail-success></div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-danger me-auto d-none" data-inquiry-archive>
+                        <i class="bi bi-archive me-1" aria-hidden="true"></i>
+                        Archive Inquiry
+                    </button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    {{-- ==================== ARCHIVED INQUIRIES MODAL ==================== --}}
+    @if ($isSuperAdmin)
+        <div class="modal fade" id="archivedInquiriesModal" tabindex="-1" aria-hidden="true"
+            aria-labelledby="archivedInquiriesModalLabel" data-archived-inquiry-modal>
+            <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+                <div class="modal-content">
+
+                    <div class="modal-header">
+                        <div>
+                            <h5 class="modal-title" id="archivedInquiriesModalLabel">Archived Inquiries</h5>
+                            <p class="text-secondary small mb-0">
+                                Nothing here was deleted. Restoring an inquiry puts it back on the active list
+                                exactly as it was.
+                            </p>
+                        </div>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+
+                    <div class="modal-body">
+                        <div class="config-table-header">
+                            <div>
+                                <h6 class="config-table-title mb-0">
+                                    <i class="bi bi-archive me-1" aria-hidden="true"></i>
+                                    Archive
+                                </h6>
+                                <span class="text-secondary small" data-archived-inquiry-count></span>
+                            </div>
+
+                            <div class="config-table-controls">
+                                <input type="search" class="form-control form-control-sm config-search"
+                                    placeholder="Search inquiry ID, name, email or subject&hellip;"
+                                    aria-label="Search archived inquiries" data-archived-inquiry-search>
+
+                                <select class="form-select form-select-sm config-filter"
+                                    aria-label="Filter by status" data-archived-inquiry-status>
+                                    <option value="all">All Statuses</option>
+                                    @foreach ($inquiryStatuses as $value => $label)
+                                        <option value="{{ $value }}">{{ $label }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="table-responsive">
+                            <table class="table table-hover table-striped align-middle mb-0">
+                                <thead class="table-info">
+                                    <tr>
+                                        <th>Inquiry ID</th>
+                                        <th>Name</th>
+                                        <th>Email</th>
+                                        <th>Subject</th>
+                                        <th>Status</th>
+                                        <th>Date Submitted</th>
+                                        <th>Archived Date</th>
+                                        <th>Archived By</th>
+                                        <th class="text-center">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody data-archived-inquiry-body></tbody>
+                            </table>
+                        </div>
+
+                        <div class="text-secondary small py-3 px-1 d-none" data-archived-inquiry-loading>
+                            <span class="spinner-border spinner-border-sm me-2" role="status"
+                                aria-hidden="true"></span>
+                            Loading archived inquiries&hellip;
+                        </div>
+
+                        <div class="schedule-empty-state mt-2 d-none" data-archived-inquiry-empty>
+                            No archived inquiries.
+                        </div>
+
+                        <div class="alert alert-danger mt-3 mb-0 d-none" role="alert"
+                            data-archived-inquiry-error></div>
+
+                        <nav class="config-pagination d-none" aria-label="Archived inquiry pages"
+                            data-archived-inquiry-pagination></nav>
+                    </div>
+
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    @endif
+
     {{-- ==================== CONFIRMATION MODAL ==================== --}}
     <div class="modal fade" id="confirmActionModal" tabindex="-1" aria-hidden="true" data-confirm-modal>
         <div class="modal-dialog modal-dialog-centered">
@@ -919,9 +1280,12 @@
                 userBase: @json(url('super-admin/configuration/users')),
                 activityLogs: @json(route('super-admin.configuration.activity-logs')),
                 contentBase: @json(url('super-admin/configuration/contents')),
+                inquiries: @json(route('super-admin.configuration.inquiries.index')),
+                inquiryBase: @json(url('super-admin/configuration/inquiries')),
                 @if ($isSuperAdmin)
                     archivedAccounts: @json(route('super-admin.configuration.users.archived')),
                     projectTypes: @json(route('super-admin.configuration.project-types.index')),
+                    archivedInquiries: @json(route('super-admin.configuration.inquiries.archived')),
                 @endif
             };
             window.configurationOptions = {
@@ -930,9 +1294,17 @@
                 // The row actions are drawn in JavaScript, so whether an
                 // account may be archived has to reach it as data.
                 canArchive: @json($isSuperAdmin),
+                // Restoring an inquiry is the Super Admin's, exactly as
+                // restoring an account is. Archiving one is not - handling a
+                // message is ordinary work an Admin does.
+                canRestoreInquiries: @json($isSuperAdmin),
+                // Opened straight from a notification: ?inquiry=7 on the URL
+                // shows the tab with that message already open.
+                openInquiry: @json(request()->integer('inquiry') ?: null),
             };
         </script>
         <script src="/js/super-admin/configuration.js"></script>
+        <script src="/js/super-admin/inquiries.js"></script>
         @if (auth()->user()?->isSuperAdmin())
             <script src="/js/super-admin/systemContents.js"></script>
             <script src="/js/super-admin/projectTypes.js"></script>

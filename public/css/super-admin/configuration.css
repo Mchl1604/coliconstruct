@@ -536,3 +536,33 @@
     color: #2370b4;
     font-weight: 600;
 }
+
+/* ---- Inquiries ---- */
+
+/* A subject can run long; let it wrap rather than stretch the table. */
+.config-inquiry-subject {
+    min-width: 14rem;
+    max-width: 26rem;
+    white-space: normal;
+}
+
+/* The message as it was typed, line breaks and all. `pre-wrap` is what keeps
+   somebody's paragraphs from collapsing into one line, and `break-word` stops
+   an unbroken URL from widening the dialog. */
+.config-inquiry-message {
+    padding: 1rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.5rem;
+    background: #f8fafc;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 20rem;
+    overflow-y: auto;
+}
+
+/* The reply is the company's own words, so it is tinted rather than grey -
+   the two blocks sit one above the other and should not read as one. */
+.config-inquiry-reply {
+    background: #eaf4fd;
+    border-color: #cfe3f6;
+}

@@ -25,6 +25,12 @@ class DisplayCode
 
     public const REPORT = 'RPT';
 
+    /**
+     * A message written in from the public Contact page. Not CON, which reads
+     * as "contract" beside the project documents.
+     */
+    public const INQUIRY = 'INQ';
+
     private const WIDTH = 4;
 
     /**

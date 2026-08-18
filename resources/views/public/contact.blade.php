@@ -6,6 +6,16 @@
     @php
         $mapEmbed = $content->get('contact.map_embed');
 
+        // The lengths the form accepts, read from the model that stores the
+        // message - so the browser stops somebody at exactly the point the
+        // validator and the column would have.
+        $limits = [
+            'name' => \App\Models\Inquiry::MAX_NAME,
+            'email' => \App\Models\Inquiry::MAX_EMAIL,
+            'subject' => \App\Models\Inquiry::MAX_SUBJECT,
+            'message' => \App\Models\Inquiry::MAX_MESSAGE,
+        ];
+
         // The three ways to reach the company, each on its own blue card. The
         // labels name the field rather than repeating its value, which is what
         // lets a phone number and an address share one shape.
@@ -31,10 +41,9 @@
     <section class="public-section contact-body">
         <div class="container">
 
-            {{-- The message form. It posts for real when the system has a mailer
-                 and somewhere to send to; when it does not, the fields are
-                 disabled and the note says why - a form that silently drops what
-                 somebody typed is worse than one that admits it is not open. --}}
+            {{-- The message form. Every message is stored and appears in
+                 Configuration > Inquiries, so it is open whether or not a mail
+                 server is reachable - what somebody types is never dropped. --}}
             <div class="contact-form-card">
                 <h2 class="contact-form-heading">{{ $content->get('contact.form_heading') }}</h2>
                 <p class="contact-form-intro public-prewrap">{{ $content->get('contact.form_intro') }}</p>
@@ -60,8 +69,8 @@
                     <div class="col-md-6">
                         <label class="form-label" for="contactName">Name</label>
                         <input type="text" class="form-control contact-field @error('name') is-invalid @enderror"
-                            id="contactName" name="name" value="{{ old('name') }}" maxlength="120"
-                            autocomplete="name" required @disabled(! $canSendInquiries)>
+                            id="contactName" name="name" value="{{ old('name') }}" maxlength="{{ $limits['name'] }}"
+                            autocomplete="name" required>
                         @error('name')
                             <div class="invalid-feedback">{{ $message }}</div>
                         @enderror
@@ -70,8 +79,8 @@
                     <div class="col-md-6">
                         <label class="form-label" for="contactEmail">Email</label>
                         <input type="email" class="form-control contact-field @error('email') is-invalid @enderror"
-                            id="contactEmail" name="email" value="{{ old('email') }}" maxlength="255"
-                            autocomplete="email" required @disabled(! $canSendInquiries)>
+                            id="contactEmail" name="email" value="{{ old('email') }}" maxlength="{{ $limits['email'] }}"
+                            autocomplete="email" required>
                         @error('email')
                             <div class="invalid-feedback">{{ $message }}</div>
                         @enderror
@@ -80,8 +89,8 @@
                     <div class="col-12">
                         <label class="form-label" for="contactSubject">Subject</label>
                         <input type="text" class="form-control contact-field @error('subject') is-invalid @enderror"
-                            id="contactSubject" name="subject" value="{{ old('subject') }}" maxlength="150" required
-                            @disabled(! $canSendInquiries)>
+                            id="contactSubject" name="subject" value="{{ old('subject') }}" maxlength="{{ $limits['subject'] }}"
+                            required>
                         @error('subject')
                             <div class="invalid-feedback">{{ $message }}</div>
                         @enderror
@@ -90,8 +99,8 @@
                     <div class="col-12">
                         <label class="form-label" for="contactMessage">Message</label>
                         <textarea class="form-control contact-field @error('message') is-invalid @enderror"
-                            id="contactMessage" name="message" rows="5" maxlength="2000" required
-                            @disabled(! $canSendInquiries)>{{ old('message') }}</textarea>
+                            id="contactMessage" name="message" rows="5" maxlength="{{ $limits['message'] }}"
+                            required>{{ old('message') }}</textarea>
                         @error('message')
                             <div class="invalid-feedback">{{ $message }}</div>
                         @enderror
@@ -109,15 +118,17 @@
                     </div>
 
                     <div class="col-12">
-                        <button type="submit" class="btn btn-brand-blue px-4" @disabled(! $canSendInquiries)>
+                        <button type="submit" class="btn btn-brand-blue px-4">
                             {{ $content->get('contact.form_button_label') }}
                         </button>
 
-                        @unless ($canSendInquiries)
+                        {{-- Editable from Configuration, and shown only when
+                             something has been written there. --}}
+                        @if ($content->has('contact.form_note'))
                             <p class="contact-form-note mb-0" id="contactFormNotice">
                                 {{ $content->get('contact.form_note') }}
                             </p>
-                        @endunless
+                        @endif
                     </div>
                 </form>
             </div>

@@ -288,9 +288,9 @@ class PublicSiteTest extends TestCase
     }
 
     /**
-     * The redesigned Contact page. The message form works when the system has
-     * a mailer behind it; the test suite deliberately has none, so this covers
-     * the other half - the form still renders, disabled, and the note says why.
+     * The redesigned Contact page. The message form is always open now that an
+     * enquiry is stored rather than only emailed - the suite runs on the
+     * `array` mailer and the form still takes a message, which is the point.
      */
     public function test_the_contact_page_renders_every_editable_piece_of_itself(): void
     {
@@ -321,14 +321,12 @@ class PublicSiteTest extends TestCase
             $response->assertSee($expected);
         }
 
-        // Nothing on this form may accept a message it cannot deliver. The
-        // suite runs on the `array` mailer, so there is nowhere for an enquiry
-        // to go: four fields and the button are disabled, and the note that
-        // explains it is shown.
+        // Nothing on the form is disabled: every message is stored and read
+        // in Configuration > Inquiries, whether or not a mail server is
+        // reachable, so there is nothing to close the form for.
         $html = $response->getContent();
 
-        $this->assertFalse($response->viewData('canSendInquiries'));
-        $this->assertSame(5, substr_count($html, 'disabled'));
+        $this->assertSame(0, substr_count($html, 'disabled'));
         $response->assertSee('Form note');
     }
 

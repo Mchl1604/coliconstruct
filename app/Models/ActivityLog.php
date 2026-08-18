@@ -268,10 +268,23 @@ class ActivityLog extends Model
      * Somebody wrote in through the public website's Contact page.
      *
      * Filed under Configuration, which is where the public site's own content
-     * is administered. There is no inquiries table, so this entry is the only
-     * record the enquiry leaves behind - which is exactly why it is written.
+     * is administered and where the enquiry itself is now handled - see the
+     * Inquiries tab. The trail records the arrival; tbl_inquiries records the
+     * message.
      */
     public const CONTACT_INQUIRY_SENT = 'Website Enquiry Sent';
+
+    /**
+     * Handling an enquiry once it has arrived. All four sit beside the entry
+     * above, under Configuration, because that is the page they happen on.
+     */
+    public const INQUIRY_STATUS_CHANGED = 'Inquiry Status Changed';
+
+    public const INQUIRY_REPLY_SENT = 'Inquiry Reply Sent';
+
+    public const INQUIRY_ARCHIVED = 'Inquiry Archived';
+
+    public const INQUIRY_RESTORED = 'Inquiry Restored';
 
     public const PROJECT_TYPE_CREATED = 'Project Type Created';
 
@@ -366,6 +379,10 @@ class ActivityLog extends Model
 
         self::SYSTEM_SETTINGS_UPDATED => self::MODULE_CONFIGURATION,
         self::CONTACT_INQUIRY_SENT => self::MODULE_CONFIGURATION,
+        self::INQUIRY_STATUS_CHANGED => self::MODULE_CONFIGURATION,
+        self::INQUIRY_REPLY_SENT => self::MODULE_CONFIGURATION,
+        self::INQUIRY_ARCHIVED => self::MODULE_CONFIGURATION,
+        self::INQUIRY_RESTORED => self::MODULE_CONFIGURATION,
         self::PROJECT_TYPE_CREATED => self::MODULE_CONFIGURATION,
         self::PROJECT_TYPE_UPDATED => self::MODULE_CONFIGURATION,
         self::PROJECT_TYPE_DELETED => self::MODULE_CONFIGURATION,
