@@ -7,5 +7,6 @@
             "runtimeArgs": ["artisan", "serve", "--port=8123"],
             "port": 8123
         }
-    ]
+    ],
+    "autoVerify": true
 }

@@ -101,10 +101,19 @@ class Project extends Model
     public const OVERDUE_CANDIDATE_STATUSES = ['pending', 'ongoing'];
 
     /**
-     * Orange, reserved for overdue. Bootstrap has no orange background
+     * Deep red, reserved for overdue. Bootstrap has no such background
      * utility, so `badge-overdue` is defined in superAdminNav.css.
+     *
+     * It used to be orange, which sat one notch along the wheel from Pending's
+     * amber and became the same brown as it once darkened for use as ink - so
+     * on the calendar, where both are drawn as outlines, late work and work
+     * that has not started yet were told apart only by reading the label. Red
+     * is a different hue rather than a different shade of the same one, and it
+     * is deliberately deeper than Cancelled's #dc3545: the two are never drawn
+     * side by side (a cancelled project leaves the calendar and the schedules
+     * page entirely), and where they do meet in a table the labels differ.
      */
-    public const OVERDUE_COLOR = '#fd7e14';
+    public const OVERDUE_COLOR = '#c9302c';
 
     /**
      * The order statuses are reported in: roughly the order work moves
@@ -146,7 +155,7 @@ class Project extends Model
         'pending' => ['#f0ad4e', '#4a2c00'],
         'ongoing' => ['#0d6efd', '#ffffff'],
         'on_hold' => ['#6c757d', '#ffffff'],
-        'overdue' => [self::OVERDUE_COLOR, '#4a2100'],
+        'overdue' => [self::OVERDUE_COLOR, '#ffffff'],
         'cancelled' => ['#dc3545', '#ffffff'],
         'completed' => ['#198754', '#ffffff'],
         'archived' => ['#212529', '#ffffff'],
@@ -361,7 +370,65 @@ class Project extends Model
     }
 
     /**
-     * Whether somebody on this project's team can no longer work it.
+     * "Ana Mendoza and Ben Cruz" - the people the warnings name.
+     *
+     * Written once because four screens print it: the projects listing and
+     * Project Details in the administrative portal, and the same two pages in
+     * the technician portal, where the lead is told about their own crew. A
+     * warning that names different people on different pages is worse than no
+     * warning at all.
+     */
+    public function inactiveCrewNames(): string
+    {
+        return $this->inactiveCrew()
+            ->map(fn (ProjectTechnician $assignment): ?string => $assignment->technician?->name)
+            ->filter()
+            ->join(', ', ' and ');
+    }
+
+    /**
+     * The team member who leads this project, or null while it has none.
+     *
+     * There is no lead column: a project's lead is the member whose ACCOUNT
+     * role says so - see Technician::isLead(). Four screens and three services
+     * derived that for themselves, which is exactly the shape ProjectTeamRules
+     * warns about, so the derivation lives here now and they ask this instead.
+     *
+     * first() rather than sole(): a project may only ever carry one lead, but
+     * that is a rule ProjectTeamRules and TechnicianRoleChangeRules enforce on
+     * the way in, and a reader is no place to throw over data that already
+     * exists.
+     */
+    public function leadAssignment(): ?ProjectTechnician
+    {
+        $this->loadMissing('projectTechnicians.technician.account');
+
+        return $this->projectTechnicians
+            ->first(fn (ProjectTechnician $assignment): bool => (bool) $assignment->technician?->isLead());
+    }
+
+    /**
+     * Whether anybody is leading this project.
+     */
+    public function hasLead(): bool
+    {
+        return $this->leadAssignment() !== null;
+    }
+
+    /**
+     * Whether this project's team can no longer run the job.
+     *
+     * Two different faults, flagged the same way because they need the same
+     * thing from an administrator - somebody has to open the team and fix it.
+     *
+     * The first is a crew member whose account has been switched off. The
+     * second is a project with no lead at all, which is what a demotion used
+     * to leave behind silently: the task board, the reports and Complete
+     * Project are all gated on the lead's account role, so a lead-less project
+     * cannot be run or closed by anybody in the technician portal.
+     *
+     * TechnicianRoleChangeRules stops new ones being made. This is what says
+     * so for the projects that were left that way before it existed.
      */
     public function needsRecrew(): bool
     {
@@ -369,7 +436,19 @@ class Project extends Model
             return false;
         }
 
-        return $this->inactiveCrew()->isNotEmpty();
+        return ! $this->hasLead() || $this->inactiveCrew()->isNotEmpty();
+    }
+
+    /**
+     * The short label the projects listings put on a flagged row.
+     *
+     * A missing lead outranks an inactive crew member when a project has both:
+     * the crew can be reassigned by whoever is running the job, and with no
+     * lead there is nobody to do it.
+     */
+    public function recrewFlagLabel(): string
+    {
+        return $this->hasLead() ? 'Inactive technician' : 'No lead technician';
     }
 
     /**
@@ -578,7 +657,7 @@ class Project extends Model
             'unscheduled' => 'Unscheduled',
             'pending' => 'Pending',
             'ongoing' => 'Ongoing',
-            self::STATUS_AWAITING_CLIENT_CONFIRMATION => 'Awaiting Client Confirmation',
+            self::STATUS_AWAITING_CLIENT_CONFIRMATION => 'Awaiting Completion Confirmation',
             'completed' => 'Completed',
             'cancelled' => 'Cancelled',
             'archived' => 'Archived',
@@ -614,6 +693,103 @@ class Project extends Model
     }
 
     /**
+     * Which tab of a projects table this project files under.
+     *
+     * Not the same thing as statusKey(): a tab is a question somebody is
+     * asking of the list, and several stored statuses can answer the same one.
+     * Unscheduled work reads as Pending, and work awaiting the client's
+     * confirmation reads as Completed, because that is where a person looks
+     * for it.
+     *
+     * The precedence is the one the badges already use - paused beats late,
+     * late beats the stored status - so a project appears under exactly one
+     * tab and no count double-counts it. Stated here so the tab counts, the
+     * rows' own data attributes and the browser-side filter cannot disagree;
+     * they were three separate copies of this before.
+     */
+    public function tabKey(): string
+    {
+        if ($this->on_hold) {
+            return 'on_hold';
+        }
+
+        if ($this->isOverdue()) {
+            return 'overdue';
+        }
+
+        return match ($this->status) {
+            'unscheduled', 'pending' => 'pending',
+            self::STATUS_AWAITING_CLIENT_CONFIRMATION, 'completed' => 'completed',
+            default => (string) $this->status,
+        };
+    }
+
+    /**
+     * How many projects fall under each tab, keyed by tabKey().
+     *
+     * `all` is the whole list, and every other key is the number of rows the
+     * matching tab will actually show - counted from the same method the rows
+     * are labelled with, so a badge can never promise more rows than the tab
+     * has.
+     *
+     * @param  Collection<int, self>  $projects
+     * @return array<string, int>
+     */
+    public static function tabCounts($projects): array
+    {
+        return ['all' => $projects->count()] + $projects
+            ->groupBy(fn (self $project): string => $project->tabKey())
+            ->map->count()
+            ->all();
+    }
+
+    /**
+     * The tabs a projects table offers, with the badge each count is printed
+     * in. Keyed by tabKey(), in the order work moves through with the two
+     * endings last - the same order the reports use.
+     *
+     * @var array<string, array{label: string, badge: string}>
+     */
+    public const STATUS_TABS = [
+        'all' => ['label' => 'All', 'badge' => 'bg-primary'],
+        'pending' => ['label' => 'Pending', 'badge' => 'bg-warning text-dark'],
+        'ongoing' => ['label' => 'Ongoing', 'badge' => 'bg-primary'],
+        'overdue' => ['label' => 'Overdue', 'badge' => 'badge-overdue'],
+        'on_hold' => ['label' => 'On Hold', 'badge' => 'bg-secondary'],
+        'completed' => ['label' => 'Completed', 'badge' => 'bg-success'],
+        'cancelled' => ['label' => 'Cancelled', 'badge' => 'bg-danger'],
+    ];
+
+    /**
+     * The tabs to draw above a projects table, each carrying its own count.
+     *
+     * Every tab is shown whether or not it holds anything: a count of zero is
+     * information, and a tab that appears and disappears as the data changes
+     * is a moving target. A caller may narrow the list - the technician portal
+     * never lists work it cannot reach - and the order is kept whatever order
+     * the keys are given in.
+     *
+     * @param  Collection<int, self>  $projects
+     * @param  array<int, string>|null  $only  the tab keys to draw, or null for all
+     * @return array<int, array{key: string, label: string, badge: string, count: int}>
+     */
+    public static function statusTabs($projects, ?array $only = null): array
+    {
+        $counts = self::tabCounts($projects);
+
+        return collect(self::STATUS_TABS)
+            ->when($only !== null, fn ($tabs) => $tabs->only($only))
+            ->map(fn (array $tab, string $key): array => [
+                'key' => $key,
+                'label' => $tab['label'],
+                'badge' => $tab['badge'],
+                'count' => (int) ($counts[$key] ?? 0),
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
      * The background and ink a status is printed with.
      *
      * @return array{0: string, 1: string}
@@ -626,13 +802,17 @@ class Project extends Model
     /**
      * The same state in the few places a full sentence will not fit - a table
      * cell, a card header, a calendar tooltip.
+     *
+     * This used to shorten Awaiting Completion Confirmation to "Awaiting
+     * Confirmation", which left the same state named two different things
+     * depending on which screen you were looking at - and "Awaiting
+     * Confirmation" did not say what was being confirmed. There is nothing
+     * left to shorten, so this is now statusLabel() under a name the callers
+     * already use; it is kept so a genuinely short form can be reintroduced in
+     * one place rather than in every table.
      */
     public function shortStatusLabel(): string
     {
-        if ($this->isAwaitingClientConfirmation() && ! $this->on_hold && ! $this->isOverdue()) {
-            return 'Awaiting Confirmation';
-        }
-
         return $this->statusLabel();
     }
 
@@ -696,9 +876,10 @@ class Project extends Model
      * @var array<string, string>
      */
     public const CALENDAR_INK = [
+        'on_hold' => '#5a6570',
         'pending' => '#b26b00',
         'ongoing' => '#0a58ca',
-        'overdue' => '#b45309',
+        'overdue' => '#9a2620',
         self::STATUS_AWAITING_CLIENT_CONFIRMATION => '#3f7d53',
         'completed' => '#146c43',
     ];
@@ -709,6 +890,14 @@ class Project extends Model
      */
     public function calendarInkColor(): string
     {
+        // Paused first, for the same reason statusLabel() asks it first: a
+        // held project's stored status is Unscheduled, so without this its
+        // remaining bookings would be drawn in the fallback blue and read as
+        // work in progress.
+        if ($this->on_hold) {
+            return self::CALENDAR_INK['on_hold'];
+        }
+
         if ($this->isOverdue()) {
             return self::CALENDAR_INK['overdue'];
         }
@@ -759,9 +948,16 @@ class Project extends Model
     /**
      * The calendar legend: what each colour means, in the order it is read.
      *
-     * Stated here so the key and the bookings cannot disagree. It was written
-     * out as four hard-coded hex values in the schedules page, which is how it
-     * came to be missing Awaiting Client Confirmation entirely.
+     * Stated here so the key and the bookings cannot disagree - it was written
+     * out as four hard-coded hex values in the schedules page, and went stale.
+     *
+     * Awaiting Completion Confirmation is deliberately absent. Its name is too
+     * long to sit in a row of one-word keys, and its green is close enough to
+     * Completed's that the pair read as one colour anyway - a legend row that
+     * takes a third of the line to point at a shade nobody can distinguish is
+     * a row that costs more than it explains. The status is still drawn in its
+     * own green, and the booking's tooltip and the schedule modal both name it
+     * exactly.
      *
      * @return array<int, array{label: string, colour: string}>
      */
@@ -771,26 +967,47 @@ class Project extends Model
             ['label' => 'Pending', 'colour' => self::CALENDAR_INK['pending']],
             ['label' => 'Ongoing', 'colour' => self::CALENDAR_INK['ongoing']],
             ['label' => 'Overdue', 'colour' => self::CALENDAR_INK['overdue']],
-            [
-                'label' => 'Awaiting Confirmation',
-                'colour' => self::CALENDAR_INK[self::STATUS_AWAITING_CLIENT_CONFIRMATION],
-            ],
             ['label' => 'Completed', 'colour' => self::CALENDAR_INK['completed']],
+            ['label' => 'On Hold', 'colour' => self::CALENDAR_INK['on_hold']],
         ];
     }
 
     /**
-     * Cancelled and on-hold work is kept out of every calendar.
+     * Cancelled work is kept out of every calendar. Nothing else is.
      *
      * A project awaiting confirmation stays on it. Its remaining dates are the
      * days the crew actually worked, and a calendar that quietly dropped them
      * the moment completion was requested would misreport what happened that
      * week - which is the same reason completed work is still drawn.
+     *
+     * Held work stays on it for exactly that reason too. A hold cuts the
+     * bookings off at the day it was placed (see ScheduleHoldCutoff), so the
+     * only dates a held project still holds are days that were actually
+     * worked - and a calendar that hid them made the weeks before the pause
+     * look empty. Nothing here recreates a released date: what is drawn is
+     * whatever rows survived the cutoff, and the hold is what decided that.
+     *
+     * Drawing a held project is not the same as being able to change it. Its
+     * schedule is locked until it is resumed - see scheduleIsEditable() - so
+     * clicking one opens the view-only panel.
      */
     public function showsOnCalendar(): bool
     {
         return ! $this->isArchived()
-            && ! $this->on_hold
             && $this->status !== 'cancelled';
+    }
+
+    /**
+     * Whether this project's dates may still be changed.
+     *
+     * Two different reasons a schedule is fixed, asked as one question so the
+     * calendar, the schedules table and the panel a date opens cannot answer
+     * it three different ways: the project is a closed record, or it is paused
+     * and has to be resumed first. ScheduleController refuses both, and this
+     * is what stops a page offering a button that endpoint would reject.
+     */
+    public function scheduleIsEditable(): bool
+    {
+        return ! $this->isReadOnly() && ! $this->isArchived() && ! $this->on_hold;
     }
 }

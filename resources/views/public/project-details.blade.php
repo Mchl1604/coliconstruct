@@ -308,15 +308,21 @@
                                     @php $technician = $projectTechnician->technician; @endphp
 
                                     @if ($technician)
-                                        <li class="list-group-item d-flex justify-content-between align-items-center">
-                                            <div>
-                                                <i class="bi bi-person-circle me-2 text-brand-blue"
-                                                    aria-hidden="true"></i>
-                                                {{ $technician->name }}
+                                        <li class="list-group-item d-flex justify-content-between align-items-center gap-2">
+                                            {{-- The person's own picture rather than a
+                                                 generic icon: a client recognising who
+                                                 is coming to their property is the whole
+                                                 point of listing the team. Falls back to
+                                                 the default avatar, so a technician who
+                                                 has not uploaded one still shows a face
+                                                 in line with the rest. --}}
+                                            <div class="d-flex align-items-center gap-2 min-w-0">
+                                                <x-user-avatar :user="$technician->account" size="sm" />
+                                                <span class="text-truncate">{{ $technician->name }}</span>
                                             </div>
 
                                             @if (optional($technician->account)->role === 'lead_technician')
-                                                <span class="badge client-lead-badge">Lead Technician</span>
+                                                <span class="badge client-lead-badge flex-shrink-0">Lead Technician</span>
                                             @endif
                                         </li>
                                     @endif

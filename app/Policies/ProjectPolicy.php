@@ -28,12 +28,19 @@ class ProjectPolicy
     /**
      * A technician sees a project because they are on its team - never
      * because they typed its id into the address bar.
+     *
+     * An account that can no longer sign in is refused here as well as at the
+     * door. Every route into this policy is behind `auth`, so a disabled
+     * account should never reach it - but "should never" is the authentication
+     * layer's promise to keep, and every power a technician has on a project
+     * is granted through this one method. Asking here costs nothing and means
+     * the answer does not depend on somebody else having got it right.
      */
     public function viewAssigned(User $user, Project $project): bool
     {
         $technicianId = $user->technicianId();
 
-        if ($technicianId === null || ! $user->needsTechnicianRecord()) {
+        if ($technicianId === null || ! $user->needsTechnicianRecord() || ! $user->canLogin()) {
             return false;
         }
 
@@ -57,11 +64,20 @@ class ProjectPolicy
             && $project->schedules()->exists();
     }
 
+    /**
+     * Filing a report is a lead's job, and only on live work.
+     *
+     * A hold is asked about separately because it does not change the stored
+     * status: pausing a project leaves it Unscheduled, which is a reportable
+     * status, so without this a paused project would still accept reports. A
+     * report describes a visit, and nobody visits a project that is paused.
+     */
     public function submitReport(User $user, Project $project): bool
     {
         return $user->isLeadTechnician()
             && $this->viewAssigned($user, $project)
             && ! $project->isArchived()
+            && ! $project->on_hold
             && in_array($project->status, self::REPORTABLE_STATUSES, true);
     }
 

@@ -19,34 +19,24 @@
     <div class="card shadow-sm border-0 rounded-2">
         <div class="card-body p-2">
 
-            {{-- Same tabs the Super Admin projects table carries. Overdue is
-                 derived rather than stored, so it gets its own tab and is
-                 taken out of Pending and Ongoing. --}}
+            {{-- Same tabs the Super Admin projects table carries, counts and
+                 all. Overdue is derived rather than stored, so it gets its own
+                 tab and is taken out of Pending and Ongoing; a hold is a state
+                 the badge already prints, so it gets one too - held work files
+                 itself under Pending otherwise, which is a tab it does not
+                 belong in and a count it quietly inflates. --}}
             <ul class="nav nav-tabs projects-status-tabs mb-3 px-1"
                 data-project-status-tabs="portalProjectsTable">
-                <li class="nav-item">
-                    <button type="button" class="nav-link active" data-status-filter="all">All</button>
-                </li>
-                <li class="nav-item">
-                    <button type="button" class="nav-link" data-status-filter="pending">Pending</button>
-                </li>
-                <li class="nav-item">
-                    <button type="button" class="nav-link" data-status-filter="ongoing">Ongoing</button>
-                </li>
-                <li class="nav-item">
-                    <button type="button" class="nav-link" data-status-filter="overdue">
-                        Overdue
-                        @if ($overdueCount > 0)
-                            <span class="badge badge-overdue ms-1">{{ $overdueCount }}</span>
-                        @endif
-                    </button>
-                </li>
-                <li class="nav-item">
-                    <button type="button" class="nav-link" data-status-filter="completed">Completed</button>
-                </li>
-                <li class="nav-item">
-                    <button type="button" class="nav-link" data-status-filter="cancelled">Cancelled</button>
-                </li>
+                @foreach ($statusTabs as $tab)
+                    <li class="nav-item">
+                        <button type="button"
+                            class="nav-link {{ $tab['key'] === 'all' ? 'active' : '' }}"
+                            data-status-filter="{{ $tab['key'] }}">
+                            {{ $tab['label'] }}
+                            <span class="badge {{ $tab['badge'] }} ms-1">{{ $tab['count'] }}</span>
+                        </button>
+                    </li>
+                @endforeach
             </ul>
 
             <div class="table-responsive">
@@ -69,10 +59,30 @@
                         @foreach ($projects as $project)
                             @php
                                 $client = $project->clients->first();
+                                // Somebody on this crew can no longer sign in.
+                                // Flagged on the row itself, exactly as the
+                                // administrative table flags it, so the lead
+                                // does not have to open every project to find
+                                // the one that is short-handed.
+                                $needsRecrew = $flagsInactiveCrew && $project->needsRecrew();
                             @endphp
-                            <tr data-status="{{ $project->status }}"
-                                data-overdue="{{ $project->isOverdue() ? '1' : '0' }}">
-                                <td>{{ $project->reference_no }}</td>
+                            <tr data-tab="{{ $project->tabKey() }}"
+                                data-status="{{ $project->status }}"
+                                data-overdue="{{ $project->isOverdue() ? '1' : '0' }}"
+                                data-on-hold="{{ $project->on_hold ? '1' : '0' }}"
+                                class="{{ $needsRecrew ? 'project-row-needs-recrew' : '' }}">
+                                <td>
+                                    {{ $project->reference_no }}
+                                    @if ($needsRecrew)
+                                        <span class="project-recrew-flag"
+                                            title="{{ $project->hasLead()
+                                                ? $project->inactiveCrewNames().' can no longer sign in. Open the project to move their tasks, and ask an administrator to update the team.'
+                                                : 'This project has no lead technician. Ask an administrator to assign one.' }}">
+                                            <i class="bi bi-person-exclamation" aria-hidden="true"></i>
+                                            {{ $project->recrewFlagLabel() }}
+                                        </span>
+                                    @endif
+                                </td>
                                 <td>
                                     {{ $client?->client_type === 'Commercial'
                                         ? ($client->company_name ?? $client->fullname)

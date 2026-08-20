@@ -325,8 +325,17 @@ class TechnicianAvailabilityService
      * day", which is a thing somebody can act on.
      *
      * @param  Collection<int, array{technician_id: int, technician_name: string, dates: array<int, string>, busy?: array<string, array<int, string>>, partial?: bool, projects?: array<int, string>}>  $conflicts
+     * @param  string|null  $closing  What to ask the reader to do about it.
+     *                                Defaults to the wording for somebody
+     *                                picking dates, which is what almost every
+     *                                caller is doing. A caller who is not -
+     *                                resuming a held project, say, where the
+     *                                dates are already fixed and it is the
+     *                                other work that has to move - passes its
+     *                                own rather than telling somebody to
+     *                                choose a range they were never offered.
      */
-    public function conflictMessage(Collection $conflicts): string
+    public function conflictMessage(Collection $conflicts, ?string $closing = null): string
     {
         if ($conflicts->isEmpty()) {
             return '';
@@ -355,7 +364,7 @@ class TechnicianAvailabilityService
             );
         })->all();
 
-        $closing = $conflicts->every($isTimed)
+        $closing ??= $conflicts->every($isTimed)
             ? ' Please choose a time when every selected technician is free.'
             : ' Please select a continuous date range where all selected technicians are available.';
 

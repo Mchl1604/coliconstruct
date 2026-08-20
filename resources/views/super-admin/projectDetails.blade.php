@@ -46,6 +46,42 @@
             </a>
         </div>
 
+        {{-- Paused. Everything below stays readable - the history is the point
+             of keeping it - but nothing on this page may take new work until
+             the project is resumed. Each disabled control says so on its own as
+             well; this is the one place that says why. --}}
+        @if ($isOnHold)
+            <div class="alert alert-secondary border-0 shadow-sm mb-4" role="alert">
+                <div class="d-flex flex-wrap align-items-start gap-3">
+                    <div class="fs-3 lh-1">
+                        <i class="bi bi-pause-circle" aria-hidden="true"></i>
+                    </div>
+
+                    <div class="flex-grow-1">
+                        <h5 class="alert-heading mb-1">This project is on hold</h5>
+                        <p class="mb-0">
+                            Its assigned technicians, reports and the days already worked are all kept exactly
+                            as they are. Tasks keep their owners, and keep their dates wherever those still fall
+                            on a day the project holds. Assigning technicians, adding reports, editing tasks and
+                            adding schedules are unavailable until the project is resumed.
+                        </p>
+                    </div>
+
+                    @unless ($isReadOnly)
+                        <form method="POST"
+                            action="{{ route('super-admin.projects.resume', $project->project_id) }}">
+                            @csrf
+                            @method('PUT')
+                            <button type="submit" class="btn btn-success">
+                                <i class="bi bi-play-fill me-1" aria-hidden="true"></i>
+                                Resume Project
+                            </button>
+                        </form>
+                    @endunless
+                </div>
+            </div>
+        @endif
+
         {{-- Waiting on the client. The work is done and the project is locked;
              the only move left is reopening it onto a new schedule, and that
              belongs to an administrator. --}}
@@ -719,8 +755,12 @@
                             Assigned Team
                         </h4>
                         @unless ($isReadOnly)
+                            {{-- Disabled rather than hidden while the project is
+                                 paused: the control stays where it always is, and
+                                 the reason it cannot be used is on it. --}}
                             <button class="btn btn-outline-primary" data-bs-toggle="modal"
-                                data-bs-target="#editAssignedTeamModal">
+                                data-bs-target="#editAssignedTeamModal" @disabled($isOnHold)
+                                title="{{ $isOnHold ? 'This project is on hold. Resume it before changing its assigned technicians.' : 'Edit assigned team' }}">
                                 <i class="bi bi-pencil-square"></i>
                             </button>
                         @endunless
@@ -737,9 +777,15 @@
                             <div class="alert alert-warning rounded-0 border-0 border-bottom mb-0" role="alert">
                                 <i class="bi bi-person-exclamation me-1"></i>
                                 <strong>This team needs attention.</strong>
-                                {{ $project->inactiveCrew()->map(fn ($assignment) => $assignment->technician?->name)->filter()->join(', ', ' and ') }}
-                                can no longer sign in, but their dates are still booked.
-                                Reassign the work or take them off the team.
+                                @unless ($project->hasLead())
+                                    This project has no lead technician, so nobody can run its task
+                                    board, file a report or close it. Choose a lead in Assigned Team.
+                                @endunless
+                                @if ($project->inactiveCrew()->isNotEmpty())
+                                    {{ $project->inactiveCrewNames() }}
+                                    can no longer sign in, but their dates are still booked.
+                                    Reassign the work or take them off the team.
+                                @endif
                             </div>
                         @endif
 
@@ -809,11 +855,19 @@
                         </h4>
 
                         @unless ($isReadOnly)
-                            <a href="{{ route('super-admin.schedules.index', ['openSchedule' => $project->project_id]) }}"
-                                class="btn btn-outline-primary btn-sm">
-                                <i class="bi bi-calendar-week me-1"></i>
-                                Update Schedule
-                            </a>
+                            @if ($isOnHold)
+                                <button type="button" class="btn btn-outline-primary btn-sm" disabled
+                                    title="This project is on hold. Resume it before adding schedules.">
+                                    <i class="bi bi-calendar-week me-1"></i>
+                                    Update Schedule
+                                </button>
+                            @else
+                                <a href="{{ route('super-admin.schedules.index', ['openSchedule' => $project->project_id]) }}"
+                                    class="btn btn-outline-primary btn-sm">
+                                    <i class="bi bi-calendar-week me-1"></i>
+                                    Update Schedule
+                                </a>
+                            @endif
                         @endunless
 
                     </div>
@@ -910,7 +964,8 @@
                             </form>
 
                             <button class="btn btn-primary" data-bs-toggle="modal"
-                                data-bs-target="#addTechnicianReportModal">
+                                data-bs-target="#addTechnicianReportModal" @disabled($isOnHold)
+                                title="{{ $isOnHold ? 'This project is on hold. Resume it before adding reports.' : 'Add a technician report' }}">
 
                                 <i class="bi bi-plus-lg me-1"></i>
 
@@ -930,12 +985,15 @@
 
                                     <div>
 
-                                        <span
-                                            class="badge
-                {{ $report->report_type == 'progress' ? 'bg-primary' : 'bg-danger' }}">
-
-                                            {{ ucfirst($report->report_type) }}
-
+                                        {{-- The model names the type and picks
+                                             its colour. Written out here before,
+                                             which is why this one page called a
+                                             report "Progress" while the reports
+                                             log, the technician portal and the
+                                             client's own page all called the
+                                             same thing a "Progress Report". --}}
+                                        <span class="badge {{ $report->typeBadgeClass() }}">
+                                            {{ $report->typeLabel() }}
                                         </span>
 
                                         <h5 class="mt-2 mb-0">
@@ -1017,12 +1075,18 @@
                                 Task List
                             </h5>
 
-                            @unless ($isReadOnly || ! $hasSchedule)
+                            @if ($isOnHold)
+                                <button class="btn btn-primary" disabled
+                                    title="This project is on hold. Resume it before editing tasks.">
+                                    <i class="bi bi-plus-lg me-1"></i>
+                                    Add Task
+                                </button>
+                            @elseif (! $isReadOnly && $hasSchedule)
                                 <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addTaskModal">
                                     <i class="bi bi-plus-lg me-1"></i>
                                     Add Task
                                 </button>
-                            @endunless
+                            @endif
 
                         </div>
 
@@ -1061,7 +1125,18 @@
                                             </td>
 
                                             <td>
-                                                {{ optional($task->technician)->name ?? 'Unassigned' }}
+                                                {{-- The person's own picture beside
+                                                     their name, the way the Assign To
+                                                     cards and the team panel show them.
+                                                     An unassigned task falls back to the
+                                                     default avatar rather than leaving a
+                                                     hole in the column. --}}
+                                                <div class="d-flex align-items-center gap-2">
+                                                    <x-user-avatar :user="$task->technician?->account"
+                                                        size="sm"
+                                                        :alt="$task->technician?->name ?? 'Unassigned'" />
+                                                    <span>{{ $task->technician?->name ?? 'Unassigned' }}</span>
+                                                </div>
                                             </td>
 
                                             <td>
@@ -1111,8 +1186,10 @@
                                                     </button>
 
                                                     {{-- A locked project's task history is a record,
-                                                         so completing and deleting both drop away. --}}
-                                                    @unless ($isReadOnly)
+                                                         so completing and deleting both drop away - and
+                                                         so does a paused project's, until it is
+                                                         resumed. --}}
+                                                    @if ($canTakeWork)
                                                         @if ($task->status != 'completed' && $task->status != 'unassigned')
                                                             <button type="button" class="btn btn-sm btn-success"
                                                                 data-bs-toggle="modal"
@@ -1128,7 +1205,7 @@
                                                             title="Delete task">
                                                             <i class="bi bi-trash" aria-hidden="true"></i>
                                                         </button>
-                                                    @endunless
+                                                    @endif
 
                                                 </div>
 
@@ -1840,11 +1917,18 @@
                                 @php
                                     $technician = $projectTechnician->technician;
                                     $activeCount = $technicianActiveTaskCounts[$technician->technician_id] ?? 0;
+                                    // Still listed, because deactivating an
+                                    // account does not take somebody off a team -
+                                    // but not selectable: they cannot open the
+                                    // project, close the task, or be told they
+                                    // have one.
+                                    $cannotReceiveWork = ! $technician->isAssignable();
                                 @endphp
 
                                 <label>
                                     <input type="radio" class="btn-check" name="technician_id"
-                                        value="{{ $technician->technician_id }}" required>
+                                        value="{{ $technician->technician_id }}" required
+                                        @disabled($cannotReceiveWork)>
 
                                     <div class="task-assign-card">
                                         <x-user-avatar :user="$technician->account" size="lg"
@@ -1856,6 +1940,11 @@
                                         </div>
                                         @if (optional($technician->account)->role === 'lead_technician')
                                             <span class="badge bg-primary task-assign-lead">Lead</span>
+                                        @endif
+                                        @if ($cannotReceiveWork)
+                                            <span class="badge bg-warning text-dark task-assign-inactive">
+                                                Account inactive
+                                            </span>
                                         @endif
                                     </div>
                                 </label>
@@ -1899,9 +1988,9 @@
         {{-- Shared with the Tasks page and the technician portal. --}}
         <x-task-details-modal :task="$task" :technicians="$projectTechnicianModels"
             :active-task-counts="$technicianActiveTaskCounts" :schedule-ranges="$scheduleRanges"
-            :update-action="$isReadOnly ? null : route('super-admin.tasks.update', $task->task_id)" />
+            :update-action="$canTakeWork ? route('super-admin.tasks.update', $task->task_id) : null" />
 
-        @unless ($isReadOnly)
+        @if ($canTakeWork)
             @if ($task->status != 'completed' && $task->status != 'unassigned')
                 <x-task-complete-modal :task="$task"
                     :action="route('super-admin.tasks.complete', $task->task_id)" />
@@ -1909,7 +1998,7 @@
 
             <x-task-delete-modal :task="$task"
                 :action="route('super-admin.tasks.destroy', $task->task_id)" />
-        @endunless
+        @endif
     @endforeach
 
 

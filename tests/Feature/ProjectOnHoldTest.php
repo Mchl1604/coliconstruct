@@ -54,11 +54,14 @@ class ProjectOnHoldTest extends TestCase
      *
      * @param  array<int, Technician>  $technicians
      */
-    private function projectWithTeam(array $technicians, string $status = 'ongoing'): Project
-    {
+    private function projectWithTeam(
+        array $technicians,
+        string $status = 'ongoing',
+        string $reference = 'REF-0001'
+    ): Project {
         $project = Project::create([
             'name' => 'Some Project',
-            'reference_no' => 'REF-0001',
+            'reference_no' => $reference,
             'status' => $status,
             'address' => 'Address',
             'description' => 'Description',
@@ -214,23 +217,119 @@ class ProjectOnHoldTest extends TestCase
     }
 
     /**
-     * A task keeps the person holding it and loses only the dates, which
-     * lived inside a booking that no longer exists.
+     * A task whose dates survive the cutoff keeps them, along with its owner.
+     *
+     * The hold draws its line at today and keeps everything on the near side.
+     * This task starts and finishes inside those kept days, so nothing about
+     * it has stopped being true - blanking it, as a hold once did to every
+     * open task, threw away a perfectly good date.
      */
-    public function test_a_hold_clears_task_dates_without_unassigning_them(): void
+    public function test_a_hold_keeps_a_task_date_that_still_falls_on_a_booked_day(): void
     {
         $ana = $this->technician('Ana Mendoza');
-        $project = $this->scheduledProject([$ana]);
+        $project = $this->projectWithTeam([$ana]);
+
+        // Booked up to today, so the cutoff releases nothing.
+        $this->book($project, $this->day(-4), $this->day(0));
+
+        $task = Task::create([
+            'project_id' => $project->project_id,
+            'technician_id' => $ana->technician_id,
+            'task_title' => 'First fix',
+            'task_description' => 'Description',
+            'start_date' => $this->day(-3)->toDateString(),
+            'due_date' => $this->day(-1)->toDateString(),
+            'status' => 'ongoing',
+        ]);
 
         $this->put(route('super-admin.projects.hold', $project->project_id))
             ->assertSessionHasNoErrors();
 
-        $task = Task::where('project_id', $project->project_id)->first();
+        $task->refresh();
 
         $this->assertSame($ana->technician_id, $task->technician_id);
         $this->assertSame('ongoing', $task->status);
+        $this->assertSame($this->day(-3)->toDateString(), (string) $task->start_date);
+        $this->assertSame($this->day(-1)->toDateString(), (string) $task->due_date);
+    }
+
+    /**
+     * A task dated on a day the hold released loses its dates.
+     *
+     * Those days are no longer days this project exists on, so the task is
+     * pointing at dates nobody is booked for - and the task form itself would
+     * refuse them. It goes back to Unassigned and is re-dated when the project
+     * is rescheduled. Its owner is not touched.
+     */
+    public function test_a_hold_unassigns_a_task_date_that_falls_on_a_released_day(): void
+    {
+        $ana = $this->technician('Ana Mendoza');
+        $project = $this->projectWithTeam([$ana]);
+
+        $this->book($project, $this->day(0), $this->day(6));
+
+        $task = Task::create([
+            'project_id' => $project->project_id,
+            'technician_id' => $ana->technician_id,
+            'task_title' => 'Second fix',
+            'task_description' => 'Description',
+            'start_date' => $this->day(5)->toDateString(),
+            'due_date' => $this->day(6)->toDateString(),
+            'status' => 'pending',
+        ]);
+
+        $this->put(route('super-admin.projects.hold', $project->project_id))
+            ->assertSessionHasNoErrors();
+
+        $task->refresh();
+
         $this->assertNull($task->start_date);
         $this->assertNull($task->due_date);
+        // The person holding it is a separate question, and a hold does not
+        // answer it.
+        $this->assertSame($ana->technician_id, $task->technician_id);
+        $this->assertSame('pending', $task->status);
+    }
+
+    /**
+     * One task each side of the line, in one hold: the kept date stays and the
+     * released one goes, rather than the whole list being blanked together.
+     */
+    public function test_a_hold_only_unassigns_the_tasks_the_cutoff_stranded(): void
+    {
+        $ana = $this->technician('Ana Mendoza');
+        $project = $this->projectWithTeam([$ana]);
+
+        $this->book($project, $this->day(-3), $this->day(6));
+
+        $kept = Task::create([
+            'project_id' => $project->project_id,
+            'technician_id' => $ana->technician_id,
+            'task_title' => 'Worked already',
+            'task_description' => 'Description',
+            'start_date' => $this->day(-3)->toDateString(),
+            'due_date' => $this->day(-1)->toDateString(),
+            'status' => 'ongoing',
+        ]);
+
+        $stranded = Task::create([
+            'project_id' => $project->project_id,
+            'technician_id' => $ana->technician_id,
+            'task_title' => 'Still to come',
+            'task_description' => 'Description',
+            'start_date' => $this->day(4)->toDateString(),
+            'due_date' => $this->day(6)->toDateString(),
+            'status' => 'pending',
+        ]);
+
+        $this->put(route('super-admin.projects.hold', $project->project_id))
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame($this->day(-3)->toDateString(), (string) $kept->refresh()->start_date);
+        $this->assertSame($this->day(-1)->toDateString(), (string) $kept->due_date);
+
+        $this->assertNull($stranded->refresh()->start_date);
+        $this->assertNull($stranded->due_date);
     }
 
     /**
@@ -585,6 +684,88 @@ class ProjectOnHoldTest extends TestCase
         $this->get(route('super-admin.projects'))->assertOk();
 
         $this->assertSame('ongoing', $project->fresh()->status);
+    }
+
+    /**
+     * A hold hands the crew's remaining day back, so somebody else can book
+     * them onto it. Resuming must not quietly take it again.
+     *
+     * The hold keeps the day it was placed on, because work was done on it.
+     * That kept day stops blocking anybody the moment the project goes on
+     * hold - a held project is not active work - which is what lets a second
+     * project be booked over it. Lifting the hold puts the day back into
+     * force, and if the crew has since been promised elsewhere on it the
+     * project would come back double-booked with nobody told.
+     */
+    public function test_resuming_is_refused_when_the_crew_was_booked_over_a_kept_day(): void
+    {
+        $ana = $this->technician('Ana Mendoza');
+
+        $held = $this->projectWithTeam([$ana], 'ongoing', 'PRJ-000001');
+        $this->book($held, $this->day(-2), $this->day(0));
+
+        $this->put(route('super-admin.projects.hold', $held->project_id))
+            ->assertSessionHasNoErrors();
+
+        // The kept day is free as far as everyone else is concerned, so this
+        // booking is allowed - and it is what the resume then collides with.
+        $other = $this->projectWithTeam([$ana], 'ongoing', 'PRJ-000002');
+        $this->book($other, $this->day(0), $this->day(3));
+
+        $this->put(route('super-admin.projects.resume', $held->project_id))
+            ->assertSessionHas('error');
+
+        $held->refresh();
+
+        $this->assertTrue($held->on_hold, 'A refused resume leaves the hold in place.');
+    }
+
+    /**
+     * The refusal names who is double-booked and what they are booked on, so
+     * the person can go and fix the actual clash.
+     */
+    public function test_a_refused_resume_says_who_is_double_booked_and_where(): void
+    {
+        $ana = $this->technician('Ana Mendoza');
+
+        $held = $this->projectWithTeam([$ana], 'ongoing', 'PRJ-000001');
+        $this->book($held, $this->day(-2), $this->day(0));
+
+        $this->put(route('super-admin.projects.hold', $held->project_id));
+
+        $other = $this->projectWithTeam([$ana], 'ongoing', 'PRJ-000002');
+        $this->book($other, $this->day(0), $this->day(3));
+
+        $response = $this->put(route('super-admin.projects.resume', $held->project_id));
+
+        $error = session('error');
+
+        $this->assertStringContainsString('Ana Mendoza', $error);
+        $this->assertStringContainsString('PRJ-000002', $error);
+    }
+
+    /**
+     * The check is about the days the project actually still holds. A hold
+     * that kept nothing has nothing to clash with, so the crew being busy
+     * elsewhere is none of the resume's business.
+     */
+    public function test_a_resume_is_allowed_when_the_clash_is_outside_the_kept_days(): void
+    {
+        $ana = $this->technician('Ana Mendoza');
+
+        $held = $this->projectWithTeam([$ana], 'ongoing', 'PRJ-000001');
+        $this->book($held, $this->day(-4), $this->day(-2));
+
+        $this->put(route('super-admin.projects.hold', $held->project_id));
+
+        $other = $this->projectWithTeam([$ana], 'ongoing', 'PRJ-000002');
+        $this->book($other, $this->day(0), $this->day(3));
+
+        $this->put(route('super-admin.projects.resume', $held->project_id))
+            ->assertSessionHasNoErrors()
+            ->assertSessionHas('success');
+
+        $this->assertFalse($held->fresh()->on_hold);
     }
 
     /**

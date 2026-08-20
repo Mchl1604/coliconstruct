@@ -44,7 +44,7 @@ class ConfigurationUserManagementTest extends TestCase
             'first_name' => 'Ana',
             'middle_name' => 'B',
             'last_name' => 'Mendoza',
-            'contact_number' => '0917 555 1234',
+            'contact_number' => '09175551234',
             'birthdate' => '1990-05-04',
             'email' => 'ana.mendoza@example.test',
             'role' => 'admin',
@@ -399,15 +399,22 @@ class ConfigurationUserManagementTest extends TestCase
             ->assertJsonPath('account.birthdate', '1990-05-04');
     }
 
+    /**
+     * A contact number is eleven digits and nothing else, on every form in the
+     * system - see User::CONTACT_NUMBER_RULE. Anything with a letter, a space
+     * or a + in it is refused, as is a run of digits that is the wrong length.
+     */
     public function test_an_invalid_contact_number_is_rejected(): void
     {
-        $response = $this->postJson(
-            route('super-admin.configuration.users.employees.store'),
-            $this->employeePayload(['contact_number' => 'not-a-number'])
-        );
+        foreach (['not-a-number', '0917 555 1234', '+639175551234', '0917555123', '091755512345'] as $number) {
+            $response = $this->postJson(
+                route('super-admin.configuration.users.employees.store'),
+                $this->employeePayload(['contact_number' => $number])
+            );
 
-        $response->assertStatus(422);
-        $this->assertStringContainsString('valid contact number', $response->json('error'));
+            $response->assertStatus(422);
+            $this->assertStringContainsString('11-digit contact number', $response->json('error'));
+        }
     }
 
     public function test_required_employee_fields_are_enforced(): void

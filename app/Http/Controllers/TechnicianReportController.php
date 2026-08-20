@@ -45,6 +45,17 @@ class TechnicianReportController extends Controller
             );
         }
 
+        // Paused work takes no reports. A hold keeps its status at
+        // Unscheduled, which is a reportable one, so this has to be asked
+        // separately - a report describes a visit, and nobody is visiting a
+        // project that has been paused.
+        if ($project->on_hold) {
+            return back()->with(
+                'error',
+                sprintf('%s is on hold. Resume it before filing a report.', $project->name)
+            );
+        }
+
         DB::beginTransaction();
 
         try {

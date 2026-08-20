@@ -179,11 +179,18 @@
                                     <label class="form-label small fw-semibold mb-1" for="contactNumber">
                                         Contact Number <span class="text-danger">*</span>
                                     </label>
-                                    <input type="tel"
+                                    {{-- Eleven digits and nothing else, the same rule
+                                         User::CONTACT_NUMBER_RULE applies on the server.
+                                         registerForm.js strips anything that is not a
+                                         digit as it is typed or pasted. --}}
+                                    <input type="text"
                                         class="form-control @error('contact_number', 'information') is-invalid @enderror"
-                                        id="contactNumber" name="contact_number" maxlength="32"
-                                        placeholder="09XX XXX XXXX" autocomplete="tel"
+                                        id="contactNumber" name="contact_number" inputmode="numeric"
+                                        data-digits-only
+                                        maxlength="{{ \App\Models\User::CONTACT_NUMBER_LENGTH }}"
+                                        placeholder="09171234567" autocomplete="tel"
                                         value="{{ old('contact_number', $account->contact_number) }}" required>
+                                    <div class="form-text">11 digits, numbers only.</div>
                                     @error('contact_number', 'information')
                                         <div class="invalid-feedback">{{ $message }}</div>
                                     @enderror
@@ -268,7 +275,12 @@
                     @endif
                 </div>
 
-                {{-- ------------------------------------- Specialties ---- --}}
+                {{-- ------------------------------------- Specialties ----
+                     The panel shows what this technician is approved for and
+                     nothing else. Changing the list is a separate act with an
+                     administrator's decision attached to it, so it lives behind
+                     an Edit button and a dialog rather than sitting open on the
+                     page as a permanently half-filled form. --}}
                 @if ($showsSpecialties)
                     <div class="card shadow-sm border-0 rounded-3 mb-4">
                         <div class="card-header bg-white d-flex flex-wrap justify-content-between align-items-center gap-2">
@@ -277,15 +289,34 @@
                                 Specialties
                             </h2>
 
-                            @if ($pendingRequest)
-                                <span class="badge bg-warning text-dark">Pending Approval</span>
-                            @endif
+                            <div class="d-flex align-items-center gap-2">
+                                @if ($pendingRequest)
+                                    <span class="badge bg-warning text-dark">Pending Approval</span>
+                                @endif
+
+                                {{-- While a request is outstanding there is
+                                     nothing to edit: an administrator is being
+                                     asked to decide on exactly one proposal, and
+                                     a second would replace it silently. --}}
+                                <button type="button" class="btn btn-sm btn-outline-primary"
+                                    data-bs-toggle="modal" data-bs-target="#specialtiesModal"
+                                    @disabled($pendingRequest || $allSkills->isEmpty())
+                                    title="{{ $pendingRequest
+                                        ? 'A change is already waiting for an administrator to decide.'
+                                        : ($allSkills->isEmpty()
+                                            ? 'No specialties have been set up yet.'
+                                            : 'Request a change to your specialties') }}">
+                                    <i class="bi bi-pencil-square me-1" aria-hidden="true"></i>
+                                    Edit
+                                </button>
+                            </div>
                         </div>
 
                         <div class="card-body">
                             <div class="profile-section-label">Approved Specialties</div>
 
-                            <div class="d-flex flex-wrap gap-2 mb-4">
+                            <div class="d-flex flex-wrap gap-2 mt-2 {{ $pendingRequest ? 'mb-4' : 'mb-0' }}"
+                                data-approved-specialties>
                                 @forelse ($approvedSkills as $skill)
                                     <span class="profile-chip">
                                         <i class="bi bi-check2" aria-hidden="true"></i>
@@ -297,10 +328,8 @@
                             </div>
 
                             @if ($pendingRequest)
-                                {{-- While a request is outstanding the technician
-                                     can neither submit another nor edit this one:
-                                     an administrator is being asked to decide on
-                                     exactly what is shown here. --}}
+                                {{-- What has been asked for, set apart so it
+                                     reads as "not yet true". --}}
                                 <div class="profile-pending-panel">
                                     <div class="profile-section-label mb-2">Pending Changes</div>
 
@@ -325,53 +354,80 @@
                                         another request until then.
                                     </p>
                                 </div>
-                            @else
-                                <form method="POST" action="{{ route('profile.specialties.request') }}">
-                                    @csrf
-
-                                    <div class="profile-section-label mb-2">Request a Change</div>
-
-                                    <p class="text-secondary small">
-                                        Tick the specialties you should hold. Nothing changes until an administrator
-                                        approves the request.
-                                    </p>
-
-                                    <div class="row g-2 mb-3">
-                                        @foreach ($allSkills as $skill)
-                                            @php
-                                                $isApproved = $approvedSkills->contains('skill_id', $skill->skill_id);
-                                            @endphp
-
-                                            <div class="col-sm-6 col-xl-4">
-                                                <div class="form-check">
-                                                    <input class="form-check-input" type="checkbox"
-                                                        name="skill_ids[]" value="{{ $skill->skill_id }}"
-                                                        id="skill{{ $skill->skill_id }}"
-                                                        @checked(collect(old('skill_ids', $approvedSkills->pluck('skill_id')->all()))->contains($skill->skill_id))>
-                                                    <label class="form-check-label" for="skill{{ $skill->skill_id }}">
-                                                        {{ $skill->skill_name }}
-                                                        @if ($isApproved)
-                                                            <span class="text-success small">(approved)</span>
-                                                        @endif
-                                                    </label>
-                                                </div>
-                                            </div>
-                                        @endforeach
-                                    </div>
-
-                                    @error('skill_ids', 'specialties')
-                                        <div class="alert alert-danger small py-2">{{ $message }}</div>
-                                    @enderror
-
-                                    <button type="submit" class="btn btn-primary px-4"
-                                        @disabled($allSkills->isEmpty())>
-                                        <i class="bi bi-send me-1" aria-hidden="true"></i>
-                                        Submit for Approval
-                                    </button>
-                                </form>
                             @endif
                         </div>
                     </div>
+
+                    {{-- The editor. Posts to the same endpoint the open form
+                         used to, so the approval rules are unchanged: nothing
+                         here alters a specialty, it asks for one. --}}
+                    @unless ($pendingRequest)
+                        <div class="modal fade" id="specialtiesModal" tabindex="-1"
+                            aria-labelledby="specialtiesModalLabel" aria-hidden="true">
+                            <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+                                <div class="modal-content">
+                                    <form method="POST" action="{{ route('profile.specialties.request') }}">
+                                        @csrf
+
+                                        <div class="modal-header">
+                                            <h5 class="modal-title" id="specialtiesModalLabel">Edit Specialties</h5>
+                                            <button type="button" class="btn-close" data-bs-dismiss="modal"
+                                                aria-label="Close"></button>
+                                        </div>
+
+                                        <div class="modal-body">
+                                            <p class="text-secondary small">
+                                                Tick the specialties you should hold. Nothing changes until an
+                                                administrator approves the request; your approved specialties stay
+                                                active in the meantime.
+                                            </p>
+
+                                            @error('skill_ids', 'specialties')
+                                                <div class="alert alert-danger small py-2">{{ $message }}</div>
+                                            @enderror
+
+                                            {{-- The approved specialty catalogue, which is
+                                                 the Project Types list - a technician can
+                                                 only ever hold a specialty the company
+                                                 actually offers. --}}
+                                            <div class="row g-2">
+                                                @foreach ($allSkills as $skill)
+                                                    @php
+                                                        $isApproved = $approvedSkills->contains('skill_id', $skill->skill_id);
+                                                    @endphp
+
+                                                    <div class="col-sm-6 col-xl-4">
+                                                        <div class="form-check">
+                                                            <input class="form-check-input" type="checkbox"
+                                                                name="skill_ids[]" value="{{ $skill->skill_id }}"
+                                                                id="skill{{ $skill->skill_id }}"
+                                                                @checked(collect(old('skill_ids', $approvedSkills->pluck('skill_id')->all()))->contains($skill->skill_id))>
+                                                            <label class="form-check-label" for="skill{{ $skill->skill_id }}">
+                                                                {{ $skill->skill_name }}
+                                                                @if ($isApproved)
+                                                                    <span class="text-success small">(approved)</span>
+                                                                @endif
+                                                            </label>
+                                                        </div>
+                                                    </div>
+                                                @endforeach
+                                            </div>
+                                        </div>
+
+                                        <div class="modal-footer">
+                                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                                                Cancel
+                                            </button>
+                                            <button type="submit" class="btn btn-primary" @disabled($allSkills->isEmpty())>
+                                                <i class="bi bi-send me-1" aria-hidden="true"></i>
+                                                Submit for Approval
+                                            </button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    @endunless
                 @endif
 
                 {{-- --------------------------------- Change password ---- --}}
@@ -389,15 +445,30 @@
                             @method('PUT')
 
                             <div class="row g-3">
+                                {{-- Each field carries the show/hide eye the sign-in
+                                     screens have, driven by the same passwordField.js:
+                                     the eye is a wrapper marked `data-password-field`
+                                     with a `data-password-toggle` button inside it, and
+                                     nothing about the fields themselves changes. The
+                                     invalid-feedback sits outside the input group,
+                                     which Bootstrap will not render from inside one. --}}
                                 <div class="col-md-4">
                                     <label class="form-label small fw-semibold mb-1" for="currentPassword">
                                         Current Password <span class="text-danger">*</span>
                                     </label>
-                                    <input type="password" class="form-control @error('current_password', 'password') is-invalid @enderror"
-                                        id="currentPassword" name="current_password"
-                                        autocomplete="current-password" required>
+                                    <div class="input-group" data-password-field>
+                                        <input type="password"
+                                            class="form-control border-end-0 @error('current_password', 'password') is-invalid @enderror"
+                                            id="currentPassword" name="current_password"
+                                            autocomplete="current-password" required>
+                                        <button class="btn btn-outline-secondary border-start-0" type="button"
+                                            data-password-toggle aria-label="Show password" aria-pressed="false"
+                                            tabindex="-1">
+                                            <i class="bi bi-eye" aria-hidden="true"></i>
+                                        </button>
+                                    </div>
                                     @error('current_password', 'password')
-                                        <div class="invalid-feedback">{{ $message }}</div>
+                                        <div class="text-danger small mt-1">{{ $message }}</div>
                                     @enderror
                                 </div>
 
@@ -405,12 +476,20 @@
                                     <label class="form-label small fw-semibold mb-1" for="newPassword">
                                         New Password <span class="text-danger">*</span>
                                     </label>
-                                    <input type="password" class="form-control @error('password', 'password') is-invalid @enderror"
-                                        id="newPassword" name="password" minlength="8"
-                                        autocomplete="new-password" required>
-                                    <div class="form-text">At least 8 characters.</div>
+                                    <div class="input-group" data-password-field>
+                                        <input type="password"
+                                            class="form-control border-end-0 @error('password', 'password') is-invalid @enderror"
+                                            id="newPassword" name="password" minlength="8" maxlength="72"
+                                            autocomplete="new-password" data-password-new required>
+                                        <button class="btn btn-outline-secondary border-start-0" type="button"
+                                            data-password-toggle aria-label="Show password" aria-pressed="false"
+                                            tabindex="-1">
+                                            <i class="bi bi-eye" aria-hidden="true"></i>
+                                        </button>
+                                    </div>
+                                    <div class="form-text" data-password-match>At least 8 characters.</div>
                                     @error('password', 'password')
-                                        <div class="invalid-feedback">{{ $message }}</div>
+                                        <div class="text-danger small mt-1">{{ $message }}</div>
                                     @enderror
                                 </div>
 
@@ -418,9 +497,17 @@
                                     <label class="form-label small fw-semibold mb-1" for="confirmPassword">
                                         Confirm New Password <span class="text-danger">*</span>
                                     </label>
-                                    <input type="password" class="form-control" id="confirmPassword"
-                                        name="password_confirmation" minlength="8" autocomplete="new-password"
-                                        required>
+                                    <div class="input-group" data-password-field>
+                                        <input type="password" class="form-control border-end-0"
+                                            id="confirmPassword" name="password_confirmation" minlength="8"
+                                            maxlength="72" autocomplete="new-password" data-password-confirm
+                                            required>
+                                        <button class="btn btn-outline-secondary border-start-0" type="button"
+                                            data-password-toggle aria-label="Show password" aria-pressed="false"
+                                            tabindex="-1">
+                                            <i class="bi bi-eye" aria-hidden="true"></i>
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
 
@@ -434,4 +521,13 @@
             </div>
         </div>
     </div>
+
+    @push('scripts')
+        {{-- The show/hide eye on every password field, and the live "do these
+             two match" indication between the new password and its
+             confirmation. The same file the sign-in screens use. --}}
+        <script src="/js/passwordField.js"></script>
+        {{-- Keeps the contact number to digits only. --}}
+        <script src="/js/registerForm.js"></script>
+    @endpush
 @endsection

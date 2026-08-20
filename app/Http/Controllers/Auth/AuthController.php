@@ -189,16 +189,25 @@ class AuthController extends Controller
     {
         $validated = $request->validate([
             'full_name' => ['required', 'string', 'max:255'],
-            'contact_number' => ['required', 'string', 'max:32', User::CONTACT_NUMBER_RULE],
+            'contact_number' => ['required', 'string', 'max:'.User::CONTACT_NUMBER_LENGTH, User::CONTACT_NUMBER_RULE],
             // Nobody under 18 gets an account, whichever form opens it.
             'birthdate' => AccountAge::rules(),
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
             'password' => ['required', 'string', 'min:8', 'max:72', 'confirmed'],
+            // Checked on the server as well as in the browser: a checkbox is
+            // the easiest field in a form to leave out of a request.
+            'terms' => ['accepted'],
         ], [
             'email.unique' => 'An account already exists for that email address.',
-            'contact_number.regex' => 'Enter a valid contact number.',
+            'contact_number.regex' => User::CONTACT_NUMBER_MESSAGE,
+            'contact_number.max' => User::CONTACT_NUMBER_MESSAGE,
             'password.confirmed' => 'The two passwords do not match.',
+            'terms.accepted' => 'Please read and accept the Terms and Conditions to continue.',
         ] + AccountAge::messages());
+
+        // Never handed to the account service: agreeing is a precondition of
+        // registering, not a column on the account.
+        unset($validated['terms']);
 
         $user = app(UserAccountService::class)->registerClient($validated);
 

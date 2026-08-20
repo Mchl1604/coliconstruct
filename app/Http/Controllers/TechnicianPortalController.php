@@ -17,6 +17,7 @@ use App\Services\ActivityLogger;
 use App\Services\NotificationService;
 use App\Services\ProjectCompletion;
 use App\Services\ProjectEmails;
+use App\Services\TaskAssignmentRules;
 use App\Services\TaskScheduleRules;
 use App\Services\TechnicianTaskLoad;
 use Carbon\CarbonImmutable;
@@ -61,6 +62,7 @@ class TechnicianPortalController extends Controller
 
     public function __construct(
         private TaskScheduleRules $scheduleRules,
+        private readonly TaskAssignmentRules $assignmentRules,
         private ProjectPolicy $projectPolicy,
         private readonly ActivityLogger $activityLogger,
         private readonly NotificationService $notifications,
@@ -118,9 +120,20 @@ class TechnicianPortalController extends Controller
         // dialog fetches them when it opens instead.
         return view('technician.projects', [
             'projects' => $projects,
-            'overdueCount' => $projects->filter->isOverdue()->count(),
+            // The same tabs and the same counts the administrative projects
+            // table draws, from the same method - so "3 Ongoing" here means
+            // exactly what it means there.
+            'statusTabs' => Project::statusTabs($projects),
             // Closing a project is a lead's call; a technician only reads.
             'canCloseProjects' => $request->user()->isLeadTechnician(),
+            // A deactivated account keeps whatever it was booked on - see
+            // Project::inactiveCrew() - so the crew it leaves short has to be
+            // told rather than left to find out on the day. The administrative
+            // projects table already flags this; the lead running the job is
+            // the other person who needs to know, and the flag is theirs
+            // alone: a technician cannot act on somebody else's account and
+            // has no tasks to move.
+            'flagsInactiveCrew' => $request->user()->isLeadTechnician(),
         ]);
     }
 
@@ -204,6 +217,10 @@ class TechnicianPortalController extends Controller
             'canManageTasks' => $this->projectPolicy->manageTasks($user, $project),
             'canSubmitReport' => $this->projectPolicy->submitReport($user, $project),
             'canCloseProjects' => $user->isLeadTechnician(),
+            // Same flag My Projects carries, for the same reason: the lead is
+            // told their crew is short, and here they can see which of them it
+            // is and move the work off them.
+            'flagsInactiveCrew' => $user->isLeadTechnician(),
             'completionBlockers' => $this->projectPolicy->blockersFor($project),
             'reportTypes' => TechnicianReport::TYPES,
         ]);
@@ -267,11 +284,28 @@ class TechnicianPortalController extends Controller
     }
 
     /**
-     * Reports: everything this lead has filed, plus the form to file more.
+     * Reports: everything this lead has filed themselves, plus the form to
+     * file more.
+     *
+     * "Filed themselves" is the account that pressed Submit, not the
+     * technician the report is filed against. The two are usually the same
+     * person, but not always: an administrator filing a report from the
+     * Reports page credits it to the project's lead when the form does not say
+     * otherwise (see TechnicianReportController::defaultTechnicianId), and a
+     * report somebody else wrote has no business in this lead's own list.
+     *
+     * Reports written before submitted_by existed carry no account at all, so
+     * they fall back to the technician the report is about - which for those
+     * rows is who filed them.
+     *
+     * This narrowing is deliberately confined to this page. Opening a project
+     * still shows every report on it whoever filed it: the question there is
+     * "what has happened on this job", not "what have I written".
      */
     public function reports(Request $request)
     {
         $technician = $this->technician($request);
+        $accountId = $request->user()->id;
 
         $reports = TechnicianReport::query()
             ->with([
@@ -280,7 +314,12 @@ class TechnicianPortalController extends Controller
                 'technician.account',
                 'submitter',
             ])
-            ->where('technician_id', $technician->technician_id)
+            ->where(function ($mine) use ($accountId, $technician): void {
+                $mine->where('submitted_by', $accountId)
+                    ->orWhere(fn ($legacy) => $legacy
+                        ->whereNull('submitted_by')
+                        ->where('technician_id', $technician->technician_id));
+            })
             ->orderByDesc('report_date')
             ->orderByDesc('id')
             ->get();
@@ -395,6 +434,8 @@ class TechnicianPortalController extends Controller
         ]);
 
         $this->scheduleRules->attach($validator, $ranges);
+        // New work, so there is no current owner to make an exception for.
+        $this->assignmentRules->attach($validator);
 
         if ($validator->fails()) {
             return $this->failed($request, $validator->errors()->first());
@@ -463,6 +504,10 @@ class TechnicianPortalController extends Controller
         ]);
 
         $this->scheduleRules->attach($validator, $ranges);
+        // Whoever holds the task may keep it: editing its wording or its dates
+        // re-submits the owner, and refusing that would make an inactive
+        // technician's work uneditable - including the handover off them.
+        $this->assignmentRules->attach($validator, (int) $task->technician_id);
 
         if ($validator->fails()) {
             return $this->failed($request, $validator->errors()->first());
@@ -912,6 +957,11 @@ class TechnicianPortalController extends Controller
                     'name' => $assignment->technician->name,
                     'role' => optional($assignment->technician->account)->role,
                     'is_lead' => optional($assignment->technician->account)->role === 'lead_technician',
+                    // Somebody whose account has been switched off stays on the
+                    // list, because they are still on the team - but the card is
+                    // rendered unselectable. See TaskAssignmentRules, which
+                    // refuses the same choice on the way back in.
+                    'can_receive_work' => $assignment->technician->isAssignable(),
                     // Their own picture, or the default avatar - the same
                     // source the Blade-rendered assign cards draw from, so the
                     // two never show the same person differently.

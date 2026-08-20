@@ -58,6 +58,26 @@
     margin-top: 0.35rem;
 }
 
+/* Somebody who can no longer be given work.
+
+   The card stays on the row rather than disappearing, because the person is
+   still on the team and a picker that quietly drops them reads as a list that
+   has forgotten somebody. What it must not do is look clickable: the pointer
+   says so, the fade says so, and the badge says why. */
+
+.btn-check:disabled + .task-assign-card,
+.btn-check:disabled + .task-assign-card:hover {
+    cursor: not-allowed;
+    opacity: 0.55;
+    background: #f8f9fa;
+    border-color: transparent;
+}
+
+.task-assign-inactive {
+    display: inline-block;
+    margin-top: 0.35rem;
+}
+
 /**
  * The view-only counterpart: who holds the task, stated rather than offered
  * as one greyed-out option among several.

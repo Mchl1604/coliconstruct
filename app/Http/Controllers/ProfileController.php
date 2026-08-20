@@ -128,7 +128,7 @@ class ProfileController extends Controller
             'last_name' => ['required', 'string', 'max:100'],
             // Theirs to correct: a number that has changed is no use to
             // anybody sitting behind an administrator's queue.
-            'contact_number' => ['required', 'string', 'max:32', User::CONTACT_NUMBER_RULE],
+            'contact_number' => ['required', 'string', 'max:'.User::CONTACT_NUMBER_LENGTH, User::CONTACT_NUMBER_RULE],
             'email' => [
                 'required', 'string', 'email', 'max:255',
                 // Their own address is theirs to keep; anybody else's is taken,
@@ -138,7 +138,8 @@ class ProfileController extends Controller
             ],
         ], [
             'email.unique' => 'Another account already uses that email address.',
-            'contact_number.regex' => 'Enter a valid contact number.',
+            'contact_number.regex' => User::CONTACT_NUMBER_MESSAGE,
+            'contact_number.max' => User::CONTACT_NUMBER_MESSAGE,
         ]);
 
         return $this->attempt(

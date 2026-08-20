@@ -8,6 +8,7 @@ use App\Models\Task;
 use App\Models\TaskImage;
 use App\Services\ActivityLogger;
 use App\Services\NotificationService;
+use App\Services\TaskAssignmentRules;
 use App\Services\TaskScheduleRules;
 use App\Services\TechnicianTaskLoad;
 use Carbon\Carbon;
@@ -22,6 +23,7 @@ class TaskController extends Controller
 {
     public function __construct(
         private TaskScheduleRules $scheduleRules,
+        private readonly TaskAssignmentRules $assignmentRules,
         private readonly ActivityLogger $activityLogger,
         private readonly NotificationService $notifications,
     ) {}
@@ -110,6 +112,14 @@ class TaskController extends Controller
             ], 422);
         }
 
+        // Paused work takes no new tasks: a task is something to be done on a
+        // booked day, and a hold has released every day still to come.
+        if ($project->on_hold) {
+            return response()->json([
+                'error' => 'This project is on hold. Resume it before adding tasks.',
+            ], 422);
+        }
+
         $ranges = $this->scheduleRanges($projectId);
 
         if ($ranges === []) {
@@ -136,6 +146,11 @@ class TaskController extends Controller
                     'name' => $technician->name,
                     'role' => optional($technician->account)->role,
                     'is_lead' => $isLead,
+                    // Somebody whose account has been switched off stays on the
+                    // list, because they are still on the team - but the card is
+                    // rendered unselectable. See TaskAssignmentRules, which
+                    // refuses the same choice on the way back in.
+                    'can_receive_work' => $technician->isAssignable(),
                     // Their own picture, or the default avatar - the same
                     // source the Blade-rendered assign cards draw from, so the
                     // two never show the same person differently.
@@ -172,6 +187,12 @@ class TaskController extends Controller
                 ->with('error', 'This project is '.$project->status.' and no longer accepts new tasks.');
         }
 
+        if ($project->on_hold) {
+            return redirect()
+                ->back()
+                ->with('error', 'This project is on hold. Resume it before adding tasks.');
+        }
+
         $ranges = $this->scheduleRanges($projectId);
 
         if ($ranges === []) {
@@ -191,6 +212,8 @@ class TaskController extends Controller
         ]);
 
         $this->attachRangeRule($validator, $ranges);
+        // New work, so there is no current owner to make an exception for.
+        $this->assignmentRules->attach($validator);
 
         $validated = $validator->validate();
 
@@ -260,6 +283,14 @@ class TaskController extends Controller
             return back()->with('error', 'This project is '.$project->status.' and its tasks can no longer be edited.');
         }
 
+        // Paused work is left exactly as it stands. Its tasks keep their dates
+        // and their owners through the hold (see ProjectController), and
+        // editing them while nobody is working is a change that belongs after
+        // the resume.
+        if ($project->on_hold) {
+            return back()->with('error', 'This project is on hold. Resume it before editing its tasks.');
+        }
+
         if ($task->status == 'completed') {
             return back();
         }
@@ -281,6 +312,10 @@ class TaskController extends Controller
         ]);
 
         $this->attachRangeRule($validator, $ranges);
+        // Whoever holds the task may keep it: editing its wording or its dates
+        // re-submits the owner, and refusing that would make an inactive
+        // technician's work uneditable - including the handover off them.
+        $this->assignmentRules->attach($validator, (int) $task->technician_id);
 
         $validated = $validator->validate();
 
@@ -343,6 +378,14 @@ class TaskController extends Controller
 
         if ($project->isReadOnly()) {
             return back()->with('error', 'This project is '.$project->status.' and its tasks can no longer be edited.');
+        }
+
+        // Paused work is left exactly as it stands. Its tasks keep their dates
+        // and their owners through the hold (see ProjectController), and
+        // editing them while nobody is working is a change that belongs after
+        // the resume.
+        if ($project->on_hold) {
+            return back()->with('error', 'This project is on hold. Resume it before editing its tasks.');
         }
 
         if ($task->status === 'completed') {
@@ -419,6 +462,14 @@ class TaskController extends Controller
 
         if ($project->isReadOnly()) {
             return back()->with('error', 'This project is '.$project->status.' and its tasks can no longer be edited.');
+        }
+
+        // Paused work is left exactly as it stands. Its tasks keep their dates
+        // and their owners through the hold (see ProjectController), and
+        // editing them while nobody is working is a change that belongs after
+        // the resume.
+        if ($project->on_hold) {
+            return back()->with('error', 'This project is on hold. Resume it before editing its tasks.');
         }
 
         DB::beginTransaction();

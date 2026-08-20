@@ -14,6 +14,7 @@ use App\Services\ActivityLogger;
 use App\Services\NotificationService;
 use App\Services\ProfileService;
 use App\Services\ProjectTeam;
+use App\Services\ProjectTeamRules;
 use App\Services\TechnicianAvailabilityService;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
@@ -56,7 +57,8 @@ class TechnicianController extends Controller
     public function __construct(
         private readonly ActivityLogger $activityLogger,
         private readonly NotificationService $notifications,
-        private readonly ProjectTeam $projectTeam
+        private readonly ProjectTeam $projectTeam,
+        private readonly ProjectTeamRules $teamRules
     ) {}
 
     public function index()
@@ -446,6 +448,16 @@ class TechnicianController extends Controller
      */
     public function assignableProjects(Technician $technician)
     {
+        // Asked here as well as on the way in, so a switched-off account is
+        // told why up front instead of being walked through a list of projects
+        // and refused at the last step. The button that opens this is already
+        // hidden for them; this is what answers a stale page.
+        if (! $technician->isAssignable()) {
+            return response()->json([
+                'error' => $this->teamRules->unavailableMessage($technician),
+            ], 422);
+        }
+
         $candidates = Project::query()
             ->with(['clients', 'schedules', 'projectTechnicians.technician.account'])
             ->whereIn('status', self::STAFFABLE_STATUSES)
@@ -563,13 +575,12 @@ class TechnicianController extends Controller
 
         // The other end of the same rule the team editor applies: an account
         // that cannot sign in cannot be given work, and this page hands out
-        // work from the technician's side rather than the project's.
+        // work from the technician's side rather than the project's. The
+        // sentence is ProjectTeamRules' so the two screens refuse the same
+        // thing in the same words, and name the same reason for it.
         if (! $technician->isAssignable()) {
             return response()->json([
-                'error' => sprintf(
-                    "%s's account is no longer active, so they cannot be assigned to a project.",
-                    $technician->name
-                ),
+                'error' => $this->teamRules->unavailableMessage($technician),
             ], 422);
         }
 
@@ -739,20 +750,36 @@ class TechnicianController extends Controller
      * Lead-role technicians who are not on this project and who are free for
      * every day of its schedule.
      *
+     * Two things this deliberately does NOT do, both of which it used to.
+     *
+     * It no longer gives up on a project with no dates. An unscheduled project
+     * has nothing to check availability against, which is a reason to skip the
+     * availability pass and not a reason to offer nobody - offering nobody
+     * made the outgoing lead impossible to remove, because removeFromProject()
+     * requires a replacement drawn from this very list. The lead was stuck
+     * until somebody scheduled the project.
+     *
+     * And it no longer offers accounts that have been switched off. Screening
+     * on the lead role alone let a deactivated or archived technician be
+     * installed as the new lead of a live project - an account that cannot
+     * sign in, so cannot open the project, close a task or read the
+     * notification saying it now leads one. ProjectTeamRules refuses exactly
+     * that on the team editor, and the two screens have to refuse the same
+     * thing.
+     *
      * @return Collection<int, Technician>
      */
     private function availableReplacementLeads(Project $project): Collection
     {
         $ranges = $this->projectRanges($project);
 
-        if ($ranges === []) {
-            return collect();
-        }
-
         $assignedIds = $project->projectTechnicians->pluck('technician_id')->all();
 
         $candidates = Technician::query()
             ->with(['account', 'skills'])
+            // assignable() is the shared answer to "may this person be given
+            // work?" - the lead role AND an account that can still sign in.
+            ->assignable()
             ->whereHas('account', function ($query): void {
                 $query->where('role', self::LEAD_ROLE);
             })
@@ -762,6 +789,12 @@ class TechnicianController extends Controller
 
         if ($candidates->isEmpty()) {
             return collect();
+        }
+
+        // No dates means no clash to find. Everybody eligible is free, because
+        // there is nothing yet to be free of.
+        if ($ranges === []) {
+            return $candidates->values();
         }
 
         // One bulk availability pass for every candidate rather than a query
@@ -945,6 +978,12 @@ class TechnicianController extends Controller
             'position' => $this->positionLabel($technician),
             'email' => $technician->account?->email,
             'avatar_url' => $technician->account?->avatarUrl(),
+            // The account's own state, in the same words and colours the
+            // profile page prints it in - so "Deactivated" means one thing
+            // across the application.
+            'status_label' => $technician->account?->statusLabel() ?? 'No account',
+            'status_badge_class' => $technician->account?->statusBadgeClass() ?? 'bg-dark',
+            'can_receive_work' => $technician->isAssignable(),
             'specialties' => $technician->skills
                 ->map(fn (Skill $skill): array => [
                     'skill_id' => $skill->skill_id,

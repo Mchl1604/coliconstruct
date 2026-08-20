@@ -32,21 +32,22 @@
         <div class="col-12 col-xl-8">
             <div class="card shadow-sm border-0 rounded-2 h-100">
                 <div class="card-body p-3">
-                    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
-                        <div>
-                            <div class="technician-eyebrow">Calendar View</div>
-                            <h5 class="fw-bold mb-0">My assigned projects</h5>
-                        </div>
-                        <span class="schedule-count-pill">
-                            {{ count($events) }} scheduled {{ \Illuminate\Support\Str::plural('block', count($events)) }}
-                        </span>
+                    <div class="mb-3">
+                        <div class="technician-eyebrow">Calendar View</div>
+                        <h5 class="fw-bold mb-0">My assigned projects</h5>
                     </div>
 
+                    {{-- Read from the model so this key and the bookings it
+                         explains cannot drift apart - written out by hand it
+                         went stale, and never gained Awaiting Completion
+                         Confirmation. --}}
                     <div class="schedule-legend mb-3">
-                        <span class="schedule-legend-item"><i class="schedule-dot" style="background:#f0ad4e"></i> Pending</span>
-                        <span class="schedule-legend-item"><i class="schedule-dot" style="background:#0d6efd"></i> Ongoing</span>
-                        <span class="schedule-legend-item"><i class="schedule-dot" style="background:#fd7e14"></i> Overdue</span>
-                        <span class="schedule-legend-item"><i class="schedule-dot" style="background:#198754"></i> Completed</span>
+                        @foreach (\App\Models\Project::calendarLegend() as $entry)
+                            <span class="schedule-legend-item">
+                                <i class="schedule-dot" style="background:{{ $entry['colour'] }}"></i>
+                                {{ $entry['label'] }}
+                            </span>
+                        @endforeach
                     </div>
 
                     <div id="technicianCalendar" class="calendar-standard"></div>

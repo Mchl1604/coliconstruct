@@ -8,6 +8,9 @@
     'minlength' => null,
     // 'new' and 'confirm' pair up for the live match indication.
     'role' => null,
+    // The block the field sits in. A page laying these out in a grid column
+    // owns the spacing, so it can hand in its own rather than fight `mb-3`.
+    'wrapper' => 'mb-3 text-start',
 ])
 
 @php
@@ -20,7 +23,7 @@
     The eye sits inside the input group rather than beside it, so the control
     reads as one field. passwordField.js drives it.
 --}}
-<div class="mb-3 text-start">
+<div class="{{ $wrapper }}">
     <label class="form-label" for="{{ $id }}">{{ $label }}</label>
 
     <div class="input-group" data-password-field>

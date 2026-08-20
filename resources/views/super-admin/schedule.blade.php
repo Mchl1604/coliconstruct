@@ -23,8 +23,7 @@
             <div class="schedule-legend-bar mb-3">
                 <div class="schedule-legend">
                     {{-- Read from the model so the key and the bookings cannot
-                         disagree. Written out by hand it went stale, and never
-                         gained Awaiting Confirmation. --}}
+                         disagree - written out by hand it went stale. --}}
                     @foreach (\App\Models\Project::calendarLegend() as $entry)
                         <span class="schedule-legend-item">
                             <i class="schedule-dot" style="background:{{ $entry['colour'] }}"></i>
@@ -85,7 +84,12 @@
                                     <x-project-status-badge :project="$project" />
                                 </td>
                                 <td class="text-center">
-                                    @if ($project->isReadOnly())
+                                    {{-- A closed record and a paused project are
+                                         both fixed until something else changes,
+                                         so both get the view-only panel. Asked of
+                                         the model so this button and the endpoint
+                                         behind it cannot disagree. --}}
+                                    @if (! $project->scheduleIsEditable())
                                         <button type="button" class="btn btn-sm btn-outline-secondary py-1 px-2"
                                             data-bs-toggle="modal"
                                             data-bs-target="#scheduleViewModal{{ $project->project_id }}">
@@ -109,11 +113,12 @@
     </div>
 
     {{-- Per-project schedule edit modals. A completed project is a historical
-         record, so it gets no edit modal at all - it gets the view-only one
-         below instead. Rendered from every listed project rather than only the
-         scheduled ones, so the Update Schedule link on a project's own page
-         still opens the editor for a project that currently holds no dates. --}}
-    @foreach ($projects->reject(fn ($project) => $project->isReadOnly()) as $project)
+         record and a held one is paused, so neither gets an edit modal at all -
+         both get the view-only one below instead. Rendered from every listed
+         project rather than only the scheduled ones, so the Update Schedule
+         link on a project's own page still opens the editor for a project that
+         currently holds no dates. --}}
+    @foreach ($projects->filter(fn ($project) => $project->scheduleIsEditable()) as $project)
         <div class="modal fade" id="scheduleEditModal{{ $project->project_id }}" tabindex="-1"
             aria-labelledby="scheduleEditModalLabel{{ $project->project_id }}" aria-hidden="true"
             data-schedule-edit-modal
@@ -140,7 +145,15 @@
                                     {{ $project->reference_no }}
                                 </a>
                             </div>
-                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+
+                            {{-- Where the project stands, in the corner. The same
+                                 badge the projects table and the calendar draw, so
+                                 the exact status is on screen while its dates are
+                                 being changed rather than a page away. --}}
+                            <div class="schedule-modal-header-end">
+                                <x-project-status-badge :project="$project" />
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            </div>
                         </div>
 
                         <div class="modal-body">
@@ -234,11 +247,11 @@
 
     @endforeach
 
-    {{-- The same panel, read rather than written. A completed project is
-         clickable everywhere an editable one is - on the calendar and from the
-         table - and shows exactly what it was scheduled for, with nothing to
-         change. --}}
-    @foreach ($scheduledProjects->filter(fn ($project) => $project->isReadOnly()) as $project)
+    {{-- The same panel, read rather than written. A completed project - and a
+         held one - is clickable everywhere an editable one is, on the calendar
+         and from the table, and shows exactly what it is scheduled for with
+         nothing to change. --}}
+    @foreach ($scheduledProjects->reject(fn ($project) => $project->scheduleIsEditable()) as $project)
         <div class="modal fade" id="scheduleViewModal{{ $project->project_id }}" tabindex="-1"
             aria-labelledby="scheduleViewModalLabel{{ $project->project_id }}" aria-hidden="true"
             data-schedule-view-modal data-project-id="{{ $project->project_id }}">
@@ -258,7 +271,14 @@
                                 {{ $project->reference_no }}
                             </a>
                         </div>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+
+                        {{-- The exact status, in the corner: this panel is read
+                             precisely because the project is in a state whose
+                             schedule cannot be changed, so it has to say which. --}}
+                        <div class="schedule-modal-header-end">
+                            <x-project-status-badge :project="$project" />
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
                     </div>
 
                     <div class="modal-body">
@@ -311,8 +331,14 @@
                         <p class="schedule-modal-note">
                             <i class="bi bi-lock" aria-hidden="true"></i>
                             <span>
-                                This project is {{ strtolower($project->statusLabel()) }}, so its schedule is a
-                                record of what happened and can no longer be changed.
+                                @if ($project->on_hold)
+                                    This project is on hold. The dates below are the days that were worked before
+                                    it was paused; the dates ahead of it were released. Resume the project before
+                                    scheduling it again.
+                                @else
+                                    This project is {{ strtolower($project->statusLabel()) }}, so its schedule is a
+                                    record of what happened and can no longer be changed.
+                                @endif
                             </span>
                         </p>
                     </div>

@@ -31,14 +31,14 @@ class TechnicianManagementTest extends TestCase
         $this->actingAsSuperAdmin();
     }
 
-    private function technician(string $name, string $role = 'technician'): Technician
+    private function technician(string $name, string $role = 'technician', array $account = []): Technician
     {
         $user = User::factory()->create([
             'name' => $name,
             'email' => strtolower(str_replace(' ', '.', $name)).'@example.test',
         ]);
 
-        $user->forceFill(['role' => $role])->save();
+        $user->forceFill(['role' => $role] + $account)->save();
 
         return Technician::create([
             'account_id' => $user->id,
@@ -1045,5 +1045,152 @@ class TechnicianManagementTest extends TestCase
             0,
             ProjectTechnician::where('technician_id', $ana->technician_id)->count()
         );
+    }
+
+    // ------------------------------------------------------------------
+    // Account state
+    // ------------------------------------------------------------------
+
+    /**
+     * The page has to say whether an account can still be used.
+     *
+     * Deactivating a technician keeps every booking they were holding - see
+     * Project::inactiveCrew() - so nothing about their row changes on its own.
+     * They go on appearing beside everybody else, with the same specialties
+     * and the same position, right up until somebody tries to give them work
+     * and is refused. The status is what makes that visible beforehand.
+     */
+    public function test_the_table_says_whether_an_account_is_active(): void
+    {
+        $this->technician('Ana Mendoza');
+        $this->technician('Gone Away', 'technician', ['status' => User::STATUS_DEACTIVATED]);
+        $this->technician('Long Gone', 'technician', ['is_archived' => true]);
+
+        $response = $this->get(route('super-admin.technicians.index'));
+
+        $response->assertOk();
+        $response->assertSee('<th>Status</th>', false);
+        $response->assertSee('badge bg-success', false);
+        $response->assertSee('Active');
+        $response->assertSee('badge bg-danger', false);
+        $response->assertSee('Deactivated');
+        $response->assertSee('Archived');
+    }
+
+    /**
+     * The words and the colours are the account's own, so a technician reads
+     * as Deactivated here and on their profile page rather than as two
+     * different things.
+     */
+    public function test_the_details_dialog_carries_the_account_state(): void
+    {
+        $deactivated = $this->technician('Gone Away', 'technician', ['status' => User::STATUS_DEACTIVATED]);
+
+        // The dialog reads the payload itself rather than a wrapper - see
+        // render(result.body) in technicians.js.
+        $payload = $this->getJson(route('super-admin.technicians.show', $deactivated->technician_id))
+            ->assertOk()
+            ->json();
+
+        $this->assertSame('Deactivated', $payload['status_label']);
+        $this->assertSame('bg-danger', $payload['status_badge_class']);
+        $this->assertFalse($payload['can_receive_work']);
+    }
+
+    /**
+     * The picker's directory says who may be given work, which is what decides
+     * whether Add Technician to Project is drawn at all.
+     */
+    public function test_the_picker_directory_says_who_can_be_given_work(): void
+    {
+        $fine = $this->technician('Ana Mendoza');
+        $gone = $this->technician('Gone Away', 'technician', ['status' => User::STATUS_DEACTIVATED]);
+
+        $page = $this->get(route('super-admin.technicians.index'));
+
+        $page->assertOk();
+        $page->assertSee('"technician_id":'.$fine->technician_id.',', false);
+        $page->assertSee('"can_receive_work":true', false);
+        $page->assertSee('"can_receive_work":false', false);
+        $page->assertSee('"status_label":"Deactivated"', false);
+
+        // And the option itself is marked, so the hidden button is not a
+        // surprise when the name is picked.
+        $page->assertSee('Gone Away (inactive account)');
+        $page->assertDontSee('Ana Mendoza (inactive account)');
+
+        $this->assertFalse($gone->fresh()->isAssignable());
+    }
+
+    /**
+     * Opening the dialog for a switched-off account is refused outright,
+     * rather than offering a list of projects and refusing at the last step.
+     */
+    public function test_assignable_projects_are_refused_for_an_inactive_account(): void
+    {
+        $gone = $this->technician('Gone Away', 'technician', ['status' => User::STATUS_DEACTIVATED]);
+        $project = $this->project('Open Work', [], 'unscheduled');
+
+        $response = $this->getJson(
+            route('super-admin.technicians.assignable', $gone->technician_id)
+        );
+
+        $response->assertStatus(422);
+        $this->assertStringContainsString('Gone Away', $response->json('error'));
+        $this->assertStringContainsString('deactivated', $response->json('error'));
+
+        // Nothing was listed, so nothing could be ticked.
+        $this->assertNull($response->json('projects'));
+        $this->assertSame(0, $project->projectTechnicians()->count());
+    }
+
+    /**
+     * An archived account is refused for its own reason rather than being
+     * lumped in with a deactivated one.
+     */
+    public function test_an_archived_account_is_refused_by_name(): void
+    {
+        $archived = $this->technician('Long Gone', 'technician', ['is_archived' => true]);
+
+        $this->getJson(route('super-admin.technicians.assignable', $archived->technician_id))
+            ->assertStatus(422)
+            ->assertJsonPath(
+                'error',
+                "Long Gone's account has been archived, so they cannot be assigned to a project."
+            );
+    }
+
+    /**
+     * The refusal on the way in is the same sentence, so the two ends of the
+     * same rule cannot describe it differently.
+     */
+    public function test_both_ends_of_the_rule_refuse_in_the_same_words(): void
+    {
+        $gone = $this->technician('Gone Away', 'technician', ['status' => User::STATUS_DEACTIVATED]);
+        $project = $this->project('Open Work', [], 'unscheduled');
+
+        $listing = $this->getJson(route('super-admin.technicians.assignable', $gone->technician_id))
+            ->assertStatus(422)
+            ->json('error');
+
+        $saving = $this->postJson(route('super-admin.technicians.projects.store', $gone->technician_id), [
+            'project_ids' => [$project->project_id],
+        ])->assertStatus(422)->json('error');
+
+        $this->assertSame($listing, $saving);
+    }
+
+    /**
+     * The guard is narrow: an ordinary technician is still offered everything
+     * they were offered before.
+     */
+    public function test_an_active_technician_is_still_offered_projects(): void
+    {
+        $fine = $this->technician('Ana Mendoza');
+        $this->project('Open Work', [], 'unscheduled');
+
+        $this->getJson(route('super-admin.technicians.assignable', $fine->technician_id))
+            ->assertOk()
+            ->assertJsonCount(1, 'projects');
     }
 }

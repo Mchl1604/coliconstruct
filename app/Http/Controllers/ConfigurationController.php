@@ -432,7 +432,7 @@ class ConfigurationController extends Controller
         // clients do not have one.
         $validator = Validator::make($request->all(), [
             'full_name' => ['required', 'string', 'max:255'],
-            'contact_number' => ['required', 'string', 'max:32', self::CONTACT_NUMBER_RULE],
+            'contact_number' => ['required', 'string', 'max:'.User::CONTACT_NUMBER_LENGTH, self::CONTACT_NUMBER_RULE],
             // Optional here for the same reason it is on the employee form:
             // an older account has none on file, but one that is supplied is
             // still held to the minimum age.
@@ -534,7 +534,7 @@ class ConfigurationController extends Controller
             'first_name' => ['required', 'string', 'max:100'],
             'middle_name' => ['nullable', 'string', 'max:100'],
             'last_name' => ['required', 'string', 'max:100'],
-            'contact_number' => ['required', 'string', 'max:32', self::CONTACT_NUMBER_RULE],
+            'contact_number' => ['required', 'string', 'max:'.User::CONTACT_NUMBER_LENGTH, self::CONTACT_NUMBER_RULE],
             // Demanded when the account is opened; optional when an existing
             // one is edited, because accounts predating this field have none
             // on file and the rest of the form must still be saveable.
@@ -578,7 +578,7 @@ class ConfigurationController extends Controller
     {
         return [
             'full_name' => ['required', 'string', 'max:255'],
-            'contact_number' => ['required', 'string', 'max:32', self::CONTACT_NUMBER_RULE],
+            'contact_number' => ['required', 'string', 'max:'.User::CONTACT_NUMBER_LENGTH, self::CONTACT_NUMBER_RULE],
             'birthdate' => AccountAge::rules(),
             'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users', 'email')],
             'password' => ['nullable', 'string', 'min:8', 'max:72'],
@@ -616,7 +616,8 @@ class ConfigurationController extends Controller
     {
         return [
             'email.unique' => 'Another account already uses that email address.',
-            'contact_number.regex' => 'Enter a valid contact number.',
+            'contact_number.regex' => User::CONTACT_NUMBER_MESSAGE,
+            'contact_number.max' => User::CONTACT_NUMBER_MESSAGE,
             'password.min' => 'The password must be at least 8 characters.',
             'skill_ids.*.exists' => 'One of the selected specialties no longer exists.',
         ] + AccountAge::messages();

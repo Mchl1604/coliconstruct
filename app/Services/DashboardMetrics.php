@@ -8,16 +8,17 @@ use App\Models\SpecialtyRequest;
 use App\Models\Technician;
 use App\Models\User;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 
 /**
  * Everything the Admin and Super Admin dashboard counts and lists.
  *
- * The dashboard is deliberately short: a strip of figures, one ring, the work
- * that is coming, who is carrying it, and what just happened. Anything that
- * needed a paragraph to explain belongs on the module's own page, which is one
- * click away.
+ * The dashboard is deliberately short: a strip of figures, the work that is
+ * coming, the doors into the modules, who is on site today, and what just
+ * happened. Anything that needed a paragraph to explain belongs on the
+ * module's own page, which is one click away.
  *
  * Two rules run through all of it:
  *
@@ -43,21 +44,6 @@ class DashboardMetrics
     private const TTL_SECONDS = 60;
 
     private const VERSION_KEY = 'dashboard.version';
-
-    /**
-     * The statuses the ring and the figures use, with the colour each one
-     * wears - the website's own blues and yellow, so the dashboard reads as
-     * part of the same product as the public site.
-     *
-     * @var array<string, array{label: string, colour: string}>
-     */
-    public const STATUS_COLOURS = [
-        'completed' => ['label' => 'Completed', 'colour' => '#1b5688'],
-        'ongoing' => ['label' => 'Ongoing', 'colour' => '#2d8de1'],
-        'overdue' => ['label' => 'Overdue', 'colour' => '#e2683f'],
-        'pending' => ['label' => 'Pending', 'colour' => '#f0c93c'],
-        'cancelled' => ['label' => 'Cancelled', 'colour' => '#b8c1cc'],
-    ];
 
     // ------------------------------------------------------------------
     // Cache
@@ -146,7 +132,7 @@ class DashboardMetrics
         if ($counts['awaiting_confirmation'] > 0) {
             $cards[] = $this->card(
                 'awaiting_confirmation',
-                'Awaiting Confirmation',
+                'Awaiting Completion Confirmation',
                 $counts['awaiting_confirmation'],
                 $projects,
                 'pending'
@@ -287,40 +273,87 @@ class DashboardMetrics
     }
 
     // ------------------------------------------------------------------
-    // The ring
+    // Lists
     // ------------------------------------------------------------------
 
     /**
-     * Where the work stands, as a share of the whole.
+     * Who is on site today: the technicians whose crew is booked on a date
+     * range covering the current date.
      *
-     * The percentages are computed here rather than in the browser so the
-     * legend is readable the instant the page paints - the ring beside it is
-     * decoration over the same numbers.
+     * "Active or scheduled to work today" is decided by exactly the scheduling
+     * logic the rest of the system uses - a booked date range on a project
+     * that is live, not paused and not finished - so this panel and the Active
+     * Today figure above it can never describe two different days' work. A
+     * technician booked on two projects today is listed once, with both jobs
+     * named.
      *
-     * @return array<int, array{key: string, label: string, colour: string, value: int, percent: int}>
+     * @return Collection<int, array<string, mixed>>
      */
-    public function statusBreakdown(): array
+    public function activeTechniciansToday(int $limit = 5): Collection
     {
-        $counts = $this->projectCounts();
-        $total = max(1, (int) $counts['total']);
+        // The cached value is a plain array, not the Collection this returns -
+        // see remember()'s note on why nothing but arrays and scalars go in.
+        $rows = $this->remember('activeTechniciansToday', function (): array {
+            $today = CarbonImmutable::today()->toDateString();
 
-        return collect(self::STATUS_COLOURS)
-            ->map(fn (array $status, string $key): array => [
-                'key' => $key,
-                'label' => $status['label'],
-                'colour' => $status['colour'],
-                'value' => (int) ($counts[$key] ?? 0),
-                'percent' => (int) round(((int) ($counts[$key] ?? 0)) / $total * 100),
-            ])
-            // A status nobody is in adds a legend row that says nothing.
-            ->filter(fn (array $slice): bool => $slice['value'] > 0)
-            ->values()
-            ->all();
+            return Technician::query()
+                ->with('account')
+                ->whereHas('account', fn ($query) => $query->whereIn('role', User::TECHNICIAN_ROLES))
+                ->whereHas('projectTechnicians.project', fn ($project) => $this
+                    ->scopeToTodaysWork($project, $today))
+                ->with(['projectTechnicians.project' => fn ($project) => $this
+                    ->scopeToTodaysWork($project, $today)])
+                ->get()
+                ->map(fn (Technician $technician): array => [
+                    'name' => $technician->name,
+                    'role' => $technician->account?->roleLabel() ?? 'Technician',
+                    'avatar_url' => $technician->account?->avatarUrl(),
+                    // What they are on today, so the panel says where somebody
+                    // is rather than only that they are busy.
+                    'projects' => $technician->projectTechnicians
+                        ->map(fn ($assignment): ?string => $assignment->project?->reference_no
+                            ?: $assignment->project?->name)
+                        ->filter()
+                        ->unique()
+                        ->values()
+                        ->all(),
+                ])
+                ->filter(fn (array $row): bool => $row['projects'] !== [])
+                ->sortBy(fn (array $row): string => mb_strtolower($row['name']))
+                ->values()
+                ->all();
+        });
+
+        return collect($rows)->take($limit)->values();
     }
 
-    // ------------------------------------------------------------------
-    // Lists
-    // ------------------------------------------------------------------
+    /**
+     * How many technicians activeTechniciansToday() found, before the panel's
+     * limit is applied - the figure the heading prints.
+     */
+    public function activeTechnicianCountToday(): int
+    {
+        return $this->activeTechniciansToday(PHP_INT_MAX)->count();
+    }
+
+    /**
+     * "This project has a crew on it today": live, not paused, not finished,
+     * and holding a date range that covers the date given.
+     *
+     * The same three conditions activeTodayCount() applies, stated once so the
+     * figure and the list of names cannot drift apart.
+     *
+     * @param  \Illuminate\Contracts\Database\Query\Builder|Builder<Project>  $query
+     */
+    private function scopeToTodaysWork($query, string $today): void
+    {
+        $query->where('is_archived', false)
+            ->whereNotIn('status', Project::READ_ONLY_STATUSES)
+            ->where(fn ($paused) => $paused->where('on_hold', false)->orWhereNull('on_hold'))
+            ->whereHas('schedules', fn ($schedules) => $schedules
+                ->whereDate('start_datetime', '<=', $today)
+                ->whereDate('end_datetime', '>=', $today));
+    }
 
     /**
      * Who is carrying how much: ongoing projects per technician, busiest

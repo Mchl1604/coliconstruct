@@ -1,11 +1,10 @@
 /**
  * The Admin / Super Admin dashboard.
  *
- * Almost nothing happens here. Every number on the page is server-rendered,
- * including the ones in the ring's legend, so the page is readable before this
- * file runs. What is left is the clock, the ring itself - decoration over
- * numbers that are already on screen - and a refresh of the figures when the
- * tab is brought back to the front.
+ * Almost nothing happens here. Every number and every shortcut on the page is
+ * server-rendered, so the page is readable and usable before this file runs.
+ * What is left is the clock and a refresh of the figures when the tab is
+ * brought back to the front.
  */
 document.addEventListener('DOMContentLoaded', function() {
     const page = document.querySelector('.dashboard-page');
@@ -29,56 +28,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 minute: '2-digit',
             });
         }, 30000);
-    }
-
-    // ------------------------------------------------------------------
-    // The ring
-    // ------------------------------------------------------------------
-
-    const canvas = document.querySelector('[data-status-ring]');
-    const slices = data.ring || [];
-
-    if (canvas && window.Chart && slices.length) {
-        new window.Chart(canvas, {
-            type: 'doughnut',
-            data: {
-                labels: slices.map(function(slice) {
-                    return slice.label;
-                }),
-                datasets: [{
-                    data: slices.map(function(slice) {
-                        return slice.value;
-                    }),
-                    backgroundColor: slices.map(function(slice) {
-                        return slice.colour;
-                    }),
-                    borderWidth: 0,
-                    // Rounded ends and a gap between arcs, so the ring reads as
-                    // separate strokes rather than one sliced disc.
-                    borderRadius: 12,
-                    spacing: 6,
-                }],
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                cutout: '74%',
-                plugins: {
-                    // The legend beside it already names every slice.
-                    legend: { display: false },
-                    tooltip: {
-                        displayColors: false,
-                        callbacks: {
-                            label: function(context) {
-                                const slice = slices[context.dataIndex] || {};
-
-                                return slice.value + ' (' + slice.percent + '%)';
-                            },
-                        },
-                    },
-                },
-            },
-        });
     }
 
     // ------------------------------------------------------------------

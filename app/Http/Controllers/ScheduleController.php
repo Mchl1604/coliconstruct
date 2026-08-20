@@ -167,10 +167,12 @@ class ScheduleController extends Controller
                     'status' => $project->status,
                     'status_label' => $this->statusLabel($project),
                     'on_hold' => (bool) $project->on_hold,
-                    // Completed work is a historical record: it is listed
-                    // here, but its dates cannot be changed, exactly as on
-                    // the calendar and in the table.
-                    'read_only' => $project->isReadOnly(),
+                    // Completed work is a historical record and paused work is
+                    // waiting to be resumed: both are listed here, and neither
+                    // one's dates can be changed - exactly as on the calendar
+                    // and in the table. Asked of the model so this panel and
+                    // the endpoint behind Remove This Date agree.
+                    'read_only' => ! $project->scheduleIsEditable(),
                     'url' => route('super-admin.projects.show', $project->project_id),
                     'technicians' => $project->projectTechnicians
                         ->map(fn ($projectTechnician) => $projectTechnician->technician?->name)
@@ -664,7 +666,7 @@ class ScheduleController extends Controller
                 // shape that was actually stored.
                 app(ScheduleConsolidation::class)->consolidate($project);
 
-                $this->syncTaskDatesWithSchedule($project, $this->storedRanges($project));
+                $this->syncTaskDatesWithSchedule($project);
                 // Status follows the dates in every direction: given up
                 // entirely, moved forward, or moved into the past.
                 $this->syncStatusWithSchedule($project);
@@ -751,7 +753,7 @@ class ScheduleController extends Controller
                 // A task can only sit inside a date the project still holds,
                 // which is the same rule a reschedule applies - so it is the
                 // same code that applies it.
-                $clearedTasks = $this->syncTaskDatesWithSchedule($project, $this->storedRanges($project));
+                $clearedTasks = $this->syncTaskDatesWithSchedule($project);
 
                 $this->syncStatusWithSchedule($project);
             });
@@ -814,67 +816,21 @@ class ScheduleController extends Controller
     }
 
     /**
-     * Tasks must always reflect the latest schedule. Any task whose dates no
-     * longer fall inside the project's scheduled period gets its dates cleared
-     * (shown as "Unassigned" in the UI) instead of silently keeping stale
-     * dates.
+     * Bring this project's task dates into line with the schedule it now
+     * holds, and hand back whichever tasks lost theirs.
      *
-     * The test is TaskScheduleRules', the same one the task forms validate
-     * against - anything else and this would clear dates the form had just
-     * accepted. Only a change that moves the outer bounds of the period can
-     * strand a task now: splitting a range leaves those bounds where they
-     * were, so a task spanning the split keeps its dates.
+     * The rule itself lives on TaskScheduleRules, which is also what the task
+     * forms validate against and what a hold applies - so a date cleared here
+     * is exactly a date the form would refuse, and no two callers can drift
+     * into two answers.
      *
-     * @param  Collection<int, array{schedule_id: ?int, start: CarbonImmutable, end: CarbonImmutable}>  $ranges
      * @return Collection<int, Task> the tasks whose dates were cleared, so a
      *                               caller can say so rather than leave the
      *                               work to be noticed missing
      */
-    private function syncTaskDatesWithSchedule(Project $project, Collection $ranges): Collection
+    private function syncTaskDatesWithSchedule(Project $project): Collection
     {
-        $currentRanges = $ranges->map(fn (array $range) => [
-            'start' => $range['start']->toDateString(),
-            'end' => $range['end']->toDateString(),
-        ])->all();
-
-        return Task::query()
-            ->where('project_id', $project->project_id)
-            ->whereNotNull('start_date')
-            ->whereNotNull('due_date')
-            ->get()
-            ->filter(function (Task $task) use ($currentRanges): bool {
-                $stillCovered = $this->taskScheduleRules->windowCovers(
-                    $currentRanges,
-                    CarbonImmutable::parse($task->start_date)->toDateString(),
-                    CarbonImmutable::parse($task->due_date)->toDateString()
-                );
-
-                if ($stillCovered) {
-                    return false;
-                }
-
-                $task->update([
-                    'start_date' => null,
-                    'due_date' => null,
-                ]);
-
-                return true;
-            })
-            ->values();
-    }
-
-    /**
-     * The project's schedules as syncTaskDatesWithSchedule() reads them.
-     *
-     * @return Collection<int, array{schedule_id: ?int, start: CarbonImmutable, end: CarbonImmutable}>
-     */
-    private function storedRanges(Project $project): Collection
-    {
-        return $project->schedules()->get()->map(fn (Schedule $schedule): array => [
-            'schedule_id' => (int) $schedule->schedule_id,
-            'start' => $schedule->startsOn(),
-            'end' => $schedule->endsOn(),
-        ]);
+        return $this->taskScheduleRules->unassignStrandedDates((int) $project->project_id);
     }
 
     /**
@@ -1073,7 +1029,10 @@ class ScheduleController extends Controller
         $events = [];
 
         foreach ($projects as $project) {
-            // Cancelled and on-hold work is kept off every calendar.
+            // Cancelled work is kept off every calendar. Held work is drawn:
+            // the only dates it still holds are days that were actually
+            // worked, and hiding them made the weeks before a pause read as
+            // empty. Nothing here recreates a date the hold released.
             if (! $project->showsOnCalendar()) {
                 continue;
             }
@@ -1099,9 +1058,10 @@ class ScheduleController extends Controller
                         'status' => $project->status,
                         'statusLabel' => $this->statusLabel($project),
                         'onHold' => $project->on_hold,
-                        // A completed project is a historical record: clicking
-                        // it opens the view-only panel rather than the editor.
-                        'readOnly' => $project->isReadOnly(),
+                        // A completed project is a historical record, and a
+                        // held one is paused: clicking either opens the
+                        // view-only panel rather than the editor.
+                        'readOnly' => ! $project->scheduleIsEditable(),
                     ],
                 ];
             }

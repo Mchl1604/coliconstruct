@@ -304,20 +304,22 @@
             }
         }
 
-/* Overdue projects are orange everywhere: badges, legends, calendar events.
-   Bootstrap has no orange background utility, hence this class. */
+/* Overdue projects are deep red everywhere: badges, legends, calendar events.
+   The value is Project::OVERDUE_COLOR; Bootstrap has no utility for it, hence
+   this class. Red rather than the orange it used to be, which was a shade of
+   Pending's amber and unreadable as a distinct state on the calendar. */
 .badge-overdue {
-    background-color: #fd7e14;
+    background-color: #c9302c;
     color: #fff;
 }
 
 /* Overdue warning banner on the project details page. */
 .overdue-banner {
-    border-left: 4px solid #fd7e14 !important;
+    border-left: 4px solid #c9302c !important;
 }
 
 .overdue-banner-icon {
     font-size: 1.6rem;
     line-height: 1;
-    color: #fd7e14;
+    color: #c9302c;
 }

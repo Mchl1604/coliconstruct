@@ -3,7 +3,9 @@
 namespace App\Services;
 
 use App\Models\Schedule;
+use App\Models\Task;
 use Carbon\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Validation\Validator;
 
 /**
@@ -116,6 +118,61 @@ class TaskScheduleRules
 
         return $this->isBookedDate($ranges, $startDate)
             && $this->isBookedDate($ranges, $dueDate);
+    }
+
+    /**
+     * Take the dates off every task the project's current schedule no longer
+     * covers, and hand back the ones that lost them.
+     *
+     * A task's dates only mean anything while the project is booked on them.
+     * The moment the schedule stops covering a task's start or its deadline,
+     * that task is pointing at days nobody is on site - so it goes back to
+     * Unassigned rather than keeping a date the task form itself would now
+     * refuse. Whoever re-schedules the project gives it a new one.
+     *
+     * The test is windowCovers(), the same one the task forms validate
+     * against, and the ranges are read from the database rather than passed
+     * in - this always measures tasks against what the project actually holds
+     * now, never against what a caller believed it was about to hold.
+     *
+     * Every caller that changes a project's dates goes through here: editing a
+     * schedule, removing a single date, and putting the project on hold. They
+     * used to have an answer each - the hold blanked every open task outright,
+     * which threw away dates that were still perfectly valid inside the days
+     * it kept.
+     *
+     * @return Collection<int, Task> the tasks whose dates were cleared, so a
+     *                               caller can say so rather than leave the
+     *                               work to be noticed missing
+     */
+    public function unassignStrandedDates(int $projectId): Collection
+    {
+        $ranges = $this->ranges($projectId);
+
+        return Task::query()
+            ->where('project_id', $projectId)
+            ->whereNotNull('start_date')
+            ->whereNotNull('due_date')
+            ->get()
+            ->filter(function (Task $task) use ($ranges): bool {
+                $stillCovered = $this->windowCovers(
+                    $ranges,
+                    Carbon::parse($task->start_date)->toDateString(),
+                    Carbon::parse($task->due_date)->toDateString()
+                );
+
+                if ($stillCovered) {
+                    return false;
+                }
+
+                $task->update([
+                    'start_date' => null,
+                    'due_date' => null,
+                ]);
+
+                return true;
+            })
+            ->values();
     }
 
     /**

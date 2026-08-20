@@ -421,12 +421,12 @@ class ProfileManagementTest extends TestCase
             ->put(route('profile.information'), [
                 'first_name' => 'Juan',
                 'last_name' => 'Dela Cruz',
-                'contact_number' => '0918 222 3344',
+                'contact_number' => '09182223344',
                 'email' => 'tech@example.test',
             ])
             ->assertSessionHas('success');
 
-        $this->assertSame('0918 222 3344', $technician->refresh()->contact_number);
+        $this->assertSame('09182223344', $technician->refresh()->contact_number);
 
         $this->assertDatabaseHas('tbl_activity_logs', [
             'action' => ActivityLog::PROFILE_UPDATED,
@@ -446,7 +446,11 @@ class ProfileManagementTest extends TestCase
                 'contact_number' => 'call me maybe',
                 'email' => 'tech@example.test',
             ])
-            ->assertSessionHasErrors(['contact_number' => 'Enter a valid contact number.'], null, 'information');
+            ->assertSessionHasErrors(
+                ['contact_number' => 'Enter an 11-digit contact number, digits only (e.g. 09171234567).'],
+                null,
+                'information'
+            );
 
         $this->assertSame('09171234567', $technician->refresh()->contact_number);
     }

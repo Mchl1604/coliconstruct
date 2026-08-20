@@ -28,6 +28,7 @@ use App\Services\ProjectTeamCandidates;
 use App\Services\ProjectTeamRules;
 use App\Services\ScheduleHoldCutoff;
 use App\Services\ScheduleModeRules;
+use App\Services\TaskScheduleRules;
 use App\Services\TechnicianAvailabilityService;
 use App\Services\TechnicianTaskLoad;
 use Carbon\CarbonImmutable;
@@ -59,7 +60,11 @@ class ProjectController extends Controller
         // `schedules` is eager loaded because isOverdue() reads every range;
         // without it the status column would fire a query per row.
         $projects = Project::query()
-            ->with(['clients', 'documents', 'schedule', 'schedules', 'projectTypes', 'projectTechnicians.technician'])
+            // `technician.account` is loaded because every row now asks
+            // needsRecrew(), which reads each assigned technician's account to
+            // decide whether they can still sign in. Without it that is two
+            // queries per row on the busiest page in the portal.
+            ->with(['clients', 'documents', 'schedule', 'schedules', 'projectTypes', 'projectTechnicians.technician.account'])
             // What the completion rules will object to, per project, as two
             // subqueries rather than two queries per row - see
             // ProjectPolicy::blockersFor(), which reads these when they are
@@ -76,10 +81,10 @@ class ProjectController extends Controller
             ->orderBy('project_id', 'desc')
             ->get();
 
-        $overdueCount = $projects->filter->isOverdue()->count();
-        // Paused work now has a tab of its own, and a count beside it for the
-        // same reason Overdue has one.
-        $onHoldCount = $projects->filter(fn (Project $project): bool => (bool) $project->on_hold)->count();
+        // Every tab carries its count, in the pattern Overdue and On Hold
+        // already used. Grouped by the same method each row is labelled with,
+        // so a badge cannot promise more rows than its tab shows.
+        $statusTabs = Project::statusTabs($projects);
 
         $policy = app(ProjectPolicy::class);
 
@@ -89,7 +94,7 @@ class ProjectController extends Controller
             ])
             ->all();
 
-        return view('super-admin.projects', compact('projects', 'overdueCount', 'onHoldCount', 'completionBlockers'));
+        return view('super-admin.projects', compact('projects', 'statusTabs', 'completionBlockers'));
     }
 
     public function archivedIndex()
@@ -714,6 +719,14 @@ class ProjectController extends Controller
 
         $isReadOnly = $project->isReadOnly();
 
+        // A hold is not the same as a locked record: everything on this page
+        // is still readable, and the project can still be resumed, cancelled
+        // and archived. What it cannot do while paused is take work - a new
+        // technician, a new report, a task edit or a new date - so the two are
+        // handed to the view separately rather than folded into one flag.
+        $isOnHold = (bool) $project->on_hold;
+        $canTakeWork = ! $isReadOnly && ! $isOnHold;
+
         // Scoped to this project: the picker below lists this project's team
         // and is answering "how much of THIS job is already on them?". Counted
         // across every project, somebody busy elsewhere read as busy here.
@@ -749,6 +762,8 @@ class ProjectController extends Controller
             'currentLeadTechnicianId',
             'currentTeamTechnicianIds',
             'isReadOnly',
+            'isOnHold',
+            'canTakeWork',
             'assignedTeamLookup',
             'technicianActiveTaskCounts',
             'canReopen',
@@ -1049,6 +1064,18 @@ class ProjectController extends Controller
             return redirect()
                 ->route('super-admin.projects', $id)
                 ->with('error', 'This project is not on hold, so there is nothing to resume.');
+        }
+
+        // A hold hands the crew's remaining days back to everybody else, so
+        // somebody may have been booked over them while the project was
+        // paused. Lifting the hold puts those days back into force, and it
+        // must not do so on top of a promise made in the meantime.
+        $clash = $this->resumeConflictMessage($project);
+
+        if ($clash !== null) {
+            return redirect()
+                ->route('super-admin.projects', $id)
+                ->with('error', $clash);
         }
 
         // The hold is lifted first, then the status is worked out from the
@@ -1471,6 +1498,71 @@ class ProjectController extends Controller
     }
 
     /**
+     * Why this project cannot be resumed yet, or null when it can.
+     *
+     * A held project blocks nobody. Its status is not one the availability
+     * checker counts - see Project::ACTIVE_PROJECT_STATUSES - so the days the
+     * cutoff kept read as free the moment the hold is placed, and another
+     * project may be booked over them. That is the point: a pause that went on
+     * holding the calendar would be a pause in name only.
+     *
+     * The price is that resuming is not a private matter. It puts those days
+     * back into force, and if the crew was promised elsewhere on one of them
+     * the project comes back double-booked with nobody told - the clash is
+     * invisible on both projects, because each one only ever shows its own
+     * dates. So the resume asks the same question a reschedule asks, of the
+     * same service, before it lifts anything: are these people still free on
+     * the days this project is about to claim again?
+     *
+     * The project's own bookings are excluded, which is what makes the
+     * question answerable at all - every day being checked is one it holds
+     * itself. A date reported here therefore always belongs to other work.
+     *
+     * Refusing rather than resuming-and-warning is deliberate. The two ways
+     * out - move the other project, or take the technician off this one - are
+     * both decisions with consequences for somebody's day, and neither is the
+     * resume's to make.
+     */
+    private function resumeConflictMessage(Project $project): ?string
+    {
+        // Read fresh: the cutoff deleted rows when the hold was placed, and a
+        // relation loaded before that would be measured instead of what the
+        // project actually still holds.
+        $schedules = Schedule::query()
+            ->where('project_id', $project->project_id)
+            ->get();
+
+        $technicianIds = ProjectTechnician::query()
+            ->where('project_id', $project->project_id)
+            ->pluck('technician_id')
+            ->map(fn ($technicianId): int => (int) $technicianId)
+            ->unique()
+            ->values();
+
+        if ($schedules->isEmpty() || $technicianIds->isEmpty()) {
+            return null;
+        }
+
+        $availability = app(TechnicianAvailabilityService::class);
+
+        $conflicts = $availability->findConflicts(
+            $technicianIds,
+            $schedules->map(fn (Schedule $schedule): array => $schedule->toAvailabilityRange())->all(),
+            (int) $project->project_id
+        );
+
+        if ($conflicts->isEmpty()) {
+            return null;
+        }
+
+        return 'This project cannot be resumed yet, because the days it still holds are now booked elsewhere. '
+            .$availability->conflictMessage(
+                $conflicts,
+                ' Reschedule the other work, or take them off the team on this project, then resume it.'
+            );
+    }
+
+    /**
      * Give a paused project's remaining dates back without breaking up its
      * crew.
      *
@@ -1485,22 +1577,29 @@ class ProjectController extends Controller
      * ScheduleHoldCutoff draws that line at today and keeps everything on the
      * near side of it, the day of the hold included.
      *
-     * Tasks keep their technician for the same reason the team does. Any that
-     * are still open lose their dates: an open task is work still to be done,
-     * and there is no longer a booking ahead of it to do it in.
+     * Tasks keep their technician for the same reason the team does. What they
+     * keep of their dates is decided by the days the cutoff left behind: a task
+     * sitting inside those days is untouched, and one whose start or deadline
+     * fell on a day the hold released goes back to Unassigned, because it is
+     * now pointing at a date nobody is booked on.
      *
-     * @return array{kept: int, shortened: int, released: int}
+     * A hold used to blank the dates of EVERY open task, which threw away
+     * perfectly good dates inside the days it had just kept. The rule applied
+     * here is TaskScheduleRules', the same one the task forms validate against
+     * and the same one a reschedule applies - so a date cleared by a hold is
+     * exactly a date the form would now refuse.
+     *
+     * @return array{kept: int, shortened: int, released: int, tasks_unassigned: int}
      */
     private function releaseScheduleOnly(Project $project): array
     {
         $summary = $this->holdCutoff->apply($project);
 
-        Task::where('project_id', $project->project_id)
-            ->where('status', '!=', 'completed')
-            ->update([
-                'start_date' => null,
-                'due_date' => null,
-            ]);
+        // After the cutoff, never before it: the tasks have to be measured
+        // against the days the project is actually left holding.
+        $summary['tasks_unassigned'] = app(TaskScheduleRules::class)
+            ->unassignStrandedDates((int) $project->project_id)
+            ->count();
 
         return $summary;
     }
@@ -1508,7 +1607,7 @@ class ProjectController extends Controller
     /**
      * What the cutoff did, as a sentence for the toast and the audit trail.
      *
-     * @param  array{kept: int, shortened: int, released: int}  $summary
+     * @param  array{kept: int, shortened: int, released: int, tasks_unassigned?: int}  $summary
      */
     private function describeHoldCutoff(array $summary): string
     {
@@ -1538,9 +1637,25 @@ class ProjectController extends Controller
             );
         }
 
-        return $parts === []
+        $sentence = $parts === []
             ? 'It held no schedules.'
             : ucfirst(implode(', ', $parts)).'.';
+
+        // Only mentioned when something actually happened to a task: a hold
+        // that stranded nothing should not report a figure of zero.
+        $unassigned = (int) ($summary['tasks_unassigned'] ?? 0);
+
+        if ($unassigned > 0) {
+            $sentence .= sprintf(
+                ' %d task%s no longer fell on a booked day, so %s date%s were unassigned.',
+                $unassigned,
+                $unassigned === 1 ? '' : 's',
+                $unassigned === 1 ? 'its' : 'their',
+                $unassigned === 1 ? '' : 's'
+            );
+        }
+
+        return $sentence;
     }
 
     /**
@@ -1620,6 +1735,14 @@ class ProjectController extends Controller
 
         if ($project->isReadOnly()) {
             return back()->with('error', 'This project is '.$project->status.' and its team can no longer be edited.');
+        }
+
+        // A paused project takes no changes to who is on it. The crew is kept
+        // through a hold precisely so the project can be resumed rather than
+        // rebuilt, and rearranging it while nobody is working is a decision
+        // that belongs after the resume, not before it.
+        if ($project->on_hold) {
+            return back()->with('error', 'This project is on hold. Resume it before changing its assigned technicians.');
         }
 
         $validator = Validator::make($request->all(), [

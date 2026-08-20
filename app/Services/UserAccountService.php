@@ -31,7 +31,8 @@ class UserAccountService
     public function __construct(
         private readonly ActivityLogger $activityLogger,
         private readonly NotificationService $notifications,
-        private readonly EmailService $email
+        private readonly EmailService $email,
+        private readonly TechnicianRoleChangeRules $roleChangeRules
     ) {}
 
     // ------------------------------------------------------------------
@@ -202,6 +203,16 @@ class UserAccountService
     {
         $this->guardEditable($user);
         $this->guardMayEdit($user);
+
+        // Asked before anything is written, because the role column IS the
+        // lead assignment on every project this account is on. Saving it is
+        // therefore an operational decision as well as an HR one, and the
+        // operational half belongs to whoever is running those projects - see
+        // TechnicianRoleChangeRules.
+        $this->roleChangeRules->guard(
+            $user,
+            $user->isSuperAdmin() ? User::ROLE_SUPER_ADMIN : (string) $data['role']
+        );
 
         DB::transaction(function () use ($user, $data, $skillIds): void {
             $user->fill([

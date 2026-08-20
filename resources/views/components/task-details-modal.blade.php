@@ -87,11 +87,20 @@
                         @forelse ($technicians as $technician)
                             @php
                                 $activeCount = $activeTaskCounts[$technician->technician_id] ?? 0;
+                                $holdsThisTask = $task->technician_id == $technician->technician_id;
+                                // An account that cannot sign in cannot open the
+                                // project, close the task, or read the notice
+                                // saying it has one - so it is not somebody work
+                                // can be moved TO. Whoever already holds the task
+                                // stays selectable, because saving an edit
+                                // re-submits the owner and the handover off them
+                                // is the very thing this dialog is for.
+                                $cannotReceiveWork = ! $technician->isAssignable() && ! $holdsThisTask;
                             @endphp
                             <label>
                                 <input type="radio" class="btn-check" name="technician_id"
                                     value="{{ $technician->technician_id }}"
-                                    @checked($task->technician_id == $technician->technician_id)>
+                                    @checked($holdsThisTask) @disabled($cannotReceiveWork)>
 
                                 <div class="task-assign-card">
                                     <x-user-avatar :user="$technician->account" size="lg"
@@ -104,6 +113,11 @@
                                     @if (optional($technician->account)->role === 'lead_technician')
                                         <span class="badge bg-primary task-assign-lead">Lead</span>
                                     @endif
+                                    @unless ($technician->isAssignable())
+                                        <span class="badge bg-warning text-dark task-assign-inactive">
+                                            Account inactive
+                                        </span>
+                                    @endunless
                                 </div>
                             </label>
                         @empty

@@ -93,8 +93,8 @@ class DashboardTest extends TestCase
             ->assertSee(now()->format('l, F j, Y'))
             ->assertSee('New Project')
             ->assertSee('Upcoming Work')
-            ->assertSee('Project Status')
-            ->assertSee('Technician Workload')
+            ->assertSee('Quick Actions')
+            ->assertSee('Active Technicians Today')
             ->assertSee('Recent Activity');
     }
 
@@ -223,33 +223,101 @@ class DashboardTest extends TestCase
     }
 
     // ------------------------------------------------------------------
-    // The ring
+    // Quick Actions
     // ------------------------------------------------------------------
 
     /**
-     * The ring's numbers are rendered as text, so they are readable before any
-     * script runs - and a status nobody is in does not get a legend row.
+     * The shortcuts point at routes that already exist, and only at the ones
+     * this reader may open. Both administrative roles reach all six today,
+     * which is what the routes themselves say.
      */
-    public function test_the_status_breakdown_is_a_share_of_the_whole(): void
+    public function test_quick_actions_open_the_modules_this_reader_may_reach(): void
+    {
+        foreach (['super_admin', 'admin'] as $role) {
+            $viewer = $this->account($role, $role.'@example.test');
+
+            $this->actingAs($viewer)
+                ->get(route('super-admin.dashboard'))
+                ->assertOk()
+                ->assertSee('Quick Actions')
+                ->assertSee(route('super-admin.projects'))
+                ->assertSee(route('super-admin.schedules.index'))
+                ->assertSee(route('super-admin.technicians.index'))
+                ->assertSee(route('super-admin.reports.index'))
+                ->assertSee(route('super-admin.configuration.index'));
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Active Technicians Today
+    // ------------------------------------------------------------------
+
+    /**
+     * Who is on site today, decided by the same booked ranges the Active Today
+     * figure counts: a technician on a project whose dates cover today, and
+     * nobody else.
+     */
+    public function test_active_technicians_today_lists_only_who_is_booked_today(): void
     {
         $owner = $this->account('super_admin', 'owner@example.test');
 
-        $this->project('ongoing', ['start' => now()->subDay(), 'end' => now()->addDay()]);
-        $this->project('completed');
-        $this->project('completed');
-        $this->project('completed');
+        $onSiteAccount = $this->account('technician', 'onsite@example.test');
+        $onSite = Technician::create(['account_id' => $onSiteAccount->id, 'role' => 'technician']);
 
-        $breakdown = collect(app(DashboardMetrics::class)->statusBreakdown())->keyBy('key');
+        $nextWeekAccount = $this->account('technician', 'nextweek@example.test');
+        $nextWeek = Technician::create(['account_id' => $nextWeekAccount->id, 'role' => 'technician']);
 
-        $this->assertSame(75, $breakdown['completed']['percent']);
-        $this->assertSame(25, $breakdown['ongoing']['percent']);
-        $this->assertFalse($breakdown->has('cancelled'));
+        $today = $this->project('ongoing', ['start' => now()->subDay(), 'end' => now()->addDay()]);
+        ProjectTechnician::create([
+            'project_id' => $today->project_id,
+            'technician_id' => $onSite->technician_id,
+        ]);
+
+        $later = $this->project('pending', ['start' => now()->addDays(7), 'end' => now()->addDays(9)]);
+        ProjectTechnician::create([
+            'project_id' => $later->project_id,
+            'technician_id' => $nextWeek->technician_id,
+        ]);
+
+        $active = app(DashboardMetrics::class)->activeTechniciansToday();
+
+        $this->assertSame([$onSiteAccount->fullName()], $active->pluck('name')->all());
+        // The job they are on travels with them, and so does their picture.
+        $this->assertSame([$today->reference_no], $active->first()['projects']);
+        $this->assertSame(asset('img/default-avatar.svg'), $active->first()['avatar_url']);
+        $this->assertSame(1, app(DashboardMetrics::class)->activeTechnicianCountToday());
 
         $this->actingAs($owner)
             ->get(route('super-admin.dashboard'))
             ->assertOk()
-            ->assertSee('75%')
-            ->assertSee('25%');
+            ->assertSee('Active Technicians Today')
+            ->assertSee($onSiteAccount->fullName())
+            // The job they are on names them apart; the two accounts share a
+            // display name, so the reference is what distinguishes the rows.
+            ->assertSee($today->reference_no)
+            ->assertDontSee($later->reference_no);
+    }
+
+    /**
+     * A paused project has nobody on site, whatever dates it still holds - the
+     * same rule the Active Today figure applies.
+     */
+    public function test_a_held_project_puts_nobody_on_site_today(): void
+    {
+        $this->account('super_admin', 'owner@example.test');
+
+        $account = $this->account('technician', 'paused@example.test');
+        $technician = Technician::create(['account_id' => $account->id, 'role' => 'technician']);
+
+        $project = $this->project('ongoing', ['start' => now()->subDay(), 'end' => now()->addDay()]);
+        $project->update(['on_hold' => true]);
+
+        ProjectTechnician::create([
+            'project_id' => $project->project_id,
+            'technician_id' => $technician->technician_id,
+        ]);
+
+        $this->assertTrue(app(DashboardMetrics::class)->activeTechniciansToday()->isEmpty());
     }
 
     public function test_workload_counts_ongoing_projects_busiest_first(): void
@@ -274,11 +342,6 @@ class DashboardTest extends TestCase
         $this->assertSame(1, $workload->first()['value']);
         // Their picture rides along, since the list shows faces.
         $this->assertSame(asset('img/default-avatar.svg'), $workload->first()['avatar_url']);
-
-        $this->actingAs($owner)
-            ->get(route('super-admin.dashboard'))
-            ->assertOk()
-            ->assertSee($busyAccount->fullName());
     }
 
     // ------------------------------------------------------------------

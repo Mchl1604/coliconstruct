@@ -143,9 +143,13 @@ class LowSeverityAuditFixesTest extends TestCase
         $response = $this->get(route('super-admin.projects'))->assertOk();
 
         $response->assertSee('data-status-filter="on_hold"', false);
-        $this->assertSame(1, $response->viewData('onHoldCount'));
 
-        // The row carries what the filter reads.
+        $tabs = collect($response->viewData('statusTabs'))->keyBy('key');
+        $this->assertSame(1, $tabs['on_hold']['count']);
+
+        // The row carries what the filter reads: the tab it belongs under,
+        // decided once by Project::tabKey().
+        $response->assertSee('data-tab="on_hold"', false);
         $response->assertSee('data-on-hold="1"', false);
     }
 

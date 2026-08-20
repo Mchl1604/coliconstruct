@@ -3,25 +3,28 @@
 @section('title', 'My Projects - ' . $content->siteTitle())
 
 @section('content')
-    {{-- The same rounded introduction panel the redesign gives every page that
-         is not the homepage: eyebrow, title, one line saying what is here. --}}
-    <section class="public-page-head">
+    {{-- A page heading rather than the full introduction panel the other
+         public pages wear. This page is a working list a client comes back to,
+         not a page being introduced to them, and the panel took the top third
+         of the screen away from the cards that are the point of it. --}}
+    <section class="public-page-title">
         <div class="container">
-            <div class="public-page-head-panel">
-                <p class="public-eyebrow mb-2">Your account</p>
-                <h1 class="public-page-head-heading">My Projects</h1>
-                <p class="public-page-head-text mb-0">
-                    @if ($isClient)
-                        Work {{ $content->get('branding.short_name') }} is carrying out for you, newest first.
-                    @elseif ($isGuest)
-                        Sign in to follow the work booked under your email address.
-                    @else
-                        This page shows a client's own projects.
-                    @endif
-                </p>
+            <div class="public-page-title-row">
+                <div>
+                    <h1 class="public-page-title-heading">My Projects</h1>
+                    <p class="public-page-title-text mb-0">
+                        @if ($isClient)
+                            Work {{ $content->get('branding.short_name') }} is carrying out for you, newest first.
+                        @elseif ($isGuest)
+                            Sign in to follow the work booked under your email address.
+                        @else
+                            This page shows a client's own projects.
+                        @endif
+                    </p>
+                </div>
 
                 @if ($isClient && $projects->isNotEmpty())
-                    <span class="public-page-head-count" data-project-count>
+                    <span class="public-page-title-count" data-project-count>
                         {{ $projects->count() }} {{ Str::plural('project', $projects->count()) }}
                     </span>
                 @endif
@@ -135,8 +138,9 @@
                                     <span class="project-card-reference">
                                         Reference: {{ $card['reference_no'] ?? 'Not assigned' }}
                                     </span>
-                                    {{-- The short label: "Awaiting Client Confirmation" does not
-                                         fit a card header, and the banner below says the rest. --}}
+                                    {{-- One label for the state, from the model, so this
+                                         header and the badge on the details page cannot
+                                         name the same thing two ways. --}}
                                     <span class="project-card-status">{{ $card['short_status_label'] }}</span>
                                 </header>
 

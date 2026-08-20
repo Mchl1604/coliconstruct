@@ -124,7 +124,12 @@ document.addEventListener("DOMContentLoaded", function () {
             // and reverses the header so the sort arrow lands on the left. A
             // technician ID is a label, not a quantity, so it is put back with
             // every other column. Ordering stays numeric.
-            columnDefs: [{ targets: 0, className: "dt-left" }],
+            columnDefs: [
+                { targets: 0, className: "dt-left" },
+                // A column of buttons has no order, and a sortable header
+                // invites a click that does nothing.
+                { targets: -1, orderable: false },
+            ],
             language: {
                 search: "",
                 searchPlaceholder: "Search technicians...",
@@ -148,6 +153,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const metaEl = modal.querySelector("[data-details-meta]");
         const idEl = modal.querySelector("[data-details-id]");
         const positionEl = modal.querySelector("[data-details-position]");
+        const statusEl = modal.querySelector("[data-details-status]");
         const emailEl = modal.querySelector("[data-details-email]");
         const specialtiesEl = modal.querySelector("[data-details-specialties]");
         const availableEl = modal.querySelector("[data-details-available]");
@@ -347,6 +353,13 @@ document.addEventListener("DOMContentLoaded", function () {
             idEl.textContent = technician.display_code;
             positionEl.textContent = technician.position;
             emailEl.textContent = technician.email || "Not on file";
+
+            // Colour and wording both come from the server, which reads them
+            // off the account - so this dialog cannot describe a state
+            // differently from the row that opened it.
+            statusEl.textContent = technician.status_label || "";
+            statusEl.className =
+                "badge " + (technician.status_badge_class || "bg-secondary");
 
             renderRequest();
             renderDraft();
@@ -902,8 +915,23 @@ document.addEventListener("DOMContentLoaded", function () {
 
             selectedTechnician = match;
             picker.value = match.display_code + " — " + match.name;
-            pickerHint.textContent = "Showing schedule for " + match.name + ".";
-            addOpenBtn.classList.remove("d-none");
+
+            // A switched-off account keeps every date it was booked on, so the
+            // calendar is still worth reading - it is only NEW work they
+            // cannot be given. So the schedule loads either way and just the
+            // Add button goes, with the hint saying why rather than leaving a
+            // control to vanish unexplained.
+            const employable = match.can_receive_work !== false;
+
+            pickerHint.textContent = employable
+                ? "Showing schedule for " + match.name + "."
+                : "Showing schedule for " +
+                  match.name +
+                  ". Their account is " +
+                  (match.status_label || "inactive").toLowerCase() +
+                  ", so they cannot be added to a project.";
+
+            addOpenBtn.classList.toggle("d-none", !employable);
 
             // A new technician means any previously shown project is stale.
             if (detailsPanel) {
@@ -1615,9 +1643,18 @@ document.addEventListener("DOMContentLoaded", function () {
 
     if (addOpenBtn) {
         addOpenBtn.addEventListener("click", function () {
-            if (addProjectModal && selectedTechnician) {
-                addProjectModal.open();
+            if (!addProjectModal || !selectedTechnician) {
+                return;
             }
+
+            // The button is already hidden for them, so this only catches a
+            // click that should not have been possible. The endpoint refuses
+            // it too - see TechnicianController::assignableProjects.
+            if (selectedTechnician.can_receive_work === false) {
+                return;
+            }
+
+            addProjectModal.open();
         });
     }
 });

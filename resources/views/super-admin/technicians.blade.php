@@ -70,6 +70,7 @@
                                     <th>Technician</th>
                                     <th>Specialty</th>
                                     <th>Position</th>
+                                    <th>Status</th>
                                     <th class="text-center">Action</th>
                                 </tr>
                             </thead>
@@ -130,6 +131,19 @@
                                                 {{ $isLead ? 'Lead Technician' : 'Technician' }}
                                             </span>
                                         </td>
+                                        <td>
+                                            {{-- Whether the account can still be
+                                                 used, in the words and colours the
+                                                 profile page already prints it in.
+                                                 It belongs on this page because a
+                                                 deactivated technician keeps every
+                                                 booking they were holding, so the
+                                                 row looks entirely normal until
+                                                 somebody tries to give them work. --}}
+                                            <span class="badge {{ $technician->account?->statusBadgeClass() ?? 'bg-dark' }}">
+                                                {{ $technician->account?->statusLabel() ?? 'No account' }}
+                                            </span>
+                                        </td>
                                         <td class="text-center">
                                             <button type="button" class="btn btn-sm btn-primary py-1 px-2"
                                                 data-view-technician="{{ $technician->technician_id }}"
@@ -162,7 +176,22 @@
                                 data-technician-picker>
                             <datalist id="technicianPickerOptions">
                                 @foreach ($technicians as $technician)
-                                    <option value="{{ $technician->displayCode() }} — {{ $technician->name }}"></option>
+                                    {{-- An inactive account is still listed: their
+                                         calendar is worth reading, because they are
+                                         still holding every date they were booked
+                                         on. It is only new work they cannot take.
+
+                                         The marker goes in the option's value rather
+                                         than its `label`, which browsers disagree
+                                         about - Firefox shows the label INSTEAD of
+                                         the value, which would hide the name. The
+                                         picker resolves on the TECH code at the
+                                         front, so the suffix costs nothing, and the
+                                         field is rewritten to the tidy form the
+                                         moment a name is chosen. --}}
+                                    <option
+                                        value="{{ $technician->displayCode() }} — {{ $technician->name }}{{ $technician->isAssignable() ? '' : ' (inactive account)' }}">
+                                    </option>
                                 @endforeach
                             </datalist>
                             <div class="form-text" data-technician-picker-hint>
@@ -198,15 +227,17 @@
                                 <span class="schedule-count-pill d-none" data-calendar-assignment-count></span>
                             </div>
 
+                            {{-- Read from the model so this key and the bookings
+                                 it explains cannot drift apart - written out by
+                                 hand it kept Overdue's old orange after the
+                                 colour changed. --}}
                             <div class="schedule-legend mb-3">
-                                <span class="schedule-legend-item"><i class="schedule-dot"
-                                        style="background:#f0ad4e"></i> Pending</span>
-                                <span class="schedule-legend-item"><i class="schedule-dot"
-                                        style="background:#0d6efd"></i> Ongoing</span>
-                                <span class="schedule-legend-item"><i class="schedule-dot"
-                                        style="background:#fd7e14"></i> Overdue</span>
-                                <span class="schedule-legend-item"><i class="schedule-dot"
-                                        style="background:#198754"></i> Completed</span>
+                                @foreach (\App\Models\Project::calendarLegend() as $entry)
+                                    <span class="schedule-legend-item">
+                                        <i class="schedule-dot" style="background:{{ $entry['colour'] }}"></i>
+                                        {{ $entry['label'] }}
+                                    </span>
+                                @endforeach
                             </div>
 
                             <div id="technicianCalendar" class="calendar-standard d-none"></div>
@@ -410,15 +441,21 @@
 
                 <div class="modal-body">
                     <div class="row g-3 mb-4">
-                        <div class="col-sm-4">
+                        <div class="col-sm-3">
                             <div class="technician-field-label">Technician ID</div>
                             <div class="technician-field-value" data-details-id></div>
                         </div>
-                        <div class="col-sm-4">
+                        <div class="col-sm-3">
                             <div class="technician-field-label">Position</div>
                             <div class="technician-field-value" data-details-position></div>
                         </div>
-                        <div class="col-sm-4">
+                        <div class="col-sm-3">
+                            <div class="technician-field-label">Account</div>
+                            <div class="technician-field-value">
+                                <span class="badge" data-details-status>&nbsp;</span>
+                            </div>
+                        </div>
+                        <div class="col-sm-3">
                             <div class="technician-field-label">Email</div>
                             <div class="technician-field-value" data-details-email></div>
                         </div>
@@ -564,6 +601,11 @@
                         // What the picker prints and matches on.
                         'display_code' => $technician->displayCode(),
                         'name' => $technician->name,
+                        // Whether Add Technician to Project is offered for
+                        // them at all. The server refuses it either way; this
+                        // is what stops the button being drawn to be refused.
+                        'can_receive_work' => $technician->isAssignable(),
+                        'status_label' => $technician->account?->statusLabel() ?? 'No account',
                     ],
                 )
                 ->values();

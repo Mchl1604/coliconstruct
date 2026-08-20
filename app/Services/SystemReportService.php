@@ -67,7 +67,7 @@ class SystemReportService
     public const REPORT_STATUSES = [
         'all' => 'All Statuses',
         'unscheduled' => 'Unscheduled',
-        Project::STATUS_AWAITING_CLIENT_CONFIRMATION => 'Awaiting Confirmation',
+        Project::STATUS_AWAITING_CLIENT_CONFIRMATION => 'Awaiting Completion Confirmation',
         'pending' => 'Pending',
         'ongoing' => 'Ongoing',
         'on_hold' => 'On Hold',
@@ -918,6 +918,11 @@ class SystemReportService
             ])
             ->map(fn (Project $project): array => [
                 'reference_no' => $project->reference_no ?: '—',
+                // When the project was opened, from the row's own timestamp -
+                // never re-derived from a schedule, which says when the work
+                // was booked rather than when the job arrived. Same formatter
+                // as every other date in the report.
+                'created_on' => $this->formatDate($project->created_at),
                 'client' => $this->clientName($project),
                 'client_type' => $project->clientType() ? ucfirst(mb_strtolower($project->clientType())) : '—',
                 'project_types' => $project->projectTypes->pluck('type_name')->all(),

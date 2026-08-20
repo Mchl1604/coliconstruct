@@ -1090,6 +1090,12 @@ document.addEventListener("DOMContentLoaded", function () {
                 unscheduled: "bg-info text-dark",
                 pending: "bg-warning",
                 ongoing: "bg-primary",
+                // A lighter green than Completed, matching
+                // Project::statusBadgeClass(): the work is done, but the
+                // project is not closed until the client says so, and the two
+                // must not look identical at a glance.
+                awaiting_client_confirmation:
+                    "bg-success-subtle text-success-emphasis border border-success-subtle",
                 completed: "bg-success",
                 cancelled: "bg-danger",
                 archived: "bg-dark",

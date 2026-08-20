@@ -84,56 +84,54 @@ document.getElementById('reportImages').addEventListener('change', function () {
 
 });
 
+/**
+ * The task list.
+ *
+ * Built the first time the Tasks tab is opened, and never before: a table
+ * measured while its pane is display:none has no width to measure, and its
+ * columns come out wrong. Every show after that re-measures instead.
+ *
+ * This used to be built twice - once here on tab-show and once again on ready -
+ * so the on-ready copy won the race, sized itself against a hidden pane, and
+ * left the tab-show handler taking the "already built" branch on the very first
+ * click. That branch then reached for the DataTables Responsive extension to
+ * recalculate. The extension is not loaded on this page - nor anywhere in the
+ * app - so the call threw a TypeError every single time the Tasks tab was
+ * opened, and the `responsive: true` option was dead config for the same
+ * reason. Both are gone; columns.adjust() is core, and it is what was actually
+ * doing the work.
+ */
 let tasksTable;
 
 $('button[data-bs-target="#tasks"]').on('shown.bs.tab', function () {
 
-    if (!$.fn.DataTable.isDataTable('#tasksTable')) {
+    if (tasksTable) {
 
-        tasksTable = $('#tasksTable').DataTable({
-            responsive: true,
-            autoWidth: false,
-            pageLength: 5,
-            lengthMenu: [5, 10, 25, 50],
-            info: false,
-            language: {
-                search: "",
-                searchPlaceholder: "Search tasks..."
-            }
-        });
+        tasksTable.columns.adjust();
 
-    } else {
-
-        tasksTable.columns.adjust().responsive.recalc();
+        return;
 
     }
+
+    tasksTable = $('#tasksTable').DataTable({
+        autoWidth: false,
+        pageLength: 5,
+        lengthMenu: [5, 10, 25, 50],
+        info: false,
+        // Sorting a column of buttons means nothing, and the header offering
+        // it invites a click that does nothing.
+        columnDefs: [{ targets: -1, orderable: false }],
+        language: {
+            search: "",
+            searchPlaceholder: "Search tasks..."
+        }
+    });
 
 });
 
 document.getElementById('taskStartDate').addEventListener('change', function () {
 
     document.getElementById('taskDueDate').min = this.value;
-
-});
-
-$(function () {
-
-    const taskTable = $('#tasksTable').DataTable({
-
-        responsive: true,
-        autoWidth: false,
-        pageLength: 5,
-        lengthMenu: [5,10,25,50],
-        info: false,
-
-        language:{
-
-            search:"",
-            searchPlaceholder:"Search tasks..."
-
-        }
-
-    });
 
 });
 
@@ -377,12 +375,49 @@ $(function () {
         renderDropdown();
     });
 
+    /**
+     * A project carries exactly one lead, so choosing a different one in the
+     * select is not an addition - it REPLACES the lead who is there, and the
+     * outgoing lead comes off the team entirely along with any unfinished task
+     * they were holding.
+     *
+     * That is the intended way to change a lead, and it stays a single save.
+     * What it must not be is a surprise: the select looks like every other
+     * field on the form, and nothing else on the page says that picking a name
+     * in it removes somebody. So the replacement is named before it happens.
+     */
+    function confirmLeadReplacement() {
+        const previousLeadId = initialState.leadTechId;
+
+        if (!previousLeadId || String(previousLeadId) === String(leadTechSelect.value)) {
+            return true;
+        }
+
+        const outgoing = technicianLookup.get(String(previousLeadId));
+        const incoming = technicianLookup.get(String(leadTechSelect.value));
+
+        return window.confirm(
+            'Replace ' + (outgoing ? outgoing.name : 'the current lead technician') +
+            ' with ' + (incoming ? incoming.name : 'the selected technician') + ' as lead technician?' +
+            '\n\nA project can only have one lead. ' +
+            (outgoing ? outgoing.name : 'The current lead') +
+            ' will be taken off this project, and any unfinished task they were holding ' +
+            'will be left unassigned for somebody to pick up.'
+        );
+    }
+
     form.addEventListener('submit', function(event) {
         if (!leadTechSelect.value) {
             event.preventDefault();
             leadTechError.classList.remove('d-none');
             leadTechSelect.setCustomValidity('A lead technician is required.');
             leadTechSelect.reportValidity();
+
+            return;
+        }
+
+        if (!confirmLeadReplacement()) {
+            event.preventDefault();
         }
     });
 

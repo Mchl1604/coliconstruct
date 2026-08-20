@@ -50,12 +50,29 @@ class User extends Authenticatable
     public const STATUS_DEACTIVATED = 'deactivated';
 
     /**
+     * How many digits a contact number carries. Philippine mobile numbers are
+     * eleven, written 09XX XXX XXXX, and every form in the system asks for
+     * exactly that.
+     */
+    public const CONTACT_NUMBER_LENGTH = 11;
+
+    /**
      * The shape a contact number has to take, wherever one is entered -
      * registration, the Configuration dialogs, and a person editing their own
      * profile. One copy, so a number accepted by one form is not rejected by
      * the next.
+     *
+     * Digits only, and exactly CONTACT_NUMBER_LENGTH of them. Spaces, dashes
+     * and a leading +63 used to be accepted, which meant the same number could
+     * be stored four different ways and no two of them compared equal.
      */
-    public const CONTACT_NUMBER_RULE = 'regex:/^\+?[0-9][0-9\s\-().]{5,20}$/';
+    public const CONTACT_NUMBER_RULE = 'regex:/^[0-9]{11}$/';
+
+    /**
+     * What a form says when the number is not eleven digits. Stated here so
+     * every validator reports the rule in the same words.
+     */
+    public const CONTACT_NUMBER_MESSAGE = 'Enter an 11-digit contact number, digits only (e.g. 09171234567).';
 
     /**
      * Every role the RBAC enum accepts, with the label the interface shows.

@@ -167,17 +167,21 @@
     padding: 0.7rem 0.85rem;
 }
 
+/* Every date range printed inside a schedule modal is blue - here, in the
+   panel a calendar date opens, and in the numbered rows of the editor. One
+   colour for "this is a booked period", so a person reading three different
+   panels is reading the same thing three times rather than three things. */
 .schedule-range-static-label {
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
     font-size: 0.85rem;
     font-weight: 600;
-    color: #334155;
+    color: #0d6efd;
 }
 
 .schedule-range-static-label i {
-    color: #94a3b8;
+    color: #0d6efd;
 }
 
 .schedule-range-head {
@@ -194,7 +198,7 @@
     font-weight: 700;
     letter-spacing: 0.05em;
     text-transform: uppercase;
-    color: #64748b;
+    color: #0d6efd;
 }
 
 .schedule-range-head-actions {
@@ -510,8 +514,9 @@
     gap: 0.3rem;
     font-size: 0.78rem;
     font-weight: 600;
-    color: #334155;
-    background: #f1f5f9;
+    color: #0a58ca;
+    background: #e7f1ff;
+    border: 1px solid #cfe2ff;
     border-radius: 0.35rem;
     padding: 0.15rem 0.5rem;
     margin-top: 0.4rem;
@@ -695,4 +700,37 @@
     flex-direction: column;
     gap: 0.5rem;
     margin-top: 0.6rem;
+}
+/* The right-hand end of a schedule modal's header: the project's status badge
+   and the close button, in that order, hard against the right edge.
+
+   `margin-left: auto` is doing the work, and it has to be here rather than
+   left to the layout: Bootstrap's own `.modal-header` is a flex row with
+   justify-content left at `normal`, and what normally pushes the X into the
+   corner is the auto margin on `.btn-close` itself. Wrapping the X in this
+   group took that button out of the header's own flex line, so its auto margin
+   had no free space to absorb and the whole group sat wherever the title
+   ended. The margin moves to the group, which is the thing that now needs to
+   be pushed. */
+.schedule-modal-header-end {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: .6rem;
+    flex-shrink: 0;
+    margin-left: auto;
+}
+
+.schedule-modal-header-end .badge {
+    white-space: normal;
+    text-align: right;
+}
+
+@media (max-width: 575.98px) {
+    /* A long status and a title competing for one narrow line: the badge is
+       allowed to wrap rather than squeeze the project's name. The X stays
+       last, in the corner, at every width. */
+    .schedule-modal-header-end .badge {
+        max-width: 8rem;
+    }
 }

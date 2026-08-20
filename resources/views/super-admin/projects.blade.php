@@ -37,45 +37,27 @@
     <div class="card shadow-sm border-0 rounded-2">
         <div class="card-body p-2">
 
-            <ul class="nav nav-tabs projects-status-tabs mb-3 px-1">
-                <li class="nav-item">
-                    <button type="button" class="nav-link active" data-status-filter="all">All</button>
-                </li>
-                <li class="nav-item">
-                    <button type="button" class="nav-link" data-status-filter="pending">Pending</button>
-                </li>
-                <li class="nav-item">
-                    <button type="button" class="nav-link" data-status-filter="ongoing">Ongoing</button>
-                </li>
-                <li class="nav-item">
-                    <button type="button" class="nav-link" data-status-filter="overdue">
-                        Overdue
-                        @if ($overdueCount > 0)
-                            <span class="badge badge-overdue ms-1">{{ $overdueCount }}</span>
-                        @endif
-                    </button>
-                </li>
-                <li class="nav-item">
-                    {{-- A hold is a state the badge already prints, so the table
-                         has to be able to list it. Held work files itself under
-                         Pending otherwise - its stored status is Unscheduled -
-                         which is a tab it does not belong in and a count it
-                         quietly inflates. --}}
-                    <button type="button" class="nav-link" data-status-filter="on_hold">
-                        On Hold
-                        @if ($onHoldCount > 0)
-                            <span class="badge bg-secondary ms-1">{{ $onHoldCount }}</span>
-                        @endif
-                    </button>
-                </li>
-                <li class="nav-item">
+            {{-- Every tab carries its count, in the pattern Overdue and On
+                 Hold already used. The figures come from Project::tabCounts(),
+                 which groups by the very method each row is labelled with, so
+                 a badge can never promise more rows than its tab shows.
 
-                    <button type="button" class="nav-link" data-status-filter="completed">Completed</button>
-                </li>
-
-                <li class="nav-item">
-                    <button type="button" class="nav-link" data-status-filter="cancelled">Cancelled</button>
-                </li>
+                 A hold is a state the badge already prints, so the table has to
+                 be able to list it. Held work files itself under Pending
+                 otherwise - its stored status is Unscheduled - which is a tab it
+                 does not belong in and a count it quietly inflates. --}}
+            <ul class="nav nav-tabs projects-status-tabs mb-3 px-1"
+                data-project-status-tabs="projectsTable">
+                @foreach ($statusTabs as $tab)
+                    <li class="nav-item">
+                        <button type="button"
+                            class="nav-link {{ $tab['key'] === 'all' ? 'active' : '' }}"
+                            data-status-filter="{{ $tab['key'] }}">
+                            {{ $tab['label'] }}
+                            <span class="badge {{ $tab['badge'] }} ms-1">{{ $tab['count'] }}</span>
+                        </button>
+                    </li>
+                @endforeach
             </ul>
 
             <div class="table-responsive">
@@ -98,10 +80,31 @@
 
                     <tbody>
                         @foreach ($projects as $project)
-                            <tr data-status="{{ $project->status }}"
+                            @php
+                                // Somebody on this team can no longer sign in.
+                                // Surfaced on the row itself rather than only
+                                // inside Project Details: an administrator
+                                // should not have to open every project to find
+                                // the ones that need re-crewing.
+                                $needsRecrew = $project->needsRecrew();
+                            @endphp
+                            <tr data-tab="{{ $project->tabKey() }}"
+                                data-status="{{ $project->status }}"
                                 data-overdue="{{ $project->isOverdue() ? '1' : '0' }}"
-                                data-on-hold="{{ $project->on_hold ? '1' : '0' }}">
-                                <td>{{ $project->displayCode() }}</td>
+                                data-on-hold="{{ $project->on_hold ? '1' : '0' }}"
+                                class="{{ $needsRecrew ? 'project-row-needs-recrew' : '' }}">
+                                <td>
+                                    {{ $project->displayCode() }}
+                                    @if ($needsRecrew)
+                                        <span class="project-recrew-flag"
+                                            title="{{ $project->hasLead()
+                                                ? $project->inactiveCrewNames().' can no longer sign in. Open the project to reassign the work.'
+                                                : 'This project has no lead technician. Open the project and choose one in Assigned Team.' }}">
+                                            <i class="bi bi-person-exclamation" aria-hidden="true"></i>
+                                            {{ $project->recrewFlagLabel() }}
+                                        </span>
+                                    @endif
+                                </td>
                                 <td>{{ $project->reference_no }}</td>
                                 <td>
                                     @php
@@ -200,10 +203,12 @@
 
                                         <div class="modal-body">
                                             Put <strong>{{ $project->reference_no }}</strong> on hold? Dates from
-                                            tomorrow onwards will be released so the crew reads as free, and its
-                                            task dates cleared. Days already worked - up to and including today -
-                                            are kept on the project's record. The assigned technicians stay on the
-                                            project, ready for it to be rescheduled.
+                                            tomorrow onwards will be released so the crew reads as free. Days
+                                            already worked - up to and including today - are kept on the project's
+                                            record. The assigned technicians stay on the project, ready for it to
+                                            be rescheduled. Its tasks keep their owners, and keep their dates
+                                            wherever those still fall on a day the project holds; a task dated on a
+                                            released day becomes Unassigned.
                                         </div>
 
                                         <div class="modal-footer">
@@ -424,7 +429,7 @@
         <script>
             $(function() {
 
-                const table = $('#projectsTable').DataTable({
+                $('#projectsTable').DataTable({
                     responsive: true,
                     autoWidth: false,
                     pageLength: 10,
@@ -444,99 +449,13 @@
                     }
                 });
 
-                const tabButtons = document.querySelectorAll('[data-status-filter]');
-
-                tabButtons.forEach(function(button) {
-                    button.addEventListener('click', function() {
-
-                        tabButtons.forEach(function(item) {
-                            item.classList.remove('active');
-                        });
-
-                        button.classList.add('active');
-
-                        const status = button.getAttribute('data-status-filter');
-
-                        $.fn.dataTable.ext.search = $.fn.dataTable.ext.search.filter(function(
-                            filterFn) {
-                            return !filterFn._projectsStatusFilter;
-                        });
-
-                        const filterFn = function(settings, data, dataIndex) {
-                            if (settings.nTable.id !== 'projectsTable') {
-                                return true;
-                            }
-
-                            if (status === 'all') {
-                                return true;
-                            }
-
-                            const rowNode = table.row(dataIndex).node();
-                            const rowStatus = rowNode && rowNode.getAttribute('data-status');
-                            const isOverdue = rowNode && rowNode.getAttribute('data-overdue') === '1';
-                            const isOnHold = rowNode && rowNode.getAttribute('data-on-hold') === '1';
-
-                            // Paused work is paused whatever its dates say, so
-                            // this is asked first - the same precedence the
-                            // badge on the row itself uses. And a held project
-                            // appears under On Hold and nowhere else, so it
-                            // stops inflating the Pending tab it never
-                            // belonged in.
-                            if (status === 'on_hold') {
-                                return isOnHold;
-                            }
-
-                            if (isOnHold) {
-                                return false;
-                            }
-
-                            if (status === 'overdue') {
-                                return isOverdue;
-                            }
-
-                            if (status === 'pending') {
-                                return !isOverdue && (rowStatus === 'pending' || rowStatus === 'unscheduled');
-                            }
-
-                            // Ongoing means "on track": overdue work has its
-                            // own tab so the two don't double-count.
-                            if (status === 'ongoing') {
-                                return rowStatus === 'ongoing' && !isOverdue;
-                            }
-
-                            // A project waiting on its client has had its work
-                            // finished, so it belongs with the completed work
-                            // rather than in a tab of its own. The badge on the
-                            // row is what says it is not signed off yet.
-                            if (status === 'completed') {
-                                return rowStatus === 'completed' ||
-                                    rowStatus === 'awaiting_client_confirmation';
-                            }
-
-                            return rowStatus === status;
-                        };
-
-                        filterFn._projectsStatusFilter = true;
-                        $.fn.dataTable.ext.search.push(filterFn);
-                        table.draw();
-                    });
-                });
-
-                // The dashboard's status chart links here with ?status=, so a
-                // slice arrives on this page with its tab already chosen.
-                const requestedStatus = new URLSearchParams(window.location.search).get('status');
-
-                if (requestedStatus) {
-                    const requestedTab = document.querySelector(
-                        '[data-status-filter="' + requestedStatus + '"]'
-                    );
-
-                    if (requestedTab) {
-                        requestedTab.click();
-                    }
-                }
-
             });
         </script>
+
+        {{-- The tabs themselves: filtering, the ?status= deep link the
+             dashboard's figures use, and the memory that brings somebody back
+             to the tab they left. Shared with the technician portal's My
+             Projects rather than written twice. --}}
+        <script src="/js/projectStatusTabs.js"></script>
     @endpush
 @endsection

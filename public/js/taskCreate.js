@@ -106,15 +106,39 @@ document.addEventListener("DOMContentLoaded", function () {
                     return;
                 }
 
+                // Everybody on the team has had their account switched off, so
+                // there is nobody left to give the work to. Said here rather
+                // than left as a row of cards none of which can be clicked.
+                if (
+                    !data.technicians.some(function (technician) {
+                        return technician.can_receive_work !== false;
+                    })
+                ) {
+                    setError(
+                        "Every technician on this project has an inactive account, so nobody can be given a task. Ask an administrator to update the team.",
+                    );
+
+                    return;
+                }
+
                 technicians.innerHTML = data.technicians
                     .map(function (technician) {
                         const count = technician.active_task_count;
+                        // Still listed, because deactivating an account does
+                        // not take somebody off a team - but not selectable:
+                        // they cannot open the project, close the task, or be
+                        // told they have one. TaskAssignmentRules refuses the
+                        // same choice on the way back in.
+                        const cannotReceiveWork =
+                            technician.can_receive_work === false;
 
                         return (
                             "<label>" +
                             '<input type="radio" class="btn-check" name="technician_id" value="' +
                             technician.technician_id +
-                            '" required>' +
+                            '" required' +
+                            (cannotReceiveWork ? " disabled" : "") +
+                            ">" +
                             '<div class="task-assign-card">' +
                             // Same markup the Blade-rendered assign cards
                             // produce, so a person looks the same wherever
@@ -138,6 +162,9 @@ document.addEventListener("DOMContentLoaded", function () {
                             (technician.role === "lead_technician" ||
                             technician.is_lead
                                 ? '<span class="badge bg-primary task-assign-lead">Lead</span>'
+                                : "") +
+                            (cannotReceiveWork
+                                ? '<span class="badge bg-warning text-dark task-assign-inactive">Account inactive</span>'
                                 : "") +
                             "</div>" +
                             "</label>"

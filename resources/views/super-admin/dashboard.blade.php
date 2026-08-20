@@ -49,7 +49,7 @@
             @endforeach
         </div>
 
-        {{-- ===================== UPCOMING WORK + THE RING ===================== --}}
+        {{-- ================= UPCOMING WORK + QUICK ACTIONS ================= --}}
         <div class="dash-grid-main">
 
             <section class="dash-panel">
@@ -93,47 +93,44 @@
                 </div>
             </section>
 
+            {{-- The doors into the rest of the portal. Built in the
+                 controller so an action nobody may open is absent rather than
+                 drawn disabled, and every one of them points at a route that
+                 already exists. --}}
             <section class="dash-panel dash-panel-quiet">
                 <div class="dash-panel-head">
-                    <h2 class="dash-panel-title">Project Status</h2>
-                    <span class="dash-panel-note">Total {{ $totalProjects }}</span>
+                    <h2 class="dash-panel-title">Quick Actions</h2>
                 </div>
 
-                <div class="dash-ring-row">
-                    <ul class="dash-legend">
-                        @forelse ($statusBreakdown as $slice)
-                            <li>
-                                <span class="dash-legend-dot" style="background: {{ $slice['colour'] }}"></span>
-                                <span class="dash-legend-label">{{ $slice['label'] }}</span>
-                                <span class="dash-legend-value">{{ $slice['percent'] }}%</span>
-                            </li>
-                        @empty
-                            <li class="dash-empty">No projects yet.</li>
-                        @endforelse
-                    </ul>
-
-                    <div class="dash-ring">
-                        <canvas data-status-ring aria-hidden="true"></canvas>
-                        <div class="dash-ring-centre">
-                            <strong>{{ $totalProjects }}</strong>
-                            <span>Projects</span>
-                        </div>
-                    </div>
+                <div class="dash-actions">
+                    @forelse ($quickActions as $action)
+                        <a class="dash-action" href="{{ $action['url'] }}" data-quick-action="{{ $action['key'] }}">
+                            <span class="dash-action-icon">
+                                <i class="bi {{ $action['icon'] }}" aria-hidden="true"></i>
+                            </span>
+                            <span class="dash-action-label">{{ $action['label'] }}</span>
+                        </a>
+                    @empty
+                        <p class="dash-empty">No modules are available to your account.</p>
+                    @endforelse
                 </div>
             </section>
         </div>
 
-        {{-- ======================= WORKLOAD + ACTIVITY ======================= --}}
+        {{-- ================= ACTIVE TECHNICIANS + ACTIVITY ================= --}}
         <div class="dash-grid-foot">
 
+            {{-- Who is on site today, decided by the same booked date ranges
+                 the Active Today figure above counts, so the two can never
+                 describe different days. --}}
             <section class="dash-panel">
                 <div class="dash-panel-head">
-                    <h2 class="dash-panel-title">Technician Workload</h2>
+                    <h2 class="dash-panel-title">Active Technicians Today</h2>
                     <a class="dash-ghost-btn" href="{{ route('super-admin.technicians.index') }}">See All</a>
                 </div>
 
                 <ul class="dash-people">
-                    @forelse ($workload as $person)
+                    @forelse ($activeTechnicians as $person)
                         <li>
                             @if ($person['avatar_url'])
                                 <img class="user-avatar user-avatar-md" src="{{ $person['avatar_url'] }}" alt=""
@@ -145,14 +142,22 @@
                                 <span class="dash-person-role">{{ $person['role'] }}</span>
                             </span>
 
+                            {{-- What they are on, so the panel says where
+                                 somebody is rather than only that they are
+                                 busy. --}}
                             <span class="dash-person-count">
-                                {{ $person['value'] }}
-                                <span>{{ Str::plural('project', $person['value']) }}</span>
+                                {{ implode(', ', $person['projects']) }}
                             </span>
                         </li>
                     @empty
-                        <li class="dash-empty">No technicians yet.</li>
+                        <li class="dash-empty">Nobody is scheduled to work today.</li>
                     @endforelse
+
+                    @if ($activeTechnicianCount > $activeTechnicians->count())
+                        <li class="dash-empty">
+                            and {{ $activeTechnicianCount - $activeTechnicians->count() }} more.
+                        </li>
+                    @endif
                 </ul>
             </section>
 
@@ -198,12 +203,8 @@
         <script>
             window.dashboardData = {
                 summaryUrl: @json(route('super-admin.dashboard.summary')),
-                // The ring draws the same numbers the legend already shows, so
-                // it needs no request of its own.
-                ring: @json($statusBreakdown),
             };
         </script>
-        <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
         <script src="/js/super-admin/dashboard.js"></script>
     @endpush
 @endsection

@@ -14,8 +14,15 @@
         // Grouped, not keyed: a project holds any number of files of each
         // type, and keyBy would quietly show only the last of them.
         $documentsByType = $project->documents->groupBy('document_type');
-        $assessmentDocuments = $documentsByType->get('assessment', collect());
-        $contractDocuments = $documentsByType->get('contract', collect());
+
+        // The types the crew may see, in the order Document::TYPES states -
+        // so this page can never fall out of step with the administrative one
+        // about what a type is called or where it sits. Quotation is dropped
+        // because what a project is worth is commercial information, and
+        // Contract only exists on Commercial work.
+        $crewDocumentTypes = collect(\App\Models\Document::TYPES)
+            ->reject(fn ($label, $type) => $type === 'quotation'
+                || ($type === 'contract' && $client?->client_type !== 'Commercial'));
 
         $clientTypeClass = match (strtolower($client?->client_type ?? '')) {
             'residential' => 'bi bi-house-door',
@@ -35,6 +42,20 @@
     {{-- `project-details-page` is what applies the brand blue from the
          client's own project page; the layout below is unchanged. --}}
     <div class="container-fluid py-2 project-details-page">
+
+        {{-- Paused. Everything below stays readable, which is the point of
+             keeping it - what is unavailable is the work: adding a report,
+             editing a task, and closing the project. The controls for those
+             are already absent (the policy refuses them while a project is on
+             hold); this says why. --}}
+        @if ($project->on_hold)
+            <div class="alert alert-secondary border-0 shadow-sm" role="alert">
+                <i class="bi bi-pause-circle me-1" aria-hidden="true"></i>
+                <strong>This project is on hold.</strong>
+                Its tasks, reports and the days already worked are all kept as they are. Adding reports and
+                editing tasks become available again once an administrator resumes the project.
+            </div>
+        @endif
 
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
             <h2 class="fw-bold mb-0 text-brand-blue">Project Details</h2>
@@ -131,9 +152,12 @@
                     </div>
 
                     <div>
-                        <span class="badge rounded-pill fs-6 px-4 py-3 {{ $project->statusBadgeClass() }}">
-                            {{ $project->statusLabel() }}
-                        </span>
+                        {{-- The shared component, same size and shape as the
+                             administrative page draws it. Written out by hand
+                             here before, which is how the same project ends up
+                             wearing two different badges depending on who is
+                             looking at it. --}}
+                        <x-project-status-badge :project="$project" class="rounded-pill fs-6 px-4 py-3" />
                     </div>
                 </div>
 
@@ -189,38 +213,48 @@
 
                 <hr>
 
-                {{-- No quotation document either: what a project is worth is
-                     commercial information, not something the crew running it
-                     needs. --}}
-                {{-- One button per file, numbered when there is more than one:
-                     the crew needs every page of an assessment, not whichever
-                     of them happened to be uploaded last. --}}
-                <div class="d-flex gap-2 flex-wrap">
-                    @forelse ($assessmentDocuments as $index => $document)
-                        <a href="{{ asset($document->document_path) }}" class="btn btn-outline-primary"
-                            target="_blank" rel="noopener noreferrer"
-                            title="{{ $document->document_name }}">
-                            Assessment{{ $assessmentDocuments->count() > 1 ? ' '.($index + 1) : '' }}
-                        </a>
-                    @empty
-                        <button type="button" class="btn btn-outline-primary" disabled>Assessment</button>
-                    @endforelse
+                {{-- The same grouped cards the administrative page draws, from
+                     the same markup and the same stylesheet: a file is a named
+                     row you can read, not a button labelled "Assessment 2" that
+                     tells you nothing about what is inside it.
 
-                    @if ($client?->client_type === 'Commercial')
-                        @forelse ($contractDocuments as $index => $document)
-                            <a href="{{ asset($document->document_path) }}" class="btn btn-outline-success"
-                                target="_blank" rel="noopener noreferrer"
-                                title="{{ $document->document_name }}">
-                                Contract{{ $contractDocuments->count() > 1 ? ' '.($index + 1) : '' }}
-                            </a>
-                        @empty
-                            <button type="button" class="btn btn-outline-success" disabled>Contract</button>
-                        @endforelse
-                    @endif
+                     What differs is which types are here and what may be done
+                     with them, and neither of those is a matter of design:
+                     Quotation is withheld from the crew, and nothing carries a
+                     remove control, because the crew reads these files and an
+                     administrator manages them. --}}
+                <div class="project-document-groups">
+                    @foreach ($crewDocumentTypes as $type => $label)
+                        @php $files = $documentsByType->get($type, collect()); @endphp
+
+                        <div class="project-document-group">
+                            <div class="project-document-group-head">
+                                <span class="fw-semibold">{{ $label }}</span>
+                                @if ($files->isNotEmpty())
+                                    <span class="badge project-document-count">{{ $files->count() }}</span>
+                                @endif
+                            </div>
+
+                            @forelse ($files as $document)
+                                <div class="project-document-file">
+                                    <a href="{{ asset($document->document_path) }}" target="_blank"
+                                        rel="noopener noreferrer" class="project-document-link"
+                                        title="{{ $document->document_name }}">
+                                        <i class="bi bi-file-earmark-text" aria-hidden="true"></i>
+                                        <span>{{ $document->document_name }}</span>
+                                    </a>
+                                </div>
+                            @empty
+                                <span class="text-muted small">No {{ strtolower($label) }} uploaded.</span>
+                            @endforelse
+                        </div>
+                    @endforeach
                 </div>
 
-                {{-- No quotation here: what a project is worth is commercial
-                     information, not something the crew running it needs. --}}
+                {{-- The administrative page prints the quotation figure above
+                     this; here there is nothing between the files and the
+                     description, for the same reason the Quotation documents
+                     are absent. --}}
                 <div class="mt-3">
                     <span class="fw-bold me-2">Project Description:</span>
                     <p>{{ $project->description ?? 'N/A' }}</p>
@@ -237,6 +271,30 @@
                     </div>
 
                     <div class="card-body p-0">
+
+                        {{-- Deactivating a technician keeps their bookings rather than
+                             handing the dates back silently, so the lead running the job
+                             has to be told who can no longer work it. The team itself is
+                             an administrator's to change, so this asks for the two things
+                             a lead can actually do about it. --}}
+                        @if ($flagsInactiveCrew && $project->needsRecrew())
+                            <div class="alert alert-warning rounded-0 border-0 border-bottom mb-0" role="alert">
+                                <i class="bi bi-person-exclamation me-1" aria-hidden="true"></i>
+                                <strong>This team needs attention.</strong>
+                                @unless ($project->hasLead())
+                                    This project has no lead technician, so its task board, reports
+                                    and Complete Project are closed to everybody. Ask an
+                                    administrator to assign a lead.
+                                @endunless
+                                @if ($project->inactiveCrew()->isNotEmpty())
+                                    {{ $project->inactiveCrewNames() }}
+                                    can no longer sign in, but their dates are still booked.
+                                    Move their tasks to somebody else, and ask an administrator
+                                    to update the team.
+                                @endif
+                            </div>
+                        @endif
+
                         <ul class="list-group list-group-flush">
                             @forelse ($project->projectTechnicians as $projectTechnician)
                                 @php
@@ -259,6 +317,10 @@
                                                     <span class="badge project-lead-badge">Lead Technician</span>
                                                 @else
                                                     <span class="badge bg-secondary">Technician</span>
+                                                @endif
+
+                                                @if ($flagsInactiveCrew && ! $technician->isAssignable())
+                                                    <span class="badge bg-warning text-dark">Account inactive</span>
                                                 @endif
                                             </div>
 
@@ -359,15 +421,26 @@
                         @forelse ($reports as $report)
                             <div
                                 class="card mb-3 {{ $report->report_type == 'progress' ? 'border-primary bg-primary-subtle' : 'border-danger bg-danger-subtle' }}">
-                                <div class="card-header d-flex justify-content-between bg-transparent">
+                                <div class="card-header d-flex justify-content-between">
                                     <div>
                                         <span class="badge {{ $report->typeBadgeClass() }}">
                                             {{ $report->typeLabel() }}
                                         </span>
                                         <h5 class="mt-2 mb-0">{{ $report->report_title }}</h5>
-                                        <small class="text-muted">
-                                            by {{ $report->submitterName() }}
-                                        </small>
+
+                                        {{-- Who filed it, beside their picture,
+                                             exactly as the administrative page
+                                             signs a report. --}}
+                                        <div class="d-flex align-items-center gap-2 mt-1">
+                                            @if ($report->submitterAvatarUrl())
+                                                <img class="user-avatar user-avatar-xs"
+                                                    src="{{ $report->submitterAvatarUrl() }}" alt=""
+                                                    loading="lazy">
+                                            @endif
+                                            <small class="text-muted">
+                                                by {{ $report->submitterName() }}
+                                            </small>
+                                        </div>
                                     </div>
 
                                     <small class="text-muted">
@@ -409,17 +482,18 @@
                                 <button type="button" class="btn btn-primary" data-bs-toggle="modal"
                                     data-bs-target="#addTaskModal">
                                     <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
-                                    Assign New Task
+                                    Add Task
                                 </button>
                             @endif
                         </div>
 
                         <div class="table-responsive">
-                            <table class="table table-hover table-striped align-middle mb-0">
+                            <table id="portalTasksTable"
+                                class="table table-hover table-striped align-middle mb-0">
                                 <thead class="table-info">
                                     <tr>
                                         <th>Task</th>
-                                        <th>Assigned Technician</th>
+                                        <th>Assigned To</th>
                                         <th>Start Date</th>
                                         <th>Due Date</th>
                                         <th>Status</th>
@@ -427,9 +501,13 @@
                                     </tr>
                                 </thead>
 
+                                {{-- No blade fallback row: a single colspan cell has
+                                     fewer cells than the header, which DataTables
+                                     cannot parse. Its own emptyTable message covers
+                                     it, the same way it does on My Projects. --}}
                                 <tbody>
-                                    @forelse ($tasks as $task)
-                                        <tr>
+                                    @foreach ($tasks as $task)
+                                        <tr data-status="{{ $task->status }}">
                                             <td>
                                                 <div class="fw-semibold">{{ $task->task_title }}</div>
                                                 <small class="text-muted">
@@ -438,10 +516,20 @@
                                             </td>
 
                                             <td>
-                                                {{ $task->technician?->name ?? 'Unassigned' }}
-                                                @if ($task->technician_id === $technicianId)
-                                                    <span class="badge bg-info text-dark ms-1">You</span>
-                                                @endif
+                                                {{-- The person's own picture beside their
+                                                     name, as on the administrative copy of
+                                                     this table. The "You" badge stays: this
+                                                     is the one table a technician reads
+                                                     looking for their own work. --}}
+                                                <div class="d-flex align-items-center gap-2">
+                                                    <x-user-avatar :user="$task->technician?->account"
+                                                        size="sm"
+                                                        :alt="$task->technician?->name ?? 'Unassigned'" />
+                                                    <span>{{ $task->technician?->name ?? 'Unassigned' }}</span>
+                                                    @if ($task->technician_id === $technicianId)
+                                                        <span class="badge bg-info text-dark">You</span>
+                                                    @endif
+                                                </div>
                                             </td>
 
                                             <td>
@@ -489,13 +577,7 @@
                                                 </div>
                                             </td>
                                         </tr>
-                                    @empty
-                                        <tr>
-                                            <td colspan="6" class="text-secondary text-center py-4">
-                                                No tasks have been created on this project yet.
-                                            </td>
-                                        </tr>
-                                    @endforelse
+                                    @endforeach
                                 </tbody>
                             </table>
                         </div>
@@ -577,16 +659,23 @@
 
                         <hr>
 
-                        <label class="form-label fw-bold mb-3">Assigned Technician</label>
+                        <label class="form-label fw-bold mb-3">Assign To</label>
 
                         <div class="task-assign-row">
                             @foreach ($technicians as $technician)
                                 @php
                                     $activeCount = $technicianActiveTaskCounts[$technician->technician_id] ?? 0;
+                                    // Still listed, because deactivating an
+                                    // account does not take somebody off a team -
+                                    // but not selectable: they cannot open the
+                                    // project, close the task, or be told they
+                                    // have one.
+                                    $cannotReceiveWork = ! $technician->isAssignable();
                                 @endphp
                                 <label>
                                     <input type="radio" class="btn-check" name="technician_id"
-                                        value="{{ $technician->technician_id }}" required>
+                                        value="{{ $technician->technician_id }}" required
+                                        @disabled($cannotReceiveWork)>
 
                                     <div class="task-assign-card">
                                         <x-user-avatar :user="$technician->account" size="lg"
@@ -598,6 +687,11 @@
                                         </div>
                                         @if (optional($technician->account)->role === 'lead_technician')
                                             <span class="badge bg-primary task-assign-lead">Lead</span>
+                                        @endif
+                                        @if ($cannotReceiveWork)
+                                            <span class="badge bg-warning text-dark task-assign-inactive">
+                                                Account inactive
+                                            </span>
                                         @endif
                                     </div>
                                 </label>
@@ -746,5 +840,45 @@
         {{-- The same range-aware task date pickers the Super Admin task forms use. --}}
         <script src="/js/super-admin/taskDatePickers.js"></script>
         <script src="/js/imagePreview.js"></script>
+
+        {{-- The task list is a DataTable here for the same reason it is one on
+             the administrative copy of this page: a project can run to dozens
+             of tasks, and finding one should not mean scrolling.
+
+             Built through the portal's own helper, so it carries the search box
+             and the paging every other table in this portal has, and page
+             lengths matched to the administrative task list.
+
+             Built when the tab is first opened rather than at load: a table
+             measured while its pane is hidden has no width to measure, and its
+             columns come out wrong. --}}
+        <script>
+            document.addEventListener('DOMContentLoaded', function() {
+                const tab = document.querySelector('button[data-bs-target="#tasks"]');
+
+                if (!tab) {
+                    return;
+                }
+
+                let table = null;
+
+                tab.addEventListener('shown.bs.tab', function() {
+                    if (table) {
+                        table.columns.adjust();
+
+                        return;
+                    }
+
+                    table = window.portal.dataTable('#portalTasksTable', 'tasks', {
+                        pageLength: 5,
+                        lengthMenu: [5, 10, 25, 50],
+                        columnDefs: [{
+                            targets: -1,
+                            orderable: false
+                        }],
+                    });
+                });
+            });
+        </script>
     @endpush
 @endsection

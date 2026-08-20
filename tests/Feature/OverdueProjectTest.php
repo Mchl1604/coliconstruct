@@ -234,9 +234,17 @@ class OverdueProjectTest extends TestCase
         $response->assertOk();
         $response->assertSee('data-status-filter="overdue"', false);
         $response->assertSee('Overdue');
-        $this->assertSame(1, $response->viewData('overdueCount'));
+
+        // Every tab carries its count now, not just this one.
+        $tabs = collect($response->viewData('statusTabs'))->keyBy('key');
+        $this->assertSame(1, $tabs['overdue']['count']);
+        $this->assertSame(2, $tabs['all']['count']);
+        $this->assertSame(1, $tabs['ongoing']['count']);
+        $this->assertSame(0, $tabs['cancelled']['count']);
+
         $response->assertSee('data-overdue="1"', false);
         $response->assertSee('data-overdue="0"', false);
+        $response->assertSee('data-tab="overdue"', false);
     }
 
     public function test_the_details_page_warns_and_offers_both_ways_out(): void
@@ -270,7 +278,17 @@ class OverdueProjectTest extends TestCase
     // Calendars
     // ------------------------------------------------------------------
 
-    public function test_cancelled_and_on_hold_projects_are_off_the_schedules_calendar(): void
+    /**
+     * Cancelled work leaves the calendar. Held work does not.
+     *
+     * A hold cuts the bookings off at the day it was placed, so the only dates
+     * a held project still holds are days that were actually worked - hiding
+     * them made the weeks before the pause read as empty. What is drawn is
+     * whatever survived that cutoff; nothing here brings a released date back.
+     * The bookings are drawn in the On Hold grey and open the view-only panel,
+     * because a held schedule cannot be changed until the project is resumed.
+     */
+    public function test_cancelled_work_leaves_the_schedules_calendar_but_held_work_stays(): void
     {
         $ongoing = $this->project('Ongoing Project');
         $this->schedule($ongoing, $this->day(-2), $this->day(5));
@@ -282,7 +300,7 @@ class OverdueProjectTest extends TestCase
         $this->schedule($cancelled, $this->day(-2), $this->day(5));
 
         $onHold = $this->project('Paused Project', 'ongoing', true);
-        $this->schedule($onHold, $this->day(-2), $this->day(5));
+        $this->schedule($onHold, $this->day(-6), $this->day(-2));
 
         $response = $this->get(route('super-admin.schedules.index'));
         $response->assertOk();
@@ -293,7 +311,15 @@ class OverdueProjectTest extends TestCase
         $this->assertContains('Ongoing Project', $names);
         $this->assertContains('Late Project', $names);
         $this->assertNotContains('Cancelled Project', $names);
-        $this->assertNotContains('Paused Project', $names);
+        $this->assertContains('Paused Project', $names);
+
+        $heldEvent = $events->firstWhere('extendedProps.projectName', 'Paused Project');
+
+        $this->assertSame(Project::CALENDAR_INK['on_hold'], $heldEvent['borderColor']);
+        $this->assertSame('On Hold', $heldEvent['extendedProps']['statusLabel']);
+        // Clicking it opens the read-only panel: the schedule is fixed until
+        // somebody resumes the project.
+        $this->assertTrue($heldEvent['extendedProps']['readOnly']);
 
         // Overdue events are orange and labelled Overdue. These are whole-day
         // bookings, so they are drawn filled - the bar carries the colour and
@@ -307,7 +333,11 @@ class OverdueProjectTest extends TestCase
         $this->assertSame('Overdue', $lateEvent['extendedProps']['statusLabel']);
     }
 
-    public function test_cancelled_and_on_hold_projects_are_off_the_technician_calendar(): void
+    /**
+     * The same rule on the technician's own calendar: cancelled work goes,
+     * held work stays as the record of the days that were worked.
+     */
+    public function test_cancelled_work_leaves_the_technician_calendar_but_held_work_stays(): void
     {
         $ana = $this->technician('Ana Mendoza');
 
@@ -324,7 +354,7 @@ class OverdueProjectTest extends TestCase
 
         $this->schedule($late, $this->day(-10), $this->day(-5));
         $this->schedule($cancelled, $this->day(-2), $this->day(5));
-        $this->schedule($onHold, $this->day(-2), $this->day(5));
+        $this->schedule($onHold, $this->day(-6), $this->day(-2));
 
         $response = $this->getJson(route('super-admin.technicians.calendar', $ana->technician_id));
         $response->assertOk();
@@ -332,12 +362,14 @@ class OverdueProjectTest extends TestCase
         $events = collect($response->json('events'));
         $names = $events->pluck('extendedProps.projectName')->unique()->values()->all();
 
-        $this->assertSame(['Late Project'], $names);
+        sort($names);
+        $this->assertSame(['Late Project', 'Paused Project'], $names);
         // Filled for a whole-day booking, the same as every other calendar.
-        $this->assertSame(Project::CALENDAR_INK['overdue'], $events->first()['borderColor']);
-        $this->assertSame(Project::CALENDAR_INK['overdue'], $events->first()['backgroundColor']);
-        $this->assertSame('#ffffff', $events->first()['textColor']);
-        $this->assertSame('Overdue', $events->first()['extendedProps']['statusLabel']);
+        $lateEvent = $events->firstWhere('extendedProps.projectName', 'Late Project');
+        $this->assertSame(Project::CALENDAR_INK['overdue'], $lateEvent['borderColor']);
+        $this->assertSame(Project::CALENDAR_INK['overdue'], $lateEvent['backgroundColor']);
+        $this->assertSame('#ffffff', $lateEvent['textColor']);
+        $this->assertSame('Overdue', $lateEvent['extendedProps']['statusLabel']);
 
         // Cancelled work is dropped from the assignments table and its count
         // too; an on-hold project is still an open assignment, so it stays.

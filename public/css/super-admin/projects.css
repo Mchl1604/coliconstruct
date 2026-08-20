@@ -121,3 +121,49 @@
     }
 }
     
+/* ---- A project whose crew includes an account that can no longer sign in ----
+   Flagged on the row itself so an administrator does not have to open every
+   project to find the ones that need re-crewing. A left edge and a warm tint
+   rather than a colour of its own: the row's status badge is still the thing
+   saying what the project IS, and this says what needs attention about it.
+
+   `!important` because table-striped paints its own background on alternate
+   rows, and a striped row would otherwise show the flag only half the time. */
+
+.project-row-needs-recrew > * {
+    background-color: #fff8e6 !important;
+}
+
+.project-row-needs-recrew > *:first-child {
+    box-shadow: inset 4px 0 0 0 #f0ad4e;
+}
+
+.project-recrew-flag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    margin-top: 0.2rem;
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: #8a5a00;
+    background: #ffe9b8;
+    border-radius: 999px;
+    padding: 0.1rem 0.5rem;
+    white-space: nowrap;
+    cursor: help;
+}
+
+/* The tab counts. Bootstrap badges sit on the tab's own background, which is
+   brand blue once the tab is active - so an active tab's badge goes white on
+   blue rather than keeping a fill that would disappear into it. */
+
+.projects-status-tabs .nav-link .badge {
+    font-size: 0.68rem;
+    font-weight: 700;
+    vertical-align: middle;
+}
+
+.projects-status-tabs .nav-link.active .badge {
+    background-color: rgba(255, 255, 255, .22) !important;
+    color: #fff !important;
+}

@@ -329,81 +329,57 @@ a.dash-stat:hover {
     color: var(--dash-blue-deep);
 }
 
-/* ---- The ring ---- */
+/* ---- Quick Actions ----
+   Six doors into the modules, laid out as a grid that reflows rather than a
+   list: they are equals, and none of them is more important than the others.
+   They fill the panel the status ring used to sit in. */
 
-.dash-ring-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1.25rem;
-    flex-wrap: wrap;
-}
-
-.dash-legend {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    min-width: 8.5rem;
-}
-
-.dash-legend li {
+.dash-actions {
     display: grid;
-    grid-template-columns: auto 1fr;
-    grid-template-rows: auto auto;
-    column-gap: .55rem;
-    align-items: center;
+    grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+    gap: .75rem;
 }
 
-.dash-legend-dot {
-    width: .65rem;
-    height: .65rem;
-    border-radius: 50%;
-}
-
-.dash-legend-label {
-    font-size: .85rem;
-    color: var(--dash-muted);
-}
-
-/* The percentage is the point, so it gets the size. */
-.dash-legend-value {
-    grid-column: 2;
-    font-size: 1.55rem;
-    font-weight: 800;
-    line-height: 1.1;
-    color: var(--dash-blue-dark);
-}
-
-.dash-ring {
-    position: relative;
-    flex: 0 0 auto;
-    width: 13.5rem;
-    height: 13.5rem;
-}
-
-.dash-ring-centre {
-    position: absolute;
-    inset: 0;
+.dash-action {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    pointer-events: none;
-}
-
-.dash-ring-centre strong {
-    font-size: 1.9rem;
-    font-weight: 800;
-    line-height: 1;
+    gap: .5rem;
+    padding: 1rem .6rem;
+    border-radius: .9rem;
+    background: #fff;
+    border: 1px solid #e6ecf3;
     color: var(--dash-blue-dark);
+    text-decoration: none;
+    text-align: center;
+    transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
 }
 
-.dash-ring-centre span {
-    font-size: .8rem;
-    color: var(--dash-muted);
+.dash-action:hover,
+.dash-action:focus-visible {
+    transform: translateY(-2px);
+    border-color: var(--dash-blue-deep);
+    box-shadow: 0 6px 18px rgba(15, 42, 68, .09);
+    color: var(--dash-blue-deep);
+}
+
+.dash-action-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.6rem;
+    height: 2.6rem;
+    border-radius: 50%;
+    background: #eef4fb;
+    color: var(--dash-blue-deep);
+    font-size: 1.15rem;
+}
+
+.dash-action-label {
+    font-size: .85rem;
+    font-weight: 600;
+    line-height: 1.2;
 }
 
 /* ---- People ---- */
@@ -449,10 +425,14 @@ a.dash-stat:hover {
     color: var(--dash-muted);
 }
 
+/* Carries the reference numbers of whatever somebody is on today, so it wraps
+   rather than pushing the row sideways. */
 .dash-person-count {
-    font-size: 1.05rem;
+    font-size: .82rem;
     font-weight: 700;
-    white-space: nowrap;
+    text-align: right;
+    max-width: 11rem;
+    overflow-wrap: anywhere;
     color: var(--dash-blue-deep);
 }
 
@@ -550,12 +530,7 @@ a.dash-activity-action:hover {
         justify-content: center;
     }
 
-    .dash-ring-row {
-        justify-content: center;
-    }
-
-    .dash-ring {
-        width: 11rem;
-        height: 11rem;
+    .dash-actions {
+        grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
     }
 }

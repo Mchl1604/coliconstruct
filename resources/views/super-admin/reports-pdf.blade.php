@@ -295,11 +295,15 @@
                     <table class="data">
                         <thead>
                             <tr>
-                                <th style="width:12%">Reference No.</th>
-                                <th style="width:20%">Client</th>
-                                <th style="width:10%">Client Type</th>
-                                <th style="width:20%">Project Type</th>
-                                <th style="width:13%">Status</th>
+                                <th style="width:11%">Reference No.</th>
+                                {{-- When the job arrived, beside the reference
+                                     it arrived under. Same format as every
+                                     other date in this report. --}}
+                                <th style="width:10%">Created</th>
+                                <th style="width:18%">Client</th>
+                                <th style="width:9%">Client Type</th>
+                                <th style="width:18%">Project Type</th>
+                                <th style="width:12%">Status</th>
                                 <th>Schedules</th>
                             </tr>
                         </thead>
@@ -307,6 +311,7 @@
                             @foreach ($rows as $row)
                                 <tr>
                                     <td class="nowrap">{{ $row['reference_no'] }}</td>
+                                    <td class="nowrap">{{ $row['created_on'] }}</td>
                                     <td>{{ $row['client'] }}</td>
                                     <td>{{ $row['client_type'] }}</td>
                                     <td>{!! $stack($row['project_types'], 'No Project Type') !!}</td>

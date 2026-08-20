@@ -304,6 +304,7 @@ class AuditDecisionsTest extends TestCase
             'email' => 'newcomer@example.test',
             'password' => 'a-good-password',
             'password_confirmation' => 'a-good-password',
+            'terms' => '1',
         ]);
 
         $client = User::where('email', 'newcomer@example.test')->first();
@@ -415,8 +416,13 @@ class AuditDecisionsTest extends TestCase
     {
         $this->actingAsSuperAdmin();
 
+        // Given a lead of its own, so this is measuring the one thing it means
+        // to measure. A project with no lead needs re-crewing for that reason
+        // alone, and the flag would never clear however the crew's accounts
+        // came and went - see LeadTechnicianRoleChangeTest.
+        $lead = $this->technician('Working Lead', 'lead_technician');
         $technician = $this->technician('Switched Off');
-        $project = $this->project([$technician]);
+        $project = $this->project([$lead, $technician]);
         $this->book($project, 1, 3);
 
         $technician->account->forceFill(['status' => User::STATUS_DEACTIVATED])->save();

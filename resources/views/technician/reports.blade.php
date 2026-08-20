@@ -14,7 +14,9 @@
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
         <div>
             <h4 class="fw-bold mb-1">Reports</h4>
-            <p class="text-secondary small mb-0">Every report you have filed.</p>
+            <p class="text-secondary small mb-0">
+                Reports you submitted. To read every report on a project, whoever filed it, open the project.
+            </p>
         </div>
 
         <div class="d-flex align-items-center gap-2">

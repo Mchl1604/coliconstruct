@@ -155,7 +155,8 @@ class ProjectTeamRules
                     $techniciansKey,
                     sprintf(
                         '%s is a Lead Technician, and a project can only have one lead. '
-                            .'Make them the lead, or choose somebody else.',
+                            .'Choose them in the Lead Technician select instead - which replaces the lead '
+                            .'this project already has - or pick somebody else here.',
                         $technician->name
                     )
                 );
@@ -172,8 +173,13 @@ class ProjectTeamRules
     /**
      * Why somebody cannot be given work, in the words the administrator who
      * switched the account off would recognise.
+     *
+     * Public because the technicians page hands out the same work from the
+     * other side - a technician picked first, projects picked second - and
+     * refusing the same thing in different words on the two screens reads as
+     * two different rules.
      */
-    private function unavailableMessage(Technician $technician): string
+    public function unavailableMessage(Technician $technician): string
     {
         $account = $technician->account;
 

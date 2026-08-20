@@ -214,6 +214,7 @@ class AuthenticationTest extends TestCase
             'birthdate' => '1990-05-04',
             'password' => 'my-own-password',
             'password_confirmation' => 'my-own-password',
+            'terms' => '1',
         ]);
 
         $response->assertRedirect(route('auth.verify'));
@@ -254,6 +255,7 @@ class AuthenticationTest extends TestCase
             'birthdate' => '1990-05-04',
             'password' => 'my-own-password',
             'password_confirmation' => 'my-own-password',
+            'terms' => '1',
         ]);
 
         $code = $this->issuedCode();
@@ -287,6 +289,7 @@ class AuthenticationTest extends TestCase
             'birthdate' => '1990-05-04',
             'password' => 'my-own-password',
             'password_confirmation' => 'my-own-password',
+            'terms' => '1',
         ]);
 
         $response = $this->get(route('auth.verify'));
@@ -322,6 +325,7 @@ class AuthenticationTest extends TestCase
             'birthdate' => '1990-05-04',
             'password' => 'my-own-password',
             'password_confirmation' => 'my-own-password',
+            'terms' => '1',
         ]);
 
         $this->post(route('auth.verify.store'), ['code' => '000000'])
@@ -391,6 +395,7 @@ class AuthenticationTest extends TestCase
             'birthdate' => '1990-05-04',
             'password' => 'my-own-password',
             'password_confirmation' => 'my-own-password',
+            'terms' => '1',
             'role' => 'super_admin',
             'status' => 'active',
         ]);
@@ -412,6 +417,7 @@ class AuthenticationTest extends TestCase
             'birthdate' => '1990-05-04',
             'password' => 'my-own-password',
             'password_confirmation' => 'my-own-password',
+            'terms' => '1',
         ])->assertSessionHasErrors('email');
     }
 
@@ -430,6 +436,7 @@ class AuthenticationTest extends TestCase
             'birthdate' => $underage,
             'password' => 'my-own-password',
             'password_confirmation' => 'my-own-password',
+            'terms' => '1',
         ])->assertSessionHasErrors('birthdate');
 
         $this->assertSame(0, User::where('email', 'young@example.test')->count());
@@ -457,6 +464,7 @@ class AuthenticationTest extends TestCase
             'birthdate' => $birthdate,
             'password' => 'my-own-password',
             'password_confirmation' => 'my-own-password',
+            'terms' => '1',
         ])->assertRedirect(route('auth.verify'));
 
         $user = User::where('email', 'eighteen@example.test')->firstOrFail();
@@ -473,6 +481,7 @@ class AuthenticationTest extends TestCase
             'birthdate' => '1990-05-04',
             'password' => 'my-own-password',
             'password_confirmation' => 'something-else',
+            'terms' => '1',
         ])->assertSessionHasErrors('password');
 
         $this->assertSame(0, User::where('email', 'jose@example.test')->count());

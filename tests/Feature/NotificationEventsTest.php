@@ -598,7 +598,7 @@ class NotificationEventsTest extends TestCase
             'first_name' => 'New',
             'last_name' => 'Technician',
             'email' => 'new.technician@example.test',
-            'contact_number' => '0917 555 1234',
+            'contact_number' => '09175551234',
             'birthdate' => '1990-05-04',
             'role' => 'technician',
             // A technician account is rejected without at least one specialty.
@@ -621,7 +621,7 @@ class NotificationEventsTest extends TestCase
             'first_name' => 'New',
             'last_name' => 'Admin',
             'email' => 'new.admin@example.test',
-            'contact_number' => '0917 555 1234',
+            'contact_number' => '09175551234',
             'birthdate' => '1990-05-04',
             'role' => 'admin',
         ]);

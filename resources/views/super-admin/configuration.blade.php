@@ -155,8 +155,10 @@
                 </div>
             </div>
 
-            {{-- ---------------- Clients ---------------- --}}
-            <div class="card shadow-sm border-0 rounded-2">
+            {{-- ---------------- Clients ----------------
+                 `id` so the dashboard's Clients quick action can open this tab
+                 at this table rather than needing a page of its own. --}}
+            <div class="card shadow-sm border-0 rounded-2" id="clients">
                 <div class="card-body p-3">
                     <div class="config-table-header">
                         <div>
@@ -691,9 +693,16 @@
                                     <label class="form-label small fw-semibold mb-1" for="userContactNumber">
                                         Contact Number <span class="text-danger">*</span>
                                     </label>
-                                    <input type="tel" id="userContactNumber" class="form-control"
-                                        name="contact_number" maxlength="32" placeholder="09XX XXX XXXX"
-                                        autocomplete="off">
+                                    {{-- Eleven digits and nothing else, the same
+                                         rule User::CONTACT_NUMBER_RULE applies on
+                                         the server. registerForm.js strips
+                                         anything that is not a digit. --}}
+                                    <input type="text" id="userContactNumber" class="form-control"
+                                        name="contact_number" inputmode="numeric" data-digits-only
+                                        maxlength="{{ \App\Models\User::CONTACT_NUMBER_LENGTH }}"
+                                        placeholder="09171234567" autocomplete="off"
+                                        aria-describedby="userContactNumberHelp">
+                                    <div class="form-text" id="userContactNumberHelp">11 digits, numbers only.</div>
                                 </div>
                                 <div class="col-md-4">
                                     <label class="form-label small fw-semibold mb-1" for="userBirthdate">
@@ -1270,6 +1279,26 @@
     </div>
 
     @push('scripts')
+        {{-- Keeps the contact number field to digits only. --}}
+        <script src="/js/registerForm.js"></script>
+        <script>
+            // Arriving on #clients from the dashboard's quick action. The table
+            // is filled by a request, so the browser's own jump happens before
+            // the card has its height - this repeats it once the page settles.
+            document.addEventListener('DOMContentLoaded', function () {
+                if (window.location.hash !== '#clients') {
+                    return;
+                }
+
+                const target = document.getElementById('clients');
+
+                if (target) {
+                    window.setTimeout(function () {
+                        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }, 400);
+                }
+            });
+        </script>
         <script>
             window.configurationRoutes = {
                 employees: @json(route('super-admin.configuration.users.employees')),
