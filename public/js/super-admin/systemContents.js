@@ -125,7 +125,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             return response.json().then(function(payload) {
                                 if (!response.ok) {
                                     throw new Error(payload.error || payload.message ||
-                                        'The image could not be uploaded.');
+                                        'Unable to upload image.');
                                 }
 
                                 return payload;
@@ -158,7 +158,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             load(currentSection);
                         })
                         .catch(function() {
-                            showError('The image could not be removed.');
+                            showError('Unable to remove image.');
                         });
                 });
             }
@@ -191,7 +191,7 @@ document.addEventListener('DOMContentLoaded', function() {
             })
             .then(function(response) {
                 if (!response.ok) {
-                    throw new Error('This content could not be loaded.');
+                    throw new Error('Unable to load this content.');
                 }
 
                 return response.json();
@@ -259,7 +259,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 .then(function(response) {
                     return response.json().then(function(payload) {
                         if (!response.ok) {
-                            throw new Error(payload.error || payload.message || 'The changes could not be saved.');
+                            throw new Error(payload.error || payload.message || 'Unable to save changes.');
                         }
 
                         return payload;

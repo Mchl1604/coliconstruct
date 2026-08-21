@@ -73,7 +73,7 @@ class EmailVerificationController extends Controller
 
         $request->validate(
             ['code' => ['required', 'string', 'max:12']],
-            ['code.required' => 'Enter the code that was emailed to you.']
+            ['code.required' => 'Enter the emailed code.']
         );
 
         try {
@@ -109,7 +109,7 @@ class EmailVerificationController extends Controller
         $account->forceFill(['last_login_at' => now()])->save();
 
         return redirect(PortalHome::url($account))
-            ->with('success', 'Your email is verified. Welcome to '.config('company.name').'.');
+            ->with('success', 'Email verified. Welcome to '.config('company.name').'.');
     }
 
     /**
@@ -138,7 +138,7 @@ class EmailVerificationController extends Controller
             return back()->with('error', $exception->getMessage());
         }
 
-        return back()->with('success', 'A new code is on its way to '.$account->email.'.');
+        return back()->with('success', 'New code sent to '.$account->email.'.');
     }
 
     // ------------------------------------------------------------------

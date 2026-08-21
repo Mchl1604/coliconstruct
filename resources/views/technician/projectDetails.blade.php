@@ -30,12 +30,11 @@
             default => 'bi bi-person',
         };
 
-        // Closing a project is a lead's call. A technician reads this page and
-        // completes their own tasks on it, nothing more.
-        $canCloseProject = $canCloseProjects
-            && in_array($project->status, ['pending', 'ongoing'], true)
-            && ! $project->on_hold;
-
+        // Closing a project is a lead's call, and only on work that is
+        // actually under way: $canCloseProject arrives from
+        // ProjectPolicy::offersCompletion(), which refuses a Pending,
+        // Unscheduled or paused project outright. A technician reads this page
+        // and completes their own tasks on it, nothing more.
         $canComplete = $canCloseProject && $completionBlockers === [];
     @endphp
 
@@ -52,8 +51,7 @@
             <div class="alert alert-secondary border-0 shadow-sm" role="alert">
                 <i class="bi bi-pause-circle me-1" aria-hidden="true"></i>
                 <strong>This project is on hold.</strong>
-                Its tasks, reports and the days already worked are all kept as they are. Adding reports and
-                editing tasks become available again once an administrator resumes the project.
+                Reports and task edits resume when an administrator lifts the hold.
             </div>
         @endif
 
@@ -88,12 +86,9 @@
                     <div class="flex-grow-1">
                         <h5 class="alert-heading mb-1">This project is overdue</h5>
                         <p class="mb-0">
-                            Its last scheduled day was
-                            <strong>{{ $project->scheduleEndsOn()->format('F j, Y') }}</strong>
-                            ({{ $project->scheduleEndsOn()->diffForHumans() }}), but the project is still
-                            <strong>{{ $project->status }}</strong>.
-                            Close it off once the work is finished, or ask an administrator to extend the
-                            schedule.
+                            Last scheduled day was
+                            <strong>{{ $project->scheduleEndsOn()->format('F j, Y') }}</strong>.
+                            Close it off, or ask an administrator to extend the schedule.
                         </p>
                     </div>
                 </div>
@@ -282,14 +277,11 @@
                                 <i class="bi bi-person-exclamation me-1" aria-hidden="true"></i>
                                 <strong>This team needs attention.</strong>
                                 @unless ($project->hasLead())
-                                    This project has no lead technician, so its task board, reports
-                                    and Complete Project are closed to everybody. Ask an
-                                    administrator to assign a lead.
+                                    No lead technician. Ask an administrator to assign one.
                                 @endunless
                                 @if ($project->inactiveCrew()->isNotEmpty())
                                     {{ $project->inactiveCrewNames() }}
-                                    can no longer sign in, but their dates are still booked.
-                                    Move their tasks to somebody else, and ask an administrator
+                                    can no longer sign in. Move their tasks and ask an administrator
                                     to update the team.
                                 @endif
                             </div>
@@ -799,11 +791,8 @@
 
                         @if ($canComplete)
                             <p class="mb-3">
-                                Every task on this project is completed. Filing this report releases any dates
-                                still booked ahead and sends the project to the client to confirm. It becomes
-                                view only from now on, and completes automatically after
-                                {{ \App\Models\Project::COMPLETION_CONFIRMATION_DAYS }} days if the client does
-                                not reply.
+                                All tasks are complete. Submitting this sends the project to the client and
+                                makes it view only.
                             </p>
 
                             @include('technician.partials.completion-fields', ['suffix' => 'Details'])
@@ -813,9 +802,23 @@
                                     <i class="bi bi-exclamation-triangle me-1" aria-hidden="true"></i>
                                     This project cannot be completed yet.
                                 </p>
+                                {{-- Each one with the way to deal with it. A
+                                     refusal that only says what is wrong
+                                     leaves the lead to go and find the tasks
+                                     themselves; the link puts them on the
+                                     tab that holds them. --}}
                                 <ul class="mb-0 ps-3">
                                     @foreach ($completionBlockers as $blocker)
-                                        <li>{{ $blocker }}</li>
+                                        <li class="mb-1">
+                                            {{ $blocker['message'] }}
+                                            @if ($blocker['action'])
+                                                <a class="alert-link d-inline-flex align-items-center gap-1"
+                                                    href="{{ $blocker['action']['url'] }}">
+                                                    {{ $blocker['action']['label'] }}
+                                                    <i class="bi bi-arrow-right-short" aria-hidden="true"></i>
+                                                </a>
+                                            @endif
+                                        </li>
                                     @endforeach
                                 </ul>
                             </div>
@@ -880,5 +883,14 @@
                 });
             });
         </script>
+
+        {{-- A completion blocker links to the tab that holds what is blocking
+             it, and the panes on this page are tabs rather than sections, so
+             the fragment has to be turned into a tab switch.
+
+             Last on purpose: opening the Tasks tab is what builds the table
+             above, and a listener that has not been registered yet cannot
+             hear it. --}}
+        <script src="/js/tabFromHash.js"></script>
     @endpush
 @endsection

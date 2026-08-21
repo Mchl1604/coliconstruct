@@ -39,11 +39,10 @@
                     <div class="alert alert-info d-flex gap-2" role="alert">
                         <i class="bi bi-info-circle-fill flex-shrink-0" aria-hidden="true"></i>
                         <div>
-                            This task is assigned to
+                            Assigned to
                             <strong>{{ $task->technician?->name ?? 'someone else' }}</strong>.
-                            You can close it on their behalf without filling anything in - the task
-                            will record that you closed it, and note that no completion details were
-                            submitted.
+                            You can close it on their behalf; details are optional and the closure is
+                            recorded against you.
                         </div>
                     </div>
                 @endunless

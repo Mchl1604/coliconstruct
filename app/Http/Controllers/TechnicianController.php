@@ -103,7 +103,7 @@ class TechnicianController extends Controller
             fn (): SpecialtyRequest => app(ProfileService::class)
                 ->approveSpecialtyRequest($specialtyRequest, $request->user()),
             'Specialty request approved.',
-            'The request could not be approved.'
+            'Unable to approve request.'
         );
     }
 
@@ -118,7 +118,7 @@ class TechnicianController extends Controller
             fn (): SpecialtyRequest => app(ProfileService::class)
                 ->rejectSpecialtyRequest($specialtyRequest, $request->user()),
             'Specialty request rejected.',
-            'The request could not be rejected.'
+            'Unable to reject request.'
         );
     }
 
@@ -175,7 +175,7 @@ class TechnicianController extends Controller
             'skill_ids' => ['present', 'array'],
             'skill_ids.*' => ['required', 'integer', 'exists:tbl_skills,skill_id'],
         ], [
-            'skill_ids.present' => 'No specialty selection was submitted.',
+            'skill_ids.present' => 'Select at least one specialty.',
         ]);
 
         if ($validator->fails()) {
@@ -388,8 +388,7 @@ class TechnicianController extends Controller
 
                 if (! $isLead && $project->projectTechnicians->count() <= 1) {
                     throw new RuntimeException($this->sentence(
-                        'A project must keep at least one technician. Assign someone else before removing '
-                            .$technician->name
+                        'A project must keep at least one technician. Assign someone else first.'
                     ));
                 }
 
@@ -426,7 +425,7 @@ class TechnicianController extends Controller
             });
         } catch (Throwable $e) {
             return response()->json([
-                'error' => $this->safeErrorMessage($e, 'That change could not be saved. Nothing was changed.'),
+                'error' => $this->safeErrorMessage($e, 'Unable to save that change. Nothing was changed.'),
             ], 422);
         }
 
@@ -503,7 +502,7 @@ class TechnicianController extends Controller
 
                 if ($existingLead) {
                     $blocked[] = $this->projectPayload($project, sprintf(
-                        'Already led by %s. A project can only have one lead technician.',
+                        'Already led by %s.',
                         $existingLead->technician?->name ?? 'another lead technician'
                     ));
 
@@ -613,7 +612,7 @@ class TechnicianController extends Controller
 
                         if ($existingLead) {
                             throw new RuntimeException(sprintf(
-                                '%s is already led by %s. A project can only have one lead technician.',
+                                '%s is already led by %s.',
                                 $project->name,
                                 $existingLead->technician?->name ?? 'another lead technician'
                             ));
@@ -686,7 +685,7 @@ class TechnicianController extends Controller
             });
         } catch (Throwable $e) {
             return response()->json([
-                'error' => $this->safeErrorMessage($e, 'That change could not be saved. Nothing was changed.'),
+                'error' => $this->safeErrorMessage($e, 'Unable to save that change. Nothing was changed.'),
             ], 422);
         }
 
@@ -725,7 +724,7 @@ class TechnicianController extends Controller
     {
         if (! $replacementLeadId) {
             throw new RuntimeException(
-                $outgoing->name.' is the lead technician. Choose a replacement lead before removing them.'
+                $outgoing->name.' leads this project. Choose a replacement first.'
             );
         }
 
@@ -738,8 +737,7 @@ class TechnicianController extends Controller
 
         if (! $replacement) {
             throw new RuntimeException(
-                'That replacement is no longer a valid lead for this project. '
-                    .'They must be a lead technician who is free for the whole schedule and not already assigned.'
+                'That replacement is no longer valid. Choose another lead who is free for the whole schedule.'
             );
         }
 

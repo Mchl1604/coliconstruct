@@ -6,7 +6,7 @@
     <i class="bi bi-shield-lock text-primary" style="font-size: 2.6rem;" aria-hidden="true"></i>
     <h3 class="mb-1 mt-2">Choose a New Password</h3>
     <p class="text-muted mb-4">
-        Your account was opened with a temporary password. Pick one only you know before continuing.
+        Choose a password only you know before continuing.
     </p>
 
     @if ($errors->any())

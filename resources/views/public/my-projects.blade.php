@@ -16,7 +16,7 @@
                         @if ($isClient)
                             Work {{ $content->get('branding.short_name') }} is carrying out for you, newest first.
                         @elseif ($isGuest)
-                            Sign in to follow the work booked under your email address.
+                            Sign in to view your projects.
                         @else
                             This page shows a client's own projects.
                         @endif
@@ -41,9 +41,9 @@
                 <div class="public-empty-state">
                     @if ($isGuest)
                         <i class="bi bi-lock fs-1 d-block mb-3 text-secondary" aria-hidden="true"></i>
-                        <h2 class="h5 fw-bold text-dark mb-2">Please log in to view your projects.</h2>
+                        <h2 class="h5 fw-bold text-dark mb-2">Sign in to view your projects.</h2>
                         <p class="mb-4">
-                            Your projects appear here once you sign in with the email address they were booked
+                            Your projects appear once you sign in with the email address they were booked
                             under.
                         </p>
                         <a class="btn btn-brand-blue btn-pill px-4" href="{{ route('auth.login') }}">Client Login</a>
@@ -53,8 +53,7 @@
                         <i class="bi bi-person-badge fs-1 d-block mb-3 text-secondary" aria-hidden="true"></i>
                         <h2 class="h5 fw-bold text-dark mb-2">This page is for client accounts.</h2>
                         <p class="mb-4">
-                            You are signed in as {{ auth()->user()->roleLabel() }}. Your work lives in your own
-                            portal.
+                            You are signed in as {{ auth()->user()->roleLabel() }} - open your portal instead.
                         </p>
                         <a class="btn btn-brand-blue btn-pill px-4"
                             href="{{ \App\Support\PortalHome::url(auth()->user()) }}">Go to My Portal</a>

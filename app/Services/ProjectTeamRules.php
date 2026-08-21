@@ -115,7 +115,7 @@ class ProjectTeamRules
             $validator->errors()->add(
                 $leadKey,
                 sprintf(
-                    '%s is not a Lead Technician, so they cannot lead this project. Choose a Lead Technician.',
+                    '%s is not a Lead Technician.',
                     $lead->name
                 )
             );
@@ -154,9 +154,7 @@ class ProjectTeamRules
                 $validator->errors()->add(
                     $techniciansKey,
                     sprintf(
-                        '%s is a Lead Technician, and a project can only have one lead. '
-                            .'Choose them in the Lead Technician select instead - which replaces the lead '
-                            .'this project already has - or pick somebody else here.',
+                        '%s is a Lead Technician - choose them in the Lead Technician field, or pick someone else here.',
                         $technician->name
                     )
                 );
@@ -191,7 +189,7 @@ class ProjectTeamRules
         };
 
         return sprintf(
-            "%s's account %s, so they cannot be assigned to a project.",
+            "%s's account %s, so they cannot be assigned.",
             $technician->name,
             $reason
         );

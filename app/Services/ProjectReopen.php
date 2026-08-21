@@ -124,8 +124,7 @@ class ProjectReopen
     {
         if ($project->isCompleted()) {
             throw new RuntimeException(
-                'This project is completed and cannot be reopened. '
-                    .'Its record stays as it is; further work needs a new project.'
+                'Completed projects cannot be reopened - create a new project instead.'
             );
         }
 
@@ -152,7 +151,7 @@ class ProjectReopen
         }
 
         throw new RuntimeException(
-            'This is a Commercial project, and Partial Day scheduling is available on Residential projects only.'
+            'This is a Commercial project. Partial Day scheduling is for Residential projects only.'
         );
     }
 
@@ -174,8 +173,7 @@ class ProjectReopen
 
         if ($clash) {
             throw new RuntimeException(sprintf(
-                'This project already has a schedule covering that time (%s). '
-                    .'Choose dates after the work that has already been recorded.',
+                'This project is already scheduled for %s. Choose later dates.',
                 $clash->describe()
             ));
         }

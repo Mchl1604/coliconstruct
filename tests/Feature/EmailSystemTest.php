@@ -199,7 +199,7 @@ class EmailSystemTest extends TestCase
             $this->otp()->issue('someone@example.test', OtpVerification::PURPOSE_REGISTRATION);
             $this->fail('A second code was issued inside the cooldown.');
         } catch (RuntimeException $exception) {
-            $this->assertStringContainsString('Please wait', $exception->getMessage());
+            $this->assertStringContainsString('Wait 60 seconds', $exception->getMessage());
         }
 
         $this->travel(OtpService::RESEND_COOLDOWN_SECONDS + 1)->seconds();

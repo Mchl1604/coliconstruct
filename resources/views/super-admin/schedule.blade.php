@@ -11,8 +11,7 @@
     <div class="d-flex justify-content-between align-items-center mb-3">
         <div>
             <h4 class="fw-bold mb-1">Schedules</h4>
-            <p class="text-secondary small mb-0">View every scheduled project on the calendar, and click a project
-                to edit its date ranges. Completed projects open as a view-only record.</p>
+            <p class="text-secondary small mb-0">Every scheduled project. Click one to edit its dates.</p>
         </div>
     </div>
 
@@ -133,6 +132,12 @@
                         @csrf
                         @method('PUT')
 
+                        {{-- Set by the browser only once a Super Admin has
+                             confirmed they mean to correct a booking that has
+                             already ended, and honoured by the server only for
+                             a Super Admin. See ScheduleController::update(). --}}
+                        <input type="hidden" name="override_past_lock" value="0" data-override-past-lock>
+
                         <div class="modal-header align-items-start">
                             <div class="schedule-modal-heading">
                                 <span class="schedule-modal-eyebrow">Edit Schedule</span>
@@ -200,14 +205,14 @@
                                 @foreach ($project->schedules as $index => $schedule)
                                     <x-schedule-range-row :schedule="$schedule" :index="$index"
                                         :working-hours="$workingHours"
-                                        :partial-day-allowed="$project->isResidential()" />
+                                        :partial-day-allowed="$project->isResidential()"
+                                        :may-override-lock="$mayOverrideLock" />
                                 @endforeach
                             </div>
 
                             <div class="schedule-empty-state {{ $project->schedules->isEmpty() ? '' : 'd-none' }}"
                                 data-ranges-empty>
-                                This project holds no dates. It stays Unscheduled, and off the calendar and the
-                                table, until a schedule is added.
+                                No dates set. Add a schedule to put this project on the calendar.
                             </div>
 
                             <button type="button" class="schedule-add-range" data-add-range>
@@ -220,8 +225,7 @@
                             <p class="schedule-modal-note">
                                 <i class="bi bi-info-circle" aria-hidden="true"></i>
                                 <span>
-                                    Removing every schedule leaves this project Unscheduled, and a new one can't
-                                    overlap time this project's technicians are already booked for elsewhere.
+                                    Removing every schedule leaves this project Unscheduled.
                                     @if ($project->isResidential())
                                         A Partial Day schedule books set hours on one date, leaving the rest of
                                         that day free.
@@ -332,12 +336,10 @@
                             <i class="bi bi-lock" aria-hidden="true"></i>
                             <span>
                                 @if ($project->on_hold)
-                                    This project is on hold. The dates below are the days that were worked before
-                                    it was paused; the dates ahead of it were released. Resume the project before
-                                    scheduling it again.
+                                    On hold. Only worked days remain - resume the project to schedule it again.
                                 @else
-                                    This project is {{ strtolower($project->statusLabel()) }}, so its schedule is a
-                                    record of what happened and can no longer be changed.
+                                    This project is {{ strtolower($project->statusLabel()) }}. Its schedule is now
+                                    read-only.
                                 @endif
                             </span>
                         </p>
@@ -386,8 +388,7 @@
                     {{-- Panel one: everything waiting for dates. --}}
                     <div data-unscheduled-list-panel>
                         <p class="text-secondary small">
-                            These projects hold no dates, so they appear on neither the calendar nor the table.
-                            Schedule one to put it on both.
+                            These projects have no dates yet.
                         </p>
 
                         <div class="schedule-date-list">
@@ -508,8 +509,7 @@
                             <p class="schedule-modal-note mb-0">
                                 <i class="bi bi-info-circle" aria-hidden="true"></i>
                                 <span data-unscheduled-note>
-                                    Dates its technicians are already booked for elsewhere cannot be picked.
-                                    Scheduling the project moves it onto the calendar and the table.
+                                    Dates where a technician is booked elsewhere cannot be picked.
                                 </span>
                             </p>
                         </div>
@@ -655,8 +655,7 @@
                             <div class="schedule-eligible-list" data-eligible-list></div>
 
                             <div class="schedule-empty-state d-none" data-eligible-empty>
-                                No projects can take this date range. Every candidate either already has a booking
-                                or has a technician who isn't free for the whole range.
+                                No project is free for this range.
                             </div>
 
                             <div class="schedule-blocked-wrap d-none" data-blocked-wrap>

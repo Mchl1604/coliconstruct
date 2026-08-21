@@ -43,7 +43,7 @@ class InquiryController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'search' => ['nullable', 'string', 'max:255'],
-            'status' => ['nullable', 'string', Rule::in(array_merge(['all'], array_keys(Inquiry::STATUSES)))],
+            'status' => ['nullable', 'string', Rule::in(array_merge(['all', Inquiry::FILTER_PENDING], array_keys(Inquiry::STATUSES)))],
             'direction' => ['nullable', 'string', Rule::in(['asc', 'desc'])],
             'page' => ['nullable', 'integer', 'min:1'],
         ]);
@@ -90,7 +90,7 @@ class InquiryController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'search' => ['nullable', 'string', 'max:255'],
-            'status' => ['nullable', 'string', Rule::in(array_merge(['all'], array_keys(Inquiry::STATUSES)))],
+            'status' => ['nullable', 'string', Rule::in(array_merge(['all', Inquiry::FILTER_PENDING], array_keys(Inquiry::STATUSES)))],
             'page' => ['nullable', 'integer', 'min:1'],
         ]);
 
@@ -143,7 +143,7 @@ class InquiryController extends Controller
         $validator = Validator::make($request->all(), [
             'status' => ['required', 'string', Rule::in(array_keys(Inquiry::STATUSES))],
         ], [
-            'status.in' => 'That is not a status an enquiry can be in.',
+            'status.in' => 'That is not a status an inquiry can be in.',
         ]);
 
         if ($validator->fails()) {
@@ -153,7 +153,7 @@ class InquiryController extends Controller
         try {
             $updated = $this->inquiries->changeStatus($inquiry, $validator->validated()['status']);
         } catch (Throwable $exception) {
-            return $this->failure($exception, 'The status could not be changed.');
+            return $this->failure($exception, 'Unable to change status.');
         }
 
         return response()->json([
@@ -174,8 +174,8 @@ class InquiryController extends Controller
         $validator = Validator::make($request->all(), [
             'message' => ['required', 'string', 'min:10', 'max:'.Inquiry::MAX_REPLY],
         ], [
-            'message.required' => 'Write a reply before sending it.',
-            'message.min' => 'Please write a little more - at least 10 characters.',
+            'message.required' => 'Write a reply before sending.',
+            'message.min' => 'Write at least 10 characters.',
         ]);
 
         if ($validator->fails()) {
@@ -191,7 +191,7 @@ class InquiryController extends Controller
         } catch (Throwable $exception) {
             // A refused reply leaves the enquiry exactly as it was, so the
             // interface keeps offering the form.
-            return $this->failure($exception, 'The reply could not be sent.');
+            return $this->failure($exception, 'Unable to send reply.');
         }
 
         return response()->json([
@@ -205,12 +205,12 @@ class InquiryController extends Controller
         try {
             $archived = $this->inquiries->archive($inquiry);
         } catch (Throwable $exception) {
-            return $this->failure($exception, 'The enquiry could not be archived.');
+            return $this->failure($exception, 'Unable to archive inquiry.');
         }
 
         return response()->json([
             'inquiry' => $this->detail($archived),
-            'message' => 'Enquiry archived. Nothing was deleted.',
+            'message' => 'Inquiry archived. Nothing was deleted.',
         ]);
     }
 
@@ -219,12 +219,12 @@ class InquiryController extends Controller
         try {
             $restored = $this->inquiries->restore($inquiry);
         } catch (Throwable $exception) {
-            return $this->failure($exception, 'The enquiry could not be restored.');
+            return $this->failure($exception, 'Unable to restore inquiry.');
         }
 
         return response()->json([
             'inquiry' => $this->detail($restored),
-            'message' => 'Enquiry restored to the active list.',
+            'message' => 'Inquiry restored to the active list.',
         ]);
     }
 

@@ -135,11 +135,13 @@
                         </div>
                     @else
                         {{-- One door for a guest, not two. Get Started opens
-                             the registration form, and that form carries the
-                             way through to Login for people who already have
-                             an account - so the header stays a single button
-                             without shutting anybody out. --}}
-                        <a class="btn btn-brand-blue btn-pill px-4" href="{{ route('auth.register') }}">
+                             Login, and that form carries the way through to
+                             Register for people who do not have an account yet
+                             - so the header stays a single button without
+                             shutting anybody out. Most people arriving here
+                             already have an account, which is why Login is the
+                             door rather than the detour. --}}
+                        <a class="btn btn-brand-blue btn-pill px-4" href="{{ route('auth.login') }}">
                             Get Started
                         </a>
                     @endif

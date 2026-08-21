@@ -780,10 +780,10 @@ class AuthenticationTest extends TestCase
 
         $this->get(route('landing.home'))
             ->assertOk()
-            // The guest header's one button, which leads to the registration
-            // form and from there to Login.
+            // The guest header's one button, which leads to Login and from
+            // there to the registration form.
             ->assertSee('Get Started')
-            ->assertSee(route('auth.register'), escape: false)
+            ->assertSee(route('auth.login'), escape: false)
             // No signed-in chrome survives the sign-out.
             ->assertDontSee('data-notification-bell', escape: false);
     }

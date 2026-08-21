@@ -219,7 +219,7 @@ class MediumSeverityAuditFixesTest extends TestCase
         $this->assertNotSame('', $error);
         $this->assertStringNotContainsString('App\\Models', $error);
         $this->assertStringNotContainsString('No query results', $error);
-        $this->assertStringContainsString('could not be updated', $error);
+        $this->assertStringContainsString('Unable to update project', $error);
     }
 
     /**

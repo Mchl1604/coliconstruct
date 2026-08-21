@@ -904,7 +904,7 @@ class ProjectCompletionConfirmationTest extends TestCase
         $response = $this->get(route('public.projects.show', $project->project_id));
 
         $response->assertOk();
-        $response->assertSee('This project is ready for your confirmation');
+        $response->assertSee('Ready for your confirmation');
         $response->assertSee('Confirm Completion');
         $response->assertSee('Contact Support');
         // The report under review, and the deadline it is under.

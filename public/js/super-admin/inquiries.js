@@ -540,7 +540,7 @@ document.addEventListener("DOMContentLoaded", function () {
             if (!result.ok) {
                 setAlert(
                     detailError,
-                    result.body.error || "That inquiry could not be opened.",
+                    result.body.error || "Unable to open inquiry.",
                 );
 
                 return;
@@ -570,7 +570,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 if (!result.ok) {
                     setAlert(
                         detailError,
-                        result.body.error || "The status could not be changed.",
+                        result.body.error || "Unable to change status.",
                     );
                     // Put the picker back to what the record actually says, so
                     // the screen never shows a status that was refused.
@@ -606,7 +606,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     // what was typed stays in the box for another attempt.
                     setAlert(
                         detailError,
-                        result.body.error || "The reply could not be sent.",
+                        result.body.error || "Unable to send reply.",
                     );
 
                     return;
@@ -646,7 +646,7 @@ document.addEventListener("DOMContentLoaded", function () {
             if (!result.ok) {
                 setAlert(
                     errorBox,
-                    result.body.error || "That inquiry could not be archived.",
+                    result.body.error || "Unable to archive inquiry.",
                 );
 
                 return;
@@ -783,7 +783,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     if (!result.ok) {
                         setAlert(
                             archivedError,
-                            result.body.error || "That inquiry could not be restored.",
+                            result.body.error || "Unable to restore inquiry.",
                         );
 
                         return;
@@ -845,5 +845,22 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         openInquiry(options.openInquiry);
+    }
+
+    // Arriving from the dashboard's "N Pending Inquiries". The filter is set
+    // before the first request rather than changed after it, so the table is
+    // fetched already narrowed - one request, and no flash of the whole list.
+    if (options.openInquiries) {
+        const statusFilter = document.querySelector("[data-inquiry-status]");
+
+        if (statusFilter) {
+            statusFilter.value = options.openInquiries;
+        }
+
+        loadOnce();
+
+        if (tab && window.bootstrap) {
+            window.bootstrap.Tab.getOrCreateInstance(tab).show();
+        }
     }
 });

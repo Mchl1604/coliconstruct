@@ -54,7 +54,7 @@
         :active-task-counts-by-project="$technicianActiveTaskCounts" :manageable="$manageable"
         update-route="super-admin.tasks.update" complete-route="super-admin.tasks.complete"
         delete-route="super-admin.tasks.destroy"
-        empty-message="There are no active projects, so there is no task board to show." />
+        empty-message="No active projects to show." />
 
     <x-task-create-modal :projects="$schedulableProjects"
         :form-data-url="route('super-admin.projects.task-form-data', ['id' => '__ID__'])"

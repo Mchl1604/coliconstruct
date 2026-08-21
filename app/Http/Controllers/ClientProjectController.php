@@ -65,7 +65,7 @@ class ClientProjectController extends Controller
         // tab, and confirming either of those would be wrong.
         if (! $record->isAwaitingClientConfirmation()) {
             return $back->with('error', $record->isCompleted()
-                ? 'This project has already been completed, so there is nothing left to confirm.'
+                ? 'This project is already complete.'
                 : 'This project is not waiting for your confirmation.');
         }
 
@@ -76,7 +76,7 @@ class ClientProjectController extends Controller
         } catch (Throwable $e) {
             report($e);
 
-            return $back->with('error', 'Your confirmation could not be saved. Please try again.');
+            return $back->with('error', 'Unable to save your confirmation. Please try again.');
         }
 
         $this->activityLogger->record(
@@ -93,6 +93,6 @@ class ClientProjectController extends Controller
         $this->notifications->clientConfirmedCompletion($record);
         $this->clientEmails->completionConfirmed($record->refresh());
 
-        return $back->with('success', 'Thank you. This project is now marked complete.');
+        return $back->with('success', 'Thank you - this project is now complete.');
     }
 }

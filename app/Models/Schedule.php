@@ -31,6 +31,23 @@ class Schedule extends Model
     ];
 
     /**
+     * A range whose last day has gone by. History, not a promise.
+     */
+    public const LOCK_LOCKED = 'locked';
+
+    /**
+     * A range that started before today and has not finished. Part worked,
+     * part still to come.
+     */
+    public const LOCK_ACTIVE = 'active';
+
+    /**
+     * A range that has not started. Entirely a promise, and entirely
+     * changeable.
+     */
+    public const LOCK_FUTURE = 'future';
+
+    /**
      * The company's timezone, used for scheduling only.
      *
      * The application itself runs on UTC and its timestamps are written that
@@ -107,6 +124,72 @@ class Schedule extends Model
     public function endsOn(): CarbonImmutable
     {
         return CarbonImmutable::parse($this->end_datetime ?? $this->start_datetime)->startOfDay();
+    }
+
+    /**
+     * Where this booking sits relative to today, which is what decides how
+     * much of it may still be changed.
+     *
+     * The line is the one ScheduleHoldCutoff already draws: a range that has
+     * ended is the record of work that happened, and a range still to come is
+     * a promise that can be withdrawn. Answered here so the editor, the
+     * calendar panel, the validator and the reports cannot disagree about
+     * which of a project's ranges are settled.
+     *
+     * A partial day needs no special case. It occupies a single date, so it is
+     * future until that date, active on it, and locked from the day after.
+     */
+    public function lockState(): string
+    {
+        $today = self::businessToday();
+
+        if ($this->endsOn()->lt($today)) {
+            return self::LOCK_LOCKED;
+        }
+
+        return $this->startsOn()->lt($today) ? self::LOCK_ACTIVE : self::LOCK_FUTURE;
+    }
+
+    /**
+     * Whether this booking has ended. A locked range is view-only: it may not
+     * be edited, deleted, or have a date taken off it, except by a Super Admin
+     * who has confirmed the override - see ScheduleModeRules.
+     */
+    public function isLocked(): bool
+    {
+        return $this->lockState() === self::LOCK_LOCKED;
+    }
+
+    /**
+     * Whether this booking is under way: it began before today and has not
+     * finished. Its start is already worked and is frozen; its end may still
+     * move, but never back past today.
+     */
+    public function isActive(): bool
+    {
+        return $this->lockState() === self::LOCK_ACTIVE;
+    }
+
+    /**
+     * Whether this booking has not started yet, and is therefore entirely
+     * changeable.
+     */
+    public function isFuture(): bool
+    {
+        return $this->lockState() === self::LOCK_FUTURE;
+    }
+
+    /**
+     * Whether the given date may be taken off a schedule.
+     *
+     * Tomorrow onwards. A day already worked is part of the record, and today
+     * is being worked - taking it away would discard a day the crew is on
+     * site for. A Super Admin may still remove a past date through the
+     * override; today is refused whoever is asking.
+     */
+    public static function dateIsRemovable(CarbonImmutable $date): bool
+    {
+        return $date->startOfDay()->gt(self::businessToday());
     }
 
     /**

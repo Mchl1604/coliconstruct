@@ -475,8 +475,7 @@ class NotificationService
             $this->oversight()->merge($this->excludingActor($this->projectTeam($project))),
             'Project Awaiting Client Confirmation',
             sprintf(
-                '%s has been marked complete by %s and is waiting for the client to confirm. '
-                    .'It completes automatically after %d days if they do not reply.',
+                '%s marked complete by %s. Completes automatically in %d days.',
                 $this->projectLabel($project),
                 $this->actorName(),
                 Project::COMPLETION_CONFIRMATION_DAYS
@@ -490,8 +489,7 @@ class NotificationService
             $this->projectClients($project),
             'Please Confirm Your Completed Project',
             sprintf(
-                'The work on %s has been completed. Please review it and confirm. '
-                    .'If we do not hear from you within %d days it will be marked complete automatically.',
+                'Work on %s is complete. Review and confirm within %d days, or it completes automatically.',
                 $this->clientProjectLabel($project),
                 Project::COMPLETION_CONFIRMATION_DAYS
             ),
@@ -552,8 +550,7 @@ class NotificationService
             $this->excludingActor($this->administrators()),
             'Deactivated Technician Still Assigned',
             sprintf(
-                "%s's account was switched off, but they are still on %s. "
-                    .'Their bookings were kept - reassign the work or take them off the team.',
+                '%s is still on %s. Reassign the work or remove them.',
                 $account->fullName(),
                 $this->listProjects($projects)
             ),
@@ -1000,16 +997,15 @@ class NotificationService
             $this->oversight()->merge($lead ? [$lead] : []),
             'Task Dates Cleared',
             sprintf(
-                '%s on %s no longer %s inside the schedule, so %s dates were cleared. %s',
+                '%s on %s %s new dates.%s',
                 $tasks->count() === 1
                     ? sprintf('"%s"', $tasks->first()->task_title)
                     : sprintf('%d tasks', $tasks->count()),
                 $this->projectLabel($project),
-                $tasks->count() === 1 ? 'falls' : 'fall',
-                $tasks->count() === 1 ? 'its' : 'their',
+                $tasks->count() === 1 ? 'needs' : 'need',
                 $tasks->count() === 1
-                    ? 'It needs new dates.'
-                    : sprintf('They need new dates: %s.', $this->taskTitleList($tasks))
+                    ? ''
+                    : sprintf(' %s.', $this->taskTitleList($tasks))
             ),
             Notification::MODULE_TASKS,
             $project,
@@ -1042,16 +1038,16 @@ class NotificationService
             $this->oversight()->merge($lead ? [$lead] : []),
             'Tasks Left Unassigned',
             sprintf(
-                '%s on %s %s unassigned because %s was removed from the project team. %s',
+                '%s on %s %s a technician after %s was removed.%s',
                 $tasks->count() === 1
                     ? sprintf('"%s"', $tasks->first()->task_title)
                     : sprintf('%d tasks', $tasks->count()),
                 $this->projectLabel($project),
-                $tasks->count() === 1 ? 'is now' : 'are now',
+                $tasks->count() === 1 ? 'needs' : 'need',
                 $technicianName,
                 $tasks->count() === 1
-                    ? 'It needs a technician.'
-                    : sprintf('They need a technician: %s.', $this->taskTitleList($tasks))
+                    ? ''
+                    : sprintf(' %s.', $this->taskTitleList($tasks))
             ),
             Notification::MODULE_TASKS,
             $project,

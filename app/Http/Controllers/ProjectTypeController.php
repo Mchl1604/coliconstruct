@@ -64,7 +64,7 @@ class ProjectTypeController extends Controller
         );
 
         return response()->json([
-            'message' => sprintf("'%s' was added. It is now available as a project type and as a specialty.", $type->type_name),
+            'message' => sprintf("'%s' added as a project type and specialty.", $type->type_name),
             'types' => $this->catalog->all()->all(),
         ]);
     }

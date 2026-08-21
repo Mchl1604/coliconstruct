@@ -89,13 +89,13 @@ class TechnicianReportController extends Controller
 
             DB::commit();
 
-            return back()->with('success', 'Technician report submitted successfully.');
+            return back()->with('success', 'Report submitted successfully.');
 
         } catch (\Exception $e) {
 
             DB::rollBack();
 
-            return back()->with('error', $this->safeErrorMessage($e, 'The report could not be saved. Nothing was changed.'));
+            return back()->with('error', $this->safeErrorMessage($e, 'Unable to save report. Nothing was changed.'));
         }
     }
 

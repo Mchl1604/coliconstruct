@@ -113,8 +113,12 @@ document.addEventListener("DOMContentLoaded", function () {
     // Tab 1 - technician table + details / specialty management
     // ---------------------------------------------------------------
 
+    // Kept so the specialty deep link below can narrow it - see
+    // showPendingSpecialtyRequests().
+    let techniciansTable = null;
+
     if (window.jQuery && window.jQuery.fn && window.jQuery.fn.DataTable) {
-        window.jQuery("#techniciansTable").DataTable({
+        techniciansTable = window.jQuery("#techniciansTable").DataTable({
             responsive: true,
             autoWidth: false,
             pageLength: 10,
@@ -389,7 +393,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 if (!result.ok) {
                     setAlert(
                         errorEl,
-                        result.body.error || "That request could not be decided.",
+                        result.body.error || "Unable to decide that request.",
                     );
 
                     return;
@@ -475,7 +479,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     saveBtn.disabled = false;
                     setAlert(
                         errorEl,
-                        result.body.error || "Could not save the specialties.",
+                        result.body.error || "Unable to save specialties.",
                     );
 
                     return;
@@ -518,7 +522,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     if (!result.ok) {
                         setAlert(
                             errorEl,
-                            result.body.error || "Could not load this technician.",
+                            result.body.error || "Unable to load technician.",
                         );
 
                         return;
@@ -607,6 +611,74 @@ document.addEventListener("DOMContentLoaded", function () {
 
         detailsModal.open(button.dataset.viewTechnician);
     });
+
+    /**
+     * Arriving from the dashboard's "N Specialty Change Requests".
+     *
+     * The figure promised the requests, so the table is narrowed to the people
+     * waiting on one rather than left for the reviewer to pick out of every
+     * technician on the books. One request opens straight into its dialog,
+     * where it is approved or rejected; several do not, because choosing which
+     * of them to open is the reviewer's call and not this file's.
+     *
+     * The banner above the table grows a way back out, so a table narrowed by
+     * a link is never a table somebody has to reload to escape.
+     */
+    function showPendingSpecialtyRequests() {
+        const asked =
+            new URLSearchParams(window.location.search).get("specialty") ===
+            "pending";
+
+        const waiting = document.querySelectorAll(
+            "[data-technician-row].technician-row-pending",
+        );
+
+        if (!asked || !waiting.length) {
+            return;
+        }
+
+        const clear = document.querySelector("[data-specialty-filter-clear]");
+
+        if (techniciansTable && window.jQuery) {
+            const $ = window.jQuery;
+
+            const filterFn = function (settings, data, dataIndex) {
+                if (settings.nTable.id !== "techniciansTable") {
+                    return true;
+                }
+
+                const node = techniciansTable.row(dataIndex).node();
+
+                return node
+                    ? node.classList.contains("technician-row-pending")
+                    : true;
+            };
+
+            filterFn._specialtyPending = true;
+            $.fn.dataTable.ext.search.push(filterFn);
+            techniciansTable.draw();
+
+            if (clear) {
+                clear.classList.remove("d-none");
+
+                clear.addEventListener("click", function () {
+                    $.fn.dataTable.ext.search =
+                        $.fn.dataTable.ext.search.filter(function (fn) {
+                            return !fn._specialtyPending;
+                        });
+
+                    techniciansTable.draw();
+                    clear.classList.add("d-none");
+                });
+            }
+        }
+
+        if (waiting.length === 1 && detailsModal) {
+            detailsModal.open(waiting[0].getAttribute("data-technician-row"));
+        }
+    }
+
+    showPendingSpecialtyRequests();
 
     // ---------------------------------------------------------------
     // Tab 2 - technician schedules
@@ -892,13 +964,13 @@ document.addEventListener("DOMContentLoaded", function () {
                 calendarEl.classList.add("d-none");
                 calendarPlaceholderEl.classList.remove("d-none");
                 calendarPlaceholderEl.textContent =
-                    "Please select a technician to view their schedule.";
+                    "Select a technician to view their schedule.";
                 calendarEmptyEl.classList.add("d-none");
                 calendarCountEl.classList.add("d-none");
                 calendarNameEl.textContent = "No technician selected";
                 addOpenBtn.classList.add("d-none");
                 pickerHint.textContent = picker.value
-                    ? "No technician matches that. Pick one from the list."
+                    ? "No match - pick one from the list."
                     : "Pick a technician to load their calendar.";
 
                 assignmentsBodyEl.innerHTML = "";
@@ -925,11 +997,11 @@ document.addEventListener("DOMContentLoaded", function () {
 
             pickerHint.textContent = employable
                 ? "Showing schedule for " + match.name + "."
-                : "Showing schedule for " +
+                : "Showing " +
                   match.name +
-                  ". Their account is " +
+                  "'s schedule. Their account is " +
                   (match.status_label || "inactive").toLowerCase() +
-                  ", so they cannot be added to a project.";
+                  " and cannot take new projects.";
 
             addOpenBtn.classList.toggle("d-none", !employable);
 
@@ -1077,7 +1149,7 @@ document.addEventListener("DOMContentLoaded", function () {
             leadPanelEl.classList.remove("d-none");
             leadIntroEl.textContent =
                 selectedTechnician.name +
-                " is the lead technician on this project. Choose a replacement who is free for its whole schedule.";
+                " leads this project. Choose a replacement who is free for its whole schedule.";
 
             if (!candidates.length) {
                 leadOptionsEl.innerHTML = "";
@@ -1278,7 +1350,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 if (!result.ok) {
                     setAlert(
                         errorEl,
-                        result.body.error || "Could not remove the technician.",
+                        result.body.error || "Unable to remove technician.",
                     );
 
                     return;
@@ -1327,7 +1399,7 @@ document.addEventListener("DOMContentLoaded", function () {
                         setAlert(
                             errorEl,
                             result.body.error ||
-                                "Could not load this assignment.",
+                                "Unable to load assignment.",
                         );
 
                         return;
@@ -1425,7 +1497,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
                 if (blockedBy) {
                     const message = endSentence(
-                        "Unavailable because its schedule overlaps " + blockedBy,
+                        "Unavailable - overlaps " + blockedBy,
                     );
                     row.setAttribute("title", message);
                     reasonEl.textContent = message;
@@ -1564,7 +1636,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     saveBtn.disabled = false;
                     setAlert(
                         errorEl,
-                        result.body.error || "Could not save the assignment.",
+                        result.body.error || "Unable to save assignment.",
                     );
 
                     return;
@@ -1625,7 +1697,7 @@ document.addEventListener("DOMContentLoaded", function () {
                         setAlert(
                             errorEl,
                             result.body.error ||
-                                "Could not load available projects.",
+                                "Unable to load available projects.",
                         );
 
                         return;

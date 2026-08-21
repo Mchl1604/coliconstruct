@@ -28,6 +28,22 @@ use Throwable;
  *
  * An entry with no mode is date-based, so a request written before partial
  * days existed still validates and still saves exactly as it did.
+ *
+ * How much of a saved booking may still change depends on where it sits
+ * relative to today - see Schedule::lockState(), which draws the same line
+ * ScheduleHoldCutoff does:
+ *
+ *   future   start is today or later    everything may change
+ *   active   started, has not ended     the start is already worked, so it is
+ *                                       frozen; the end may move, but never
+ *                                       back past today
+ *   locked   ended before today         nothing may change
+ *
+ * A Super Admin may set those aside for a booking they have confirmed they
+ * mean to correct. Nothing else is set aside with them: an overridden booking
+ * is still checked for overlaps, for partial-day eligibility and for the
+ * availability of everybody on it, because a correction that double-books a
+ * technician is not a correction.
  */
 class ScheduleModeRules
 {
@@ -88,13 +104,12 @@ class ScheduleModeRules
      * 'ranges.0.' for one row of the schedules page.
      *
      * `$isExisting` marks a row that is already saved, and `$existing` is that
-     * row when the caller has it. Together they say: a saved booking keeps
-     * whatever dates it holds, so editing one schedule is never blocked by
-     * another having quietly slipped into the past - but MOVING a saved
-     * booking is a new promise about new days, and a promise cannot be made
-     * about a day that has gone. Without the row itself to compare against,
-     * `$isExisting` alone still means "leave its dates alone", which is what
-     * the screening endpoints want.
+     * row when the caller has it. With the row in hand its lock state decides
+     * what may change. Without it, `$isExisting` alone still means "leave its
+     * dates alone", which is what the screening endpoints want.
+     *
+     * `$mayOverrideLock` is the Super Admin's confirmed correction. It lifts
+     * the lock rules and nothing else.
      *
      * @param  array<string, mixed>  $entry
      * @return array{mode: string, start: CarbonImmutable, end: CarbonImmutable}|null
@@ -105,22 +120,118 @@ class ScheduleModeRules
         string $keyPrefix = '',
         bool $partialDayAllowed = true,
         bool $isExisting = false,
-        ?Schedule $existing = null
+        ?Schedule $existing = null,
+        bool $mayOverrideLock = false
     ): ?array {
         $mode = $this->modeFor($entry);
 
         if ($mode === Schedule::MODE_PARTIAL_DAY && ! $partialDayAllowed) {
             $validator->errors()->add(
                 $keyPrefix.'scheduling_mode',
-                'Partial Day scheduling is available on Residential projects only.'
+                'Partial Day scheduling is for Residential projects only.'
             );
 
             return null;
         }
 
         return $mode === Schedule::MODE_PARTIAL_DAY
-            ? $this->validatePartialDay($validator, $entry, $keyPrefix, $isExisting, $existing)
-            : $this->validateDateBased($validator, $entry, $keyPrefix, $isExisting, $existing);
+            ? $this->validatePartialDay($validator, $entry, $keyPrefix, $isExisting, $existing, $mayOverrideLock)
+            : $this->validateDateBased($validator, $entry, $keyPrefix, $isExisting, $existing, $mayOverrideLock);
+    }
+
+    /**
+     * The refusal an Admin reads when they try to change a booking that has
+     * ended, which names who can.
+     */
+    public function lockedMessage(): string
+    {
+        return 'This date range has already ended. Super Admin access is required to make changes.';
+    }
+
+    /**
+     * The same bounds for a range that has not been saved yet.
+     *
+     * A new booking is a promise about work still to come, so the floor is
+     * today at both ends - validateDateBased() and validatePartialDay() refuse
+     * a past date on a new row, and a picker that offers one is offering a
+     * date the save will bounce. The editor used to hand its new rows no floor
+     * at all, so last month was there to be clicked.
+     *
+     * Shaped exactly like editabilityOf() so the row component can hand either
+     * to the same pickers without asking which it got.
+     *
+     * @return array{editable: bool, startFrozen: bool, earliestStart: CarbonImmutable, earliestEnd: CarbonImmutable}
+     */
+    public function limitsForNewRange(): array
+    {
+        $today = Schedule::businessToday();
+
+        return [
+            'editable' => true,
+            'startFrozen' => false,
+            'earliestStart' => $today,
+            'earliestEnd' => $today,
+        ];
+    }
+
+    /**
+     * Whether a saved booking may be changed at all, and how much of it.
+     *
+     * Returned rather than thrown so a caller can ask before it offers a
+     * control - the editor draws a locked row read-only rather than letting
+     * somebody fill in a form this would refuse, and hands the same bounds to
+     * its date pickers.
+     *
+     *   editable      false only for a locked row nobody may override
+     *   startFrozen   the start is already worked and may not move at all
+     *   earliestStart the earliest the start may be set to, null for no bound
+     *   earliestEnd   the earliest the end may be set to, null for no bound
+     *
+     * The two overrides differ, which is the point of them. Correcting a
+     * booking that has ENDED means its dates were wrong, so any dates may
+     * replace them - that is what a correction is. Overriding one that is
+     * UNDER WAY only releases its frozen start, and releases it forwards:
+     * stretching a live booking back over days nobody worked would be
+     * inventing history rather than fixing it.
+     *
+     * @return array{editable: bool, startFrozen: bool, earliestStart: ?CarbonImmutable, earliestEnd: ?CarbonImmutable}
+     */
+    public function editabilityOf(Schedule $schedule, bool $mayOverrideLock = false): array
+    {
+        $today = Schedule::businessToday();
+
+        return match ($schedule->lockState()) {
+            Schedule::LOCK_LOCKED => $mayOverrideLock
+                ? ['editable' => true, 'startFrozen' => false, 'earliestStart' => null, 'earliestEnd' => null]
+                : ['editable' => false, 'startFrozen' => true, 'earliestStart' => null, 'earliestEnd' => null],
+
+            // Started already: those days are worked, so the start stays put,
+            // and the end may not retreat past today either - pulling it back
+            // would discard days the crew was on site for.
+            //
+            // The override floor is where the booking ALREADY starts, not
+            // today. Forward means forward from where it is: a booking that
+            // began on the 20th may stay on the 20th or be moved later, and
+            // may not be stretched back to the 19th. Using today here instead
+            // would refuse the start it already holds - which would make an
+            // override stricter than no override, and leave a Super Admin
+            // unable to extend the end of a live booking at all.
+            Schedule::LOCK_ACTIVE => $mayOverrideLock
+                ? [
+                    'editable' => true,
+                    'startFrozen' => false,
+                    'earliestStart' => $schedule->startsOn(),
+                    'earliestEnd' => $today,
+                ]
+                : ['editable' => true, 'startFrozen' => true, 'earliestStart' => null, 'earliestEnd' => $today],
+
+            default => [
+                'editable' => true,
+                'startFrozen' => false,
+                'earliestStart' => $today,
+                'earliestEnd' => null,
+            ],
+        };
     }
 
     /**
@@ -132,7 +243,8 @@ class ScheduleModeRules
         array $entry,
         string $keyPrefix,
         bool $isExisting,
-        ?Schedule $existing = null
+        ?Schedule $existing = null,
+        bool $mayOverrideLock = false
     ): ?array {
         $startDate = $this->date($entry['start_date'] ?? null);
         $endDate = $this->date($entry['end_date'] ?? null);
@@ -158,23 +270,64 @@ class ScheduleModeRules
             return null;
         }
 
-        // A saved row that is being left where it is keeps its dates however
-        // long ago they were. One that is being moved is making a new promise,
-        // and it cannot be made about a day that has already gone.
+        // A saved row resubmitted exactly as it stands is not a change at all,
+        // whatever its age. This is what lets a form carrying an untouched
+        // booking be saved.
         $unchanged = $existing !== null
             && $existing->isDateBased()
             && $existing->startsOn()->equalTo($startDate)
             && $existing->endsOn()->equalTo($endDate);
 
+        if ($existing !== null && ! $unchanged) {
+            if (! $this->assertMayChange($validator, $existing, $keyPrefix, 'start_date', $mayOverrideLock)) {
+                return null;
+            }
+
+            $limits = $this->editabilityOf($existing, $mayOverrideLock);
+
+            // Days already worked are the record. The start of a booking under
+            // way stays where it is.
+            if ($limits['startFrozen'] && ! $startDate->equalTo($existing->startsOn())) {
+                $validator->errors()->add(
+                    $keyPrefix.'start_date',
+                    'This schedule has started. Super Admin access is required to move its start date.'
+                );
+
+                return null;
+            }
+
+            if ($limits['earliestStart'] && $startDate->lt($limits['earliestStart'])) {
+                $validator->errors()->add(
+                    $keyPrefix.'start_date',
+                    'Choose a start date of today or later.'
+                );
+
+                return null;
+            }
+
+            if ($limits['earliestEnd'] && $endDate->lt($limits['earliestEnd'])) {
+                $validator->errors()->add(
+                    $keyPrefix.'end_date',
+                    'Choose an end date of today or later.'
+                );
+
+                return null;
+            }
+
+            return [
+                'mode' => Schedule::MODE_DATE_BASED,
+                'start' => $startDate->startOfDay(),
+                'end' => $endDate->endOfDay(),
+            ];
+        }
+
+        // Everything below is a booking with no saved row to measure against:
+        // a brand new one, or one a screening endpoint is asking about. Nothing
+        // may be newly promised for a day that has gone.
         $mayKeepPastDates = $unchanged || ($isExisting && $existing === null);
 
         if (! $mayKeepPastDates && $startDate->lt(Schedule::businessToday())) {
-            $validator->errors()->add(
-                $keyPrefix.'start_date',
-                $existing !== null
-                    ? 'A schedule cannot be moved into the past. Choose a start date of today or later.'
-                    : 'The start date cannot be in the past.'
-            );
+            $validator->errors()->add($keyPrefix.'start_date', 'The start date cannot be in the past.');
 
             return null;
         }
@@ -195,7 +348,8 @@ class ScheduleModeRules
         array $entry,
         string $keyPrefix,
         bool $isExisting,
-        ?Schedule $existing = null
+        ?Schedule $existing = null,
+        bool $mayOverrideLock = false
     ): ?array {
         $date = $this->date($entry['project_date'] ?? null);
         $startTime = is_string($entry['start_time'] ?? null) ? $entry['start_time'] : null;
@@ -266,14 +420,19 @@ class ScheduleModeRules
             && CarbonImmutable::parse($existing->start_datetime)->equalTo($start)
             && CarbonImmutable::parse($existing->end_datetime ?? $existing->start_datetime)->equalTo($end);
 
-        $mayKeepPastDates = $unchanged || ($isExisting && $existing === null);
+        if ($existing !== null && ! $unchanged
+            && ! $this->assertMayChange($validator, $existing, $keyPrefix, 'project_date', $mayOverrideLock)) {
+            return null;
+        }
+
+        $mayKeepPastDates = $unchanged || $mayOverrideLock || ($isExisting && $existing === null);
 
         if (! $mayKeepPastDates) {
             if ($date->lt(Schedule::businessToday())) {
                 $validator->errors()->add(
                     $keyPrefix.'project_date',
                     $existing !== null
-                        ? 'A schedule cannot be moved into the past. Choose a date of today or later.'
+                        ? 'Choose a date of today or later.'
                         : 'The project date cannot be in the past.'
                 );
 
@@ -293,6 +452,32 @@ class ScheduleModeRules
             'start' => $start,
             'end' => $end,
         ];
+    }
+
+    /**
+     * Refuse a change to a booking that has ended, unless it is a Super
+     * Admin's confirmed correction.
+     *
+     * Reported against the field the person is looking at rather than gathered
+     * into one message about the whole form, the same way every other rule
+     * here reports.
+     *
+     * @return bool whether the change may go ahead
+     */
+    private function assertMayChange(
+        Validator $validator,
+        Schedule $existing,
+        string $keyPrefix,
+        string $field,
+        bool $mayOverrideLock
+    ): bool {
+        if ($this->editabilityOf($existing, $mayOverrideLock)['editable']) {
+            return true;
+        }
+
+        $validator->errors()->add($keyPrefix.$field, $this->lockedMessage());
+
+        return false;
     }
 
     /**
@@ -337,8 +522,7 @@ class ScheduleModeRules
 
         if (! $schedule->spansSingleDay()) {
             throw new RuntimeException(sprintf(
-                'The schedule for %s covers more than one day, so it cannot be changed to Partial Day. '
-                    .'Split it into separate one-day schedules first, or add a new Partial Day schedule instead.',
+                'The schedule for %s covers more than one day. Split it into single days first.',
                 $schedule->describe()
             ));
         }

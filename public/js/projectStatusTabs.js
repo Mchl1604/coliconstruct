@@ -17,6 +17,13 @@
  * `data-status` / `data-overdue` are still honoured for any table that has not
  * been given `data-tab`.
  *
+ * A row may also carry `data-tab-extra` - a space separated list of the
+ * attention tabs it falls under, from Project::attentionTabKeys(). Those tabs
+ * ask what needs doing rather than what state something is in, so unlike the
+ * status tabs they overlap: one project can appear under Unscheduled and No
+ * Technicians both. The dashboard's Urgent Actions link straight at them with
+ * `?status=`, which is what opens the list already filtered.
+ *
  * The chosen tab is remembered per table for the rest of the browsing session,
  * so opening a project from Ongoing and coming back lands on Ongoing rather
  * than resetting to All.
@@ -88,8 +95,25 @@ document.addEventListener("DOMContentLoaded", function () {
         return rowStatus;
     }
 
+    /**
+     * The attention tabs a row also belongs under, if any - the value
+     * Project::attentionTabKeys() gave it, space separated.
+     *
+     * A row has exactly one tabOf(), but it can need booking AND have nobody
+     * on it, so these are a list rather than a second status.
+     */
+    function extrasOf(rowNode) {
+        const given = rowNode ? rowNode.getAttribute("data-tab-extra") : null;
+
+        return given ? given.split(/\s+/).filter(Boolean) : [];
+    }
+
     function matches(rowNode, status) {
-        return status === "all" || tabOf(rowNode) === status;
+        return (
+            status === "all" ||
+            tabOf(rowNode) === status ||
+            extrasOf(rowNode).indexOf(status) !== -1
+        );
     }
 
     function wire(tabList, tableId, table) {

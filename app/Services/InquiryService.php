@@ -54,7 +54,7 @@ class InquiryService
             $inquiry->name,
             null,
             sprintf(
-                '%s - a website enquiry was sent by %s (%s): %s',
+                '%s - a website inquiry was sent by %s (%s): %s',
                 $inquiry->code(),
                 $inquiry->name,
                 $inquiry->email,
@@ -66,7 +66,7 @@ class InquiryService
         // separate alerting for inquiries - administrators already read this.
         $this->notifications->deliver(
             $this->notifications->administrators(),
-            'New website enquiry',
+            'New website inquiry',
             sprintf('%s wrote in about %s.', $inquiry->name, $inquiry->subject),
             Notification::MODULE_INQUIRIES,
             $inquiry,
@@ -86,11 +86,11 @@ class InquiryService
     public function changeStatus(Inquiry $inquiry, string $status): Inquiry
     {
         if (! array_key_exists($status, Inquiry::STATUSES)) {
-            throw new RuntimeException('That is not a status an enquiry can be in.');
+            throw new RuntimeException('That is not a status an inquiry can be in.');
         }
 
         if ($inquiry->status === $status) {
-            throw new RuntimeException('That enquiry is already '.Inquiry::STATUSES[$status].'.');
+            throw new RuntimeException('That inquiry is already '.Inquiry::STATUSES[$status].'.');
         }
 
         $previous = $inquiry->statusLabel();
@@ -124,12 +124,12 @@ class InquiryService
     public function reply(Inquiry $inquiry, string $body, User $sender): Inquiry
     {
         if ($inquiry->is_archived) {
-            throw new RuntimeException('That enquiry is archived. Restore it before replying.');
+            throw new RuntimeException('That inquiry is archived. Restore it before replying.');
         }
 
         if (! $this->email->isDeliverable()) {
             throw new RuntimeException(
-                'Email is not configured on this system, so the reply could not be sent.'
+                'Email is not configured, so the reply was not sent.'
             );
         }
 
@@ -145,7 +145,7 @@ class InquiryService
 
         if (! $sent) {
             throw new RuntimeException(
-                'The reply could not be sent. The enquiry has been left unchanged so it can be tried again.'
+                'Unable to send reply. Nothing was changed - try again.'
             );
         }
 
@@ -178,7 +178,7 @@ class InquiryService
     public function archive(Inquiry $inquiry): Inquiry
     {
         if ($inquiry->is_archived) {
-            throw new RuntimeException('That enquiry is already archived.');
+            throw new RuntimeException('That inquiry is already archived.');
         }
 
         $inquiry->is_archived = true;
@@ -204,7 +204,7 @@ class InquiryService
     public function restore(Inquiry $inquiry): Inquiry
     {
         if (! $inquiry->is_archived) {
-            throw new RuntimeException('That enquiry is not archived.');
+            throw new RuntimeException('That inquiry is not archived.');
         }
 
         $inquiry->is_archived = false;

@@ -335,7 +335,7 @@ class CreateProjectTest extends TestCase
 
         $message = (string) session('error');
 
-        $this->assertStringContainsString('could not be created', $message);
+        $this->assertStringContainsString('Unable to create project', $message);
         // Debug mode appends the underlying fault, which is what debug mode is
         // for - the test environment runs with it on.
         $this->assertTrue(config('app.debug'));
@@ -368,7 +368,7 @@ class CreateProjectTest extends TestCase
 
         $message = (string) session('error');
 
-        $this->assertStringContainsString('could not be created', $message);
+        $this->assertStringContainsString('Unable to create project', $message);
         $this->assertStringNotContainsString('SQLSTATE', $message);
         $this->assertStringNotContainsString('insert into', $message);
         $this->assertStringNotContainsString('tbl_documents', $message);

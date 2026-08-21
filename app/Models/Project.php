@@ -101,6 +101,24 @@ class Project extends Model
     public const OVERDUE_CANDIDATE_STATUSES = ['pending', 'ongoing'];
 
     /**
+     * The only status a project can be closed out from.
+     *
+     * Narrower than ACTIVE_PROJECT_STATUSES on purpose. Pending means "booked,
+     * not started" and Unscheduled means "no dates at all" - see
+     * ProjectStatusRules, which derives all three - and neither describes work
+     * that can be finished. Completing one of those would file a completion
+     * report for a visit nobody has made yet, so the technician portal does
+     * not offer the button and ProjectPolicy refuses the request behind it.
+     *
+     * Overdue is deliberately included: it is derived rather than stored, and
+     * a late project is stored as Ongoing. Closing one off is exactly what the
+     * overdue banner asks the lead to do.
+     *
+     * @var array<int, string>
+     */
+    public const COMPLETABLE_STATUSES = ['ongoing'];
+
+    /**
      * Deep red, reserved for overdue. Bootstrap has no such background
      * utility, so `badge-overdue` is defined in superAdminNav.css.
      *
@@ -464,6 +482,22 @@ class Project extends Model
         return $this->status === 'completed';
     }
 
+    /**
+     * Whether this project is in a state a completion can even be offered
+     * for - before anything is asked about the work recorded on it.
+     *
+     * This is the question the Complete Project button asks. What is still
+     * outstanding on a completable project is a separate question, and
+     * ProjectPolicy::blockersFor() answers it.
+     */
+    public function isCompletable(): bool
+    {
+        return ! $this->isReadOnly()
+            && ! $this->isArchived()
+            && ! $this->on_hold
+            && in_array($this->status, self::COMPLETABLE_STATUSES, true);
+    }
+
     public function isAwaitingClientConfirmation(): bool
     {
         return $this->status === self::STATUS_AWAITING_CLIENT_CONFIRMATION;
@@ -657,7 +691,7 @@ class Project extends Model
             'unscheduled' => 'Unscheduled',
             'pending' => 'Pending',
             'ongoing' => 'Ongoing',
-            self::STATUS_AWAITING_CLIENT_CONFIRMATION => 'Awaiting Completion Confirmation',
+            self::STATUS_AWAITING_CLIENT_CONFIRMATION => 'Awaiting Client Confirmation',
             'completed' => 'Completed',
             'cancelled' => 'Cancelled',
             'archived' => 'Archived',
@@ -725,6 +759,127 @@ class Project extends Model
     }
 
     /**
+     * The tabs that answer "what needs attention", as opposed to "what state
+     * is this in".
+     *
+     * Separate from STATUS_TABS because they are a different kind of question
+     * and follow different rules. A status tab is exclusive - tabKey() files
+     * each project under exactly one - whereas a project with no crew and no
+     * dates needs attention twice and belongs in both of these. They are also
+     * drawn only when they hold something: a status reading zero is worth
+     * knowing, but a permanent "No Technicians: 0" tab is a reminder of
+     * nothing.
+     *
+     * The dashboard's Urgent Actions link straight at these keys, which is how
+     * a figure there opens the list of projects behind it.
+     *
+     * @var array<string, array{label: string, badge: string}>
+     */
+    public const ATTENTION_TABS = [
+        'unscheduled' => ['label' => 'Unscheduled', 'badge' => 'bg-info text-dark'],
+        'no_technicians' => ['label' => 'No Technicians', 'badge' => 'bg-danger'],
+        'inactive_crew' => ['label' => 'Inactive Crew', 'badge' => 'bg-danger'],
+    ];
+
+    /**
+     * Live work with no dates on it at all.
+     *
+     * Paused work is excluded on the same terms overdue work is: a hold is a
+     * decision somebody already took, and putting a project on hold sets its
+     * status to Unscheduled, so without this every held project would report
+     * itself as needing to be booked.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeMissingSchedule(Builder $query): Builder
+    {
+        return $query
+            ->whereIn('status', self::DERIVED_LIVE_STATUSES)
+            ->where('is_archived', false)
+            ->where(fn (Builder $paused) => $paused->where('on_hold', false)->orWhereNull('on_hold'))
+            ->whereDoesntHave('schedules');
+    }
+
+    /**
+     * Live work with nobody on it.
+     *
+     * A held project still counts here: a hold pauses the dates, not the
+     * question of who is going to do the job, and an empty team is what stops
+     * it being resumed.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeMissingTechnicians(Builder $query): Builder
+    {
+        return $query
+            ->whereIn('status', self::DERIVED_LIVE_STATUSES)
+            ->where('is_archived', false)
+            ->whereDoesntHave('projectTechnicians');
+    }
+
+    /**
+     * Live work still crewed by somebody who can no longer sign in.
+     *
+     * Deactivating an account keeps its bookings rather than handing the dates
+     * back silently - see inactiveCrew() - so the assignment outlives the
+     * login, and somebody has to reassign the work.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeWithInactiveCrew(Builder $query): Builder
+    {
+        return $query
+            ->whereIn('status', self::DERIVED_LIVE_STATUSES)
+            ->where('is_archived', false)
+            ->whereHas('projectTechnicians.technician', fn ($technician) => $technician
+                ->whereDoesntHave('account', fn ($account) => $account
+                    ->whereIn('role', User::TECHNICIAN_ROLES)
+                    ->where('is_archived', false)
+                    ->where('status', User::STATUS_ACTIVE)));
+    }
+
+    /**
+     * Which attention tabs this project falls under, if any.
+     *
+     * Unlike tabKey() this returns a list: the questions overlap, and a
+     * project can need booking, need a crew and be carrying somebody who has
+     * been switched off all at once. Decided here rather than in the view or
+     * the browser, for the same reason tabKey() is - the counts beside the
+     * tabs, the rows' own attributes and the filter all read this.
+     *
+     * @return array<int, string>
+     */
+    public function attentionTabKeys(): array
+    {
+        // The same window the scopes above count over, so a badge and the
+        // rows it promises cannot describe different projects.
+        if ($this->isArchived() || ! in_array($this->status, self::DERIVED_LIVE_STATUSES, true)) {
+            return [];
+        }
+
+        $this->loadMissing(['schedules', 'projectTechnicians.technician.account']);
+
+        $keys = [];
+
+        if (! $this->on_hold && $this->schedules->isEmpty()) {
+            $keys[] = 'unscheduled';
+        }
+
+        if ($this->projectTechnicians->isEmpty()) {
+            $keys[] = 'no_technicians';
+        }
+
+        if ($this->inactiveCrew()->isNotEmpty()) {
+            $keys[] = 'inactive_crew';
+        }
+
+        return $keys;
+    }
+
+    /**
      * How many projects fall under each tab, keyed by tabKey().
      *
      * `all` is the whole list, and every other key is the number of rows the
@@ -737,10 +892,20 @@ class Project extends Model
      */
     public static function tabCounts($projects): array
     {
-        return ['all' => $projects->count()] + $projects
+        $counts = ['all' => $projects->count()] + $projects
             ->groupBy(fn (self $project): string => $project->tabKey())
             ->map->count()
             ->all();
+
+        // Counted separately because they overlap: a project needing dates AND
+        // a crew is one row under two tabs, so groupBy() cannot answer this.
+        foreach (array_keys(self::ATTENTION_TABS) as $key) {
+            $counts[$key] = $projects
+                ->filter(fn (self $project): bool => in_array($key, $project->attentionTabKeys(), true))
+                ->count();
+        }
+
+        return $counts;
     }
 
     /**
@@ -763,22 +928,36 @@ class Project extends Model
     /**
      * The tabs to draw above a projects table, each carrying its own count.
      *
-     * Every tab is shown whether or not it holds anything: a count of zero is
-     * information, and a tab that appears and disappears as the data changes
-     * is a moving target. A caller may narrow the list - the technician portal
-     * never lists work it cannot reach - and the order is kept whatever order
-     * the keys are given in.
+     * Every STATUS tab is shown whether or not it holds anything: a count of
+     * zero is information, and a tab that appears and disappears as the data
+     * changes is a moving target. A caller may narrow the list - the
+     * technician portal never lists work it cannot reach - and the order is
+     * kept whatever order the keys are given in.
+     *
+     * The attention tabs are the exception, and are opt-in: they answer "what
+     * needs doing" rather than "what state is this in", so an empty one is
+     * noise rather than information. See ATTENTION_TABS.
      *
      * @param  Collection<int, self>  $projects
      * @param  array<int, string>|null  $only  the tab keys to draw, or null for all
+     * @param  bool  $withAttention  also draw the attention tabs that hold something
      * @return array<int, array{key: string, label: string, badge: string, count: int}>
      */
-    public static function statusTabs($projects, ?array $only = null): array
+    public static function statusTabs($projects, ?array $only = null, bool $withAttention = false): array
     {
         $counts = self::tabCounts($projects);
 
         return collect(self::STATUS_TABS)
             ->when($only !== null, fn ($tabs) => $tabs->only($only))
+            // The attention tabs come last, and only the ones holding
+            // something: see ATTENTION_TABS on why these appear and disappear
+            // where a status tab never does.
+            ->merge(
+                $withAttention
+                    ? collect(self::ATTENTION_TABS)
+                        ->filter(fn (array $tab, string $key): bool => ($counts[$key] ?? 0) > 0)
+                    : []
+            )
             ->map(fn (array $tab, string $key): array => [
                 'key' => $key,
                 'label' => $tab['label'],

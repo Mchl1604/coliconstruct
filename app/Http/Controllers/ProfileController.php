@@ -98,7 +98,7 @@ class ProfileController extends Controller
 
                 return $isReplacement ? 'Profile picture changed.' : 'Profile picture uploaded.';
             },
-            'The profile picture could not be saved.'
+            'Unable to save profile picture.'
         );
     }
 
@@ -110,7 +110,7 @@ class ProfileController extends Controller
 
                 return 'Profile picture removed.';
             },
-            'The profile picture could not be removed.'
+            'Unable to remove profile picture.'
         );
     }
 
@@ -152,7 +152,7 @@ class ProfileController extends Controller
                     ? 'Profile updated. Enter the code we sent to '.$user->pending_email.' to confirm your new email address.'
                     : 'Profile updated.';
             },
-            'Your profile could not be updated.'
+            'Unable to update profile.'
         );
     }
 
@@ -171,7 +171,7 @@ class ProfileController extends Controller
         $validated = $request->validateWithBag('emailChange', [
             'code' => ['required', 'string', 'max:12'],
         ], [
-            'code.required' => 'Enter the code that was emailed to you.',
+            'code.required' => 'Enter the emailed code.',
         ]);
 
         $user = $request->user();
@@ -182,7 +182,7 @@ class ProfileController extends Controller
 
                 return 'Your email address is now '.$updated->email.'.';
             },
-            'Your email address could not be changed.'
+            'Unable to change email address.'
         );
     }
 
@@ -196,7 +196,7 @@ class ProfileController extends Controller
 
                 return 'A new code is on its way to '.$user->pending_email.'.';
             },
-            'A new code could not be sent.'
+            'Unable to send a new code.'
         );
     }
 
@@ -208,9 +208,9 @@ class ProfileController extends Controller
             function () use ($user): string {
                 $this->profile->cancelEmailChange($user);
 
-                return 'The email change was cancelled. Your address is unchanged.';
+                return 'Email change cancelled.';
             },
-            'The email change could not be cancelled.'
+            'Unable to cancel the email change.'
         );
     }
 
@@ -244,7 +244,7 @@ class ProfileController extends Controller
 
                 return 'Password updated.';
             },
-            'Your password could not be updated.'
+            'Unable to update password.'
         );
     }
 
@@ -271,7 +271,7 @@ class ProfileController extends Controller
             'skill_ids' => ['present', 'array'],
             'skill_ids.*' => ['integer', 'exists:tbl_skills,skill_id'],
         ], [
-            'skill_ids.present' => 'No specialty selection was submitted.',
+            'skill_ids.present' => 'Select at least one specialty.',
         ]);
 
         return $this->attempt(
@@ -281,9 +281,9 @@ class ProfileController extends Controller
                     array_map('intval', $validated['skill_ids'] ?? [])
                 );
 
-                return 'Specialty request submitted. An administrator will review it.';
+                return 'Specialty request submitted for approval.';
             },
-            'Your specialty request could not be submitted.'
+            'Unable to submit specialty request.'
         );
     }
 

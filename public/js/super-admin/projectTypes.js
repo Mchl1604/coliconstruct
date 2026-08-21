@@ -155,7 +155,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function handle(result) {
         if (!result.ok) {
-            showError(result.body.error || 'Could not save the project type.');
+            showError(result.body.error || 'Unable to save project type.');
 
             return false;
         }
@@ -179,7 +179,7 @@ document.addEventListener('DOMContentLoaded', function() {
             loading.classList.add('d-none');
 
             if (!result.ok) {
-                showError(result.body.error || 'Could not load the project types.');
+                showError(result.body.error || 'Unable to load project types.');
 
                 return;
             }

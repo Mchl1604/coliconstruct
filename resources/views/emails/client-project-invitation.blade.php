@@ -35,8 +35,7 @@
         </p>
         <p
             style="margin:0 0 16px 0; padding:12px 16px; background-color:#fff8e6; border-left:3px solid #f0ad4e; font-size:14px;">
-            Register with <strong>{{ $contactEmail }}</strong>. The system matches projects to accounts by email
-            address, so using a different one means this project will not appear under <em>My Projects</em>.
+            Register with <strong>{{ $contactEmail }}</strong> &mdash; a different address will not show this project.
         </p>
     @endif
 

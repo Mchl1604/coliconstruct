@@ -9,6 +9,7 @@ use App\Models\Inquiry;
 use App\Models\Notification;
 use App\Models\Project;
 use App\Models\User;
+use App\Services\DashboardMetrics;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Mail;
@@ -590,5 +591,50 @@ class InquiryManagementTest extends TestCase
         )->assertStatus(422);
 
         Mail::assertNotQueued(InquiryReplyMail::class);
+    }
+
+    /**
+     * `pending` is not a status a message can hold - it is the two unfinished
+     * ones together, which is what the dashboard's Pending Inquiries figure
+     * counts and what its link asks this table for. The figure and the list it
+     * opens have to describe the same rows.
+     */
+    public function test_the_pending_filter_returns_everything_still_open(): void
+    {
+        $expected = [];
+
+        foreach (Inquiry::STATUSES as $status => $label) {
+            $inquiry = Inquiry::create($this->payload([
+                'email' => $status.'@example.test',
+                'subject' => $label.' message',
+            ]) + ['status' => $status]);
+
+            if (in_array($status, Inquiry::PENDING_STATUSES, true)) {
+                $expected[] = $inquiry->inquiry_id;
+            }
+        }
+
+        // Archived work is out of the working list whatever status it holds.
+        Inquiry::create($this->payload(['email' => 'filed@example.test'])
+            + ['status' => Inquiry::STATUS_NEW, 'is_archived' => true]);
+
+        $this->actingAsSuperAdmin();
+
+        $rows = $this->getJson(route('super-admin.configuration.inquiries.index', [
+            'status' => Inquiry::FILTER_PENDING,
+        ]))->assertOk()->json('rows');
+
+        sort($expected);
+
+        $this->assertSame(
+            $expected,
+            collect($rows)->pluck('id')->sort()->values()->all()
+        );
+
+        // The same rows the dashboard counted.
+        $this->assertSame(
+            count($expected),
+            app(DashboardMetrics::class)->pendingInquiries()
+        );
     }
 }

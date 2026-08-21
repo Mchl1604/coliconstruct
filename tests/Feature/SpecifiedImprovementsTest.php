@@ -419,8 +419,12 @@ class SpecifiedImprovementsTest extends TestCase
     }
 
     /**
-     * Every tab carries a count, and each project is counted under exactly
-     * one of them.
+     * Every status tab carries a count, and each project is counted under
+     * exactly one of them.
+     *
+     * The attention tabs beside them are deliberately not part of that sum:
+     * they ask what needs doing rather than what state work is in, and one
+     * project can need booking and a crew both - see Project::ATTENTION_TABS.
      */
     public function test_every_projects_tab_carries_its_own_count(): void
     {
@@ -447,11 +451,14 @@ class SpecifiedImprovementsTest extends TestCase
         $this->assertSame(1, $tabs['completed']['count']);
         $this->assertSame(1, $tabs['cancelled']['count']);
 
-        // Everything but All adds up to All, which is what "counted once"
-        // means.
+        // Every status tab but All adds up to All, which is what "counted
+        // once" means.
         $this->assertSame(
             $tabs['all']['count'],
-            $tabs->reject(fn (array $tab): bool => $tab['key'] === 'all')->sum('count')
+            $tabs
+                ->only(array_keys(Project::STATUS_TABS))
+                ->reject(fn (array $tab): bool => $tab['key'] === 'all')
+                ->sum('count')
         );
     }
 

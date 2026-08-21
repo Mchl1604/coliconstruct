@@ -32,17 +32,42 @@ document.addEventListener("DOMContentLoaded", function () {
 
     let projectId = null;
 
+    /**
+     * One blocker as a list item: what is wrong, and the link to the screen
+     * that fixes it.
+     *
+     * The link matters more than the sentence. "2 tasks are still open" on its
+     * own leaves the lead to go and find those two tasks; the link opens the
+     * project on the tab that holds them. Not every blocker has one - a
+     * project that is already completed is a fact rather than a to-do - so the
+     * link is drawn only when the server sent one.
+     */
+    function blockerItem(blocker) {
+        const item =
+            "<li class=\"mb-1\">" + portal.escapeHtml(blocker.message || "");
+
+        if (!blocker.action) {
+            return item + "</li>";
+        }
+
+        return (
+            item +
+            ' <a class="alert-link" href="' +
+            portal.escapeHtml(blocker.action.url) +
+            '">' +
+            portal.escapeHtml(blocker.action.label) +
+            ' <i class="bi bi-arrow-right-short" aria-hidden="true"></i>' +
+            "</a></li>"
+        );
+    }
+
     function showBlockers(blockers) {
         loadingEl.classList.add("d-none");
         blockedEl.classList.toggle("d-none", blockers.length === 0);
         readyEl.classList.toggle("d-none", blockers.length > 0);
         submitEl.disabled = blockers.length > 0;
 
-        blockersEl.innerHTML = blockers
-            .map(function (blocker) {
-                return "<li>" + portal.escapeHtml(blocker) + "</li>";
-            })
-            .join("");
+        blockersEl.innerHTML = blockers.map(blockerItem).join("");
     }
 
     document.addEventListener("click", function (event) {

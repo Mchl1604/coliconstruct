@@ -202,7 +202,7 @@ class AuthController extends Controller
             'contact_number.regex' => User::CONTACT_NUMBER_MESSAGE,
             'contact_number.max' => User::CONTACT_NUMBER_MESSAGE,
             'password.confirmed' => 'The two passwords do not match.',
-            'terms.accepted' => 'Please read and accept the Terms and Conditions to continue.',
+            'terms.accepted' => 'Accept the Terms and Conditions to continue.',
         ] + AccountAge::messages());
 
         // Never handed to the account service: agreeing is a precondition of
@@ -239,7 +239,7 @@ class AuthController extends Controller
 
         return redirect()
             ->route('auth.verify')
-            ->with('success', 'We sent a verification code to '.$account->email.'.');
+            ->with('success', 'Verification code sent to '.$account->email.'.');
     }
 
     public function logout(Request $request)
@@ -263,7 +263,7 @@ class AuthController extends Controller
 
         // Home rather than the sign-in form: signing out should leave somebody
         // on the public website, where the header offers Login again.
-        return redirect()->route('landing.home')->with('success', 'You have been signed out.');
+        return redirect()->route('landing.home')->with('success', 'Signed out.');
     }
 
     // ------------------------------------------------------------------
@@ -324,7 +324,7 @@ class AuthController extends Controller
         );
 
         return redirect(PortalHome::url($user))
-            ->with('success', 'Your password has been updated.');
+            ->with('success', 'Password updated.');
     }
 
     // ------------------------------------------------------------------

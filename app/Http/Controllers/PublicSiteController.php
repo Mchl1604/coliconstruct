@@ -89,7 +89,7 @@ class PublicSiteController extends Controller
             // and a person will never see.
             'company_website' => ['nullable', 'size:0'],
         ], [
-            'message.min' => 'Please tell us a little more - at least 10 characters.',
+            'message.min' => 'Please write at least 10 characters.',
             'company_website.size' => 'That message could not be sent.',
         ]);
 
@@ -141,7 +141,7 @@ class PublicSiteController extends Controller
 
     private function inquiryThanks(): string
     {
-        return 'Thank you - your message has been sent. We will come back to you shortly.';
+        return 'Thank you - your message has been sent.';
     }
 
     /**

@@ -104,6 +104,11 @@ class ScheduleController extends Controller
         // hours exist without the list being written out twice.
         $workingHours = Schedule::workingHourOptions();
 
+        // Whether this reader may correct a booking that has already ended.
+        // Decided once here rather than re-derived per row in the view, and
+        // re-checked on the way in - this only governs what is drawn.
+        $mayOverrideLock = (bool) request()->user()?->isSuperAdmin();
+
         return view('super-admin.schedule', compact(
             'projects',
             'scheduledProjects',
@@ -112,7 +117,8 @@ class ScheduleController extends Controller
             'technicianSchedules',
             'technicianNames',
             'projectLabels',
-            'workingHours'
+            'workingHours',
+            'mayOverrideLock'
         ));
     }
 
@@ -277,7 +283,7 @@ class ScheduleController extends Controller
             if ($isPartialDay && ! $project->isResidential()) {
                 $blocked[] = $this->projectPayload(
                     $project,
-                    'Partial Day scheduling is available on Residential projects only.'
+                    'Partial Day scheduling is for Residential projects only.'
                 );
 
                 continue;
@@ -425,7 +431,7 @@ class ScheduleController extends Controller
                     foreach ($technicianIds as $technicianId) {
                         if (isset($claimedTechnicians[$technicianId])) {
                             throw new RuntimeException(sprintf(
-                                '%s is assigned to both %s and %s, so they cannot share this schedule.',
+                                '%s is on both %s and %s and cannot share this schedule.',
                                 $project->projectTechnicians
                                     ->firstWhere('technician_id', $technicianId)?->technician?->name
                                     ?? 'A technician',
@@ -473,14 +479,14 @@ class ScheduleController extends Controller
             });
         } catch (Throwable $e) {
             return response()->json([
-                'error' => $this->safeErrorMessage($e, 'That schedule could not be saved. Nothing was changed.'),
+                'error' => $this->safeErrorMessage($e, 'Unable to save schedule. Nothing was changed.'),
             ], 422);
         }
 
         return response()->json([
             'message' => $projects->count() === 1
-                ? $projects->first()->name.' has been scheduled.'
-                : $projects->count().' projects have been scheduled.',
+                ? $projects->first()->name.' scheduled.'
+                : $projects->count().' projects scheduled.',
         ]);
     }
 
@@ -576,7 +582,7 @@ class ScheduleController extends Controller
         }
 
         throw new RuntimeException(sprintf(
-            '%s is a Commercial project, and Partial Day scheduling is available on Residential projects only.',
+            '%s is a Commercial project. Partial Day scheduling is for Residential projects only.',
             $project->name
         ));
     }
@@ -614,28 +620,60 @@ class ScheduleController extends Controller
         $validated = $request->validate([
             'ranges' => ['nullable', 'array'],
             'ranges.*.schedule_id' => ['nullable', 'integer', 'exists:tbl_schedule,schedule_id'],
+            'override_past_lock' => ['nullable', 'boolean'],
             ...$scheduleRules->rules('ranges.*.'),
         ], $scheduleRules->messages('ranges.*.'));
 
+        // A Super Admin correcting a booking that has ended, having confirmed
+        // they mean to. Read from the account rather than from the form alone:
+        // the flag says the confirmation was given, the role says it counts.
+        $mayOverrideLock = (bool) ($validated['override_past_lock'] ?? false)
+            && (bool) $request->user()?->isSuperAdmin();
+
         // Read before anything moves, so the log can say what it changed from.
         $rangesBefore = $this->describeSchedules($project->schedules);
+        $overrode = false;
 
         try {
-            DB::transaction(function () use ($validated, $project, $scheduleRules): void {
-                $ranges = $this->resolveSubmittedRanges($project, $validated['ranges'] ?? [], $scheduleRules);
+            DB::transaction(function () use ($validated, $project, $scheduleRules, $mayOverrideLock, &$overrode): void {
+                $ranges = $this->resolveSubmittedRanges(
+                    $project,
+                    $validated['ranges'] ?? [],
+                    $scheduleRules,
+                    $mayOverrideLock
+                );
 
                 $this->assertNoOverlapWithinSubmission($ranges, $scheduleRules);
                 $this->assertRangesAvailable($project, $ranges);
 
                 $keepScheduleIds = $ranges->pluck('schedule_id')->filter()->values();
 
+                // A booking that has ended is the record of work that
+                // happened, and it survives whatever the form sends. Omitting
+                // one is how the editor submits a row it drew read-only, so
+                // treating an omission as a deletion would quietly destroy
+                // history every time somebody edited a future range.
                 $project->schedules()
                     ->whereNotIn('schedule_id', $keepScheduleIds->all())
                     ->get()
-                    ->each(fn (Schedule $schedule) => $schedule->delete());
+                    ->each(function (Schedule $schedule) use ($mayOverrideLock, &$overrode): void {
+                        if ($schedule->isLocked() && ! $mayOverrideLock) {
+                            return;
+                        }
 
-                $ranges->each(function (array $range) use ($project): void {
+                        if ($schedule->isLocked()) {
+                            $overrode = true;
+                        }
+
+                        $schedule->delete();
+                    });
+
+                $ranges->each(function (array $range) use ($project, &$overrode): void {
                     if ($range['schedule_id']) {
+                        if ($range['used_override']) {
+                            $overrode = true;
+                        }
+
                         Schedule::query()
                             ->where('project_id', $project->project_id)
                             ->where('schedule_id', $range['schedule_id'])
@@ -679,7 +717,13 @@ class ScheduleController extends Controller
                 ActivityLog::PROJECT_RESCHEDULED,
                 null,
                 sprintf(
-                    "Changed the date ranges on '%s' from %s to %s.",
+                    // Named as an override when one was used, so the trail
+                    // separates a routine reschedule from a correction to work
+                    // already on the record. The actor is recorded by the
+                    // logger itself.
+                    $overrode
+                        ? "Overrode the past-schedule lock on '%s' and changed its date ranges from %s to %s."
+                        : "Changed the date ranges on '%s' from %s to %s.",
                     $project->reference_no ?? $project->name,
                     $rangesBefore,
                     $rangesAfter
@@ -697,13 +741,13 @@ class ScheduleController extends Controller
                 ->with('success', $project->schedules()->exists()
                     ? 'Schedule updated successfully.'
                     : sprintf(
-                        '%s now holds no dates and is Unscheduled, so it has been taken off the calendar and the table.',
+                        '%s is now Unscheduled.',
                         $project->name
                     ));
         } catch (Throwable $e) {
             return redirect()
                 ->route('super-admin.schedules.index')
-                ->with('error', $this->safeErrorMessage($e, 'The schedule could not be saved. Nothing was changed.'));
+                ->with('error', $this->safeErrorMessage($e, 'Unable to save schedule. Nothing was changed.'));
         }
     }
 
@@ -719,13 +763,17 @@ class ScheduleController extends Controller
      * have a morning and an afternoon booked separately on one date, and only
      * the person clicking knows which of them is being given up.
      */
-    public function removeDate(Schedule $schedule, string $date)
+    public function removeDate(Request $request, Schedule $schedule, string $date)
     {
         try {
             $day = CarbonImmutable::parse($date)->startOfDay();
         } catch (Throwable $e) {
             return response()->json(['error' => 'Invalid date.'], 422);
         }
+
+        // A Super Admin correcting a day already worked, having confirmed it.
+        $mayOverrideLock = $request->boolean('override_past_lock')
+            && (bool) $request->user()?->isSuperAdmin();
 
         $project = Project::query()
             ->with(['clients', 'schedules', 'projectTechnicians.technician.account'])
@@ -743,8 +791,9 @@ class ScheduleController extends Controller
         $label = $day->format('F j, Y');
 
         try {
-            DB::transaction(function () use ($project, $schedule, $day, $removal, &$clearedTasks): void {
+            DB::transaction(function () use ($project, $schedule, $day, $removal, $mayOverrideLock, &$clearedTasks): void {
                 $this->assertDateRemovable($project);
+                $this->assertDayRemovable($day, $mayOverrideLock);
 
                 $removal->remove($schedule, $day);
 
@@ -759,7 +808,7 @@ class ScheduleController extends Controller
             });
         } catch (Throwable $e) {
             return response()->json([
-                'error' => $this->safeErrorMessage($e, 'That schedule could not be saved. Nothing was changed.'),
+                'error' => $this->safeErrorMessage($e, 'Unable to save schedule. Nothing was changed.'),
             ], 422);
         }
 
@@ -770,7 +819,12 @@ class ScheduleController extends Controller
             ActivityLog::PROJECT_RESCHEDULED,
             null,
             sprintf(
-                "Removed %s from the schedule on '%s'. Its dates changed from %s to %s.",
+                // Named as an override when the day had already passed, so the
+                // trail separates giving up a booked day from correcting the
+                // record of one that was worked.
+                $day->lt(Schedule::businessToday())
+                    ? "Overrode the past-schedule lock on '%2\$s' and removed %1\$s from it. Its dates changed from %3\$s to %4\$s."
+                    : "Removed %1\$s from the schedule on '%2\$s'. Its dates changed from %3\$s to %4\$s.",
                 $label,
                 $project->reference_no ?? $project->name,
                 $rangesBefore,
@@ -812,6 +866,38 @@ class ScheduleController extends Controller
 
         if ($project->on_hold) {
             throw new RuntimeException('This project is on hold and its schedule can no longer be changed.');
+        }
+    }
+
+    /**
+     * Whether a particular day may be taken off a schedule.
+     *
+     * Tomorrow onwards, and nothing else. A day already worked is part of the
+     * project's record - the same reason ScheduleHoldCutoff keeps the days a
+     * hold was placed after - and today is being worked right now, so taking
+     * it away would discard a day the crew is on site for.
+     *
+     * A Super Admin may still remove a day that has passed, as a correction to
+     * a record that was wrong. Today is refused whoever is asking: it is not a
+     * mistake in the record yet, it is work in progress.
+     */
+    private function assertDayRemovable(CarbonImmutable $day, bool $mayOverrideLock): void
+    {
+        if (Schedule::dateIsRemovable($day)) {
+            return;
+        }
+
+        if ($day->equalTo(Schedule::businessToday())) {
+            throw new RuntimeException(
+                'Today is already under way, so it cannot be removed from the schedule.'
+            );
+        }
+
+        if (! $mayOverrideLock) {
+            throw new RuntimeException(sprintf(
+                '%s has already passed and cannot be removed. Super Admin access is required to change it.',
+                $day->format('F j, Y')
+            ));
         }
     }
 
@@ -907,7 +993,8 @@ class ScheduleController extends Controller
     private function resolveSubmittedRanges(
         Project $project,
         array $submitted,
-        ScheduleModeRules $scheduleRules
+        ScheduleModeRules $scheduleRules,
+        bool $mayOverrideLock = false
     ): Collection {
         $existing = $project->schedules->keyBy('schedule_id');
         $partialDayAllowed = $project->isResidential();
@@ -928,6 +1015,12 @@ class ScheduleController extends Controller
                 throw new RuntimeException('One of the schedules being edited does not belong to this project.');
             }
 
+            // Noted before the row is touched: once it has been rewritten its
+            // own dates no longer say what state it was in.
+            $wasLocked = $schedule?->isLocked() ?? false;
+            $wasActive = $schedule?->isActive() ?? false;
+            $storedStart = $schedule?->startsOn();
+
             $range = $scheduleRules->validateEntry(
                 $validator,
                 $entry,
@@ -935,9 +1028,10 @@ class ScheduleController extends Controller
                 $partialDayAllowed,
                 $schedule !== null,
                 // The stored row, so the rules can tell a booking being left
-                // alone from one being moved. Only the second is refused a
-                // date in the past.
-                $schedule
+                // alone from one being moved, and how much of it has already
+                // been worked.
+                $schedule,
+                $mayOverrideLock
             );
 
             if (! $range) {
@@ -953,6 +1047,16 @@ class ScheduleController extends Controller
                 'mode' => $range['mode'],
                 'start' => $range['start'],
                 'end' => $range['end'],
+                // Whether this change could only be made because the lock was
+                // overridden - which is what the audit line reports.
+                //
+                // Two shapes of it, not one. A booking that had ENDED and has
+                // been changed at all is the obvious case. The other is a
+                // booking already UNDER WAY whose start has been moved: that
+                // start is a day the crew worked, it is frozen for everybody
+                // else, and moving it rewrites the record just as surely.
+                'used_override' => ($wasLocked && ! $this->matchesStored($schedule, $range))
+                    || ($wasActive && $storedStart && ! $storedStart->equalTo($range['start']->startOfDay())),
             ]);
         }
 
@@ -967,6 +1071,28 @@ class ScheduleController extends Controller
         }
 
         return $resolved;
+    }
+
+    /**
+     * Whether a resolved range says exactly what the stored row already says.
+     *
+     * A row the editor drew read-only is still submitted by some callers, and
+     * resubmitting a booking unchanged is not a change - so it must not be
+     * reported as an override.
+     *
+     * @param  array{mode: string, start: CarbonImmutable, end: CarbonImmutable}  $range
+     */
+    private function matchesStored(?Schedule $schedule, array $range): bool
+    {
+        if (! $schedule) {
+            return false;
+        }
+
+        $stored = $schedule->occupiedInterval();
+
+        return $schedule->scheduling_mode === $range['mode']
+            && $stored['start']->equalTo($range['start'])
+            && $stored['end']->equalTo($range['end']);
     }
 
     /**

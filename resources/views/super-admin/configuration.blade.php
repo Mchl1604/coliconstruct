@@ -445,8 +445,7 @@
                                     Project Types
                                 </h5>
                                 <p class="text-secondary small mb-0">
-                                    The services a project can be booked for. Each one is also a technician
-                                    specialty, so adding a type here offers it on the Technicians page too.
+                                    Project types double as technician specialties.
                                 </p>
                             </div>
                         </div>
@@ -523,8 +522,7 @@
                 <div>
                     <h5 class="fw-bold mb-0">Inquiries</h5>
                     <span class="text-secondary small">
-                        Messages sent through the public Contact page. Nothing here is linked to a client
-                        or a project.
+                        Messages from the public Contact page.
                     </span>
                 </div>
 
@@ -556,6 +554,10 @@
                             <select class="form-select form-select-sm config-filter" aria-label="Filter by status"
                                 data-inquiry-status>
                                 <option value="all">All Statuses</option>
+                                {{-- Not a status a message can hold: the two
+                                     unfinished ones together, which is what the
+                                     dashboard counts as pending. --}}
+                                <option value="{{ \App\Models\Inquiry::FILTER_PENDING }}">Pending</option>
                                 @foreach ($inquiryStatuses as $value => $label)
                                     <option value="{{ $value }}">{{ $label }}</option>
                                 @endforeach
@@ -817,8 +819,7 @@
                                         </button>
                                     </div>
                                     <div class="form-text">
-                                        Generated for you, or type your own - at least 8 characters. The account must
-                                        choose a new password at first sign-in.
+                                        At least 8 characters. A new password is required at first sign-in.
                                         @if ($mailEnabled)
                                             A copy is emailed to them automatically.
                                         @else
@@ -919,7 +920,7 @@
                         <div>
                             <h5 class="modal-title" id="archivedAccountsModalLabel">Archived Accounts</h5>
                             <p class="text-secondary small mb-0">
-                                Nothing here was deleted. Restoring an account brings it back exactly as it was.
+                                Nothing was deleted. Restoring brings an account back as it was.
                             </p>
                         </div>
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -1104,7 +1105,7 @@
                         </div>
 
                         <p class="text-secondary small mb-0">
-                            Any status may follow any other. Sending a reply sets it to Responded on its own.
+                            Sending a reply sets the status to Responded.
                         </p>
 
                         {{-- Reply form. The recipient is shown but never typed:
@@ -1175,8 +1176,7 @@
                         <div>
                             <h5 class="modal-title" id="archivedInquiriesModalLabel">Archived Inquiries</h5>
                             <p class="text-secondary small mb-0">
-                                Nothing here was deleted. Restoring an inquiry puts it back on the active list
-                                exactly as it was.
+                                Nothing was deleted. Restoring puts an inquiry back on the active list.
                             </p>
                         </div>
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -1330,6 +1330,11 @@
                 // Opened straight from a notification: ?inquiry=7 on the URL
                 // shows the tab with that message already open.
                 openInquiry: @json(request()->integer('inquiry') ?: null),
+                // The dashboard's Pending Inquiries figure, which opens this
+                // tab narrowed to the messages still waiting on somebody.
+                openInquiries: @json(request()->query('inquiries') === \App\Models\Inquiry::FILTER_PENDING
+                    ? \App\Models\Inquiry::FILTER_PENDING
+                    : null),
             };
         </script>
         <script src="/js/super-admin/configuration.js"></script>

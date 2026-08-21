@@ -30,7 +30,7 @@
             style="letter-spacing:.6rem; font-weight:600;" inputmode="numeric" autocomplete="one-time-code"
             pattern="[0-9]*" maxlength="6" placeholder="000000" required autofocus>
         <div class="form-text">
-            The code expires {{ \App\Services\OtpService::VALID_MINUTES }} minutes after it was sent.
+            Code expires in {{ \App\Services\OtpService::VALID_MINUTES }} minutes.
         </div>
     </div>
 

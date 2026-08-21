@@ -115,7 +115,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     })
                 ) {
                     setError(
-                        "Every technician on this project has an inactive account, so nobody can be given a task. Ask an administrator to update the team.",
+                        "Every technician on this project is inactive. Ask an administrator to update the team.",
                     );
 
                     return;

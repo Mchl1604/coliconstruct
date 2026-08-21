@@ -26,22 +26,22 @@
             </div>
 
             <div class="modal-body">
-                <p class="mb-1">This will permanently delete</p>
+                <p class="mb-1">Permanently delete</p>
                 <h5 class="fw-bold">"{{ $task->task_title }}"</h5>
 
                 @if ($task->isCompleted())
                     <div class="alert alert-warning mt-3 mb-0">
                         <i class="bi bi-exclamation-triangle me-1" aria-hidden="true"></i>
-                        This task is already completed. Its completion notes
+                        Its completion notes
                         @if ($task->images->isNotEmpty())
                             and {{ $task->images->count() }}
                             {{ \Illuminate\Support\Str::plural('photo', $task->images->count()) }}
                         @endif
-                        will be deleted with it.
+                        go with it.
                     </div>
                 @endif
 
-                <p class="text-danger mb-0 mt-3">This action cannot be undone.</p>
+                <p class="text-danger mb-0 mt-3">This cannot be undone.</p>
             </div>
 
             <div class="modal-footer">

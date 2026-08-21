@@ -263,7 +263,7 @@ document.addEventListener("DOMContentLoaded", function () {
             if (!result.ok) {
                 reportsBody.innerHTML = "";
                 reportsEmpty.textContent =
-                    result.body.error || "Could not load reports.";
+                    result.body.error || "Unable to load reports.";
                 reportsEmpty.classList.remove("d-none");
                 renderReportsPagination(null);
 
@@ -487,7 +487,7 @@ document.addEventListener("DOMContentLoaded", function () {
                         titleEl.textContent = "Unavailable";
                         setAlert(
                             errorEl,
-                            result.body.error || "Could not load this report.",
+                            result.body.error || "Unable to load report.",
                         );
 
                         return;
@@ -579,7 +579,7 @@ document.addEventListener("DOMContentLoaded", function () {
         form.addEventListener("submit", function (event) {
             if (!projectSelect.value) {
                 event.preventDefault();
-                setAlert(errorEl, "Select a project before submitting.");
+                setAlert(errorEl, "Select a project first.");
             }
         });
 
@@ -995,7 +995,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 if (!result.ok) {
                     setAlert(
                         systemError,
-                        result.body.error || "Could not load this graph.",
+                        result.body.error || "Unable to load chart.",
                     );
 
                     return;
@@ -1030,7 +1030,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 if (!result.ok) {
                     setAlert(
                         systemError,
-                        result.body.error || "Could not load the dashboard.",
+                        result.body.error || "Unable to load dashboard.",
                     );
 
                     return;
@@ -1230,7 +1230,7 @@ document.addEventListener("DOMContentLoaded", function () {
                             })
                             .then(function (body) {
                                 throw new Error(
-                                    body.error || "Could not generate the report.",
+                                    body.error || "Unable to generate report.",
                                 );
                             });
                     }

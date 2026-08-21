@@ -315,7 +315,7 @@
             if (!params) {
                 loadingEl.classList.add('d-none');
                 showError(
-                    'Choose the project schedule first, so the technicians can be checked against it.',
+                    'Set the schedule first so technicians can be checked.',
                 );
 
                 return;
@@ -342,7 +342,7 @@
                     loadingEl.classList.add('d-none');
 
                     if (!result.ok) {
-                        showError(result.body.error || 'Could not load projects.');
+                        showError(result.body.error || 'Unable to load projects.');
 
                         return;
                     }
@@ -356,7 +356,7 @@
                     }
 
                     loadingEl.classList.add('d-none');
-                    showError('Could not load projects.');
+                    showError('Unable to load projects.');
                 });
         }
 

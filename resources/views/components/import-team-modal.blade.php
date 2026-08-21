@@ -29,8 +29,7 @@
                 <div data-import-browser>
                     <p class="text-secondary small">
                         <i class="bi bi-info-circle me-1" aria-hidden="true"></i>
-                        Only the technicians are copied. The other project keeps its own schedule, tasks,
-                        reports and details, and you can still add or remove people afterwards.
+                        Only technicians are copied. You can add or remove people afterwards.
                     </p>
 
                     <div class="input-group mb-3">

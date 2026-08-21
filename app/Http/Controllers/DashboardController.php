@@ -7,15 +7,15 @@ use App\Models\User;
 use App\Services\DashboardMetrics;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 
 /**
  * The Admin and Super Admin dashboard.
  *
- * Short on purpose: a strip of figures, one ring, the work that is coming, who
- * is carrying it, and what just happened. Everything here is either a number
- * somebody checks daily or a door into the module that owns it.
+ * Short on purpose: a strip of figures, the work that is coming, what is
+ * waiting on somebody, who is carrying it, and what just happened. Everything
+ * here is either a number somebody checks daily or a backlog with the page
+ * that clears it one click away.
  *
  * What an Admin may not read is not sent. The archive figures and another
  * administrator's activity are absent from their payload rather than hidden by
@@ -46,9 +46,10 @@ class DashboardController extends Controller
             // opened to answer.
             'activeTechnicians' => $this->metrics->activeTechniciansToday(),
             'activeTechnicianCount' => $this->metrics->activeTechnicianCountToday(),
-            // The doors into the modules, narrowed to the ones this reader may
-            // actually open.
-            'quickActions' => $this->quickActions($viewer),
+            // What is waiting on somebody, and where each backlog is cleared.
+            // This replaced Quick Actions, which was a second copy of the
+            // sidebar - see DashboardMetrics::urgentActions().
+            'urgentActions' => $this->metrics->urgentActions(),
             'recentActivity' => $this->recentActivity($viewer),
         ]);
     }
@@ -64,78 +65,6 @@ class DashboardController extends Controller
     // ------------------------------------------------------------------
     // Internals
     // ------------------------------------------------------------------
-
-    /**
-     * The modules this reader may open, as a strip of shortcuts.
-     *
-     * Every entry points at a route that already exists - nothing here is a
-     * page of its own - and each carries the check that decides whether this
-     * reader may reach it. An action the viewer cannot use is not rendered
-     * disabled, it is absent: a dashboard offering a door somebody cannot walk
-     * through is worse than one that does not mention it.
-     *
-     * Admin and Super Admin reach all six today, because the routes behind
-     * them admit both roles. The predicates are stated anyway so narrowing one
-     * later is a change here rather than a change in the view.
-     *
-     * @return array<int, array{key: string, label: string, icon: string, url: string}>
-     */
-    private function quickActions(User $viewer): array
-    {
-        $isAdministrator = in_array($viewer->role, User::ADMINISTRATOR_ROLES, true);
-
-        return collect([
-            [
-                'key' => 'projects',
-                'label' => 'Projects',
-                'icon' => 'bi-folder2-open',
-                'url' => route('super-admin.projects'),
-                'allowed' => $isAdministrator,
-            ],
-            [
-                'key' => 'schedules',
-                'label' => 'Schedules',
-                'icon' => 'bi-calendar-event',
-                'url' => route('super-admin.schedules.index'),
-                'allowed' => $isAdministrator,
-            ],
-            [
-                'key' => 'technicians',
-                'label' => 'Technicians',
-                'icon' => 'bi-tools',
-                'url' => route('super-admin.technicians.index'),
-                'allowed' => $isAdministrator,
-            ],
-            [
-                // Client accounts live in Configuration's User Management tab
-                // rather than on a page of their own, so this opens that tab
-                // at the Clients table instead of duplicating it.
-                'key' => 'clients',
-                'label' => 'Clients',
-                'icon' => 'bi-building',
-                'url' => route('super-admin.configuration.index').'#clients',
-                'allowed' => $isAdministrator,
-            ],
-            [
-                'key' => 'reports',
-                'label' => 'Reports',
-                'icon' => 'bi-graph-up',
-                'url' => route('super-admin.reports.index'),
-                'allowed' => $isAdministrator,
-            ],
-            [
-                'key' => 'configuration',
-                'label' => 'Configuration',
-                'icon' => 'bi-sliders',
-                'url' => route('super-admin.configuration.index'),
-                'allowed' => $isAdministrator,
-            ],
-        ])
-            ->filter(fn (array $action): bool => $action['allowed'])
-            ->map(fn (array $action): array => Arr::except($action, 'allowed'))
-            ->values()
-            ->all();
-    }
 
     /**
      * The last few things that happened, as this reader is allowed to see

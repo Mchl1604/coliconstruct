@@ -218,7 +218,7 @@ class SystemContentService
         $path = $file->storeAs(self::DIRECTORY, $name, self::DISK);
 
         if ($path === false) {
-            throw new RuntimeException('The image could not be stored.');
+            throw new RuntimeException('Unable to store image.');
         }
 
         // Read straight from the table, never the cached map: deleting a file

@@ -59,7 +59,7 @@ class TaskAssignmentRules
         };
 
         return sprintf(
-            "%s's account %s, so they cannot be given a task. Choose somebody else.",
+            "%s's account %s and cannot be given tasks.",
             $technician->name,
             $reason
         );

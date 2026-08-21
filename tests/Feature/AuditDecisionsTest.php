@@ -122,7 +122,7 @@ class AuditDecisionsTest extends TestCase
             $stored->startsOn()->toDateString(),
             'The booking stayed where it was.'
         );
-        $this->assertStringContainsString('cannot be moved into the past', (string) session('error'));
+        $this->assertStringContainsString('Choose a start date of today or later.', (string) session('error'));
     }
 
     /**

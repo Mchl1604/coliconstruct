@@ -60,8 +60,7 @@
                                 name="profile_photo" accept="image/*" required>
 
                             <div class="form-text text-start mb-2">
-                                JPG, PNG or WEBP, up to 5 MB. It is shown as a circle, so a square picture
-                                crops best.
+                                JPG, PNG or WEBP, up to 5 MB. Square images work best.
                             </div>
 
                             @error('profile_photo', 'photo')
@@ -114,8 +113,7 @@
                         </dl>
 
                         <p class="text-secondary small mb-0 mt-3 text-start">
-                            Your role, status and date of birth cannot be changed here - ask an
-                            administrator if one of them is wrong.
+                            Role, status and date of birth can only be changed by an administrator.
                         </p>
                     </div>
                 </div>
@@ -204,8 +202,7 @@
                                         id="emailAddress" name="email" maxlength="255" required
                                         value="{{ old('email', $account->email) }}">
                                     <div class="form-text">
-                                        This is the address you sign in with. Changing it sends a 6-digit code to
-                                        the new address, which you must enter before the change takes effect.
+                                        Your sign-in address. Changing it requires a code sent to the new address.
                                     </div>
                                     @error('email', 'information')
                                         <div class="invalid-feedback">{{ $message }}</div>
@@ -228,8 +225,8 @@
                                 <div>
                                     <div class="fw-semibold small">Confirm your new email address</div>
                                     <div class="text-secondary small">
-                                        We sent a 6-digit code to <strong>{{ $pendingEmail }}</strong>.
-                                        Until you enter it, you keep signing in with {{ $account->email }}.
+                                        Code sent to <strong>{{ $pendingEmail }}</strong>.
+                                        Sign in with {{ $account->email }} until confirmed.
                                     </div>
                                 </div>
                             </div>
@@ -349,9 +346,8 @@
 
                                     <p class="text-secondary small mb-0">
                                         Submitted
-                                        {{ $pendingRequest->created_at?->diffForHumans() }}. Your approved
-                                        specialties stay active until an administrator decides. You cannot submit
-                                        another request until then.
+                                        {{ $pendingRequest->created_at?->diffForHumans() }}. Your current
+                                        specialties stay active until it is decided.
                                     </p>
                                 </div>
                             @endif
@@ -377,9 +373,8 @@
 
                                         <div class="modal-body">
                                             <p class="text-secondary small">
-                                                Tick the specialties you should hold. Nothing changes until an
-                                                administrator approves the request; your approved specialties stay
-                                                active in the meantime.
+                                                Select the specialties you should hold. Nothing changes until an
+                                                administrator approves it.
                                             </p>
 
                                             @error('skill_ids', 'specialties')

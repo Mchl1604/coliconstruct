@@ -329,57 +329,63 @@ a.dash-stat:hover {
     color: var(--dash-blue-deep);
 }
 
-/* ---- Quick Actions ----
-   Six doors into the modules, laid out as a grid that reflows rather than a
-   list: they are equals, and none of them is more important than the others.
-   They fill the panel the status ring used to sit in. */
+/* ---- Urgent actions ---- */
 
-.dash-actions {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
-    gap: .75rem;
-}
-
-.dash-action {
+.dash-urgent {
+    list-style: none;
+    margin: 0;
+    padding: 0;
     display: flex;
     flex-direction: column;
+}
+
+.dash-urgent-item {
+    display: flex;
     align-items: center;
-    justify-content: center;
-    gap: .5rem;
-    padding: 1rem .6rem;
-    border-radius: .9rem;
-    background: #fff;
-    border: 1px solid #e6ecf3;
-    color: var(--dash-blue-dark);
-    text-decoration: none;
-    text-align: center;
-    transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+    gap: .75rem;
+    padding: .7rem 0;
+    border-bottom: 1px solid #eef2f7;
 }
 
-.dash-action:hover,
-.dash-action:focus-visible {
-    transform: translateY(-2px);
-    border-color: var(--dash-blue-deep);
-    box-shadow: 0 6px 18px rgba(15, 42, 68, .09);
-    color: var(--dash-blue-deep);
+.dash-urgent-item:last-child {
+    border-bottom: 0;
 }
 
-.dash-action-icon {
+.dash-urgent-icon {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 2.6rem;
-    height: 2.6rem;
+    flex: 0 0 auto;
+    width: 2.1rem;
+    height: 2.1rem;
     border-radius: 50%;
-    background: #eef4fb;
-    color: var(--dash-blue-deep);
-    font-size: 1.15rem;
+    /* Amber rather than red: these are things to get to today, not faults. */
+    background: #fdf1e0;
+    color: #a05a00;
+    font-size: .95rem;
 }
 
-.dash-action-label {
+/* Takes the slack so every View sits on the same right-hand edge. */
+.dash-urgent-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: .9rem;
+    font-weight: 600;
+    line-height: 1.3;
+    color: var(--dash-blue-dark);
+}
+
+.dash-urgent-view {
+    flex: 0 0 auto;
     font-size: .85rem;
     font-weight: 600;
-    line-height: 1.2;
+    color: var(--dash-blue-deep);
+    text-decoration: underline;
+}
+
+.dash-urgent-view:hover,
+.dash-urgent-view:focus-visible {
+    color: var(--dash-blue-dark);
 }
 
 /* ---- People ---- */
@@ -528,9 +534,5 @@ a.dash-activity-action:hover {
     .dash-primary-btn {
         width: 100%;
         justify-content: center;
-    }
-
-    .dash-actions {
-        grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
     }
 }

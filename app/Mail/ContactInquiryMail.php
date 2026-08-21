@@ -29,7 +29,7 @@ class ContactInquiryMail extends SystemMail
 
     protected function subjectLine(): string
     {
-        return 'Website enquiry: '.$this->inquirySubject;
+        return 'Website inquiry: '.$this->inquirySubject;
     }
 
     protected function template(): string

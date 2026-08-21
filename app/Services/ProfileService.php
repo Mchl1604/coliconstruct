@@ -224,7 +224,7 @@ class ProfileService
     public function confirmEmailChange(User $user, string $code): User
     {
         if (! $user->hasPendingEmailChange()) {
-            throw new RuntimeException('There is no email change waiting to be confirmed.');
+            throw new RuntimeException('No email change is pending.');
         }
 
         $newEmail = (string) $user->pending_email;
@@ -294,7 +294,7 @@ class ProfileService
     public function resendEmailChangeCode(User $user): void
     {
         if (! $user->hasPendingEmailChange()) {
-            throw new RuntimeException('There is no email change waiting to be confirmed.');
+            throw new RuntimeException('No email change is pending.');
         }
 
         $this->otp->issue(

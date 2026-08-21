@@ -144,12 +144,17 @@ document.addEventListener("DOMContentLoaded", function () {
         const shown = dates.slice(0, 8);
         const remaining = dates.length - shown.length;
 
+        // Abbreviated, matching the server's formatDateList(): a technician
+        // blocked on six dates produced a sentence nobody read to the end, and
+        // the month is the part that repeats. It is also the shape the date
+        // pickers show, so a date quoted in a refusal reads as the date on the
+        // field it came from.
         const labels = shown.map(function (date) {
             return new Date(date + "T00:00:00").toLocaleDateString(
                 undefined,
                 allCurrentYear
-                    ? { month: "long", day: "numeric" }
-                    : { month: "long", day: "numeric", year: "numeric" },
+                    ? { month: "short", day: "numeric" }
+                    : { month: "short", day: "numeric", year: "numeric" },
             );
         });
 
@@ -216,52 +221,51 @@ document.addEventListener("DOMContentLoaded", function () {
         return " (booked on " + formatList(projects) + ")";
     }
 
+    /**
+     * Who cannot work it, when, and what is holding them - and nothing else.
+     *
+     * Word for word what the server says, so a refusal caught here and the
+     * same refusal caught on save read identically. See
+     * TechnicianAvailabilityService::conflictMessage().
+     */
     function conflictMessage(conflicts) {
         if (!conflicts.length) {
             return "";
         }
 
         // Hours-only clashes name the hours; anything touching whole days
-        // keeps the wording the page has always used.
+        // speaks in dates.
         if (
             conflicts.every(function (conflict) {
                 return conflict.labels && conflict.labels.length;
             })
         ) {
-            return (
-                conflicts
-                    .map(function (conflict) {
-                        return (
-                            "Technician " +
-                            conflict.name +
-                            " is already booked " +
-                            conflict.labels.join(" and ") +
-                            " on " +
-                            formatDateList([conflict.date]) +
-                            describeBlockers(conflict.projects) +
-                            "."
-                        );
-                    })
-                    .join(" ") +
-                " Please choose a time when every selected technician is free."
-            );
-        }
-
-        return (
-            conflicts
+            return conflicts
                 .map(function (conflict) {
                     return (
-                        "Technician " +
                         conflict.name +
-                        " is unavailable on " +
-                        formatDateList(conflict.dates) +
+                        " is already booked " +
+                        conflict.labels.join(" and ") +
+                        " on " +
+                        formatDateList([conflict.date]) +
                         describeBlockers(conflict.projects) +
                         "."
                     );
                 })
-                .join(" ") +
-            " Please select a continuous date range where all selected technicians are available."
-        );
+                .join(" ");
+        }
+
+        return conflicts
+            .map(function (conflict) {
+                return (
+                    conflict.name +
+                    " is unavailable on " +
+                    formatDateList(conflict.dates) +
+                    describeBlockers(conflict.projects) +
+                    "."
+                );
+            })
+            .join(" ");
     }
 
     /**
@@ -455,6 +459,80 @@ document.addEventListener("DOMContentLoaded", function () {
         return Boolean(entry.start && entry.end && entry.start <= entry.end);
     }
 
+    /**
+     * Whether choosing `candidate` would stretch a booking across a day
+     * nobody on the project can work.
+     *
+     * A date being free in itself was never enough. A booking that ends on
+     * Aug 25 and is pulled back to start on Aug 10 books every day between the
+     * two, so if somebody is busy on Aug 15 then Aug 10 is no more pickable
+     * than Aug 15 is. The save has always said so - every day of the resulting
+     * range is checked server-side - but the picker only greyed out the busy
+     * day itself, so the refusal arrived after the click rather than instead
+     * of it.
+     *
+     * `anchor` is the date at the range's other end as it stands right now:
+     * the end date while a start is being chosen, the start date while an end
+     * is. With no anchor there is no resulting range to judge and nothing is
+     * blocked.
+     *
+     * A candidate on the far side of its anchor - a start later than the
+     * current end, an end earlier than the current start - is left alone. That
+     * is not a range at all but the first half of moving a booking, which the
+     * other field's minDate then completes; refusing it here would make a
+     * booking impossible to move forward past a busy day.
+     *
+     * `isBlocked` answers for one 'YYYY-MM-DD' string, so each caller keeps
+     * whatever notion of "blocked" its own screen already uses.
+     */
+    function rangeSpansBlockedDay(candidate, anchor, candidateIsStart, isBlocked) {
+        if (!candidate || !anchor) {
+            return false;
+        }
+
+        const from = candidateIsStart ? candidate : anchor;
+        const to = candidateIsStart ? anchor : candidate;
+
+        if (from > to) {
+            return false;
+        }
+
+        return eachDate(from, to).some(isBlocked);
+    }
+
+    /**
+     * A Clear button inside the calendar itself.
+     *
+     * Emptying a date field matters more here than it looks. Each calendar is
+     * bounded by whatever the other field holds - the start may not pass the
+     * end, and neither may drag the range over a day somebody is booked on -
+     * so a booking hemmed in at both ends can only be moved somewhere else by
+     * letting go of one of its dates first. Clearing is that release.
+     *
+     * It goes on the calendar rather than in the modal because the calendar is
+     * what somebody is looking at when they find they cannot pick the date
+     * they want, and because it belongs to one field: a control in the modal
+     * would have to say which of the two it meant.
+     *
+     * Clearing fires the picker's own change handler, which is what rebounds
+     * the other calendar - so nothing else has to be told about it.
+     */
+    function attachClearButton(instance) {
+        const button = document.createElement("button");
+
+        // Explicitly not a submit button: it lives inside a form.
+        button.type = "button";
+        button.className = "schedule-picker-clear";
+        button.textContent = "Clear";
+
+        button.addEventListener("click", function () {
+            instance.clear();
+            instance.close();
+        });
+
+        instance.calendarContainer.appendChild(button);
+    }
+
     function destroyPicker(input) {
         if (input && input._flatpickr) {
             input._flatpickr.destroy();
@@ -481,6 +559,11 @@ document.addEventListener("DOMContentLoaded", function () {
         };
 
         const scheduleIdInput = row.querySelector('input[name*="[schedule_id]"]');
+        // A booking that has ended and that this reader may not correct. It
+        // carries no schedule_id - the server keeps it whatever the form says -
+        // so it must not be mistaken for a new row, whose dates would then read
+        // as a new promise about days that have gone.
+        const locked = row.dataset.locked === "1";
 
         if (rowMode(row) === MODE_PARTIAL_DAY) {
             return {
@@ -488,7 +571,8 @@ document.addEventListener("DOMContentLoaded", function () {
                 date: value("[data-range-project-date]"),
                 from: minutesFromTime(value("[data-range-start-time]")),
                 to: minutesFromTime(value("[data-range-end-time]")),
-                isNew: !scheduleIdInput || !scheduleIdInput.value,
+                isNew: !locked && (!scheduleIdInput || !scheduleIdInput.value),
+                locked: locked,
             };
         }
 
@@ -496,7 +580,8 @@ document.addEventListener("DOMContentLoaded", function () {
             mode: MODE_DATE_BASED,
             start: value("[data-range-start]"),
             end: value("[data-range-end]"),
-            isNew: !scheduleIdInput || !scheduleIdInput.value,
+            isNew: !locked && (!scheduleIdInput || !scheduleIdInput.value),
+            locked: locked,
         };
     }
 
@@ -611,6 +696,51 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
+    /**
+     * The saved booking a row stands for, or null for one added just now.
+     */
+    function rowScheduleId(row) {
+        const input = row.querySelector('input[name*="[schedule_id]"]');
+
+        return input && input.value ? input.value : row.dataset.scheduleId || null;
+    }
+
+    /**
+     * One row in the words the confirmation and the activity log use.
+     */
+    function describeEntry(entry) {
+        if (entry.mode === MODE_PARTIAL_DAY) {
+            const hours =
+                entry.from === null || entry.to === null
+                    ? "?"
+                    : formatMinutes(entry.from) + " - " + formatMinutes(entry.to);
+
+            return (entry.date || "?") + " " + hours;
+        }
+
+        return entry.start === entry.end
+            ? entry.start || "?"
+            : (entry.start || "?") + " - " + (entry.end || "?");
+    }
+
+    /**
+     * Present a date field as settled: readable, submitted, but not offering to
+     * change. Used for the start of a booking that is already under way, whose
+     * first days have been worked.
+     *
+     * flatpickr is simply never attached, so the input the person sees is the
+     * plain field carrying the stored date.
+     */
+    function markFrozen(input) {
+        if (!input) {
+            return;
+        }
+
+        input.readOnly = true;
+        input.classList.add("schedule-range-input-frozen");
+        input.title = "This schedule has started, so its start date is fixed.";
+    }
+
     function initRangeRow(row, technicianIds, projectId, container) {
         const startInput = row.querySelector("[data-range-start]");
         const endInput = row.querySelector("[data-range-end]");
@@ -623,26 +753,54 @@ document.addEventListener("DOMContentLoaded", function () {
 
         [startInput, endInput, projectDateInput].forEach(destroyPicker);
 
-        const scheduleIdInput = row.querySelector('input[name*="[schedule_id]"]');
-        const isExisting = !!(scheduleIdInput && scheduleIdInput.value);
-        const minDate = isExisting ? null : "today";
+        // A booking that has ended, drawn as the record it is. Its fields are
+        // disabled, and giving them date pickers would only invite a change
+        // this page cannot make.
+        if (row.dataset.locked === "1") {
+            return;
+        }
+
+        // How far back each field may go, decided on the server by
+        // ScheduleModeRules - editabilityOf() for a saved booking,
+        // limitsForNewRange() for a row being added - so the picker offers
+        // exactly what the save will accept. Empty means no bound, which is
+        // now only a Super Admin correcting a booking that has ended: any date
+        // may replace dates that were wrong.
+        const startFrozen = row.dataset.startFrozen === "1";
+        const earliestStart = row.dataset.earliestStart || null;
+        const earliestEnd = row.dataset.earliestEnd || null;
 
         // Time already claimed by the other rows of this same form, so a row's
         // picker also blocks what is spoken for elsewhere in this project.
         const otherRowEntries = function () {
             return Array.from(container.querySelectorAll("[data-range-row]"))
                 .filter(function (otherRow) {
-                    return otherRow !== row;
+                    // A locked row is entirely in the past and this form cannot
+                    // move it, so it can never collide with anything being
+                    // picked here.
+                    return otherRow !== row && otherRow.dataset.locked !== "1";
                 })
                 .map(readRow)
                 .filter(entryIsComplete);
         };
 
-        const wholeDayBlocked = function (date) {
-            const dateString = normalizeDateString(date);
+        // One answer per date, kept for as long as a picker stays open.
+        //
+        // The question is asked far more often than it used to be: flatpickr
+        // puts it to every day it draws, and each of those now walks the whole
+        // range the day would produce. The answer depends on the other rows
+        // and on other projects' bookings, neither of which can change while a
+        // calendar is open, so it is worked out once and cleared on the next
+        // opening.
+        const blockedDayCache = new Map();
 
+        const wholeDayBlockedOn = function (dateString) {
             if (!dateString) {
                 return false;
+            }
+
+            if (blockedDayCache.has(dateString)) {
+                return blockedDayCache.get(dateString);
             }
 
             const busyElsewhere = technicianIds.some(function (technicianId) {
@@ -652,17 +810,50 @@ document.addEventListener("DOMContentLoaded", function () {
                 );
             });
 
-            if (busyElsewhere) {
-                return true;
-            }
-
-            return otherRowEntries().some(function (entry) {
-                return entriesOverlap(entry, {
-                    mode: MODE_DATE_BASED,
-                    start: dateString,
-                    end: dateString,
+            const blocked =
+                busyElsewhere ||
+                otherRowEntries().some(function (entry) {
+                    return entriesOverlap(entry, {
+                        mode: MODE_DATE_BASED,
+                        start: dateString,
+                        end: dateString,
+                    });
                 });
-            });
+
+            blockedDayCache.set(dateString, blocked);
+
+            return blocked;
+        };
+
+        // A start is refused when the day itself is taken, and equally when
+        // the range it would produce with the end already in the field runs
+        // over a day that is. The end is judged the same way against the start.
+        const startBlocked = function (date) {
+            const dateString = normalizeDateString(date);
+
+            return (
+                wholeDayBlockedOn(dateString) ||
+                rangeSpansBlockedDay(
+                    dateString,
+                    endInput ? endInput.value : "",
+                    true,
+                    wholeDayBlockedOn,
+                )
+            );
+        };
+
+        const endBlocked = function (date) {
+            const dateString = normalizeDateString(date);
+
+            return (
+                wholeDayBlockedOn(dateString) ||
+                rangeSpansBlockedDay(
+                    dateString,
+                    startInput ? startInput.value : "",
+                    false,
+                    wholeDayBlockedOn,
+                )
+            );
         };
 
         // A partial day only needs one hour of the date still open.
@@ -679,38 +870,89 @@ document.addEventListener("DOMContentLoaded", function () {
         };
 
         if (startInput && endInput) {
+            // Each picker's disabled days depend on what the other field
+            // currently holds, so moving one date redraws the other's calendar
+            // rather than leaving it offering dates that no longer work.
+            let startPicker = null;
+
             const endPicker = window.flatpickr(endInput, {
                 ...FRIENDLY_DATE,
-                minDate: minDate,
-                disable: [wholeDayBlocked],
-            });
-
-            const startPicker = window.flatpickr(startInput, {
-                ...FRIENDLY_DATE,
-                minDate: minDate,
-                disable: [wholeDayBlocked],
-                onChange: function (selectedDates) {
-                    if (selectedDates[0]) {
-                        endPicker.set("minDate", selectedDates[0]);
-                    } else {
-                        endPicker.set("minDate", minDate);
+                minDate: earliestEnd,
+                disable: [endBlocked],
+                onReady: function (selectedDates, dateString, instance) {
+                    attachClearButton(instance);
+                },
+                onOpen: function (selectedDates, dateString, instance) {
+                    // Rows may have been edited since this calendar was built,
+                    // so the answers are thrown away and the days redrawn
+                    // against what the form says now.
+                    blockedDayCache.clear();
+                    instance.redraw();
+                },
+                onChange: function () {
+                    if (!startPicker) {
+                        return;
                     }
+
+                    // A start may never sit after the end, so the ceiling
+                    // moves with it. Clearing the end lifts the ceiling
+                    // altogether, which is how a booking pinned between its
+                    // own end and a busy day is moved somewhere else.
+                    startPicker.set("maxDate", endInput.value || null);
+                    startPicker.redraw();
                 },
             });
 
-            if (startInput.value) {
-                endPicker.set("minDate", startInput.value);
+            // A booking under way keeps the start it already worked. The field
+            // still submits - the server compares it - but nothing here offers
+            // to change it.
+            if (startFrozen) {
+                markFrozen(startInput);
+            } else {
+                startPicker = window.flatpickr(startInput, {
+                    ...FRIENDLY_DATE,
+                    minDate: earliestStart,
+                    // The end the row already holds is the start's ceiling, so
+                    // a date after it cannot be picked in the first place.
+                    // Empty means the row has no end yet and nothing to cap.
+                    maxDate: endInput.value || null,
+                    disable: [startBlocked],
+                    onReady: function (selectedDates, dateString, instance) {
+                        attachClearButton(instance);
+                    },
+                    onOpen: function (selectedDates, dateString, instance) {
+                        blockedDayCache.clear();
+                        instance.redraw();
+                    },
+                    onChange: function (selectedDates) {
+                        if (selectedDates[0]) {
+                            endPicker.set("minDate", selectedDates[0]);
+                        } else {
+                            endPicker.set("minDate", earliestEnd);
+                        }
+
+                        endPicker.redraw();
+                    },
+                });
             }
 
-            // Referenced so the linter sees the picker is used; flatpickr
-            // keeps its own handle on the element either way.
-            void startPicker;
+            // The end may never precede the start, nor retreat past whatever
+            // floor the row carries - whichever of the two is later wins.
+            if (startInput.value && (!earliestEnd || startInput.value > earliestEnd)) {
+                endPicker.set("minDate", startInput.value);
+            }
         }
 
         if (projectDateInput) {
+            if (startFrozen) {
+                markFrozen(projectDateInput);
+
+                return;
+            }
+
             window.flatpickr(projectDateInput, {
                 ...FRIENDLY_DATE,
-                minDate: minDate,
+                minDate: earliestStart,
                 disable: [partialDayBlocked],
                 onChange: function () {
                     // The hours on offer belong to the date just chosen.
@@ -904,6 +1146,62 @@ document.addEventListener("DOMContentLoaded", function () {
             clearError();
         });
 
+        // Set only once a Super Admin has confirmed a correction, and honoured
+        // by the server only for a Super Admin - the flag says the
+        // confirmation was given, the account says it counts.
+        const overrideInput = form
+            ? form.querySelector("[data-override-past-lock]")
+            : null;
+
+        // What the bookings that have already ended said when this page was
+        // drawn. A Super Admin may correct one, and the confirmation has to be
+        // able to say what it is changing from.
+        //
+        // Read once, at load: once a field has been edited the row no longer
+        // knows what it used to hold.
+        const endedOnLoad = Array.from(
+            container.querySelectorAll('[data-range-row][data-lock-state="locked"]'),
+        ).map(function (row) {
+            const entry = readRow(row);
+
+            return {
+                id: rowScheduleId(row),
+                label: describeEntry(entry),
+                entry: entry,
+            };
+        });
+
+        /**
+         * The corrections a Super Admin is about to make to work already on the
+         * record - a booking that has ended and has been edited, or one that
+         * has been taken off the form altogether.
+         *
+         * An Admin never produces any of these: their locked rows are drawn
+         * read-only and carry no remove button, and the server keeps them
+         * whatever is submitted.
+         */
+        function pendingOverrides() {
+            return endedOnLoad
+                .map(function (original) {
+                    const row = original.id
+                        ? container.querySelector(
+                              '[data-range-row][data-schedule-id="' + original.id + '"]',
+                          )
+                        : null;
+
+                    if (!row) {
+                        return original.label + " -> removed";
+                    }
+
+                    const now = describeEntry(readRow(row));
+
+                    return now === original.label
+                        ? null
+                        : original.label + " -> " + now;
+                })
+                .filter(Boolean);
+        }
+
         if (form) {
             form.addEventListener("submit", function (event) {
                 const rows = Array.from(
@@ -919,7 +1217,13 @@ document.addEventListener("DOMContentLoaded", function () {
                 // one is hidden, which bars it from native validation.
                 let hasIncomplete = false;
                 const availabilityConflicts = [];
-                const entries = rows.map(readRow);
+                // Locked rows submit nothing and cannot be changed here, so
+                // they are not checked: their dates are in the past by
+                // definition, and reading them would report every one of them
+                // as a schedule starting before today.
+                const entries = rows.map(readRow).filter(function (entry) {
+                    return !entry.locked;
+                });
 
                 entries.forEach(function (entry) {
                     if (entry.mode === MODE_PARTIAL_DAY) {
@@ -986,6 +1290,15 @@ document.addEventListener("DOMContentLoaded", function () {
                             date: conflict.date,
                             dates: conflict.dates ? conflict.dates.slice() : undefined,
                             labels: conflict.labels ? conflict.labels.slice() : undefined,
+                            // Carried through the merge rather than dropped.
+                            // conflictsForEntry() works out which projects are
+                            // holding somebody, and losing them here was what
+                            // left this page saying only that a technician is
+                            // unavailable - the one screen that could name the
+                            // work standing in the way and did not.
+                            projects: conflict.projects
+                                ? conflict.projects.slice()
+                                : undefined,
                         });
 
                         return;
@@ -998,6 +1311,17 @@ document.addEventListener("DOMContentLoaded", function () {
                             }
                         });
                         existing.dates.sort();
+                    }
+
+                    // One technician held by several projects across the rows
+                    // of this form is named once, with all of them.
+                    if (conflict.projects && existing.projects) {
+                        conflict.projects.forEach(function (project) {
+                            if (existing.projects.indexOf(project) === -1) {
+                                existing.projects.push(project);
+                            }
+                        });
+                        existing.projects.sort();
                     }
                 });
 
@@ -1024,10 +1348,37 @@ document.addEventListener("DOMContentLoaded", function () {
                         errorBox.textContent = conflictMessage(mergedConflicts);
                     } else {
                         errorBox.textContent =
-                            "One or more schedules are invalid or overlap another schedule in this form.";
+                            "Two schedules in this form overlap.";
                     }
 
                     errorBox.classList.remove("d-none");
+
+                    return;
+                }
+
+                // Correcting work already on the record is the one change on
+                // this form that is asked about before it happens. Everything
+                // else here can be put back by editing again; this cannot,
+                // because what it overwrites is the record of what happened.
+                const overrides = pendingOverrides();
+
+                if (overrides.length) {
+                    const confirmed = window.confirm(
+                        "These ranges have already ended:\n\n" +
+                            overrides.join("\n") +
+                            "\n\nChanging them alters the record of completed work " +
+                            "and is logged against your account. Continue?",
+                    );
+
+                    if (!confirmed) {
+                        event.preventDefault();
+
+                        return;
+                    }
+
+                    if (overrideInput) {
+                        overrideInput.value = "1";
+                    }
                 }
             });
         }
@@ -1202,7 +1553,13 @@ document.addEventListener("DOMContentLoaded", function () {
 
         function resetAddPanel() {
             panel.classList.add("d-none");
-            toggleBtn.classList.remove("d-none");
+            // Nothing may be booked onto a day that has already gone - the
+            // server refuses it, and offering the form here only produces an
+            // error the person could not have avoided.
+            toggleBtn.classList.toggle(
+                "d-none",
+                selectedDate < normalizeDateString(new Date()),
+            );
             clearResults();
             showError("");
             showSuccess("");
@@ -1322,9 +1679,9 @@ document.addEventListener("DOMContentLoaded", function () {
 
                 if (disabled) {
                     const message =
-                        "Unavailable because Technician " +
+                        "Unavailable - " +
                         blockingTechnician +
-                        " is already assigned to " +
+                        " is on " +
                         blockingProject +
                         ".";
                     row.setAttribute("title", message);
@@ -1500,7 +1857,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     if (!result.ok) {
                         showError(
                             result.body.error ||
-                                "Could not load available projects.",
+                                "Unable to load available projects.",
                         );
 
                         return;
@@ -1514,7 +1871,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     }
 
                     eligibleLoading.classList.add("d-none");
-                    showError("Could not load available projects.");
+                    showError("Unable to load available projects.");
                 });
         }
 
@@ -1533,6 +1890,24 @@ document.addEventListener("DOMContentLoaded", function () {
                     '<div class="schedule-date-card-booking">' +
                     chip +
                     '<span class="schedule-date-readonly">View only</span>' +
+                    "</div>"
+                );
+            }
+
+            // A day that has been worked is part of the project's record, and
+            // today is being worked right now. Neither is given up from here -
+            // the button is absent rather than disabled, so nothing invites a
+            // click the server would refuse. Correcting a day that has passed
+            // is a Super Admin's to do, in the schedule editor.
+            const today = normalizeDateString(new Date());
+
+            if (selectedDate <= today) {
+                return (
+                    '<div class="schedule-date-card-booking">' +
+                    chip +
+                    '<span class="schedule-date-readonly">' +
+                    (selectedDate === today ? "Under way" : "Already worked") +
+                    "</span>" +
                     "</div>"
                 );
             }
@@ -1662,7 +2037,7 @@ document.addEventListener("DOMContentLoaded", function () {
                         button.disabled = false;
                         showDateError(
                             result.body.error ||
-                                "Could not remove that date.",
+                                "Unable to remove that date.",
                         );
 
                         return;
@@ -1680,7 +2055,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 })
                 .catch(function () {
                     button.disabled = false;
-                    showDateError("Could not remove that date.");
+                    showDateError("Unable to remove that date.");
                 });
         }
 
@@ -1750,7 +2125,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     }
 
                     loadingEl.classList.add("d-none");
-                    emptyEl.textContent = "Could not load projects for this date.";
+                    emptyEl.textContent = "Unable to load projects for this date.";
                     emptyEl.classList.remove("d-none");
                 });
         }
@@ -1863,7 +2238,7 @@ document.addEventListener("DOMContentLoaded", function () {
                                     ? Object.values(result.body.errors)
                                           .flat()
                                           .join(" ")
-                                    : "Could not save the schedule."),
+                                    : "Unable to save schedule."),
                         );
 
                         return;
@@ -1883,7 +2258,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 .catch(function () {
                     saveSpinner.classList.add("d-none");
                     saveBtn.disabled = false;
-                    showError("Could not save the schedule.");
+                    showError("Unable to save schedule.");
                 });
         });
 
@@ -1993,9 +2368,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
         // A day nobody on this project can work is not offered at all, the
         // same rule the per-project editor's pickers apply.
-        function wholeDayBlocked(date) {
-            const dateString = normalizeDateString(date);
-
+        function wholeDayBlockedOn(dateString) {
             if (!dateString || !picked) {
                 return false;
             }
@@ -2006,6 +2379,37 @@ document.addEventListener("DOMContentLoaded", function () {
                         .length > 0
                 );
             });
+        }
+
+        // And neither is a free day whose selection would carry the range over
+        // a day that is taken - the same cross-check the editor's pickers do,
+        // so a range is created under the rule it will later be edited under.
+        function startBlocked(date) {
+            const dateString = normalizeDateString(date);
+
+            return (
+                wholeDayBlockedOn(dateString) ||
+                rangeSpansBlockedDay(
+                    dateString,
+                    endInput ? endInput.value : "",
+                    true,
+                    wholeDayBlockedOn,
+                )
+            );
+        }
+
+        function endBlocked(date) {
+            const dateString = normalizeDateString(date);
+
+            return (
+                wholeDayBlockedOn(dateString) ||
+                rangeSpansBlockedDay(
+                    dateString,
+                    startInput ? startInput.value : "",
+                    false,
+                    wholeDayBlockedOn,
+                )
+            );
         }
 
         // A partial day only needs one hour of the date still open.
@@ -2039,21 +2443,46 @@ document.addEventListener("DOMContentLoaded", function () {
                 return;
             }
 
+            // Each picker's disabled days depend on what the other field
+            // holds, so a change to one redraws the other.
+            let startPicker = null;
+
             const endPicker = window.flatpickr(endInput, {
                 ...FRIENDLY_DATE,
                 minDate: "today",
-                disable: [wholeDayBlocked],
+                disable: [endBlocked],
+                onReady: function (selectedDates, dateString, instance) {
+                    attachClearButton(instance);
+                },
+                onOpen: function (selectedDates, dateString, instance) {
+                    instance.redraw();
+                },
                 onChange: function () {
+                    if (startPicker) {
+                        // The start may never sit after the end; clearing the
+                        // end lifts the ceiling again.
+                        startPicker.set("maxDate", endInput.value || null);
+                        startPicker.redraw();
+                    }
+
                     showError("");
                 },
             });
 
-            const startPicker = window.flatpickr(startInput, {
+            startPicker = window.flatpickr(startInput, {
                 ...FRIENDLY_DATE,
                 minDate: "today",
-                disable: [wholeDayBlocked],
+                maxDate: endInput.value || null,
+                disable: [startBlocked],
+                onReady: function (selectedDates, dateString, instance) {
+                    attachClearButton(instance);
+                },
+                onOpen: function (selectedDates, dateString, instance) {
+                    instance.redraw();
+                },
                 onChange: function (selectedDates) {
                     endPicker.set("minDate", selectedDates[0] || "today");
+                    endPicker.redraw();
                     showError("");
                 },
             });
@@ -2369,7 +2798,7 @@ document.addEventListener("DOMContentLoaded", function () {
                         saveBtn.disabled = false;
                         showError(
                             result.body.error ||
-                                "Could not save the schedule.",
+                                "Unable to save schedule.",
                         );
 
                         return;
@@ -2389,7 +2818,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 .catch(function () {
                     saveSpinner.classList.add("d-none");
                     saveBtn.disabled = false;
-                    showError("Could not save the schedule.");
+                    showError("Unable to save schedule.");
                 });
         });
 

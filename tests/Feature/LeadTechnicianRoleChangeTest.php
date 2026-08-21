@@ -9,7 +9,9 @@ use App\Models\ScheduleTechnician;
 use App\Models\Skill;
 use App\Models\Technician;
 use App\Models\User;
+use App\Policies\ProjectPolicy;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Testing\TestResponse;
 use Tests\TestCase;
 
 /**
@@ -53,9 +55,17 @@ class LeadTechnicianRoleChangeTest extends TestCase
 
         $response = $this->changeRole($lead->account, 'technician');
 
-        $response->assertStatus(422);
-        $this->assertStringContainsString('PRJ-0001', $response->json('error'));
-        $this->assertStringContainsString('lead technician', $response->json('error'));
+        $response->assertStatus(422)
+            ->assertJsonPath('role_change.message', 'Role change affects 1 project.')
+            ->assertJsonPath('role_change.action', 'Assign a new Lead Technician before continuing.')
+            ->assertJsonPath('role_change.projects.0.name', 'Project PRJ-0001');
+
+        // The link goes to the team that has to change, not to the top of the
+        // project page.
+        $this->assertStringContainsString(
+            route('super-admin.projects.show', $project->project_id).'#assigned-team',
+            $response->json('role_change.projects.0.url')
+        );
 
         // Nothing was written: the account keeps its role and the project
         // keeps its lead.
@@ -71,12 +81,13 @@ class LeadTechnicianRoleChangeTest extends TestCase
             $this->assign($this->project($reference, 'ongoing'), $lead);
         }
 
-        $error = $this->changeRole($lead->account, 'technician')->json('error');
+        $body = $this->changeRole($lead->account, 'technician')->json('role_change');
 
-        $this->assertStringContainsString('3 live projects', $error);
-        $this->assertStringContainsString('PRJ-0001', $error);
-        $this->assertStringContainsString('PRJ-0002', $error);
-        $this->assertStringContainsString('PRJ-0003', $error);
+        $this->assertSame('Role change affects 3 projects.', $body['message']);
+        $this->assertSame(
+            ['Project PRJ-0001', 'Project PRJ-0002', 'Project PRJ-0003'],
+            array_column($body['projects'], 'name')
+        );
     }
 
     public function test_a_lead_may_be_demoted_once_the_lead_has_been_handed_over(): void
@@ -153,12 +164,15 @@ class LeadTechnicianRoleChangeTest extends TestCase
         $project = $this->project('PRJ-0001', 'ongoing');
         $this->assign($project, $mate);
 
-        $error = $this->changeRole($mate->account, User::ROLE_LEAD_TECHNICIAN)
+        $this->changeRole($mate->account, User::ROLE_LEAD_TECHNICIAN)
             ->assertStatus(422)
-            ->json('error');
+            ->assertJsonPath('role_change.message', 'Cannot update role.')
+            ->assertJsonPath(
+                'role_change.action',
+                'This change would make them Lead Technician on assigned projects.'
+            )
+            ->assertJsonPath('role_change.projects.0.name', 'Project PRJ-0001');
 
-        $this->assertStringContainsString('silently become the lead', $error);
-        $this->assertStringContainsString('PRJ-0001', $error);
         $this->assertSame('technician', $mate->account->fresh()->role);
     }
 
@@ -171,11 +185,14 @@ class LeadTechnicianRoleChangeTest extends TestCase
         $this->assign($project, $lead);
         $this->assign($project, $mate);
 
-        $error = $this->changeRole($mate->account, User::ROLE_LEAD_TECHNICIAN)
+        $this->changeRole($mate->account, User::ROLE_LEAD_TECHNICIAN)
             ->assertStatus(422)
-            ->json('error');
-
-        $this->assertStringContainsString('two leads', $error);
+            ->assertJsonPath('role_change.message', 'Cannot update role.')
+            ->assertJsonPath(
+                'role_change.action',
+                'This change would create multiple Lead Technicians.'
+            )
+            ->assertJsonPath('role_change.projects.0.name', 'Project PRJ-0001');
 
         // The project still carries exactly one.
         $leads = $project->fresh()->projectTechnicians
@@ -228,7 +245,11 @@ class LeadTechnicianRoleChangeTest extends TestCase
 
         $this->get(route('super-admin.projects.show', $project->project_id))
             ->assertOk()
-            ->assertSee('This project has no lead technician', false);
+            ->assertSee('No lead technician assigned', false)
+            // The landing point every refused role change links to. Without it
+            // those links open the project and leave the reader to find the
+            // team themselves.
+            ->assertSee('id="assigned-team"', false);
     }
 
     // ------------------------------------------------------------------
@@ -322,7 +343,7 @@ class LeadTechnicianRoleChangeTest extends TestCase
         $this->assign($project, $lead);
         $this->schedule($project, 1, 5);
 
-        $policy = app(\App\Policies\ProjectPolicy::class);
+        $policy = app(ProjectPolicy::class);
 
         $this->assertTrue($policy->manageTasks($lead->account->fresh(), $project->fresh()));
 
@@ -411,7 +432,7 @@ class LeadTechnicianRoleChangeTest extends TestCase
      *
      * @param  array<string, mixed>  $overrides
      */
-    private function changeRole(User $user, string $role, array $overrides = []): \Illuminate\Testing\TestResponse
+    private function changeRole(User $user, string $role, array $overrides = []): TestResponse
     {
         return $this->post(
             route('super-admin.configuration.users.employees.update', $user->id),

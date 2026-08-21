@@ -105,7 +105,13 @@
                                             <i class="bi bi-eye" aria-hidden="true"></i>
                                         </a>
 
-                                        @if ($canCloseProjects && in_array($project->status, ['pending', 'ongoing'], true) && ! $project->on_hold)
+                                        {{-- Only work that is actually under
+                                             way. A Pending, Unscheduled or
+                                             paused project has had nobody on
+                                             site yet, so there is nothing to
+                                             close out and no button offered -
+                                             see Project::isCompletable(). --}}
+                                        @if ($canCloseProjects && $project->isCompletable())
                                             <button type="button" class="btn btn-sm btn-success py-1 px-2"
                                                 data-complete-project="{{ $project->project_id }}"
                                                 data-project-reference="{{ $project->reference_no }}"
@@ -161,8 +167,7 @@
 
                     <div class="d-none" data-complete-project-ready>
                         <p class="mb-3">
-                            Every task on this project is completed. Marking it complete makes the
-                            project view only and releases any dates still booked ahead.
+                            All tasks are complete. Marking it complete makes the project view only.
                         </p>
 
                         @include('technician.partials.completion-fields', ['suffix' => 'List'])

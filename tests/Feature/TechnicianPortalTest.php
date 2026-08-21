@@ -15,6 +15,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 /**
@@ -989,7 +990,7 @@ class TechnicianPortalTest extends TestCase
         $response->assertStatus(422);
         $this->assertStringContainsString(
             'still open',
-            implode(' ', $response->json('blockers'))
+            implode(' ', array_column($response->json('blockers'), 'message'))
         );
         $this->assertSame('ongoing', $this->project->refresh()->status);
     }
@@ -1122,8 +1123,8 @@ class TechnicianPortalTest extends TestCase
 
         $response->assertStatus(422);
         $this->assertStringContainsString(
-            'no tasks',
-            implode(' ', $response->json('blockers'))
+            'No tasks yet',
+            implode(' ', array_column($response->json('blockers'), 'message'))
         );
     }
 
@@ -1155,6 +1156,156 @@ class TechnicianPortalTest extends TestCase
 
         $this->postJson(route('technician.projects.complete', $other), [])
             ->assertForbidden();
+    }
+
+    // ------------------------------------------------------------------
+    // Which projects are even offered a completion
+    // ------------------------------------------------------------------
+
+    /**
+     * The button is drawn for work that is actually under way and for nothing
+     * else. Pending means booked but not started, Unscheduled means no dates
+     * at all, and a hold means the crew has been told to stop - in none of
+     * those has anybody been on site, so there is no completion to file and
+     * the button is absent rather than opening a dialog that can only refuse.
+     *
+     * @return array<string, array{0: string, 1: bool}>
+     */
+    public static function completionOfferStatuses(): array
+    {
+        return [
+            'ongoing' => ['ongoing', true],
+            'pending' => ['pending', false],
+            'unscheduled' => ['unscheduled', false],
+        ];
+    }
+
+    #[DataProvider('completionOfferStatuses')]
+    public function test_the_complete_button_is_only_offered_on_work_under_way(
+        string $status,
+        bool $offered
+    ): void {
+        $this->project->update(['status' => $status]);
+
+        $this->actingAs($this->leadAccount);
+
+        $details = $this->get(route('technician.projects.show', $this->project));
+        $details->assertOk();
+
+        $list = $this->get(route('technician.projects'));
+        $list->assertOk();
+
+        if ($offered) {
+            $details->assertSee('data-bs-target="#completeProjectModal"', false);
+            $list->assertSee('data-complete-project="'.$this->project->project_id.'"', false);
+
+            return;
+        }
+
+        $details->assertDontSee('data-bs-target="#completeProjectModal"', false);
+        $list->assertDontSee('data-complete-project="'.$this->project->project_id.'"', false);
+    }
+
+    public function test_a_project_on_hold_is_offered_no_complete_button(): void
+    {
+        $this->project->update(['on_hold' => true]);
+
+        $this->actingAs($this->leadAccount);
+
+        $this->get(route('technician.projects.show', $this->project))
+            ->assertOk()
+            ->assertDontSee('data-bs-target="#completeProjectModal"', false);
+
+        $this->get(route('technician.projects'))
+            ->assertOk()
+            ->assertDontSee('data-complete-project="'.$this->project->project_id.'"', false);
+    }
+
+    /**
+     * The button being gone is a courtesy, not the rule. Somebody who posts
+     * to the endpoint anyway is refused by the policy, and told why.
+     */
+    public function test_a_project_that_has_not_started_cannot_be_completed(): void
+    {
+        $this->task($this->mate, 'Done', 'completed');
+        $this->project->update(['status' => 'pending']);
+
+        $this->actingAs($this->leadAccount);
+
+        $response = $this->postJson(
+            route('technician.projects.complete', $this->project),
+            $this->completionPayload()
+        );
+
+        $response->assertStatus(422);
+        $this->assertStringContainsString(
+            'Not started yet',
+            implode(' ', array_column($response->json('blockers'), 'message'))
+        );
+        $this->assertSame('pending', $this->project->refresh()->status);
+    }
+
+    public function test_an_unscheduled_project_cannot_be_completed(): void
+    {
+        $this->project->schedules()->delete();
+        $this->task($this->mate, 'Done', 'completed');
+        $this->project->update(['status' => 'unscheduled']);
+
+        $this->actingAs($this->leadAccount);
+
+        $response = $this->postJson(
+            route('technician.projects.complete', $this->project),
+            $this->completionPayload()
+        );
+
+        $response->assertStatus(422);
+        $this->assertStringContainsString(
+            'Not scheduled yet',
+            implode(' ', array_column($response->json('blockers'), 'message'))
+        );
+        $this->assertSame('unscheduled', $this->project->refresh()->status);
+    }
+
+    // ------------------------------------------------------------------
+    // Saying where to go, not just what is wrong
+    // ------------------------------------------------------------------
+
+    /**
+     * A refusal a lead cannot act on is a dead end. Every blocker they can
+     * deal with carries the link to the screen that deals with it.
+     */
+    public function test_a_blocker_carries_the_link_to_what_fixes_it(): void
+    {
+        $this->task($this->mate, 'Still open');
+
+        $this->actingAs($this->leadAccount);
+
+        $blockers = $this->postJson(
+            route('technician.projects.complete', $this->project),
+            []
+        )->assertStatus(422)->json('blockers');
+
+        $this->assertCount(1, $blockers);
+        $this->assertSame(
+            route('technician.projects.show', $this->project->project_id).'#tasks',
+            $blockers[0]['action']['url']
+        );
+        $this->assertSame('Go to the open task', $blockers[0]['action']['label']);
+    }
+
+    public function test_the_project_page_prints_the_blocker_link_beside_the_reason(): void
+    {
+        $this->task($this->mate, 'Still open');
+
+        $this->actingAs($this->leadAccount);
+
+        $this->get(route('technician.projects.show', $this->project))
+            ->assertOk()
+            ->assertSee('1 task is still open. Every task has to be completed first.')
+            ->assertSee(
+                route('technician.projects.show', $this->project->project_id).'#tasks',
+                false
+            );
     }
 
     // ------------------------------------------------------------------

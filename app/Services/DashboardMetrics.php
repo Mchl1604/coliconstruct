@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Inquiry;
 use App\Models\Project;
 use App\Models\Schedule;
 use App\Models\SpecialtyRequest;
@@ -132,7 +133,7 @@ class DashboardMetrics
         if ($counts['awaiting_confirmation'] > 0) {
             $cards[] = $this->card(
                 'awaiting_confirmation',
-                'Awaiting Completion Confirmation',
+                'Awaiting Client Confirmation',
                 $counts['awaiting_confirmation'],
                 $projects,
                 'pending'
@@ -270,6 +271,121 @@ class DashboardMetrics
             'pendingSpecialtyRequests',
             fn (): int => SpecialtyRequest::query()->pending()->count()
         );
+    }
+
+    // ------------------------------------------------------------------
+    // Urgent actions
+    // ------------------------------------------------------------------
+
+    /**
+     * What is waiting on somebody, and where it is fixed.
+     *
+     * This replaced Quick Actions, which was a row of doors into modules the
+     * sidebar already offers - the same six links, one row lower. A dashboard
+     * is opened to find out what needs doing, so this answers that instead:
+     * every entry is a real backlog with a real count, and an entry with
+     * nothing in it is absent rather than drawn as a zero.
+     *
+     * Each url opens the page ALREADY filtered to the records behind the
+     * figure, so the reader lands on the work rather than on a list to search.
+     * The three project entries point at the projects table's attention tabs -
+     * see Project::ATTENTION_TABS - which exist for exactly this.
+     *
+     * Not cached: these are read once per dashboard load, they are the figures
+     * most likely to be stale a moment after they are computed, and the whole
+     * point of the section is that it stops mentioning something the moment it
+     * is dealt with.
+     *
+     * @return array<int, array{key: string, label: string, count: int, icon: string, url: string}>
+     */
+    public function urgentActions(): array
+    {
+        $projects = route('super-admin.projects');
+
+        return collect([
+            [
+                'key' => 'unscheduled_projects',
+                'count' => Project::query()->missingSchedule()->count(),
+                'singular' => 'Unscheduled Project',
+                'plural' => 'Unscheduled Projects',
+                'icon' => 'bi-calendar-x',
+                'url' => $projects.'?status=unscheduled',
+            ],
+            [
+                'key' => 'overdue_projects',
+                'count' => Project::query()->overdue()->count(),
+                'singular' => 'Overdue Project',
+                'plural' => 'Overdue Projects',
+                'icon' => 'bi-clock-history',
+                'url' => $projects.'?status=overdue',
+            ],
+            [
+                // Counted as projects rather than as people: the assignment is
+                // what needs attention, and the row it opens shows which
+                // technician it is.
+                'key' => 'inactive_technicians',
+                'count' => Project::query()->withInactiveCrew()->count(),
+                'singular' => 'Inactive Technician in a Project',
+                'plural' => 'Inactive Technicians in Projects',
+                'icon' => 'bi-person-exclamation',
+                'url' => $projects.'?status=inactive_crew',
+            ],
+            [
+                'key' => 'specialty_requests',
+                'count' => $this->pendingSpecialtyRequests(),
+                'singular' => 'Specialty Change Request',
+                'plural' => 'Specialty Change Requests',
+                'icon' => 'bi-patch-question',
+                // Opens the Technicians table narrowed to the people waiting,
+                // and the request itself when there is only one.
+                'url' => route('super-admin.technicians.index').'?specialty=pending',
+            ],
+            [
+                'key' => 'pending_inquiries',
+                'count' => $this->pendingInquiries(),
+                'singular' => 'Pending Inquiry',
+                'plural' => 'Pending Inquiries',
+                'icon' => 'bi-envelope-exclamation',
+                // Configuration opens on its Inquiries tab, already filtered
+                // to the messages still waiting on somebody.
+                'url' => route('super-admin.configuration.index').'?inquiries='.Inquiry::FILTER_PENDING,
+            ],
+            [
+                'key' => 'projects_without_technicians',
+                'count' => Project::query()->missingTechnicians()->count(),
+                'singular' => 'Project Without Technicians',
+                'plural' => 'Projects Without Technicians',
+                'icon' => 'bi-people',
+                'url' => $projects.'?status=no_technicians',
+            ],
+        ])
+            ->filter(fn (array $action): bool => $action['count'] > 0)
+            ->map(fn (array $action): array => [
+                'key' => $action['key'],
+                // "3 Unscheduled Projects" / "1 Overdue Project" - the whole
+                // message, so the view prints one string and cannot get the
+                // agreement wrong.
+                'label' => $action['count'].' '.($action['count'] === 1 ? $action['singular'] : $action['plural']),
+                'count' => $action['count'],
+                'icon' => $action['icon'],
+                'url' => $action['url'],
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * How many enquiries nobody has dealt with yet.
+     *
+     * New and In Progress both count: an enquiry someone has picked up is
+     * still open work. Responded and Closed are finished, and the archive is
+     * out of the working list entirely. Counted through the same scope the
+     * Inquiries table filters by, so this figure and the list it opens can
+     * never describe different rows - see Inquiry::PENDING_STATUSES.
+     */
+    public function pendingInquiries(): int
+    {
+        return Inquiry::query()->active()->pending()->count();
     }
 
     // ------------------------------------------------------------------

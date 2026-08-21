@@ -226,13 +226,7 @@ class TaskScheduleRules
             return 'No schedule set, so this project cannot take dated tasks yet.';
         }
 
-        $booked = 'Booked: '.$this->describe($ranges).'.';
-
-        if (count($ranges) === 1) {
-            return $booked;
-        }
-
-        return $booked.' A task must start and be due on a booked day, but may run across the gap between them.';
+        return 'Booked: '.$this->describe($ranges).'.';
     }
 
     /**

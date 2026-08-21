@@ -269,7 +269,7 @@ class TaskController extends Controller
 
             return redirect()
                 ->back()
-                ->with('error', $this->safeErrorMessage($e, 'The task could not be saved. Nothing was changed.'));
+                ->with('error', $this->safeErrorMessage($e, 'Unable to save task. Nothing was changed.'));
         }
     }
 
@@ -359,7 +359,7 @@ class TaskController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
 
-            return back()->with('error', $this->safeErrorMessage($e, 'The task could not be saved. Nothing was changed.'));
+            return back()->with('error', $this->safeErrorMessage($e, 'Unable to save task. Nothing was changed.'));
         }
     }
 
@@ -426,7 +426,7 @@ class TaskController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
 
-            return back()->with('error', $this->safeErrorMessage($e, 'The task could not be saved. Nothing was changed.'));
+            return back()->with('error', $this->safeErrorMessage($e, 'Unable to save task. Nothing was changed.'));
         }
 
         $this->activityLogger->record(
@@ -451,7 +451,7 @@ class TaskController extends Controller
 
         return back()->with(
             'success',
-            'Task marked as completed.'
+            'Task completed.'
         );
     }
 
@@ -498,7 +498,7 @@ class TaskController extends Controller
 
             return back()->with(
                 'error',
-                $this->safeErrorMessage($e, 'The task could not be deleted. Nothing was changed.')
+                $this->safeErrorMessage($e, 'Unable to delete task. Nothing was changed.')
             );
         }
     }

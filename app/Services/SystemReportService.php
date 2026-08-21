@@ -67,7 +67,7 @@ class SystemReportService
     public const REPORT_STATUSES = [
         'all' => 'All Statuses',
         'unscheduled' => 'Unscheduled',
-        Project::STATUS_AWAITING_CLIENT_CONFIRMATION => 'Awaiting Completion Confirmation',
+        Project::STATUS_AWAITING_CLIENT_CONFIRMATION => 'Awaiting Client Confirmation',
         'pending' => 'Pending',
         'ongoing' => 'Ongoing',
         'on_hold' => 'On Hold',

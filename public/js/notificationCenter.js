@@ -164,7 +164,7 @@ document.addEventListener('DOMContentLoaded', function() {
             })
             .then(function(response) {
                 if (!response.ok) {
-                    throw new Error('Could not load notifications.');
+                    throw new Error('Unable to load notifications.');
                 }
 
                 return response.json();

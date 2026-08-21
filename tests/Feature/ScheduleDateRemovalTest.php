@@ -132,12 +132,12 @@ class ScheduleDateRemovalTest extends TestCase
         return CarbonImmutable::today()->addDays($offset)->toDateString();
     }
 
-    private function removeDate(Schedule $schedule, string $date)
+    private function removeDate(Schedule $schedule, string $date, bool $override = false)
     {
         return $this->deleteJson(route('super-admin.schedules.dates.destroy', [
             'schedule' => $schedule->schedule_id,
             'date' => $date,
-        ]));
+        ]), $override ? ['override_past_lock' => true] : []);
     }
 
     /**
@@ -570,16 +570,114 @@ class ScheduleDateRemovalTest extends TestCase
             ->assertStatus(422);
     }
 
-    public function test_a_past_date_may_still_be_removed(): void
+    /**
+     * A day that has been worked is part of the project's record. Giving it up
+     * from the calendar would rewrite what happened, so it is refused - and the
+     * refusal names who can change it.
+     */
+    public function test_a_past_date_is_not_removable(): void
+    {
+        $admin = User::factory()->create(['email' => 'past.admin@example.test']);
+        $admin->forceFill(['role' => 'admin', 'status' => User::STATUS_ACTIVE])->save();
+
+        $this->actingAs($admin);
+
+        $project = $this->createProject([$this->createTechnician('Jose Garcia')]);
+        $schedule = $this->book($project, $this->day(-5), $this->day(-1));
+
+        $response = $this->removeDate($schedule, $this->day(-3))->assertStatus(422);
+
+        $this->assertStringContainsString('already passed', $response->json('error'));
+        $this->assertStringContainsString('Super Admin', $response->json('error'));
+
+        // Nothing moved.
+        $this->assertSame(
+            [['start' => $this->day(-5), 'end' => $this->day(-1)]],
+            $this->rangesOf($project)
+        );
+    }
+
+    /**
+     * The correction that has to remain possible: a Super Admin who has
+     * confirmed they mean to may still take a day off a booking that has ended.
+     */
+    public function test_a_super_admin_may_remove_a_past_date_with_the_override(): void
     {
         $project = $this->createProject([$this->createTechnician('Jose Garcia')]);
         $schedule = $this->book($project, $this->day(-5), $this->day(-1));
 
-        $this->removeDate($schedule, $this->day(-3))->assertOk();
+        $this->removeDate($schedule, $this->day(-3), override: true)->assertOk();
 
         $this->assertSame([
             ['start' => $this->day(-5), 'end' => $this->day(-4)],
             ['start' => $this->day(-2), 'end' => $this->day(-1)],
+        ], $this->rangesOf($project));
+
+        // Recorded as the correction it is, not as a routine reschedule.
+        $this->assertTrue(
+            ActivityLog::query()
+                ->where('action', ActivityLog::PROJECT_RESCHEDULED)
+                ->get()
+                ->contains(fn (ActivityLog $log): bool => str_contains(
+                    (string) $log->description,
+                    'Overrode the past-schedule lock'
+                ))
+        );
+    }
+
+    /**
+     * A Super Admin without the confirmation is an Admin: the flag is what
+     * says the override was meant, and the role is only what makes it count.
+     */
+    public function test_a_past_date_is_refused_without_the_confirmation(): void
+    {
+        $project = $this->createProject([$this->createTechnician('Jose Garcia')]);
+        $schedule = $this->book($project, $this->day(-5), $this->day(-1));
+
+        $this->removeDate($schedule, $this->day(-3))->assertStatus(422);
+
+        $this->assertSame(
+            [['start' => $this->day(-5), 'end' => $this->day(-1)]],
+            $this->rangesOf($project)
+        );
+    }
+
+    /**
+     * Today is not a mistake in the record, it is work in progress - so it is
+     * refused whoever is asking, override or not.
+     */
+    public function test_today_is_never_removable(): void
+    {
+        $project = $this->createProject([$this->createTechnician('Jose Garcia')]);
+        $schedule = $this->book($project, $this->day(-2), $this->day(3));
+
+        foreach ([false, true] as $override) {
+            $response = $this->removeDate($schedule, $this->day(0), override: $override)
+                ->assertStatus(422);
+
+            $this->assertStringContainsString('under way', $response->json('error'));
+        }
+
+        $this->assertSame(
+            [['start' => $this->day(-2), 'end' => $this->day(3)]],
+            $this->rangesOf($project)
+        );
+    }
+
+    /**
+     * A future date inside a range that has already started is still given up
+     * freely: those days are promises, not record.
+     */
+    public function test_a_future_date_inside_a_started_range_may_be_removed(): void
+    {
+        $project = $this->createProject([$this->createTechnician('Jose Garcia')]);
+        $schedule = $this->book($project, $this->day(-2), $this->day(5));
+
+        $this->removeDate($schedule, $this->day(3))->assertOk();
+
+        $this->assertSame([
+            ['start' => $this->day(-2), 'end' => $this->day(2)],
+            ['start' => $this->day(4), 'end' => $this->day(5)],
         ], $this->rangesOf($project));
     }
 

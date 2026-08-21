@@ -32,6 +32,16 @@
         // gap between two visits is not a day this project exists on, and the
         // pickers grey those days out.
         $taskDateHint = app(\App\Services\TaskScheduleRules::class)->describeSelectable($scheduleRanges->all());
+
+        // Only work that is actually under way may be closed out. A Pending,
+        // Unscheduled or paused project has had nobody on site yet, so there
+        // is nothing to close out - the same rule the technician portal draws
+        // its button by. See Project::isCompletable().
+        //
+        // An overdue project satisfies it: overdue is derived, and a late
+        // project is stored as Ongoing. Closing it off is exactly what the
+        // banner below asks for.
+        $canComplete = $project->isCompletable();
     @endphp
     {{-- `project-details-page` is what applies the brand blue from the
          client's own project page; the layout below is unchanged. --}}
@@ -60,10 +70,7 @@
                     <div class="flex-grow-1">
                         <h5 class="alert-heading mb-1">This project is on hold</h5>
                         <p class="mb-0">
-                            Its assigned technicians, reports and the days already worked are all kept exactly
-                            as they are. Tasks keep their owners, and keep their dates wherever those still fall
-                            on a day the project holds. Assigning technicians, adding reports, editing tasks and
-                            adding schedules are unavailable until the project is resumed.
+                            Resume it to add schedules, reports, tasks or technicians.
                         </p>
                     </div>
 
@@ -100,27 +107,21 @@
                              space, which is what strands a comma from its word. --}}
                         @php
                             $requestedBy = $project->completionRequestedByUser?->fullName();
-                            $sentence = 'The work was recorded as finished on '
-                                . ($project->completed_at?->format('F j, Y') ?? 'an earlier date') . '.';
-
-                            if ($project->completion_requested_at) {
-                                $sentence .= ' Sent for confirmation on '
+                            $sentence = $project->completion_requested_at
+                                ? 'Sent '
                                     . $project->completion_requested_at->format('F j, Y')
-                                    . ($requestedBy ? ' by ' . $requestedBy : '') . '.';
-                            }
+                                    . ($requestedBy ? ' by ' . $requestedBy : '') . '.'
+                                : '';
                         @endphp
 
                         <p class="mb-2">
-                            {{ $sentence }} The client has been emailed and notified.
-                        </p>
-
-                        <p class="mb-2">
+                            {{ $sentence }}
                             @if ($project->confirmationDeadline())
-                                It completes automatically on
+                                Completes automatically on
                                 <strong>{{ $project->confirmationDeadline()->format('F j, Y') }}</strong>
-                                ({{ $project->confirmationCountdown() }}) if the client does not reply.
+                                ({{ $project->confirmationCountdown() }}) unless the client replies.
                             @endif
-                            This project is locked and cannot be edited while it is waiting.
+                            Locked until then.
                         </p>
 
                         @if ($canReopen)
@@ -170,19 +171,7 @@
                                     <x-project-status-badge :project="$project" />
                                 </div>
 
-                                <div class="alert alert-secondary small mb-4">
-                                    <i class="bi bi-info-circle me-1" aria-hidden="true"></i>
-                                    The dates released when this project was completed were freed for other work and
-                                    are not restored. Book the remaining work below; the project becomes
-                                    <strong>Ongoing</strong> and editable again.
-                                    @if ($project->schedules->isNotEmpty())
-                                        Its recorded work
-                                        ({{ $project->schedules->map(fn($schedule) => $schedule->describe())->join('; ') }})
-                                        is kept as history.
-                                    @endif
-                                </div>
-
-                                <h6 class="fw-bold mb-2">New schedule</h6>
+                                <h6 class="fw-bold mb-2 mt-4">New schedule</h6>
 
                                 @if ($partialDayAllowed)
                                     <div class="mb-3">
@@ -254,10 +243,9 @@
 
                                 @if ($project->projectTechnicians->isNotEmpty())
                                     <div class="form-text mt-2">
-                                        The assigned team
+                                        The team
                                         ({{ $project->projectTechnicians->map(fn($assignment) => $assignment->technician?->name)->filter()->join(', ') }})
-                                        is booked onto these dates. Anyone already committed elsewhere will be
-                                        reported and the reopen refused.
+                                        is booked onto these dates. A clash will refuse the reopen.
                                     </div>
                                 @endif
 
@@ -361,11 +349,9 @@
                     <div class="flex-grow-1">
                         <h5 class="alert-heading mb-1">This project is overdue</h5>
                         <p class="mb-2">
-                            Its last scheduled day was
-                            <strong>{{ $project->scheduleEndsOn()->format('F j, Y') }}</strong>
-                            ({{ $project->scheduleEndsOn()->diffForHumans() }}), but the project is still
-                            <strong>{{ $project->status }}</strong>.
-                            Add a new date range if the work is continuing, or mark the project complete.
+                            Last scheduled day was
+                            <strong>{{ $project->scheduleEndsOn()->format('F j, Y') }}</strong>.
+                            Extend the schedule or mark it complete.
                         </p>
 
                         <div class="d-flex flex-wrap gap-2">
@@ -375,16 +361,19 @@
                                 Add New Schedule
                             </a>
 
-                            <button type="button" class="btn btn-sm btn-success" data-bs-toggle="modal"
-                                data-bs-target="#completeOverdueProjectModal">
-                                <i class="bi bi-check-circle me-1" aria-hidden="true"></i>
-                                Mark as Complete
-                            </button>
+                            @if ($canComplete)
+                                <button type="button" class="btn btn-sm btn-success" data-bs-toggle="modal"
+                                    data-bs-target="#completeOverdueProjectModal">
+                                    <i class="bi bi-check-circle me-1" aria-hidden="true"></i>
+                                    Mark as Complete
+                                </button>
+                            @endif
                         </div>
                     </div>
                 </div>
             </div>
 
+            @if ($canComplete)
             {{-- Same fields as the Projects page completion modal, so both
                  routes into completion collect identical information. --}}
             <div class="modal fade" id="completeOverdueProjectModal" tabindex="-1"
@@ -407,8 +396,7 @@
 
                             <div class="modal-body">
                                 <p class="mb-3">
-                                    Mark <strong>{{ $project->reference_no }}</strong> as completed? The schedule,
-                                    technicians and task history stay on record, but the project becomes view only.
+                                    Mark <strong>{{ $project->reference_no }}</strong> as completed?
                                 </p>
 
                                 {{-- What the completion rules object to. A lead technician is
@@ -434,8 +422,7 @@
                                             required
                                             placeholder="Why is this being completed with the above outstanding?"></textarea>
                                         <div class="form-text">
-                                            Recorded against the project and in the activity log, and the other
-                                            administrators are notified.
+                                            Recorded in the activity log. Other administrators are notified.
                                         </div>
                                     </div>
                                 @endif
@@ -478,6 +465,7 @@
                     </div>
                 </div>
             </div>
+            @endif
         @endif
 
         <!-- Project Information -->
@@ -745,7 +733,12 @@
         <div class="row mb-4">
 
             <!-- Assigned Team -->
-            <div class="col-lg-6 mb-3">
+            {{-- The id is the landing point for the links a refused role change
+                 prints: a role change that would decide who leads a project is
+                 refused, and the person refused is sent straight here to settle
+                 the team by hand. The scroll margin keeps the heading clear of
+                 the top of the window. --}}
+            <div class="col-lg-6 mb-3" id="assigned-team" style="scroll-margin-top: 1.5rem;">
 
                 <div class="card shadow-sm h-100">
 
@@ -778,13 +771,11 @@
                                 <i class="bi bi-person-exclamation me-1"></i>
                                 <strong>This team needs attention.</strong>
                                 @unless ($project->hasLead())
-                                    This project has no lead technician, so nobody can run its task
-                                    board, file a report or close it. Choose a lead in Assigned Team.
+                                    No lead technician assigned. Choose one in Assigned Team.
                                 @endunless
                                 @if ($project->inactiveCrew()->isNotEmpty())
                                     {{ $project->inactiveCrewNames() }}
-                                    can no longer sign in, but their dates are still booked.
-                                    Reassign the work or take them off the team.
+                                    can no longer sign in but are still booked. Reassign or remove them.
                                 @endif
                             </div>
                         @endif
@@ -1256,8 +1247,8 @@
 
                         <div class="modal-body">
                             <p class="mb-3">
-                                Cancelling <strong>{{ $project->reference_no }}</strong> will remove its schedule and
-                                assigned technicians, freeing them up for other projects. This action cannot be undone.
+                                Cancel <strong>{{ $project->reference_no }}</strong>? Its schedule and
+                                technicians are released. This cannot be undone.
                             </p>
 
                             <div class="mb-3">
@@ -1509,9 +1500,7 @@
                             <i class="bi bi-info-circle" aria-hidden="true"></i>
                             <span>
                                 {{ \App\Models\Document::ALLOWED_LABEL }}, up to
-                                {{ \App\Models\Document::MAX_LABEL }} each. You may pick several at once, and
-                                anything you pick is <strong>added</strong> to what the project already holds &mdash;
-                                remove a file from the list on the page behind this dialog.
+                                {{ \App\Models\Document::MAX_LABEL }} each. Uploads are added to existing files.
                             </span>
                         </p>
 

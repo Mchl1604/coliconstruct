@@ -79,7 +79,7 @@ class PasswordResetController extends Controller
         if (! $this->email->isDeliverable()) {
             return back()->with(
                 'error',
-                'Email is not configured on this system, so a verification code cannot be sent. '
+                'Verification codes cannot be sent right now. '
                     .'Ask an administrator to reset your password from Configuration.'
             );
         }
@@ -109,7 +109,7 @@ class PasswordResetController extends Controller
 
         return redirect()
             ->route('auth.password.verify')
-            ->with('success', 'If that address has an account, a verification code is on its way.');
+            ->with('success', 'Code sent.');
     }
 
     // ------------------------------------------------------------------
@@ -140,7 +140,7 @@ class PasswordResetController extends Controller
 
         $request->validate(
             ['code' => ['required', 'string', 'max:12']],
-            ['code.required' => 'Enter the code that was emailed to you.']
+            ['code.required' => 'Enter the emailed code.']
         );
 
         try {
@@ -180,7 +180,7 @@ class PasswordResetController extends Controller
             }
         }
 
-        return back()->with('success', 'If that address has an account, a new code is on its way.');
+        return back()->with('success', 'New code sent.');
     }
 
     // ------------------------------------------------------------------
@@ -250,7 +250,7 @@ class PasswordResetController extends Controller
 
         return redirect()
             ->route('auth.login')
-            ->with('success', 'Your password has been reset. Sign in with it now.');
+            ->with('success', 'Password reset. Sign in with it now.');
     }
 
     // ------------------------------------------------------------------

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Client;
+use App\Models\Inquiry;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
 use App\Models\Schedule;
@@ -93,7 +94,7 @@ class DashboardTest extends TestCase
             ->assertSee(now()->format('l, F j, Y'))
             ->assertSee('New Project')
             ->assertSee('Upcoming Work')
-            ->assertSee('Quick Actions')
+            ->assertSee('Urgent Actions')
             ->assertSee('Active Technicians Today')
             ->assertSee('Recent Activity');
     }
@@ -223,29 +224,283 @@ class DashboardTest extends TestCase
     }
 
     // ------------------------------------------------------------------
-    // Quick Actions
+    // Urgent Actions
     // ------------------------------------------------------------------
 
     /**
-     * The shortcuts point at routes that already exist, and only at the ones
-     * this reader may open. Both administrative roles reach all six today,
-     * which is what the routes themselves say.
+     * Nothing to do means nothing listed. The section is not a menu, so with
+     * every backlog clear it says so rather than drawing six zeroes.
      */
-    public function test_quick_actions_open_the_modules_this_reader_may_reach(): void
+    public function test_urgent_actions_lists_nothing_when_nothing_needs_attention(): void
     {
-        foreach (['super_admin', 'admin'] as $role) {
-            $viewer = $this->account($role, $role.'@example.test');
+        $owner = $this->account('super_admin', 'owner@example.test');
 
-            $this->actingAs($viewer)
+        $this->actingAs($owner)
+            ->get(route('super-admin.dashboard'))
+            ->assertOk()
+            ->assertSee('Urgent Actions')
+            ->assertSee('Nothing needs attention right now.')
+            ->assertViewHas('urgentActions', []);
+    }
+
+    /**
+     * Each entry says how many and opens the page already filtered to them.
+     * Both administrative roles see the same list: every figure here is about
+     * work, which neither role is kept out of.
+     */
+    public function test_urgent_actions_count_the_work_waiting_and_link_to_it(): void
+    {
+        // Booked, so neither overdue nor unscheduled - but nobody is on it,
+        // which is the one thing wrong with it.
+        $this->project('ongoing', ['start' => now()->subDay(), 'end' => now()->addDay()]);
+
+        // No dates at all.
+        $this->project('unscheduled');
+
+        // Last day gone by, still open.
+        $this->project('ongoing', ['start' => now()->subDays(9), 'end' => now()->subDays(2)]);
+
+        foreach (['super_admin', 'admin'] as $role) {
+            $actions = collect(
+                $this->actingAs($this->account($role, $role.'@example.test'))
+                    ->get(route('super-admin.dashboard'))
+                    ->assertOk()
+                    ->viewData('urgentActions')
+            )->keyBy('key');
+
+            $this->assertSame('1 Unscheduled Project', $actions['unscheduled_projects']['label']);
+            $this->assertSame(
+                route('super-admin.projects').'?status=unscheduled',
+                $actions['unscheduled_projects']['url']
+            );
+
+            $this->assertSame('1 Overdue Project', $actions['overdue_projects']['label']);
+            $this->assertSame(
+                route('super-admin.projects').'?status=overdue',
+                $actions['overdue_projects']['url']
+            );
+
+            // All three carry no crew, the unscheduled one included.
+            $this->assertSame(
+                '3 Projects Without Technicians',
+                $actions['projects_without_technicians']['label']
+            );
+            $this->assertSame(
+                route('super-admin.projects').'?status=no_technicians',
+                $actions['projects_without_technicians']['url']
+            );
+
+            // Nothing is waiting on either of these, so neither is listed.
+            $this->assertFalse($actions->has('specialty_requests'));
+            $this->assertFalse($actions->has('pending_inquiries'));
+        }
+    }
+
+    /**
+     * An entry is one sentence, and the number agrees with the noun.
+     */
+    public function test_an_urgent_action_says_one_project_rather_than_one_projects(): void
+    {
+        $this->project('unscheduled');
+        $this->project('unscheduled');
+
+        $actions = collect(
+            $this->actingAs($this->account('super_admin', 'owner@example.test'))
+                ->get(route('super-admin.dashboard'))
+                ->viewData('urgentActions')
+        )->keyBy('key');
+
+        $this->assertSame('2 Unscheduled Projects', $actions['unscheduled_projects']['label']);
+    }
+
+    /**
+     * The counts describe the work as it is now, so clearing a backlog takes
+     * its entry off the dashboard rather than leaving it reading zero.
+     */
+    public function test_an_urgent_action_disappears_once_its_backlog_is_cleared(): void
+    {
+        $owner = $this->account('super_admin', 'owner@example.test');
+        $project = $this->project('unscheduled');
+
+        $this->assertTrue($this->hasUrgentAction($owner, 'unscheduled_projects'));
+
+        Schedule::create([
+            'project_id' => $project->project_id,
+            'start_datetime' => now()->addDay()->format('Y-m-d').' 08:00:00',
+            'end_datetime' => now()->addDays(3)->format('Y-m-d').' 17:00:00',
+            'status' => 'scheduled',
+        ]);
+
+        $this->assertFalse($this->hasUrgentAction($owner, 'unscheduled_projects'));
+    }
+
+    /**
+     * Paused work is not a backlog. A hold sets the project's status to
+     * Unscheduled, so without this every held project would report itself as
+     * waiting to be booked.
+     */
+    public function test_a_held_project_is_not_reported_as_unscheduled(): void
+    {
+        $held = $this->project('unscheduled');
+        $held->forceFill(['on_hold' => true])->save();
+
+        $owner = $this->account('super_admin', 'owner@example.test');
+
+        $this->assertFalse($this->hasUrgentAction($owner, 'unscheduled_projects'));
+
+        // Still counted as crewless, though: a hold pauses the dates, not the
+        // question of who is going to do the job.
+        $this->assertTrue($this->hasUrgentAction($owner, 'projects_without_technicians'));
+    }
+
+    /**
+     * Finished and archived work is history, and history is never a backlog.
+     */
+    public function test_finished_and_archived_work_is_never_urgent(): void
+    {
+        foreach (['completed', 'cancelled'] as $status) {
+            $this->project($status);
+        }
+
+        $archived = $this->project('unscheduled');
+        $archived->forceFill(['is_archived' => true])->save();
+
+        $this->actingAs($this->account('super_admin', 'owner@example.test'))
+            ->get(route('super-admin.dashboard'))
+            ->assertOk()
+            ->assertViewHas('urgentActions', []);
+    }
+
+    /**
+     * The three queues that are not project counts: a technician who can no
+     * longer sign in but is still crewed, a specialty decision nobody has
+     * taken, and an enquiry nobody has answered.
+     */
+    public function test_urgent_actions_report_the_queues_outside_the_projects_table(): void
+    {
+        $project = $this->project('ongoing', ['start' => now()->subDay(), 'end' => now()->addDay()]);
+
+        $tech = $this->account('technician', 'tech@example.test');
+        $technician = Technician::create(['account_id' => $tech->id, 'role' => 'technician']);
+
+        ProjectTechnician::create([
+            'project_id' => $project->project_id,
+            'technician_id' => $technician->technician_id,
+        ]);
+
+        // Switched off, but their booking survives - which is the assignment
+        // somebody has to pick up.
+        $tech->forceFill(['status' => User::STATUS_DEACTIVATED])->save();
+
+        SpecialtyRequest::create([
+            'technician_id' => $technician->technician_id,
+            'status' => SpecialtyRequest::STATUS_PENDING,
+            'requested_skill_ids' => [],
+            'current_skill_ids' => [],
+            'requested_by' => $tech->id,
+        ]);
+
+        // New and In Progress are both still open work; Closed is an ending.
+        foreach ([Inquiry::STATUS_NEW, Inquiry::STATUS_IN_PROGRESS, Inquiry::STATUS_CLOSED] as $index => $status) {
+            Inquiry::create([
+                'name' => 'Rosa Villanueva',
+                'email' => 'rosa'.$index.'@example.test',
+                'subject' => 'Aircon quote',
+                'message' => 'We need two split-type units installed at our office.',
+                'status' => $status,
+            ]);
+        }
+
+        $actions = collect(
+            $this->actingAs($this->account('super_admin', 'owner@example.test'))
                 ->get(route('super-admin.dashboard'))
                 ->assertOk()
-                ->assertSee('Quick Actions')
-                ->assertSee(route('super-admin.projects'))
-                ->assertSee(route('super-admin.schedules.index'))
-                ->assertSee(route('super-admin.technicians.index'))
-                ->assertSee(route('super-admin.reports.index'))
-                ->assertSee(route('super-admin.configuration.index'));
+                ->viewData('urgentActions')
+        )->keyBy('key');
+
+        $this->assertSame(
+            '1 Inactive Technician in a Project',
+            $actions['inactive_technicians']['label']
+        );
+        $this->assertSame(
+            route('super-admin.projects').'?status=inactive_crew',
+            $actions['inactive_technicians']['url']
+        );
+
+        $this->assertSame('1 Specialty Change Request', $actions['specialty_requests']['label']);
+        $this->assertSame(
+            route('super-admin.technicians.index').'?specialty=pending',
+            $actions['specialty_requests']['url']
+        );
+
+        $this->assertSame('2 Pending Inquiries', $actions['pending_inquiries']['label']);
+        $this->assertSame(
+            route('super-admin.configuration.index').'?inquiries=pending',
+            $actions['pending_inquiries']['url']
+        );
+
+        // The project is crewed, so it is not also reported as empty.
+        $this->assertFalse($actions->has('projects_without_technicians'));
+    }
+
+    /**
+     * Every View lands on a page that actually offers the tab it asks for -
+     * an entry linking at a filter the table does not draw would open the
+     * whole list and quietly lose the reader.
+     */
+    public function test_each_view_link_opens_a_list_that_offers_the_tab_it_asks_for(): void
+    {
+        $owner = $this->account('super_admin', 'owner@example.test');
+
+        $this->project('unscheduled');
+        $this->project('ongoing', ['start' => now()->subDays(9), 'end' => now()->subDays(2)]);
+
+        $tabs = collect(
+            $this->actingAs($owner)->get(route('super-admin.projects'))->viewData('statusTabs')
+        )->pluck('key');
+
+        foreach (['unscheduled', 'overdue', 'no_technicians'] as $key) {
+            $this->assertContains($key, $tabs);
         }
+
+        // And the rows say which of those tabs they answer, which is what the
+        // browser-side filter reads.
+        $this->actingAs($owner)
+            ->get(route('super-admin.projects'))
+            ->assertOk()
+            ->assertSee('data-tab-extra="unscheduled no_technicians"', false);
+    }
+
+    /**
+     * An attention tab is drawn only while it holds something, unlike a status
+     * tab - so a cleared backlog takes its tab away as well as its entry.
+     */
+    public function test_an_attention_tab_is_absent_when_nothing_needs_that_attention(): void
+    {
+        $owner = $this->account('super_admin', 'owner@example.test');
+
+        $tabs = collect(
+            $this->actingAs($owner)->get(route('super-admin.projects'))->viewData('statusTabs')
+        )->pluck('key');
+
+        // The status tabs are always drawn, zero or not.
+        $this->assertContains('overdue', $tabs);
+
+        foreach (array_keys(Project::ATTENTION_TABS) as $key) {
+            $this->assertNotContains($key, $tabs);
+        }
+    }
+
+    /**
+     * Whether the dashboard is currently reporting one particular backlog.
+     */
+    private function hasUrgentAction(User $viewer, string $key): bool
+    {
+        return collect(
+            $this->actingAs($viewer)
+                ->get(route('super-admin.dashboard'))
+                ->viewData('urgentActions')
+        )->contains(fn (array $action): bool => $action['key'] === $key);
     }
 
     // ------------------------------------------------------------------

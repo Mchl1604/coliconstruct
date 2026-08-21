@@ -6,8 +6,7 @@
     <i class="bi bi-shield-lock text-primary" style="font-size: 2.6rem;" aria-hidden="true"></i>
     <h3 class="mb-1 mt-2">Enter Your Code</h3>
     <p class="text-muted mb-4">
-        If <strong>{{ $email }}</strong> has an account, a 6-digit code is on its way.
-        Enter it below to set a new password.
+        A 6-digit code was sent to <strong>{{ $email }}</strong>.
     </p>
 
     @if ($errors->any())

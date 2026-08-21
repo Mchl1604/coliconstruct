@@ -1,13 +1,13 @@
 @extends('emails.layout')
 
-@section('subject', 'Website enquiry from ' . $senderName)
+@section('subject', 'Website inquiry from ' . $senderName)
 
 @section('preview')
     {{ $senderName }} wrote in through the Contact page about {{ $inquirySubject }}.
 @endsection
 
 @section('heading')
-    New enquiry from the website
+    New inquiry from the website
 @endsection
 
 @section('content')

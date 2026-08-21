@@ -29,8 +29,16 @@
                 <strong>{{ $pendingTechnicianIds->count() }}</strong>
                 {{ Str::plural('technician', $pendingTechnicianIds->count()) }}
                 {{ $pendingTechnicianIds->count() === 1 ? 'is' : 'are' }}
-                waiting on a specialty decision. Open the highlighted row to approve or reject it.
+                waiting on a specialty decision.
             </span>
+
+            {{-- Shown only when the dashboard's Urgent Actions narrowed this
+                 table to the people waiting - the way back out, so a table
+                 filtered by a link never has to be reloaded to escape. --}}
+            <button type="button" class="btn btn-sm btn-outline-secondary ms-auto d-none"
+                data-specialty-filter-clear>
+                Show all technicians
+            </button>
         </div>
     @endif
 
@@ -349,8 +357,8 @@
                                     <p class="text-muted small mb-2" data-panel-lead-intro></p>
                                     <div class="technician-lead-options" data-panel-lead-options></div>
                                     <div class="schedule-empty-state d-none" data-panel-lead-empty>
-                                        No lead technician is available for this project's dates. Free one up, or
-                                        change the project schedule, before removing the current lead.
+                                        No lead technician is free for these dates. Free one up or change the
+                                        schedule first.
                                     </div>
                                 </div>
 

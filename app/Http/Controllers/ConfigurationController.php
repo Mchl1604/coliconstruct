@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Exceptions\RoleChangeBlocked;
 use App\Models\ActivityLog;
 use App\Models\Inquiry;
 use App\Models\Skill;
@@ -298,7 +299,7 @@ class ConfigurationController extends Controller
         try {
             $restored = $this->accounts->restore($user);
         } catch (Throwable $exception) {
-            return $this->failure($exception, 'The account could not be restored.');
+            return $this->failure($exception, 'Unable to restore account.');
         }
 
         return response()->json([
@@ -350,7 +351,7 @@ class ConfigurationController extends Controller
                 array_map('intval', $data['skill_ids'] ?? [])
             );
         } catch (Throwable $exception) {
-            return $this->failure($exception, 'The employee account could not be created.');
+            return $this->failure($exception, 'Unable to create employee account.');
         }
 
         return response()->json([
@@ -374,7 +375,7 @@ class ConfigurationController extends Controller
         try {
             $result = $this->accounts->createClient($data);
         } catch (Throwable $exception) {
-            return $this->failure($exception, 'The client account could not be created.');
+            return $this->failure($exception, 'Unable to create client account.');
         }
 
         return response()->json([
@@ -412,7 +413,7 @@ class ConfigurationController extends Controller
                 array_map('intval', $data['skill_ids'] ?? [])
             );
         } catch (Throwable $exception) {
-            return $this->failure($exception, 'The employee account could not be updated.');
+            return $this->failure($exception, 'Unable to update employee account.');
         }
 
         return response()->json([
@@ -446,7 +447,7 @@ class ConfigurationController extends Controller
         try {
             $updated = $this->accounts->updateClient($user, $validator->validated());
         } catch (Throwable $exception) {
-            return $this->failure($exception, 'The client account could not be updated.');
+            return $this->failure($exception, 'Unable to update client account.');
         }
 
         return response()->json([
@@ -467,13 +468,13 @@ class ConfigurationController extends Controller
         try {
             $password = $this->accounts->resetPassword($user);
         } catch (Throwable $exception) {
-            return $this->failure($exception, 'The password could not be reset.');
+            return $this->failure($exception, 'Unable to reset password.');
         }
 
         return response()->json([
             'password' => $password,
             'emailed' => $this->deliverCredentials($user, $password, true),
-            'message' => 'Password reset. The account must choose a new one at next sign-in.',
+            'message' => 'Password reset. A new one is required at next sign-in.',
         ]);
     }
 
@@ -497,7 +498,7 @@ class ConfigurationController extends Controller
                 $validator->validated()['status'] === User::STATUS_ACTIVE
             );
         } catch (Throwable $exception) {
-            return $this->failure($exception, 'The account status could not be changed.');
+            return $this->failure($exception, 'Unable to change account status.');
         }
 
         return response()->json([
@@ -515,7 +516,7 @@ class ConfigurationController extends Controller
         try {
             $this->accounts->archive($user);
         } catch (Throwable $exception) {
-            return $this->failure($exception, 'The account could not be archived.');
+            return $this->failure($exception, 'Unable to archive account.');
         }
 
         return response()->json(['message' => 'Account archived.']);
@@ -673,6 +674,16 @@ class ConfigurationController extends Controller
      */
     private function failure(Throwable $exception, string $fallback)
     {
+        // A refused role change also carries the projects standing in the way,
+        // so the page can list them and link to each team - see
+        // TechnicianRoleChangeRules.
+        if ($exception instanceof RoleChangeBlocked) {
+            return response()->json([
+                'error' => $exception->getMessage(),
+                'role_change' => $exception->payload(),
+            ], 422);
+        }
+
         if ($exception instanceof RuntimeException) {
             return response()->json(['error' => $exception->getMessage()], 422);
         }

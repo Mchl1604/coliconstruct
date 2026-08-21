@@ -308,7 +308,14 @@ class TechnicianAvailabilityServiceTest extends TestCase
 
         $this->assertStringContainsString('Carlo Diaz is already booked', $message);
         $this->assertStringContainsString('8:00 AM - 10:00 AM', $message);
-        $this->assertStringContainsString('Please choose a time', $message);
+
+        // Who and when, and nothing after it. The message used to close by
+        // telling the reader to choose a time everyone is free - which is the
+        // one thing somebody looking at a date picker already knows, and it
+        // pushed the names and hours they can act on off the end of the box.
+        $this->assertStringEndsWith('.', $message);
+        $this->assertStringNotContainsString('Choose a time', $message);
+        $this->assertStringNotContainsString('Choose dates', $message);
     }
 
     /**

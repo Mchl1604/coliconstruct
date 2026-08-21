@@ -41,8 +41,7 @@
                         @endforeach
                     </select>
                     <div class="form-text">
-                        Choose the project first &mdash; the technician list below depends on who is
-                        assigned to it.
+                        Choose the project first.
                     </div>
                     <div class="text-danger small mt-1 d-none" data-task-create-error></div>
                 </div>

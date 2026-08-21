@@ -93,27 +93,38 @@
                 </div>
             </section>
 
-            {{-- The doors into the rest of the portal. Built in the
-                 controller so an action nobody may open is absent rather than
-                 drawn disabled, and every one of them points at a route that
-                 already exists. --}}
+            {{-- What is waiting on somebody. This replaced Quick Actions,
+                 which was the sidebar again one row lower; a dashboard is
+                 opened to find out what needs doing.
+
+                 Every entry is a real backlog with a real count, and one that
+                 has been cleared is absent rather than drawn as a zero - so an
+                 empty section means there is nothing to do, which is worth
+                 saying in as many words. Each View opens the page already
+                 filtered to the records behind the figure. --}}
             <section class="dash-panel dash-panel-quiet">
                 <div class="dash-panel-head">
-                    <h2 class="dash-panel-title">Quick Actions</h2>
+                    <h2 class="dash-panel-title">Urgent Actions</h2>
                 </div>
 
-                <div class="dash-actions">
-                    @forelse ($quickActions as $action)
-                        <a class="dash-action" href="{{ $action['url'] }}" data-quick-action="{{ $action['key'] }}">
-                            <span class="dash-action-icon">
-                                <i class="bi {{ $action['icon'] }}" aria-hidden="true"></i>
+                <ul class="dash-urgent">
+                    @forelse ($urgentActions as $action)
+                        <li class="dash-urgent-item">
+                            <span class="dash-urgent-icon" aria-hidden="true">
+                                <i class="bi {{ $action['icon'] }}"></i>
                             </span>
-                            <span class="dash-action-label">{{ $action['label'] }}</span>
-                        </a>
+
+                            <span class="dash-urgent-label">{{ $action['label'] }}</span>
+
+                            <a class="dash-urgent-view" href="{{ $action['url'] }}"
+                                data-urgent-action="{{ $action['key'] }}">
+                                View
+                            </a>
+                        </li>
                     @empty
-                        <p class="dash-empty">No modules are available to your account.</p>
+                        <li class="dash-empty">Nothing needs attention right now.</li>
                     @endforelse
-                </div>
+                </ul>
             </section>
         </div>
 

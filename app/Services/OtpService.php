@@ -325,7 +325,7 @@ class OtpService
 
         if ($seconds > 0) {
             throw new RuntimeException(
-                sprintf('Please wait %d second%s before asking for another code.', $seconds, $seconds === 1 ? '' : 's')
+                sprintf('Wait %d second%s before requesting another code.', $seconds, $seconds === 1 ? '' : 's')
             );
         }
     }
@@ -342,7 +342,7 @@ class OtpService
         $minutes = (int) ceil(RateLimiter::availableIn($this->requestKey($email, $purpose)) / 60);
 
         throw new RuntimeException(
-            sprintf('Too many verification codes have been requested. Try again in %d minute%s.', max(1, $minutes), $minutes === 1 ? '' : 's')
+            sprintf('Too many codes requested. Try again in %d minute%s.', max(1, $minutes), $minutes === 1 ? '' : 's')
         );
     }
 

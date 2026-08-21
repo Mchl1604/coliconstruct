@@ -132,21 +132,20 @@ class PublicSiteTest extends TestCase
     }
 
     /**
-     * The header offers a guest one door - Get Started - and the registration
-     * form behind it carries the way through to Login, so somebody who
-     * already has an account is never stranded.
+     * The header offers a guest one door - Get Started - which opens Login,
+     * and the form behind it carries the way through to Register, so somebody
+     * without an account yet is never stranded.
      */
     public function test_a_guest_is_offered_get_started_and_a_client_their_profile(): void
     {
         $this->get(route('landing.home'))
             ->assertOk()
             ->assertSee('Get Started')
-            ->assertSee(route('auth.register'), escape: false);
-
-        $this->get(route('auth.register'))
-            ->assertOk()
-            ->assertSee('Already have an account?')
             ->assertSee(route('auth.login'), escape: false);
+
+        $this->get(route('auth.login'))
+            ->assertOk()
+            ->assertSee(route('auth.register'), escape: false);
 
         $client = $this->account('client', 'client@example.test');
 
@@ -341,7 +340,7 @@ class PublicSiteTest extends TestCase
         $response = $this->get(route('public.projects'));
 
         $response->assertOk()
-            ->assertSee('Please log in to view your projects.')
+            ->assertSee('Sign in to view your projects.')
             ->assertSee(route('auth.login'), escape: false)
             // Not one detail of anybody's work reaches a guest.
             ->assertDontSee('Aircon Installation - Greenfield Offices')

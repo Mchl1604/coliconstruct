@@ -184,6 +184,72 @@
     color: #0d6efd;
 }
 
+/* A booking that has ended: the project's record of work that happened, drawn
+   as settled rather than as a form somebody forgot to fill in. Muted and
+   flattened, so the editable rows above and below it are what the eye lands
+   on. */
+.schedule-range-row.is-locked {
+    background: #f8fafc;
+    border-style: dashed;
+    border-color: #cbd5e1;
+}
+
+.schedule-range-row.is-locked:hover {
+    box-shadow: none;
+    border-color: #cbd5e1;
+}
+
+/* Under way: part worked, part still to come. Marked, but not muted - its end
+   date is still very much editable. */
+.schedule-range-row.schedule-range-active {
+    border-color: #b6d4fe;
+}
+
+/* Which of the three a row is, in the row's own header. */
+.schedule-range-flag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin-right: auto;
+    padding: 0.1rem 0.45rem;
+    border-radius: 0.35rem;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.schedule-range-flag-locked {
+    background: #e2e8f0;
+    color: #475569;
+}
+
+.schedule-range-flag-active {
+    background: #cfe2ff;
+    color: #084298;
+}
+
+/* Why a row cannot be changed, on the row rather than in a toast that arrives
+   after somebody has already tried. */
+.schedule-range-locked-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.35rem;
+    margin: 0 0 0.6rem;
+    font-size: 0.76rem;
+    line-height: 1.4;
+    color: #64748b;
+}
+
+/* A start date that has been worked. Readable, still submitted, but plainly
+   not on offer. */
+.schedule-range-input-frozen,
+.schedule-range-input-frozen[readonly] {
+    background-color: #f1f5f9;
+    color: #64748b;
+    cursor: default;
+}
+
 .schedule-range-head {
     display: flex;
     align-items: center;
@@ -733,4 +799,43 @@
     .schedule-modal-header-end .badge {
         max-width: 8rem;
     }
+}
+
+/* The Clear button inside a date picker's calendar.
+
+   Styled here rather than beside the range row it belongs to, because
+   flatpickr appends its calendar to <body> and not to the field: a selector
+   scoped to the modal would never reach it.
+
+   `.flatpickr-calendar` is a fixed width with the day grid filling it, so the
+   button is a full-width footer under the grid rather than a control floating
+   somewhere in it. The top border is the same hairline the grid already uses
+   between its own sections. */
+.flatpickr-calendar .schedule-picker-clear {
+    display: block;
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border: 0;
+    border-top: 1px solid #e6e6e6;
+    /* Squares off the two bottom corners the calendar itself rounds, so the
+       button ends where the panel does. */
+    border-radius: 0 0 5px 5px;
+    background: transparent;
+    color: #64748b;
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+}
+
+.flatpickr-calendar .schedule-picker-clear:hover,
+.flatpickr-calendar .schedule-picker-clear:focus-visible {
+    background: #f1f5f9;
+    color: #334155;
+}
+
+/* An open calendar that has not been given room for the footer would clip it -
+   flatpickr sizes the panel from the day grid alone. */
+.flatpickr-calendar.open {
+    height: auto;
 }

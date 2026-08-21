@@ -6,8 +6,7 @@
     <img src="/img/coliconstructlogor.png" alt="{{ config('company.name') }}" width="72" class="mb-3">
     <h3 class="mb-1">Verify Your Email</h3>
     <p class="text-muted mb-4">
-        We sent a 6-digit code to <strong>{{ $email }}</strong>.
-        Enter it below to activate your account.
+        A 6-digit code was sent to <strong>{{ $email }}</strong>.
     </p>
 
     @if ($errors->any())

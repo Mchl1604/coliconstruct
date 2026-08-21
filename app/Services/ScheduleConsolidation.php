@@ -33,6 +33,13 @@ use Illuminate\Support\Collection;
  * day books hours on one date and leaves the rest of it free; folding one into
  * a whole-day range would claim a day nobody booked, and folding two together
  * would claim the night between them.
+ *
+ * A range that has already ended is not exempt. Aug 18-20 and Aug 21-25 are one
+ * booking whether or not the first half has been worked, so they are merged and
+ * the surviving row's end moves - which is a write to a row the editor draws
+ * locked. That is deliberate: the lock is about what a PERSON may retype, and
+ * two touching bookings being one booking is a fact about the data that holds
+ * either way. The merged row simply stops reading as ended, because it has not.
  */
 class ScheduleConsolidation
 {

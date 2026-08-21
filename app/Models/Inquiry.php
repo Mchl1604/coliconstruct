@@ -42,6 +42,12 @@ class Inquiry extends Model
      *
      * @var array<string, string>
      */
+    /**
+     * The filter value that means "everything still open" - not a status a
+     * row can hold, which is why it is kept apart from STATUSES.
+     */
+    public const FILTER_PENDING = 'pending';
+
     public const STATUSES = [
         self::STATUS_NEW => 'New',
         self::STATUS_IN_PROGRESS => 'In Progress',
@@ -156,16 +162,47 @@ class Inquiry extends Model
     }
 
     /**
-     * Narrow to one status. Anything other than a known one means "all", which
-     * is what the filter's own default sends.
+     * The statuses that still want something from somebody.
+     *
+     * New has not been picked up; In Progress has, but is not finished.
+     * Responded and Closed are both endings, which is why neither counts here
+     * or on the dashboard's Pending Inquiries figure.
+     *
+     * @var array<int, string>
+     */
+    public const PENDING_STATUSES = [
+        self::STATUS_NEW,
+        self::STATUS_IN_PROGRESS,
+    ];
+
+    /**
+     * Narrow to one status, or to `pending` - the two unfinished ones together,
+     * which is what the dashboard's Pending Inquiries figure counts and what
+     * its link asks this table for. Anything else means "all", which is what
+     * the filter's own default sends.
      */
     public function scopeWithStatus(Builder $query, ?string $status): Builder
     {
+        if ($status === self::FILTER_PENDING) {
+            return $query->whereIn('status', self::PENDING_STATUSES);
+        }
+
         if (! $status || ! array_key_exists($status, self::STATUSES)) {
             return $query;
         }
 
         return $query->where('status', $status);
+    }
+
+    /**
+     * Everything still open, counted the same way the filter above narrows.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopePending(Builder $query): Builder
+    {
+        return $query->whereIn('status', self::PENDING_STATUSES);
     }
 
     /**

@@ -37,6 +37,69 @@ document.addEventListener("DOMContentLoaded", function () {
         element.classList.toggle("d-none", !message);
     }
 
+    /**
+     * A refused role change, printed as the two sentences it came with and a
+     * compact list of the projects standing in the way.
+     *
+     * Each project links to its Assigned Team, which is where the block is
+     * lifted: a role change is never allowed to pick a lead, so somebody has
+     * to open the project and settle it by hand. Built as nodes rather than
+     * markup so a project name is text and stays text.
+     */
+    function setRoleChangeAlert(element, details) {
+        if (!element) {
+            return;
+        }
+
+        element.textContent = "";
+        element.classList.remove("d-none");
+
+        const headline = document.createElement("div");
+        headline.className = "fw-semibold";
+        headline.textContent = details.message || "";
+        element.appendChild(headline);
+
+        if (details.action) {
+            const action = document.createElement("div");
+            action.textContent = details.action;
+            element.appendChild(action);
+        }
+
+        const projects = details.projects || [];
+
+        if (!projects.length) {
+            return;
+        }
+
+        const list = document.createElement("ul");
+        list.className = "list-unstyled small mb-0 mt-2";
+
+        projects.forEach(function (project) {
+            const item = document.createElement("li");
+            item.className =
+                "d-flex justify-content-between align-items-center gap-3 py-1 border-top";
+
+            const name = document.createElement("span");
+            name.className = "text-truncate";
+            name.textContent = project.name || "Untitled project";
+            item.appendChild(name);
+
+            const link = document.createElement("a");
+            link.className = "fw-semibold text-decoration-underline flex-shrink-0";
+            link.href = project.url;
+            // A new tab: the account being edited is still open behind this,
+            // half-saved, and closing it to go and look would lose the edit.
+            link.target = "_blank";
+            link.rel = "noopener";
+            link.textContent = "View";
+            item.appendChild(link);
+
+            list.appendChild(item);
+        });
+
+        element.appendChild(list);
+    }
+
     function setBusy(button, spinner, busy) {
         if (button) {
             button.disabled = busy;
@@ -626,7 +689,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     if (!result.ok) {
                         setAlert(
                             archivedError,
-                            result.body.error || "That account could not be restored.",
+                            result.body.error || "Unable to restore account.",
                         );
 
                         return;
@@ -1151,10 +1214,14 @@ document.addEventListener("DOMContentLoaded", function () {
             setBusy(userSubmit, userSpinner, false);
 
             if (!result.ok) {
-                setAlert(
-                    userFormError,
-                    result.body.error || "The account could not be saved.",
-                );
+                if (result.body.role_change) {
+                    setRoleChangeAlert(userFormError, result.body.role_change);
+                } else {
+                    setAlert(
+                        userFormError,
+                        result.body.error || "Unable to save account.",
+                    );
+                }
 
                 return;
             }
@@ -1199,8 +1266,8 @@ document.addEventListener("DOMContentLoaded", function () {
         credentialsPassword.value = password;
 
         document.querySelector("[data-credentials-note]").textContent = emailed
-            ? "A copy has been emailed to the account. This password is shown only once - it cannot be read back later."
-            : "Email delivery is not configured, so hand this password over directly. It is shown only once and cannot be read back later.";
+            ? "Emailed to the account. Shown only once."
+            : "Email is not configured - hand this over directly. Shown only once.";
 
         bootstrapModal(credentialsModalEl)?.show();
     }
@@ -1249,7 +1316,7 @@ document.addEventListener("DOMContentLoaded", function () {
             if (!result.ok) {
                 setAlert(
                     confirmError,
-                    result.body.error || "That action could not be completed.",
+                    result.body.error || "Unable to complete that action.",
                 );
 
                 return;
@@ -1282,7 +1349,7 @@ document.addEventListener("DOMContentLoaded", function () {
     function fetchAccount(id) {
         return requestJson(routes.userBase + "/" + id).then(function (result) {
             if (!result.ok) {
-                setAlert(pageError, result.body.error || "Could not load that account.");
+                setAlert(pageError, result.body.error || "Unable to load account.");
 
                 return null;
             }
@@ -1342,8 +1409,9 @@ document.addEventListener("DOMContentLoaded", function () {
                     title: activating ? "Activate Account" : "Deactivate Account",
                     body: activating
                         ? "Allow " + account.full_name + " to sign in again?"
-                        : account.full_name +
-                          " will no longer be able to sign in. Their assignments, reports and historical records are all kept.",
+                        : "Deactivate " +
+                          account.full_name +
+                          "? They can no longer sign in. Nothing is deleted.",
                     label: activating ? "Activate" : "Deactivate",
                     variant: activating ? "btn-success" : "btn-warning",
                     onConfirm: function () {
@@ -1360,7 +1428,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     body:
                         "Archive " +
                         account.full_name +
-                        "? The account is removed from the active lists and can no longer sign in. Nothing is deleted - projects, reports, documents and audit history all stay exactly as they are.",
+                        "? They can no longer sign in. Nothing is deleted, and the account can be restored.",
                     label: "Archive",
                     variant: "btn-danger",
                     onConfirm: function () {

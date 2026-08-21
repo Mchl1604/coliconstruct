@@ -11,6 +11,7 @@ use App\Models\Schedule;
 use App\Models\Technician;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 /**
@@ -161,6 +162,72 @@ class PortalImprovementsTest extends TestCase
         // And the routes refuse them, not just the buttons.
         $this->actingAs($admin)->get(route('super-admin.projects.archived'))->assertRedirect();
         $this->actingAs($admin)->getJson(route('super-admin.configuration.users.archived'))->assertForbidden();
+    }
+
+    /**
+     * Completing a project stays with both administrative roles. What decides
+     * whether the button is drawn is the project's state, not who is looking:
+     * a Pending, Unscheduled or paused project has had nobody on site yet, so
+     * there is nothing to close out.
+     *
+     * Overdue keeps its button. Overdue is derived rather than stored - a late
+     * project is stored as Ongoing - and closing it off is exactly what the
+     * overdue banner asks for.
+     */
+    public function test_both_administrative_roles_may_complete_work_under_way(): void
+    {
+        $project = $this->project('c@example.test');
+
+        foreach (['admin' => 'a@example.test', 'super_admin' => 'o@example.test'] as $role => $email) {
+            $this->actingAs($this->account($role, $email))
+                ->get(route('super-admin.projects'))
+                ->assertOk()
+                ->assertSee('data-bs-target="#completeProjectModal'.$project->project_id.'"', escape: false);
+        }
+    }
+
+    /**
+     * @return array<string, array{0: string}>
+     */
+    public static function nonCompletableProjectStates(): array
+    {
+        return ['pending' => ['pending'], 'unscheduled' => ['unscheduled'], 'on hold' => ['on_hold']];
+    }
+
+    /**
+     * Each state is reached through its dates rather than by writing the
+     * status, because the projects listing re-derives it as it draws - see
+     * ProjectController::updateStatus(). A status set behind the calendar's
+     * back would simply be corrected before the page rendered, and the test
+     * would be asserting about a project in a state it was not in.
+     */
+    #[DataProvider('nonCompletableProjectStates')]
+    public function test_no_completion_button_is_offered_for_work_nobody_has_started(string $state): void
+    {
+        $project = $this->project('c@example.test');
+
+        match ($state) {
+            // Booked, not started: the first day has not arrived.
+            'pending' => $project->schedules()->update([
+                'start_datetime' => now()->addDays(3),
+                'end_datetime' => now()->addDays(5),
+            ]),
+            // No dates at all.
+            'unscheduled' => $project->schedules()->delete(),
+            // Paused. The calendar does not decide a held project's status, so
+            // this one keeps its dates and stays Ongoing underneath.
+            'on_hold' => $project->update(['on_hold' => true]),
+        };
+
+        foreach (['admin' => 'a@example.test', 'super_admin' => 'o@example.test'] as $role => $email) {
+            $this->actingAs($this->account($role, $email))
+                ->get(route('super-admin.projects'))
+                ->assertOk()
+                ->assertDontSee(
+                    'data-bs-target="#completeProjectModal'.$project->project_id.'"',
+                    escape: false
+                );
+        }
     }
 
     public function test_a_super_admin_keeps_the_archive(): void

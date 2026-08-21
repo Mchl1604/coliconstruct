@@ -34,16 +34,14 @@
                             </div>
 
                             <div class="flex-grow-1">
-                                <h2 class="h5 fw-bold mb-1">This project is ready for your confirmation</h2>
+                                <h2 class="h5 fw-bold mb-1">Ready for your confirmation</h2>
 
                                 <p class="mb-2 text-secondary">
-                                    Our team has finished the work
+                                    Work finished
                                     @if ($card['completed_on'])
-                                        on
                                         <strong>{{ \Carbon\CarbonImmutable::parse($card['completed_on'])->format('F j, Y') }}</strong>
                                     @endif
-                                    . Please review the completion report below, including the photographs, and
-                                    confirm that you are happy with it.
+                                    . Review the report below and confirm.
                                 </p>
 
                                 @if ($card['confirmation_deadline'])
@@ -51,9 +49,9 @@
                                         <span class="badge bg-warning text-dark me-2">
                                             {{ $card['confirmation_countdown'] }}
                                         </span>
-                                        If we do not hear from you by
+                                        Completes automatically on
                                         <strong>{{ $card['confirmation_deadline']->format('F j, Y') }}</strong>
-                                        this project will be marked complete automatically.
+                                        if we do not hear from you.
                                     </p>
                                 @endif
 
@@ -426,7 +424,7 @@
                         @empty
                             <div class="client-tracker-empty">
                                 <i class="bi bi-clipboard fs-3 d-block mb-2" aria-hidden="true"></i>
-                                No reports have been filed yet. Updates from the technicians will appear here as
+                                No reports yet. Updates appear here as
                                 work progresses.
                             </div>
                         @endforelse

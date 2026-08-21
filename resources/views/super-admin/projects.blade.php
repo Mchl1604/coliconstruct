@@ -45,7 +45,12 @@
                  A hold is a state the badge already prints, so the table has to
                  be able to list it. Held work files itself under Pending
                  otherwise - its stored status is Unscheduled - which is a tab it
-                 does not belong in and a count it quietly inflates. --}}
+                 does not belong in and a count it quietly inflates.
+
+                 The last few tabs are the attention ones, drawn only while they
+                 hold something: they answer what needs doing rather than what
+                 state work is in, and they are where the dashboard's Urgent
+                 Actions land. --}}
             <ul class="nav nav-tabs projects-status-tabs mb-3 px-1"
                 data-project-status-tabs="projectsTable">
                 @foreach ($statusTabs as $tab)
@@ -92,6 +97,10 @@
                                 data-status="{{ $project->status }}"
                                 data-overdue="{{ $project->isOverdue() ? '1' : '0' }}"
                                 data-on-hold="{{ $project->on_hold ? '1' : '0' }}"
+                                {{-- The attention tabs this row also answers -
+                                     overlapping, so a list rather than a second
+                                     status. See Project::attentionTabKeys(). --}}
+                                data-tab-extra="{{ implode(' ', $project->attentionTabKeys()) }}"
                                 class="{{ $needsRecrew ? 'project-row-needs-recrew' : '' }}">
                                 <td>
                                     {{ $project->displayCode() }}
@@ -151,7 +160,12 @@
                                                 </button>
                                             @endif
 
-                                            @if (in_array($project->status, ['pending', 'ongoing'], true))
+                                            {{-- Only work that is actually under way. A Pending,
+                                                 Unscheduled or paused project has had nobody on site
+                                                 yet, so there is nothing to close out - the same rule
+                                                 the technician portal draws the button by. See
+                                                 Project::isCompletable(). --}}
+                                            @if ($project->isCompletable())
                                                 <button class="btn btn-sm btn-success py-1 px-2" data-bs-toggle="modal"
                                                     data-bs-target="#completeProjectModal{{ $project->project_id }}"
                                                     title="Complete Project">
@@ -202,13 +216,8 @@
                                         </div>
 
                                         <div class="modal-body">
-                                            Put <strong>{{ $project->reference_no }}</strong> on hold? Dates from
-                                            tomorrow onwards will be released so the crew reads as free. Days
-                                            already worked - up to and including today - are kept on the project's
-                                            record. The assigned technicians stay on the project, ready for it to
-                                            be rescheduled. Its tasks keep their owners, and keep their dates
-                                            wherever those still fall on a day the project holds; a task dated on a
-                                            released day becomes Unassigned.
+                                            Put <strong>{{ $project->reference_no }}</strong> on hold?
+                                            Dates from tomorrow are released.
                                         </div>
 
                                         <div class="modal-footer">
@@ -248,8 +257,7 @@
                                         </div>
 
                                         <div class="modal-body">
-                                            Are you sure you want to resume
-                                            <strong>{{ $project->reference_no }}</strong>?
+                                            Resume <strong>{{ $project->reference_no }}</strong>?
                                         </div>
 
                                         <div class="modal-footer">
@@ -273,6 +281,7 @@
                             </div>
 
                             <!-- COMPLETE PROJECT MODAL -->
+                            @if ($project->isCompletable())
                             <div class="modal fade" id="completeProjectModal{{ $project->project_id }}" tabindex="-1"
                                 aria-labelledby="completeProjectModalLabel{{ $project->project_id }}" aria-hidden="true">
 
@@ -294,11 +303,7 @@
 
                                             <div class="modal-body">
                                                 <p class="mb-3">
-                                                    Are you sure you want to mark
-                                                    <strong>{{ $project->reference_no }}</strong>
-                                                    as completed? The project's schedule, technicians, and task
-                                                    history will remain on record, but the project will become
-                                                    view only.
+                                                    Mark <strong>{{ $project->reference_no }}</strong> as completed?
                                                 </p>
 
                                                 {{-- What the completion rules object to. A lead technician
@@ -328,8 +333,8 @@
                                                             maxlength="500" required
                                                             placeholder="Why is this being completed with the above outstanding?"></textarea>
                                                         <div class="form-text">
-                                                            Recorded against the project and in the activity log, and
-                                                            the other administrators are notified.
+                                                            Recorded in the activity log. Other administrators are
+                                                            notified.
                                                         </div>
                                                     </div>
                                                 @endif
@@ -375,6 +380,7 @@
                                     </div>
                                 </div>
                             </div>
+                            @endif
 
                             <!-- ARCHIVE PROJECT MODAL -->
                             @if ($canArchive)
@@ -393,8 +399,7 @@
 
                                         <div class="modal-body">
                                             Archive <strong>{{ $project->reference_no }}</strong>? Its schedule and
-                                            assigned technicians will be released, but all project information will
-                                            be preserved and can be restored later.
+                                            technicians are released. It can be restored later.
                                         </div>
 
                                         <div class="modal-footer">

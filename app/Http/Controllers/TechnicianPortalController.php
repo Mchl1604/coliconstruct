@@ -216,12 +216,16 @@ class TechnicianPortalController extends Controller
             'scheduleRanges' => collect($this->scheduleRules->ranges($project->project_id)),
             'canManageTasks' => $this->projectPolicy->manageTasks($user, $project),
             'canSubmitReport' => $this->projectPolicy->submitReport($user, $project),
-            'canCloseProjects' => $user->isLeadTechnician(),
+            // Whether this project is even in a state to be closed out. A
+            // Pending, Unscheduled or paused project is not, so the button is
+            // not drawn at all rather than opening a dialog that can only
+            // refuse - see ProjectPolicy::offersCompletion().
+            'canCloseProject' => $this->projectPolicy->offersCompletion($user, $project),
             // Same flag My Projects carries, for the same reason: the lead is
             // told their crew is short, and here they can see which of them it
             // is and move the work off them.
             'flagsInactiveCrew' => $user->isLeadTechnician(),
-            'completionBlockers' => $this->projectPolicy->blockersFor($project),
+            'completionBlockers' => $this->projectPolicy->blockerDetailsFor($project),
             'reportTypes' => TechnicianReport::TYPES,
         ]);
     }
@@ -397,7 +401,10 @@ class TechnicianPortalController extends Controller
                 'submit_report' => $this->projectPolicy->submitReport($user, $project),
                 'complete_project' => $this->projectPolicy->complete($user, $project),
             ],
-            'completion_blockers' => $this->projectPolicy->blockersFor($project),
+            // With the link to whatever fixes each one: the completion dialog
+            // on My Projects renders these, and a refusal a lead cannot act on
+            // is a dead end.
+            'completion_blockers' => $this->projectPolicy->blockerDetailsFor($project),
             'task_form' => $this->taskFormData_($project),
         ]);
     }
@@ -420,7 +427,7 @@ class TechnicianPortalController extends Controller
         $ranges = $this->scheduleRules->ranges($project->project_id);
 
         if ($ranges === []) {
-            return $this->failed($request, 'This project has no schedule yet, so a task has no dates to sit in.');
+            return $this->failed($request, 'This project has no schedule yet, so tasks cannot be dated.');
         }
 
         $validator = Validator::make($request->all(), [
@@ -581,7 +588,7 @@ class TechnicianPortalController extends Controller
                 }
             });
         } catch (Throwable $e) {
-            return $this->failed($request, $this->safeErrorMessage($e, 'That could not be saved. Nothing was changed.'));
+            return $this->failed($request, $this->safeErrorMessage($e, 'Unable to save. Nothing was changed.'));
         }
 
         $this->activityLogger->record(
@@ -593,7 +600,7 @@ class TechnicianPortalController extends Controller
 
         $this->notifications->taskCompleted($task, count($request->file('images') ?? []) > 0);
 
-        return $this->succeeded($request, 'Task marked as completed.', fn (): array => [
+        return $this->succeeded($request, 'Task completed.', fn (): array => [
             'task' => $this->taskPayload(
                 $task->fresh(['technician.account', 'images', 'completedBy']),
                 $this->technician($request)
@@ -622,7 +629,7 @@ class TechnicianPortalController extends Controller
                 $task->delete();
             });
         } catch (Throwable $e) {
-            return $this->failed($request, $this->safeErrorMessage($e, 'That could not be saved. Nothing was changed.'));
+            return $this->failed($request, $this->safeErrorMessage($e, 'Unable to save. Nothing was changed.'));
         }
 
         $this->activityLogger->record(
@@ -653,7 +660,7 @@ class TechnicianPortalController extends Controller
 
         if ($formData['ranges'] === []) {
             return response()->json([
-                'error' => 'This project has no schedule yet. A task has no dates to sit in.',
+                'error' => 'This project has no schedule yet, so tasks cannot be dated.',
             ], 422);
         }
 
@@ -708,7 +715,7 @@ class TechnicianPortalController extends Controller
                 }
             });
         } catch (Throwable $e) {
-            return $this->failed($request, $this->safeErrorMessage($e, 'That could not be saved. Nothing was changed.'));
+            return $this->failed($request, $this->safeErrorMessage($e, 'Unable to save. Nothing was changed.'));
         }
 
         $this->activityLogger->record(
@@ -740,7 +747,7 @@ class TechnicianPortalController extends Controller
     {
         $this->authorize('viewAssigned', $project);
 
-        $blockers = $this->projectPolicy->blockersFor($project);
+        $blockers = $this->projectPolicy->blockerDetailsFor($project);
 
         if ($blockers !== [] || ! $this->projectPolicy->complete($request->user(), $project)) {
             if ($request->expectsJson()) {
@@ -750,9 +757,13 @@ class TechnicianPortalController extends Controller
                 ], 422);
             }
 
+            // The full-page route back is the project's own page, which draws
+            // the same blockers with the same links, so the flash message only
+            // has to say what happened.
             return back()->with(
                 'error',
-                'This project cannot be completed yet. '.implode(' ', $blockers)
+                'This project cannot be completed yet. '
+                    .implode(' ', array_column($blockers, 'message'))
             );
         }
 
@@ -783,7 +794,7 @@ class TechnicianPortalController extends Controller
                 );
             });
         } catch (Throwable $e) {
-            return $this->failed($request, $this->safeErrorMessage($e, 'That could not be saved. Nothing was changed.'));
+            return $this->failed($request, $this->safeErrorMessage($e, 'Unable to save. Nothing was changed.'));
         }
 
         // Recorded from this portal exactly as it is from the other one. The
@@ -809,8 +820,7 @@ class TechnicianPortalController extends Controller
         app(ProjectEmails::class)->projectAwaitingConfirmation($project->refresh());
 
         $message = sprintf(
-            'Completion recorded. The client has been asked to confirm, and the project completes '
-                .'automatically in %d days if they do not reply.',
+            'Completion recorded. Completes automatically in %d days unless the client replies.',
             Project::COMPLETION_CONFIRMATION_DAYS
         );
 

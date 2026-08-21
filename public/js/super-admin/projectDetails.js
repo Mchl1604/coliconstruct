@@ -398,11 +398,9 @@ document.getElementById('taskStartDate').addEventListener('change', function () 
 
         return window.confirm(
             'Replace ' + (outgoing ? outgoing.name : 'the current lead technician') +
-            ' with ' + (incoming ? incoming.name : 'the selected technician') + ' as lead technician?' +
-            '\n\nA project can only have one lead. ' +
-            (outgoing ? outgoing.name : 'The current lead') +
-            ' will be taken off this project, and any unfinished task they were holding ' +
-            'will be left unassigned for somebody to pick up.'
+            ' with ' + (incoming ? incoming.name : 'the selected technician') + ' as lead?' +
+            '\n\n' + (outgoing ? outgoing.name : 'The current lead') +
+            ' comes off the project and their open tasks become Unassigned.'
         );
     }
 
@@ -606,7 +604,7 @@ document.getElementById('taskStartDate').addEventListener('change', function () 
                 .then(function (result) {
                     if (!result.ok) {
                         button.disabled = false;
-                        showError(result.body.error || 'Could not remove that file.');
+                        showError(result.body.error || 'Unable to remove that file.');
 
                         return;
                     }
@@ -641,7 +639,7 @@ document.getElementById('taskStartDate').addEventListener('change', function () 
                 })
                 .catch(function () {
                     button.disabled = false;
-                    showError('Could not remove that file.');
+                    showError('Unable to remove that file.');
                 });
         });
     })();

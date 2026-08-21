@@ -84,7 +84,11 @@ class ProjectController extends Controller
         // Every tab carries its count, in the pattern Overdue and On Hold
         // already used. Grouped by the same method each row is labelled with,
         // so a badge cannot promise more rows than its tab shows.
-        $statusTabs = Project::statusTabs($projects);
+        //
+        // With the attention tabs on the end - Unscheduled, No Technicians,
+        // Inactive Crew - which appear only while they hold something and are
+        // where the dashboard's Urgent Actions land.
+        $statusTabs = Project::statusTabs($projects, null, withAttention: true);
 
         $policy = app(ProjectPolicy::class);
 
@@ -462,7 +466,7 @@ class ProjectController extends Controller
             return $exception->getMessage();
         }
 
-        $message = 'The project could not be created. Nothing was saved, so you can correct the details and try again.';
+        $message = 'Unable to create project. Nothing was saved.';
 
         return config('app.debug')
             ? $message.' ('.$exception->getMessage().')'
@@ -932,7 +936,7 @@ class ProjectController extends Controller
 
             return redirect()
                 ->route('super-admin.projects.show', $id)
-                ->with('error', $this->safeErrorMessage($e, 'The project could not be updated. Nothing was saved, so you can correct the details and try again.'));
+                ->with('error', $this->safeErrorMessage($e, 'Unable to update project. Nothing was saved.'));
         }
     }
 
@@ -984,7 +988,7 @@ class ProjectController extends Controller
         );
 
         return response()->json([
-            'message' => sprintf('%s was removed.', $name),
+            'message' => sprintf('%s removed.', $name),
             'remaining' => $project->documents()->where('document_type', $type)->count(),
         ]);
     }
@@ -1039,12 +1043,11 @@ class ProjectController extends Controller
 
             return redirect()
                 ->route('super-admin.projects', $id)
-                ->with('success', 'Project has been put on hold. '.$this->describeHoldCutoff($summary)
-                    .' Its assigned technicians were kept.');
+                ->with('success', 'Project put on hold.');
         } catch (Throwable $e) {
             return redirect()
                 ->route('super-admin.projects', $id)
-                ->with('error', $this->safeErrorMessage($e, 'The project could not be put on hold. Nothing was changed.'));
+                ->with('error', $this->safeErrorMessage($e, 'Unable to put project on hold. Nothing was changed.'));
         }
     }
 
@@ -1063,7 +1066,7 @@ class ProjectController extends Controller
         if (! $project->on_hold) {
             return redirect()
                 ->route('super-admin.projects', $id)
-                ->with('error', 'This project is not on hold, so there is nothing to resume.');
+                ->with('error', 'This project is not on hold.');
         }
 
         // A hold hands the crew's remaining days back to everybody else, so
@@ -1102,9 +1105,9 @@ class ProjectController extends Controller
         return redirect()
             ->route('super-admin.projects', $id)
             ->with('success', sprintf(
-                'Project has been resumed. It is %s.%s',
+                'Project resumed - %s.%s',
                 $project->statusLabel(),
-                $project->status === 'unscheduled' ? ' It must be scheduled again.' : ''
+                $project->status === 'unscheduled' ? ' Schedule it again.' : ''
             ));
     }
 
@@ -1150,8 +1153,7 @@ class ProjectController extends Controller
                 ->route('super-admin.projects.show', $id)
                 ->withInput()
                 ->with('error', sprintf(
-                    'This project is not ready to be completed. %s To complete it anyway, give a reason '
-                        .'for overriding - it is recorded against the project and in the activity log.',
+                    'This project is not ready to be completed. %s Give a reason to complete it anyway.',
                     implode(' ', $blockers)
                 ));
         }
@@ -1172,15 +1174,14 @@ class ProjectController extends Controller
             return redirect()
                 ->route('super-admin.projects')
                 ->with('success', sprintf(
-                    'Completion recorded. %s is now awaiting the client\'s confirmation, and completes '
-                        .'automatically in %d days if they do not reply.',
+                    'Completion recorded. %s completes automatically in %d days unless the client replies.',
                     $project->reference_no ?? $project->name,
                     Project::COMPLETION_CONFIRMATION_DAYS
                 ));
         } catch (Throwable $e) {
             return redirect()
                 ->route('super-admin.projects')
-                ->with('error', $this->safeErrorMessage($e, 'The completion could not be recorded. Nothing was saved.'));
+                ->with('error', $this->safeErrorMessage($e, 'Unable to record completion. Nothing was saved.'));
         }
     }
 
@@ -1202,7 +1203,7 @@ class ProjectController extends Controller
 
         if (! $project->canBeReopened()) {
             return $back->with('error', $project->isCompleted()
-                ? 'This project is completed and cannot be reopened.'
+                ? 'Completed projects cannot be reopened - create a new project instead.'
                 : sprintf('Only a project awaiting client confirmation can be reopened. This one is %s.', $project->statusLabel()));
         }
 
@@ -1212,8 +1213,8 @@ class ProjectController extends Controller
             'reopen_reason' => ['required', 'string', 'min:10', 'max:500'],
             ...$scheduleRules->rules(),
         ], [
-            'reopen_reason.required' => 'A reason for reopening this project is required.',
-            'reopen_reason.min' => 'Please describe why the project is being reopened, in at least 10 characters.',
+            'reopen_reason.required' => 'Enter a reason for reopening.',
+            'reopen_reason.min' => 'Describe the reason in at least 10 characters.',
             ...$scheduleRules->messages(),
         ]);
 
@@ -1230,7 +1231,7 @@ class ProjectController extends Controller
 
         if (! $entry) {
             return $back->withInput()->with('error', $validator->errors()->first()
-                ?: 'That schedule could not be read, so the project was not reopened.');
+                ?: 'Unable to read that schedule. The project was not reopened.');
         }
 
         $reopen = app(ProjectReopen::class);
@@ -1245,7 +1246,7 @@ class ProjectController extends Controller
         } catch (Throwable $e) {
             // Nothing was written: the schedule and the status change share one
             // transaction, so the project cannot be left Ongoing without dates.
-            return $back->withInput()->with('error', $this->safeErrorMessage($e, 'The project could not be reopened. Nothing was saved.'));
+            return $back->withInput()->with('error', $this->safeErrorMessage($e, 'Unable to reopen project. Nothing was saved.'));
         }
 
         $ranges = $schedule->describe();
@@ -1268,7 +1269,7 @@ class ProjectController extends Controller
         $this->clientEmails->projectReopened($project->refresh());
 
         return $back->with('success', sprintf(
-            'Project reopened and scheduled for %s. It is Ongoing and editable again.',
+            'Project reopened and scheduled for %s.',
             $ranges
         ));
     }
@@ -1396,11 +1397,11 @@ class ProjectController extends Controller
 
             return redirect()
                 ->route('super-admin.projects.show', $id)
-                ->with('success', 'Project has been cancelled.');
+                ->with('success', 'Project cancelled.');
         } catch (Throwable $e) {
             return redirect()
                 ->route('super-admin.projects.show', $id)
-                ->with('error', $this->safeErrorMessage($e, 'The project could not be cancelled. Nothing was changed.'));
+                ->with('error', $this->safeErrorMessage($e, 'Unable to cancel project. Nothing was changed.'));
         }
     }
 
@@ -1442,11 +1443,11 @@ class ProjectController extends Controller
 
             return redirect()
                 ->route('super-admin.projects')
-                ->with('success', 'Project has been archived.');
+                ->with('success', 'Project archived.');
         } catch (Throwable $e) {
             return redirect()
                 ->route('super-admin.projects')
-                ->with('error', $this->safeErrorMessage($e, 'The project could not be archived. Nothing was changed.'));
+                ->with('error', $this->safeErrorMessage($e, 'Unable to archive project. Nothing was changed.'));
         }
     }
 
@@ -1493,7 +1494,7 @@ class ProjectController extends Controller
         } catch (Throwable $e) {
             return redirect()
                 ->route('super-admin.projects.archived')
-                ->with('error', $this->safeErrorMessage($e, 'The project could not be restored. Nothing was changed.'));
+                ->with('error', $this->safeErrorMessage($e, 'Unable to restore project. Nothing was changed.'));
         }
     }
 
@@ -1555,10 +1556,10 @@ class ProjectController extends Controller
             return null;
         }
 
-        return 'This project cannot be resumed yet, because the days it still holds are now booked elsewhere. '
+        return 'Unable to resume - the days this project still holds are now booked elsewhere. '
             .$availability->conflictMessage(
                 $conflicts,
-                ' Reschedule the other work, or take them off the team on this project, then resume it.'
+                ' Reschedule that work or remove them from this team.'
             );
     }
 
@@ -1605,7 +1606,7 @@ class ProjectController extends Controller
     }
 
     /**
-     * What the cutoff did, as a sentence for the toast and the audit trail.
+     * What the cutoff did, as a sentence for the audit trail.
      *
      * @param  array{kept: int, shortened: int, released: int, tasks_unassigned?: int}  $summary
      */

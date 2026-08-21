@@ -532,7 +532,7 @@ class TechnicianManagementTest extends TestCase
         ]));
 
         $response->assertStatus(422);
-        $this->assertStringContainsString('Choose a replacement lead', $response->json('error'));
+        $this->assertStringContainsString('Choose a replacement first', $response->json('error'));
         $this->assertDatabaseHas('tbl_project_technicians', [
             'project_id' => $project->project_id,
             'technician_id' => $lead->technician_id,
@@ -774,7 +774,7 @@ class TechnicianManagementTest extends TestCase
         $this->assertTrue(
             $blocked->contains(fn (array $row): bool => $row['name'] === 'Already Led'
                 && str_contains((string) $row['reason'], 'Jose Garcia')
-                && str_contains((string) $row['reason'], 'only have one lead'))
+                && str_contains((string) $row['reason'], 'Already led by'))
         );
     }
 
@@ -814,7 +814,7 @@ class TechnicianManagementTest extends TestCase
         );
 
         $response->assertStatus(422);
-        $this->assertStringContainsString('only have one lead', $response->json('error'));
+        $this->assertStringContainsString('is already led by', $response->json('error'));
         $this->assertDatabaseMissing('tbl_project_technicians', [
             'project_id' => $ledAlready->project_id,
             'technician_id' => $incoming->technician_id,
@@ -1156,7 +1156,7 @@ class TechnicianManagementTest extends TestCase
             ->assertStatus(422)
             ->assertJsonPath(
                 'error',
-                "Long Gone's account has been archived, so they cannot be assigned to a project."
+                "Long Gone's account has been archived, so they cannot be assigned."
             );
     }
 

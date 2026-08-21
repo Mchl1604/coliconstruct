@@ -326,14 +326,17 @@ class TechnicianAvailabilityService
      *
      * @param  Collection<int, array{technician_id: int, technician_name: string, dates: array<int, string>, busy?: array<string, array<int, string>>, partial?: bool, projects?: array<int, string>}>  $conflicts
      * @param  string|null  $closing  What to ask the reader to do about it.
-     *                                Defaults to the wording for somebody
-     *                                picking dates, which is what almost every
-     *                                caller is doing. A caller who is not -
-     *                                resuming a held project, say, where the
-     *                                dates are already fixed and it is the
-     *                                other work that has to move - passes its
-     *                                own rather than telling somebody to
-     *                                choose a range they were never offered.
+     *                                Defaults to nothing: somebody looking at
+     *                                a date picker can see they have to pick
+     *                                different dates, and being told so in a
+     *                                second sentence only buried the names and
+     *                                dates that are the actual content. A
+     *                                caller whose reader CANNOT act on it that
+     *                                way - resuming a held project, say, where
+     *                                the dates are fixed and it is the other
+     *                                work that has to move - still passes its
+     *                                own, because there the instruction is the
+     *                                only place that is said.
      */
     public function conflictMessage(Collection $conflicts, ?string $closing = null): string
     {
@@ -349,7 +352,7 @@ class TechnicianAvailabilityService
 
             if ($isTimed($conflict)) {
                 return sprintf(
-                    'Technician %s is already booked %s%s.',
+                    '%s is already booked %s%s.',
                     $conflict['technician_name'],
                     $this->describeBusy($conflict['busy']),
                     $on
@@ -357,23 +360,19 @@ class TechnicianAvailabilityService
             }
 
             return sprintf(
-                'Technician %s is unavailable on %s%s.',
+                '%s is unavailable on %s%s.',
                 $conflict['technician_name'],
                 $this->formatDateList($conflict['dates']),
                 $on
             );
         })->all();
 
-        $closing ??= $conflicts->every($isTimed)
-            ? ' Please choose a time when every selected technician is free.'
-            : ' Please select a continuous date range where all selected technicians are available.';
-
-        return implode(' ', $parts).$closing;
+        return implode(' ', $parts).($closing ?? '');
     }
 
     /**
-     * "August 1 and August 2" - the same phrasing the conflict message uses,
-     * for callers that want the dates without the surrounding sentence.
+     * "Aug 1 and Aug 2" - the same phrasing the conflict message uses, for
+     * callers that want the dates without the surrounding sentence.
      *
      * @param  array<int, string>  $dates
      */
@@ -793,7 +792,12 @@ class TechnicianAvailabilityService
     }
 
     /**
-     * "August 1", "August 1 and August 2", "August 1, August 2, and August 3".
+     * "Aug 1", "Aug 1 and Aug 2", "Aug 1, Aug 2, and Aug 3".
+     *
+     * Abbreviated on purpose: a technician blocked on six dates produced a
+     * sentence nobody read to the end, and the month is the part that repeats.
+     * This is the same shape the date pickers show ("Aug 25, 2026"), so a date
+     * quoted in a refusal reads as the date on the field it came from.
      *
      * @param  array<int, string>  $dates
      */
@@ -807,7 +811,7 @@ class TechnicianAvailabilityService
         $allCurrentYear = collect($dates)->every(
             fn (string $date): bool => CarbonImmutable::parse($date)->year === $currentYear
         );
-        $format = $allCurrentYear ? 'F j' : 'F j, Y';
+        $format = $allCurrentYear ? 'M j' : 'M j, Y';
 
         $shown = array_slice($dates, 0, 8);
         $remaining = count($dates) - count($shown);

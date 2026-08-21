@@ -272,7 +272,7 @@ class ActivityLog extends Model
      * Inquiries tab. The trail records the arrival; tbl_inquiries records the
      * message.
      */
-    public const CONTACT_INQUIRY_SENT = 'Website Enquiry Sent';
+    public const CONTACT_INQUIRY_SENT = 'Website Inquiry Sent';
 
     /**
      * Handling an enquiry once it has arrived. All four sit beside the entry

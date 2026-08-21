@@ -2,10 +2,10 @@
 
 namespace App\Services;
 
+use App\Exceptions\RoleChangeBlocked;
 use App\Models\Project;
 use App\Models\User;
 use Illuminate\Support\Collection;
-use RuntimeException;
 
 /**
  * What a change of job title is allowed to do to work already booked.
@@ -51,9 +51,10 @@ class TechnicianRoleChangeRules
     /**
      * Refuse a role change that would decide who leads a live project.
      *
-     * Throws RuntimeException, which ConfigurationController::failure() turns
-     * into a 422 carrying the message - and which the Configuration page
-     * already prints, so this needs nothing of the browser.
+     * Throws RoleChangeBlocked, which ConfigurationController::failure() turns
+     * into a 422 carrying two short sentences and the projects in the way -
+     * which the Configuration page prints as a list of links, so the person
+     * refused can open each project and settle its team.
      */
     public function guard(User $user, string $newRole): void
     {
@@ -136,21 +137,25 @@ class TechnicianRoleChangeRules
             return;
         }
 
-        throw new RuntimeException(sprintf(
-            '%s is the lead technician on %s (%s). '
-                .'Hand the lead over on %s before changing their role - open the project and '
-                .'choose a new lead in Assigned Team, or replace them from the Technicians page. '
-                .'A paused project can be handed over from the Technicians page without resuming it.',
-            $user->fullName(),
-            $this->countLabel($projects),
-            $this->referenceList($projects),
-            $projects->count() === 1 ? 'it' : 'each of them'
-        ));
+        throw new RoleChangeBlocked(
+            sprintf(
+                'Role change affects %d project%s.',
+                $projects->count(),
+                $projects->count() === 1 ? '' : 's'
+            ),
+            'Assign a new Lead Technician before continuing.',
+            $projects
+        );
     }
 
     /**
      * A promotion may not hand somebody a project, and may not put a second
      * lead on one either.
+     *
+     * Both faults need the same thing done - open the project and settle its
+     * team - so both list every live project the account is on. Only the
+     * second sentence differs, because an administrator wants to know which
+     * of the two they are looking at.
      */
     private function guardPromotion(User $user): void
     {
@@ -160,59 +165,14 @@ class TechnicianRoleChangeRules
             return;
         }
 
-        // Named apart because they are two different problems with the same
-        // fix, and an administrator reading this wants to know which they are
-        // looking at.
-        $wouldLead = $projects->reject(fn (Project $project): bool => $project->hasLead());
-        $wouldDouble = $projects->filter(fn (Project $project): bool => $project->hasLead());
+        $wouldDouble = $projects->contains(fn (Project $project): bool => $project->hasLead());
 
-        $reasons = [];
-
-        if ($wouldLead->isNotEmpty()) {
-            $reasons[] = sprintf(
-                'they would silently become the lead of %s, which %s no lead yet',
-                $this->referenceList($wouldLead),
-                $wouldLead->count() === 1 ? 'has' : 'have'
-            );
-        }
-
-        if ($wouldDouble->isNotEmpty()) {
-            $reasons[] = sprintf(
-                '%s would end up with two leads, and a project can only have one',
-                $this->referenceList($wouldDouble)
-            );
-        }
-
-        throw new RuntimeException(sprintf(
-            '%s is assigned to %s. Promoting them to Lead Technician cannot go ahead because %s. '
-                .'Take them off those projects first, or make them the lead of one from Assigned Team, '
-                .'which replaces the lead already there.',
-            $user->fullName(),
-            $this->countLabel($projects),
-            implode(', and ', $reasons)
-        ));
-    }
-
-    /**
-     * "1 live project" / "3 live projects".
-     *
-     * @param  Collection<int, Project>  $projects
-     */
-    private function countLabel(Collection $projects): string
-    {
-        return $projects->count().' live project'.($projects->count() === 1 ? '' : 's');
-    }
-
-    /**
-     * "PRJ-0001, PRJ-0002 and PRJ-0003" - what the administrator will go and
-     * look for, so the reference rather than the name.
-     *
-     * @param  Collection<int, Project>  $projects
-     */
-    private function referenceList(Collection $projects): string
-    {
-        return $projects
-            ->map(fn (Project $project): string => (string) ($project->reference_no ?: $project->name))
-            ->join(', ', ' and ');
+        throw new RoleChangeBlocked(
+            'Cannot update role.',
+            $wouldDouble
+                ? 'This change would create multiple Lead Technicians.'
+                : 'This change would make them Lead Technician on assigned projects.',
+            $projects
+        );
     }
 }
