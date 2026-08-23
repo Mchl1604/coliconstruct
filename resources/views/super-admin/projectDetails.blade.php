@@ -109,7 +109,7 @@
                             $requestedBy = $project->completionRequestedByUser?->fullName();
                             $sentence = $project->completion_requested_at
                                 ? 'Sent '
-                                    . $project->completion_requested_at->format('F j, Y')
+                                    . \App\Support\BusinessTime::format($project->completion_requested_at, 'F j, Y')
                                     . ($requestedBy ? ' by ' . $requestedBy : '') . '.'
                                 : '';
                         @endphp
@@ -330,7 +330,7 @@
                 <i class="bi bi-check2-circle me-2 text-success" aria-hidden="true"></i>
                 <strong>{{ $project->completionMethodLabel() }}</strong>
                 @if ($project->client_confirmed_at)
-                    on {{ $project->client_confirmed_at->format('F j, Y') }}
+                    on {{ \App\Support\BusinessTime::format($project->client_confirmed_at, 'F j, Y') }}
                 @endif
                 . A completed project is a historical record and cannot be reopened.
             </div>
@@ -430,8 +430,8 @@
                                 <div class="mb-3">
                                     <label class="form-label fw-semibold">Completion Date</label>
                                     <input type="date" class="form-control" name="completion_date"
-                                        value="{{ now()->format('Y-m-d') }}"
-                                        max="{{ now()->format('Y-m-d') }}" required>
+                                        value="{{ \App\Support\BusinessTime::today()->format('Y-m-d') }}"
+                                        max="{{ \App\Support\BusinessTime::today()->format('Y-m-d') }}" required>
                                 </div>
 
                                 <div class="mb-3">
@@ -570,7 +570,7 @@
 
                         <div class="mb-2">
                             <span class="fw-semibold me-2">Completion Date:</span>
-                            <span>{{ $project->completed_at ? \Carbon\Carbon::parse($project->completed_at)->format('M d, Y') : 'N/A' }}</span>
+                            <span>{{ \App\Support\BusinessTime::format($project->completed_at, 'M d, Y', 'N/A') }}</span>
                         </div>
 
                         <div class="mb-2">
@@ -638,7 +638,7 @@
 
                         <div class="mb-2">
                             <span class="fw-semibold me-2">Cancellation Date:</span>
-                            <span>{{ $project->cancelled_at ? \Carbon\Carbon::parse($project->cancelled_at)->format('M d, Y') : 'N/A' }}</span>
+                            <span>{{ \App\Support\BusinessTime::format($project->cancelled_at, 'M d, Y', 'N/A') }}</span>
                         </div>
 
                         <div class="mb-2">
@@ -1254,7 +1254,7 @@
                             <div class="mb-3">
                                 <label class="form-label fw-semibold">Cancellation Date</label>
                                 <input type="date" class="form-control" name="cancellation_date"
-                                    value="{{ now()->format('Y-m-d') }}" required>
+                                    value="{{ \App\Support\BusinessTime::today()->format('Y-m-d') }}" required>
                             </div>
 
                             <div class="mb-3">

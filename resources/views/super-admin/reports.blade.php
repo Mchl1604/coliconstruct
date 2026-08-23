@@ -620,7 +620,7 @@
                             <select id="exportMonth" class="form-select" data-export-month>
                                 @foreach (range(1, 12) as $month)
                                     <option value="{{ $month }}"
-                                        @selected($month === (int) now()->format('n'))>
+                                        @selected($month === (int) \App\Support\BusinessTime::today()->format('n'))>
                                         {{ \Carbon\CarbonImmutable::create(2000, $month, 1)->format('F') }}
                                     </option>
                                 @endforeach
@@ -631,7 +631,7 @@
                             <label class="form-label fw-semibold" for="exportYear">Year</label>
                             <select id="exportYear" class="form-select" data-export-year>
                                 @foreach ($exportYears as $year)
-                                    <option value="{{ $year }}" @selected($year === (int) now()->format('Y'))>
+                                    <option value="{{ $year }}" @selected($year === (int) \App\Support\BusinessTime::today()->format('Y'))>
                                         {{ $year }}
                                     </option>
                                 @endforeach

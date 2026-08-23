@@ -39,7 +39,7 @@
                                 <p class="mb-2 text-secondary">
                                     Work finished
                                     @if ($card['completed_on'])
-                                        <strong>{{ \Carbon\CarbonImmutable::parse($card['completed_on'])->format('F j, Y') }}</strong>
+                                        <strong>{{ \App\Support\BusinessTime::format($card['completed_on'], 'F j, Y') }}</strong>
                                     @endif
                                     . Review the report below and confirm.
                                 </p>
@@ -50,7 +50,7 @@
                                             {{ $card['confirmation_countdown'] }}
                                         </span>
                                         Completes automatically on
-                                        <strong>{{ $card['confirmation_deadline']->format('F j, Y') }}</strong>
+                                        <strong>{{ \App\Support\BusinessTime::format($card['confirmation_deadline'], 'F j, Y') }}</strong>
                                         if we do not hear from you.
                                     </p>
                                 @endif
@@ -177,7 +177,7 @@
                             @if ($project->completed_at)
                                 <p class="text-secondary small mb-1">
                                     Work completed
-                                    {{ \Carbon\CarbonImmutable::parse($project->completed_at)->format('M d, Y') }}
+                                    {{ \App\Support\BusinessTime::format($project->completed_at, 'M d, Y') }}
                                 </p>
                             @endif
 
@@ -185,7 +185,7 @@
                                 <p class="text-secondary small mb-1">
                                     {{ $card['completion_method_label'] }}@if ($project->client_confirmed_at)
                                         on
-                                        {{ $project->client_confirmed_at->format('M d, Y') }}
+                                        {{ \App\Support\BusinessTime::format($project->client_confirmed_at, 'M d, Y') }}
                                     @endif
                                 </p>
                             @endif

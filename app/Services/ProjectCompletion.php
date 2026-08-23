@@ -6,6 +6,7 @@ use App\Models\Project;
 use App\Models\ProjectCompletionPhoto;
 use App\Models\Schedule;
 use App\Models\User;
+use App\Support\BusinessTime;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Http\UploadedFile;
@@ -59,7 +60,12 @@ class ProjectCompletion
             // silently defeat releaseFutureSchedules() - every booked date
             // would fall before the cutoff and nothing would be released -
             // and a project cannot have been finished before it was created.
-            'completion_date' => ['required', 'date', 'before_or_equal:today'],
+            //
+            // Bounded at the office's today, not the server's. `today` here
+            // would resolve on UTC, and from 4 PM in Manila that is still
+            // yesterday: a lead closing out at the end of the working day
+            // would be told the date they are standing in is in the future.
+            'completion_date' => ['required', 'date', 'before_or_equal:'.BusinessTime::today()->toDateString()],
             'completion_summary' => ['required', 'string'],
             'completion_remarks' => ['nullable', 'string'],
             'completion_photos' => $photosRequired

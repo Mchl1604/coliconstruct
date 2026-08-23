@@ -108,7 +108,7 @@
                             </div>
                             <div>
                                 <dt>Member Since</dt>
-                                <dd>{{ $account->created_at?->format('M j, Y') ?? '—' }}</dd>
+                                <dd>{{ \App\Support\BusinessTime::format($account->created_at) }}</dd>
                             </div>
                         </dl>
 

@@ -1,5 +1,7 @@
 <?php
 
+use App\Models\Schedule;
+
 return [
 
     /*
@@ -66,6 +68,24 @@ return [
     */
 
     'timezone' => 'UTC',
+
+    /*
+    |--------------------------------------------------------------------------
+    | Scheduler Timezone
+    |--------------------------------------------------------------------------
+    |
+    | The clock the scheduler reads its times off. Storage stays UTC above -
+    | that is deliberate, see the note on Schedule::BUSINESS_TIMEZONE - but a
+    | job written as 8 AM means 8 AM at the office.
+    |
+    | Without this the daily reminders and the completion sweep run at 08:00
+    | UTC, which is 4 PM in Manila: the reminder about tomorrow's work would
+    | arrive as people are leaving, and a client's seven days would lapse in
+    | the middle of an afternoon rather than overnight.
+    |
+    */
+
+    'schedule_timezone' => Schedule::BUSINESS_TIMEZONE,
 
     /*
     |--------------------------------------------------------------------------

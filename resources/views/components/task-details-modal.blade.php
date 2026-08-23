@@ -204,7 +204,7 @@
                             <span class="task-completion-label">Completed On</span>
                             @if ($task->completed_at)
                                 <p class="mb-0">
-                                    {{ $task->completed_at->format('M j, Y') }}
+                                    {{ \App\Support\BusinessTime::format($task->completed_at) }}
                                     @if ($closer && ! $closedOnBehalf)
                                         <span class="text-muted">&middot; by {{ $closer->fullName() }}</span>
                                     @endif

@@ -342,8 +342,8 @@
                                                 <div class="mb-3">
                                                     <label class="form-label fw-semibold">Completion Date</label>
                                                     <input type="date" class="form-control" name="completion_date"
-                                                        value="{{ now()->format('Y-m-d') }}"
-                                                        max="{{ now()->format('Y-m-d') }}" required>
+                                                        value="{{ \App\Support\BusinessTime::today()->format('Y-m-d') }}"
+                                                        max="{{ \App\Support\BusinessTime::today()->format('Y-m-d') }}" required>
                                                 </div>
 
                                                 <div class="mb-3">

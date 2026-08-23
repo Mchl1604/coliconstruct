@@ -9,7 +9,7 @@
 <div class="mb-3">
     <label class="form-label fw-semibold" for="completionDate{{ $suffix }}">Completion Date</label>
     <input type="date" class="form-control" id="completionDate{{ $suffix }}" name="completion_date"
-        value="{{ now()->format('Y-m-d') }}" max="{{ now()->format('Y-m-d') }}" required>
+        value="{{ \App\Support\BusinessTime::today()->format('Y-m-d') }}" max="{{ \App\Support\BusinessTime::today()->format('Y-m-d') }}" required>
 </div>
 
 <div class="mb-3">

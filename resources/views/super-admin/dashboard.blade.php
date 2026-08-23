@@ -22,9 +22,9 @@
                 <p class="dash-subtitle">
                     {{ $viewer->roleLabel() }}
                     <span aria-hidden="true">&middot;</span>
-                    {{ now()->format('l, F j, Y') }}
+                    {{ \App\Support\BusinessTime::now()->format('l, F j, Y') }}
                     <span aria-hidden="true">&middot;</span>
-                    <span data-dashboard-clock>{{ now()->format('g:i A') }}</span>
+                    <span data-dashboard-clock>{{ \App\Support\BusinessTime::now()->format('g:i A') }}</span>
                 </p>
             </div>
 

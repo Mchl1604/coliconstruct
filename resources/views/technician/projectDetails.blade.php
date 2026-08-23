@@ -171,7 +171,7 @@
 
                         <div class="mb-2">
                             <span class="fw-semibold me-2">Completion Date:</span>
-                            <span>{{ $project->completed_at?->format('M d, Y') ?? 'N/A' }}</span>
+                            <span>{{ \App\Support\BusinessTime::format($project->completed_at, 'M d, Y', 'N/A') }}</span>
                         </div>
 
                         <div class="mb-2">
