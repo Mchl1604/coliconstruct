@@ -16,6 +16,12 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Railway terminates TLS at its edge and forwards plain HTTP with the
+        // original scheme in X-Forwarded-Proto. Without trusting that proxy the
+        // URL generator writes http:// form actions onto an https:// page, which
+        // the browser refuses to submit.
+        $middleware->trustProxies(at: '*');
+
         // A deactivated or archived account is turned away on every route it
         // could still be holding a session on, not only on the ones that ask
         // about a role. Appended to the whole web group because the routes
