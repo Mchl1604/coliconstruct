@@ -238,7 +238,7 @@ class AuthenticationTest extends TestCase
         $this->assertNotSame('my-own-password', $pending->password);
         $this->assertTrue(Hash::check('my-own-password', $pending->password));
 
-        Mail::assertQueued(OtpCodeMail::class, fn (OtpCodeMail $mail): bool => $mail->hasTo('jose@example.test')
+        Mail::assertSent(OtpCodeMail::class, fn (OtpCodeMail $mail): bool => $mail->hasTo('jose@example.test')
             && $mail->purpose === OtpVerification::PURPOSE_REGISTRATION);
 
         $this->assertDatabaseHas('tbl_otp_verifications', [
@@ -446,7 +446,7 @@ class AuthenticationTest extends TestCase
 
         $this->assertGuest();
 
-        Mail::assertQueued(OtpCodeMail::class);
+        Mail::assertSent(OtpCodeMail::class);
     }
 
     /**
@@ -491,7 +491,7 @@ class AuthenticationTest extends TestCase
     {
         $code = null;
 
-        Mail::assertQueued(OtpCodeMail::class, function (OtpCodeMail $mail) use (&$code): bool {
+        Mail::assertSent(OtpCodeMail::class, function (OtpCodeMail $mail) use (&$code): bool {
             $code = $mail->code;
 
             return true;

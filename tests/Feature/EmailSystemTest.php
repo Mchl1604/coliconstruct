@@ -55,6 +55,94 @@ class EmailSystemTest extends TestCase
         return app(OtpService::class);
     }
 
+    // ------------------------------------------------------------------
+    // Saying so only when it happened
+    // ------------------------------------------------------------------
+
+    /**
+     * A code the mailer would not take is not announced as sent.
+     *
+     * The provider that prompted this accepted one recipient and rejected
+     * every other with a 403. Queued, that rejection surfaced in a worker's
+     * log an hour later while the page had already said "code sent" - so the
+     * person waited on an email that was never coming. Sent inline, the
+     * refusal is the answer to the request that caused it.
+     */
+    public function test_a_code_the_mailer_refuses_is_reported_rather_than_announced(): void
+    {
+        $this->mock(EmailService::class, function ($mock): void {
+            $mock->shouldReceive('sendNow')->once()->andReturn(false);
+        });
+
+        $thrown = null;
+
+        try {
+            $this->otp()->issue('rejected@example.test', OtpVerification::PURPOSE_REGISTRATION);
+        } catch (RuntimeException $exception) {
+            $thrown = $exception;
+        }
+
+        $this->assertNotNull($thrown, 'A refused code was reported as sent.');
+        $this->assertStringContainsString('could not send', $thrown->getMessage());
+
+        // And no code is left behind pretending to be live: it would hold the
+        // resend cooldown and show a countdown for a message nobody has.
+        $this->assertSame(0, OtpVerification::where('email', 'rejected@example.test')->count());
+    }
+
+    /**
+     * The same failure, seen from the page a person is actually on.
+     */
+    public function test_registration_says_the_code_could_not_be_sent(): void
+    {
+        $this->mock(EmailService::class, function ($mock): void {
+            $mock->shouldReceive('sendNow')->andReturn(false);
+        });
+
+        $this->post(route('auth.register.store'), [
+            'full_name' => 'Jose Garcia',
+            'email' => 'rejected@example.test',
+            'contact_number' => '09175551234',
+            'birthdate' => '1990-05-04',
+            'password' => 'my-own-password',
+            'password_confirmation' => 'my-own-password',
+            'terms' => '1',
+        ])->assertSessionHas('error');
+
+        $this->assertSame(0, OtpVerification::count());
+    }
+
+    /**
+     * sendNow answers for the transport rather than for the queue, and a
+     * refusal is a false rather than an exception - the caller decides what a
+     * failure means, and for none of them is it a 500.
+     */
+    public function test_send_now_reports_what_the_transport_did(): void
+    {
+        Mail::fake();
+
+        $this->assertTrue(
+            app(EmailService::class)->sendNow('someone@example.test', new OtpCodeMail(
+                '123456',
+                OtpVerification::PURPOSE_REGISTRATION,
+                10,
+                'Someone'
+            ))
+        );
+
+        Mail::assertSent(OtpCodeMail::class);
+
+        // An address no mail server would take never reaches the transport.
+        $this->assertFalse(
+            app(EmailService::class)->sendNow('not-an-address', new OtpCodeMail(
+                '123456',
+                OtpVerification::PURPOSE_REGISTRATION,
+                10,
+                'Someone'
+            ))
+        );
+    }
+
     private function account(string $role, string $email, array $attributes = []): User
     {
         return User::create(array_merge([
@@ -104,7 +192,7 @@ class EmailSystemTest extends TestCase
     {
         $code = null;
 
-        Mail::assertQueued(OtpCodeMail::class, function (OtpCodeMail $mail) use (&$code): bool {
+        Mail::assertSent(OtpCodeMail::class, function (OtpCodeMail $mail) use (&$code): bool {
             $code = $mail->code;
 
             return true;
@@ -206,7 +294,7 @@ class EmailSystemTest extends TestCase
 
         $this->otp()->issue('someone@example.test', OtpVerification::PURPOSE_REGISTRATION);
 
-        Mail::assertQueued(OtpCodeMail::class, 2);
+        Mail::assertSent(OtpCodeMail::class, 2);
     }
 
     public function test_a_new_code_invalidates_the_previous_one(): void

@@ -35,7 +35,17 @@ class EmailService
     private const NON_DELIVERING = ['log', 'array', null];
 
     /**
-     * Hand one message to the mailer.
+     * Queue one message, after the surrounding write has committed.
+     *
+     * For mail that accompanies an action rather than being it: a status
+     * change, a notification, a welcome. The action is what the person asked
+     * for, so a mail server having a bad afternoon must not undo it.
+     *
+     * The return value is honest about how little it can know. Queueing a
+     * message is not delivering one, and when this is called inside a
+     * transaction the queueing has not even been attempted yet - so `true`
+     * here means "accepted for delivery", never "delivered". Anything that
+     * needs to tell somebody a message arrived wants sendNow() instead.
      *
      * @param  string|array<int, string>  $to
      * @return bool whether the message was accepted for delivery
@@ -48,10 +58,54 @@ class EmailService
             return false;
         }
 
+        // DB::afterCommit runs the callback immediately when no transaction is
+        // open and defers it when one is. In the first case $accepted carries
+        // the real answer by the time this returns; in the second there is
+        // nothing yet to report and it stays optimistic.
+        $accepted = true;
+
         try {
-            DB::afterCommit(function () use ($recipients, $mail): void {
-                $this->dispatch($recipients, $mail);
+            DB::afterCommit(function () use ($recipients, $mail, &$accepted): void {
+                $accepted = $this->dispatch($recipients, $mail);
             });
+        } catch (Throwable $exception) {
+            $this->report($recipients, $mail, $exception);
+
+            return false;
+        }
+
+        return $accepted;
+    }
+
+    /**
+     * Send one message now, and say whether it actually left.
+     *
+     * For the messages that ARE the action - a verification code, a reset
+     * code - where the whole point of the request is that something arrives.
+     * Queueing one of those means the interface announcing a code while the
+     * rejection is still an hour away in a worker's log, which is how a
+     * provider refusing every recipient but one went unnoticed.
+     *
+     * Still swallows the exception rather than throwing: what a failure means
+     * is the caller's decision, and for none of them is it a 500. The reason
+     * goes to the log either way.
+     *
+     * @param  string|array<int, string>  $to
+     * @return bool whether the mailer accepted the message
+     */
+    public function sendNow(string|array $to, SystemMail $mail): bool
+    {
+        $recipients = $this->validRecipients($to);
+
+        if ($recipients === []) {
+            return false;
+        }
+
+        try {
+            // sendNow rather than send: every system mailable is ShouldQueue,
+            // and send() would hand it to a worker - whose success or failure
+            // is not something this method could then report.
+            Mail::to($recipients)->sendNow($mail);
 
             return true;
         } catch (Throwable $exception) {
@@ -91,13 +145,18 @@ class EmailService
 
     /**
      * @param  array<int, string>  $recipients
+     * @return bool whether the message reached the queue
      */
-    private function dispatch(array $recipients, SystemMail $mail): void
+    private function dispatch(array $recipients, SystemMail $mail): bool
     {
         try {
             Mail::to($recipients)->queue($mail);
+
+            return true;
         } catch (Throwable $exception) {
             $this->report($recipients, $mail, $exception);
+
+            return false;
         }
     }
 

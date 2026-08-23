@@ -313,7 +313,7 @@ class AuditDecisionsTest extends TestCase
 
         // The account - and so the claim - is made by the code, not the form.
         $code = null;
-        Mail::assertQueued(OtpCodeMail::class, function (OtpCodeMail $mail) use (&$code): bool {
+        Mail::assertSent(OtpCodeMail::class, function (OtpCodeMail $mail) use (&$code): bool {
             $code = $mail->code;
 
             return true;

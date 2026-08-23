@@ -109,12 +109,31 @@ class OtpService
 
         RateLimiter::hit($this->requestKey($email, $purpose), self::REQUEST_WINDOW_SECONDS);
 
-        app(EmailService::class)->send($email, new OtpCodeMail(
+        // Sent rather than queued, and the answer is acted on. A code is the
+        // one kind of message where "we sent it" is the entire content of what
+        // the interface then tells somebody: announcing one that a worker will
+        // fail to deliver an hour later leaves them waiting on an email that
+        // is never coming, with nothing on screen to suggest otherwise.
+        $delivered = app(EmailService::class)->sendNow($email, new OtpCodeMail(
             $code,
             $purpose,
             self::VALID_MINUTES,
             $recipientName ?? $user?->fullName()
         ));
+
+        if (! $delivered) {
+            // A code nobody received is worse than no code: it would sit here
+            // as the one live code for this address and purpose, running down
+            // the resend cooldown and showing a countdown for a message that
+            // does not exist. The rate-limiter hit above deliberately stands -
+            // a failing mail provider is not a reason to lift the ceiling on
+            // how often an address may be tried.
+            $record->delete();
+
+            throw new RuntimeException(
+                'We could not send a code to that address. Check it is correct and try again.'
+            );
+        }
 
         $this->record(
             $purpose === OtpVerification::PURPOSE_REGISTRATION

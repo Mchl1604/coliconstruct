@@ -128,7 +128,7 @@ class PasswordResetTest extends TestCase
         $this->post(route('auth.password.email'), ['email' => $user->email])
             ->assertRedirect(route('auth.password.verify'));
 
-        Mail::assertQueued(OtpCodeMail::class, fn (OtpCodeMail $mail): bool => $mail->hasTo($user->email)
+        Mail::assertSent(OtpCodeMail::class, fn (OtpCodeMail $mail): bool => $mail->hasTo($user->email)
             && $mail->purpose === OtpVerification::PURPOSE_FORGOT_PASSWORD);
     }
 
@@ -155,7 +155,7 @@ class PasswordResetTest extends TestCase
         );
 
         // And nothing was sent to the address that has no account.
-        Mail::assertQueued(OtpCodeMail::class, 1);
+        Mail::assertSent(OtpCodeMail::class, 1);
     }
 
     public function test_the_emailed_code_sets_a_new_password_and_clears_the_forced_change(): void
@@ -295,7 +295,7 @@ class PasswordResetTest extends TestCase
     {
         $code = null;
 
-        Mail::assertQueued(OtpCodeMail::class, function (OtpCodeMail $mail) use (&$code): bool {
+        Mail::assertSent(OtpCodeMail::class, function (OtpCodeMail $mail) use (&$code): bool {
             $code = $mail->code;
 
             return true;

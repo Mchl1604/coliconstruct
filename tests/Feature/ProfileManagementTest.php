@@ -298,7 +298,7 @@ class ProfileManagementTest extends TestCase
         $this->assertSame('tech@example.test', $technician->email);
         $this->assertSame('maria@example.test', $technician->pending_email);
 
-        Mail::assertQueued(OtpCodeMail::class, fn (OtpCodeMail $mail): bool => $mail->hasTo('maria@example.test')
+        Mail::assertSent(OtpCodeMail::class, fn (OtpCodeMail $mail): bool => $mail->hasTo('maria@example.test')
             && $mail->purpose === OtpVerification::PURPOSE_EMAIL_CHANGE);
 
         $this->assertDatabaseHas('tbl_activity_logs', ['action' => ActivityLog::PROFILE_NAME_UPDATED]);
@@ -399,7 +399,7 @@ class ProfileManagementTest extends TestCase
     {
         $code = null;
 
-        Mail::assertQueued(OtpCodeMail::class, function (OtpCodeMail $mail) use (&$code): bool {
+        Mail::assertSent(OtpCodeMail::class, function (OtpCodeMail $mail) use (&$code): bool {
             $code = $mail->code;
 
             return true;
