@@ -11,7 +11,9 @@ This guide is the whole of what is left to do.
 
 ## 1. What you need before you start
 
-Pick one email service and collect five things from it:
+Pick one email service and collect five things from it. If you are deploying to
+Railway, read the Resend section under **Choose a provider** first — SMTP is
+blocked there, and the five values below will not apply to you:
 
 | You need | Goes in | Example |
 | --- | --- | --- |
@@ -36,6 +38,38 @@ Plus two you choose yourself:
 ---
 
 ## 2. Choose a provider
+
+### Resend — the one that works on Railway
+
+Railway disables outbound SMTP (ports 25, 465 and 587) on its Free, Trial and
+Hobby plans, so **no SMTP provider in this guide can deliver from a Railway
+deployment below Pro** — not Gmail, not SendGrid over port 587. The connection
+simply never opens, and `mail:test` reports the host as unreachable.
+
+Resend sends over HTTPS instead, which no host blocks. The driver is already
+installed (`resend/resend-php`) and the transport is already defined in
+`config/mail.php`, so there is nothing to add in code.
+
+1. Sign up at <https://resend.com> and create an API key at
+   <https://resend.com/api-keys> with send permission.
+2. To send from your own address, add your domain under **Domains** and put the
+   SPF and DKIM records it shows into your DNS. Until that verifies you can
+   only send from `onboarding@resend.dev`, which is enough to test with.
+
+```dotenv
+MAIL_MAILER=resend
+RESEND_API_KEY=re_your_actual_key_here
+MAIL_FROM_ADDRESS="noreply@yourdomain.com"
+MAIL_FROM_NAME="ColiConstruct"
+```
+
+`MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD` and `MAIL_SCHEME`
+are not read in this mode; leave them or delete them, either way.
+
+The same reasoning applies to Postmark (`MAIL_MAILER=postmark`,
+`POSTMARK_API_KEY`), which is already wired in `config/services.php` and needs
+`composer require symfony/postmark-mailer`. Any provider reached over HTTPS
+rather than SMTP will do.
 
 ### Gmail — quickest for a small deployment or a demo
 
@@ -153,6 +187,13 @@ Anything left empty is simply omitted from the footer rather than printed blank.
 php artisan config:clear
 ```
 
+On a deployed environment there is no `.env` to edit — the file is git-ignored
+and never ships. Set every value as a service variable in the host's own
+dashboard (on Railway: the service → **Variables**). If your start command runs
+`php artisan config:cache`, run it at container start rather than during the
+build, or the cache is written before the host has injected the variables and
+the mailer boots with nothing in it.
+
 Send yourself a real message through the real templates:
 
 ```bash
@@ -190,6 +231,24 @@ php artisan schedule:work
 > Emails then send during the request instead. It works, but every action that
 > sends one gets slower by the round trip to the mail server.
 
+On Railway there is no supervisor to hand these to, so each one is a service of
+its own pointed at this same repository, with the start command overridden:
+
+| Service | Start command |
+| --- | --- |
+| web | your normal one, plus `php artisan migrate --force` |
+| worker | `php artisan queue:work --tries=3 --max-time=3600` |
+| scheduler | `php artisan schedule:work` |
+
+The worker is what makes `QUEUE_CONNECTION=database` deliver anything; the
+scheduler is what makes the daily reminders fire **and what completes projects
+whose seven-day confirmation window has run out**. Skipping the scheduler is a
+gap in the application's behaviour, not only in its email.
+
+If paying for three containers is not worth it, the honest minimum is one web
+service with `QUEUE_CONNECTION=sync` — accepting that no scheduled work ever
+runs.
+
 ---
 
 ## 6. Verify it end to end
@@ -218,6 +277,7 @@ Once mail is configured, these are the flows to try:
 | `mail:test` succeeds but nothing else arrives | The queue worker is not running. Start `php artisan queue:work`. |
 | `Failed to authenticate on SMTP server` | Wrong username/password, or an account password used where an **app password** is required (Gmail, Outlook). |
 | `Connection could not be established` | Wrong host or port, or a firewall blocking outbound SMTP. Try port 587. |
+| `Network is unreachable` on Railway, with correct credentials | Railway blocks outbound SMTP below the Pro plan. Switch to `MAIL_MAILER=resend`. |
 | Emails arrive with a broken logo | `APP_URL` is wrong, or `COMPANY_LOGO` points somewhere the recipient cannot reach. |
 | Links in emails point at `localhost` | `APP_URL` is wrong. |
 | Everything lands in spam | Your sending domain has no SPF/DKIM records. Set them up with your provider. |
@@ -230,6 +290,7 @@ Once mail is configured, these are the flows to try:
 | Setting | File | Notes |
 | --- | --- | --- |
 | SMTP credentials | `.env` | Never commit these. `.env` is git-ignored; `.env.example` documents them. |
+| `RESEND_API_KEY` | `.env` → `config/services.php` | Only read when `MAIL_MAILER=resend`. |
 | Mailer definitions | `config/mail.php` | Untouched Laravel defaults; no need to edit. |
 | Company branding | `.env` → `config/company.php` | Name, logo, colours, footer contact details. |
 | Code lifetime, attempts, cooldown | `app/Services/OtpService.php` | Constants at the top: 6 digits, 10 minutes, 5 attempts, 60-second resend. |
