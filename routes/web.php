@@ -28,11 +28,17 @@ Route::get('/', [PublicSiteController::class, 'home'])->name('landing.home');
 Route::get('/about', [PublicSiteController::class, 'about'])->name('public.about');
 Route::get('/contact', [PublicSiteController::class, 'contact'])->name('public.contact');
 
-// The one thing a stranger can make this application do. Throttled because a
-// public endpoint that sends email is what a spam script looks for; the
-// controller adds a honeypot on top of it.
+// The one thing a stranger can make this application do.
+//
+// The throttle here is a ceiling on requests, not on enquiries: it exists so a
+// script cannot hammer the endpoint, and it is set well above anything a
+// person does so that somebody who simply clicked twice is answered by the
+// form with a toast rather than by a 429 page. The limits that actually decide
+// how many enquiries an address or a connection may send live in
+// InquirySpamGuard, alongside the honeypot - the same layering the email
+// verification routes use over OtpService's own per-address limits.
 Route::post('/contact', [PublicSiteController::class, 'sendInquiry'])
-    ->middleware('throttle:5,10')
+    ->middleware('throttle:30,10')
     ->name('public.contact.send');
 Route::get('/my-projects', [PublicSiteController::class, 'myProjects'])->name('public.projects');
 Route::get('/my-projects/{project}', [PublicSiteController::class, 'projectDetails'])

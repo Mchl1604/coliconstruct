@@ -55,7 +55,10 @@
 
     <div class="admin-shell" data-admin-shell>
         <aside class="admin-sidebar" aria-label="Portal navigation">
-            <a class="admin-brand" href="{{ url('/') }}">
+            {{-- Home for a technician is their schedule - the first link in
+                 the navigation below and the page they sign in to. The logo
+                 used to leave the portal for the public website. --}}
+            <a class="admin-brand" href="{{ route('technician.schedule') }}">
                 <img src="{{ asset('img/coliconstructlogor.png') }}" alt="Coliconstruct" class="admin-brand-logo">
                 <span>Coliconstruct</span>
             </a>

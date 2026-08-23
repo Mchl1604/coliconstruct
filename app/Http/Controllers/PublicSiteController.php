@@ -8,9 +8,11 @@ use App\Models\Project;
 use App\Services\ClientProjects;
 use App\Services\EmailService;
 use App\Services\InquiryService;
+use App\Services\InquirySpamGuard;
 use App\Services\SystemContentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use RuntimeException;
 use Throwable;
 
 /**
@@ -28,7 +30,8 @@ class PublicSiteController extends Controller
 {
     public function __construct(
         private readonly SystemContentService $content,
-        private readonly ClientProjects $clientProjects
+        private readonly ClientProjects $clientProjects,
+        private readonly InquirySpamGuard $spamGuard
     ) {}
 
     public function home()
@@ -66,13 +69,21 @@ class PublicSiteController extends Controller
      * The one thing a stranger can make this application do, so it is the one
      * endpoint with no account behind it at all. What guards it:
      *
-     *   - A throttle on the route, because a public POST that writes a row and
-     *     sends email is exactly what a spam script looks for.
      *   - A honeypot field no person ever sees or fills in. A bot that fills
      *     every input gives itself away, and is answered as though it had
      *     succeeded so it has nothing to learn from and nothing to retry.
+     *   - A window per IP address and two per email address, so neither a
+     *     script nor somebody leaning on the button can fill the Inquiries
+     *     tab with noise. See InquirySpamGuard.
+     *   - A throttle on the route above those, which is a ceiling on requests
+     *     rather than on enquiries - the same layering the verification routes
+     *     use over OtpService's own per-address limits.
      *   - Length limits on every field, stated on the model so the form, the
      *     validator and the columns cannot drift apart.
+     *
+     * None of it is announced. The form carries no notice, no counter and no
+     * cooldown: it looks like an ordinary contact form, and a visitor only
+     * ever hears about a limit in the moment one actually stops them.
      *
      * What it does not do is as important as what it does: no account is
      * opened, no project is created, and the enquiry is linked to neither.
@@ -80,23 +91,31 @@ class PublicSiteController extends Controller
      */
     public function sendInquiry(Request $request)
     {
+        // Before validation rather than after it, so a bot is answered exactly
+        // the same way whatever else it got wrong. Nothing is stored, nothing
+        // is emailed, and nothing is counted against anybody's window.
+        if ($this->spamGuard->tripsHoneypot($request)) {
+            return back()->with('success', $this->inquiryThanks());
+        }
+
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:'.Inquiry::MAX_NAME],
             'email' => ['required', 'string', 'email', 'max:'.Inquiry::MAX_EMAIL],
             'subject' => ['required', 'string', 'max:'.Inquiry::MAX_SUBJECT],
             'message' => ['required', 'string', 'min:10', 'max:'.Inquiry::MAX_MESSAGE],
-            // The honeypot. Named for something a browser will not autofill
-            // and a person will never see.
-            'company_website' => ['nullable', 'size:0'],
         ], [
             'message.min' => 'Please write at least 10 characters.',
-            'company_website.size' => 'That message could not be sent.',
         ]);
 
-        // Answered as a success. A bot learns nothing, and a person who
-        // somehow tripped it has already been told by validation.
-        if (filled($request->input('company_website'))) {
-            return back()->with('success', $this->inquiryThanks());
+        try {
+            $this->spamGuard->guard($request, $validated['email']);
+        } catch (RuntimeException $exception) {
+            // A toast, and what they typed is handed back, so somebody caught
+            // by a colleague's submission on the same office connection has
+            // only to wait rather than write the whole thing again.
+            return back()
+                ->withInput()
+                ->with('error', $exception->getMessage());
         }
 
         try {
@@ -111,6 +130,11 @@ class PublicSiteController extends Controller
                 ->withInput()
                 ->with('error', 'Your message could not be sent just now. Please email or call us instead.');
         }
+
+        // Counted only now that a row exists. An enquiry this application
+        // failed to store cost the sender nothing, so it must not spend their
+        // window either.
+        $this->spamGuard->recordSubmission($request, $inquiry->email);
 
         // A copy to the company inbox, on top of the record. Best effort: the
         // enquiry is already saved and visible in Configuration, so a mail

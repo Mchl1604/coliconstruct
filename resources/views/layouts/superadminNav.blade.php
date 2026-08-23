@@ -76,7 +76,11 @@ href="https://cdn.datatables.net/2.3.8/css/dataTables.dataTables.css">
 
     <div class="admin-shell" data-admin-shell>
         <aside class="admin-sidebar" aria-label="Admin navigation">
-            <a class="admin-brand" href="{{ url('/admin/dashboard') }}">
+            {{-- Home for this shell is the dashboard, for an Admin as much as
+                 a Super Admin - both land there after signing in. Named rather
+                 than written out: /admin/dashboard was a path this app has
+                 never served, so the logo answered with a 404. --}}
+            <a class="admin-brand" href="{{ route('super-admin.dashboard') }}">
                 <img src="{{ asset('img/coliconstructlogor.png') }}" alt="Coliconstruct" class="admin-brand-logo">
                 <span>Coliconstruct</span>
             </a>

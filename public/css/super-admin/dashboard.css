@@ -301,34 +301,6 @@ a.dash-stat:hover {
     margin-right: -.5rem;
 }
 
-.dash-task-foot {
-    display: flex;
-    align-items: center;
-    gap: .55rem;
-    margin-top: .4rem;
-}
-
-.dash-task-bar {
-    flex: 1 1 auto;
-    height: .35rem;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, .8);
-    overflow: hidden;
-}
-
-.dash-task-bar > span {
-    display: block;
-    height: 100%;
-    border-radius: 999px;
-    background: var(--dash-blue-deep);
-}
-
-.dash-task-count {
-    font-size: .78rem;
-    font-weight: 700;
-    color: var(--dash-blue-deep);
-}
-
 /* ---- Urgent actions ---- */
 
 .dash-urgent {

@@ -2321,7 +2321,11 @@ document.addEventListener("DOMContentLoaded", function () {
         const saveBtn = modal.querySelector("[data-unscheduled-save]");
         const saveSpinner = modal.querySelector("[data-unscheduled-save-spinner]");
 
+        // Both are read off the markup rather than written out again here,
+        // so renaming the heading in the view renames it on the way back
+        // from a project too.
         const listTitle = titleEl ? titleEl.textContent : "";
+        const listEyebrow = eyebrowEl ? eyebrowEl.textContent : "";
 
         // The project being scheduled, or null while the list is showing.
         let picked = null;
@@ -2579,7 +2583,7 @@ document.addEventListener("DOMContentLoaded", function () {
             }
 
             if (eyebrowEl) {
-                eyebrowEl.textContent = "Unscheduled";
+                eyebrowEl.textContent = listEyebrow;
             }
 
             showError("");

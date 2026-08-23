@@ -574,6 +574,31 @@
     margin-top: 0.15rem;
 }
 
+/* The list holds two kinds of project. The tag says which, so a row that
+   already has dates is never mistaken for one that has none. */
+.schedule-need-tag {
+    display: inline-block;
+    vertical-align: middle;
+    margin-left: 0.4rem;
+    padding: 0.05rem 0.45rem;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.schedule-need-tag.is-overdue {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.schedule-need-tag.is-unscheduled {
+    background: #e0f2fe;
+    color: #075985;
+}
+
 .schedule-date-card-range {
     display: inline-flex;
     align-items: center;

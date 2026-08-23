@@ -31,11 +31,15 @@
                     @endforeach
                 </div>
 
+                {{-- One button for both kinds of project the calendar cannot
+                     show where it should: those with no dates at all, and
+                     those whose dates have all gone by while the work is
+                     still open. Both are answered by giving it dates. --}}
                 <button type="button" class="btn btn-sm btn-outline-primary schedule-unscheduled-btn"
                     data-bs-toggle="modal" data-bs-target="#unscheduledProjectsModal">
                     <i class="bi bi-calendar-plus" aria-hidden="true"></i>
-                    Unscheduled Projects
-                    <span class="schedule-unscheduled-count">{{ $unscheduledProjects->count() }}</span>
+                    Needs Scheduling
+                    <span class="schedule-unscheduled-count">{{ $needsSchedulingProjects->count() }}</span>
                 </button>
             </div>
 
@@ -375,9 +379,9 @@
 
                 <div class="modal-header align-items-start">
                     <div class="schedule-modal-heading">
-                        <span class="schedule-modal-eyebrow" data-unscheduled-eyebrow>Unscheduled</span>
+                        <span class="schedule-modal-eyebrow" data-unscheduled-eyebrow>Needs Scheduling</span>
                         <h5 class="modal-title mb-0" id="unscheduledProjectsModalLabel" data-unscheduled-title>
-                            Projects with no dates
+                            Projects waiting on dates
                         </h5>
                     </div>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -388,15 +392,30 @@
                     {{-- Panel one: everything waiting for dates. --}}
                     <div data-unscheduled-list-panel>
                         <p class="text-secondary small">
-                            These projects have no dates yet.
+                            Projects with no dates yet, and projects whose dates have
+                            all passed while the work is still open.
                         </p>
 
                         <div class="schedule-date-list">
-                            @forelse ($unscheduledProjects as $project)
+                            @forelse ($needsSchedulingProjects as $project)
+                                @php
+                                    // Which of the two it is, said on the card
+                                    // rather than left for the reader to work
+                                    // out from a missing date.
+                                    $isOverdue = $project->isOverdue();
+                                    $ranSince = $isOverdue ? $project->scheduleEndsOn() : null;
+                                @endphp
+
                                 <div class="schedule-date-card">
                                     <div class="schedule-date-card-top">
                                         <div>
-                                            <div class="schedule-date-card-name">{{ $project->name }}</div>
+                                            <div class="schedule-date-card-name">
+                                                {{ $project->name }}
+                                                <span
+                                                    class="schedule-need-tag {{ $isOverdue ? 'is-overdue' : 'is-unscheduled' }}">
+                                                    {{ $isOverdue ? 'Overdue' : 'Unscheduled' }}
+                                                </span>
+                                            </div>
                                             <div class="schedule-date-card-meta">
                                                 <a href="{{ route('super-admin.projects.show', $project->project_id) }}"
                                                     class="schedule-modal-ref">
@@ -409,6 +428,9 @@
                                                 @endphp
                                                 @if ($client)
                                                     &middot; {{ $client }}
+                                                @endif
+                                                @if ($ranSince)
+                                                    &middot; Due {{ $ranSince->format('M j, Y') }}
                                                 @endif
                                             </div>
                                         </div>
@@ -423,7 +445,7 @@
                                             data-partial-day-allowed="{{ $project->isResidential() ? '1' : '0' }}"
                                             data-technician-ids="{{ $project->projectTechnicians->pluck('technician_id')->implode(',') }}">
                                             <i class="bi bi-calendar2-week" aria-hidden="true"></i>
-                                            Schedule
+                                            {{ $isOverdue ? 'Reschedule' : 'Schedule' }}
                                         </button>
                                     </div>
 
@@ -441,7 +463,8 @@
                                 </div>
                             @empty
                                 <div class="schedule-empty-state">
-                                    Every project has its dates. Nothing is waiting to be scheduled.
+                                    Every project has dates it has not yet run past. Nothing is
+                                    waiting to be scheduled.
                                 </div>
                             @endforelse
                         </div>
@@ -451,7 +474,7 @@
                     <div class="d-none" data-unscheduled-form-panel>
                         <button type="button" class="schedule-back-link" data-unscheduled-back>
                             <i class="bi bi-arrow-left" aria-hidden="true"></i>
-                            All unscheduled projects
+                            All projects waiting on dates
                         </button>
 
                         <div class="schedule-add-panel">

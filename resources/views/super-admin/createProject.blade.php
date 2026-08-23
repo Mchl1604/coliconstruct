@@ -188,9 +188,9 @@
                                         <input type="checkbox" name="project_types[]"
                                             value="{{ $projectType->type_name }}" class="visually-hidden"
                                             data-project-type-checkbox data-label="{{ $projectType->type_name }}">
-                                        <span class="project-type-icon"><i class="bi bi-{{ $projectType->icon_class }}"
-                                                aria-hidden="true"></i></span>
                                         <span class="project-type-name">{{ $projectType->type_name }}</span>
+                                        <span class="project-type-check" aria-hidden="true"><i
+                                                class="bi bi-check-lg"></i></span>
                                     </label>
                                 @endforeach
 

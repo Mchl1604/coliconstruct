@@ -119,8 +119,8 @@ class UnscheduledProjectVisibilityTest extends TestCase
     }
 
     /**
-     * The list behind the Unscheduled Projects button: everything the
-     * calendar cannot draw, and only what can actually be booked.
+     * The list behind the Needs Scheduling button: everything the calendar
+     * cannot draw where it belongs, and only what can actually be booked.
      */
     public function test_the_unscheduled_list_offers_every_project_waiting_for_dates(): void
     {
@@ -141,7 +141,7 @@ class UnscheduledProjectVisibilityTest extends TestCase
         $response = $this->get(route('super-admin.schedules.index'));
         $response->assertOk();
 
-        $offeredIds = $response->viewData('unscheduledProjects')->pluck('project_id')->all();
+        $offeredIds = $response->viewData('needsSchedulingProjects')->pluck('project_id')->all();
 
         $this->assertSame([$waiting->project_id], $offeredIds);
         $this->assertNotContains($scheduled->project_id, $offeredIds);
@@ -149,8 +149,69 @@ class UnscheduledProjectVisibilityTest extends TestCase
         $this->assertNotContains($completed->project_id, $offeredIds);
 
         // The button that opens the list, and the row that schedules it.
-        $response->assertSee('Unscheduled Projects');
+        $response->assertSee('Needs Scheduling');
         $response->assertSee('data-unscheduled-pick="'.$waiting->project_id.'"', false);
+    }
+
+    /**
+     * Overdue work belongs in the same list. Its dates have all gone by while
+     * the job is still open, so the calendar only shows it in the past - and
+     * the fix is the same one the list already offers: give it dates.
+     */
+    public function test_the_list_also_offers_projects_whose_dates_have_all_passed(): void
+    {
+        $overdue = $this->createProject('Overdue Project', 'ongoing');
+        $this->bookProject($overdue, $this->day(-6), $this->day(-2));
+
+        $waiting = $this->createProject('Waiting Project', 'unscheduled');
+
+        // Still running today, so it is where it should be on the calendar.
+        $current = $this->createProject('Current Project', 'ongoing');
+        $this->bookProject($current, $this->day(-1), $this->day(3));
+
+        $response = $this->get(route('super-admin.schedules.index'));
+        $response->assertOk();
+
+        $offeredIds = $response->viewData('needsSchedulingProjects')->pluck('project_id')->all();
+
+        $this->assertContains($overdue->project_id, $offeredIds);
+        $this->assertContains($waiting->project_id, $offeredIds);
+        $this->assertNotContains($current->project_id, $offeredIds);
+
+        // Overdue is the more pressing of the two, so it sorts first.
+        $this->assertSame($overdue->project_id, $offeredIds[0]);
+
+        // And the card says which of the two it is, rather than leaving the
+        // reader to infer it from a missing date.
+        $response->assertSee('data-unscheduled-pick="'.$overdue->project_id.'"', false);
+        $response->assertSee('Reschedule');
+    }
+
+    /**
+     * Giving overdue work new dates takes it out of the list, because it is
+     * no longer overdue - the same endpoint, and the same result.
+     */
+    public function test_rescheduling_overdue_work_takes_it_out_of_the_list(): void
+    {
+        $overdue = $this->createProject('Overdue Project', 'ongoing');
+        $this->bookProject($overdue, $this->day(-6), $this->day(-2));
+
+        $response = $this->postJson(route('super-admin.schedules.assign'), [
+            'start_date' => $this->day(2),
+            'end_date' => $this->day(4),
+            'project_ids' => [$overdue->project_id],
+        ]);
+
+        $response->assertOk();
+        $this->assertFalse($overdue->fresh()->isOverdue());
+
+        $page = $this->get(route('super-admin.schedules.index'));
+        $page->assertOk();
+
+        $this->assertNotContains(
+            $overdue->project_id,
+            $page->viewData('needsSchedulingProjects')->pluck('project_id')->all()
+        );
     }
 
     /**
@@ -185,7 +246,7 @@ class UnscheduledProjectVisibilityTest extends TestCase
             $project->project_id,
             $page->viewData('scheduledProjects')->pluck('project_id')->all()
         );
-        $this->assertSame([], $page->viewData('unscheduledProjects')->all());
+        $this->assertSame([], $page->viewData('needsSchedulingProjects')->all());
     }
 
     public function test_saving_with_no_ranges_gives_up_every_date_and_leaves_the_project_unscheduled(): void
@@ -212,11 +273,11 @@ class UnscheduledProjectVisibilityTest extends TestCase
         );
         $this->assertSame([], $page->viewData('calendarEvents'));
 
-        // And it is waiting in the Unscheduled Projects list, which is the
-        // way back onto both.
+        // And it is waiting in the Needs Scheduling list, which is the way
+        // back onto both.
         $this->assertContains(
             $project->project_id,
-            $page->viewData('unscheduledProjects')->pluck('project_id')->all()
+            $page->viewData('needsSchedulingProjects')->pluck('project_id')->all()
         );
     }
 

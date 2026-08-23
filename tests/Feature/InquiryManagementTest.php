@@ -174,6 +174,12 @@ class InquiryManagementTest extends TestCase
         $this->assertSame(0, Inquiry::count());
     }
 
+    /**
+     * The honeypot stores nothing and says nothing.
+     *
+     * Answered as a success on purpose: a bot told it was refused knows what
+     * to change, and one thanked for its message does not.
+     */
     public function test_a_filled_honeypot_stores_nothing(): void
     {
         Mail::fake();
@@ -181,28 +187,50 @@ class InquiryManagementTest extends TestCase
 
         $this->post(route('public.contact.send'), $this->payload([
             'company_website' => 'http://spam.example',
-        ]))->assertSessionHasErrors('company_website');
+        ]))
+            ->assertSessionHas('success')
+            ->assertSessionHasNoErrors();
 
         $this->assertSame(0, Inquiry::count());
+        Mail::assertNothingQueued();
     }
 
-    public function test_repeated_submissions_are_throttled(): void
+    /**
+     * And a submission that trips it is not even validated first, so nothing
+     * about which field caught it leaks through an error message.
+     */
+    public function test_the_honeypot_is_checked_before_anything_else_is(): void
     {
         Mail::fake();
         $this->withWorkingMailer();
 
-        // The route allows five in ten minutes; the sixth is refused.
-        for ($attempt = 1; $attempt <= 5; $attempt++) {
-            $this->post(route('public.contact.send'), $this->payload([
-                'subject' => 'Quote request '.$attempt,
-            ]))->assertSessionHas('success');
-        }
+        $this->post(route('public.contact.send'), [
+            'name' => '',
+            'email' => 'not-an-address',
+            'subject' => '',
+            'message' => 'short',
+            'company_website' => 'http://spam.example',
+        ])
+            ->assertSessionHas('success')
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame(0, Inquiry::count());
+    }
+
+    /**
+     * A person filling the form normally never meets the honeypot, whether it
+     * is absent from the request or present and empty.
+     */
+    public function test_an_empty_honeypot_does_not_affect_a_real_visitor(): void
+    {
+        Mail::fake();
+        $this->withWorkingMailer();
 
         $this->post(route('public.contact.send'), $this->payload([
-            'subject' => 'One too many',
-        ]))->assertStatus(429);
+            'company_website' => '',
+        ]))->assertSessionHas('success');
 
-        $this->assertSame(5, Inquiry::count());
+        $this->assertSame(1, Inquiry::count());
     }
 
     /**

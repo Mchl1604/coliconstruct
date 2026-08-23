@@ -79,13 +79,6 @@
                                     <span class="dash-task-meta">No team yet</span>
                                 @endforelse
                             </span>
-
-                            <span class="dash-task-foot">
-                                <span class="dash-task-bar">
-                                    <span style="width: {{ $item['percent'] }}%"></span>
-                                </span>
-                                <span class="dash-task-count">{{ $item['done'] }}/{{ $item['total'] }}</span>
-                            </span>
                         </a>
                     @empty
                         <p class="dash-empty">Nothing is scheduled from today onwards.</p>

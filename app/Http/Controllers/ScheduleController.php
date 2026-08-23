@@ -76,15 +76,24 @@ class ScheduleController extends Controller
             ->filter(fn (Project $project): bool => $project->schedules->isNotEmpty())
             ->values();
 
-        // The other half: work waiting for its first dates, which is the only
-        // way it reaches the calendar. On-hold projects are left out - a hold
-        // releases the dates and the team, and the project has to be resumed
-        // before it can be booked, which is the project page's to do.
-        $unscheduledProjects = $projects
-            ->filter(fn (Project $project): bool => $project->schedules->isEmpty()
-                && ! $project->on_hold
-                && ! $project->isReadOnly())
-            ->sortBy('name')
+        // The other half: work that is not on the calendar where it should be.
+        // Two kinds sit here, and both are put right the same way - by giving
+        // the project dates it does not currently hold:
+        //
+        //   Unscheduled - no dates at all, so there is nothing to draw.
+        //   Overdue     - every date it holds has passed while the work is
+        //                 still open, so the calendar shows it only in the past.
+        //
+        // On-hold projects are left out of both - a hold releases the dates and
+        // the team, and the project has to be resumed before it can be booked,
+        // which is the project page's to do.
+        $needsSchedulingProjects = $projects
+            ->filter(fn (Project $project): bool => ! $project->on_hold
+                && ! $project->isReadOnly()
+                && ($project->schedules->isEmpty() || $project->isOverdue()))
+            // Overdue first: a date already missed is the more pressing of the
+            // two, and within each group the names read alphabetically.
+            ->sortBy(fn (Project $project): string => ($project->isOverdue() ? '0' : '1').mb_strtolower($project->name))
             ->values();
 
         $calendarEvents = $this->buildCalendarEvents($scheduledProjects);
@@ -112,7 +121,7 @@ class ScheduleController extends Controller
         return view('super-admin.schedule', compact(
             'projects',
             'scheduledProjects',
-            'unscheduledProjects',
+            'needsSchedulingProjects',
             'calendarEvents',
             'technicianSchedules',
             'technicianNames',

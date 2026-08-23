@@ -32,7 +32,8 @@
 }
 
 .project-type-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+    gap: .75rem;
 }
 
 .upload-grid {
@@ -194,8 +195,7 @@
 }
 
 .client-type-option,
-.schedule-mode-option,
-.project-type-option {
+.schedule-mode-option {
     padding: 1rem;
     cursor: pointer;
     display: flex;
@@ -222,8 +222,7 @@
 }
 
 .client-type-icon,
-.schedule-mode-icon,
-.project-type-icon {
+.schedule-mode-icon {
     width: 2.6rem;
     height: 2.6rem;
     border-radius: .9rem;
@@ -245,18 +244,58 @@
 }
 
 .client-type-option.is-selected .client-type-icon,
-.schedule-mode-option.is-selected .schedule-mode-icon,
-.project-type-option.is-selected .project-type-icon {
+.schedule-mode-option.is-selected .schedule-mode-icon {
     background: #0d6efd;
     color: #ffffff;
 }
 
+/* A project type is nothing but its name, so the tile is the name: no
+   icon slot standing empty beside it, and the whole plate lights up
+   when it is picked. The tick only appears once the box is checked -
+   an unselected row of tiles stays quiet. */
 .project-type-option {
-    align-items: flex-start;
+    padding: .7rem .9rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .6rem;
+    min-height: 3rem;
 }
 
 .project-type-option .project-type-name {
-    margin-top: .15rem;
+    font-size: .95rem;
+    line-height: 1.3;
+}
+
+.project-type-check {
+    flex: 0 0 auto;
+    width: 1.35rem;
+    height: 1.35rem;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: .8rem;
+    background: transparent;
+    color: transparent;
+    border: 1px solid #cbd5e1;
+    transition: background-color .2s ease, color .2s ease, border-color .2s ease;
+}
+
+.project-type-option:hover {
+    border-color: #93c5fd;
+    background: #f1f5f9;
+}
+
+.project-type-option.is-selected .project-type-name {
+    color: #0b4fc4;
+}
+
+.project-type-option.is-selected .project-type-check {
+    background: #0d6efd;
+    border-color: #0d6efd;
+    color: #ffffff;
 }
 
 .upload-card {
@@ -448,7 +487,6 @@
     }
 
     .client-type-grid,
-    .project-type-grid,
     .upload-grid,
     .review-grid {
         grid-template-columns: 1fr;

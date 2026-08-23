@@ -16,6 +16,11 @@
             'message' => \App\Models\Inquiry::MAX_MESSAGE,
         ];
 
+        // The name of the field nobody sees, read from config for the same
+        // reason the lengths are read from the model: the form and the guard
+        // that inspects it must not be able to drift apart.
+        $honeypotField = config('inquiries.honeypot_field', 'company_website');
+
         // The three ways to reach the company, each on its own blue card. The
         // labels name the field rather than repeating its value, which is what
         // lets a phone number and an address share one shape.
@@ -113,7 +118,7 @@
                          fill it in. --}}
                     <div class="contact-honeypot" aria-hidden="true">
                         <label for="contactCompanyWebsite">Company website</label>
-                        <input type="text" id="contactCompanyWebsite" name="company_website" value=""
+                        <input type="text" id="contactCompanyWebsite" name="{{ $honeypotField }}" value=""
                             tabindex="-1" autocomplete="off">
                     </div>
 

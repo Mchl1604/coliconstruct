@@ -274,7 +274,9 @@ class LowSeverityAuditFixesTest extends TestCase
             'subject' => 'Cheap deals',
             'message' => 'Buy things from this website right now please.',
             'company_website' => 'http://spam.example',
-        ])->assertSessionHasErrors('company_website');
+        ])
+            ->assertSessionHas('success')
+            ->assertSessionHasNoErrors();
 
         Mail::assertNothingQueued();
     }
