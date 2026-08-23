@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use App\Models\User;
 use App\Services\UserAccountService;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\Hash;
 
 /**
  * The system's own super administrator.
@@ -44,7 +45,7 @@ class SuperAdminSeeder extends Seeder
         $user = User::create($attributes + [
             'user_code' => $accounts->nextUserCode('EMP'),
             'email' => 'michaelcapanayan@gmail.com',
-            'password' => '160593',
+            'password' => Hash::make(env('SUPER_ADMIN_PASSWORD')),
             // The owner chose this password deliberately, so it is not
             // treated as a temporary one that has to be replaced.
             'must_change_password' => false,
