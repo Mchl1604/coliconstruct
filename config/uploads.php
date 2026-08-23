@@ -4,38 +4,31 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Where uploaded files are written
+    | Where uploaded files live
     |--------------------------------------------------------------------------
     |
-    | Project documents and completion photographs are moved onto disk with
-    | UploadedFile::move(), which is a direct filesystem call rather than a
-    | Storage facade one. That is deliberate - these files are served straight
-    | out of public/ by asset() - but it has one sharp edge: Storage::fake()
-    | does NOT intercept move(), so a test posting a document used to write a
-    | real file into the real public/uploads and leave it there forever.
-    |
-    | Thousands of 0-byte PDFs and fake JPGs accumulated that way, and were
-    | committed. Making the root configurable is what lets the test suite send
-    | them somewhere disposable instead - see phpunit.xml.
-    |
-    | UPLOAD_ROOT is read relative to the project root when set. Unset, which
-    | is every real environment, this is exactly where it always was.
+    | One disk for everything a person uploads - see the `uploads` entry in
+    | config/filesystems.php, which is where the local-or-object-storage choice
+    | is actually made. Named here so that a call site says what kind of file
+    | it is handling rather than repeating a disk name.
     |
     */
 
-    'root' => env('UPLOAD_ROOT')
-        ? base_path(env('UPLOAD_ROOT'))
-        : public_path('uploads'),
+    'disk' => env('UPLOADS_DISK', 'uploads'),
 
     /*
-    | The public path the same files are READ back from.
-    |
-    | Kept separate from the root on purpose: document_path is stored in the
-    | database and handed to asset(), so it has to stay relative to public/
-    | whatever the write root is. In every real environment the two agree; in
-    | the test suite they deliberately do not, and nothing reads the files.
+    | The folders within it, one per kind of upload. Kept in one place because
+    | the delete paths have to agree with the write paths, and a typo in either
+    | is a file that is never cleaned up or never found.
     */
 
-    'public_prefix' => 'uploads',
+    'folders' => [
+        'profile_photos' => 'profile-photos',
+        'documents' => 'documents',
+        'completion_photos' => 'completion-photos',
+        'task_images' => 'task-images',
+        'report_images' => 'report-images',
+        'system_contents' => 'system-contents',
+    ],
 
 ];

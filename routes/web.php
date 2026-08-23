@@ -9,6 +9,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\InquiryController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\UploadedFileController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ProjectTypeController;
 use App\Http\Controllers\PublicSiteController;
@@ -95,6 +96,41 @@ Route::post('/forgot-password/resend', [PasswordResetController::class, 'resend'
     ->name('auth.password.resend');
 Route::get('/reset-password', [PasswordResetController::class, 'showReset'])->name('auth.password.reset');
 Route::post('/reset-password', [PasswordResetController::class, 'reset'])->name('auth.password.store');
+
+// ---------------------------------------------------------------------------
+// Uploaded files
+// ---------------------------------------------------------------------------
+//
+// Nothing a person uploaded is served by the web server any longer - see
+// UploadedFileController. These routes are how every picture, photograph and
+// document is read, and each one asks who is requesting it before handing
+// anything over. A URL is no longer a key.
+//
+// System content is the deliberate exception: logos and illustrations on the
+// public website have to load for people who are not signed in.
+Route::prefix('media')->name('media.')->group(function () {
+    Route::get('/system/{key}', [UploadedFileController::class, 'systemContent'])
+        ->where('key', '[A-Za-z0-9_.\\-]+')
+        ->name('system');
+
+    Route::middleware('auth')->group(function () {
+        Route::get('/avatars/{user}', [UploadedFileController::class, 'profilePhoto'])
+            ->whereNumber('user')
+            ->name('avatar');
+        Route::get('/documents/{document}', [UploadedFileController::class, 'document'])
+            ->whereNumber('document')
+            ->name('document');
+        Route::get('/completion-photos/{photo}', [UploadedFileController::class, 'completionPhoto'])
+            ->whereNumber('photo')
+            ->name('completion-photo');
+        Route::get('/task-images/{image}', [UploadedFileController::class, 'taskImage'])
+            ->whereNumber('image')
+            ->name('task-image');
+        Route::get('/report-images/{image}', [UploadedFileController::class, 'reportImage'])
+            ->whereNumber('image')
+            ->name('report-image');
+    });
+});
 
 // The forced first password change. Sits inside `auth` but outside
 // `password.changed`, which is the middleware that redirects here.

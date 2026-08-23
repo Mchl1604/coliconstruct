@@ -187,7 +187,7 @@ class ProfileManagementTest extends TestCase
 
     public function test_an_internal_user_uploads_replaces_and_removes_their_picture(): void
     {
-        Storage::fake('public');
+        Storage::fake('uploads');
 
         $admin = $this->account('admin', 'admin@example.test');
 
@@ -200,7 +200,7 @@ class ProfileManagementTest extends TestCase
 
         $first = $admin->refresh()->profile_photo_path;
         $this->assertNotNull($first);
-        Storage::disk('public')->assertExists($first);
+        Storage::disk('uploads')->assertExists($first);
         $this->assertDatabaseHas('tbl_activity_logs', ['action' => ActivityLog::PROFILE_PHOTO_UPLOADED]);
 
         // Replacing keeps exactly one picture: the old file goes.
@@ -212,7 +212,7 @@ class ProfileManagementTest extends TestCase
 
         $second = $admin->refresh()->profile_photo_path;
         $this->assertNotSame($first, $second);
-        Storage::disk('public')->assertMissing($first);
+        Storage::disk('uploads')->assertMissing($first);
         $this->assertDatabaseHas('tbl_activity_logs', ['action' => ActivityLog::PROFILE_PHOTO_CHANGED]);
 
         $this->actingAs($admin)
@@ -220,7 +220,7 @@ class ProfileManagementTest extends TestCase
             ->assertSessionHas('success', 'Profile picture removed.');
 
         $this->assertNull($admin->refresh()->profile_photo_path);
-        Storage::disk('public')->assertMissing($second);
+        Storage::disk('uploads')->assertMissing($second);
         $this->assertDatabaseHas('tbl_activity_logs', ['action' => ActivityLog::PROFILE_PHOTO_REMOVED]);
 
         // And with none set, the default avatar stands in.
@@ -233,7 +233,7 @@ class ProfileManagementTest extends TestCase
      */
     public function test_a_client_sets_and_removes_their_own_picture(): void
     {
-        Storage::fake('public');
+        Storage::fake('uploads');
 
         $client = $this->account('client', 'client@example.test');
 
@@ -250,7 +250,7 @@ class ProfileManagementTest extends TestCase
         $stored = $client->refresh()->profile_photo_path;
 
         $this->assertNotNull($stored);
-        Storage::disk('public')->assertExists($stored);
+        Storage::disk('uploads')->assertExists($stored);
         $this->assertNotSame(asset('img/default-avatar.svg'), $client->avatarUrl());
 
         $this->actingAs($client)
@@ -258,7 +258,7 @@ class ProfileManagementTest extends TestCase
             ->assertSessionHas('success', 'Profile picture removed.');
 
         $this->assertNull($client->refresh()->profile_photo_path);
-        Storage::disk('public')->assertMissing($stored);
+        Storage::disk('uploads')->assertMissing($stored);
         $this->assertSame(asset('img/default-avatar.svg'), $client->avatarUrl());
     }
 
@@ -735,7 +735,7 @@ class ProfileManagementTest extends TestCase
 
     public function test_creating_a_user_never_asks_for_a_picture(): void
     {
-        Storage::fake('public');
+        Storage::fake('uploads');
 
         $owner = $this->account('super_admin', 'owner@example.test');
 

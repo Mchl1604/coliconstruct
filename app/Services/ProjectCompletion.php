@@ -7,6 +7,7 @@ use App\Models\ProjectCompletionPhoto;
 use App\Models\Schedule;
 use App\Models\User;
 use App\Support\BusinessTime;
+use App\Support\UploadStore;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Http\UploadedFile;
@@ -35,11 +36,6 @@ use Illuminate\Support\Str;
  */
 class ProjectCompletion
 {
-    /**
-     * The folder completion photographs live in, under the uploads root.
-     */
-    private const PHOTO_FOLDER = 'completion';
-
     /**
      * The completion report both portals collect.
      *
@@ -227,24 +223,13 @@ class ProjectCompletion
             return 0;
         }
 
-        // Written to the configured root, which the test suite points at a
-        // throwaway directory - move() is not something Storage::fake() can
-        // intercept, so without this the suite fills public/uploads.
-        $directory = config('uploads.root').'/'.self::PHOTO_FOLDER;
-
-        File::ensureDirectoryExists($directory);
-
-        $photos->each(function (UploadedFile $photo) use ($directory, $project): void {
-            // Named by uuid rather than by what it was called on the way in:
-            // two people uploading "done.jpg" must not land on one file.
-            $fileName = Str::uuid()->toString().'.'.$photo->getClientOriginalExtension();
-
-            $photo->move($directory, $fileName);
-
+        $photos->each(function (UploadedFile $photo) use ($project): void {
             ProjectCompletionPhoto::create([
                 'project_id' => $project->project_id,
-                // Relative to public/, because asset() reads it back.
-                'photo_path' => config('uploads.public_prefix').'/'.self::PHOTO_FOLDER.'/'.$fileName,
+                // A path on the private uploads disk. The URL is built from
+                // the row's id by route('media.completion-photo'), so nothing
+                // about where the bytes live leaks into a page.
+                'photo_path' => UploadStore::put($photo, 'completion_photos'),
                 'uploaded_at' => now(),
             ]);
         });

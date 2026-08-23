@@ -20,12 +20,12 @@ use App\Services\ProjectEmails;
 use App\Services\TaskAssignmentRules;
 use App\Services\TaskScheduleRules;
 use App\Services\TechnicianTaskLoad;
+use App\Support\UploadStore;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Exists;
@@ -583,7 +583,7 @@ class TechnicianPortalController extends Controller
                 foreach ($request->file('images') ?? [] as $image) {
                     TaskImage::create([
                         'task_id' => $task->task_id,
-                        'image_path' => $image->store('task-completions', 'public'),
+                        'image_path' => UploadStore::put($image, 'task_images'),
                     ]);
                 }
             });
@@ -622,7 +622,7 @@ class TechnicianPortalController extends Controller
         try {
             DB::transaction(function () use ($task): void {
                 foreach ($task->images as $image) {
-                    Storage::disk('public')->delete($image->image_path);
+                    UploadStore::remove($image->image_path);
                     $image->delete();
                 }
 
@@ -710,7 +710,7 @@ class TechnicianPortalController extends Controller
                 foreach ($request->file('images') ?? [] as $image) {
                     TechnicianReportImage::create([
                         'technician_report_id' => $report->id,
-                        'image_path' => $image->store('technician-reports', 'public'),
+                        'image_path' => UploadStore::put($image, 'report_images'),
                     ]);
                 }
             });
@@ -1064,7 +1064,7 @@ class TechnicianPortalController extends Controller
             'completed_by' => $task->completedBy?->fullName(),
             'images' => $task->relationLoaded('images')
                 ? $task->images->map(fn (TaskImage $image): array => [
-                    'url' => asset('storage/'.$image->image_path),
+                    'url' => $image->url(),
                 ])->all()
                 : [],
         ];
@@ -1096,7 +1096,7 @@ class TechnicianPortalController extends Controller
             // data-order the Blade rows carry.
             'date_order' => $report->report_date?->timestamp ?? 0,
             'images' => $report->images->map(fn (TechnicianReportImage $image): array => [
-                'url' => asset('storage/'.$image->image_path),
+                'url' => $image->url(),
             ])->all(),
         ];
     }

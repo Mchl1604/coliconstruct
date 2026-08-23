@@ -123,7 +123,10 @@ class TaskAssignPickerTest extends TestCase
         $withPhoto = $technicians->firstWhere('name', 'Andres Bonifacio');
         $withoutPhoto = $technicians->firstWhere('name', 'Zoe Alvarez');
 
-        $this->assertStringContainsString('andres.jpg', $withPhoto['avatar_url']);
+        // The URL names the account rather than the file: the picture is
+        // served by a route that checks the caller, not by its path.
+        $this->assertStringContainsString('/media/avatars/', $withPhoto['avatar_url']);
+        $this->assertNotSame(asset('img/default-avatar.svg'), $withPhoto['avatar_url']);
 
         // Nothing uploaded falls back to the shared default rather than to a
         // broken image or an icon that does not match the other cards.

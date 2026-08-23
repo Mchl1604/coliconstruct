@@ -83,7 +83,7 @@ class TaskCompletionRecordTest extends TestCase
 
     public function test_completing_a_task_records_the_notes_and_photos(): void
     {
-        Storage::fake('public');
+        Storage::fake('uploads');
 
         $task = $this->task();
 
@@ -99,7 +99,7 @@ class TaskCompletionRecordTest extends TestCase
         $this->assertSame('Unit fitted, tested and signed off.', $task->completion_notes);
         $this->assertNotNull($task->completed_at);
         $this->assertCount(1, $task->images);
-        Storage::disk('public')->assertExists($task->images->first()->image_path);
+        Storage::disk('uploads')->assertExists($task->images->first()->image_path);
     }
 
     /**
@@ -152,7 +152,7 @@ class TaskCompletionRecordTest extends TestCase
             'completion_notes' => 'Coil cleaned and refrigerant topped up.',
             'completed_at' => now(),
         ]);
-        $task->images()->create(['image_path' => 'task-completions/proof.jpg']);
+        $image = $task->images()->create(['image_path' => 'task-images/proof.jpg']);
 
         foreach ([
             route('super-admin.tasks.index'),
@@ -163,7 +163,7 @@ class TaskCompletionRecordTest extends TestCase
             $response->assertOk();
             $response->assertSee('Completion Details');
             $response->assertSee('Coil cleaned and refrigerant topped up.');
-            $response->assertSee('task-completions/proof.jpg');
+            $response->assertSee($image->url(), escape: false);
             $response->assertSee('View Task');
             $response->assertDontSee('Edit Task');
         }
@@ -272,7 +272,7 @@ class TaskCompletionRecordTest extends TestCase
             'completion_notes' => 'Swapped the capacitor.',
             'completed_at' => now(),
         ]);
-        $task->images()->create(['image_path' => 'task-completions/tech-proof.jpg']);
+        $image = $task->images()->create(['image_path' => 'task-images/tech-proof.jpg']);
 
         $this->actingAs($this->technician->account);
 
@@ -281,7 +281,7 @@ class TaskCompletionRecordTest extends TestCase
         $response->assertOk();
         $response->assertSee('Completion Details');
         $response->assertSee('Swapped the capacitor.');
-        $response->assertSee('task-completions/tech-proof.jpg');
+        $response->assertSee($image->url(), escape: false);
         // Read only: no save button and no reassignment picker.
         $response->assertDontSee('Save Changes');
         $response->assertDontSee('task-assign-row', false);

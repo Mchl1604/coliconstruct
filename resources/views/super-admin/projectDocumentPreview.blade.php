@@ -21,12 +21,12 @@
                     Back to Project
                 </a>
 
-                <a href="{{ asset($document->document_path) }}" class="btn btn-outline-secondary" target="_blank"
+                <a href="{{ $document->url() }}" class="btn btn-outline-secondary" target="_blank"
                     rel="noopener noreferrer">
                     Open Original File
                 </a>
 
-                <a href="{{ asset($document->document_path) }}" class="btn btn-primary"
+                <a href="{{ $document->url() }}" class="btn btn-primary"
                     download="{{ $document->document_name }}">
                     <i class="bi bi-download me-1" aria-hidden="true"></i>
                     Download

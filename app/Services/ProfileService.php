@@ -10,9 +10,9 @@ use App\Models\OtpVerification;
 use App\Models\SpecialtyRequest;
 use App\Models\Technician;
 use App\Models\User;
+use App\Support\UploadStore;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 use RuntimeException;
 
 /**
@@ -28,9 +28,6 @@ use RuntimeException;
  */
 class ProfileService
 {
-    /** Where profile pictures live on the public disk. */
-    private const PHOTO_DIRECTORY = 'profile-photos';
-
     public function __construct(
         private readonly ActivityLogger $activityLogger,
         private readonly NotificationService $notifications,
@@ -53,11 +50,11 @@ class ProfileService
 
         $previous = $user->profile_photo_path;
 
-        $user->profile_photo_path = $photo->store(self::PHOTO_DIRECTORY, 'public');
+        $user->profile_photo_path = UploadStore::put($photo, 'profile_photos');
         $user->save();
 
         if ($previous && $previous !== $user->profile_photo_path) {
-            Storage::disk('public')->delete($previous);
+            UploadStore::remove($previous);
         }
 
         $this->activityLogger->record(
@@ -87,7 +84,7 @@ class ProfileService
         $user->profile_photo_path = null;
         $user->save();
 
-        Storage::disk('public')->delete($previous);
+        UploadStore::remove($previous);
 
         $this->activityLogger->record(
             ActivityLog::PROFILE_PHOTO_REMOVED,

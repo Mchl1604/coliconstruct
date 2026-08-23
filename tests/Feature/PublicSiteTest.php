@@ -254,7 +254,7 @@ class PublicSiteTest extends TestCase
      */
     public function test_a_team_member_is_paired_with_the_photograph_in_their_position(): void
     {
-        Storage::fake('public');
+        Storage::fake('uploads');
 
         $superAdmin = $this->account('super_admin', 'owner@example.test');
 
@@ -749,7 +749,7 @@ class PublicSiteTest extends TestCase
 
     public function test_an_upload_reads_the_previous_path_from_the_table(): void
     {
-        Storage::fake('public');
+        Storage::fake('uploads');
 
         $superAdmin = $this->account('super_admin', 'owner@example.test');
         $url = route('super-admin.configuration.contents.images.store', 'branding.logo');
@@ -764,8 +764,8 @@ class PublicSiteTest extends TestCase
         $this->actingAs($superAdmin)->post($url, ['image' => UploadedFile::fake()->image('second.png')]);
         $second = SystemContent::where('content_key', 'branding.logo')->value('content_value');
 
-        Storage::disk('public')->assertExists($second);
-        Storage::disk('public')->assertMissing($first);
+        Storage::disk('uploads')->assertExists($second);
+        Storage::disk('uploads')->assertMissing($first);
         $this->assertNotSame($first, $second);
     }
 
@@ -836,7 +836,7 @@ class PublicSiteTest extends TestCase
 
     public function test_an_image_is_stored_and_shown_on_the_site(): void
     {
-        Storage::fake('public');
+        Storage::fake('uploads');
 
         $superAdmin = $this->account('super_admin', 'owner@example.test');
 
@@ -849,16 +849,16 @@ class PublicSiteTest extends TestCase
         $path = SystemContent::where('content_key', 'branding.logo')->value('content_value');
 
         $this->assertNotNull($path);
-        Storage::disk('public')->assertExists($path);
+        Storage::disk('uploads')->assertExists($path);
 
         $this->get(route('landing.home'))
             ->assertOk()
-            ->assertSee(Storage::disk('public')->url($path), escape: false);
+            ->assertSee(route('media.system', ['key' => 'branding.logo']), escape: false);
     }
 
     public function test_replacing_an_image_deletes_the_one_it_replaced(): void
     {
-        Storage::fake('public');
+        Storage::fake('uploads');
 
         $superAdmin = $this->account('super_admin', 'owner@example.test');
         $url = route('super-admin.configuration.contents.images.store', 'branding.logo');
@@ -870,13 +870,13 @@ class PublicSiteTest extends TestCase
         $second = SystemContent::where('content_key', 'branding.logo')->value('content_value');
 
         $this->assertNotSame($first, $second);
-        Storage::disk('public')->assertMissing($first);
-        Storage::disk('public')->assertExists($second);
+        Storage::disk('uploads')->assertMissing($first);
+        Storage::disk('uploads')->assertExists($second);
     }
 
     public function test_removing_an_image_clears_the_field_and_the_file(): void
     {
-        Storage::fake('public');
+        Storage::fake('uploads');
 
         $superAdmin = $this->account('super_admin', 'owner@example.test');
 
@@ -892,12 +892,12 @@ class PublicSiteTest extends TestCase
             ->assertOk();
 
         $this->assertNull(SystemContent::where('content_key', 'branding.logo')->value('content_value'));
-        Storage::disk('public')->assertMissing($path);
+        Storage::disk('uploads')->assertMissing($path);
     }
 
     public function test_a_document_is_refused_where_an_image_belongs(): void
     {
-        Storage::fake('public');
+        Storage::fake('uploads');
 
         $superAdmin = $this->account('super_admin', 'owner@example.test');
 
@@ -912,7 +912,7 @@ class PublicSiteTest extends TestCase
 
     public function test_a_text_field_cannot_be_used_as_an_image_slot(): void
     {
-        Storage::fake('public');
+        Storage::fake('uploads');
 
         $superAdmin = $this->account('super_admin', 'owner@example.test');
 

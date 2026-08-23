@@ -4,11 +4,11 @@ namespace App\Services;
 
 use App\Models\SystemContent;
 use App\Models\User;
+use App\Support\UploadStore;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use RuntimeException;
 
@@ -41,16 +41,16 @@ class SystemContentService
     private const CACHE_TTL_SECONDS = 60;
 
     /**
-     * Where uploaded website assets live on the public disk.
-     */
-    private const DISK = 'public';
-
-    private const DIRECTORY = 'system-contents';
-
-    /**
      * @var array<int, string>
+     *
+     * SVG is deliberately absent. It is not a picture but an XML document,
+     * and one may carry script - which, served from this application's own
+     * origin by route('media.system'), would run with the session of whoever
+     * opened it. Only an administrator can upload website imagery, so this is
+     * a path from admin to super admin rather than one open to the public,
+     * but it is a path, and no branding need has ever required SVG.
      */
-    public const ALLOWED_IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'svg', 'ico'];
+    public const ALLOWED_IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'ico'];
 
     public const MAX_IMAGE_KILOBYTES = 4096;
 
@@ -96,22 +96,30 @@ class SystemContentService
      * A stored image as a URL the browser can load, or null when there is
      * none - callers decide what to show in its place.
      *
-     * Reduced to a path rather than left absolute: the disk builds its URL
-     * from APP_URL, and the same installation is reached on more than one host
-     * (the Herd domain, `artisan serve`, the deployed name). A path is right
-     * on all of them.
+     * A route rather than a file location. Website imagery is the one upload
+     * that has to load for people who are not signed in, so the route is open
+     * - but it is still the application handing the bytes over, which keeps
+     * every upload on one disk and makes the deployment's storage durable
+     * rather than a directory the next deploy empties.
      */
     public function image(string $key): ?string
     {
+        return $this->imagePath($key) === null
+            ? null
+            : route('media.system', ['key' => $key]);
+    }
+
+    /**
+     * The stored path behind an image key, for the route that serves it.
+     *
+     * Read from the cached map like everything else here; the route is a page
+     * load's worth of traffic and must not cost a query each time.
+     */
+    public function imagePath(string $key): ?string
+    {
         $path = $this->all()[$key] ?? null;
 
-        if (! $path || trim($path) === '') {
-            return null;
-        }
-
-        $url = Storage::disk(self::DISK)->url($path);
-
-        return parse_url($url, PHP_URL_PATH) ?: $url;
+        return $path && trim($path) !== '' ? $path : null;
     }
 
     /**
@@ -215,7 +223,11 @@ class SystemContentService
         $extension = strtolower($file->getClientOriginalExtension() ?: 'png');
         $name = Str::slug(str_replace('.', '-', $key)).'-'.Str::random(8).'.'.$extension;
 
-        $path = $file->storeAs(self::DIRECTORY, $name, self::DISK);
+        $path = UploadStore::disk()->putFileAs(
+            UploadStore::folder('system_contents'),
+            $file,
+            $name
+        );
 
         if ($path === false) {
             throw new RuntimeException('Unable to store image.');
@@ -342,8 +354,6 @@ class SystemContentService
             return;
         }
 
-        if (Storage::disk(self::DISK)->exists($path)) {
-            Storage::disk(self::DISK)->delete($path);
-        }
+        UploadStore::remove($path);
     }
 }

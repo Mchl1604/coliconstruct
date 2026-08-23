@@ -15,6 +15,15 @@ class TechnicianReportImage extends Model
         'image_path',
     ];
 
+    /**
+     * Where a page links to this image - a route that checks the asking
+     * account against the report's project, never the file's own location.
+     */
+    public function url(): string
+    {
+        return route('media.report-image', ['image' => $this->getKey()]);
+    }
+
     public function report()
     {
         return $this->belongsTo(TechnicianReport::class);

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Project;
 use App\Models\TechnicianReport;
 use App\Models\TechnicianReportImage;
+use App\Support\UploadStore;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -78,7 +79,7 @@ class TechnicianReportController extends Controller
 
                 foreach ($request->file('images') as $image) {
 
-                    $path = $image->store('technician-reports', 'public');
+                    $path = UploadStore::put($image, 'report_images');
 
                     TechnicianReportImage::create([
                         'technician_report_id' => $report->id,

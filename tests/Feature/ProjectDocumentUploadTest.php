@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Client;
 use App\Models\Document;
+use App\Support\UploadStore;
 use App\Models\Project;
 use App\Models\ProjectType;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -31,18 +32,11 @@ class ProjectDocumentUploadTest extends TestCase
 
     protected function tearDown(): void
     {
-        // The controller moves files onto disk rather than onto a fake disk,
-        // so the files a test made are cleared up behind it. They land under
-        // the configured uploads root, which the suite points somewhere
-        // disposable - hence diskPath() rather than public_path().
-        foreach (array_keys(Document::TYPES) as $type) {
-            foreach (Document::query()->where('document_type', $type)->get() as $document) {
-                $path = $document->diskPath();
-
-                if (File::exists($path)) {
-                    File::delete($path);
-                }
-            }
+        // Written to the real uploads disk rather than a faked one, so the
+        // files a test made are cleared up behind it. The suite points that
+        // disk's root somewhere disposable - see UPLOADS_ROOT in phpunit.xml.
+        foreach (Document::query()->get() as $document) {
+            UploadStore::remove($document->document_path);
         }
 
         parent::tearDown();
@@ -184,11 +178,9 @@ class ProjectDocumentUploadTest extends TestCase
         )->assertSessionHasNoErrors();
 
         $doomed = $project->documents()->where('document_name', 'drop.pdf')->firstOrFail();
-        // Asked of the document: the suite writes uploads to a throwaway root,
-        // so public_path() is not where the file is under test.
-        $path = $doomed->diskPath();
+        $path = $doomed->document_path;
 
-        $this->assertTrue(File::exists($path));
+        $this->assertTrue(UploadStore::exists($path));
 
         $response = $this->deleteJson(route('super-admin.projects.documents.destroy', [
             'id' => $project->project_id,

@@ -616,8 +616,8 @@
                                 <div class="row g-3">
                                     @foreach ($project->completionPhotos as $photo)
                                         <div class="col-lg-3 col-md-4 col-6">
-                                            <a href="{{ asset($photo->photo_path) }}" target="_blank" rel="noopener noreferrer">
-                                                <img src="{{ asset($photo->photo_path) }}" class="img-fluid rounded border"
+                                            <a href="{{ $photo->url() }}" target="_blank" rel="noopener noreferrer">
+                                                <img src="{{ $photo->url() }}" class="img-fluid rounded border"
                                                     style="height:170px;width:100%;object-fit:cover;">
                                             </a>
                                         </div>
@@ -686,7 +686,7 @@
 
                             @forelse ($files as $document)
                                 <div class="project-document-file" data-document-row="{{ $document->document_id }}">
-                                    <a href="{{ asset($document->document_path) }}" target="_blank"
+                                    <a href="{{ $document->url() }}" target="_blank"
                                         rel="noopener noreferrer" class="project-document-link"
                                         title="{{ $document->document_name }}">
                                         <i class="bi bi-file-earmark-text" aria-hidden="true"></i>
@@ -1029,10 +1029,10 @@
                                             @foreach ($report->images as $image)
                                                 <div class="col-lg-3 col-md-4 col-6">
 
-                                                    <a href="{{ asset('storage/' . $image->image_path) }}"
+                                                    <a href="{{ $image->url() }}"
                                                         target="_blank">
 
-                                                        <img src="{{ asset('storage/' . $image->image_path) }}"
+                                                        <img src="{{ $image->url() }}"
                                                             class="img-fluid rounded border"
                                                             style="height:170px;width:100%;object-fit:cover;">
 

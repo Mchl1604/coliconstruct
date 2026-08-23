@@ -31,6 +31,7 @@ use App\Services\ScheduleModeRules;
 use App\Services\TaskScheduleRules;
 use App\Services\TechnicianAvailabilityService;
 use App\Services\TechnicianTaskLoad;
+use App\Support\UploadStore;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -615,19 +616,13 @@ class ProjectController extends Controller
             return 0;
         }
 
-        // Written to the configured root, which the test suite points at a
-        // throwaway directory - move() is not something Storage::fake() can
-        // intercept, so without this the suite fills public/uploads.
-        $directory = config('uploads.root').'/'.$folder;
-
-        File::ensureDirectoryExists($directory);
-
-        $files->each(function (UploadedFile $uploadedFile) use ($directory, $projectId, $folder): void {
-            // Named by uuid rather than by what it was called on the way in:
-            // two people uploading "quotation.pdf" must not land on one file.
-            $fileName = Str::uuid()->toString().'.'.$uploadedFile->getClientOriginalExtension();
-
-            $uploadedFile->move($directory, $fileName);
+        $files->each(function (UploadedFile $uploadedFile) use ($projectId, $folder): void {
+            // On the private uploads disk, which is object storage in a
+            // deployment and a directory outside public/ everywhere else.
+            // Never under public/: a contract is not a static asset, and the
+            // route that serves it checks who is asking - see
+            // UploadedFileController.
+            $path = UploadStore::put($uploadedFile, 'documents');
 
             Document::create([
                 'project_id' => $projectId,
@@ -637,8 +632,9 @@ class ProjectController extends Controller
                 // to what the column holds: the name is a label here, and the
                 // file on disk is found by document_path either way.
                 'document_name' => mb_substr($uploadedFile->getClientOriginalName(), 0, 255),
-                // Relative to public/, because asset() reads it back.
-                'document_path' => config('uploads.public_prefix').'/'.$folder.'/'.$fileName,
+                // The path on the uploads disk. Nothing derives a URL from
+                // it - route('media.document') does that from the id.
+                'document_path' => $path,
                 'uploaded_at' => now(),
             ]);
         });
@@ -792,7 +788,7 @@ class ProjectController extends Controller
         abort_unless((int) $document->project_id === (int) $project->project_id, 404);
 
         $type = $document->document_type;
-        $documentUrl = asset($document->document_path);
+        $documentUrl = $document->url();
         $extension = strtolower(pathinfo($document->document_path, PATHINFO_EXTENSION));
 
         $previewType = match ($extension) {
@@ -963,17 +959,13 @@ class ProjectController extends Controller
 
         $name = $document->document_name;
         $type = $document->document_type;
-        // Asked of the document rather than assumed to be under public/ - the
-        // write root is configurable, and the two only agree outside tests.
-        $path = $document->diskPath();
+        $path = $document->document_path;
 
         $document->delete();
 
         // The row is what the pages read, so it goes first; a file left on
-        // disk by a failed unlink is invisible rather than broken.
-        if (File::exists($path)) {
-            File::delete($path);
-        }
+        // the disk by a failed delete is invisible rather than broken.
+        UploadStore::remove($path);
 
         $this->activityLogger->record(
             ActivityLog::PROJECT_UPDATED,

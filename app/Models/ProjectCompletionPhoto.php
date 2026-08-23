@@ -23,6 +23,15 @@ class ProjectCompletionPhoto extends Model
         'uploaded_at' => 'datetime',
     ];
 
+    /**
+     * Where a page links to this photograph - a route that checks the asking
+     * account against the project, never the file's own location.
+     */
+    public function url(): string
+    {
+        return route('media.completion-photo', ['photo' => $this->completion_photo_id]);
+    }
+
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class, 'project_id', 'project_id');

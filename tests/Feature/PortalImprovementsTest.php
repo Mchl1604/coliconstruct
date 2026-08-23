@@ -105,13 +105,15 @@ class PortalImprovementsTest extends TestCase
         $client = $this->account('client', 'c@example.test');
         $project = $this->project($client->email);
 
-        // The buttons link straight at the file, in a new tab, the way the
-        // administrative pages open the same documents.
+        // The buttons link at the route that serves the file, in a new tab,
+        // the way the administrative pages open the same documents. Not at a
+        // path under public/: the bytes are on a private disk and the route
+        // is what checks this client may have them.
         $response = $this->actingAs($client)
             ->get(route('public.projects.show', $project->project_id))
             ->assertOk()
             ->assertSee('Project Documents')
-            ->assertSee(asset('uploads/assessment/a.pdf'), escape: false)
+            ->assertSee($project->documents()->firstOrFail()->url(), escape: false)
             ->assertDontSee('Quotation');
 
         // The project type appears exactly once now that the text field is gone.

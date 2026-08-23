@@ -136,7 +136,7 @@ class ReportsPageTest extends TestCase
         for ($index = 0; $index < $images; $index++) {
             TechnicianReportImage::create([
                 'technician_report_id' => $report->id,
-                'image_path' => 'technician-reports/sample-'.$report->id.'-'.$index.'.jpg',
+                'image_path' => 'report-images/sample-'.$report->id.'-'.$index.'.jpg',
             ]);
         }
 

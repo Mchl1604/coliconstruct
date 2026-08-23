@@ -230,9 +230,9 @@
                             <div class="row g-3 mt-0">
                                 @foreach ($task->images as $image)
                                     <div class="col-lg-4 col-md-6">
-                                        <a href="{{ asset('storage/' . $image->image_path) }}" target="_blank"
+                                        <a href="{{ $image->url() }}" target="_blank"
                                             rel="noopener noreferrer">
-                                            <img src="{{ asset('storage/' . $image->image_path) }}"
+                                            <img src="{{ $image->url() }}"
                                                 class="img-fluid rounded shadow-sm task-completion-image"
                                                 alt="Completion photo">
                                         </a>

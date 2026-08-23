@@ -218,7 +218,7 @@ class ReportController extends Controller
             'images' => $report->images
                 ->map(fn ($image): array => [
                     'id' => $image->id,
-                    'url' => asset('storage/'.$image->image_path),
+                    'url' => $image->url(),
                 ])
                 ->all(),
         ]);

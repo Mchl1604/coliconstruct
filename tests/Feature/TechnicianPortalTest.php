@@ -330,7 +330,7 @@ class TechnicianPortalTest extends TestCase
             'completion_notes' => 'Coil cleaned and refrigerant topped up.',
             'completed_at' => now(),
         ]);
-        $task->images()->create(['image_path' => 'task-completions/proof.jpg']);
+        $image = $task->images()->create(['image_path' => 'task-images/proof.jpg']);
 
         $this->actingAs($this->leadAccount);
 
@@ -343,7 +343,7 @@ class TechnicianPortalTest extends TestCase
             $response->assertOk();
             $response->assertSee('Completion Details');
             $response->assertSee('Coil cleaned and refrigerant topped up.');
-            $response->assertSee('task-completions/proof.jpg');
+            $response->assertSee($image->url(), escape: false);
             // View only: a completed task offers no save button.
             $response->assertDontSee('Edit Task');
         }
@@ -425,7 +425,7 @@ class TechnicianPortalTest extends TestCase
             'completion_notes' => 'Belt replaced.',
             'completed_at' => now(),
         ]);
-        $task->images()->create(['image_path' => 'task-completions/panel-proof.jpg']);
+        $image = $task->images()->create(['image_path' => 'task-images/panel-proof.jpg']);
 
         $this->actingAs($this->leadAccount);
 
@@ -437,7 +437,7 @@ class TechnicianPortalTest extends TestCase
         $response->assertJsonPath('tasks.0.completion_notes', 'Belt replaced.');
         $response->assertJsonCount(1, 'tasks.0.images');
         $this->assertStringContainsString(
-            'task-completions/panel-proof.jpg',
+            $image->url(),
             $response->json('tasks.0.images.0.url')
         );
     }
@@ -663,7 +663,7 @@ class TechnicianPortalTest extends TestCase
      */
     public function test_completing_a_task_stores_the_notes_and_the_photo(): void
     {
-        Storage::fake('public');
+        Storage::fake('uploads');
 
         $task = $this->task($this->lead, 'Lead task');
 
@@ -683,7 +683,7 @@ class TechnicianPortalTest extends TestCase
         $this->assertSame('Unit mounted and tested.', $task->completion_notes);
         $this->assertNotNull($task->completed_at);
         $this->assertCount(1, $task->images);
-        Storage::disk('public')->assertExists($task->images->first()->image_path);
+        Storage::disk('uploads')->assertExists($task->images->first()->image_path);
     }
 
     public function test_completing_a_task_without_an_image_is_allowed(): void
@@ -814,11 +814,11 @@ class TechnicianPortalTest extends TestCase
      */
     public function test_deleting_a_completed_task_takes_its_photos_with_it(): void
     {
-        Storage::fake('public');
-        Storage::disk('public')->put('task-completions/proof.jpg', 'x');
+        Storage::fake('uploads');
+        Storage::disk('uploads')->put('task-images/proof.jpg', 'x');
 
         $task = $this->task($this->mate, 'Done then deleted', 'completed');
-        $task->images()->create(['image_path' => 'task-completions/proof.jpg']);
+        $image = $task->images()->create(['image_path' => 'task-images/proof.jpg']);
 
         $this->actingAs($this->leadAccount);
 
@@ -826,7 +826,7 @@ class TechnicianPortalTest extends TestCase
 
         $this->assertSame(0, Task::count());
         $this->assertDatabaseCount('tbl_task_images', 0);
-        Storage::disk('public')->assertMissing('task-completions/proof.jpg');
+        Storage::disk('uploads')->assertMissing('task-images/proof.jpg');
     }
 
     public function test_a_lead_cannot_delete_a_task_on_a_project_they_are_not_on(): void
@@ -866,7 +866,7 @@ class TechnicianPortalTest extends TestCase
 
     public function test_a_report_is_always_filed_under_the_signed_in_lead(): void
     {
-        Storage::fake('public');
+        Storage::fake('uploads');
 
         $this->actingAs($this->leadAccount);
 
@@ -898,7 +898,7 @@ class TechnicianPortalTest extends TestCase
      */
     public function test_a_submitted_report_carries_the_tables_sort_key(): void
     {
-        Storage::fake('public');
+        Storage::fake('uploads');
 
         $this->actingAs($this->leadAccount);
 
@@ -1023,7 +1023,7 @@ class TechnicianPortalTest extends TestCase
         // The fixture schedule runs from day +10 to +20, entirely ahead.
         $this->assertSame(1, $this->project->schedules()->count());
 
-        Storage::fake('public');
+        Storage::fake('uploads');
         $this->actingAs($this->leadAccount);
 
         $this->post(

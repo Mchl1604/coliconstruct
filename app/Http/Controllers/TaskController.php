@@ -11,10 +11,10 @@ use App\Services\NotificationService;
 use App\Services\TaskAssignmentRules;
 use App\Services\TaskScheduleRules;
 use App\Services\TechnicianTaskLoad;
+use App\Support\UploadStore;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Exists;
@@ -418,7 +418,7 @@ class TaskController extends Controller
             foreach ($request->file('images') ?? [] as $image) {
                 TaskImage::create([
                     'task_id' => $task->task_id,
-                    'image_path' => $image->store('task-completions', 'public'),
+                    'image_path' => UploadStore::put($image, 'task_images'),
                 ]);
             }
 
@@ -478,7 +478,7 @@ class TaskController extends Controller
             // The completion photos go with the task rather than being left
             // orphaned on disk.
             foreach ($task->images as $image) {
-                Storage::disk('public')->delete($image->image_path);
+                UploadStore::remove($image->image_path);
                 $image->delete();
             }
 

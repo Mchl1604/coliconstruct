@@ -102,23 +102,15 @@ class Document extends Model
     }
 
     /**
-     * Where this file actually sits on disk.
+     * Where a page links to this document.
      *
-     * document_path is stored relative to public/ because asset() reads it
-     * back, but the directory it is WRITTEN to is configurable - the test
-     * suite points it somewhere disposable, because UploadedFile::move() is
-     * not something Storage::fake() can intercept. So public_path() is the
-     * right answer in every real environment and the wrong one under test,
-     * and anything that opens or deletes the file has to ask here rather than
-     * assume.
+     * Never the file's own location. The bytes are on a private disk and the
+     * route is what decides whether the person asking may have them - see
+     * UploadedFileController::document(). document_path is an internal detail
+     * of the disk and nothing outside the store should build a URL from it.
      */
-    public function diskPath(): string
+    public function url(): string
     {
-        $prefix = config('uploads.public_prefix').'/';
-        $relative = str_starts_with($this->document_path, $prefix)
-            ? mb_substr($this->document_path, mb_strlen($prefix))
-            : $this->document_path;
-
-        return config('uploads.root').'/'.$relative;
+        return route('media.document', ['document' => $this->document_id]);
     }
 }
