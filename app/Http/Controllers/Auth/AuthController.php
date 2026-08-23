@@ -101,12 +101,20 @@ class AuthController extends Controller
         // to hide behind the generic message - it is sent to finish the
         // registration it started.
         if ($attempted && Auth::user()->requiresEmailVerification()) {
-            $pending = Auth::user();
+            $unproved = Auth::user();
             Auth::logout();
 
             RateLimiter::clear($this->throttleKey($request));
 
-            return $this->sendVerificationCode($request, $pending);
+            // Only accounts that predate tbl_pending_registrations can be in
+            // this state - registration no longer creates one - but they exist
+            // in deployed databases and must still be able to finish.
+            return $this->sendVerificationCode(
+                $request,
+                $unproved->email,
+                $unproved->fullName(),
+                $unproved
+            );
         }
 
         // The credentials matched; now check the account is allowed in at all.
@@ -180,10 +188,11 @@ class AuthController extends Controller
      * accounts exist solely because an admin or super admin created them in
      * Configuration.
      *
-     * The account is created unverified and is not signed in. A code emailed
-     * to the address is the only thing that activates it - see
-     * EmailVerificationController - so an address nobody can read never
-     * becomes a working account.
+     * Nothing in `users` is created here. The details are parked in
+     * tbl_pending_registrations and a code is emailed to the address; only
+     * that code coming back makes the account - see
+     * EmailVerificationController. An address nobody can read therefore never
+     * takes an account, a user_code, or a place in Configuration's listings.
      */
     public function register(Request $request)
     {
@@ -209,9 +218,9 @@ class AuthController extends Controller
         // registering, not a column on the account.
         unset($validated['terms']);
 
-        $user = app(UserAccountService::class)->registerClient($validated);
+        $pending = app(UserAccountService::class)->startRegistration($validated);
 
-        return $this->sendVerificationCode($request, $user);
+        return $this->sendVerificationCode($request, $pending->email, $pending->fullName());
     }
 
     /**
@@ -219,17 +228,20 @@ class AuthController extends Controller
      *
      * Shared by registration and by a sign-in attempt against an account that
      * never finished one, so both land on the same page having sent the same
-     * kind of code.
+     * kind of code. Takes the address rather than an account because in the
+     * first case there is no account yet - only a pending registration - and
+     * in the second there is.
      */
-    private function sendVerificationCode(Request $request, User $account)
+    private function sendVerificationCode(Request $request, string $email, string $name, ?User $account = null)
     {
-        $request->session()->put(EmailVerificationController::SESSION_KEY, $account->email);
+        $request->session()->put(EmailVerificationController::SESSION_KEY, $email);
 
         try {
             app(OtpService::class)->issue(
-                $account->email,
+                $email,
                 OtpVerification::PURPOSE_REGISTRATION,
-                $account
+                $account,
+                $name
             );
         } catch (RuntimeException $exception) {
             // A code was sent moments ago, or too many have been asked for.
@@ -239,7 +251,7 @@ class AuthController extends Controller
 
         return redirect()
             ->route('auth.verify')
-            ->with('success', 'Verification code sent to '.$account->email.'.');
+            ->with('success', 'Verification code sent to '.$email.'.');
     }
 
     public function logout(Request $request)

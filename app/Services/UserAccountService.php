@@ -5,11 +5,13 @@ namespace App\Services;
 use App\Mail\AccountStatusMail;
 use App\Models\ActivityLog;
 use App\Models\Client;
+use App\Models\PendingRegistration;
 use App\Models\Project;
 use App\Models\Technician;
 use App\Models\User;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use RuntimeException;
 
 /**
@@ -132,6 +134,78 @@ class UserAccountService
     }
 
     /**
+     * Take down a registration without creating anything.
+     *
+     * Nothing in `users` happens here - no account, no user_code, no activity
+     * log entry, no notification to the administrators. All of that waits for
+     * completeRegistration(), so an address that is never proved leaves behind
+     * a row that expires rather than an account that does not.
+     *
+     * A second attempt at the same address replaces the first rather than
+     * being refused. Somebody who mistyped their name, or chose a password
+     * they immediately forgot, can simply fill the form in again - and the
+     * address is never held against them by a registration they abandoned.
+     * OtpService's resend cooldown and hourly cap are what stop the same
+     * address being used to send mail repeatedly.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    public function startRegistration(array $data): PendingRegistration
+    {
+        $email = mb_strtolower(trim((string) $data['email']));
+
+        return DB::transaction(function () use ($data, $email): PendingRegistration {
+            PendingRegistration::where('email', $email)->delete();
+
+            return PendingRegistration::create([
+                'email' => $email,
+                'full_name' => trim((string) $data['full_name']),
+                'contact_number' => trim((string) $data['contact_number']),
+                'birthdate' => $data['birthdate'],
+                // Hashed on the way in. The row is then worth no more to
+                // somebody reading the table than the finished account is.
+                'password' => Hash::make($data['password']),
+                'expires_at' => now()->addHours(PendingRegistration::VALID_HOURS),
+            ]);
+        });
+    }
+
+    /**
+     * Turn a proved registration into the account.
+     *
+     * Called once, by EmailVerificationController, after the code has come
+     * back. Everything that used to happen at the moment the form was
+     * submitted happens here instead - which is also the more honest place for
+     * it: the administrators are told about a client who exists, and the
+     * user_code sequence is not spent on somebody who never arrived.
+     */
+    public function completeRegistration(PendingRegistration $pending): User
+    {
+        $user = $this->registerClient([
+            'full_name' => $pending->full_name,
+            'contact_number' => $pending->contact_number,
+            'birthdate' => $pending->birthdate,
+            // Already a hash. User's `hashed` cast leaves it alone.
+            'password' => $pending->password,
+            'email' => $pending->email,
+        ]);
+
+        $pending->delete();
+
+        return $user;
+    }
+
+    /**
+     * Remove the registrations nobody came back to finish.
+     *
+     * @return int the number of rows removed
+     */
+    public function purgeLapsedRegistrations(): int
+    {
+        return PendingRegistration::query()->lapsed()->delete();
+    }
+
+    /**
      * A client signing themselves up from the public site.
      *
      * The role is hard-coded rather than taken from the form: self-service
@@ -141,6 +215,10 @@ class UserAccountService
      *
      * Unlike an administrator-created account, the password is the person's
      * own choice, so nothing has to be replaced at first sign-in.
+     *
+     * Reached only through completeRegistration(), so by the time this runs
+     * the address has already been proved - which is why the account is
+     * created verified.
      *
      * @param  array<string, mixed>  $data
      */
@@ -161,10 +239,9 @@ class UserAccountService
                 'role' => User::ROLE_CLIENT,
                 'status' => User::STATUS_ACTIVE,
                 'is_archived' => false,
-                // Unverified on purpose. A self-registered address has proved
-                // nothing yet, and the account cannot sign in until a code
-                // sent to it comes back - see EmailVerificationController.
-                'email_verified_at' => null,
+                // Proved before the account existed: nothing reaches here
+                // until the code sent to the address has come back.
+                'email_verified_at' => now(),
                 'must_change_password' => false,
                 'created_by' => null,
                 'password' => $data['password'],

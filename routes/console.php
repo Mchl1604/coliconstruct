@@ -1,6 +1,7 @@
 <?php
 
 use App\Services\OtpService;
+use App\Services\UserAccountService;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -32,3 +33,13 @@ Schedule::command('projects:process-completion-confirmations')->dailyAt('08:05')
 Schedule::call(fn () => app(OtpService::class)->purgeExpired())
     ->dailyAt('03:00')
     ->name('otp:purge-expired');
+
+// Registrations nobody came back to finish.
+//
+// The only thing that removes them: a pending registration is attached to no
+// account, so no other flow would ever reach it. Without this an address typed
+// by mistake would hold its row - and refuse itself to whoever actually owns
+// it - for as long as the table lives.
+Schedule::call(fn () => app(UserAccountService::class)->purgeLapsedRegistrations())
+    ->dailyAt('03:05')
+    ->name('registrations:purge-lapsed');

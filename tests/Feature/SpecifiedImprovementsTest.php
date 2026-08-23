@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Client;
+use App\Models\PendingRegistration;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
 use App\Models\Schedule;
@@ -146,14 +147,17 @@ class SpecifiedImprovementsTest extends TestCase
             ]))->assertSessionHasErrors('contact_number');
 
             $this->assertNull(User::where('email', 'refused@example.test')->first());
+            $this->assertNull(PendingRegistration::where('email', 'refused@example.test')->first());
         }
 
         $this->post(route('auth.register.store'), $this->registration())
             ->assertRedirect(route('auth.verify'));
 
+        // Held as a pending registration, not an account - see
+        // UserAccountService::startRegistration().
         $this->assertSame(
             '09171234567',
-            User::where('email', 'jose@example.test')->value('contact_number')
+            PendingRegistration::where('email', 'jose@example.test')->value('contact_number')
         );
     }
 
@@ -169,6 +173,7 @@ class SpecifiedImprovementsTest extends TestCase
             ->assertSessionHasErrors('terms');
 
         $this->assertNull(User::where('email', 'jose@example.test')->first());
+        $this->assertNull(PendingRegistration::where('email', 'jose@example.test')->first());
     }
 
     /**

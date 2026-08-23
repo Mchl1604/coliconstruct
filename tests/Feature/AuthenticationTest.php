@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Mail\OtpCodeMail;
 use App\Models\ActivityLog;
 use App\Models\OtpVerification;
+use App\Models\PendingRegistration;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
 use App\Models\Schedule;
@@ -12,6 +13,7 @@ use App\Models\Task;
 use App\Models\Technician;
 use App\Models\TechnicianReport;
 use App\Models\User;
+use App\Services\UserAccountService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
@@ -199,11 +201,12 @@ class AuthenticationTest extends TestCase
     // ------------------------------------------------------------------
 
     /**
-     * Self-registration produces a client and nothing else - and does not sign
-     * them in. The address has proved nothing yet, so the account is created
-     * unverified and the browser goes to the verification page.
+     * Registering creates no account at all. The details wait in
+     * tbl_pending_registrations with a code sent to the address, and `users`
+     * is untouched until that code comes back - so an address typed by
+     * mistake takes nothing and holds nothing.
      */
-    public function test_registering_creates_an_unverified_client_account(): void
+    public function test_registering_creates_no_account_until_the_code_comes_back(): void
     {
         Mail::fake();
 
@@ -219,18 +222,21 @@ class AuthenticationTest extends TestCase
 
         $response->assertRedirect(route('auth.verify'));
 
-        $user = User::where('email', 'jose@example.test')->firstOrFail();
-
-        $this->assertSame(User::ROLE_CLIENT, $user->role);
-        $this->assertStringStartsWith('CLI-', (string) $user->user_code);
-        // Their own password, so there is nothing to force them to replace.
-        $this->assertFalse($user->must_change_password);
-        $this->assertTrue(Hash::check('my-own-password', $user->password));
-
-        // Unverified, not signed in, and holding a live code.
-        $this->assertFalse($user->hasVerifiedEmail());
-        $this->assertTrue($user->requiresEmailVerification());
+        // Nothing in users, and none of what goes with an account either.
+        $this->assertNull(User::where('email', 'jose@example.test')->first());
+        $this->assertDatabaseMissing('tbl_activity_logs', [
+            'action' => ActivityLog::CLIENT_CREATED,
+        ]);
         $this->assertGuest();
+
+        $pending = PendingRegistration::where('email', 'jose@example.test')->firstOrFail();
+
+        $this->assertSame('Jose Garcia', $pending->full_name);
+        $this->assertSame('09175551234', $pending->contact_number);
+        $this->assertSame('1990-05-04', $pending->birthdate->toDateString());
+        // Hashed here too: the row is worth no more than the account would be.
+        $this->assertNotSame('my-own-password', $pending->password);
+        $this->assertTrue(Hash::check('my-own-password', $pending->password));
 
         Mail::assertQueued(OtpCodeMail::class, fn (OtpCodeMail $mail): bool => $mail->hasTo('jose@example.test')
             && $mail->purpose === OtpVerification::PURPOSE_REGISTRATION);
@@ -239,6 +245,74 @@ class AuthenticationTest extends TestCase
             'email' => 'jose@example.test',
             'purpose' => OtpVerification::PURPOSE_REGISTRATION,
         ]);
+    }
+
+    /**
+     * Filling the form in again replaces the registration rather than being
+     * refused as a duplicate. This is the point of the pending table: an
+     * abandoned attempt must never hold an address against the person who
+     * owns it.
+     */
+    public function test_registering_again_replaces_the_pending_registration(): void
+    {
+        Mail::fake();
+
+        $this->travelTo(now()->subMinutes(5));
+
+        $this->post(route('auth.register.store'), [
+            'full_name' => 'Jose Gracia',
+            'email' => 'jose@example.test',
+            'contact_number' => '09175551234',
+            'birthdate' => '1990-05-04',
+            'password' => 'first-password',
+            'password_confirmation' => 'first-password',
+            'terms' => '1',
+        ]);
+
+        $this->travelBack();
+
+        $this->post(route('auth.register.store'), [
+            'full_name' => 'Jose Garcia',
+            'email' => 'jose@example.test',
+            'contact_number' => '09175559999',
+            'birthdate' => '1990-05-04',
+            'password' => 'second-password',
+            'password_confirmation' => 'second-password',
+            'terms' => '1',
+        ])->assertRedirect(route('auth.verify'));
+
+        $this->assertSame(1, PendingRegistration::where('email', 'jose@example.test')->count());
+
+        $pending = PendingRegistration::where('email', 'jose@example.test')->firstOrFail();
+
+        $this->assertSame('Jose Garcia', $pending->full_name);
+        $this->assertSame('09175559999', $pending->contact_number);
+        $this->assertTrue(Hash::check('second-password', $pending->password));
+    }
+
+    /**
+     * A registration nobody finished is swept up, and the address it was
+     * holding is free again.
+     */
+    public function test_a_lapsed_registration_is_swept_away(): void
+    {
+        Mail::fake();
+
+        $this->post(route('auth.register.store'), [
+            'full_name' => 'Jose Garcia',
+            'email' => 'jose@example.test',
+            'contact_number' => '09175551234',
+            'birthdate' => '1990-05-04',
+            'password' => 'my-own-password',
+            'password_confirmation' => 'my-own-password',
+            'terms' => '1',
+        ]);
+
+        $this->travel(PendingRegistration::VALID_HOURS + 1)->hours();
+
+        $this->assertNull(PendingRegistration::liveFor('jose@example.test'));
+        $this->assertSame(1, app(UserAccountService::class)->purgeLapsedRegistrations());
+        $this->assertSame(0, PendingRegistration::count());
     }
 
     /**
@@ -265,9 +339,19 @@ class AuthenticationTest extends TestCase
 
         $user = User::where('email', 'jose@example.test')->firstOrFail();
 
+        // Everything that used to happen at submit happens here instead.
+        $this->assertSame(User::ROLE_CLIENT, $user->role);
+        $this->assertStringStartsWith('CLI-', (string) $user->user_code);
+        // Their own password, so there is nothing to force them to replace.
+        $this->assertFalse($user->must_change_password);
+        $this->assertTrue(Hash::check('my-own-password', $user->password));
+
         $this->assertTrue($user->hasVerifiedEmail());
         $this->assertTrue($user->canLogin());
         $this->assertAuthenticatedAs($user);
+
+        // The pending row is spent, not left behind.
+        $this->assertNull(PendingRegistration::where('email', 'jose@example.test')->first());
 
         $this->assertDatabaseHas('tbl_activity_logs', [
             'action' => ActivityLog::REGISTRATION_VERIFIED,
@@ -331,9 +415,9 @@ class AuthenticationTest extends TestCase
         $this->post(route('auth.verify.store'), ['code' => '000000'])
             ->assertSessionHas('error');
 
-        $this->assertFalse(
-            User::where('email', 'jose@example.test')->firstOrFail()->hasVerifiedEmail()
-        );
+        // Still nothing in users, and the registration is still waiting.
+        $this->assertNull(User::where('email', 'jose@example.test')->first());
+        $this->assertNotNull(PendingRegistration::liveFor('jose@example.test'));
         $this->assertGuest();
 
         $this->assertDatabaseHas('tbl_otp_verifications', [
@@ -366,6 +450,40 @@ class AuthenticationTest extends TestCase
     }
 
     /**
+     * The accounts that predate tbl_pending_registrations.
+     *
+     * Registration no longer leaves an unverified account behind, but every
+     * database deployed before it does hold some. They must still be able to
+     * finish: signing in resends the code, and the code marks the account they
+     * already have rather than trying to create a second one.
+     */
+    public function test_an_account_left_unverified_by_the_old_flow_can_still_finish(): void
+    {
+        Mail::fake();
+
+        $legacy = $this->account('client', [
+            'email' => 'legacy@example.test',
+            'email_verified_at' => null,
+        ]);
+
+        $this->post(route('auth.login.attempt'), [
+            'email' => $legacy->email,
+            'password' => 'correct-password',
+        ])->assertRedirect(route('auth.verify'));
+
+        $this->post(route('auth.verify.store'), ['code' => $this->issuedCode()]);
+
+        $legacy->refresh();
+
+        $this->assertTrue($legacy->hasVerifiedEmail());
+        $this->assertAuthenticatedAs($legacy);
+
+        // No second account, and nothing parked in the pending table for it.
+        $this->assertSame(1, User::where('email', 'legacy@example.test')->count());
+        $this->assertSame(0, PendingRegistration::count());
+    }
+
+    /**
      * The six digits, read back from the message that carried them - the only
      * place they exist after being generated.
      */
@@ -388,6 +506,8 @@ class AuthenticationTest extends TestCase
      */
     public function test_registration_cannot_be_talked_into_making_an_employee(): void
     {
+        Mail::fake();
+
         $this->post(route('auth.register.store'), [
             'full_name' => 'Sneaky Person',
             'email' => 'sneaky@example.test',
@@ -399,6 +519,10 @@ class AuthenticationTest extends TestCase
             'role' => 'super_admin',
             'status' => 'active',
         ]);
+
+        // The crafted fields are not even carried as far as the account: the
+        // pending table has no column that could hold one.
+        $this->post(route('auth.verify.store'), ['code' => $this->issuedCode()]);
 
         $user = User::where('email', 'sneaky@example.test')->firstOrFail();
 
@@ -466,6 +590,8 @@ class AuthenticationTest extends TestCase
             'password_confirmation' => 'my-own-password',
             'terms' => '1',
         ])->assertRedirect(route('auth.verify'));
+
+        $this->post(route('auth.verify.store'), ['code' => $this->issuedCode()]);
 
         $user = User::where('email', 'eighteen@example.test')->firstOrFail();
 

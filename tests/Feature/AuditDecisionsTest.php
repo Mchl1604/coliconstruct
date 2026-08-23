@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Mail\OtpCodeMail;
 use App\Models\Client;
 use App\Models\Notification;
 use App\Models\Project;
@@ -15,6 +16,7 @@ use App\Services\ProfileService;
 use App\Services\SystemReportService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
 
 /**
@@ -297,6 +299,8 @@ class AuditDecisionsTest extends TestCase
 
         $this->assertNull(Client::where('project_id', $project->project_id)->value('user_id'));
 
+        Mail::fake();
+
         $this->post(route('auth.register.store'), [
             'full_name' => 'New Comer',
             'contact_number' => '09123456789',
@@ -306,6 +310,16 @@ class AuditDecisionsTest extends TestCase
             'password_confirmation' => 'a-good-password',
             'terms' => '1',
         ]);
+
+        // The account - and so the claim - is made by the code, not the form.
+        $code = null;
+        Mail::assertQueued(OtpCodeMail::class, function (OtpCodeMail $mail) use (&$code): bool {
+            $code = $mail->code;
+
+            return true;
+        });
+
+        $this->post(route('auth.verify.store'), ['code' => (string) $code]);
 
         $client = User::where('email', 'newcomer@example.test')->first();
 
