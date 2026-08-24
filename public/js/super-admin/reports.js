@@ -43,6 +43,53 @@ document.addEventListener("DOMContentLoaded", function () {
         );
     }
 
+    /**
+     * The same toast the layout raises for a flashed message, appended from
+     * here for an action that happened without a page load. Same container,
+     * same markup, so an archived report reads exactly like a saved project.
+     */
+    function toast(message, variant) {
+        const container = document.querySelector("[data-toast-container]");
+
+        if (!container || !message || !window.bootstrap) {
+            return;
+        }
+
+        const name = variant || "success";
+        const isDark = name === "warning" || name === "info";
+        const element = document.createElement("div");
+
+        element.className =
+            "toast align-items-center border-0 bg-" +
+            name +
+            (isDark ? " text-dark" : " text-white");
+        element.setAttribute("role", "alert");
+        element.setAttribute("aria-live", "assertive");
+        element.setAttribute("aria-atomic", "true");
+        // Inner flex row, matching the flash-toasts component: `d-flex` on the
+        // toast itself would beat the rule that keeps it hidden until shown.
+        element.innerHTML =
+            '<div class="d-flex">' +
+            '<div class="toast-body">' +
+            escapeHtml(message) +
+            "</div>" +
+            '<button type="button" class="btn-close ' +
+            (isDark ? "" : "btn-close-white ") +
+            'me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>' +
+            "</div>";
+
+        container.appendChild(element);
+
+        element.addEventListener("hidden.bs.toast", function () {
+            element.remove();
+        });
+
+        window.bootstrap.Toast.getOrCreateInstance(element, {
+            autohide: true,
+            delay: 4000,
+        }).show();
+    }
+
     function setAlert(element, message) {
         if (!element) {
             return;
@@ -188,10 +235,26 @@ document.addEventListener("DOMContentLoaded", function () {
                     escapeHtml(report.report_date_label) +
                     "</td>" +
                     '<td class="text-center">' +
+                    '<div class="d-inline-flex gap-1">' +
                     '<button type="button" class="btn btn-sm btn-primary py-1 px-2" ' +
                     'data-view-report="' +
                     report.id +
                     '" title="View report"><i class="bi bi-eye"></i></button>' +
+                    // Drawn only where the server said this account may
+                    // archive this report. The endpoint asks the same policy
+                    // again, so a row that answers false here is refused there
+                    // too - see TechnicianReportArchiveController.
+                    (report.can_archive
+                        ? '<button type="button" class="btn btn-sm btn-warning py-1 px-2" ' +
+                          'data-archive-report="' +
+                          report.id +
+                          '" data-report-label="' +
+                          escapeHtml(report.display_code) +
+                          " - " +
+                          escapeHtml(report.report_title) +
+                          '" title="Archive report"><i class="bi bi-archive"></i></button>'
+                        : "") +
+                    "</div>" +
                     "</td>" +
                     "</tr>"
                 );
@@ -501,12 +564,99 @@ document.addEventListener("DOMContentLoaded", function () {
 
     const viewer = viewModalEl ? initViewer(viewModalEl) : null;
 
+    // ---------------------------------------------------------------
+    // Archiving a report
+    //
+    // The confirmation dialog the rest of the portal uses, then one request.
+    // The row is not hidden locally: the table is reloaded, so what is on
+    // screen is what the server would answer for these filters - which is the
+    // same list Project Details will now show.
+    // ---------------------------------------------------------------
+
+    const archiveModalEl = document.querySelector("[data-archive-report-modal]");
+
+    const archiving = archiveModalEl
+        ? (function (modal) {
+              const labelEl = modal.querySelector("[data-archive-report-label]");
+              const errorEl = modal.querySelector("[data-archive-report-error]");
+              const confirmEl = modal.querySelector("[data-archive-report-confirm]");
+              const spinnerEl = modal.querySelector("[data-archive-report-spinner]");
+
+              let pendingId = null;
+
+              function setBusy(isBusy) {
+                  confirmEl.disabled = isBusy;
+                  spinnerEl.classList.toggle("d-none", !isBusy);
+              }
+
+              confirmEl.addEventListener("click", function () {
+                  if (pendingId === null) {
+                      return;
+                  }
+
+                  setAlert(errorEl, "");
+                  setBusy(true);
+
+                  requestJson(
+                      routes.archiveBase + "/" + pendingId + "/archive",
+                      {
+                          method: "POST",
+                          headers: { "X-CSRF-TOKEN": csrfToken() },
+                      },
+                  ).then(function (result) {
+                      setBusy(false);
+
+                      if (!result.ok) {
+                          setAlert(
+                              errorEl,
+                              result.body.error || "Unable to archive report.",
+                          );
+
+                          return;
+                      }
+
+                      if (window.bootstrap) {
+                          window.bootstrap.Modal.getOrCreateInstance(modal).hide();
+                      }
+
+                      toast(result.body.message || "Report archived successfully.");
+                      pendingId = null;
+                      loadReports();
+                  });
+              });
+
+              return {
+                  open: function (id, label) {
+                      pendingId = id;
+                      labelEl.textContent = label || "this report";
+                      setAlert(errorEl, "");
+                      setBusy(false);
+
+                      if (window.bootstrap) {
+                          window.bootstrap.Modal.getOrCreateInstance(modal).show();
+                      }
+                  },
+              };
+          })(archiveModalEl)
+        : null;
+
     if (reportsBody) {
         reportsBody.addEventListener("click", function (event) {
-            const button = event.target.closest("[data-view-report]");
+            const viewButton = event.target.closest("[data-view-report]");
 
-            if (button && viewer) {
-                viewer.open(button.dataset.viewReport);
+            if (viewButton && viewer) {
+                viewer.open(viewButton.dataset.viewReport);
+
+                return;
+            }
+
+            const archiveButton = event.target.closest("[data-archive-report]");
+
+            if (archiveButton && archiving) {
+                archiving.open(
+                    archiveButton.dataset.archiveReport,
+                    archiveButton.dataset.reportLabel,
+                );
             }
         });
     }

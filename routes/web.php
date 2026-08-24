@@ -9,7 +9,6 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\InquiryController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\ProfileController;
-use App\Http\Controllers\UploadedFileController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ProjectTypeController;
 use App\Http\Controllers\PublicSiteController;
@@ -19,7 +18,9 @@ use App\Http\Controllers\SystemContentController;
 use App\Http\Controllers\TaskController;
 use App\Http\Controllers\TechnicianController;
 use App\Http\Controllers\TechnicianPortalController;
+use App\Http\Controllers\TechnicianReportArchiveController;
 use App\Http\Controllers\TechnicianReportController;
+use App\Http\Controllers\UploadedFileController;
 use Illuminate\Support\Facades\Route;
 
 // The public website. Every page here is readable by anyone; My Projects is
@@ -274,6 +275,17 @@ Route::prefix('super-admin')
 
         // ROUTE FOR SUPER ADMIN REPORTS PAGE
         Route::get('/reports', [ReportController::class, 'index'])->name('reports.index');
+
+        // The archived technician reports, on the same terms as the archived
+        // projects and archived accounts pages. Declared before the
+        // /reports/technician-reports/{report} route below so the literal
+        // segment is matched first.
+        //
+        // Admin reaches this as well as Super Admin: an Admin may archive any
+        // report, and a list they can fill but not read would be a strange
+        // half of a feature. Who may put one back is decided per report by
+        // TechnicianReportPolicy, not by the door.
+        Route::get('/reports/archived', [ReportController::class, 'archivedIndex'])->name('reports.archived');
         Route::get('/reports/technician-reports', [ReportController::class, 'technicianReports'])->name('reports.technician');
         Route::get('/reports/technician-reports/{report}', [ReportController::class, 'showTechnicianReport'])->name('reports.technician.show');
         Route::get('/reports/reportable-projects', [ReportController::class, 'reportableProjects'])->name('reports.reportable');
@@ -423,6 +435,11 @@ Route::prefix('technician')
         Route::middleware('role:lead_technician')->group(function () {
             Route::get('/reports', [TechnicianPortalController::class, 'reports'])->name('reports');
 
+            // A lead's own archive. Declared beside the log it belongs to, and
+            // narrowed the same way: what a lead filed away themselves.
+            Route::get('/reports/archived', [TechnicianPortalController::class, 'archivedReports'])
+                ->name('reports.archived');
+
             Route::post('/projects/{project}/complete', [TechnicianPortalController::class, 'completeProject'])
                 ->name('projects.complete');
             Route::get('/projects/{project}/task-form-data', [TechnicianPortalController::class, 'taskFormData'])
@@ -436,6 +453,29 @@ Route::prefix('technician')
             Route::delete('/tasks/{task}', [TechnicianPortalController::class, 'destroyTask'])
                 ->name('tasks.destroy');
         });
+    });
+
+// Archiving a technician report, and putting it back.
+//
+// One pair of endpoints for every screen that offers the action - the Reports
+// page and Project Details, in both portals - so a report archived from one
+// disappears from all of them and there is a single rule to enforce.
+//
+// The role list here is the outer fence: a plain technician and a client have
+// no business archiving anything. Which reports a lead technician may actually
+// touch is TechnicianReportPolicy's decision, made per report inside the
+// controller - a lead archives only what they filed themselves, whatever the
+// page they came from and whatever id they send.
+Route::middleware(['auth', 'password.changed', 'role:super_admin,admin,lead_technician'])
+    ->prefix('technician-reports')
+    ->name('technician-reports.')
+    ->group(function () {
+        Route::post('/{report}/archive', [TechnicianReportArchiveController::class, 'archive'])
+            ->whereNumber('report')
+            ->name('archive');
+        Route::put('/{report}/restore', [TechnicianReportArchiveController::class, 'restore'])
+            ->whereNumber('report')
+            ->name('restore');
     });
 
 // A client has no portal of their own. Signing in lands them on the public

@@ -152,11 +152,20 @@
                 aria-hidden="true">
                 <div class="modal-dialog modal-lg modal-dialog-centered">
                     <div class="modal-content">
+                        {{-- The days the pickers must refuse travel on the form,
+                             computed by ProjectController::reopenBlockedDates()
+                             from the very rules the reopen is checked against -
+                             the team's other bookings, and the days this project
+                             kept. Two lists because a whole-day range needs the
+                             whole day free while an hours-only one needs an hour
+                             of it. See reopenProject.js. --}}
                         <form method="POST" action="{{ route('super-admin.projects.reopen', $project->project_id) }}"
-                            data-reopen-form>
+                            data-reopen-form data-reopen-earliest="{{ $today }}"
+                            data-reopen-blocked-whole-day="{{ json_encode($reopenBlockedDates['whole_day']) }}"
+                            data-reopen-blocked-partial-day="{{ json_encode($reopenBlockedDates['partial_day']) }}">
                             @csrf
 
-                            <div class="modal-header bg-dark text-white">
+                            <div class="modal-header bg-primary text-white">
                                 <h5 class="modal-title" id="reopenProjectModalLabel">
                                     <i class="bi bi-arrow-counterclockwise me-2" aria-hidden="true"></i>
                                     Reopen Project &mdash; {{ $project->reference_no }}
@@ -195,18 +204,24 @@
 
                                 {{-- The two field groups. The one not in use is hidden AND
                                      disabled, so the browser neither validates nor submits it -
-                                     the same rule the schedules page follows. --}}
+                                     the same rule the schedules page follows.
+
+                                     Text rather than date fields because they carry flatpickr,
+                                     the same picker the schedules page uses: a native date
+                                     field cannot grey out the days the team is already booked
+                                     on. The value submitted is still Y-m-d, and the floor
+                                     today's date once was comes from data-reopen-earliest. --}}
                                 <div class="row g-3" data-reopen-date-based>
                                     <div class="col-md-6">
                                         <label class="form-label fw-semibold" for="reopenStartDate">Start date</label>
-                                        <input type="date" class="form-control" id="reopenStartDate" name="start_date"
-                                            min="{{ $today }}" required>
+                                        <input type="text" class="form-control" id="reopenStartDate" name="start_date"
+                                            placeholder="Select start date" data-reopen-start required>
                                     </div>
 
                                     <div class="col-md-6">
                                         <label class="form-label fw-semibold" for="reopenEndDate">End date</label>
-                                        <input type="date" class="form-control" id="reopenEndDate" name="end_date"
-                                            min="{{ $today }}" required>
+                                        <input type="text" class="form-control" id="reopenEndDate" name="end_date"
+                                            placeholder="Select end date" data-reopen-end required>
                                     </div>
                                 </div>
 
@@ -214,8 +229,9 @@
                                     <div class="row g-3" data-reopen-partial-day hidden>
                                         <div class="col-md-4">
                                             <label class="form-label fw-semibold" for="reopenProjectDate">Date</label>
-                                            <input type="date" class="form-control" id="reopenProjectDate"
-                                                name="project_date" min="{{ $today }}" disabled>
+                                            <input type="text" class="form-control" id="reopenProjectDate"
+                                                name="project_date" placeholder="Select date" data-reopen-project-date
+                                                disabled>
                                         </div>
 
                                         <div class="col-md-4">
@@ -245,7 +261,9 @@
                                     <div class="form-text mt-2">
                                         The team
                                         ({{ $project->projectTechnicians->map(fn($assignment) => $assignment->technician?->name)->filter()->join(', ') }})
-                                        is booked onto these dates. A clash will refuse the reopen.
+                                        is booked onto these dates. Days any of them are already
+                                        spoken for are greyed out, and a clash will still refuse
+                                        the reopen.
                                     </div>
                                 @endif
 
@@ -265,7 +283,7 @@
 
                             <div class="modal-footer">
                                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                                <button type="submit" class="btn btn-dark">
+                                <button type="submit" class="btn btn-primary">
                                     <i class="bi bi-arrow-counterclockwise me-1" aria-hidden="true"></i>
                                     Reopen &amp; Schedule
                                 </button>
@@ -714,7 +732,10 @@
                     <span class="fw-bold me-2">
                         Quotation:
                     </span>
-                    <span>
+                    {{-- Green, as the quotation column reads on the projects
+                         table: the figure the project is worth is the one thing
+                         on this card somebody scans for. --}}
+                    <span class="text-success fw-semibold">
                         ₱ {{ number_format($project->quotation, 2) }}
                     </span>
                 </div>
@@ -1007,11 +1028,34 @@
 
                                     </div>
 
-                                    <small class="text-muted">
+                                    <div class="text-end">
 
-                                        {{ \Carbon\Carbon::parse($report->report_date)->format('M d, Y') }}
+                                        <small class="text-muted d-block">
 
-                                    </small>
+                                            {{ \Carbon\Carbon::parse($report->report_date)->format('M d, Y') }}
+
+                                        </small>
+
+                                        {{-- Archiving takes this report off the
+                                             active lists everywhere - here and on
+                                             the Reports page alike - without
+                                             deleting it or anything attached to
+                                             it. Drawn only for whoever the policy
+                                             says may do it, and refused by the
+                                             endpoint on the same terms. --}}
+                                        @can('archive', $report)
+                                            <button type="button" class="btn btn-sm btn-outline-secondary mt-2"
+                                                data-bs-toggle="modal"
+                                                data-bs-target="#archiveReportModal{{ $report->id }}">
+
+                                                <i class="bi bi-archive me-1"></i>
+
+                                                Archive
+
+                                            </button>
+                                        @endcan
+
+                                    </div>
 
                                 </div>
 
@@ -1047,6 +1091,50 @@
                                 </div>
 
                             </div>
+
+                            @can('archive', $report)
+                                <!-- ARCHIVE REPORT MODAL -->
+                                <div class="modal fade" id="archiveReportModal{{ $report->id }}" tabindex="-1"
+                                    aria-hidden="true">
+                                    <div class="modal-dialog">
+                                        <div class="modal-content">
+
+                                            <div class="modal-header">
+                                                <h5 class="modal-title">Archive Report</h5>
+                                                <button type="button" class="btn-close" data-bs-dismiss="modal"
+                                                    aria-label="Close"></button>
+                                            </div>
+
+                                            <div class="modal-body">
+                                                Archive <strong>{{ $report->displayCode() }} &mdash;
+                                                    {{ $report->report_title }}</strong>?
+
+                                                <p class="text-secondary small mb-0 mt-2">
+                                                    It comes off this project's report list and off the active
+                                                    Reports page. The report, its images and its attachments are
+                                                    kept, and it can be restored from Archived Reports. The
+                                                    project, its schedule and its team are not affected.
+                                                </p>
+                                            </div>
+
+                                            <div class="modal-footer">
+                                                <button type="button" class="btn btn-secondary"
+                                                    data-bs-dismiss="modal">Cancel</button>
+
+                                                <form method="POST"
+                                                    action="{{ route('technician-reports.archive', $report->id) }}">
+                                                    @csrf
+                                                    <button type="submit" class="btn btn-warning">
+                                                        <i class="bi bi-archive me-1"></i>
+                                                        Archive Report
+                                                    </button>
+                                                </form>
+                                            </div>
+
+                                        </div>
+                                    </div>
+                                </div>
+                            @endcan
 
                         @empty
 
@@ -1997,6 +2085,8 @@
         <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
         {{-- Same range-aware task date pickers the Tasks page uses. --}}
         <script src="/js/super-admin/taskDatePickers.js"></script>
+        {{-- Greys out the days the Reopen dialog cannot book. --}}
+        <script src="/js/super-admin/reopenProject.js"></script>
         <script src="/js/imagePreview.js"></script>
         <script src="/js/importTeam.js"></script>
         <script src="/js/super-admin/projectDetails.js"></script>

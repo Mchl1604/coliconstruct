@@ -435,9 +435,25 @@
                                         </div>
                                     </div>
 
-                                    <small class="text-muted">
-                                        {{ $report->report_date?->format('M d, Y') ?? '—' }}
-                                    </small>
+                                    <div class="text-end">
+                                        <small class="text-muted d-block">
+                                            {{ $report->report_date?->format('M d, Y') ?? '—' }}
+                                        </small>
+
+                                        {{-- A lead archives the reports they filed
+                                             themselves and no others: the button is
+                                             drawn from the same policy the endpoint
+                                             enforces, so what is missing here is
+                                             refused there. --}}
+                                        @can('archive', $report)
+                                            <button type="button" class="btn btn-sm btn-outline-secondary mt-2"
+                                                data-bs-toggle="modal"
+                                                data-bs-target="#archiveReportModal{{ $report->id }}">
+                                                <i class="bi bi-archive me-1" aria-hidden="true"></i>
+                                                Archive
+                                            </button>
+                                        @endcan
+                                    </div>
                                 </div>
 
                                 <div class="card-body">
@@ -460,6 +476,49 @@
                                     @endif
                                 </div>
                             </div>
+
+                            @can('archive', $report)
+                                {{-- ==================== ARCHIVE REPORT ==================== --}}
+                                <div class="modal fade" id="archiveReportModal{{ $report->id }}" tabindex="-1"
+                                    aria-hidden="true">
+                                    <div class="modal-dialog">
+                                        <div class="modal-content">
+
+                                            <div class="modal-header">
+                                                <h5 class="modal-title">Archive Report</h5>
+                                                <button type="button" class="btn-close" data-bs-dismiss="modal"
+                                                    aria-label="Close"></button>
+                                            </div>
+
+                                            <div class="modal-body">
+                                                Archive <strong>{{ $report->displayCode() }} &mdash;
+                                                    {{ $report->report_title }}</strong>?
+
+                                                <p class="text-secondary small mb-0 mt-2">
+                                                    It comes off this project's report list and off your Reports
+                                                    page. The report, its images and its attachments are kept, and
+                                                    it can be restored from Archived Reports.
+                                                </p>
+                                            </div>
+
+                                            <div class="modal-footer">
+                                                <button type="button" class="btn btn-secondary"
+                                                    data-bs-dismiss="modal">Cancel</button>
+
+                                                <form method="POST"
+                                                    action="{{ route('technician-reports.archive', $report->id) }}">
+                                                    @csrf
+                                                    <button type="submit" class="btn btn-warning">
+                                                        <i class="bi bi-archive me-1" aria-hidden="true"></i>
+                                                        Archive Report
+                                                    </button>
+                                                </form>
+                                            </div>
+
+                                        </div>
+                                    </div>
+                                </div>
+                            @endcan
                         @empty
                             <div class="alert alert-info">No technician reports found.</div>
                         @endforelse

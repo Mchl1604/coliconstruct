@@ -11,6 +11,7 @@ use App\Models\TaskImage;
 use App\Models\Technician;
 use App\Models\TechnicianReport;
 use App\Models\TechnicianReportImage;
+use App\Models\User;
 use App\Policies\ProjectPolicy;
 use App\Policies\TaskPolicy;
 use App\Services\ActivityLogger;
@@ -22,6 +23,7 @@ use App\Services\TaskScheduleRules;
 use App\Services\TechnicianTaskLoad;
 use App\Support\UploadStore;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -177,7 +179,11 @@ class TechnicianPortalController extends Controller
             ->orderBy('due_date')
             ->get();
 
+        // Archived reports are off this list, exactly as they are off the
+        // administrator's copy of the page: archiving one from either portal
+        // takes it out of both.
         $reports = TechnicianReport::query()
+            ->active()
             ->with(['images', 'technician.account', 'submitter', 'project.clients'])
             ->where('project_id', $project->project_id)
             ->when(
@@ -312,18 +318,14 @@ class TechnicianPortalController extends Controller
         $accountId = $request->user()->id;
 
         $reports = TechnicianReport::query()
+            ->active()
             ->with([
                 'project.clients',
                 'images',
                 'technician.account',
                 'submitter',
             ])
-            ->where(function ($mine) use ($accountId, $technician): void {
-                $mine->where('submitted_by', $accountId)
-                    ->orWhere(fn ($legacy) => $legacy
-                        ->whereNull('submitted_by')
-                        ->where('technician_id', $technician->technician_id));
-            })
+            ->where(fn ($mine) => $this->scopeToOwnReports($mine, $accountId, $technician->technician_id))
             ->orderByDesc('report_date')
             ->orderByDesc('id')
             ->get();
@@ -342,13 +344,77 @@ class TechnicianPortalController extends Controller
             // has already been handed.
             'reportPayloads' => $reports
                 ->mapWithKeys(fn (TechnicianReport $report): array => [
-                    $report->id => $this->reportPayload($report),
+                    $report->id => $this->reportPayload($report, $request->user()),
                 ]),
             'reportableProjects' => $this->assignedProjects($technician)
                 ->filter(fn (Project $project): bool => $this->projectPolicy->submitReport($request->user(), $project))
                 ->values(),
             'reportTypes' => TechnicianReport::TYPES,
         ]);
+    }
+
+    /**
+     * The archive behind the Reports page: the reports this lead filed away
+     * themselves.
+     *
+     * Narrowed exactly as the active log is, and for the same reason - a lead
+     * reads what they wrote, not what the office archived on some other
+     * project. Restoring is offered per row and re-checked by
+     * TechnicianReportPolicy on the way in, so the list and the endpoint agree
+     * about what is theirs.
+     *
+     * Nothing here is a stub: an archived report keeps its pictures, its
+     * project and the day it was filed, and the viewer shows all of it.
+     */
+    public function archivedReports(Request $request)
+    {
+        $technician = $this->technician($request);
+        $accountId = $request->user()->id;
+
+        $reports = TechnicianReport::query()
+            ->archived()
+            ->with([
+                'project.clients',
+                'images',
+                'technician.account',
+                'submitter',
+                'archiver',
+            ])
+            ->where(fn ($mine) => $this->scopeToOwnReports($mine, $accountId, $technician->technician_id))
+            // Rows archived before the timestamp existed sort last rather than
+            // first, which is what a null would otherwise do on some engines.
+            ->orderByRaw('archived_at is null')
+            ->orderByDesc('archived_at')
+            ->orderByDesc('id')
+            ->get();
+
+        $user = $request->user();
+
+        return view('technician.archivedReports', [
+            'reports' => $reports,
+            'reportPayloads' => $reports->mapWithKeys(fn (TechnicianReport $report): array => [
+                $report->id => $this->reportPayload($report, $user),
+            ]),
+        ]);
+    }
+
+    /**
+     * "Reports this account filed", as a query condition.
+     *
+     * The account that pressed Submit, or - for reports written before
+     * submitted_by existed, which carry no account at all - the technician the
+     * report was filed under, who for those rows is who wrote it. Shared by the
+     * active log and its archive so the two can never disagree about whose
+     * report it is.
+     *
+     * @param  \Illuminate\Contracts\Database\Query\Builder|Builder<TechnicianReport>  $query
+     */
+    private function scopeToOwnReports($query, int $accountId, int $technicianId): void
+    {
+        $query->where('submitted_by', $accountId)
+            ->orWhere(fn ($legacy) => $legacy
+                ->whereNull('submitted_by')
+                ->where('technician_id', $technicianId));
     }
 
     // ------------------------------------------------------------------
@@ -384,6 +450,7 @@ class TechnicianPortalController extends Controller
         ]);
 
         $reports = TechnicianReport::query()
+            ->active()
             ->with(['images', 'technician.account', 'submitter', 'project.clients'])
             ->where('project_id', $project->project_id)
             ->orderByDesc('report_date')
@@ -395,7 +462,7 @@ class TechnicianPortalController extends Controller
         return response()->json([
             'project' => $this->projectPayload($project),
             'tasks' => $project->tasks->map(fn (Task $task): array => $this->taskPayload($task, $technician))->all(),
-            'reports' => $reports->map(fn (TechnicianReport $report): array => $this->reportPayload($report))->all(),
+            'reports' => $reports->map(fn (TechnicianReport $report): array => $this->reportPayload($report, $user))->all(),
             'permissions' => [
                 'manage_tasks' => $this->projectPolicy->manageTasks($user, $project),
                 'submit_report' => $this->projectPolicy->submitReport($user, $project),
@@ -728,7 +795,7 @@ class TechnicianPortalController extends Controller
         $this->notifications->technicianReportFiled($project, strtolower($report->typeLabel()));
 
         return $this->succeeded($request, 'Report submitted.', fn (): array => [
-            'report' => $this->reportPayload($report->load(['project', 'images'])),
+            'report' => $this->reportPayload($report->load(['project', 'images']), $request->user()),
         ], 201);
     }
 
@@ -1073,7 +1140,7 @@ class TechnicianPortalController extends Controller
     /**
      * @return array<string, mixed>
      */
-    private function reportPayload(TechnicianReport $report): array
+    private function reportPayload(TechnicianReport $report, ?User $user = null): array
     {
         return [
             'id' => $report->id,
@@ -1098,6 +1165,15 @@ class TechnicianPortalController extends Controller
             'images' => $report->images->map(fn (TechnicianReportImage $image): array => [
                 'url' => $image->url(),
             ])->all(),
+            'is_archived' => $report->isArchived(),
+            'archived_at_label' => $report->archived_at?->format('M j, Y') ?? '—',
+            'archived_by' => $report->archiver?->fullName() ?? '—',
+            // Whether this account may act on the report. The endpoint asks the
+            // same policy again, so these only decide whether a button is
+            // drawn - a lead sees Archive on their own reports and on no
+            // others, whatever the page does with the payload.
+            'can_archive' => (bool) $user?->can('archive', $report),
+            'can_restore' => (bool) $user?->can('restore', $report),
         ];
     }
 

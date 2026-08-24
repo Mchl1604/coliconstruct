@@ -66,13 +66,15 @@
                                         </button>
                                     </form>
 
-                                    {{-- No inquiries table exists to post to, so this points at
-                                         the channels the company actually publishes rather than
-                                         at a form that would drop what was typed. --}}
+                                    {{-- Straight to the Contact Us page, which is where every
+                                         published channel is listed. It used to be a mailto:
+                                         when an address was configured, which the browser
+                                         answers by asking to hand the click to whatever
+                                         application claims mail - a prompt on a machine that
+                                         has one, and nothing at all on a machine that does
+                                         not. A page inside the site always opens. --}}
                                     <a class="btn btn-outline-secondary px-4"
-                                        @if ($supportEmail) href="mailto:{{ $supportEmail }}?subject={{ rawurlencode('Support request - ' . ($card['reference_no'] ?? $card['name'])) }}"
-                                        @else
-                                            href="{{ route('public.contact') }}" @endif>
+                                        href="{{ route('public.contact') }}">
                                         <i class="bi bi-life-preserver me-1" aria-hidden="true"></i>
                                         Contact Support
                                     </a>

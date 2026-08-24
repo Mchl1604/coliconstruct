@@ -256,6 +256,14 @@ class ActivityLog extends Model
 
     public const REPORT_PRINTED = 'Report Printed';
 
+    /**
+     * A technician report taken off the active lists, and put back. Nothing is
+     * deleted either way - see TechnicianReportArchive.
+     */
+    public const REPORT_ARCHIVED = 'Report Archived';
+
+    public const REPORT_RESTORED = 'Report Restored';
+
     // ------------------------------------------------------------------
     // Configuration
     // ------------------------------------------------------------------
@@ -376,6 +384,8 @@ class ActivityLog extends Model
         self::REPORT_GENERATED => self::MODULE_REPORTS,
         self::REPORT_EXPORTED => self::MODULE_REPORTS,
         self::REPORT_PRINTED => self::MODULE_REPORTS,
+        self::REPORT_ARCHIVED => self::MODULE_REPORTS,
+        self::REPORT_RESTORED => self::MODULE_REPORTS,
 
         self::SYSTEM_SETTINGS_UPDATED => self::MODULE_CONFIGURATION,
         self::CONTACT_INQUIRY_SENT => self::MODULE_CONFIGURATION,

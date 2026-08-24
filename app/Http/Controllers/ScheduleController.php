@@ -1235,9 +1235,14 @@ class ScheduleController extends Controller
      */
     private function buildTechnicianSchedules(): array
     {
+        // Mirrors TechnicianAvailabilityService::busySchedulesQuery(), archived
+        // work included: archiving keeps the schedule now, so a project
+        // archived while it read Pending or Ongoing has to be named out rather
+        // than left to its status alone.
         $schedules = Schedule::query()
             ->whereHas('project', function ($query): void {
-                $query->whereIn('status', self::ACTIVE_PROJECT_STATUSES);
+                $query->whereIn('status', self::ACTIVE_PROJECT_STATUSES)
+                    ->where('is_archived', false);
             })
             ->with([
                 'scheduleTechnicians:schedule_technician_id,schedule_id,project_technician_id',

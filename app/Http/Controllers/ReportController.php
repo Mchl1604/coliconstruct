@@ -112,6 +112,40 @@ class ReportController extends Controller
         ]);
     }
 
+    /**
+     * The archive: every technician report that has been filed away.
+     *
+     * Server-rendered rather than fetched, the same way Archived Projects and
+     * Archived Accounts are - an archive is read, not worked, so a DataTable
+     * over the whole list is both simpler and enough.
+     *
+     * Every report here stays whole: its pictures are still served, its
+     * submitter is still named, and its project is still linked. Restoring is
+     * offered per row and only to whoever the policy says may do it, which for
+     * a lead technician is their own reports and nobody else's.
+     */
+    public function archivedIndex(Request $request)
+    {
+        $reports = TechnicianReport::query()
+            ->archived()
+            ->with(['project.clients', 'technician.account', 'submitter', 'images', 'archiver'])
+            // Rows archived before the timestamp existed sort last rather than
+            // first, which is what a null would otherwise do on some engines.
+            ->orderByRaw('archived_at is null')
+            ->orderByDesc('archived_at')
+            ->orderByDesc('id')
+            ->get();
+
+        $user = $request->user();
+
+        return view('super-admin.archivedReports', [
+            'reports' => $reports,
+            'reportPayloads' => $reports->mapWithKeys(fn (TechnicianReport $report): array => [
+                $report->id => $this->archivedPayload($report, $user),
+            ]),
+        ]);
+    }
+
     // ------------------------------------------------------------------
     // Tab 1 - technician reports
     // ------------------------------------------------------------------
@@ -141,7 +175,11 @@ class ReportController extends Controller
 
         $filters = $validator->validated();
 
+        // Archived reports are not part of this list at all. They keep every
+        // filter and every column they had, but they are read on the Archived
+        // Reports page - see archivedIndex().
         $query = TechnicianReport::query()
+            ->active()
             ->with(['project.clients', 'technician.account', 'submitter', 'images'])
             ->when(! empty($filters['project_id']), fn ($q) => $q->where('project_id', $filters['project_id']))
             ->when(
@@ -195,7 +233,7 @@ class ReportController extends Controller
 
         return response()->json([
             'reports' => collect($page->items())
-                ->map(fn (TechnicianReport $report): array => $this->reportRow($report))
+                ->map(fn (TechnicianReport $report): array => $this->reportRow($report, $request->user()))
                 ->all(),
             'meta' => $this->paginationMeta($page),
         ]);
@@ -204,11 +242,16 @@ class ReportController extends Controller
     /**
      * Everything the report viewer shows, including its image gallery.
      */
-    public function showTechnicianReport(TechnicianReport $report)
+    public function showTechnicianReport(Request $request, TechnicianReport $report)
     {
-        $report->load(['project.clients', 'technician.account', 'images']);
+        $report->load(['project.clients', 'technician.account', 'images', 'archiver']);
 
-        return response()->json($this->reportRow($report) + [
+        return response()->json($this->reportRow($report, $request->user()) + [
+            // An archived report is still read in full; the viewer says so
+            // rather than pretending otherwise.
+            'archived_at_label' => $report->archived_at?->format('M j, Y') ?? '—',
+            'archived_by' => $report->archiver?->fullName() ?? '—',
+            'can_restore' => (bool) $request->user()?->can('restore', $report),
             'description' => $report->report_description,
             'client' => $report->project?->clients->first()?->company_name
                 ?: $report->project?->clients->first()?->fullname,
@@ -505,7 +548,7 @@ class ReportController extends Controller
     /**
      * @return array<string, mixed>
      */
-    private function reportRow(TechnicianReport $report): array
+    private function reportRow(TechnicianReport $report, ?User $user = null): array
     {
         return [
             'id' => $report->id,
@@ -524,6 +567,35 @@ class ReportController extends Controller
             'report_date' => $report->report_date?->toDateString(),
             'report_date_label' => $report->report_date?->format('M j, Y') ?? '—',
             'image_count' => $report->images->count(),
+            'is_archived' => $report->isArchived(),
+            // What the row is allowed to offer. The endpoint asks the same
+            // policy again before it does anything, so this only decides
+            // whether a button is drawn - never whether it works.
+            'can_archive' => (bool) $user?->can('archive', $report),
+        ];
+    }
+
+    /**
+     * One archived report, as the archive page's viewer reads it.
+     *
+     * @return array<string, mixed>
+     */
+    private function archivedPayload(TechnicianReport $report, ?User $user): array
+    {
+        return $this->reportRow($report, $user) + [
+            'description' => $report->report_description,
+            'can_restore' => (bool) $user?->can('restore', $report),
+            'archived_at_label' => $report->archived_at?->format('M j, Y') ?? '—',
+            'archived_by' => $report->archiver?->fullName() ?? '—',
+            'project_url' => $report->project
+                ? route('super-admin.projects.show', $report->project->project_id)
+                : null,
+            'images' => $report->images
+                ->map(fn ($image): array => [
+                    'id' => $image->id,
+                    'url' => $image->url(),
+                ])
+                ->all(),
         ];
     }
 

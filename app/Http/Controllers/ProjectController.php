@@ -39,13 +39,20 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Str;
 use PDOException;
 use RuntimeException;
 use Throwable;
 
 class ProjectController extends Controller
 {
+    /**
+     * How far ahead the Reopen dialog's date pickers are screened for
+     * technician availability. Far enough that nobody meets the edge of it in
+     * practice; a date beyond it is simply not greyed out, and the reopen
+     * itself is checked on the way in whatever the picker offered.
+     */
+    private const REOPEN_PICKER_HORIZON_MONTHS = 24;
+
     public function __construct(
         private readonly ActivityLogger $activityLogger,
         private readonly NotificationService $notifications,
@@ -519,9 +526,16 @@ class ProjectController extends Controller
      */
     private function buildTechnicianSchedules(): array
     {
+        // The same two conditions TechnicianAvailabilityService screens by, so
+        // a day the browser offers is a day the server will accept. Archived
+        // work is named as well as excluded by status: archiving keeps the
+        // schedule now, and a project archived while its status still read
+        // Pending or Ongoing would otherwise go on booking its crew from
+        // inside the archive.
         $schedules = Schedule::query()
             ->whereHas('project', function ($query): void {
-                $query->whereIn('status', ['pending', 'ongoing']);
+                $query->whereIn('status', Project::ACTIVE_PROJECT_STATUSES)
+                    ->where('is_archived', false);
             })
             ->with([
                 'scheduleTechnicians:schedule_technician_id,schedule_id,project_technician_id',
@@ -702,7 +716,12 @@ class ProjectController extends Controller
         // Get technician reports for this project. `submitter` and the
         // technician's account are loaded because every card names who filed
         // the report - asked per row, that is a query per report.
+        // Archived reports are deliberately absent: this is the project's
+        // active record, and an archived report is read on the Archived
+        // Reports page - the same rule the Reports listing follows, so a
+        // report archived from either place disappears from both.
         $reports = TechnicianReport::with(['images', 'submitter', 'technician.account'])
+            ->active()
             ->where('project_id', $id);
 
         $tasks = Task::with(['technician', 'images', 'completedBy'])
@@ -741,8 +760,12 @@ class ProjectController extends Controller
             && in_array($request->user()?->role, [User::ROLE_SUPER_ADMIN, User::ROLE_ADMIN], true);
 
         // The reopen dialog books new dates, so it needs the same bookable
-        // hours every other scheduling screen offers.
+        // hours every other scheduling screen offers, and the days its pickers
+        // must refuse - see reopenBlockedDates().
         $workingHours = Schedule::workingHourOptions();
+        $reopenBlockedDates = $canReopen
+            ? $this->reopenBlockedDates($project)
+            : ['whole_day' => [], 'partial_day' => []];
 
         // What the completion rules would object to, if anything. An
         // administrator may complete a project regardless - unlike a lead
@@ -768,6 +791,7 @@ class ProjectController extends Controller
             'technicianActiveTaskCounts',
             'canReopen',
             'workingHours',
+            'reopenBlockedDates',
             'completionBlockers'
         ));
 
@@ -1267,6 +1291,82 @@ class ProjectController extends Controller
     }
 
     /**
+     * The days the Reopen dialog's date pickers must grey out.
+     *
+     * Two refusals stand between a reopen and its new dates, and this is both
+     * of them drawn on a calendar rather than discovered after pressing the
+     * button:
+     *
+     *   ProjectReopen::assertTeamAvailable()  every technician on the team has
+     *       to be free for the whole of the new range. Asked of the same
+     *       service the reopen itself asks, with this project's own bookings
+     *       left out exactly as they are there - so the project can never read
+     *       as its own blocker.
+     *
+     *   ProjectReopen::assertNoSelfOverlap()  the new dates may not land on
+     *       the days the project kept. Those are days the crew actually
+     *       worked, and they are excluded from the availability answer above,
+     *       so they are added back here. A whole-day booking of its own takes
+     *       every hour of the days it covers and so blocks an hours-only
+     *       reopen too; a partial-day one leaves the rest of that day open.
+     *
+     * The picker is a convenience either way: reopen() re-runs both checks on
+     * whatever arrives, so a date typed past a greyed-out one is still
+     * refused.
+     *
+     * @return array{whole_day: array<int, string>, partial_day: array<int, string>}
+     */
+    private function reopenBlockedDates(Project $project): array
+    {
+        $from = Schedule::businessToday();
+        $to = $from->addMonths(self::REOPEN_PICKER_HORIZON_MONTHS);
+
+        $technicianIds = $project->projectTechnicians
+            ->pluck('technician_id')
+            ->filter()
+            ->unique()
+            ->values();
+
+        $blocked = $technicianIds->isEmpty()
+            ? ['whole_day' => [], 'partial_day' => []]
+            : app(TechnicianAvailabilityService::class)->blockedDatesInWindow(
+                $technicianIds,
+                $from,
+                $to,
+                (int) $project->project_id
+            );
+
+        $wholeDay = array_flip($blocked['whole_day']);
+        $partialDay = array_flip($blocked['partial_day']);
+
+        foreach ($project->schedules as $schedule) {
+            $start = $schedule->startsOn();
+            $end = $schedule->endsOn();
+
+            for ($day = $start; $day->lte($end); $day = $day->addDay()) {
+                if ($day->lt($from) || $day->gt($to)) {
+                    continue;
+                }
+
+                $date = $day->toDateString();
+                $wholeDay[$date] = true;
+
+                if (! $schedule->isPartialDay()) {
+                    $partialDay[$date] = true;
+                }
+            }
+        }
+
+        $wholeDay = array_keys($wholeDay);
+        $partialDay = array_keys($partialDay);
+
+        sort($wholeDay);
+        sort($partialDay);
+
+        return ['whole_day' => $wholeDay, 'partial_day' => $partialDay];
+    }
+
+    /**
      * Everything that happens because completion was requested, as opposed to
      * everything that records it.
      *
@@ -1398,8 +1498,29 @@ class ProjectController extends Controller
     }
 
     /**
-     * Archive a project: keep every field for historical purposes but move
-     * it out of the active Projects list and free its technicians.
+     * Archive a project: take it out of the active list without taking it
+     * apart.
+     *
+     * Archiving used to delete the schedule rows, the schedule-technician
+     * links and the project-technician assignments, and blank the dates on
+     * every unfinished task. The project came back from the archive as an
+     * empty shell - no dates, no crew, no way to tell what it had been - so
+     * the archive preserved a record that was missing the half of it anybody
+     * would want to look up.
+     *
+     * Nothing is deleted now. The only columns that move are the archive's
+     * own, plus the status - which has to read `archived` because that is what
+     * every guard, every listing and every availability query already asks
+     * for. What the status was is recorded in pre_archive_status so that
+     * restoring can put it back rather than guess.
+     *
+     * Keeping the schedule does not keep the technicians booked: the
+     * availability checker counts only Pending and Ongoing work that is not
+     * archived - see Project::ACTIVE_PROJECT_STATUSES and
+     * TechnicianAvailabilityService - so an archived project's dates stop
+     * occupying anybody the moment it is archived, exactly as a cancelled
+     * project's already do. That is why cancel() has never deleted anything
+     * either, and archive now matches it.
      */
     public function archive(Request $request, int $id)
     {
@@ -1416,12 +1537,17 @@ class ProjectController extends Controller
                 $project->update([
                     'status' => 'archived',
                     'is_archived' => true,
-                    'on_hold' => false,
+                    // What to come back as. Read before the update, which is
+                    // the only moment it is still the project's own status.
+                    'pre_archive_status' => $project->status,
                     'archived_at' => now(),
                     'archived_by' => $request->user()?->id,
                 ]);
 
-                $this->releaseScheduleAndTechnicians($project);
+                // Schedule rows, technician assignments and task dates are all
+                // left exactly as they are. A hold is left alone too: it is
+                // somebody's decision about the work, not archive metadata,
+                // and a project archived while paused comes back paused.
             });
 
             $this->activityLogger->record(
@@ -1444,12 +1570,37 @@ class ProjectController extends Controller
     }
 
     /**
-     * Restore an archived project back into the active pipeline as
-     * Unscheduled. It must be scheduled again from scratch.
+     * Restore an archived project to the state it was archived in.
+     *
+     * Restore is not Reopen and does not borrow any of its behaviour. Reopen
+     * takes a project that is waiting on its client and books it onto NEW
+     * dates, because the dates it had were released and given away. Restore
+     * takes a project that was only ever put to one side and puts it back:
+     * same status, same schedule, same crew, same tasks. Nothing is created
+     * and nothing is cleared.
+     *
+     * A restored Completed project is Completed. A restored Cancelled project
+     * is Cancelled. Neither becomes active or scheduled merely by coming back,
+     * and neither is turned into Unscheduled - which is what this used to do
+     * to every project it touched, because there was nothing left to restore
+     * to by the time it ran.
+     *
+     * The one thing that can refuse it is the calendar. An archived project's
+     * dates stop occupying its technicians while it sits in the archive, so
+     * another project may have booked those people over them in the meantime.
+     * Putting the project back into force would then double-book somebody with
+     * nobody told, the clash invisible on both projects because each one only
+     * ever shows its own dates. So the same question Resume asks is asked
+     * here, of the same service, before anything is written - see
+     * restoreConflictMessage().
+     *
+     * Only a project whose dates would actually come back into force has to be
+     * asked. Completed, cancelled and paused work holds nobody either way, so
+     * there is nothing for it to collide with.
      */
     public function restore(int $id)
     {
-        $project = Project::findOrFail($id);
+        $project = Project::with(['schedules', 'projectTechnicians'])->findOrFail($id);
 
         if (! $project->isArchived()) {
             return redirect()
@@ -1457,24 +1608,52 @@ class ProjectController extends Controller
                 ->with('error', 'Only archived projects can be restored.');
         }
 
+        // Null for anything archived by the old flow, which left no schedule
+        // and no team behind: Unscheduled is then not a downgrade, it is the
+        // truth about a project with no dates.
+        $restoredStatus = $project->statusToRestore() ?? 'unscheduled';
+
+        if ($project->restoreWouldClaimDates() && ($clash = $this->restoreConflictMessage($project))) {
+            // Nothing is written and nothing is offered instead. Moving the
+            // other work or taking somebody off this team are both decisions
+            // with consequences for a person's week, and neither is a restore's
+            // to make - the same reason Resume refuses rather than resolves.
+            return redirect()
+                ->route('super-admin.projects.archived')
+                ->with('error', $clash);
+        }
+
         try {
-            DB::transaction(function () use ($project): void {
+            DB::transaction(function () use ($project, $restoredStatus): void {
                 $project->update([
-                    'status' => 'unscheduled',
+                    'status' => $restoredStatus,
                     'is_archived' => false,
                     'archived_at' => null,
                     'archived_by' => null,
+                    'pre_archive_status' => null,
                 ]);
 
-                // Schedule/technicians were already released on archive,
-                // but this guarantees a clean slate either way.
-                $this->releaseScheduleAndTechnicians($project);
+                // Schedules, technician assignments and tasks are untouched:
+                // they were never taken away, so there is nothing to put back.
+                //
+                // The one adjustment is to the three statuses the calendar
+                // owns. A project archived as Pending whose first booked day
+                // has arrived in the meantime is Ongoing now, and this is the
+                // same rule the projects listing applies to every other row.
+                // ProjectStatusRules leaves Completed, Cancelled, Awaiting and
+                // held work alone, so a decision somebody made is never
+                // overwritten by one the dates imply.
+                $this->syncStatusWithSchedule($project);
             });
 
             $this->activityLogger->record(
                 ActivityLog::PROJECT_RESTORED,
                 null,
-                sprintf("Restored project '%s' from the archive.", $project->reference_no),
+                sprintf(
+                    "Restored project '%s' from the archive as %s, with its schedule and team intact.",
+                    $project->reference_no,
+                    $project->refresh()->statusLabel()
+                ),
                 $project
             );
 
@@ -1482,12 +1661,69 @@ class ProjectController extends Controller
 
             return redirect()
                 ->route('super-admin.projects')
-                ->with('success', 'Project restored. It is now Unscheduled.');
+                ->with('success', sprintf(
+                    'Project restored as %s, with its original schedule and team.',
+                    $project->statusLabel()
+                ));
         } catch (Throwable $e) {
             return redirect()
                 ->route('super-admin.projects.archived')
                 ->with('error', $this->safeErrorMessage($e, 'Unable to restore project. Nothing was changed.'));
         }
+    }
+
+    /**
+     * Why this project's preserved schedule cannot come back into force, or
+     * null when it can.
+     *
+     * The same question, the same service and the same wording as
+     * resumeConflictMessage(), because it is the same situation: dates that
+     * were not occupying anybody are about to start occupying them again, and
+     * the only thing that can have changed underneath is other work.
+     *
+     * The project's own bookings are excluded, which is what makes the
+     * question answerable at all - every day being checked is one it holds
+     * itself, so without the exclusion a project would always report itself as
+     * its own blocker. A date reported here therefore always belongs to
+     * somebody else's work.
+     */
+    private function restoreConflictMessage(Project $project): ?string
+    {
+        // Read from the table rather than from a loaded relation: the rows are
+        // what the restore is about, and a relation loaded earlier in the
+        // request would be a picture rather than the record.
+        $schedules = Schedule::query()
+            ->where('project_id', $project->project_id)
+            ->get();
+
+        $technicianIds = ProjectTechnician::query()
+            ->where('project_id', $project->project_id)
+            ->pluck('technician_id')
+            ->map(fn ($technicianId): int => (int) $technicianId)
+            ->unique()
+            ->values();
+
+        if ($schedules->isEmpty() || $technicianIds->isEmpty()) {
+            return null;
+        }
+
+        $availability = app(TechnicianAvailabilityService::class);
+
+        $conflicts = $availability->findConflicts(
+            $technicianIds,
+            $schedules->map(fn (Schedule $schedule): array => $schedule->toAvailabilityRange())->all(),
+            (int) $project->project_id
+        );
+
+        if ($conflicts->isEmpty()) {
+            return null;
+        }
+
+        return 'Unable to restore - the dates this project still holds are now booked elsewhere. '
+            .$availability->conflictMessage(
+                $conflicts,
+                ' Reschedule that work or remove them from this team, then restore it again.'
+            );
     }
 
     /**
@@ -1651,41 +1887,14 @@ class ProjectController extends Controller
         return $sentence;
     }
 
-    /**
-     * Remove a project's schedule, schedule-technician, and
-     * project-technician records so its technicians are freed up for
-     * other work. Used by cancel/archive/restore. Task history is left
-     * alone; unassigned tasks simply show "Unassigned".
+    /*
+     * releaseScheduleAndTechnicians() lived here and deleted a project's
+     * schedule rows, its technician assignments and its task dates. Archive
+     * and restore were its only callers - cancel() deliberately never used it,
+     * because a cancelled project keeps its record and stops occupying
+     * technicians by virtue of its status alone. Archive and restore now work
+     * the same way, so nothing was left to call it.
      */
-    private function releaseScheduleAndTechnicians(Project $project): void
-    {
-        $projectTechnicianIds = DB::table('tbl_project_technicians')
-            ->where('project_id', $project->project_id)
-            ->pluck('project_technician_id');
-
-        if ($projectTechnicianIds->isNotEmpty()) {
-            DB::table('tbl_schedule_technicians')
-                ->whereIn('project_technician_id', $projectTechnicianIds->all())
-                ->delete();
-        }
-
-        DB::table('tbl_project_technicians')
-            ->where('project_id', $project->project_id)
-            ->delete();
-
-        DB::table('tbl_schedule')
-            ->where('project_id', $project->project_id)
-            ->delete();
-
-        Task::where('project_id', $project->project_id)
-            ->where('status', '!=', 'completed')
-            ->update([
-                'technician_id' => null,
-                'status' => 'unassigned',
-                'start_date' => null,
-                'due_date' => null,
-            ]);
-    }
 
     /**
      * Bring a project's status into line with the dates it holds.

@@ -313,6 +313,90 @@ document.addEventListener("DOMContentLoaded", function () {
     });
 
     // ------------------------------------------------------------------
+    // Archiving
+    //
+    // The confirmation dialog first, then one request. The row is dropped from
+    // the table on success rather than the page being reloaded - it is off the
+    // active list now, here and on the project it belongs to.
+    // ------------------------------------------------------------------
+
+    const archiveEl = document.querySelector("[data-archive-report-modal]");
+
+    if (archiveEl) {
+        const labelEl = archiveEl.querySelector("[data-archive-report-label]");
+        const errorEl = archiveEl.querySelector("[data-archive-report-error]");
+        const confirmEl = archiveEl.querySelector(
+            "[data-archive-report-confirm]",
+        );
+
+        let pending = null;
+
+        function setArchiveError(message) {
+            errorEl.textContent = message || "";
+            errorEl.classList.toggle("d-none", !message);
+        }
+
+        document.addEventListener("click", function (event) {
+            const button = event.target.closest("[data-archive-report]");
+
+            if (!button) {
+                return;
+            }
+
+            pending = {
+                id: button.getAttribute("data-archive-report"),
+                row: button.closest("tr"),
+            };
+
+            labelEl.textContent =
+                button.getAttribute("data-report-label") || "this report";
+            setArchiveError("");
+            window.bootstrap.Modal.getOrCreateInstance(archiveEl).show();
+        });
+
+        confirmEl.addEventListener("click", function () {
+            if (!pending) {
+                return;
+            }
+
+            const target = pending;
+
+            setArchiveError("");
+            portal.setBusy(confirmEl, true);
+
+            portal
+                .request(
+                    (window.portalRoutes.archiveReport || "").replace(
+                        "__ID__",
+                        target.id,
+                    ),
+                    { method: "POST" },
+                )
+                .then(function (body) {
+                    window.bootstrap.Modal.getOrCreateInstance(archiveEl).hide();
+
+                    if (table && target.row) {
+                        table.row(target.row).remove().draw(false);
+                    }
+
+                    delete reports[target.id];
+                    pending = null;
+
+                    portal.toast(
+                        body.message || "Report archived successfully.",
+                        "success",
+                    );
+                })
+                .catch(function (error) {
+                    setArchiveError(error.message);
+                })
+                .finally(function () {
+                    portal.setBusy(confirmEl, false);
+                });
+        });
+    }
+
+    // ------------------------------------------------------------------
     // Submitting
     // ------------------------------------------------------------------
 
@@ -368,9 +452,20 @@ document.addEventListener("DOMContentLoaded", function () {
             portal.escapeHtml(report.date_label) +
             "</td>" +
             '<td class="text-center">' +
+            '<div class="d-inline-flex gap-1">' +
             '<button type="button" class="btn btn-sm btn-primary py-1 px-2" data-view-report="' +
             portal.escapeHtml(report.id) +
             '" title="View report"><i class="bi bi-eye"></i></button>' +
+            // Drawn from the server's own answer, so a row added without a
+            // reload offers exactly what a reloaded one would.
+            (report.can_archive
+                ? '<button type="button" class="btn btn-sm btn-warning py-1 px-2" data-archive-report="' +
+                  portal.escapeHtml(report.id) +
+                  '" data-report-label="' +
+                  portal.escapeHtml(report.display_code + " - " + report.title) +
+                  '" title="Archive report"><i class="bi bi-archive"></i></button>'
+                : "") +
+            "</div>" +
             "</td>";
 
         return row;

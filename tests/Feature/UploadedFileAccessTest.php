@@ -6,7 +6,10 @@ use App\Models\Client;
 use App\Models\Document;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
+use App\Models\SystemContent;
 use App\Models\Technician;
+use App\Models\TechnicianReport;
+use App\Models\TechnicianReportImage;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
@@ -109,6 +112,30 @@ class UploadedFileAccessTest extends TestCase
         return $user->fresh();
     }
 
+    /**
+     * A technician report with one picture attached to it.
+     */
+    private function reportImage(Project $project): TechnicianReportImage
+    {
+        Storage::disk('uploads')->put('report-images/site.jpg', 'a photograph');
+
+        $filedBy = $this->technician('reporter'.uniqid().'@example.test', $project);
+
+        $report = TechnicianReport::create([
+            'project_id' => $project->project_id,
+            'technician_id' => Technician::query()->where('account_id', $filedBy->id)->value('technician_id'),
+            'report_type' => 'progress',
+            'report_title' => 'Day one',
+            'report_description' => 'What was done.',
+            'report_date' => now()->toDateString(),
+        ]);
+
+        return TechnicianReportImage::create([
+            'technician_report_id' => $report->id,
+            'image_path' => 'report-images/site.jpg',
+        ]);
+    }
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -195,6 +222,70 @@ class UploadedFileAccessTest extends TestCase
     }
 
     /**
+     * A report picture reaches the office.
+     *
+     * It did not: TechnicianReportImage::report() left Eloquent to guess its
+     * foreign key, which guessed `report_id` from the method name rather than
+     * the `technician_report_id` the table actually has. The relation resolved
+     * to null for every row, so the controller could not find a project to
+     * check and answered 404 - every image in the Reports section was broken
+     * for everybody, whatever their role.
+     */
+    public function test_the_office_may_read_a_report_image(): void
+    {
+        $project = $this->project('owner@example.test');
+        $image = $this->reportImage($project);
+
+        $this->actingAsSuperAdmin();
+
+        $this->get($image->url())->assertOk();
+    }
+
+    public function test_the_owning_client_may_read_a_report_image(): void
+    {
+        $project = $this->project('owner@example.test');
+        $image = $this->reportImage($project);
+
+        $this->actingAs($this->client('owner@example.test'))
+            ->get($image->url())
+            ->assertOk();
+    }
+
+    /**
+     * The relation being wired correctly must not widen who may see the file:
+     * a report picture is still the project's audience and nobody else's.
+     */
+    public function test_another_client_may_not_read_a_report_image(): void
+    {
+        $project = $this->project('owner@example.test');
+        $image = $this->reportImage($project);
+
+        $this->actingAs($this->client('somebody.else@example.test'))
+            ->get($image->url())
+            ->assertForbidden();
+    }
+
+    public function test_a_technician_off_the_project_may_not_read_a_report_image(): void
+    {
+        $project = $this->project('owner@example.test');
+        $image = $this->reportImage($project);
+
+        $this->actingAs($this->technician('stranger@example.test'))
+            ->get($image->url())
+            ->assertForbidden();
+    }
+
+    public function test_a_technician_on_the_project_may_read_a_report_image(): void
+    {
+        $project = $this->project('owner@example.test');
+        $image = $this->reportImage($project);
+
+        $this->actingAs($this->technician('assigned@example.test', $project))
+            ->get($image->url())
+            ->assertOk();
+    }
+
+    /**
      * Website imagery is the deliberate exception: it has to load for people
      * who have not signed in, because that is what it is for.
      */
@@ -202,7 +293,7 @@ class UploadedFileAccessTest extends TestCase
     {
         Storage::disk('uploads')->put('system-contents/logo.png', 'a logo');
 
-        \App\Models\SystemContent::create([
+        SystemContent::create([
             'content_key' => 'branding.logo',
             'content_value' => 'system-contents/logo.png',
             'content_type' => 'image',

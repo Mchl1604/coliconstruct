@@ -6,9 +6,11 @@ use App\Models\Project;
 use App\Models\Schedule;
 use App\Models\SpecialtyRequest;
 use App\Models\Task;
+use App\Models\TechnicianReport;
 use App\Models\User;
 use App\Policies\ProjectPolicy;
 use App\Policies\TaskPolicy;
+use App\Policies\TechnicianReportPolicy;
 use App\Services\DashboardMetrics;
 use App\Services\SystemContentService;
 use Illuminate\Contracts\View\View as ViewContract;
@@ -36,6 +38,7 @@ class AppServiceProvider extends ServiceProvider
         // greppable from one place.
         Gate::policy(Project::class, ProjectPolicy::class);
         Gate::policy(Task::class, TaskPolicy::class);
+        Gate::policy(TechnicianReport::class, TechnicianReportPolicy::class);
 
         // Every public page reads its words from the same place, and a child
         // view's @section is evaluated before its layout - so $content is

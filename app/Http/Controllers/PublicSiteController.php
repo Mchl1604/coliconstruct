@@ -221,12 +221,12 @@ class PublicSiteController extends Controller
             'project' => $record,
             'card' => $this->card($record),
             'client' => $record->clients->first(),
-            // Contact Support. There is no inquiries table to post to, so the
-            // client is pointed at the published channels rather than at a
-            // form that would silently drop what they typed - the same reason
-            // the Contact page's own form is disabled. Reaching support never
-            // changes the project's status and never pauses the seven days.
-            'supportEmail' => $this->content->get('contact.email'),
+            // Contact Support sends the client to the Contact Us page, which
+            // is where every published channel is listed; the number is
+            // repeated in the sentence beneath the buttons so somebody holding
+            // a phone does not have to load a page to find it. Reaching
+            // support never changes the project's status and never pauses the
+            // seven days.
             'supportPhone' => $this->content->get('contact.phone'),
             // The client's tracker, so it leads the page. Newest first, with
             // the most recently filed breaking a same-day tie - re-stated here

@@ -202,6 +202,20 @@ class ProjectDetailsConsistencyTest extends TestCase
     }
 
     /**
+     * The figure reads as money.
+     *
+     * Green, and the same green the Quotation column on the projects table
+     * already uses - one figure printed two ways in two places is one of them
+     * looking like an oversight.
+     */
+    public function test_the_quotation_figure_is_printed_in_the_money_colour(): void
+    {
+        $this->administrativePage()
+            ->assertOk()
+            ->assertSee('<span class="text-success fw-semibold">', false);
+    }
+
+    /**
      * Removing a file is an administrator's, so the crew's cards carry no
      * remove control - the same cards, minus a button they may not press.
      */

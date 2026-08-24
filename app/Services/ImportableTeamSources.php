@@ -68,9 +68,10 @@ class ImportableTeamSources
     {
         $projects = Project::query()
             ->with(['clients', 'schedules', 'projectTechnicians.technician.account'])
+            // Archiving keeps a project's team now, so it has to be named
+            // out rather than left to empty itself: a team nobody is working
+            // with is not a team to copy onto live work.
             ->where('is_archived', false)
-            // Archiving releases a project's team, so an archived project has
-            // nothing to offer even before the question of whether it should.
             ->whereHas('projectTechnicians')
             ->when($excludeProjectId !== null, function ($query) use ($excludeProjectId): void {
                 $query->where('project_id', '!=', $excludeProjectId);

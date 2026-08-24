@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Support\DisplayCode;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -21,10 +22,15 @@ class TechnicianReport extends Model
         'report_description',
         'report_date',
         'report_type',
+        'is_archived',
+        'archived_at',
+        'archived_by',
     ];
 
     protected $casts = [
         'report_date' => 'date',
+        'is_archived' => 'boolean',
+        'archived_at' => 'datetime',
     ];
 
     /**
@@ -43,6 +49,31 @@ class TechnicianReport extends Model
     public function displayCode(): string
     {
         return DisplayCode::format(DisplayCode::REPORT, $this->id);
+    }
+
+    /**
+     * Reports that belong on an active list: never the archived ones.
+     *
+     * Every query that answers "what has been reported" reads through this, so
+     * an archived report cannot leak back into a count, a table or a project's
+     * own report list by somebody forgetting the condition.
+     */
+    public function scopeActive(Builder $query): Builder
+    {
+        return $query->where('is_archived', false);
+    }
+
+    /**
+     * The other half: what the Archived Reports view lists.
+     */
+    public function scopeArchived(Builder $query): Builder
+    {
+        return $query->where('is_archived', true);
+    }
+
+    public function isArchived(): bool
+    {
+        return (bool) $this->is_archived;
     }
 
     public function images(): HasMany
@@ -92,6 +123,37 @@ class TechnicianReport extends Model
     public function submitterAvatarUrl(): ?string
     {
         return ($this->submitter ?? $this->technician?->account)?->avatarUrl();
+    }
+
+    /**
+     * The account that filed this report away. Null while it is active, and
+     * for anything archived before the column existed.
+     */
+    public function archiver(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'archived_by', 'id');
+    }
+
+    /**
+     * Whether this account is the one that filed the report.
+     *
+     * `submitted_by` is the answer wherever there is one. Reports written
+     * before that column existed carry no account at all, and for those the
+     * technician the report is filed under is who wrote it - the same fallback
+     * submitterName() prints and the same one the technician portal's own
+     * report log narrows by. It is never "the technician assigned to the
+     * project now": a report whose submitter is recorded is judged on that
+     * alone.
+     */
+    public function wasSubmittedBy(User $user): bool
+    {
+        if ($this->submitted_by !== null) {
+            return (int) $this->submitted_by === (int) $user->id;
+        }
+
+        $technicianId = $user->technicianId();
+
+        return $technicianId !== null && (int) $this->technician_id === $technicianId;
     }
 
     public function typeLabel(): string

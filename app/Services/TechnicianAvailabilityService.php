@@ -164,6 +164,106 @@ class TechnicianAvailabilityService
     }
 
     /**
+     * The calendar days a date picker has to refuse for a team, over a window.
+     *
+     * Read from the same occupancy every other check here is read from, so a
+     * day a picker greys out is a day assertContinuouslyAvailable() would have
+     * refused, and a day it leaves open is one that would have passed. The
+     * picker is still a convenience: the server re-runs the real check on the
+     * way in, so a typed-in date is no way around this.
+     *
+     * Two answers, because there are two kinds of booking:
+     *
+     *   whole_day    somebody is occupied at all. A date-based range takes
+     *                every minute of every day it touches, so any occupancy
+     *                at all on a day rules that day out.
+     *   partial_day  no hour of the working day is free for the whole team at
+     *                once, so no hours-only booking fits anywhere on it.
+     *
+     * @param  Collection<int, int>|array<int, int>  $technicianIds
+     * @param  array<int, int>  $excludeScheduleIds
+     * @return array{whole_day: array<int, string>, partial_day: array<int, string>}
+     */
+    public function blockedDatesInWindow(
+        Collection|array $technicianIds,
+        CarbonImmutable $from,
+        CarbonImmutable $to,
+        ?int $excludeProjectId = null,
+        array $excludeScheduleIds = []
+    ): array {
+        $empty = ['whole_day' => [], 'partial_day' => []];
+
+        if ($from->gt($to)) {
+            return $empty;
+        }
+
+        $intervals = $this->occupiedIntervals(
+            $technicianIds,
+            [['start' => $from->startOfDay(), 'end' => $to->startOfDay()]],
+            $excludeProjectId,
+            $excludeScheduleIds
+        );
+
+        if ($intervals === []) {
+            return $empty;
+        }
+
+        // Collapsed across the team: a partial day needs one hour open for
+        // everybody at once, not an hour each.
+        $busyByDay = [];
+
+        foreach ($intervals as $days) {
+            foreach ($days as $day => $dayIntervals) {
+                foreach ($dayIntervals as $interval) {
+                    $busyByDay[$day][] = $interval;
+                }
+            }
+        }
+
+        ksort($busyByDay);
+
+        $partialDay = [];
+
+        foreach ($busyByDay as $day => $dayIntervals) {
+            if (! $this->hasFreeWorkingHour($dayIntervals)) {
+                $partialDay[] = (string) $day;
+            }
+        }
+
+        return [
+            'whole_day' => array_map('strval', array_keys($busyByDay)),
+            'partial_day' => $partialDay,
+        ];
+    }
+
+    /**
+     * Whether one whole bookable hour of a day is still open.
+     *
+     * @param  array<int, array{project_id: int, from: int, to: int}>  $intervals
+     */
+    private function hasFreeWorkingHour(array $intervals): bool
+    {
+        for ($hour = Schedule::WORKING_HOUR_START; $hour < Schedule::WORKING_HOUR_END; $hour++) {
+            $slot = ['from' => $hour * 60, 'to' => ($hour + 1) * 60];
+            $taken = false;
+
+            foreach ($intervals as $interval) {
+                if ($this->overlaps($slot, $interval)) {
+                    $taken = true;
+
+                    break;
+                }
+            }
+
+            if (! $taken) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Walk every requested range and report which technicians are occupied
      * when, and by what.
      *

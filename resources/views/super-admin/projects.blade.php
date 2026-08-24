@@ -398,8 +398,11 @@
                                         </div>
 
                                         <div class="modal-body">
-                                            Archive <strong>{{ $project->reference_no }}</strong>? Its schedule and
-                                            technicians are released. It can be restored later.
+                                            Archive <strong>{{ $project->reference_no }}</strong>? It leaves the
+                                            active list but keeps everything it holds - its schedule, its team and
+                                            its tasks - and its technicians stop being booked for those dates.
+                                            Restoring it later brings it back as
+                                            <strong>{{ $project->statusLabel() }}</strong>, exactly as it is now.
                                         </div>
 
                                         <div class="modal-footer">

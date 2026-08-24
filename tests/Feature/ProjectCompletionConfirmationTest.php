@@ -11,6 +11,7 @@ use App\Models\ProjectTechnician;
 use App\Models\ProjectType;
 use App\Models\Schedule;
 use App\Models\ScheduleTechnician;
+use App\Models\SystemContent;
 use App\Models\Task;
 use App\Models\Technician;
 use App\Models\User;
@@ -830,6 +831,230 @@ class ProjectCompletionConfirmationTest extends TestCase
     }
 
     /**
+     * The dialog says which days it cannot book before anything is typed.
+     *
+     * The pickers used to be plain date fields with a floor of today, so every
+     * day the team was already spoken for looked as pickable as any other and
+     * the refusal only arrived after the button was pressed. The days the
+     * reopen would refuse now ride in on the form and are greyed out - drawn
+     * from the same availability service the reopen itself is checked by.
+     */
+    public function test_the_reopen_dialog_greys_out_days_the_team_is_booked_elsewhere(): void
+    {
+        $this->actingAsSuperAdmin();
+
+        $technician = $this->technician('Ivy Rale');
+
+        $project = $this->project();
+        $this->assign($project, $technician);
+        $this->schedule($project, -5, -2);
+        $this->requestCompletion($project);
+
+        // The same technician, on live work ahead of today.
+        $other = $this->project('ongoing', 'other.client@example.test');
+        $this->assign($other, $technician);
+        $this->schedule($other, 10, 12);
+
+        $response = $this->get(route('super-admin.projects.show', $project->project_id));
+
+        $response->assertOk();
+
+        $blocked = $this->blockedReopenDates($response->getContent());
+
+        $this->assertContains(CarbonImmutable::today()->addDays(10)->toDateString(), $blocked);
+        $this->assertContains(CarbonImmutable::today()->addDays(11)->toDateString(), $blocked);
+        $this->assertContains(CarbonImmutable::today()->addDays(12)->toDateString(), $blocked);
+        // A day either side of that booking is still free work.
+        $this->assertNotContains(CarbonImmutable::today()->addDays(9)->toDateString(), $blocked);
+        $this->assertNotContains(CarbonImmutable::today()->addDays(13)->toDateString(), $blocked);
+    }
+
+    /**
+     * A project is never its own blocker.
+     *
+     * Asking for completion released every day past the completion date, and
+     * those days were free for anybody from that moment - including for this
+     * project, reopening onto them. What it may not do is book over the days
+     * it kept, which are days the crew actually worked. Both halves are
+     * visible in the dialog: the kept day is greyed out, the released ones are
+     * not.
+     */
+    public function test_the_reopen_dialog_frees_the_days_the_project_released_and_keeps_the_days_it_worked(): void
+    {
+        $this->actingAsSuperAdmin();
+
+        $project = $this->project();
+        $this->assign($project, $this->technician('Jed Mora'));
+        // Straddles today, so completing it keeps up to today and releases the
+        // rest - the same technician was booked across the whole of it.
+        $this->schedule($project, -1, 5);
+        $this->requestCompletion($project);
+
+        $response = $this->get(route('super-admin.projects.show', $project->project_id));
+
+        $response->assertOk();
+
+        $blocked = $this->blockedReopenDates($response->getContent());
+
+        // Worked, and still the project's own: not bookable again.
+        $this->assertContains(CarbonImmutable::today()->toDateString(), $blocked);
+
+        // Released at completion, and free again - the project's own former
+        // claim on them is not allowed to read as a clash.
+        $this->assertNotContains(CarbonImmutable::today()->addDays(1)->toDateString(), $blocked);
+        $this->assertNotContains(CarbonImmutable::today()->addDays(5)->toDateString(), $blocked);
+    }
+
+    /**
+     * Whatever the picker offered, the reopen is checked again on the way in -
+     * so a date typed past a greyed-out one changes nothing.
+     */
+    public function test_a_greyed_out_date_is_still_refused_when_it_is_posted_anyway(): void
+    {
+        $this->actingAsSuperAdmin();
+
+        $technician = $this->technician('Kip Vale');
+
+        $project = $this->project();
+        $this->assign($project, $technician);
+        $this->schedule($project, -5, -2);
+        $this->requestCompletion($project);
+
+        $other = $this->project('ongoing', 'other.client@example.test');
+        $this->assign($other, $technician);
+        $this->schedule($other, 10, 12);
+
+        $response = $this->get(route('super-admin.projects.show', $project->project_id));
+        $blocked = $this->blockedReopenDates($response->getContent());
+
+        $refused = CarbonImmutable::today()->addDays(11)->toDateString();
+        $this->assertContains($refused, $blocked);
+
+        $this->post(route('super-admin.projects.reopen', $project->project_id), [
+            'reopen_reason' => 'Additional work is required on site.',
+            'scheduling_mode' => Schedule::MODE_DATE_BASED,
+            'start_date' => $refused,
+            'end_date' => $refused,
+        ])->assertRedirect();
+
+        $project->refresh();
+
+        $this->assertSame(Project::STATUS_AWAITING_CLIENT_CONFIRMATION, $project->status);
+        $this->assertNull($project->reopened_at);
+    }
+
+    /**
+     * A range whose ends are both free but which crosses a booked day is
+     * refused too - the picker greys the crossed day out, and the server
+     * refuses the range - so the two must agree about that day.
+     */
+    public function test_a_range_spanning_a_booked_day_is_greyed_out_and_refused(): void
+    {
+        $this->actingAsSuperAdmin();
+
+        $technician = $this->technician('Lia Nuno');
+
+        $project = $this->project();
+        $this->assign($project, $technician);
+        $this->schedule($project, -5, -2);
+        $this->requestCompletion($project);
+
+        $other = $this->project('ongoing', 'other.client@example.test');
+        $this->assign($other, $technician);
+        $this->schedule($other, 11, 11);
+
+        $response = $this->get(route('super-admin.projects.show', $project->project_id));
+        $blocked = $this->blockedReopenDates($response->getContent());
+
+        // The ends are free; the day between them is not.
+        $this->assertNotContains(CarbonImmutable::today()->addDays(10)->toDateString(), $blocked);
+        $this->assertContains(CarbonImmutable::today()->addDays(11)->toDateString(), $blocked);
+        $this->assertNotContains(CarbonImmutable::today()->addDays(12)->toDateString(), $blocked);
+
+        $this->post(route('super-admin.projects.reopen', $project->project_id), [
+            'reopen_reason' => 'Additional work is required on site.',
+            'scheduling_mode' => Schedule::MODE_DATE_BASED,
+            'start_date' => CarbonImmutable::today()->addDays(10)->toDateString(),
+            'end_date' => CarbonImmutable::today()->addDays(12)->toDateString(),
+        ])->assertRedirect();
+
+        $this->assertSame(
+            Project::STATUS_AWAITING_CLIENT_CONFIRMATION,
+            $project->refresh()->status
+        );
+    }
+
+    /**
+     * An Admin sees the same greyed-out calendar a Super Admin does: both may
+     * reopen, so both have to be told the same thing about the dates.
+     */
+    public function test_an_admin_gets_the_same_blocked_dates_as_a_super_admin(): void
+    {
+        $this->actingAsSuperAdmin();
+
+        $technician = $this->technician('Mo Sarte');
+
+        $project = $this->project();
+        $this->assign($project, $technician);
+        $this->schedule($project, -5, -2);
+        $this->requestCompletion($project);
+
+        $other = $this->project('ongoing', 'other.client@example.test');
+        $this->assign($other, $technician);
+        $this->schedule($other, 10, 12);
+
+        $admin = User::factory()->create(['email' => 'the.admin@example.test']);
+        $admin->forceFill(['role' => User::ROLE_ADMIN, 'status' => User::STATUS_ACTIVE])->save();
+
+        $response = $this->actingAs($admin)
+            ->get(route('super-admin.projects.show', $project->project_id));
+
+        $response->assertOk();
+
+        $this->assertContains(
+            CarbonImmutable::today()->addDays(11)->toDateString(),
+            $this->blockedReopenDates($response->getContent())
+        );
+    }
+
+    /**
+     * The dialog wears the same blue every other dialog in the portal wears.
+     *
+     * It was the only one in black, which read as a warning rather than as the
+     * ordinary administrative action it is.
+     */
+    public function test_the_reopen_dialog_uses_the_blue_theme(): void
+    {
+        $this->actingAsSuperAdmin();
+
+        $project = $this->project();
+        $this->assign($project, $this->technician('Nia Bolt'));
+        $this->schedule($project, -5, -2);
+        $this->requestCompletion($project);
+
+        $response = $this->get(route('super-admin.projects.show', $project->project_id));
+
+        $response->assertOk();
+        $response->assertSee('<div class="modal-header bg-primary text-white">', false);
+        $response->assertSee('<button type="submit" class="btn btn-primary">', false);
+        $response->assertDontSee('modal-header bg-dark text-white', false);
+    }
+
+    /**
+     * The whole-day list the Reopen form carries to its date pickers.
+     *
+     * @return array<int, string>
+     */
+    private function blockedReopenDates(string $html): array
+    {
+        preg_match('/data-reopen-blocked-whole-day="([^"]*)"/', $html, $matches);
+
+        $decoded = json_decode(html_entity_decode($matches[1] ?? '[]'), true);
+
+        return is_array($decoded) ? $decoded : [];
+    }
+
+    /**
      * A reopened project is genuinely live again, which is the whole point.
      */
     public function test_a_reopened_project_is_editable_again(): void
@@ -911,6 +1136,43 @@ class ProjectCompletionConfirmationTest extends TestCase
         $response->assertSee('Everything on site is finished.');
         $response->assertSee($project->confirmationDeadline()->format('F j, Y'));
         $response->assertSee(route('public.projects.confirm', $project->project_id), false);
+    }
+
+    /**
+     * Contact Support is a link into the site, whatever is configured.
+     *
+     * It used to become a mailto: as soon as a support address was published,
+     * and a mailto: is not a page: the browser answers it by asking to hand
+     * the click to whatever application claims mail, which is a prompt on a
+     * machine that has one and silence on a machine that does not. Either way
+     * the client never arrives anywhere.
+     */
+    public function test_contact_support_links_to_the_contact_page_and_opens_no_application(): void
+    {
+        $this->actingAsSuperAdmin();
+
+        $project = $this->project();
+        $this->assign($project, $this->technician('Dara Sim'));
+        $this->schedule($project, -5, -2);
+        $this->requestCompletion($project);
+
+        // A published support address is exactly the case that used to switch
+        // the button over to mailto:.
+        SystemContent::create([
+            'content_key' => 'contact.email',
+            'content_value' => 'support@example.test',
+            'content_type' => 'text',
+            'section' => 'contact',
+        ]);
+
+        $this->actingAs($this->clientAccount());
+
+        $response = $this->get(route('public.projects.show', $project->project_id));
+
+        $response->assertOk();
+        $response->assertSee('Contact Support');
+        $response->assertSee('href="'.route('public.contact').'"', false);
+        $response->assertDontSee('mailto:', false);
     }
 
     /**

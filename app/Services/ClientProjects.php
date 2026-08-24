@@ -134,7 +134,11 @@ class ClientProjects
                 // no time, so several reports filed on one day would come back
                 // in whatever order the database chose - most recently filed
                 // breaks the tie.
-                'reports' => fn ($query) => $query->with('images')
+                // Archived reports are left out: the tracker shows what is on
+                // the active record, and archiving one takes it off every
+                // active list including this one.
+                'reports' => fn ($query) => $query->active()
+                    ->with('images')
                     ->orderByDesc('report_date')
                     ->orderByDesc('id'),
             ])

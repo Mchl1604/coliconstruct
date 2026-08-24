@@ -24,6 +24,13 @@
                 {{ $reports->count() }} {{ \Illuminate\Support\Str::plural('report', $reports->count()) }}
             </span>
 
+            {{-- The other half of the list: archiving a report moves it there
+                 rather than deleting it. --}}
+            <a href="{{ route('technician.reports.archived') }}" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-archive me-1" aria-hidden="true"></i>
+                View Archived Reports
+            </a>
+
             <button type="button" class="btn btn-sm btn-primary" data-submit-report
                 @disabled($reportableProjects->isEmpty())>
                 <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
@@ -158,10 +165,24 @@
                                     {{ $report->report_date?->format('M j, Y') ?? '—' }}
                                 </td>
                                 <td class="text-center">
-                                    <button type="button" class="btn btn-sm btn-primary py-1 px-2"
-                                        data-view-report="{{ $report->id }}" title="View report">
-                                        <i class="bi bi-eye" aria-hidden="true"></i>
-                                    </button>
+                                    <div class="d-inline-flex gap-1">
+                                        <button type="button" class="btn btn-sm btn-primary py-1 px-2"
+                                            data-view-report="{{ $report->id }}" title="View report">
+                                            <i class="bi bi-eye" aria-hidden="true"></i>
+                                        </button>
+
+                                        {{-- Only the reports this lead filed
+                                             themselves, decided by the same policy
+                                             the endpoint enforces. --}}
+                                        @can('archive', $report)
+                                            <button type="button" class="btn btn-sm btn-warning py-1 px-2"
+                                                data-archive-report="{{ $report->id }}"
+                                                data-report-label="{{ $report->displayCode() }} - {{ $report->report_title }}"
+                                                title="Archive report">
+                                                <i class="bi bi-archive" aria-hidden="true"></i>
+                                            </button>
+                                        @endcan
+                                    </div>
                                 </td>
                             </tr>
                         @endforeach
@@ -231,6 +252,41 @@
         </div>
     </div>
 
+    {{-- ============================ ARCHIVE REPORT ============================ --}}
+    <div class="modal fade" id="archiveReportModal" tabindex="-1" aria-hidden="true" data-archive-report-modal>
+        <div class="modal-dialog">
+            <div class="modal-content">
+
+                <div class="modal-header">
+                    <h5 class="modal-title">Archive Report</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+
+                <div class="modal-body">
+                    Archive <strong data-archive-report-label></strong>?
+
+                    <p class="text-secondary small mb-0 mt-2">
+                        It comes off this list and off its project's report list. The report, its images and
+                        its attachments are kept, and it can be restored from View Archived Reports.
+                    </p>
+
+                    <div class="alert alert-danger mt-3 mb-0 d-none" role="alert" data-archive-report-error></div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-warning" data-archive-report-confirm>
+                        <span class="spinner-border spinner-border-sm me-1 d-none" role="status" aria-hidden="true"
+                            data-spinner></span>
+                        <i class="bi bi-archive me-1" aria-hidden="true"></i>
+                        Archive Report
+                    </button>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
     @include('technician.partials.report-form-modal', [
         'projects' => $reportableProjects,
         'reportTypes' => $reportTypes,
@@ -242,6 +298,7 @@
 
             window.portalRoutes = {
                 storeReport: @json(route('technician.reports.store', ['project' => '__ID__'])),
+                archiveReport: @json(route('technician-reports.archive', ['report' => '__ID__'])),
             };
         </script>
         <script src="/js/technician/modals.js"></script>

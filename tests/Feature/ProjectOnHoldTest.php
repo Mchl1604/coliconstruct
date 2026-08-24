@@ -769,10 +769,16 @@ class ProjectOnHoldTest extends TestCase
     }
 
     /**
-     * Archiving still breaks up the crew: that is an ending, not a pause, and
-     * the people on it should not go on reading as committed to it.
+     * Archiving frees the crew without breaking the project up.
+     *
+     * This used to delete the schedule rows and the assignments outright, and
+     * asserted that it had. It no longer does: an archived project keeps its
+     * dates and its team as the record of what it was, and stops occupying
+     * anybody by virtue of its status - the same way a cancelled project
+     * always has. The freeing is what matters here and is what is asserted
+     * below; the preserving is covered in ProjectArchiveRestoreTest.
      */
-    public function test_archiving_still_releases_the_team(): void
+    public function test_archiving_frees_the_crew_without_deleting_the_project(): void
     {
         $ana = $this->technician('Ana Mendoza');
         $project = $this->scheduledProject([$ana]);
@@ -780,7 +786,20 @@ class ProjectOnHoldTest extends TestCase
         $this->post(route('super-admin.projects.archive', $project->project_id))
             ->assertSessionHasNoErrors();
 
-        $this->assertSame(0, ProjectTechnician::where('project_id', $project->project_id)->count());
-        $this->assertSame(0, Schedule::where('project_id', $project->project_id)->count());
+        // Nothing was taken apart.
+        $this->assertSame(1, ProjectTechnician::where('project_id', $project->project_id)->count());
+        $this->assertSame(1, Schedule::where('project_id', $project->project_id)->count());
+
+        // And Ana is free for those very days on other work, which is the
+        // thing deleting the rows was there to achieve.
+        $other = $this->projectWithTeam([$ana], 'ongoing', 'PRJ-FREE-1');
+
+        $this->assertTrue(
+            app(TechnicianAvailabilityService::class)->findConflicts(
+                [$ana->technician_id],
+                [['start' => $this->day(0), 'end' => $this->day(4)]],
+                (int) $other->project_id
+            )->isEmpty()
+        );
     }
 }

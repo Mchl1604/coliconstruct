@@ -10,7 +10,6 @@
 @section('card')
     <img src="/img/coliconstructlogor.png" alt="Coliconstruct" width="72" class="mb-3">
     <h3 class="mb-1">Create an Account</h3>
-    <p class="text-muted mb-4">Register as a Coliconstruct client</p>
 
     @if ($errors->any())
         <div class="alert alert-danger text-start" role="alert">

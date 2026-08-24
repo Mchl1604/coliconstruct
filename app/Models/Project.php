@@ -208,6 +208,7 @@ class Project extends Model
         'cancellation_remarks',
         'archived_at',
         'archived_by',
+        'pre_archive_status',
     ];
 
     protected $casts = [
@@ -619,6 +620,49 @@ class Project extends Model
     }
 
     /**
+     * The status a restore should put this project back into.
+     *
+     * Archiving keeps the project whole and records what it was on the way in,
+     * so restoring returns it rather than reinventing it: a Completed project
+     * comes back Completed, a Cancelled one Cancelled, and work that was under
+     * way comes back under way with the dates it still holds.
+     *
+     * Null means there is nothing recorded to return to, which is true of
+     * every project archived by the earlier flow - that one deleted the
+     * schedule and the team on the way in, so there is no earlier state left.
+     * Those keep restoring as Unscheduled, which is what they always did and
+     * the only honest answer for a project with no dates behind it.
+     */
+    public function statusToRestore(): ?string
+    {
+        $status = $this->pre_archive_status;
+
+        // 'archived' would be a project archived twice by some earlier path;
+        // restoring into it would leave the row unreachable from either list.
+        return is_string($status) && $status !== '' && $status !== 'archived'
+            ? $status
+            : null;
+    }
+
+    /**
+     * Whether restoring this project would put its schedule back into force -
+     * that is, whether the dates it kept would start occupying its technicians
+     * again.
+     *
+     * Only work that is actually booked does. Completed and cancelled records
+     * keep their schedules for the history and have never counted against
+     * anybody's availability (see ACTIVE_PROJECT_STATUSES), and a paused
+     * project holds nobody either - that is what a hold is for. So restoring
+     * one of those cannot collide with anything, and only the statuses below
+     * have to be screened against the calendar first.
+     */
+    public function restoreWouldClaimDates(): bool
+    {
+        return ! $this->on_hold
+            && in_array((string) $this->statusToRestore(), self::ACTIVE_PROJECT_STATUSES, true);
+    }
+
+    /**
      * The last day the project is scheduled for, across every date range.
      */
     public function scheduleEndsOn(): ?CarbonImmutable
@@ -687,7 +731,21 @@ class Project extends Model
             return 'Overdue';
         }
 
-        return match ($this->status) {
+        return self::statusLabelFor($this->status);
+    }
+
+    /**
+     * How a stored status reads, without a project in hand.
+     *
+     * statusLabel() is the one to reach for nearly everywhere: it knows that a
+     * paused project reads as On Hold and a late one as Overdue whatever the
+     * column says. This is for the cases where there is a status but no
+     * project in that state to ask - the archive listing saying what a restore
+     * would bring a project back as, for instance.
+     */
+    public static function statusLabelFor(?string $status): string
+    {
+        return match ($status) {
             'unscheduled' => 'Unscheduled',
             'pending' => 'Pending',
             'ongoing' => 'Ongoing',
@@ -695,7 +753,7 @@ class Project extends Model
             'completed' => 'Completed',
             'cancelled' => 'Cancelled',
             'archived' => 'Archived',
-            default => ucfirst((string) $this->status),
+            default => ucfirst((string) $status),
         };
     }
 

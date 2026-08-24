@@ -46,11 +46,20 @@
                     <span class="text-secondary small" data-reports-count></span>
                 </div>
 
-                <button type="button" class="btn btn-primary" data-bs-toggle="modal"
-                    data-bs-target="#createReportModal">
-                    <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
-                    Create Report
-                </button>
+                <div class="d-flex align-items-center gap-2">
+                    {{-- The other half of the list. Archiving a report takes it
+                         off this table and puts it there; nothing is deleted. --}}
+                    <a href="{{ route('super-admin.reports.archived') }}" class="btn btn-outline-secondary">
+                        <i class="bi bi-archive me-1" aria-hidden="true"></i>
+                        View Archived Reports
+                    </a>
+
+                    <button type="button" class="btn btn-primary" data-bs-toggle="modal"
+                        data-bs-target="#createReportModal">
+                        <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
+                        Create Report
+                    </button>
+                </div>
             </div>
 
             {{-- Filters --}}
@@ -697,6 +706,44 @@
         </div>
     </div>
 
+    {{-- ==================== ARCHIVE REPORT CONFIRMATION ==================== --}}
+    {{-- The same shape every other confirmation in the portal takes: it says
+         what will happen, and it says what will not. --}}
+    <div class="modal fade" id="archiveReportModal" tabindex="-1" aria-hidden="true" data-archive-report-modal>
+        <div class="modal-dialog">
+            <div class="modal-content">
+
+                <div class="modal-header">
+                    <h5 class="modal-title">Archive Report</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+
+                <div class="modal-body">
+                    Archive <strong data-archive-report-label></strong>?
+
+                    <p class="text-secondary small mb-0 mt-2">
+                        It comes off the active reports list and off its project's report list. The report,
+                        its images and its attachments are kept, and it can be restored from View Archived
+                        Reports.
+                    </p>
+
+                    <div class="alert alert-danger mt-3 mb-0 d-none" role="alert" data-archive-report-error></div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-warning" data-archive-report-confirm>
+                        <span class="spinner-border spinner-border-sm me-1 d-none" role="status" aria-hidden="true"
+                            data-archive-report-spinner></span>
+                        <i class="bi bi-archive me-1" aria-hidden="true"></i>
+                        Archive Report
+                    </button>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
     @push('scripts')
         <script>
             window.reportRoutes = {
@@ -706,6 +753,7 @@
                 export: @json(route('super-admin.reports.export')),
                 reportBase: @json(url('super-admin/reports/technician-reports')),
                 projectBase: @json(url('super-admin/projects')),
+                archiveBase: @json(url('technician-reports')),
             };
         </script>
         <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>

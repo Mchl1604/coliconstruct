@@ -95,9 +95,31 @@
                                         </div>
 
                                         <div class="modal-body">
+                                            @php
+                                                // What it will come back as. Null for anything
+                                                // archived before archiving preserved state:
+                                                // there is no schedule or team behind those, so
+                                                // Unscheduled is the honest answer and the one
+                                                // they have always restored to.
+                                                $returnsAs = $project->statusToRestore();
+                                            @endphp
+
                                             Restore <strong>{{ $project->reference_no ?? $project->name }}</strong>?
-                                            It returns as <strong>Unscheduled</strong> - its schedule and
-                                            technicians must be set again.
+
+                                            @if ($returnsAs)
+                                                It returns as
+                                                <strong>{{ \App\Models\Project::statusLabelFor($returnsAs) }}</strong>
+                                                with its original schedule and team.
+
+                                                @if ($project->restoreWouldClaimDates())
+                                                    Its dates come back into force, so the restore is refused if
+                                                    somebody on the team has since been booked elsewhere over them.
+                                                @endif
+                                            @else
+                                                It returns as <strong>Unscheduled</strong> - this project was
+                                                archived before archiving kept schedules, so its dates and team
+                                                must be set again.
+                                            @endif
                                         </div>
 
                                         <div class="modal-footer">
