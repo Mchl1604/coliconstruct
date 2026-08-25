@@ -15,6 +15,7 @@ use App\Models\Technician;
 use App\Models\TechnicianReport;
 use App\Models\User;
 use App\Policies\ProjectPolicy;
+use App\Rules\NotAnEmployeeEmail;
 use App\Services\ActivityLogger;
 use App\Services\ClientProjects;
 use App\Services\ImportableTeamSources;
@@ -33,6 +34,7 @@ use App\Services\ScheduleModeRules;
 use App\Services\TaskScheduleRules;
 use App\Services\TechnicianAvailabilityService;
 use App\Services\TechnicianTaskLoad;
+use App\Support\PersonName;
 use App\Support\UploadStore;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
@@ -871,12 +873,16 @@ class ProjectController extends Controller
 
         $validated = $request->validate([
             'first_name' => ['required', 'string', 'max:255'],
-            'middle_initial' => ['nullable', 'string', 'max:255'],
+            // An initial, not a name - see PersonName.
+            'middle_initial' => PersonName::middleInitialRules(),
             'last_name' => ['required', 'string', 'max:255'],
             'company_name' => ['nullable', 'string', 'max:255'],
             'address' => ['required', 'string'],
             'contact_number' => ['required', 'regex:/^09\d{9}$/'],
-            'email_address' => ['required', 'email', 'max:255'],
+            // The same rule the wizard applies: a project's client may
+            // not be one of the staff, whose address is the key their
+            // own portal is keyed on.
+            'email_address' => ['required', 'email', 'max:255', new NotAnEmployeeEmail],
             'quotation' => ['required', 'numeric', 'min:0'],
             'project_description' => ['required', 'string'],
             'project_types' => ['required', 'array', 'min:1'],
@@ -892,6 +898,7 @@ class ProjectController extends Controller
             'contractDocument' => ['nullable', 'array', 'max:'.Document::MAX_FILES],
             'contractDocument.*' => Document::fileRules(),
         ], [
+            ...PersonName::middleInitialMessages('middle_initial'),
             'assessmentDocument.max' => 'Upload at most '.Document::MAX_FILES.' assessment files at a time.',
             'assessmentDocument.*.mimes' => Document::mimesMessage('assessment'),
             'assessmentDocument.*.max' => Document::maxMessage('assessment'),

@@ -131,8 +131,9 @@
 
                         <div class="col-md-2">
                             <label for="middleName" class="form-label">Middle Initial</label>
-                            <input type="text" name="middle_name" id="middleName" class="form-control"
-                                placeholder="Enter M.I" data-summary-input="middle_name">
+                            <input type="text" name="middle_name" id="middleName" class="form-control text-center"
+                                maxlength="1" pattern="[A-Za-z]" placeholder="M.I"
+                                data-summary-input="middle_name">
                         </div>
 
                         <div class="col-md-6">

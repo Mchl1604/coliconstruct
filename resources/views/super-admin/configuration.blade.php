@@ -742,10 +742,14 @@
                                 </div>
                                 <div class="col-md-4">
                                     <label class="form-label small fw-semibold mb-1" for="userMiddleName">
-                                        Middle Name
+                                        Middle Initial
                                     </label>
-                                    <input type="text" id="userMiddleName" class="form-control" name="middle_name"
-                                        maxlength="100" placeholder="Optional" autocomplete="off">
+                                    {{-- One letter, which is what an initial is. The
+                                         box stops at one and the server refuses
+                                         anything else - see PersonName. --}}
+                                    <input type="text" id="userMiddleName" class="form-control text-center"
+                                        name="middle_name" maxlength="1" pattern="[A-Za-z]" placeholder="Optional"
+                                        autocomplete="off">
                                 </div>
                                 <div class="col-md-4">
                                     <label class="form-label small fw-semibold mb-1" for="userLastName">

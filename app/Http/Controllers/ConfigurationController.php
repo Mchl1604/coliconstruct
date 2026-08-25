@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Services\CredentialDelivery;
 use App\Services\UserAccountService;
 use App\Support\AccountAge;
+use App\Support\PersonName;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -537,7 +538,9 @@ class ConfigurationController extends Controller
     {
         return [
             'first_name' => ['required', 'string', 'max:100'],
-            'middle_name' => ['nullable', 'string', 'max:100'],
+            // An initial, not a name - see PersonName, which every form
+            // collecting one is held to.
+            'middle_name' => PersonName::middleInitialRules(),
             'last_name' => ['required', 'string', 'max:100'],
             'contact_number' => ['required', 'string', 'max:'.User::CONTACT_NUMBER_LENGTH, self::CONTACT_NUMBER_RULE],
             // Demanded when the account is opened; optional when an existing
@@ -625,7 +628,7 @@ class ConfigurationController extends Controller
             'contact_number.max' => User::CONTACT_NUMBER_MESSAGE,
             'password.min' => 'The password must be at least 8 characters.',
             'skill_ids.*.exists' => 'One of the selected specialties no longer exists.',
-        ] + AccountAge::messages();
+        ] + PersonName::middleInitialMessages() + AccountAge::messages();
     }
 
     // ------------------------------------------------------------------

@@ -280,7 +280,7 @@ class ProfileManagementTest extends TestCase
         $this->actingAs($technician)
             ->put(route('profile.information'), [
                 'first_name' => 'Maria',
-                'middle_name' => 'Santos',
+                'middle_name' => 'S',
                 'last_name' => 'Reyes',
                 'contact_number' => '09171234567',
                 'email' => 'maria@example.test',
@@ -289,10 +289,10 @@ class ProfileManagementTest extends TestCase
 
         $technician->refresh();
 
-        $this->assertSame('Maria Santos Reyes', $technician->fullName());
+        $this->assertSame('Maria S Reyes', $technician->fullName());
         // `name` is what the topbar and every listing read, so it has to keep
         // up with the parts.
-        $this->assertSame('Maria Santos Reyes', $technician->name);
+        $this->assertSame('Maria S Reyes', $technician->name);
 
         // The address they sign in with has not moved.
         $this->assertSame('tech@example.test', $technician->email);

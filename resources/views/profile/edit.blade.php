@@ -151,10 +151,14 @@
 
                                 <div class="col-md-4">
                                     <label class="form-label small fw-semibold mb-1" for="middleName">
-                                        Middle Name
+                                        Middle Initial
                                     </label>
-                                    <input type="text" class="form-control @error('middle_name', 'information') is-invalid @enderror"
-                                        id="middleName" name="middle_name" maxlength="100" placeholder="Optional"
+                                    {{-- One letter, which is what an initial is. The
+                                         box stops at one and the server refuses
+                                         anything else - see PersonName. --}}
+                                    <input type="text" class="form-control text-center @error('middle_name', 'information') is-invalid @enderror"
+                                        id="middleName" name="middle_name" maxlength="1" pattern="[A-Za-z]"
+                                        placeholder="Optional"
                                         value="{{ old('middle_name', $account->middle_name) }}">
                                     @error('middle_name', 'information')
                                         <div class="invalid-feedback">{{ $message }}</div>

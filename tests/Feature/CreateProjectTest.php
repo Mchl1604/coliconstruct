@@ -68,7 +68,7 @@ class CreateProjectTest extends TestCase
             'client_type' => 'Residential',
             'surname' => 'Dela Cruz',
             'firstname' => 'Juan',
-            'middle_name' => 'Santos',
+            'middle_name' => 'S',
             'client_email' => 'juan.dela.cruz@example.test',
             'client_phone' => '09123456789',
             'project_address' => '123 Sample Street, Sample City',
@@ -115,7 +115,7 @@ class CreateProjectTest extends TestCase
 
         $this->assertDatabaseCount('tbl_projects', 1);
         $this->assertDatabaseHas('tbl_projects', [
-            'name' => 'Juan Santos Dela Cruz',
+            'name' => 'Juan S Dela Cruz',
             'status' => 'pending',
             'address' => '123 Sample Street, Sample City',
             'quotation' => '1250.00',

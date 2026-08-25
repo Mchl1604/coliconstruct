@@ -1607,8 +1607,9 @@
 
                             <div class="col-md-2">
                                 <label class="form-label">Middle Initial</label>
-                                <input type="text" maxlength="1" class="form-control text-center"
-                                    name="middle_initial" value="{{ $project->clients->first()?->middlename ?? '' }}">
+                                <input type="text" maxlength="1" pattern="[A-Za-z]"
+                                    class="form-control text-center" name="middle_initial"
+                                    value="{{ $project->clients->first()?->middlename ?? '' }}">
                             </div>
 
                             <div class="col-md-5">

@@ -5,9 +5,11 @@ namespace App\Http\Requests;
 use App\Models\Document;
 use App\Models\ProjectType;
 use App\Models\Schedule;
+use App\Rules\NotAnEmployeeEmail;
 use App\Services\ProjectTeamRules;
 use App\Services\ScheduleModeRules;
 use App\Services\TechnicianAvailabilityService;
+use App\Support\PersonName;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -49,8 +51,13 @@ class StoreProjectRequest extends FormRequest
             'company_name' => ['nullable', 'string', 'max:255', Rule::requiredIf($this->input('client_type') === 'Commercial')],
             'surname' => ['required', 'string', 'max:255'],
             'firstname' => ['required', 'string', 'max:255'],
-            'middle_name' => ['nullable', 'string', 'max:255'],
-            'client_email' => ['required', 'email:rfc', 'max:255'],
+            // An initial, not a name - the field has always been
+            // labelled M.I. and now only accepts one.
+            'middle_name' => PersonName::middleInitialRules(),
+            // A client is not a member of staff. An employee's address
+            // here would hand them the client's own project - see
+            // NotAnEmployeeEmail.
+            'client_email' => ['required', 'email:rfc', 'max:255', new NotAnEmployeeEmail],
             'client_phone' => ['required', 'regex:/^09\d{9}$/'],
             'project_address' => ['required', 'string'],
             'quotation_amount' => ['required', 'numeric', 'min:0'],
@@ -76,6 +83,7 @@ class StoreProjectRequest extends FormRequest
     public function messages(): array
     {
         return [
+            ...PersonName::middleInitialMessages(),
             'quotation_amount.numeric' => 'The quotation amount must be a valid number.',
             'quotation_amount.min' => 'The quotation amount must be at least zero.',
             'assessment_report.required' => 'Upload at least one assessment report file.',

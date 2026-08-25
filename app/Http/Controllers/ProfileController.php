@@ -7,6 +7,7 @@ use App\Models\Skill;
 use App\Models\User;
 use App\Services\OtpService;
 use App\Services\ProfileService;
+use App\Support\PersonName;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -124,7 +125,9 @@ class ProfileController extends Controller
 
         $data = $request->validateWithBag('information', [
             'first_name' => ['required', 'string', 'max:100'],
-            'middle_name' => ['nullable', 'string', 'max:100'],
+            // An initial, not a name - see PersonName, which every form
+            // collecting one is held to.
+            'middle_name' => PersonName::middleInitialRules(),
             'last_name' => ['required', 'string', 'max:100'],
             // Theirs to correct: a number that has changed is no use to
             // anybody sitting behind an administrator's queue.
@@ -140,6 +143,7 @@ class ProfileController extends Controller
             'email.unique' => 'Another account already uses that email address.',
             'contact_number.regex' => User::CONTACT_NUMBER_MESSAGE,
             'contact_number.max' => User::CONTACT_NUMBER_MESSAGE,
+            ...PersonName::middleInitialMessages(),
         ]);
 
         return $this->attempt(
