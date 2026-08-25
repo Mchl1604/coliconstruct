@@ -1,0 +1,258 @@
+/*
+ * The Schedule Conflict dialog on the Archived Projects page.
+ *
+ * It shows one thing: the archived project's schedule, one row per range it
+ * holds, each carrying its own verdict. So the rows are the design - a range
+ * that clashes is unmistakable at a glance, a range that has ended is visibly
+ * settled, and everything else stays quiet enough for those two to read.
+ */
+
+.conflict-modal-header {
+    align-items: flex-start;
+    border-bottom: 1px solid #e9ecef;
+}
+
+.conflict-eyebrow {
+    display: block;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #b02a37;
+}
+
+.conflict-panel {
+    border: 1px solid #dee2e6;
+    border-left: 4px solid #0d6efd;
+    border-radius: 0.5rem;
+    padding: 0.75rem 1rem;
+    background: #f8f9fa;
+    margin-bottom: 1rem;
+}
+
+.conflict-panel-title {
+    display: block;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #6c757d;
+    margin-bottom: 0.2rem;
+}
+
+.conflict-project-ref {
+    font-weight: 700;
+    font-size: 1.05rem;
+    color: #212529;
+}
+
+.conflict-panel-line {
+    font-size: 0.9rem;
+}
+
+/* ---------------------------------------------------------------- */
+/* The schedule itself                                              */
+/* ---------------------------------------------------------------- */
+
+.range-list-title {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #6c757d;
+    margin-bottom: 0.5rem;
+}
+
+.range-row {
+    border: 1px solid #dee2e6;
+    border-left: 4px solid #adb5bd;
+    border-radius: 0.5rem;
+    padding: 0.8rem 1rem;
+    margin-bottom: 0.6rem;
+    background: #fff;
+}
+
+/* A range the team is free for. */
+.range-row.is-available {
+    border-left-color: #198754;
+}
+
+/* The range in the way - the whole range, never a scattering of days. */
+.range-row.is-conflict {
+    border-color: #f1aeb5;
+    border-left-color: #dc3545;
+    background: #fff5f5;
+}
+
+/* Work that has already happened: settled, and out of the argument. */
+.range-row.is-past {
+    border-left-color: #ced4da;
+    background: #f8f9fa;
+}
+
+.range-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.range-label {
+    font-weight: 600;
+    font-size: 1rem;
+    color: #212529;
+}
+
+.range-row.is-past .range-label {
+    color: #6c757d;
+}
+
+.range-state {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.range-badge {
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 0.2rem 0.55rem;
+    border-radius: 0.3rem;
+    white-space: nowrap;
+}
+
+.range-badge.is-available {
+    background: #d1e7dd;
+    color: #0f5132;
+}
+
+.range-badge.is-conflict {
+    background: #f8d7da;
+    color: #b02a37;
+}
+
+.range-badge.is-past {
+    background: #e9ecef;
+    color: #495057;
+}
+
+.range-readonly {
+    font-size: 0.75rem;
+    color: #6c757d;
+}
+
+/* The answer to "why", kept as supporting detail - the range is the subject. */
+.conflict-why {
+    margin-top: 0.5rem;
+}
+
+.conflict-why-summary {
+    font-size: 0.875rem;
+    color: #b02a37;
+    margin-bottom: 0.25rem;
+}
+
+.conflict-why-more summary {
+    font-size: 0.8rem;
+    color: #6c757d;
+    cursor: pointer;
+}
+
+.conflict-why-more ul {
+    margin: 0.4rem 0 0;
+    padding-left: 1.1rem;
+    font-size: 0.85rem;
+    color: #495057;
+}
+
+.range-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.7rem;
+}
+
+.range-empty {
+    padding: 1rem;
+    border: 1px dashed #dee2e6;
+    border-radius: 0.5rem;
+    color: #6c757d;
+}
+
+/* ---------------------------------------------------------------- */
+/* Editing one range                                                */
+/* ---------------------------------------------------------------- */
+
+.conflict-editor {
+    margin-top: 0.8rem;
+    padding-top: 0.8rem;
+    border-top: 1px dashed #dee2e6;
+}
+
+.conflict-editor-note {
+    font-size: 0.82rem;
+    color: #6c757d;
+    margin-bottom: 0.5rem;
+}
+
+.conflict-fields {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-bottom: 0.6rem;
+}
+
+.conflict-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    min-width: 160px;
+}
+
+.conflict-field span {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #6c757d;
+}
+
+.conflict-editor-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+}
+
+/* Letting go of one end of the range, so the other can move. Drawn the way
+   the schedules page draws the same button. */
+.flatpickr-calendar .conflict-picker-clear {
+    display: block;
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border: 0;
+    border-top: 1px solid #e6e6e6;
+    /* Squares off the two bottom corners the calendar itself rounds, so the
+       button ends where the panel does. */
+    border-radius: 0 0 5px 5px;
+    background: transparent;
+    color: #64748b;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.flatpickr-calendar .conflict-picker-clear:hover,
+.flatpickr-calendar .conflict-picker-clear:focus-visible {
+    background: #f1f5f9;
+    color: #334155;
+}
+
+/* An open calendar that has not been given room for the footer would clip it -
+   flatpickr sizes the panel from the day grid alone. */
+.flatpickr-calendar.open {
+    height: auto;
+}
+
+.conflict-modal-footer {
+    border-top: 1px solid #e9ecef;
+}

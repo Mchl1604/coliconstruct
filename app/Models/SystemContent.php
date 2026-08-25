@@ -2,16 +2,27 @@
 
 namespace App\Models;
 
+use App\Services\InquirySpamGuard;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * One editable piece of the public website.
+ * One editable piece of the system: a word or picture on the public website,
+ * or an operational setting an administrator may change.
  *
  * The catalogue below - DEFINITIONS - is the only place that decides what is
  * editable. Adding a field means adding a line there; the table, the editor
  * and the pages all follow from it, with no migration and no new columns.
+ *
+ * Sections come in two groups. SECTIONS is the public website, edited in
+ * Configuration -> System Settings -> System Contents. SETTINGS_SECTIONS is
+ * everything that changes how the system behaves rather than how it reads -
+ * the confirmation window, the enquiry cooldown, the Terms and Conditions -
+ * edited in the card beneath it. Both are the same table, the same service and
+ * the same editor; only the list of pills differs, because "rewrite the About
+ * page" and "complete projects after five days instead of seven" are not the
+ * same kind of decision and should not sit in one undifferentiated list.
  */
 class SystemContent extends Model
 {
@@ -42,7 +53,24 @@ class SystemContent extends Model
     public const SECTION_FOOTER = 'footer';
 
     /**
-     * The tabs of the editor, in the order it shows them.
+     * How long a project may wait on its client, and what else the project
+     * workflow lets an administrator set.
+     */
+    public const SECTION_PROJECT_SETTINGS = 'project_settings';
+
+    /**
+     * How often one visitor may write in from the public Contact form.
+     */
+    public const SECTION_INQUIRY_SETTINGS = 'inquiry_settings';
+
+    /**
+     * The Terms and Conditions, and anything else that is a legal statement
+     * rather than marketing copy.
+     */
+    public const SECTION_LEGAL = 'legal';
+
+    /**
+     * The public website's sections, in the order the editor shows them.
      *
      * @var array<string, string>
      */
@@ -54,6 +82,17 @@ class SystemContent extends Model
         self::SECTION_FOOTER => 'Footer',
     ];
 
+    /**
+     * The operational sections - things that change what the system does.
+     *
+     * @var array<string, string>
+     */
+    public const SETTINGS_SECTIONS = [
+        self::SECTION_PROJECT_SETTINGS => 'Project Settings',
+        self::SECTION_INQUIRY_SETTINGS => 'Inquiry Settings',
+        self::SECTION_LEGAL => 'Terms & Conditions',
+    ];
+
     public const TYPE_TEXT = 'text';
 
     public const TYPE_TEXTAREA = 'textarea';
@@ -63,6 +102,16 @@ class SystemContent extends Model
     public const TYPE_IMAGE = 'image';
 
     public const TYPE_URL = 'url';
+
+    /**
+     * A whole number typed into a spinner rather than a free-text box.
+     *
+     * Stored as a string like everything else here - the column holds text and
+     * one column for every type would be a schema per setting - and read back
+     * through SystemContentService::number(), which is what turns it into the
+     * integer the application uses.
+     */
+    public const TYPE_NUMBER = 'number';
 
     /**
      * The types that hold an uploaded file rather than typed-in words.
@@ -444,7 +493,120 @@ class SystemContent extends Model
             'help' => 'Use :year for the current year.',
             'default' => '© Coliconstruct Engineering Services. Established in 2012.',
         ],
+
+        // ------------------------------------------------------- Project Settings
+        //
+        // Operational settings rather than website copy, and in this catalogue
+        // because it already IS the settings store: one table, one cached read,
+        // one editor, one audit entry, one permission. A second mechanism for
+        // "numbers an administrator may change" would be the same thing twice.
+        //
+        // Each of the three below carries its own `rules`, which is the only
+        // structural addition: the website's fields are all "some text, not too
+        // long", and these are not - a completion window of nought days or an
+        // empty set of terms would break the thing they configure.
+        'project_settings.auto_completion_days' => [
+            'label' => 'Automatic Project Completion (days)',
+            'type' => self::TYPE_NUMBER,
+            'section' => self::SECTION_PROJECT_SETTINGS,
+            'help' => 'Automatically complete a project after it remains awaiting client confirmation for this many days. The client is reminded shortly before the deadline.',
+            // Concatenated rather than cast: this is a constant expression,
+            // where a cast is not allowed and `. ''` is. Written from the
+            // constant either way, so the shipped default and the runtime
+            // fallback cannot drift apart.
+            'default' => Project::DEFAULT_COMPLETION_CONFIRMATION_DAYS.'',
+            'rules' => ['required', 'integer', 'min:1', 'max:365'],
+            'messages' => [
+                'required' => 'Enter the number of days before a project completes automatically.',
+                'integer' => 'The number of days must be a whole number.',
+                'min' => 'The number of days must be at least 1.',
+                'max' => 'The number of days cannot be more than 365.',
+            ],
+        ],
+
+        // ------------------------------------------------------- Inquiry Settings
+        'inquiry_settings.submission_limit_minutes' => [
+            'label' => 'Inquiry Submission Limit (minutes)',
+            'type' => self::TYPE_NUMBER,
+            'section' => self::SECTION_INQUIRY_SETTINGS,
+            'help' => 'How long a visitor must wait before sending another message from the public Contact form. The form never mentions it - somebody who writes in too soon simply sees a notice asking them to try again later.',
+            'default' => InquirySpamGuard::DEFAULT_SUBMISSION_LIMIT_MINUTES.'',
+            'rules' => ['required', 'integer', 'min:1', 'max:1440'],
+            'messages' => [
+                'required' => 'Enter the number of minutes between inquiry submissions.',
+                'integer' => 'The limit must be a whole number of minutes.',
+                'min' => 'The limit must be at least 1 minute.',
+                'max' => 'The limit cannot be more than 1440 minutes (24 hours).',
+            ],
+        ],
+
+        // ------------------------------------------------------------------ Legal
+        // Plain text, and nothing but. Whoever writes the company's terms is a
+        // person with something to say about the company's terms, not somebody
+        // who should have to close a <p> tag to say it - and markup typed into
+        // a box is markup that can be typed wrong, on the one page a visitor
+        // has to read before they agree to anything.
+        //
+        // Nothing is substituted in on the way out either. What is typed here
+        // is what the page shows, word for word: a legal document that quietly
+        // rewrites itself between the textarea and the screen is one nobody can
+        // proof-read. Blank lines separate paragraphs and the page renders the
+        // text as written; that is the whole of it.
+        'legal.terms_and_conditions' => [
+            'label' => 'Terms and Conditions',
+            'type' => self::TYPE_TEXTAREA,
+            'section' => self::SECTION_LEGAL,
+            'help' => 'Shown wherever the system asks somebody to accept the terms, exactly as written here.',
+            'default' => self::DEFAULT_TERMS,
+            'rules' => ['required', 'string', 'max:50000'],
+            'messages' => [
+                'required' => 'The Terms and Conditions cannot be empty.',
+                'max' => 'The Terms and Conditions are too long to store.',
+            ],
+        ],
     ];
+
+    /**
+     * The Terms and Conditions as the system ships with them.
+     *
+     * Word for word what the registration dialog used to have written into its
+     * markup, minus the markup: a numbered heading is a line of its own and a
+     * blank line ends a paragraph, which is the only formatting the page needs
+     * and the only formatting anybody has to type.
+     *
+     * Written out in full, including the company's name and the confirmation
+     * window. This is a starting draft rather than a live document - the
+     * company is expected to replace it with its own terms - and a draft that
+     * reads as finished English is more useful than one peppered with tokens
+     * whose meaning has to be looked up.
+     */
+    private const DEFAULT_TERMS = <<<'TEXT'
+        Please read these terms before opening a Coliconstruct client account.
+
+        1. Your account
+        A client account is for following the work Coliconstruct is carrying out for you. You are responsible for the accuracy of the details you register with, for keeping your password to yourself, and for everything done through your account. Tell us at once if you believe somebody else has access to it.
+
+        2. Who may register
+        You must be at least 18 years old. Registering on behalf of a company means you are authorised to do so. Accounts for Coliconstruct staff are created by an administrator and are never opened from this form.
+
+        3. Verifying your email address
+        Your account is not active until you enter the code we send to the address you register with. That address is how we identify you, how your projects reach your account, and how we contact you about them.
+
+        4. Project information
+        Schedules, progress reports, photographs and completion records shown in your account describe work as it stands and may change as the work proceeds. Where a project is reported as complete you will be asked to confirm it; if you do not respond within 7 days, the system records the project as completed on your behalf. Quotations, contracts and any other document in your account remain governed by the signed agreement between us.
+
+        5. Your information
+        We collect your name, email address, contact number and date of birth to operate your account, and we use them for that purpose. We do not sell your information. Records connected to your projects are retained as part of our business records.
+
+        6. Acceptable use
+        Do not attempt to reach another client's projects, interfere with the system, or use it for anything unlawful. We may deactivate an account that is used this way.
+
+        7. Availability and changes
+        The system may be unavailable during maintenance or for reasons outside our control. We may update these terms; continuing to use your account after a change means you accept the updated terms.
+
+        8. Contact
+        Questions about these terms can be sent to the company using the contact details on our website.
+        TEXT;
 
     public function editor(): BelongsTo
     {
@@ -465,6 +627,38 @@ class SystemContent extends Model
             self::DEFINITIONS,
             fn (array $definition): bool => $definition['section'] === $section
         );
+    }
+
+    /**
+     * Every section the editor knows, whichever card draws it.
+     *
+     * The two lists are kept apart for the pills and joined here for
+     * everything else - the controller's "is this a real section?" guard, the
+     * label it logs, the label it hands back. Splitting that check as well
+     * would mean two ways to answer one question.
+     *
+     * @return array<string, string>
+     */
+    public static function allSections(): array
+    {
+        return self::SECTIONS + self::SETTINGS_SECTIONS;
+    }
+
+    /**
+     * A section's human label, or null when there is no such section.
+     */
+    public static function sectionLabel(string $section): ?string
+    {
+        return self::allSections()[$section] ?? null;
+    }
+
+    /**
+     * Whether this section holds operational settings rather than website
+     * copy - which is what decides how strictly the editor validates it.
+     */
+    public static function isSettingsSection(string $section): bool
+    {
+        return isset(self::SETTINGS_SECTIONS[$section]);
     }
 
     public static function isImageKey(string $key): bool

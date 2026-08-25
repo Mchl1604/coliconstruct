@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\SystemContentService;
 use App\Support\DisplayCode;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
@@ -29,11 +30,31 @@ class Project extends Model
 
     /**
      * How long a client has to confirm before the system closes the project
-     * for them, and when they are reminded that the clock is running.
+     * for them, when nobody has configured anything else.
+     *
+     * The number the system ships with, not the number it uses. The window is
+     * a Super Admin setting now - Configuration -> System Settings -> Project
+     * Settings - and everything that needs it asks completionConfirmationDays()
+     * rather than reading this. This is what that method falls back to on a
+     * fresh installation, and on one where the setting has been cleared.
      */
-    public const COMPLETION_CONFIRMATION_DAYS = 7;
+    public const DEFAULT_COMPLETION_CONFIRMATION_DAYS = 7;
 
-    public const COMPLETION_REMINDER_DAYS = 5;
+    /**
+     * The setting the window is stored under.
+     */
+    public const SETTING_COMPLETION_DAYS = 'project_settings.auto_completion_days';
+
+    /**
+     * How long before the deadline the client is reminded that the clock is
+     * running.
+     *
+     * Two days, and derived rather than stored: the reminder is a warning
+     * about the deadline, so it has to move when the deadline does. With the
+     * shipped seven-day window this puts the reminder on day five, which is
+     * exactly where it has always been.
+     */
+    public const COMPLETION_REMINDER_LEAD_DAYS = 2;
 
     /**
      * How a project came to be Completed.
@@ -264,9 +285,35 @@ class Project extends Model
         return $this->hasMany(ProjectTechnician::class, 'project_id', 'project_id');
     }
 
+    /**
+     * The photographs of the CURRENT completion report.
+     *
+     * Narrowed to the rows no historical report has claimed. A photograph
+     * belongs to the completion cycle it was filed in, and reopening a project
+     * hands that cycle's photographs to the report it supersedes - see
+     * ProjectCompletionHistory. Without the condition, a project completed a
+     * second time would show the first visit's photographs beside the second
+     * visit's report as though they were one job.
+     *
+     * Every photograph ever filed is still reachable: through this relation
+     * while its cycle is current, and through the historical report's own
+     * photos() afterwards.
+     */
     public function completionPhotos(): HasMany
     {
-        return $this->hasMany(ProjectCompletionPhoto::class, 'project_id', 'project_id');
+        return $this->hasMany(ProjectCompletionPhoto::class, 'project_id', 'project_id')
+            ->whereNull('completion_report_id');
+    }
+
+    /**
+     * The completion reports this project has already been through, newest
+     * cycle first. Empty for a project that has never been reopened.
+     */
+    public function completionReports(): HasMany
+    {
+        return $this->hasMany(ProjectCompletionReport::class, 'project_id', 'project_id')
+            ->orderByDesc('cycle')
+            ->orderByDesc('completion_report_id');
     }
 
     /**
@@ -524,10 +571,79 @@ class Project extends Model
      * A Completed project never can be, by either route into it: the client
      * agreed, or the seven days ran out and the system closed it. Either way
      * it is a historical record, and further work is a new project.
+     *
+     * What reopening does NOT do is throw the completion report away. The
+     * report for the cycle that is ending is filed as history first - see
+     * ProjectCompletionHistory - so the project comes back with no current
+     * completion report while the previous one stays readable.
      */
     public function canBeReopened(): bool
     {
         return $this->isAwaitingClientConfirmation();
+    }
+
+    /**
+     * Whether this project has been through a reopen at any point.
+     */
+    public function wasReopened(): bool
+    {
+        return $this->reopened_at !== null;
+    }
+
+    /**
+     * Whether the Project Reopened notice belongs on the page.
+     *
+     * Only while the project is live again. Once it is completed a second
+     * time, the notice would be describing something that is no longer true -
+     * the current completion report is what the page has to say then, and the
+     * history moves behind View Previous Completion Reports.
+     */
+    public function showsReopenedNotice(): bool
+    {
+        return $this->wasReopened() && ! $this->isReadOnly();
+    }
+
+    /**
+     * Whether there is anything for View Previous Completion Reports to show.
+     *
+     * Counted through the relation so a page that eager-loaded it does not go
+     * back to the database to ask.
+     */
+    public function hasPreviousCompletionReports(): bool
+    {
+        return $this->relationLoaded('completionReports')
+            ? $this->completionReports->isNotEmpty()
+            : $this->completionReports()->exists();
+    }
+
+    /**
+     * How long a client has to confirm, as configured.
+     *
+     * The single place the number is decided. Every guard, every email, every
+     * countdown and the nightly sweep read it here, so changing the setting
+     * changes all of them at once and none of them can drift.
+     */
+    public static function completionConfirmationDays(): int
+    {
+        return app(SystemContentService::class)->number(
+            self::SETTING_COMPLETION_DAYS,
+            self::DEFAULT_COMPLETION_CONFIRMATION_DAYS
+        );
+    }
+
+    /**
+     * The day of the window the reminder goes out on, counted from the day
+     * completion was requested.
+     *
+     * Floored at one so a very short window still reminds somebody rather than
+     * quietly reminding them before they were asked. On a window of one or two
+     * days the reminder pass excludes projects already due to be completed, so
+     * the client hears once - about the completion - which is the right way
+     * round.
+     */
+    public static function completionReminderDays(): int
+    {
+        return max(1, self::completionConfirmationDays() - self::COMPLETION_REMINDER_LEAD_DAYS);
     }
 
     /**
@@ -544,7 +660,7 @@ class Project extends Model
         }
 
         return CarbonImmutable::parse($this->completion_requested_at)
-            ->addDays(self::COMPLETION_CONFIRMATION_DAYS);
+            ->addDays(self::completionConfirmationDays());
     }
 
     /**
@@ -603,7 +719,7 @@ class Project extends Model
             self::METHOD_CLIENT_CONFIRMED => 'Confirmed by the client',
             self::METHOD_AUTO_COMPLETED => sprintf(
                 'Completed automatically after %d days without a reply',
-                self::COMPLETION_CONFIRMATION_DAYS
+                self::completionConfirmationDays()
             ),
             default => null,
         };
@@ -617,6 +733,41 @@ class Project extends Model
     public function isArchived(): bool
     {
         return $this->status === 'archived' || (bool) $this->is_archived;
+    }
+
+    /**
+     * The two finished statuses that may still be archived.
+     *
+     * Awaiting Client Confirmation is deliberately absent, though it is
+     * read-only too: that project is a question put to a client that has not
+     * been answered yet, and taking it out of the active system would strand
+     * both the answer and the seven-day clock. It is archivable the moment it
+     * becomes Completed.
+     *
+     * @var array<int, string>
+     */
+    public const ARCHIVABLE_READ_ONLY_STATUSES = ['completed', 'cancelled'];
+
+    /**
+     * Whether this project may be archived.
+     *
+     * Asked by the Archive button and again by the endpoint behind it, so a
+     * request typed straight at the route is refused on the same rule the page
+     * drew - hiding a button is not a permission.
+     *
+     * Live work has always been archivable. A finished record is archivable
+     * too, which is the point of an archive: Completed and Cancelled projects
+     * are exactly the ones there is no more to do about, and leaving them in
+     * the active listing forever was the reason the list grew without end.
+     */
+    public function isArchivable(): bool
+    {
+        if ($this->isArchived()) {
+            return false;
+        }
+
+        return ! $this->isReadOnly()
+            || in_array($this->status, self::ARCHIVABLE_READ_ONLY_STATUSES, true);
     }
 
     /**

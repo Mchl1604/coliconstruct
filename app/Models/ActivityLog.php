@@ -119,6 +119,17 @@ class ActivityLog extends Model
 
     public const EMAIL_CHANGED = 'Email Changed';
 
+    /**
+     * A client agreeing to the Terms and Conditions.
+     *
+     * Filed under Authentication for the same reason the verification
+     * workflows are: it is a precondition of an account being allowed to carry
+     * on, and the audit trail's question about it - "who agreed to which
+     * version, and when" - is the same question the sign-in rows answer about
+     * access.
+     */
+    public const TERMS_ACCEPTED = 'Terms Accepted';
+
     // ------------------------------------------------------------------
     // User Management
     //
@@ -334,6 +345,7 @@ class ActivityLog extends Model
         self::REGISTRATION_VERIFIED => self::MODULE_AUTHENTICATION,
         self::EMAIL_CHANGE_REQUESTED => self::MODULE_AUTHENTICATION,
         self::EMAIL_CHANGED => self::MODULE_AUTHENTICATION,
+        self::TERMS_ACCEPTED => self::MODULE_AUTHENTICATION,
 
         self::EMPLOYEE_CREATED => self::MODULE_USER_MANAGEMENT,
         self::EMPLOYEE_UPDATED => self::MODULE_USER_MANAGEMENT,

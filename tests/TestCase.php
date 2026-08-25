@@ -3,10 +3,34 @@
 namespace Tests;
 
 use App\Models\User;
+use App\Services\SystemContentService;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 
 abstract class TestCase extends BaseTestCase
 {
+    /**
+     * The Terms and Conditions columns a client fixture needs.
+     *
+     * A client who has not agreed to the current terms is held outside their
+     * portal by EnsureTermsAreAccepted, which is the point of that middleware
+     * - but it means a fixture client built for a test about something else
+     * would be stopped at the door, and the test would then prove nothing
+     * about what it was actually asking. In production every client using the
+     * portal has agreed, so this is what a realistic fixture looks like.
+     *
+     * A test that wants the OTHER case - a client who is behind - simply
+     * leaves these off. TermsAcceptanceTest is built that way throughout.
+     *
+     * @return array<string, mixed>
+     */
+    protected function acceptedTerms(): array
+    {
+        return [
+            'terms_accepted_version' => app(SystemContentService::class)->termsVersion(),
+            'terms_accepted_at' => now(),
+        ];
+    }
+
     /**
      * Sign in as a super administrator.
      *

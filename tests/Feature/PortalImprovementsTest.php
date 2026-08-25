@@ -39,7 +39,7 @@ class PortalImprovementsTest extends TestCase
             'is_archived' => false,
             'must_change_password' => false,
             'password' => 'password',
-        ]);
+        ] + $this->acceptedTerms());
     }
 
     private function project(string $email): Project
@@ -114,7 +114,13 @@ class PortalImprovementsTest extends TestCase
             ->assertOk()
             ->assertSee('Project Documents')
             ->assertSee($project->documents()->firstOrFail()->url(), escape: false)
-            ->assertDontSee('Quotation');
+            // The group heading, not the bare word: the website's small print
+            // mentions quotations, and the footer's Terms and Conditions
+            // dialog now puts that sentence on every public page. What this
+            // asserts is that the project has no Quotation GROUP - a group
+            // with no files in it is left out entirely, and a client should
+            // not be shown that a document is missing.
+            ->assertDontSee('<span class="fw-semibold">Quotation</span>', escape: false);
 
         // The project type appears exactly once now that the text field is gone.
         $this->assertSame(1, substr_count($response->getContent(), 'Aircon Installation'));

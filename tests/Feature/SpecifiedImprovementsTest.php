@@ -716,7 +716,7 @@ class SpecifiedImprovementsTest extends TestCase
             'status' => User::STATUS_ACTIVE,
             'email_verified_at' => now(),
             'password' => 'test-password',
-        ]);
+        ] + $this->acceptedTerms());
 
         $project = $this->project('ongoing', 'client@example.test');
 

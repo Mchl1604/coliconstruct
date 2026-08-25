@@ -83,7 +83,7 @@ class UploadedFileAccessTest extends TestCase
             'status' => User::STATUS_ACTIVE,
             'email_verified_at' => now(),
             'password' => 'a-password',
-        ]);
+        ] + $this->acceptedTerms());
     }
 
     private function technician(string $email, ?Project $assignedTo = null): User

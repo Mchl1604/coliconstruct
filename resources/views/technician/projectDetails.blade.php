@@ -75,8 +75,13 @@
 
         {{-- Overdue: the last scheduled day has passed but the project is still
              open. A lead cannot reschedule, so the only way out offered here is
-             to close it off. --}}
-        @if ($project->isOverdue())
+             to close it off.
+
+             Not shown to a plain technician - see $showsOverdueNotice in
+             TechnicianPortalController::showProject. Neither way out is theirs
+             to take, so the notice would only be a warning about a decision
+             somebody else has to make. --}}
+        @if ($showsOverdueNotice && $project->isOverdue())
             <div class="alert alert-warning border-0 shadow-sm mb-4 overdue-banner" role="alert">
                 <div class="d-flex flex-wrap align-items-start gap-3">
                     <div class="overdue-banner-icon">

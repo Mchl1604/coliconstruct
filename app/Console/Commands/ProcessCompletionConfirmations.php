@@ -18,8 +18,19 @@ use Throwable;
  * The confirmation clock.
  *
  * A project handed to its client for confirmation cannot sit there forever, so
- * two things happen on a timer: a reminder on day five, and completion on day
- * seven whether anybody replied or not.
+ * two things happen on a timer: a reminder shortly before the deadline, and
+ * completion on the deadline itself whether anybody replied or not.
+ *
+ * How long the window is belongs to the Super Admin - Configuration -> System
+ * Settings -> Project Settings - and is read on every run through
+ * Project::completionConfirmationDays(). Nothing here counts days of its own,
+ * so changing the setting changes this sweep with it.
+ *
+ * The window is measured from completion_requested_at, so changing it never
+ * completes anything on its own: it moves the line, and a project crosses that
+ * line only once it has genuinely waited that long. Shortening it to a length a
+ * waiting project has already exceeded will complete that project on the next
+ * run, which is exactly what the setting means.
  *
  * Two passes over the same set, in the order a person would do them, modelled
  * on SendTaskReminders. Scheduled daily and safe to run again by hand: the
@@ -27,7 +38,7 @@ use Throwable;
  * the completion pass only ever sees projects still in the awaiting status.
  *
  * This must not depend on anybody opening a page. A client who never signs in
- * again is exactly the case the seven days exist for, so the work happens here
+ * again is exactly the case the window exists for, so the work happens here
  * rather than in a controller - see routes/console.php, and note that it needs
  * `php artisan schedule:work` or a cron entry calling schedule:run.
  */
@@ -48,19 +59,21 @@ class ProcessCompletionConfirmations extends Command
         $reminded = 0;
         $completed = 0;
 
-        // Day five first. A project that is somehow past both marks gets its
-        // reminder and its completion in the same run, which reads oddly - so
-        // the reminder pass deliberately excludes anything already due to be
+        // The reminder first. A project that is somehow past both marks gets
+        // its reminder and its completion in the same run, which reads oddly -
+        // so the reminder pass deliberately excludes anything already due to be
         // completed, and those clients hear once, about the thing that
-        // actually happened.
-        foreach ($this->awaitingSince($now->subDays(Project::COMPLETION_REMINDER_DAYS))
+        // actually happened. That exclusion is also what keeps a shortened
+        // window sane: every project it has just made overdue is completed
+        // rather than reminded.
+        foreach ($this->awaitingSince($now->subDays(Project::completionReminderDays()))
             ->whereNull('completion_reminder_sent_at')
-            ->where('completion_requested_at', '>', $now->subDays(Project::COMPLETION_CONFIRMATION_DAYS))
+            ->where('completion_requested_at', '>', $now->subDays(Project::completionConfirmationDays()))
             ->get() as $project) {
             $reminded += $this->remind($project, $notifications, $emails) ? 1 : 0;
         }
 
-        foreach ($this->awaitingSince($now->subDays(Project::COMPLETION_CONFIRMATION_DAYS))->get() as $project) {
+        foreach ($this->awaitingSince($now->subDays(Project::completionConfirmationDays()))->get() as $project) {
             $completed += $this->autoComplete($project, $completion, $notifications, $emails, $activityLogger) ? 1 : 0;
         }
 
@@ -96,11 +109,11 @@ class ProcessCompletionConfirmations extends Command
     }
 
     /**
-     * Day five: a nudge, and nothing else.
+     * The nudge, and nothing else.
      *
      * The clock is deliberately not touched. The reminder tells the client the
-     * deadline is coming; it does not move it, and a client who reads it on
-     * day six still has until day seven.
+     * deadline is coming; it does not move it, and a client who reads it late
+     * still has until the deadline and no longer.
      */
     private function remind(Project $project, NotificationService $notifications, ProjectEmails $emails): bool
     {
@@ -123,7 +136,7 @@ class ProcessCompletionConfirmations extends Command
     }
 
     /**
-     * Day seven: the project completes itself.
+     * The deadline: the project completes itself.
      *
      * One project failing must not stop the rest of the sweep, so each is its
      * own transaction and its own try.
@@ -155,7 +168,7 @@ class ProcessCompletionConfirmations extends Command
                 "Completed project '%s' automatically after %d days without client confirmation "
                     .'(Awaiting Client Confirmation -> Completed).',
                 $project->reference_no ?? $project->name,
-                Project::COMPLETION_CONFIRMATION_DAYS
+                Project::completionConfirmationDays()
             ),
             $project
         );

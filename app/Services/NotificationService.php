@@ -478,7 +478,7 @@ class NotificationService
                 '%s marked complete by %s. Completes automatically in %d days.',
                 $this->projectLabel($project),
                 $this->actorName(),
-                Project::COMPLETION_CONFIRMATION_DAYS
+                Project::completionConfirmationDays()
             ),
             Notification::MODULE_PROJECTS,
             $project,
@@ -491,7 +491,7 @@ class NotificationService
             sprintf(
                 'Work on %s is complete. Review and confirm within %d days, or it completes automatically.',
                 $this->clientProjectLabel($project),
-                Project::COMPLETION_CONFIRMATION_DAYS
+                Project::completionConfirmationDays()
             ),
             Notification::MODULE_PROJECTS,
             $project,
@@ -591,7 +591,7 @@ class NotificationService
      */
     public function completionConfirmationReminder(Project $project): void
     {
-        $remaining = max(1, Project::COMPLETION_CONFIRMATION_DAYS - Project::COMPLETION_REMINDER_DAYS);
+        $remaining = max(1, Project::completionConfirmationDays() - Project::completionReminderDays());
 
         $this->deliver(
             $this->projectClients($project),
@@ -647,7 +647,7 @@ class NotificationService
             sprintf(
                 '%s was marked complete automatically after %d days without a reply from the client.',
                 $this->projectLabel($project),
-                Project::COMPLETION_CONFIRMATION_DAYS
+                Project::completionConfirmationDays()
             ),
             Notification::MODULE_PROJECTS,
             $project,
@@ -661,7 +661,7 @@ class NotificationService
                 '%s has been marked complete, as the %d day confirmation period has passed. '
                     .'Please contact us if anything about the work still needs attention.',
                 $this->clientProjectLabel($project),
-                Project::COMPLETION_CONFIRMATION_DAYS
+                Project::completionConfirmationDays()
             ),
             Notification::MODULE_PROJECTS,
             $project,

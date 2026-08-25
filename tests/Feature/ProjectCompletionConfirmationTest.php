@@ -27,6 +27,9 @@ use Tests\TestCase;
  * may reopen it in the meantime, onto a new schedule; once it is Completed,
  * nobody may reopen it at all.
  *
+ * Reopening does not destroy the completion report it leaves behind: it is
+ * filed away as history instead. See ProjectCompletionHistoryTest.
+ *
  * The schedule half of this is the part that was already right and must stay
  * right: every date past the completion date is released, across every range
  * the project holds, and the days already worked are kept.
@@ -152,7 +155,7 @@ class ProjectCompletionConfirmationTest extends TestCase
     {
         $user = User::factory()->create(['name' => 'Owner Person', 'email' => $email]);
 
-        $user->forceFill(['role' => User::ROLE_CLIENT, 'status' => User::STATUS_ACTIVE])->save();
+        $user->forceFill(['role' => User::ROLE_CLIENT, 'status' => User::STATUS_ACTIVE] + $this->acceptedTerms())->save();
 
         return $user;
     }
@@ -556,7 +559,7 @@ class ProjectCompletionConfirmationTest extends TestCase
 
         // Five days ago, so the reminder is due and the deadline is not.
         $project->forceFill([
-            'completion_requested_at' => CarbonImmutable::now()->subDays(Project::COMPLETION_REMINDER_DAYS),
+            'completion_requested_at' => CarbonImmutable::now()->subDays(Project::completionReminderDays()),
         ])->save();
 
         $this->artisan('projects:process-completion-confirmations')->assertSuccessful();
@@ -595,7 +598,7 @@ class ProjectCompletionConfirmationTest extends TestCase
         $this->schedule($project, -8, -6);
         $this->requestCompletion($project);
 
-        $requestedAt = CarbonImmutable::now()->subDays(Project::COMPLETION_REMINDER_DAYS);
+        $requestedAt = CarbonImmutable::now()->subDays(Project::completionReminderDays());
         $project->forceFill(['completion_requested_at' => $requestedAt])->save();
 
         $this->artisan('projects:process-completion-confirmations');
@@ -616,7 +619,7 @@ class ProjectCompletionConfirmationTest extends TestCase
         $this->requestCompletion($project);
 
         $project->forceFill([
-            'completion_requested_at' => CarbonImmutable::now()->subDays(Project::COMPLETION_CONFIRMATION_DAYS),
+            'completion_requested_at' => CarbonImmutable::now()->subDays(Project::completionConfirmationDays()),
         ])->save();
 
         $this->artisan('projects:process-completion-confirmations')->assertSuccessful();
@@ -772,6 +775,11 @@ class ProjectCompletionConfirmationTest extends TestCase
 
         $this->assertSame('completed', $project->status);
         $this->assertSame(1, $project->schedules()->count(), 'No schedule may be created for a completed project.');
+
+        // And the completion report it holds is untouched: nothing was filed
+        // away, because nothing was reopened.
+        $this->assertTrue($project->hasCompletionReport());
+        $this->assertSame(0, $project->completionReports()->count());
     }
 
     public function test_reopening_requires_a_reason(): void

@@ -357,15 +357,15 @@
                     System Contents
                 </a>
 
-                <a class="settings-section-link" href="#projectTypesPane" data-settings-link>
-                    <i class="bi bi-diagram-3" aria-hidden="true"></i>
-                    Project Types
+                <a class="settings-section-link" href="#generalSettingsPane" data-settings-link>
+                    <i class="bi bi-sliders" aria-hidden="true"></i>
+                    General
                 </a>
             </nav>
 
             {{-- System Contents lives inside System Settings: the public
                  website belongs to the Super Admin alone. --}}
-                <div class="card shadow-sm border-0 rounded-2 mb-4" id="systemContentsPane">
+                <div class="card shadow-sm border-0 rounded-2 mb-4" id="systemContentsPane" data-content-editor>
                     <div class="card-body p-4">
 
                         <div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3">
@@ -419,6 +419,15 @@
                                         Save Changes
                                     </button>
 
+                                    {{-- A re-read rather than an undo stack: the
+                                         saved values are the only thing that was
+                                         ever true, so fetching them back is what
+                                         discarding a change means. --}}
+                                    <button type="button" class="btn btn-outline-secondary px-4"
+                                        data-content-cancel>
+                                        Cancel
+                                    </button>
+
                                     <span class="text-success small d-none" data-content-saved>
                                         <i class="bi bi-check2-circle me-1" aria-hidden="true"></i>Saved
                                     </span>
@@ -428,85 +437,153 @@
 
                         <div class="alert alert-danger mt-3 d-none" role="alert" data-content-error></div>
 
+
                     </div>
                 </div>
 
-                {{-- Project Types: the catalogue of work the company does.
-                     The same list serves two screens - it is what a project
-                     may be, and what a technician may be qualified for - so
-                     everything written here lands in both. --}}
-                <div class="card shadow-sm rounded-2 mb-4 project-types-card" id="projectTypesPane">
+                {{-- The operational settings: how long a project waits on its
+                     client, how often one visitor may write in, and the Terms
+                     and Conditions everybody is asked to accept.
+
+                     The same editor as System Contents above, against the same
+                     endpoints - one catalogue, one table, one audit entry. What
+                     differs is only the list of pills, because "rewrite the
+                     About page" and "complete projects after five days instead
+                     of seven" are not the same kind of decision. --}}
+                <div class="card shadow-sm border-0 rounded-2" id="generalSettingsPane" data-content-editor>
                     <div class="card-body p-4">
 
                         <div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3">
                             <div>
-                                <h5 class="fw-bold mb-1 project-types-heading">
-                                    <i class="bi bi-diagram-3 me-1" aria-hidden="true"></i>
-                                    Project Types
+                                <h5 class="fw-bold mb-1">
+                                    <i class="bi bi-sliders me-1 text-primary" aria-hidden="true"></i>
+                                    General
                                 </h5>
                                 <p class="text-secondary small mb-0">
-                                    Project types double as technician specialties.
+                                    How the system behaves. Changes apply immediately.
                                 </p>
                             </div>
                         </div>
 
-                        <form class="row g-2 align-items-end mb-3 project-types-add" data-project-type-add-form
-                            novalidate>
-                            <div class="col-sm">
-                                <label class="form-label small fw-semibold mb-1" for="projectTypeName">
-                                    Add a project type
-                                </label>
-                                <input type="text" class="form-control" id="projectTypeName"
-                                    placeholder="e.g. Heating Installation" maxlength="255"
-                                    data-project-type-name required>
-                            </div>
-                            <div class="col-sm-auto">
-                                <button type="submit" class="btn btn-primary px-4" data-project-type-add>
-                                    <span class="spinner-border spinner-border-sm me-1 d-none" role="status"
-                                        aria-hidden="true" data-project-type-add-spinner></span>
-                                    <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
-                                    Add
-                                </button>
-                            </div>
-                        </form>
+                        <ul class="nav nav-pills gap-2 mb-4 content-section-nav" data-content-sections>
+                            @foreach ($settingsSections as $key => $label)
+                                <li class="nav-item">
+                                    <button type="button" class="nav-link {{ $loop->first ? 'active' : '' }}"
+                                        data-content-section="{{ $key }}">
+                                        {{ $label }}
+                                    </button>
+                                </li>
+                            @endforeach
+                        </ul>
 
-                        <div class="text-secondary small py-3 px-1" data-project-type-loading>
+                        <div class="text-secondary small py-3 px-1 d-none" data-content-loading>
                             <span class="spinner-border spinner-border-sm me-2" role="status"
                                 aria-hidden="true"></span>
-                            Loading project types&hellip;
+                            Loading settings&hellip;
                         </div>
 
-                        <div class="table-responsive">
-                            <table class="table table-hover align-middle mb-0 project-types-table">
-                                <thead>
-                                    <tr>
-                                        <th>Project Type</th>
-                                        <th>Projects</th>
-                                        <th>Technicians</th>
-                                        <th class="text-center">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody data-project-type-body></tbody>
-                            </table>
+                        <div class="content-section-panel">
+                            <div class="content-section-panel-title" data-content-section-title></div>
+
+                            <form data-content-form novalidate>
+                                <div class="row g-4" data-content-fields></div>
+
+                                <div class="d-flex align-items-center gap-2 mt-4">
+                                    <button type="submit" class="btn btn-primary px-4" data-content-save>
+                                        <span class="spinner-border spinner-border-sm me-1 d-none"
+                                            role="status" aria-hidden="true" data-content-save-spinner></span>
+                                        Save Changes
+                                    </button>
+
+                                    <button type="button" class="btn btn-outline-secondary px-4"
+                                        data-content-cancel>
+                                        Cancel
+                                    </button>
+
+                                    <span class="text-success small d-none" data-content-saved>
+                                        <i class="bi bi-check2-circle me-1" aria-hidden="true"></i>Saved
+                                    </span>
+                                </div>
+                            </form>
                         </div>
 
-                        <div class="schedule-empty-state mt-2 d-none" data-project-type-empty>
-                            No project types yet. Add the first one above.
+                        <div class="alert alert-danger mt-3 d-none" role="alert" data-content-error></div>
+
+                        {{-- Project Types belongs to Project Settings: the
+                             catalogue of work the company does is a project
+                             setting, and the one list serves two screens - it is
+                             what a project may be, and what a technician may be
+                             qualified for.
+
+                             It is not a catalogue field, so it cannot be one of
+                             the inputs the editor builds; it rides along instead,
+                             shown and hidden with the section it belongs to. See
+                             [data-content-extra] in systemContents.js. --}}
+                        <div data-content-extra="project_settings" hidden>
+                            <hr class="my-4">
+
+                            <div class="project-types-panel" id="projectTypesPane">
+
+                                    <div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3">
+                                        <div>
+                                            <h5 class="fw-bold mb-1 project-types-heading">
+                                                <i class="bi bi-diagram-3 me-1" aria-hidden="true"></i>
+                                                Project Types
+                                            </h5>
+                                            <p class="text-secondary small mb-0">
+                                                Project types double as technician specialties.
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <form class="row g-2 align-items-end mb-3 project-types-add" data-project-type-add-form
+                                        novalidate>
+                                        <div class="col-sm">
+                                            <label class="form-label small fw-semibold mb-1" for="projectTypeName">
+                                                Add a project type
+                                            </label>
+                                            <input type="text" class="form-control" id="projectTypeName"
+                                                placeholder="e.g. Heating Installation" maxlength="255"
+                                                data-project-type-name required>
+                                        </div>
+                                        <div class="col-sm-auto">
+                                            <button type="submit" class="btn btn-primary px-4" data-project-type-add>
+                                                <span class="spinner-border spinner-border-sm me-1 d-none" role="status"
+                                                    aria-hidden="true" data-project-type-add-spinner></span>
+                                                <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
+                                                Add
+                                            </button>
+                                        </div>
+                                    </form>
+
+                                    <div class="text-secondary small py-3 px-1" data-project-type-loading>
+                                        <span class="spinner-border spinner-border-sm me-2" role="status"
+                                            aria-hidden="true"></span>
+                                        Loading project types&hellip;
+                                    </div>
+
+                                    <div class="table-responsive">
+                                        <table class="table table-hover align-middle mb-0 project-types-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Project Type</th>
+                                                    <th>Projects</th>
+                                                    <th>Technicians</th>
+                                                    <th class="text-center">Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody data-project-type-body></tbody>
+                                        </table>
+                                    </div>
+
+                                    <div class="schedule-empty-state mt-2 d-none" data-project-type-empty>
+                                        No project types yet. Add the first one above.
+                                    </div>
+
+                                    <div class="alert alert-danger mt-3 mb-0 d-none" role="alert" data-project-type-error></div>
+                                    <div class="alert alert-success mt-3 mb-0 d-none" role="alert" data-project-type-success></div>
+                            </div>
                         </div>
-
-                        <div class="alert alert-danger mt-3 mb-0 d-none" role="alert" data-project-type-error></div>
-                        <div class="alert alert-success mt-3 mb-0 d-none" role="alert" data-project-type-success></div>
-
-                    </div>
-                </div>
-
-                <div class="card shadow-sm border-0 rounded-2">
-                    <div class="card-body p-5 text-center">
-                        <i class="bi bi-gear config-placeholder-icon" aria-hidden="true"></i>
-                        <h5 class="fw-bold mt-3 mb-1">System Settings</h5>
-                        <p class="text-secondary mb-0">
-                            The remaining system settings will be implemented in a future update.
-                        </p>
                     </div>
                 </div>
             </div>

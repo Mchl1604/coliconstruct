@@ -26,6 +26,8 @@ use App\Services\ProjectStatusRules;
 use App\Services\ProjectTeam;
 use App\Services\ProjectTeamCandidates;
 use App\Services\ProjectTeamRules;
+use App\Services\RestoreScheduleConflicts;
+use App\Services\ScheduleConsolidation;
 use App\Services\ScheduleHoldCutoff;
 use App\Services\ScheduleModeRules;
 use App\Services\TaskScheduleRules;
@@ -676,6 +678,17 @@ class ProjectController extends Controller
                 $query->with(['account', 'skills']);
             },
 
+            // The completion cycles this project has already been through, for
+            // View Previous Completion Reports. Loaded with everything the
+            // dialog prints so a project reopened several times is still one
+            // query rather than one per cycle. This is history only - the
+            // CURRENT report, if there is one, is on the project row itself.
+            'completionReports.photos',
+            'completionReports.completionRequestedByUser',
+            'completionReports.clientConfirmedByUser',
+            'completionReports.completionOverriddenByUser',
+            'completionReports.supersededByUser',
+
         ])->findOrFail($id);
         $sortedProjectTechnicians = $project->projectTechnicians
             ->sortByDesc(function ($projectTechnician) {
@@ -776,6 +789,15 @@ class ProjectController extends Controller
             ? []
             : app(ProjectPolicy::class)->blockersFor($project);
 
+        // Archiving belongs to the Super Admin, and only to a project the
+        // archive will accept - Project::isArchivable() is the same question
+        // the endpoint asks, so the button cannot offer what the route refuses.
+        $canArchive = (bool) $request->user()?->isSuperAdmin() && $project->isArchivable();
+
+        // Every completion cycle this project has been through, already
+        // loaded. Never the current report: that one is read off the project.
+        $previousCompletionReports = $project->completionReports;
+
         return view('super-admin.projectDetails', compact(
             'project',
             'projectTypes',
@@ -792,7 +814,9 @@ class ProjectController extends Controller
             'canReopen',
             'workingHours',
             'reopenBlockedDates',
-            'completionBlockers'
+            'completionBlockers',
+            'canArchive',
+            'previousCompletionReports'
         ));
 
     }
@@ -1192,7 +1216,7 @@ class ProjectController extends Controller
                 ->with('success', sprintf(
                     'Completion recorded. %s completes automatically in %d days unless the client replies.',
                     $project->reference_no ?? $project->name,
-                    Project::COMPLETION_CONFIRMATION_DAYS
+                    Project::completionConfirmationDays()
                 ));
         } catch (Throwable $e) {
             return redirect()
@@ -1211,6 +1235,10 @@ class ProjectController extends Controller
      * A reopen is a new schedule, not a status change: the dates released at
      * completion were free for other work from that moment, and the
      * administrator has to say when the remaining work actually happens.
+     *
+     * The completion report of the cycle being ended is filed as history on
+     * the way through - see ProjectCompletionHistory - so the project comes
+     * back with no current completion report and nothing is lost.
      */
     public function reopen(Request $request, int $id)
     {
@@ -1526,10 +1554,30 @@ class ProjectController extends Controller
     {
         $project = Project::findOrFail($id);
 
+        // Super Admin only. The route already carries `role:super_admin`, and
+        // this asks again: the button is drawn from the same question, and a
+        // permission that only one of the two layers enforces is a permission
+        // that can be posted straight past.
+        if (! $request->user()?->isSuperAdmin()) {
+            return redirect()
+                ->route('super-admin.projects')
+                ->with('error', 'Only the Super Admin can archive a project.');
+        }
+
         if ($project->isArchived()) {
             return redirect()
                 ->route('super-admin.projects')
                 ->with('error', 'This project is already archived.');
+        }
+
+        // The same rule the Archive button is drawn by - see
+        // Project::isArchivable(). A project still waiting on its client is
+        // the one thing it refuses: the answer and the seven-day clock are
+        // both still outstanding.
+        if (! $project->isArchivable()) {
+            return redirect()
+                ->route('super-admin.projects')
+                ->with('error', sprintf('A %s project cannot be archived.', $project->statusLabel()));
         }
 
         try {
@@ -1592,20 +1640,42 @@ class ProjectController extends Controller
      * nobody told, the clash invisible on both projects because each one only
      * ever shows its own dates. So the same question Resume asks is asked
      * here, of the same service, before anything is written - see
-     * restoreConflictMessage().
+     * RestoreScheduleConflicts.
      *
      * Only a project whose dates would actually come back into force has to be
      * asked. Completed, cancelled and paused work holds nobody either way, so
      * there is nothing for it to collide with.
+     *
+     * The refusal is no longer only a sentence. A caller that asked for JSON -
+     * the Archived Projects page does - gets the whole clash back instead:
+     * which technician, which other project, which days of each, and which
+     * days the two share, so the Schedule Conflict dialog can draw it and
+     * offer the two ways out. What it may NOT do is proceed: this check runs
+     * on every attempt, after whatever was changed in that dialog, so a
+     * resolution worked out against availability read a minute ago is
+     * re-tested against availability now. The dialog is a convenience; this is
+     * the decision.
      */
-    public function restore(int $id)
+    public function restore(Request $request, int $id)
     {
         $project = Project::with(['schedules', 'projectTechnicians'])->findOrFail($id);
 
+        // Super Admin only, asked here as well as on the route. Restoring
+        // re-books people's weeks, and a permission enforced by only one of
+        // the two layers is a permission that can be posted straight past -
+        // the same reasoning archive() is guarded by.
+        if (! $request->user()?->isSuperAdmin()) {
+            return $this->restoreRefusal(
+                $request,
+                'Only the Super Admin can restore a project.'
+            );
+        }
+
         if (! $project->isArchived()) {
-            return redirect()
-                ->route('super-admin.projects.archived')
-                ->with('error', 'Only archived projects can be restored.');
+            return $this->restoreRefusal(
+                $request,
+                'Only archived projects can be restored.'
+            );
         }
 
         // Null for anything archived by the old flow, which left no schedule
@@ -1613,14 +1683,28 @@ class ProjectController extends Controller
         // truth about a project with no dates.
         $restoredStatus = $project->statusToRestore() ?? 'unscheduled';
 
-        if ($project->restoreWouldClaimDates() && ($clash = $this->restoreConflictMessage($project))) {
-            // Nothing is written and nothing is offered instead. Moving the
-            // other work or taking somebody off this team are both decisions
-            // with consequences for a person's week, and neither is a restore's
-            // to make - the same reason Resume refuses rather than resolves.
+        // Asked of the same service the Schedule Conflict dialog reads, on
+        // every attempt, so the last word belongs to the server and not to
+        // whatever the dialog was showing when the button was pressed.
+        $conflicts = app(RestoreScheduleConflicts::class)->report($project);
+
+        if ($conflicts['blocked']) {
+            // Nothing is written, and nothing is resolved on anybody's behalf.
+            // Moving the other work or taking somebody off that team are both
+            // decisions with consequences for a person's week, and neither is
+            // a restore's to make - the same reason Resume refuses rather than
+            // resolves. What is different is that the refusal now hands back
+            // everything needed to make either of those decisions.
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'error' => $conflicts['message'],
+                    'conflicts' => $conflicts,
+                ], 409);
+            }
+
             return redirect()
                 ->route('super-admin.projects.archived')
-                ->with('error', $clash);
+                ->with('error', $conflicts['message']);
         }
 
         try {
@@ -1659,71 +1743,256 @@ class ProjectController extends Controller
 
             $this->notifications->projectRestored($project);
 
+            $success = sprintf(
+                'Project restored as %s, with its original schedule and team.',
+                $project->statusLabel()
+            );
+
+            // A toast is exactly right for this one: it is the good news, and
+            // there is nothing to act on. The page it belongs on is the active
+            // Projects list, which is where the project now is.
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'message' => $success,
+                    'redirect' => route('super-admin.projects'),
+                ]);
+            }
+
             return redirect()
                 ->route('super-admin.projects')
-                ->with('success', sprintf(
-                    'Project restored as %s, with its original schedule and team.',
-                    $project->statusLabel()
-                ));
+                ->with('success', $success);
         } catch (Throwable $e) {
-            return redirect()
-                ->route('super-admin.projects.archived')
-                ->with('error', $this->safeErrorMessage($e, 'Unable to restore project. Nothing was changed.'));
+            return $this->restoreRefusal(
+                $request,
+                $this->safeErrorMessage($e, 'Unable to restore project. Nothing was changed.')
+            );
         }
     }
 
     /**
-     * Why this project's preserved schedule cannot come back into force, or
-     * null when it can.
+     * A restore that cannot go ahead for a reason that is not a clash.
      *
-     * The same question, the same service and the same wording as
-     * resumeConflictMessage(), because it is the same situation: dates that
-     * were not occupying anybody are about to start occupying them again, and
-     * the only thing that can have changed underneath is other work.
-     *
-     * The project's own bookings are excluded, which is what makes the
-     * question answerable at all - every day being checked is one it holds
-     * itself, so without the exclusion a project would always report itself as
-     * its own blocker. A date reported here therefore always belongs to
-     * somebody else's work.
+     * The archive page drives its Restore button with fetch, so a refusal has
+     * to arrive as JSON there and as the flash the rest of the portal uses
+     * everywhere else.
      */
-    private function restoreConflictMessage(Project $project): ?string
+    private function restoreRefusal(Request $request, string $message)
     {
-        // Read from the table rather than from a loaded relation: the rows are
-        // what the restore is about, and a relation loaded earlier in the
-        // request would be a picture rather than the record.
-        $schedules = Schedule::query()
-            ->where('project_id', $project->project_id)
-            ->get();
-
-        $technicianIds = ProjectTechnician::query()
-            ->where('project_id', $project->project_id)
-            ->pluck('technician_id')
-            ->map(fn ($technicianId): int => (int) $technicianId)
-            ->unique()
-            ->values();
-
-        if ($schedules->isEmpty() || $technicianIds->isEmpty()) {
-            return null;
+        if ($request->expectsJson()) {
+            return response()->json(['error' => $message], 422);
         }
 
-        $availability = app(TechnicianAvailabilityService::class);
+        return redirect()
+            ->route('super-admin.projects.archived')
+            ->with('error', $message);
+    }
 
-        $conflicts = $availability->findConflicts(
-            $technicianIds,
-            $schedules->map(fn (Schedule $schedule): array => $schedule->toAvailabilityRange())->all(),
-            (int) $project->project_id
+    /**
+     * The current state of the calendar for one archived project, for the
+     * Schedule Conflict dialog.
+     *
+     * Read twice by that dialog: once when it opens, and again every time
+     * somebody presses Recheck after moving a booking or taking a technician
+     * off the other project. Availability changes underneath a dialog that
+     * stays open - somebody else may book the same person while it is - so a
+     * dialog that trusted what it loaded once would offer a Restore that the
+     * server then refuses. This is the same report restore() itself runs, so
+     * the two can never disagree about what is in the way.
+     */
+    public function restoreConflicts(Request $request, int $id)
+    {
+        $project = Project::with(['schedules', 'projectTechnicians'])->findOrFail($id);
+
+        if (! $request->user()?->isSuperAdmin()) {
+            return response()->json(['error' => 'Only the Super Admin can restore a project.'], 403);
+        }
+
+        if (! $project->isArchived()) {
+            return response()->json(['error' => 'Only archived projects can be restored.'], 422);
+        }
+
+        return response()->json(app(RestoreScheduleConflicts::class)->report($project));
+    }
+
+    /**
+     * Move or drop one range of an archived project's schedule, from the
+     * Schedule Conflict dialog.
+     *
+     * The thing being resolved is THIS project's schedule. A clash is two
+     * pieces of work wanting the same person on the same day, and either of
+     * them could move in principle - but the other one is live work somebody
+     * is already expecting, and a restore is no reason to rewrite it. So the
+     * archived project's own range is what moves here, and the other project
+     * is not touched at all.
+     *
+     * The schedules page cannot do this: an archived project is read-only
+     * there, and rightly so - it is not on the calendar. What is reused is
+     * every rule that decides whether a range is allowed, which is where the
+     * agreement actually has to hold:
+     *
+     *   ScheduleModeRules              what a range may say, and how much of a
+     *                                  saved one may still change
+     *   TechnicianAvailabilityService  whether the team is free for it
+     *   ScheduleConsolidation          ranges that run into each other are one
+     *   Schedule::isLocked()           a range that has ended is history
+     *
+     * A range that is entirely in the past is refused outright. It is not
+     * coming back into force, it never counted against this check, and
+     * changing it would be rewriting a record of work that happened.
+     */
+    public function updateRestoreSchedule(Request $request, int $id)
+    {
+        $project = Project::with(['schedules', 'projectTechnicians'])->findOrFail($id);
+
+        if (! $request->user()?->isSuperAdmin()) {
+            return response()->json(['error' => 'Only the Super Admin can restore a project.'], 403);
+        }
+
+        if (! $project->isArchived()) {
+            return response()->json([
+                'error' => 'Only an archived project\'s schedule can be changed from here.',
+            ], 422);
+        }
+
+        $scheduleRules = app(ScheduleModeRules::class);
+
+        $validated = $request->validate([
+            'schedule_id' => ['required', 'integer'],
+            'action' => ['nullable', 'in:update,remove'],
+            ...$scheduleRules->rules(),
+        ], $scheduleRules->messages());
+
+        $schedule = $project->schedules
+            ->firstWhere('schedule_id', (int) $validated['schedule_id']);
+
+        if (! $schedule) {
+            return response()->json(['error' => 'That schedule range does not belong to this project.'], 422);
+        }
+
+        if ($schedule->isLocked()) {
+            return response()->json([
+                'error' => 'This schedule range has already ended. It is part of the project\'s history and cannot be changed.',
+            ], 422);
+        }
+
+        try {
+            DB::transaction(function () use ($project, $schedule, $validated, $scheduleRules): void {
+                if (($validated['action'] ?? 'update') === 'remove') {
+                    $schedule->delete();
+
+                    $this->activityLogger->record(
+                        ActivityLog::PROJECT_RESCHEDULED,
+                        null,
+                        sprintf(
+                            "Removed the %s range from archived project '%s' while resolving its restore.",
+                            $schedule->describe(),
+                            $project->reference_no ?? $project->name
+                        ),
+                        $project
+                    );
+
+                    return;
+                }
+
+                $range = $this->resolveRestoreRange($schedule, $validated, $scheduleRules, $project);
+                $before = $schedule->describe();
+
+                // Its own other ranges, which it may not be booked over: the
+                // same self-overlap rule the schedules page and the reopen
+                // dialog apply.
+                $overlaps = $project->schedules
+                    ->reject(fn (Schedule $other): bool => (int) $other->schedule_id === (int) $schedule->schedule_id)
+                    ->contains(fn (Schedule $other): bool => $scheduleRules->overlaps($range, $other->occupiedInterval()));
+
+                if ($overlaps) {
+                    throw new RuntimeException('This project already has a schedule range covering that time.');
+                }
+
+                // And the question the whole dialog exists for, asked of the
+                // one service every other booking screen asks. The project's
+                // own bookings are excluded, so it can never read as its own
+                // blocker.
+                app(TechnicianAvailabilityService::class)->assertContinuouslyAvailable(
+                    $project->projectTechnicians->pluck('technician_id')->unique()->values(),
+                    [$range],
+                    (int) $project->project_id
+                );
+
+                $schedule->update([
+                    'start_datetime' => $range['start'],
+                    'end_datetime' => $range['end'],
+                    'scheduling_mode' => $range['mode'],
+                ]);
+
+                // Ranges that now run into each other are one booking, which
+                // is the existing system's own rule about what counts as a
+                // separate range - ranges that merely sit near each other are
+                // left alone.
+                app(ScheduleConsolidation::class)->consolidate($project);
+
+                // Tasks are deliberately left where they are. This project is
+                // still archived; its tasks, reports and history are what the
+                // archive preserves, and moving a date on the way past is not
+                // this endpoint's business.
+                $this->activityLogger->record(
+                    ActivityLog::PROJECT_RESCHEDULED,
+                    null,
+                    sprintf(
+                        "Changed a schedule range on archived project '%s' from %s to %s while resolving its restore.",
+                        $project->reference_no ?? $project->name,
+                        $before,
+                        $schedule->refresh()->describe()
+                    ),
+                    $project
+                );
+            });
+        } catch (Throwable $e) {
+            return response()->json([
+                'error' => $this->safeErrorMessage($e, 'Unable to change that schedule range. Nothing was changed.'),
+            ], 422);
+        }
+
+        // The whole schedule again, screened from scratch: an edit can resolve
+        // one range and walk another into trouble, and the dialog has to be
+        // told about the schedule rather than about the range it just saved.
+        return response()->json(
+            app(RestoreScheduleConflicts::class)->report($project->fresh(['schedules', 'projectTechnicians']))
+        );
+    }
+
+    /**
+     * What one submitted range means, checked by the rules that own the
+     * question.
+     *
+     * @param  array<string, mixed>  $validated
+     * @return array{mode: string, start: CarbonImmutable, end: CarbonImmutable}
+     */
+    private function resolveRestoreRange(
+        Schedule $schedule,
+        array $validated,
+        ScheduleModeRules $scheduleRules,
+        Project $project
+    ): array {
+        $validator = Validator::make([], []);
+
+        $range = $scheduleRules->validateEntry(
+            $validator,
+            $validated,
+            '',
+            $project->isResidential(),
+            true,
+            $schedule
         );
 
-        if ($conflicts->isEmpty()) {
-            return null;
+        if (! $range) {
+            throw new RuntimeException($validator->errors()->first() ?: 'Those dates cannot be used.');
         }
 
-        return 'Unable to restore - the dates this project still holds are now booked elsewhere. '
-            .$availability->conflictMessage(
-                $conflicts,
-                ' Reschedule that work or remove them from this team, then restore it again.'
-            );
+        // Changing what kind of booking a saved range is has its own rules -
+        // hours cannot be attached to a range covering several days.
+        $scheduleRules->assertConvertible($schedule, $range['mode']);
+
+        return $range;
     }
 
     /**

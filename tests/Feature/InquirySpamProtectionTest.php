@@ -406,8 +406,14 @@ class InquirySpamProtectionTest extends TestCase
     // ==================================================================
 
     /**
-     * The limits are a property of the deployment, not a setting somebody
-     * administers, so they live in config and nowhere near Configuration.
+     * The per-address caps are a property of the deployment, not a decision
+     * somebody administers, so they live in config and nowhere near
+     * Configuration.
+     *
+     * `per_ip.decay_seconds` is here too but means something different now: it
+     * is what the Inquiry Submission Limit setting falls back to, so a site
+     * that chose a window before the setting existed keeps it. What the guard
+     * actually counts by is the setting - see SystemSettingsTest.
      */
     public function test_the_limits_are_configuration_file_values(): void
     {

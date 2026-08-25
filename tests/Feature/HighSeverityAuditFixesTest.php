@@ -526,7 +526,7 @@ class HighSeverityAuditFixesTest extends TestCase
             ->update(['email_address' => 'live.client@example.test']);
 
         $client = User::factory()->create(['name' => 'Live Client', 'email' => 'live.client@example.test']);
-        $client->forceFill(['role' => User::ROLE_CLIENT, 'status' => User::STATUS_ACTIVE])->save();
+        $client->forceFill(['role' => User::ROLE_CLIENT, 'status' => User::STATUS_ACTIVE] + $this->acceptedTerms())->save();
 
         $this->actingAs($client);
         $this->get('/my-projects')->assertOk();
@@ -552,7 +552,7 @@ class HighSeverityAuditFixesTest extends TestCase
         ]);
 
         $client = User::factory()->create(['name' => 'Confirming Client', 'email' => 'confirming@example.test']);
-        $client->forceFill(['role' => User::ROLE_CLIENT, 'status' => User::STATUS_DEACTIVATED])->save();
+        $client->forceFill(['role' => User::ROLE_CLIENT, 'status' => User::STATUS_DEACTIVATED] + $this->acceptedTerms())->save();
 
         $this->actingAs($client);
         $this->post(route('public.projects.confirm', $project->project_id))
@@ -564,7 +564,7 @@ class HighSeverityAuditFixesTest extends TestCase
     public function test_a_deactivated_account_loses_profile_and_notifications_too(): void
     {
         $client = User::factory()->create(['name' => 'Profile Client', 'email' => 'profile.client@example.test']);
-        $client->forceFill(['role' => User::ROLE_CLIENT, 'status' => User::STATUS_ACTIVE])->save();
+        $client->forceFill(['role' => User::ROLE_CLIENT, 'status' => User::STATUS_ACTIVE] + $this->acceptedTerms())->save();
 
         $this->actingAs($client);
         $this->get(route('profile.edit'))->assertOk();

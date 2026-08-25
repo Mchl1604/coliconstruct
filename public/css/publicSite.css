@@ -1206,6 +1206,22 @@
     text-align: center;
 }
 
+/* The Terms and Conditions link, which sits on the copyright row rather than
+   in a section of its own. Matched to the copyright line beside it: this is
+   small print, not a call to action, and a link that shouted would pull the
+   eye to the quietest part of the page. */
+.public-footer-terms {
+    font-size: .85rem;
+    color: #a8adb4;
+    text-decoration: underline;
+    vertical-align: baseline;
+}
+
+.public-footer-terms:hover,
+.public-footer-terms:focus {
+    color: #fff;
+}
+
 /* ---- Responsive ---- */
 
 @media (max-width: 991.98px) {

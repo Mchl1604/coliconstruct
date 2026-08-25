@@ -115,7 +115,7 @@ class MediumSeverityAuditFixesTest extends TestCase
         Config::set('session.driver', 'database');
 
         $user = User::factory()->create(['email' => 'forgetful@example.test']);
-        $user->forceFill(['role' => User::ROLE_CLIENT, 'status' => User::STATUS_ACTIVE])->save();
+        $user->forceFill(['role' => User::ROLE_CLIENT, 'status' => User::STATUS_ACTIVE] + $this->acceptedTerms())->save();
 
         $this->openSession($user, 'session-one');
         $this->openSession($user, 'session-two');
@@ -151,7 +151,7 @@ class MediumSeverityAuditFixesTest extends TestCase
         $this->actingAsSuperAdmin();
 
         $target = User::factory()->create(['email' => 'target@example.test']);
-        $target->forceFill(['role' => User::ROLE_CLIENT, 'status' => User::STATUS_ACTIVE])->save();
+        $target->forceFill(['role' => User::ROLE_CLIENT, 'status' => User::STATUS_ACTIVE] + $this->acceptedTerms())->save();
 
         $this->openSession($target, 'their-session');
 
@@ -175,7 +175,7 @@ class MediumSeverityAuditFixesTest extends TestCase
             'role' => User::ROLE_CLIENT,
             'status' => User::STATUS_ACTIVE,
             'password' => 'the-old-password',
-        ])->save();
+        ] + $this->acceptedTerms())->save();
 
         $this->openSession($user, 'somewhere-else');
 

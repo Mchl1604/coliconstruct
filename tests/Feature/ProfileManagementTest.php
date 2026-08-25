@@ -44,7 +44,7 @@ class ProfileManagementTest extends TestCase
             'must_change_password' => false,
             'email_verified_at' => now(),
             'password' => 'password',
-        ], $attributes));
+        ], $this->acceptedTerms(), $attributes));
     }
 
     private function technicianFor(User $user, array $skillNames = []): Technician

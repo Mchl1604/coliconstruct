@@ -173,13 +173,23 @@
                                                 </button>
                                             @endif
 
-                                            @if ($canArchive)
-                                                <button class="btn btn-sm btn-dark py-1 px-2" data-bs-toggle="modal"
-                                                    data-bs-target="#archiveProjectModal{{ $project->project_id }}"
-                                                    title="Archive Project">
-                                                    <i class="bi bi-archive"></i>
-                                                </button>
-                                            @endif
+                                        @endif
+
+                                        {{-- Outside the read-only branch on purpose.
+                                             A Completed or Cancelled project is exactly
+                                             what an archive is for: there is nothing
+                                             left to do about it, and leaving it in the
+                                             active listing forever is why that list
+                                             grew without end. The model decides which
+                                             statuses qualify, and the endpoint asks it
+                                             the same question - see
+                                             Project::isArchivable(). --}}
+                                        @if ($canArchive && $project->isArchivable())
+                                            <button class="btn btn-sm btn-dark py-1 px-2" data-bs-toggle="modal"
+                                                data-bs-target="#archiveProjectModal{{ $project->project_id }}"
+                                                title="Archive Project">
+                                                <i class="bi bi-archive"></i>
+                                            </button>
                                         @endif
                                     </div>
                                 </td>
@@ -383,7 +393,7 @@
                             @endif
 
                             <!-- ARCHIVE PROJECT MODAL -->
-                            @if ($canArchive)
+                            @if ($canArchive && $project->isArchivable())
                             <div class="modal fade" id="archiveProjectModal{{ $project->project_id }}" tabindex="-1"
                                 aria-labelledby="archiveProjectModalLabel{{ $project->project_id }}" aria-hidden="true">
 
@@ -392,17 +402,18 @@
 
                                         <div class="modal-header">
                                             <h5 class="modal-title" id="archiveProjectModalLabel{{ $project->project_id }}">
-                                                Archive Project
+                                                Archive {{ $project->reference_no ?? $project->name }}?
                                             </h5>
                                             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                                         </div>
 
+                                        {{-- The same short confirmation the Project
+                                             Details page asks, so archiving reads the
+                                             same wherever it is started from. --}}
                                         <div class="modal-body">
-                                            Archive <strong>{{ $project->reference_no }}</strong>? It leaves the
-                                            active list but keeps everything it holds - its schedule, its team and
-                                            its tasks - and its technicians stop being booked for those dates.
-                                            Restoring it later brings it back as
-                                            <strong>{{ $project->statusLabel() }}</strong>, exactly as it is now.
+                                            <strong>Nothing is deleted.</strong> Its schedule, team, tasks,
+                                            reports, documents and history stay with it on the Archived
+                                            Projects page, and its technicians are freed for those dates.
                                         </div>
 
                                         <div class="modal-footer">

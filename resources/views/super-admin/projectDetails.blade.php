@@ -51,10 +51,69 @@
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h2 class="fw-bold text-brand-blue">Project Details</h2>
 
-            <a href="{{ route('super-admin.projects') }}" class="btn btn-outline-secondary">
-                Back to Projects
-            </a>
+            <div class="d-flex flex-wrap gap-2">
+                {{-- Archiving is the Super Admin's, and only where the archive
+                     will take the project - Project::isArchivable() is the same
+                     question ProjectController::archive() asks, so this button
+                     can never offer what the endpoint refuses. An already
+                     archived project is not offered it, which is what keeps
+                     View from turning into a second archive. --}}
+                @if ($canArchive)
+                    <button type="button" class="btn btn-dark" data-bs-toggle="modal"
+                        data-bs-target="#archiveProjectModal">
+                        <i class="bi bi-archive me-1" aria-hidden="true"></i>
+                        Archive Project
+                    </button>
+                @endif
+
+                <a href="{{ route('super-admin.projects') }}" class="btn btn-outline-secondary">
+                    Back to Projects
+                </a>
+            </div>
         </div>
+
+        <!-- ARCHIVE PROJECT MODAL -->
+        @if ($canArchive)
+            <div class="modal fade" id="archiveProjectModal" tabindex="-1"
+                aria-labelledby="archiveProjectModalLabel" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content">
+
+                        <div class="modal-header">
+                            <h5 class="modal-title" id="archiveProjectModalLabel">
+                                Archive {{ $project->reference_no ?? $project->name }}?
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"
+                                aria-label="Close"></button>
+                        </div>
+
+                        {{-- Short on purpose. The question is the heading, and the
+                             body says only the two things somebody deciding it does
+                             not already know: that nothing is lost, and that the
+                             calendar is given back. --}}
+                        <div class="modal-body">
+                            <strong>Nothing is deleted.</strong> Its schedule, team, tasks, reports,
+                            documents and history stay with it on the Archived Projects page, and its
+                            technicians are freed for those dates.
+                        </div>
+
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+
+                            <form method="POST"
+                                action="{{ route('super-admin.projects.archive', $project->project_id) }}">
+                                @csrf
+                                <button type="submit" class="btn btn-dark">
+                                    <i class="bi bi-archive me-1" aria-hidden="true"></i>
+                                    Archive Project
+                                </button>
+                            </form>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        @endif
 
         {{-- Paused. Everything below stays readable - the history is the point
              of keeping it - but nothing on this page may take new work until
@@ -134,6 +193,68 @@
                     </div>
                 </div>
             </div>
+        @endif
+
+        {{-- Reopened, and live again. This is what stands where the previous
+             completion report used to: that report describes a project that is
+             finished, and this one is not - so it has been filed away as
+             history (see ProjectCompletionHistory) and the completion section
+             below correctly shows nothing until the work is closed out again.
+             Nothing was deleted, and the button says where it went.
+
+             Only while the project is actually ongoing. Once it is completed a
+             second time this notice would be describing something no longer
+             true, so Project::showsReopenedNotice() drops it and the history
+             moves into the completion report's own header. --}}
+        @if ($project->showsReopenedNotice())
+            <div class="alert alert-info border-0 shadow-sm mb-4" role="alert">
+                <div class="d-flex flex-wrap align-items-start gap-3">
+                    <div class="flex-grow-1">
+                        {{-- The icon sits in the heading rather than in a
+                             column of its own: at the width this alert is drawn
+                             the column wrapped onto its own line, which turned a
+                             small mark into a banner above the words it was
+                             meant to sit beside. --}}
+                        <h5 class="alert-heading mb-1">
+                            <i class="bi bi-arrow-counterclockwise me-2" aria-hidden="true"></i>
+                            Project Reopened
+                        </h5>
+
+                        @php
+                            $reopenedBy = $project->reopenedByUser?->fullName();
+                            $reopenedOn = \App\Support\BusinessTime::format($project->reopened_at, 'F j, Y', '');
+                        @endphp
+
+                        <p class="mb-2">
+                            This project was previously completed and has been reopened{{ $reopenedOn ? ' on ' . $reopenedOn : '' }}{{ $reopenedBy ? ' by ' . $reopenedBy : '' }}.
+                        </p>
+
+                        @if ($project->reopen_reason)
+                            <p class="mb-2">
+                                <span class="fw-semibold">Reason:</span>
+                                {{ $project->reopen_reason }}
+                            </p>
+                        @endif
+
+                        @if ($previousCompletionReports->isNotEmpty())
+                            <button type="button" class="btn btn-sm btn-outline-dark"
+                                data-bs-toggle="modal" data-bs-target="#previousCompletionReportsModal">
+                                <i class="bi bi-clock-history me-1" aria-hidden="true"></i>
+                                View Previous Completion Reports
+                                <span class="badge bg-dark ms-1">{{ $previousCompletionReports->count() }}</span>
+                            </button>
+                        @endif
+                    </div>
+                </div>
+            </div>
+        @endif
+
+        {{-- The history behind View Previous Completion Reports, wherever that
+             button is drawn from - the reopened banner above, the current
+             report's own header, or the standalone link below. Rendered once,
+             so the three of them open the same dialog. --}}
+        @if ($previousCompletionReports->isNotEmpty())
+            <x-previous-completion-reports-modal :project="$project" :reports="$previousCompletionReports" />
         @endif
 
         {{-- Reopening. Deliberately not a status dropdown: the dates released
@@ -578,13 +699,39 @@
                 @if ($project->hasCompletionReport() && ! $project->isCancelled())
                     <hr>
                     <div class="completion-report">
-                        <h5 class="fw-bold text-success mb-3">
-                            <i class="bi bi-check-circle me-2"></i>
-                            Completion Report
-                            @unless ($project->isCompleted())
-                                <span class="badge bg-secondary align-middle ms-2">Awaiting client confirmation</span>
-                            @endunless
-                        </h5>
+                        <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+                            <h5 class="fw-bold text-success mb-0">
+                                <i class="bi bi-check-circle me-2"></i>
+                                Completion Report
+                                {{-- Which cycle this is. Only worth saying once
+                                     there has been more than one, and it is what
+                                     tells this report apart from the superseded
+                                     ones behind the button beside it. --}}
+                                @if ($previousCompletionReports->isNotEmpty())
+                                    <span class="badge bg-success align-middle ms-2">
+                                        #{{ $previousCompletionReports->count() + 1 }} &middot; Current
+                                    </span>
+                                @endif
+                                @unless ($project->isCompleted())
+                                    <span class="badge bg-secondary align-middle ms-2">Awaiting client confirmation</span>
+                                @endunless
+                            </h5>
+
+                            <div class="d-flex flex-wrap gap-2">
+                                {{-- The history stays reachable once the project is
+                                     completed again: the current report is what this
+                                     section shows, and the earlier cycles are never
+                                     mixed into it. --}}
+                                @if ($previousCompletionReports->isNotEmpty())
+                                    <button type="button" class="btn btn-sm btn-outline-secondary"
+                                        data-bs-toggle="modal" data-bs-target="#previousCompletionReportsModal">
+                                        <i class="bi bi-clock-history me-1" aria-hidden="true"></i>
+                                        View Previous Completion Reports
+                                        <span class="badge bg-secondary ms-1">{{ $previousCompletionReports->count() }}</span>
+                                    </button>
+                                @endif
+                            </div>
+                        </div>
 
                         <div class="mb-2">
                             <span class="fw-semibold me-2">Completion Date:</span>
@@ -643,6 +790,32 @@
                                 </div>
                             </div>
                         @endif
+                    </div>
+                @endif
+
+                {{-- The last way in to the history, for a project where neither
+                     of the other two is drawn: reopened and then cancelled, or
+                     archived from an ongoing cycle. Without it the earlier
+                     completion reports would still be in the database and
+                     unreachable from the page they belong to. --}}
+                @php
+                    $showsCurrentCompletionReport = $project->hasCompletionReport() && ! $project->isCancelled();
+                @endphp
+
+                @if ($previousCompletionReports->isNotEmpty() && ! $showsCurrentCompletionReport && ! $project->showsReopenedNotice())
+                    <hr>
+                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+                        <span class="text-muted">
+                            <i class="bi bi-clock-history me-1" aria-hidden="true"></i>
+                            This project has been completed and reopened before. It has no current
+                            completion report.
+                        </span>
+
+                        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal"
+                            data-bs-target="#previousCompletionReportsModal">
+                            View Previous Completion Reports
+                            <span class="badge bg-secondary ms-1">{{ $previousCompletionReports->count() }}</span>
+                        </button>
                     </div>
                 @endif
 
@@ -975,15 +1148,29 @@
 
                             </form>
 
-                            <button class="btn btn-primary" data-bs-toggle="modal"
-                                data-bs-target="#addTechnicianReportModal" @disabled($isOnHold)
-                                title="{{ $isOnHold ? 'This project is on hold. Resume it before adding reports.' : 'Add a technician report' }}">
+                            {{-- A finished, cancelled or archived project is a
+                                 closed record and takes no more reports -
+                                 TechnicianReportController refuses one on the
+                                 same rule, so this button was offering an
+                                 action that could only ever end in an error
+                                 toast. Awaiting Client Confirmation is one of
+                                 those statuses: the work is done and the client
+                                 is reading the report on it.
 
-                                <i class="bi bi-plus-lg me-1"></i>
+                                 A hold is different and keeps its button, shown
+                                 but disabled: that project is coming back, and
+                                 the tooltip says what to do about it. --}}
+                            @unless ($isReadOnly)
+                                <button class="btn btn-primary" data-bs-toggle="modal"
+                                    data-bs-target="#addTechnicianReportModal" @disabled($isOnHold)
+                                    title="{{ $isOnHold ? 'This project is on hold. Resume it before adding reports.' : 'Add a technician report' }}">
 
-                                Add Report
+                                    <i class="bi bi-plus-lg me-1"></i>
 
-                            </button>
+                                    Add Report
+
+                                </button>
+                            @endunless
 
                         </div>
 
@@ -1811,6 +1998,10 @@
     @endpush
 
     <!-- Add Technician Report Modal -->
+    {{-- Drawn only where the report could actually be filed, so the form is not
+         sitting in the page of a closed or paused project waiting for somebody
+         to reach it. --}}
+    @if ($canTakeWork)
     <div class="modal fade" id="addTechnicianReportModal" tabindex="-1" aria-labelledby="addTechnicianReportModalLabel"
         aria-hidden="true">
         <div class="modal-dialog modal-lg">
@@ -1898,6 +2089,7 @@
             </form>
         </div>
     </div>
+    @endif
     <!-- End of Add Technician Report Modal -->
 
     <!-- Add Task Modal -->

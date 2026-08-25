@@ -13,8 +13,15 @@ use Illuminate\Support\Facades\Validator;
 use Throwable;
 
 /**
- * Configuration -> System Contents: the editor behind every word and picture
- * on the public website.
+ * Configuration -> System Settings: the editor behind every word and picture
+ * on the public website, and behind the operational settings beneath it - the
+ * completion confirmation window, the enquiry cooldown, the Terms and
+ * Conditions.
+ *
+ * One controller for both because they are one mechanism: the same table, the
+ * same catalogue, the same cached read, the same audit entry. What a section
+ * holds decides how it is validated - see the `rules` a settings field carries
+ * in SystemContent::DEFINITIONS - and nothing else about it differs.
  *
  * Super Admin only, enforced here rather than by the route group: the whole
  * Configuration page is shared with Admin, and this one tab is not theirs.
@@ -34,11 +41,13 @@ class SystemContentController extends Controller
     {
         $this->authorizeSuperAdmin($request);
 
-        abort_unless(isset(SystemContent::SECTIONS[$section]), 404);
+        $label = SystemContent::sectionLabel($section);
+
+        abort_if($label === null, 404);
 
         return response()->json([
             'section' => $section,
-            'label' => SystemContent::SECTIONS[$section],
+            'label' => $label,
             'fields' => $this->fieldsFor($section),
         ]);
     }
@@ -50,28 +59,16 @@ class SystemContentController extends Controller
     {
         $this->authorizeSuperAdmin($request);
 
-        abort_unless(isset(SystemContent::SECTIONS[$section]), 404);
+        $label = SystemContent::sectionLabel($section);
 
-        $definitions = SystemContent::definitionsFor($section);
+        abort_if($label === null, 404);
 
-        $rules = [];
-
-        foreach ($definitions as $key => $definition) {
-            if (in_array($definition['type'], SystemContent::FILE_TYPES, true)) {
-                continue;
-            }
-
-            // Keyed by content key, which contains dots - escaped so the
-            // validator reads them as one field rather than nested data.
-            $rules['values.'.str_replace('.', '\.', $key)] = $definition['type'] === SystemContent::TYPE_TEXT
-                ? ['nullable', 'string', 'max:255']
-                : ['nullable', 'string', 'max:20000'];
-        }
+        [$rules, $messages] = $this->validationFor($section);
 
         // Hand-rolled for the same reason as the rest of Configuration: the
         // app only renders exceptions as JSON for api/* paths, so a thrown
         // ValidationException here would answer with an HTML redirect.
-        $validator = Validator::make($request->all(), $rules);
+        $validator = Validator::make($request->all(), $rules, $messages);
 
         if ($validator->fails()) {
             return response()->json(['error' => $validator->errors()->first()], 422);
@@ -83,14 +80,23 @@ class SystemContentController extends Controller
             $request->user()
         );
 
+        $isSettings = SystemContent::isSettingsSection($section);
+
         $this->activityLogger->record(
             ActivityLog::SYSTEM_SETTINGS_UPDATED,
             null,
-            sprintf('Updated the %s content of the public website.', SystemContent::SECTIONS[$section])
+            $isSettings
+                ? sprintf('Updated the %s.', $label)
+                : sprintf('Updated the %s content of the public website.', $label)
         );
 
         return response()->json([
-            'message' => 'Website content updated.',
+            // Named on the way back as well as on the way in: the editor
+            // re-renders from this payload, and it has to know which section it
+            // is drawing to decide which of the extra panels belongs beside it.
+            'section' => $section,
+            'label' => $label,
+            'message' => $isSettings ? 'Settings updated.' : 'Website content updated.',
             'saved' => $saved,
             'fields' => $this->fieldsFor($section),
         ]);
@@ -177,6 +183,57 @@ class SystemContentController extends Controller
     private function labelFor(string $key): string
     {
         return SystemContent::DEFINITIONS[$key]['label'] ?? $key;
+    }
+
+    /**
+     * The rules and the wording for one section's fields.
+     *
+     * Website copy is all the same shape - some text, not too long - and a
+     * blank field there is a real answer: an empty hero badge hides the badge.
+     * A setting is not like that. A confirmation window of nought days would
+     * complete every waiting project on the next sweep and an empty set of
+     * terms would leave registration asking people to accept nothing, so a
+     * field that configures behaviour states its own rules in the catalogue
+     * and they are used here in place of the generic pair.
+     *
+     * The messages are the definitions' own too, because "The values.
+     * project_settings.auto_completion_days must be at least 1" is not a
+     * sentence to show anybody.
+     *
+     * @return array{0: array<string, array<int, string>>, 1: array<string, string>}
+     */
+    private function validationFor(string $section): array
+    {
+        $rules = [];
+        $messages = [];
+
+        foreach (SystemContent::definitionsFor($section) as $key => $definition) {
+            if (in_array($definition['type'], SystemContent::FILE_TYPES, true)) {
+                continue;
+            }
+
+            // Keyed by content key, which contains dots - escaped so the
+            // validator reads them as one field rather than nested data.
+            $field = 'values.'.str_replace('.', '\.', $key);
+
+            $rules[$field] = $definition['rules'] ?? ($definition['type'] === SystemContent::TYPE_TEXT
+                ? ['nullable', 'string', 'max:255']
+                : ['nullable', 'string', 'max:20000']);
+
+            // Registered under both spellings. The rule is keyed with the dots
+            // escaped, so the validator reads one field rather than nested
+            // data - but by the time it looks a message up it has resolved the
+            // attribute back to its plain form. Which of the two it asks for is
+            // an internal detail; answering to both costs one array entry and
+            // means a rule that gains a message does not silently keep printing
+            // "The values.legal.terms and conditions field is required."
+            foreach ($definition['messages'] ?? [] as $rule => $message) {
+                $messages[$field.'.'.$rule] = $message;
+                $messages['values.'.$key.'.'.$rule] = $message;
+            }
+        }
+
+        return [$rules, $messages];
     }
 
     /**

@@ -124,7 +124,7 @@ class ProjectUpdateMail extends SystemMail
     private function body(): string
     {
         $company = config('company.name');
-        $window = Project::COMPLETION_CONFIRMATION_DAYS;
+        $window = Project::completionConfirmationDays();
 
         return match ($this->event) {
             self::COMPLETED => 'The work on this project has been completed and signed off. Thank you for choosing '

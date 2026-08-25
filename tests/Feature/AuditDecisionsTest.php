@@ -253,7 +253,7 @@ class AuditDecisionsTest extends TestCase
     public function test_a_client_keeps_their_projects_after_changing_their_email(): void
     {
         $client = User::factory()->create(['name' => 'Moving Client', 'email' => 'before@example.test']);
-        $client->forceFill(['role' => User::ROLE_CLIENT, 'status' => User::STATUS_ACTIVE])->save();
+        $client->forceFill(['role' => User::ROLE_CLIENT, 'status' => User::STATUS_ACTIVE] + $this->acceptedTerms())->save();
 
         $project = $this->project([], 'ongoing', 'before@example.test');
         Client::where('project_id', $project->project_id)->update(['user_id' => $client->id]);
@@ -281,7 +281,7 @@ class AuditDecisionsTest extends TestCase
     public function test_the_account_link_outranks_the_stored_address(): void
     {
         $client = User::factory()->create(['name' => 'Linked Client', 'email' => 'new@example.test']);
-        $client->forceFill(['role' => User::ROLE_CLIENT, 'status' => User::STATUS_ACTIVE])->save();
+        $client->forceFill(['role' => User::ROLE_CLIENT, 'status' => User::STATUS_ACTIVE] + $this->acceptedTerms())->save();
 
         $project = $this->project([], 'ongoing', 'stale@example.test');
         Client::where('project_id', $project->project_id)->update(['user_id' => $client->id]);
@@ -334,10 +334,10 @@ class AuditDecisionsTest extends TestCase
     public function test_a_client_still_cannot_reach_somebody_elses_project(): void
     {
         $mine = User::factory()->create(['name' => 'Mine', 'email' => 'mine@example.test']);
-        $mine->forceFill(['role' => User::ROLE_CLIENT, 'status' => User::STATUS_ACTIVE])->save();
+        $mine->forceFill(['role' => User::ROLE_CLIENT, 'status' => User::STATUS_ACTIVE] + $this->acceptedTerms())->save();
 
         $theirs = User::factory()->create(['name' => 'Theirs', 'email' => 'theirs@example.test']);
-        $theirs->forceFill(['role' => User::ROLE_CLIENT, 'status' => User::STATUS_ACTIVE])->save();
+        $theirs->forceFill(['role' => User::ROLE_CLIENT, 'status' => User::STATUS_ACTIVE] + $this->acceptedTerms())->save();
 
         $project = $this->project([], 'ongoing', 'theirs@example.test');
         Client::where('project_id', $project->project_id)->update(['user_id' => $theirs->id]);

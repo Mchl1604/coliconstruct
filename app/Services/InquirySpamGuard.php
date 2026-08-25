@@ -50,6 +50,40 @@ class InquirySpamGuard
     /** What somebody held back by either per-address window is told. */
     public const EMAIL_MESSAGE = 'You have submitted too many inquiries. Please try again later.';
 
+    /**
+     * How long one sender waits between enquiries, when nobody has configured
+     * anything else. Ten minutes, which is what the shipped config file has
+     * always said in seconds.
+     */
+    public const DEFAULT_SUBMISSION_LIMIT_MINUTES = 10;
+
+    /**
+     * The setting the wait is stored under.
+     */
+    public const SETTING_LIMIT_MINUTES = 'inquiry_settings.submission_limit_minutes';
+
+    public function __construct(private readonly SystemContentService $settings) {}
+
+    /**
+     * How long a sender must wait, in minutes.
+     *
+     * A setting rather than a constant because it is the one limit here an
+     * administrator has a reason to change: a company running a campaign wants
+     * it short, one being pestered wants it long, and neither should need a
+     * deployment. The per-address caps below stay in config - those are a
+     * property of the deployment, not a decision about the business.
+     *
+     * Asked of the settings store on every submission, which costs nothing:
+     * SystemContentService caches the whole table as one map.
+     */
+    public function submissionLimitMinutes(): int
+    {
+        return $this->settings->number(
+            self::SETTING_LIMIT_MINUTES,
+            $this->configuredLimitMinutes()
+        );
+    }
+
     // ------------------------------------------------------------------
     // The honeypot
     // ------------------------------------------------------------------
@@ -115,7 +149,10 @@ class InquirySpamGuard
      */
     public function recordSubmission(Request $request, string $email): void
     {
-        RateLimiter::hit($this->ipKey($request), $this->limit('per_ip.decay_seconds'));
+        // The one window an administrator sets, so it is read from the setting
+        // rather than from config. The two below are deployment properties and
+        // are not on any screen.
+        RateLimiter::hit($this->ipKey($request), $this->submissionLimitMinutes() * 60);
         RateLimiter::hit($this->hourlyEmailKey($email), $this->limit('per_email.hourly.decay_seconds'));
         RateLimiter::hit($this->dailyEmailKey($email), $this->limit('per_email.daily.decay_seconds'));
     }
@@ -168,13 +205,28 @@ class InquirySpamGuard
     }
 
     /**
+     * The deployment's own idea of the wait, in whole minutes.
+     *
+     * What the setting falls back to, so a site that configured
+     * INQUIRY_IP_WINDOW_SECONDS before the setting existed keeps the window it
+     * chose rather than being silently reset to ten minutes. Rounded up, so a
+     * configured window is never shortened by the conversion.
+     */
+    private function configuredLimitMinutes(): int
+    {
+        $seconds = $this->limit('per_ip.decay_seconds');
+
+        return max(1, (int) ceil($seconds / 60));
+    }
+
+    /**
      * @return array<string, int>
      */
     private function defaults(): array
     {
         return [
             'per_ip.max' => 1,
-            'per_ip.decay_seconds' => 600,
+            'per_ip.decay_seconds' => self::DEFAULT_SUBMISSION_LIMIT_MINUTES * 60,
             'per_email.hourly.max' => 3,
             'per_email.hourly.decay_seconds' => 3600,
             'per_email.daily.max' => 10,

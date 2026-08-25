@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\EnsureAccountIsActive;
 use App\Http\Middleware\EnsurePasswordIsChanged;
+use App\Http\Middleware\EnsureTermsAreAccepted;
 use App\Http\Middleware\EnsureUserHasRole;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -28,7 +29,15 @@ return Application::configure(basePath: dirname(__DIR__))
         // that were missing the check - My Projects, the client's sign-off,
         // Profile, Notifications - are exactly the ones with no role on them.
         // It is a no-op for guests.
-        $middleware->web(append: [EnsureAccountIsActive::class]);
+        //
+        // Terms acceptance is appended beside it for the same reason: a client
+        // who has not agreed to the current Terms and Conditions must be held
+        // out of their portal on every route that could still let them in, not
+        // only on the ones somebody remembered to decorate. It runs after the
+        // active-account check so a disabled account is turned away before it
+        // is asked to agree to anything, and it is a no-op for guests and for
+        // every non-client role - see EnsureTermsAreAccepted.
+        $middleware->web(append: [EnsureAccountIsActive::class, EnsureTermsAreAccepted::class]);
 
         $middleware->alias([
             'role' => EnsureUserHasRole::class,

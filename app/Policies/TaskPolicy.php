@@ -17,6 +17,37 @@ class TaskPolicy
     public function __construct(private ProjectPolicy $projects) {}
 
     /**
+     * Whether this account may read a single task at all.
+     *
+     * The counterpart to Task::scopeVisibleTo, for the places that are handed
+     * one task rather than building a list: a plain technician reads their own
+     * work, and a lead reads the board for a project they are on. The office
+     * is not asked about here - nothing that serves an administrator consults
+     * this policy - so an employee who carries no technician record falls to
+     * the caller's own rule.
+     *
+     * The two questions are deliberately separate from complete(): a completed
+     * task is still readable by whoever held it, long after there is nothing
+     * left to do on it.
+     */
+    public function view(User $user, Task $task): bool
+    {
+        $project = $task->project;
+
+        if ($project === null) {
+            return false;
+        }
+
+        if (! $this->projects->viewAssigned($user, $project)) {
+            return false;
+        }
+
+        // A lead sees the whole board for the project they run; a technician
+        // sees the work that is theirs.
+        return ! $user->isTechnician() || $task->isAssignedTo($user);
+    }
+
+    /**
      * A technician closes the work assigned to them; a lead may also close
      * anything on a project they run, for work that is finished on site but
      * was never marked.

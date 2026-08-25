@@ -131,8 +131,9 @@ class AuthenticationTest extends TestCase
     // ------------------------------------------------------------------
 
     /**
-     * A deactivated account fails exactly like a wrong password, so nothing
-     * here tells an attacker which addresses exist and are merely switched off.
+     * A deactivated account is refused, and is told why - see
+     * SystemSettingsTest for the message itself and for the reason it gives
+     * nothing away. All that matters here is that it does not get in.
      */
     public function test_a_deactivated_account_cannot_sign_in(): void
     {

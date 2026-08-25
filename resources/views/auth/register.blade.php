@@ -109,7 +109,9 @@
         </div>
     </form>
 
-    @include('auth.partials.terms-modal')
+    {{-- The one reading copy of the document, shared with the website
+         footer - see resources/views/components/terms-modal.blade.php. --}}
+    <x-terms-modal />
 @endsection
 
 @push('scripts')

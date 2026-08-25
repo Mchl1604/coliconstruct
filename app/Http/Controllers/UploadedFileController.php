@@ -70,9 +70,27 @@ class UploadedFileController extends Controller
         return $this->stream($photo->photo_path);
     }
 
+    /**
+     * A photograph filed against a task on completion.
+     *
+     * The project's audience, narrowed by the task's own: a plain technician
+     * reads their own work and nothing else, so the photograph a colleague
+     * filed is out of reach here as well as on the page. Without this, a
+     * technician who could no longer see a colleague's task could still fetch
+     * the picture from it by asking for the id - which is exactly the door
+     * this controller exists to close.
+     */
     public function taskImage(Request $request, TaskImage $image): StreamedResponse
     {
-        $this->authorizeProject($request, $image->task?->project);
+        $task = $image->task;
+
+        $this->authorizeProject($request, $task?->project);
+
+        // Only the technician roles are narrowed further; the office reads the
+        // whole board and a client never reaches a task photograph at all.
+        if ($task !== null && $request->user()?->needsTechnicianRecord()) {
+            abort_unless(Gate::forUser($request->user())->allows('view', $task), 403);
+        }
 
         return $this->stream($image->image_path);
     }

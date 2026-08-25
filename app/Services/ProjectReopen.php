@@ -16,12 +16,21 @@ use RuntimeException;
  * wrong: a client raises something, or the crew finds more to do, and the
  * project has to resume rather than be closed and re-created.
  *
- * Two rules shape the whole of it.
+ * Three rules shape the whole of it.
  *
  * A Completed project is never reopened. Both routes into Completed are
  * settled - the client agreed, or seven days went by - and a record that can
  * be reopened afterwards is not a record. That is asserted here rather than
  * left to whichever page drew the button.
+ *
+ * The completion report is filed away rather than kept or deleted. It lives on
+ * the project's own columns, which is where every page reads the CURRENT
+ * report from, so leaving it there would have a live project presenting a
+ * finished project's report - and the next completion would write over it.
+ * ProjectCompletionHistory copies the cycle onto a row of its own, marked
+ * Superseded, takes its photographs with it and then clears the columns. The
+ * project comes back with no current completion report and every previous one
+ * still readable.
  *
  * The released dates do not come back. Asking for completion gave up every
  * booked day past the completion date, and those days were free for other work
@@ -35,7 +44,8 @@ class ProjectReopen
         private readonly ProjectTeam $projectTeam,
         private readonly TechnicianAvailabilityService $availability,
         private readonly ScheduleModeRules $scheduleRules,
-        private readonly ScheduleConsolidation $consolidation
+        private readonly ScheduleConsolidation $consolidation,
+        private readonly ProjectCompletionHistory $completionHistory
     ) {}
 
     /**
@@ -73,6 +83,11 @@ class ProjectReopen
         // together - see ProjectTeam.
         $this->projectTeam->linkScheduleToTeam($schedule, $project);
 
+        // Before the status moves. The snapshot reads the project's completion
+        // columns and its status as they stand now, and 'ongoing' would put
+        // the wrong answer to "what was it when this report was superseded?".
+        $this->completionHistory->supersede($project, $actor, $reason);
+
         $project->update([
             // Ongoing rather than Pending whichever way the dates fall: an
             // administrator reopening a project is saying work resumes, and
@@ -82,11 +97,11 @@ class ProjectReopen
             'reopened_at' => CarbonImmutable::now(),
             'reopened_by' => $actor?->id,
             'reopen_reason' => $reason,
-            // The confirmation clock stops. The completion report itself -
-            // the date, the summary, the remarks and the photographs - is
-            // deliberately kept: it describes a visit that really happened,
-            // and completing the project again writes a fresh report beside
-            // rather than over the evidence.
+            // The confirmation clock stops. The report the clock was running
+            // on has just been filed as history above - nothing is destroyed,
+            // it simply stops being this project's current completion report,
+            // so the completion section on every page correctly shows nothing
+            // until the work is closed out again.
             'completion_requested_at' => null,
             'completion_requested_by' => null,
             'completion_reminder_sent_at' => null,

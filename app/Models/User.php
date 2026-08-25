@@ -3,6 +3,7 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Services\SystemContentService;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -29,6 +30,8 @@ use Illuminate\Notifications\Notifiable;
     'email',
     'pending_email',
     'email_verified_at',
+    'terms_accepted_version',
+    'terms_accepted_at',
     'role',
     'status',
     'is_archived',
@@ -132,6 +135,8 @@ class User extends Authenticatable
 
     public const ROLE_LEAD_TECHNICIAN = 'lead_technician';
 
+    public const ROLE_TECHNICIAN = 'technician';
+
     /**
      * Roles that carry a technician record, and therefore specialties.
      *
@@ -156,6 +161,7 @@ class User extends Authenticatable
             'must_change_password' => 'boolean',
             'archived_at' => 'datetime',
             'last_login_at' => 'datetime',
+            'terms_accepted_at' => 'datetime',
         ];
     }
 
@@ -282,6 +288,65 @@ class User extends Authenticatable
     }
 
     /**
+     * Whether this account has agreed to the Terms and Conditions as they
+     * stand right now.
+     *
+     * Compared by version rather than by a flag, which is the whole point: an
+     * account that agreed to last month's wording has accepted something, and
+     * a boolean would go on saying so after the Super Admin rewrote it. The
+     * version is the fingerprint of the current text - see
+     * SystemContentService::termsVersion() - so this answers "these terms",
+     * not "some terms, once".
+     */
+    public function hasAcceptedCurrentTerms(): bool
+    {
+        return filled($this->terms_accepted_version)
+            && hash_equals(
+                app(SystemContentService::class)->termsVersion(),
+                (string) $this->terms_accepted_version
+            );
+    }
+
+    /**
+     * Whether this account must agree before it may carry on.
+     *
+     * Clients only. Employees are bound by their employment rather than by a
+     * dialog, and locking an administrator out of the portal because the
+     * document they themselves maintain had changed would be a way to lock
+     * everybody out of the system at once - the Super Admin included, from the
+     * page they would need to fix it.
+     */
+    public function requiresTermsAcceptance(): bool
+    {
+        return $this->isClient() && ! $this->hasAcceptedCurrentTerms();
+    }
+
+    /**
+     * Whether this account agreed to a previous set of terms, which is what
+     * makes the current ask an UPDATE rather than a first request.
+     */
+    public function hasAcceptedEarlierTerms(): bool
+    {
+        return filled($this->terms_accepted_version) && ! $this->hasAcceptedCurrentTerms();
+    }
+
+    /**
+     * Record this account's agreement to the terms as they stand right now.
+     *
+     * The version is read here rather than taken from the request. A client
+     * posting the Agree form has no say in what they are agreeing to: whatever
+     * fingerprint arrives in the body is ignored, so nobody can mark
+     * themselves up to date with a document that was never on their screen.
+     */
+    public function acceptCurrentTerms(): void
+    {
+        $this->forceFill([
+            'terms_accepted_version' => app(SystemContentService::class)->termsVersion(),
+            'terms_accepted_at' => now(),
+        ])->save();
+    }
+
+    /**
      * Whether a change of email is waiting on a code sent to the new address.
      */
     public function hasPendingEmailChange(): bool
@@ -324,6 +389,22 @@ class User extends Authenticatable
     public function isLeadTechnician(): bool
     {
         return $this->role === self::ROLE_LEAD_TECHNICIAN;
+    }
+
+    /**
+     * Whether this is a plain technician - one of the crew, not the lead
+     * running the job.
+     *
+     * The distinction matters wherever the portal narrows what somebody may
+     * see rather than what they may do: a technician's task board is their own
+     * work alone, while a lead runs the whole board for the projects they are
+     * on. needsTechnicianRecord() answers "carries a technician record", which
+     * both roles do; this answers "and holds no authority over anybody else's
+     * work", which only one of them does.
+     */
+    public function isTechnician(): bool
+    {
+        return $this->role === self::ROLE_TECHNICIAN;
     }
 
     /**

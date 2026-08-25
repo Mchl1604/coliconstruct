@@ -171,7 +171,12 @@ class TechnicianPortalController extends Controller
                 ->values()
         );
 
+        // Narrowed to what the reader is allowed to see: a lead runs the whole
+        // board, a technician reads their own work and nothing else. Done in
+        // SQL rather than in the view so a colleague's task never reaches the
+        // page to be hidden - see Task::scopeVisibleTo.
         $tasks = Task::query()
+            ->visibleTo($request->user())
             ->with(['technician.account', 'images', 'completedBy'])
             ->where('project_id', $project->project_id)
             ->orderByRaw("case when status = 'ongoing' then 0 when status = 'pending' then 1 when status = 'unassigned' then 2 else 3 end")
@@ -231,6 +236,14 @@ class TechnicianPortalController extends Controller
             // told their crew is short, and here they can see which of them it
             // is and move the work off them.
             'flagsInactiveCrew' => $user->isLeadTechnician(),
+            // The overdue banner is a lead's notice, not the crew's. It asks
+            // the reader to close the project off or to go and have the
+            // schedule extended, and a plain technician can do neither - so to
+            // them it is a warning about somebody else's decision, on a page
+            // whose only remaining purpose is the work they still owe. The
+            // status badge still reads Overdue for everyone; what is withheld
+            // is the instruction, not the fact.
+            'showsOverdueNotice' => ! $user->isTechnician(),
             'completionBlockers' => $this->projectPolicy->blockerDetailsFor($project),
             'reportTypes' => TechnicianReport::TYPES,
         ]);
@@ -249,6 +262,7 @@ class TechnicianPortalController extends Controller
         $projects = $this->assignedProjects($technician, ['cancelled', 'archived', 'completed']);
 
         $tasks = Task::query()
+            ->visibleTo($request->user())
             ->with(['technician.account', 'images', 'completedBy'])
             ->whereIn('project_id', $projects->pluck('project_id'))
             ->orderByRaw("case when status = 'ongoing' then 0 when status = 'pending' then 1 when status = 'unassigned' then 2 else 3 end")
@@ -440,6 +454,7 @@ class TechnicianPortalController extends Controller
             'schedules',
             'projectTechnicians.technician.account',
             'tasks' => fn ($query) => $query
+                ->visibleTo($request->user())
                 ->when($mineOnly, fn ($q) => $q->where('technician_id', $technician->technician_id))
                 ->orderByRaw("case when status = 'ongoing' then 0 when status = 'pending' then 1 when status = 'unassigned' then 2 else 3 end")
                 ->orderByRaw('due_date is null')
@@ -888,7 +903,7 @@ class TechnicianPortalController extends Controller
 
         $message = sprintf(
             'Completion recorded. Completes automatically in %d days unless the client replies.',
-            Project::COMPLETION_CONFIRMATION_DAYS
+            Project::completionConfirmationDays()
         );
 
         if ($request->expectsJson()) {

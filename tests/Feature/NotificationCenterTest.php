@@ -30,7 +30,7 @@ class NotificationCenterTest extends TestCase
             'role' => $role,
             'status' => User::STATUS_ACTIVE,
             'password' => 'correct-password',
-        ]);
+        ] + $this->acceptedTerms());
     }
 
     /**

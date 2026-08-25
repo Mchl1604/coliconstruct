@@ -164,6 +164,83 @@ class SystemContentService
     }
 
     /**
+     * A numeric setting, as a positive integer.
+     *
+     * Everything in this table is stored as text, so this is where a setting
+     * becomes the number the application actually uses. Anything that is not a
+     * positive whole number - blank, a word, a nought, a negative - falls back
+     * to what the caller says it should be rather than being passed on: a
+     * confirmation window of nought days would complete every waiting project
+     * on the next sweep, and an enquiry cooldown of nought would switch the
+     * protection off. Validation stops those being saved; this stops one
+     * mattering if it ever gets in.
+     */
+    public function number(string $key, int $fallback): int
+    {
+        $raw = trim((string) $this->get($key, (string) $fallback));
+
+        // Deliberately strict: "7 days" is a mistake, not seven.
+        if (! preg_match('/^\d+$/', $raw)) {
+            return $fallback;
+        }
+
+        $value = (int) $raw;
+
+        return $value > 0 ? $value : $fallback;
+    }
+
+    /**
+     * The Terms and Conditions, as written.
+     *
+     * Nothing is substituted into them and nothing is interpreted. What an
+     * administrator typed into the box is what the page shows, which is the
+     * only behaviour that is obvious from looking at the editor - a document
+     * that quietly rewrites itself between the textarea and the screen is a
+     * document nobody can proof-read.
+     */
+    public function terms(): string
+    {
+        return (string) $this->get('legal.terms_and_conditions');
+    }
+
+    /**
+     * The fingerprint of the terms as they stand right now.
+     *
+     * This is what "the current version" means throughout the system, and it
+     * is derived from the words rather than kept alongside them. The terms are
+     * one editable field in tbl_system_contents with no revision number of its
+     * own, so a counter would have to be incremented by hand on every save -
+     * and the first time somebody forgot, every client would be reading new
+     * terms while the system believed they had already agreed to them.
+     *
+     * A hash cannot fall out of step: if the text a client is shown differs by
+     * a single character from the text they accepted, the two fingerprints
+     * differ and they are asked again. Equally, saving the editor without
+     * changing anything - which is what re-reading a settings page and pressing
+     * Save amounts to - leaves the fingerprint alone, so nobody is made to
+     * agree to the same words twice.
+     *
+     * Line endings are normalised and the ends trimmed first. A textarea posts
+     * CRLF where the shipped default has LF, and "the same document, submitted
+     * from a different browser" must not read as a new version.
+     */
+    public function termsVersion(): string
+    {
+        return hash('sha256', $this->normalisedTerms());
+    }
+
+    /**
+     * The terms as the fingerprint sees them: one kind of line ending, no
+     * leading or trailing whitespace.
+     */
+    private function normalisedTerms(): string
+    {
+        $terms = $this->terms();
+
+        return trim(preg_replace('/\r\n?/', "\n", $terms) ?? $terms);
+    }
+
+    /**
      * The website title, used for the browser tab on every public page.
      */
     public function siteTitle(): string

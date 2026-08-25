@@ -49,7 +49,7 @@ class PublicSiteTest extends TestCase
             'status' => User::STATUS_ACTIVE,
             'email_verified_at' => now(),
             'password' => 'correct-password',
-        ]);
+        ] + $this->acceptedTerms());
     }
 
     /**
@@ -927,15 +927,41 @@ class PublicSiteTest extends TestCase
     // The catalogue itself
     // ------------------------------------------------------------------
 
+    /**
+     * The catalogue holds two kinds of section now - the public website's, and
+     * the operational settings' - and both are drawn by the same editor from
+     * allSections(). A field filed under neither would be stored, validated and
+     * never shown to anybody.
+     */
     public function test_every_field_belongs_to_a_section_the_editor_offers(): void
     {
+        $sections = SystemContent::allSections();
+
         foreach (SystemContent::DEFINITIONS as $key => $definition) {
             $this->assertArrayHasKey(
                 $definition['section'],
-                SystemContent::SECTIONS,
+                $sections,
                 $key.' is filed under a section the editor does not show.'
             );
         }
+    }
+
+    /**
+     * The two lists must not overlap: a section in both would be drawn twice,
+     * once in each card, and saving from either would fight the other.
+     */
+    public function test_the_website_sections_and_the_settings_sections_are_distinct(): void
+    {
+        $this->assertSame(
+            [],
+            array_intersect_key(SystemContent::SECTIONS, SystemContent::SETTINGS_SECTIONS),
+            'A section cannot belong to both editors.'
+        );
+
+        $this->assertCount(
+            count(SystemContent::SECTIONS) + count(SystemContent::SETTINGS_SECTIONS),
+            SystemContent::allSections()
+        );
     }
 
     public function test_a_pipe_separated_field_reads_as_a_list(): void

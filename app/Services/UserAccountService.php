@@ -244,6 +244,15 @@ class UserAccountService
                 'email_verified_at' => now(),
                 'must_change_password' => false,
                 'created_by' => null,
+                // The registration form does not open without the terms box
+                // being ticked and AuthController re-checks it on the way in,
+                // so the account arrives here having already agreed - and it
+                // agreed to whatever the settings publish at this moment. The
+                // fingerprint is stored rather than a flag, so a later rewrite
+                // asks them again and an unchanged document does not. See
+                // SystemContentService::termsVersion().
+                'terms_accepted_version' => app(SystemContentService::class)->termsVersion(),
+                'terms_accepted_at' => now(),
                 'password' => $data['password'],
             ]);
         });

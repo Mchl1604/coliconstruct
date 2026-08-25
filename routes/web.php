@@ -20,6 +20,7 @@ use App\Http\Controllers\TechnicianController;
 use App\Http\Controllers\TechnicianPortalController;
 use App\Http\Controllers\TechnicianReportArchiveController;
 use App\Http\Controllers\TechnicianReportController;
+use App\Http\Controllers\TermsController;
 use App\Http\Controllers\UploadedFileController;
 use Illuminate\Support\Facades\Route;
 
@@ -97,6 +98,31 @@ Route::post('/forgot-password/resend', [PasswordResetController::class, 'resend'
     ->name('auth.password.resend');
 Route::get('/reset-password', [PasswordResetController::class, 'showReset'])->name('auth.password.reset');
 Route::post('/reset-password', [PasswordResetController::class, 'reset'])->name('auth.password.store');
+
+// ---------------------------------------------------------------------------
+// Terms and Conditions
+// ---------------------------------------------------------------------------
+//
+// Reading them, and agreeing to them. There is deliberately no page here: the
+// document is shown in a modal by the registration form, by the website footer
+// and by the dialog a client meets after signing in, because in all three the
+// reader is in the middle of something and sending them away would cost them
+// it. `show` is for anything that wants the current text and its version
+// without a page around it.
+//
+// Reading is open to anybody, signed in or not - the footer link is for
+// visitors as much as for clients, and opening the document has never been an
+// acceptance of it.
+//
+// Accepting is behind `auth` and records the agreement against the
+// authenticated account, never against an id in the body. It sits outside
+// `password.changed` and outside the terms middleware itself for the same
+// reason the password-change screen does: the way through a gate cannot be
+// behind that gate.
+Route::get('/terms', [TermsController::class, 'show'])->name('terms.show');
+Route::post('/terms/accept', [TermsController::class, 'accept'])
+    ->middleware('auth')
+    ->name('terms.accept');
 
 // ---------------------------------------------------------------------------
 // Uploaded files
@@ -243,6 +269,22 @@ Route::prefix('super-admin')
         Route::put('/projects/{id}/restore', [ProjectController::class, 'restore'])
             ->middleware('role:super_admin')
             ->name('projects.restore');
+
+        // What stands between an archived project and its old dates, read by
+        // the Schedule Conflict dialog when it opens and again every time it
+        // rechecks. Behind the same privilege as the restore itself: it names
+        // other projects and the people on them, so it is not a wider door
+        // than the action it belongs to.
+        Route::get('/projects/{id}/restore-conflicts', [ProjectController::class, 'restoreConflicts'])
+            ->middleware('role:super_admin')
+            ->name('projects.restore-conflicts');
+
+        // Moving or dropping one range of an archived project's own schedule,
+        // which is how a restore conflict is resolved: the archived project
+        // gives way, and the live work it clashed with is left alone.
+        Route::put('/projects/{id}/restore-schedule', [ProjectController::class, 'updateRestoreSchedule'])
+            ->middleware('role:super_admin')
+            ->name('projects.restore-schedule');
         // Documents are addressed one at a time: a project may hold several of
         // each type, so the type alone no longer names a file.
         Route::get('/projects/{id}/documents/{document}', [ProjectController::class, 'previewDocument'])

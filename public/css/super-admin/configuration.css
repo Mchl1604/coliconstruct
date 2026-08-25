@@ -477,12 +477,17 @@
 }
 
 /* ---- Project Types ----
-   The same blue System Contents wears on its panel, so the two halves of
-   System Settings read as one thing rather than two. */
+   A panel inside the General card now, under the Project Settings pill: the
+   catalogue of work the company does is a project setting. It keeps the blue
+   System Contents wears on its own panel, so the settings tab reads as one
+   thing rather than several. */
 
-.project-types-card {
+.project-types-panel {
     border: 1px solid #cfe3f6;
     border-top: 4px solid #2370b4;
+    border-radius: .5rem;
+    padding: 1.25rem;
+    background: #fff;
 }
 
 .project-types-heading {

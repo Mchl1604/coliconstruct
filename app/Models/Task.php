@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -76,6 +77,34 @@ class Task extends Model
     public function completedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'completed_by', 'id');
+    }
+
+    /**
+     * Narrow a task query to what this account is allowed to see.
+     *
+     * A plain technician's task board is their own work and nothing else: not
+     * a colleague's task on the same project, and not one nobody has been
+     * given yet. Everybody else - a lead running the board, an administrator,
+     * the office - reads the whole board, so the scope adds nothing for them.
+     *
+     * Stated as a scope rather than repeated in each controller action so the
+     * page, the JSON the schedule panel reads and the file routes are narrowed
+     * by one rule: a technician cannot reach another technician's task by
+     * asking a different endpoint for it.
+     */
+    public function scopeVisibleTo(Builder $query, ?User $user): Builder
+    {
+        if ($user === null || ! $user->isTechnician()) {
+            return $query;
+        }
+
+        $technicianId = $user->technicianId();
+
+        // No technician record means no tasks of their own, and therefore
+        // nothing to show - never the whole board.
+        return $technicianId === null
+            ? $query->whereRaw('1 = 0')
+            : $query->where('technician_id', $technicianId);
     }
 
     public function isCompleted(): bool

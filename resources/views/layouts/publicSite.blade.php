@@ -15,6 +15,11 @@
     $footerLogo = $content->image('branding.footer_logo') ?? $logo;
     $favicon = $content->image('branding.favicon');
     $quickLinks = $content->lines('footer.quick_links');
+    // A client who has not agreed to the current Terms and Conditions is held
+    // out of their portal by EnsureTermsAreAccepted; this is what tells them
+    // so, and offers the two ways out. Clients only - see
+    // User::requiresTermsAcceptance().
+    $needsTermsAgreement = (bool) $viewer?->requiresTermsAcceptance();
     $socials = collect([
         ['key' => 'contact.facebook', 'icon' => 'bi-facebook', 'label' => 'Facebook'],
         ['key' => 'contact.telegram', 'icon' => 'bi-telegram', 'label' => 'Telegram'],
@@ -157,6 +162,14 @@
         <x-notification-center-modal />
     @endif
 
+    {{-- The reading copy, opened from the footer by anybody at all. Opening it
+         records nothing - see the component. --}}
+    <x-terms-modal />
+
+    @if ($needsTermsAgreement)
+        <x-terms-agreement-modal :user="$viewer" />
+    @endif
+
     <main>
         @yield('content')
     </main>
@@ -226,7 +239,22 @@
 
             <hr class="public-footer-rule">
 
-            <p class="public-footer-copyright mb-0">{{ $content->copyright() }}</p>
+            {{-- The copyright line and the terms sit on one row: they are the
+                 same kind of thing - the small print the page closes with -
+                 and a second rule between them would read as another section.
+
+                 A button rather than a link, and the same reading dialog the
+                 registration form opens, because there is no Terms and
+                 Conditions page to send anybody to. Opening it is reading,
+                 never agreeing. --}}
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <p class="public-footer-copyright mb-0">{{ $content->copyright() }}</p>
+
+                <button type="button" class="btn btn-link p-0 public-footer-terms"
+                    data-bs-toggle="modal" data-bs-target="#termsModal">
+                    Terms and Conditions
+                </button>
+            </div>
         </div>
     </footer>
 

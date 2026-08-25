@@ -43,6 +43,15 @@ class AuthController extends Controller
      */
     private const FAILED_SIGN_IN_ALERT_THRESHOLD = 5;
 
+    /**
+     * What somebody with the right password for a switched-off account is told.
+     *
+     * Names no role, no reason and nobody in particular: it says the account is
+     * off and who to ask, which is everything the holder can act on and nothing
+     * an attacker who does not already have the password could learn.
+     */
+    public const DEACTIVATED_MESSAGE = 'Your account has been deactivated. Please contact an administrator for assistance.';
+
     public function __construct(
         private readonly ActivityLogger $activityLogger,
         private readonly NotificationService $notifications
@@ -60,9 +69,17 @@ class AuthController extends Controller
     /**
      * Verify credentials and open a session.
      *
-     * A deactivated or archived account fails exactly like a wrong password -
-     * same message either way, so nothing here tells an attacker which
-     * addresses exist and which are merely switched off.
+     * One message covers every failure but one: a wrong password, an address
+     * with no account behind it, an archived account and an unusable stored
+     * hash all read the same, so nothing here tells a stranger which addresses
+     * exist and which are merely switched off.
+     *
+     * The exception is a deactivated account whose password was correct, which
+     * is told so plainly - see DEACTIVATED_MESSAGE. That is deliberate and it
+     * gives nothing away: only somebody who already holds the right password
+     * ever sees it, and to them "these credentials do not match our records"
+     * is not a security boundary, it is a lie that sends the account's real
+     * owner to reset a password that was never the problem.
      */
     public function login(Request $request)
     {
@@ -118,7 +135,20 @@ class AuthController extends Controller
         }
 
         // The credentials matched; now check the account is allowed in at all.
+        // Which of the two reasons it was is remembered, because they are not
+        // the same thing to the person in front of the screen: a deactivated
+        // account is somebody's own account, switched off, and they need to be
+        // told that rather than sent round the password reset.
+        //
+        // An archived account is not told apart. That is a record of somebody
+        // who has left, kept for the history, and it is closer to "no such
+        // account" than to "your account is off".
+        $deactivated = false;
+
         if ($attempted && ! Auth::user()->canLogin()) {
+            $deactivated = ! Auth::user()->is_archived
+                && Auth::user()->status === User::STATUS_DEACTIVATED;
+
             Auth::logout();
             $attempted = false;
         }
@@ -138,11 +168,15 @@ class AuthController extends Controller
 
             $this->alertOnRepeatedFailures($credentials['email']);
 
-            // Deactivated, archived, wrong password, unusable hash: one message
-            // for all of them, so nothing here tells a stranger which addresses
-            // exist and which are merely switched off.
+            // Archived, wrong password, unusable hash, no such address: one
+            // message for all of them, so nothing here tells a stranger which
+            // addresses exist and which are merely switched off. The one
+            // exception is above, and is reached only by somebody who already
+            // had the password.
             throw ValidationException::withMessages([
-                'email' => 'Those credentials do not match our records.',
+                'email' => $deactivated
+                    ? self::DEACTIVATED_MESSAGE
+                    : 'Those credentials do not match our records.',
             ]);
         }
 

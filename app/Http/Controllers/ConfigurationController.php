@@ -85,7 +85,11 @@ class ConfigurationController extends Controller
             // The Inquiries filter and the status picker inside its details
             // dialog, both from the one list on the model.
             'inquiryStatuses' => Inquiry::STATUSES,
+            // The two editors on the System Settings tab: the public website's
+            // sections, and the operational ones beneath them. Two lists rather
+            // than one because they are two cards - see SystemContent.
             'contentSections' => SystemContent::SECTIONS,
+            'settingsSections' => SystemContent::SETTINGS_SECTIONS,
             'skills' => Skill::query()->orderBy('skill_name')->get(['skill_id', 'skill_name']),
             // Whether the interface may promise that credentials were emailed.
             'mailEnabled' => $this->credentials->isDeliverable(),

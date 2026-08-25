@@ -12,11 +12,17 @@ return [
     | the limits that keep a script - or somebody leaning on the button - from
     | filling Configuration > Inquiries with noise.
     |
-    | Deliberately a config file rather than a Configuration page setting.
-    | These are not a decision an administrator makes about the business; they
-    | are a property of the deployment, changed once when a site turns out to
-    | sit behind a busy shared address and never again. Putting them on screen
-    | would only invite somebody to switch the protection off.
+    | One of them is on a screen and the rest are not, and the line between
+    | them is whose decision it is. How long one sender waits between messages
+    | is the company's - short during a campaign, long while being pestered -
+    | so it is a Super Admin setting, and `per_ip.decay_seconds` below is only
+    | what that setting falls back to on a deployment that set it here before
+    | the setting existed. See InquirySpamGuard::submissionLimitMinutes().
+    |
+    | The per-address caps stay here. Those are a property of the deployment,
+    | changed once when a site turns out to sit behind a busy shared address
+    | and never again, and putting them on screen would only invite somebody to
+    | switch the protection off.
     |
     | Every limit is enforced server side by InquirySpamGuard. Nothing in the
     | browser is trusted to hold any of them.
@@ -30,6 +36,9 @@ return [
     | it: an office, a school or a phone network puts many legitimate people
     | behind a single address, so this is kept short enough that a second
     | person is delayed rather than turned away.
+    |
+    | `decay_seconds` is the fallback for the Inquiry Submission Limit setting,
+    | not the window itself - the setting is what the guard actually counts by.
     */
     'per_ip' => [
         'max' => (int) env('INQUIRY_MAX_PER_IP', 1),

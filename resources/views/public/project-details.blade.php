@@ -86,7 +86,7 @@
                                         You can also call <strong>{{ $supportPhone }}</strong>.
                                     @endif
                                     Getting in touch does not pause the
-                                    {{ \App\Models\Project::COMPLETION_CONFIRMATION_DAYS }} day confirmation period.
+                                    {{ \App\Models\Project::completionConfirmationDays() }} day confirmation period.
                                 </p>
                             </div>
                         </div>
