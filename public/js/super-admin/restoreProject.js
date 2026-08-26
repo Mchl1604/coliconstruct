@@ -333,6 +333,29 @@
             return fresh ? ' placeholder="' + text + '"' : '';
         };
 
+        // The bookable hours as a list, never a time box: a partial day is
+        // booked on the hour everywhere else in the system, and a time input
+        // would put a minute field beside the hour that nothing downstream
+        // could honour. The hours come from the server with the range - see
+        // RestoreScheduleConflicts - so this dialog offers what the save will
+        // accept and holds no copy of the working day of its own.
+        const hourSelect = function (hook, range, selected) {
+            const options = (range.hour_options || []).map(function (option) {
+                // An hour the window no longer covers is kept where the
+                // booking already holds it and offered nowhere else, exactly
+                // as the schedules page keeps it.
+                const disabled = option.outside && option.value !== selected;
+
+                return '<option value="' + escapeHtml(option.value) + '"'
+                    + (option.value === selected ? ' selected' : '')
+                    + (disabled ? ' disabled' : '') + '>'
+                    + escapeHtml(option.label) + '</option>';
+            }).join('');
+
+            return '<select class="form-select form-select-sm" ' + hook + '>'
+                + options + '</select>';
+        };
+
         const fields = range.partial_day
             ? ''
                 + '<label class="conflict-field">'
@@ -343,13 +366,11 @@
                 + '</label>'
                 + '<label class="conflict-field">'
                 + '<span>Start</span>'
-                + '<input type="time" class="form-control form-control-sm" data-range-start-time'
-                + ' value="' + escapeHtml(range.start_time) + '">'
+                + hourSelect('data-range-start-time', range, range.start_time)
                 + '</label>'
                 + '<label class="conflict-field">'
                 + '<span>End</span>'
-                + '<input type="time" class="form-control form-control-sm" data-range-end-time'
-                + ' value="' + escapeHtml(range.end_time) + '">'
+                + hourSelect('data-range-end-time', range, range.end_time)
                 + '</label>'
             : ''
                 + '<label class="conflict-field">'

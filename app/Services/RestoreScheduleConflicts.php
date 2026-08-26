@@ -263,6 +263,17 @@ class RestoreScheduleConflicts
             'project_date' => $schedule->startsOn()->toDateString(),
             'start_time' => CarbonImmutable::parse($schedule->start_datetime)->format('H:i'),
             'end_time' => CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime)->format('H:i'),
+            // The hours this range may be moved to: the configured partial-day
+            // window, widened to keep whatever this booking already holds. Sent
+            // rather than built in the browser so the dialog offers exactly
+            // what the save will accept, and so no second copy of the window
+            // lives in a script - see Schedule::partialDayHourBounds().
+            'hour_options' => $schedule->isPartialDay()
+                ? Schedule::workingHourOptionsIncluding(
+                    CarbonImmutable::parse($schedule->start_datetime)->format('H:i'),
+                    CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime)->format('H:i')
+                )
+                : [],
             'state' => $state,
             'state_label' => match ($state) {
                 self::STATE_PAST => 'Past',

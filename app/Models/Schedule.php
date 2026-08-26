@@ -673,6 +673,36 @@ class Schedule extends Model
     }
 
     /**
+     * Every hour of the clock, for a setting that names one.
+     *
+     * Distinct from workingHourOptions(), which offers the hours a booking may
+     * be made in - the configured window. This is what that window is chosen
+     * FROM, so it spans the whole day.
+     *
+     * Whole hours and nothing else. Not a courtesy: the pickers these settings
+     * feed offer whole hours, availability is counted in whole-hour slots, and
+     * a partial-day booking is validated on the hour - so half past eight is
+     * not a finer setting, it is a value nothing downstream could honour.
+     * Offering the hours rather than accepting a time is what makes that
+     * impossible to type rather than merely refused afterwards.
+     *
+     * @return array<int, array{value: string, label: string}>
+     */
+    public static function hourOptions(): array
+    {
+        $options = [];
+
+        for ($hour = 0; $hour <= 23; $hour++) {
+            $options[] = [
+                'value' => sprintf('%02d:00', $hour),
+                'label' => self::hourLabel($hour),
+            ];
+        }
+
+        return $options;
+    }
+
+    /**
      * The bookable hours, widened to keep any hour a saved booking already
      * holds.
      *

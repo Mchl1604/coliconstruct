@@ -163,7 +163,17 @@ class PartialDayHoursSettingTest extends TestCase
 
         $this->assertSame('07:00', $fields[Schedule::SETTING_PARTIAL_DAY_START]['value']);
         $this->assertSame('19:00', $fields[Schedule::SETTING_PARTIAL_DAY_END]['value']);
-        $this->assertSame('time', $fields[Schedule::SETTING_PARTIAL_DAY_START]['type']);
+        // Chosen from a list of whole hours, so there is no minute to edit.
+        $this->assertSame('hour', $fields[Schedule::SETTING_PARTIAL_DAY_START]['type']);
+        $this->assertCount(24, $fields[Schedule::SETTING_PARTIAL_DAY_START]['options']);
+        $this->assertSame('00:00', $fields[Schedule::SETTING_PARTIAL_DAY_START]['options'][0]['value']);
+        $this->assertSame('8:00 AM', $fields[Schedule::SETTING_PARTIAL_DAY_START]['options'][8]['label']);
+        $this->assertSame(
+            [],
+            collect($fields[Schedule::SETTING_PARTIAL_DAY_END]['options'])
+                ->reject(fn (array $option): bool => str_ends_with($option['value'], ':00'))
+                ->all()
+        );
         $this->assertFalse($fields[Schedule::SETTING_PARTIAL_DAY_END]['is_default']);
     }
 

@@ -114,12 +114,33 @@ class SystemContent extends Model
     public const TYPE_NUMBER = 'number';
 
     /**
-     * An hour of the working day, stored and edited as 'HH:MM' on a 24-hour
-     * clock. The editor draws a time input stepped to the hour, because every
-     * setting of this kind bounds something the rest of the system counts in
-     * whole hours.
+     * An hour of the clock, stored as 'HH:MM' on a 24-hour clock with the
+     * minutes always at nought.
+     *
+     * The editor draws the hours as a list to choose from rather than a time
+     * box to type into, so there is no minute to edit. Everything a setting of
+     * this kind bounds is counted by the hour - the pickers it feeds, the
+     * availability slots, the validation behind them - so a value like 08:30
+     * is not a finer setting but one nothing downstream could honour.
      */
-    public const TYPE_TIME = 'time';
+    public const TYPE_HOUR = 'hour';
+
+    /**
+     * The choices a field of a given type offers, when it offers a fixed list.
+     *
+     * Kept here rather than in the controller so the catalogue stays the one
+     * description of a field: what it is, what it may hold, and what it may be
+     * set to.
+     *
+     * @param  array<string, mixed>  $definition
+     * @return array<int, array{value: string, label: string}>
+     */
+    public static function optionsFor(array $definition): array
+    {
+        return ($definition['type'] ?? null) === self::TYPE_HOUR
+            ? Schedule::hourOptions()
+            : [];
+    }
 
     /**
      * The types that hold an uploaded file rather than typed-in words.
@@ -546,9 +567,9 @@ class SystemContent extends Model
         // has no hours to bound, so nothing here reaches one.
         'project_settings.partial_day_start_hour' => [
             'label' => 'Partial Day Start Hour',
-            'type' => self::TYPE_TIME,
+            'type' => self::TYPE_HOUR,
             'section' => self::SECTION_PROJECT_SETTINGS,
-            'help' => 'The earliest a partial-day schedule may start. On the hour; used for the time pickers, the availability checks and the validation behind them.',
+            'help' => 'The earliest a partial-day schedule may start. Whole hours only - it feeds the time pickers, the availability checks and the validation behind them.',
             // Read from the model so the shipped default and the runtime
             // fallback cannot drift apart.
             'default' => Schedule::DEFAULT_PARTIAL_DAY_START,
@@ -562,9 +583,9 @@ class SystemContent extends Model
         ],
         'project_settings.partial_day_end_hour' => [
             'label' => 'Partial Day End Hour',
-            'type' => self::TYPE_TIME,
+            'type' => self::TYPE_HOUR,
             'section' => self::SECTION_PROJECT_SETTINGS,
-            'help' => 'The latest a partial-day schedule may end. On the hour, and later than the start hour.',
+            'help' => 'The latest a partial-day schedule may end. Whole hours only, and later than the start hour.',
             'default' => Schedule::DEFAULT_PARTIAL_DAY_END,
             'rules' => ['required', 'string', 'regex:/^([01]\d|2[0-3]):00$/'],
             'messages' => [

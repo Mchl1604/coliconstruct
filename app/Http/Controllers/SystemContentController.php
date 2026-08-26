@@ -332,11 +332,9 @@ class SystemContentController extends Controller
                     // is. Null for everything that stands on its own.
                     'before' => $definition['before'] ?? null,
                     'before_message' => $definition['messages']['before'] ?? null,
-                    // What the field's own shape rule says, so the editor can
-                    // refuse a value in the same words the server would - a
-                    // time field is on the hour, and being told so before the
-                    // save is better than being told after it.
-                    'format_message' => $definition['messages']['regex'] ?? null,
+                    // The choices a field offers, for the ones that offer a
+                    // fixed list. Empty for everything typed into freely.
+                    'options' => SystemContent::optionsFor($definition),
                 ];
             })
             ->values()

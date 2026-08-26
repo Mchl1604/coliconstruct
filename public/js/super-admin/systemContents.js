@@ -104,19 +104,32 @@ document.addEventListener('DOMContentLoaded', function() {
             // whole hours and availability is measured in whole-hour slots.
             // The field it must come before, when it has one, travels with it
             // so the pair can be checked before anything is sent.
-            if (field.type === 'time') {
+            // The hours, chosen from rather than typed into. A time box would
+            // put a minute field beside the hour, and every one of these
+            // settings bounds something the rest of the system counts in whole
+            // hours - so the minute is not a finer setting, it is a value
+            // nothing downstream could honour. Offering the hours is what
+            // makes it impossible to enter rather than merely refused
+            // afterwards. The field it must come before, when it has one,
+            // travels with it so the pair can be checked before anything is
+            // sent.
+            if (field.type === 'hour') {
                 const before = field.before
                     ? ' data-content-before="' + escapeHtml(field.before) + '"' +
                     ' data-content-before-message="' + escapeHtml(field.before_message || '') + '"'
                     : '';
 
+                const choices = (field.options || []).map(function(option) {
+                    return '<option value="' + escapeHtml(option.value) + '"' +
+                        (option.value === field.value ? ' selected' : '') + '>' +
+                        escapeHtml(option.label) + '</option>';
+                }).join('');
+
                 return '<div class="col-md-4"><label class="form-label fw-semibold" for="' + id + '">' +
                     escapeHtml(field.label) + badge + '</label>' +
-                    '<input type="time" step="3600" class="form-control" id="' + id + '" value="' +
-                    escapeHtml(field.value) + '" data-content-input="' + escapeHtml(field.key) + '"' +
-                    ' data-content-time data-content-format-message="' +
-                    escapeHtml(field.format_message || '') + '"' +
-                    before + '>' + help + '</div>';
+                    '<select class="form-select" id="' + id + '"' +
+                    ' data-content-input="' + escapeHtml(field.key) + '"' +
+                    before + '>' + choices + '</select>' + help + '</div>';
             }
 
             if (field.type === 'textarea' || field.type === 'html') {
@@ -178,63 +191,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
                 return input.dataset.contentBeforeMessage ||
                     'These times have to come in order.';
-            }
-
-            return null;
-        }
-
-        /**
-         * Hold a time field to the hour it names.
-         *
-         * These settings bound something the rest of the system counts in
-         * whole hours - the pickers they feed offer whole hours and
-         * availability is measured in whole-hour slots - so half past eight is
-         * a mistake rather than a finer setting. step="3600" makes the spinner
-         * and the browser's own picker move by the hour; this is for the case
-         * they cannot cover, which is somebody typing the minutes.
-         *
-         * Corrected on blur rather than on every keystroke, so the field is
-         * not fighting the person while they are still in it, and the
-         * correction is visible in the box before anything is saved.
-         */
-        function bindHourOnlyTimes() {
-            fieldsWrap.querySelectorAll('[data-content-time]').forEach(function(input) {
-                input.addEventListener('blur', function() {
-                    const parts = /^(\d{1,2}):(\d{2})$/.exec(input.value.trim());
-
-                    if (!parts || parts[2] === '00') {
-                        return;
-                    }
-
-                    input.value = parts[1].padStart(2, '0') + ':00';
-                });
-            });
-        }
-
-        /**
-         * The first time field holding something other than a whole hour, as
-         * the sentence to show about it - or null when they all do.
-         *
-         * The wording is the field's own, sent with it from the catalogue, so
-         * this says what the server would say about the same value.
-         */
-        function timeOffTheHour(values) {
-            const inputs = Array.from(fieldsWrap.querySelectorAll('[data-content-time]'));
-
-            for (const input of inputs) {
-                const value = String(values[input.dataset.contentInput] || '').trim();
-
-                // Blank is the `required` rule's to complain about, and it is
-                // the server's rule; two sentences about one empty box is one
-                // too many.
-                if (value === '') {
-                    continue;
-                }
-
-                if (!/^\d{1,2}:00$/.test(value)) {
-                    return input.dataset.contentFormatMessage ||
-                        'Choose a time on the hour.';
-                }
             }
 
             return null;
@@ -324,7 +280,6 @@ document.addEventListener('DOMContentLoaded', function() {
         function render(payload) {
             fieldsWrap.innerHTML = (payload.fields || []).map(fieldMarkup).join('');
             bindImageActions();
-            bindHourOnlyTimes();
             showExtrasFor(payload.section || currentSection);
 
             const title = pane.querySelector('[data-content-section-title]');
@@ -409,14 +364,6 @@ document.addEventListener('DOMContentLoaded', function() {
             const sectionForFields = firstKey
                 ? firstKey.slice(0, firstKey.lastIndexOf('.'))
                 : currentSection;
-
-            const offTheHour = timeOffTheHour(values);
-
-            if (offTheHour) {
-                showError(offTheHour);
-
-                return;
-            }
 
             const ordering = timesOutOfOrder(values);
 
