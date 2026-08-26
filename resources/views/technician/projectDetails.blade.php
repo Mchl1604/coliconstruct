@@ -92,7 +92,7 @@
                         <h5 class="alert-heading mb-1">This project is overdue</h5>
                         <p class="mb-0">
                             Last scheduled day was
-                            <strong>{{ $project->scheduleEndsOn()->format('F j, Y') }}</strong>.
+                            <strong>{{ $project->scheduleEndsOn()->format(\App\Support\BusinessTime::DATE) }}</strong>.
                             Close it off, or ask an administrator to extend the schedule.
                         </p>
                     </div>
@@ -176,7 +176,7 @@
 
                         <div class="mb-2">
                             <span class="fw-semibold me-2">Completion Date:</span>
-                            <span>{{ \App\Support\BusinessTime::format($project->completed_at, 'M d, Y', 'N/A') }}</span>
+                            <span>{{ \App\Support\BusinessTime::format($project->completed_at, \App\Support\BusinessTime::DATE, 'N/A') }}</span>
                         </div>
 
                         <div class="mb-2">
@@ -442,7 +442,7 @@
 
                                     <div class="text-end">
                                         <small class="text-muted d-block">
-                                            {{ $report->report_date?->format('M d, Y') ?? '—' }}
+                                            {{ $report->report_date?->format(\App\Support\BusinessTime::DATE) ?? '—' }}
                                         </small>
 
                                         {{-- A lead archives the reports they filed
@@ -451,7 +451,7 @@
                                              enforces, so what is missing here is
                                              refused there. --}}
                                         @can('archive', $report)
-                                            <button type="button" class="btn btn-sm btn-outline-secondary mt-2"
+                                            <button type="button" class="btn btn-sm btn-dark mt-2"
                                                 data-bs-toggle="modal"
                                                 data-bs-target="#archiveReportModal{{ $report->id }}">
                                                 <i class="bi bi-archive me-1" aria-hidden="true"></i>
@@ -513,7 +513,7 @@
                                                 <form method="POST"
                                                     action="{{ route('technician-reports.archive', $report->id) }}">
                                                     @csrf
-                                                    <button type="submit" class="btn btn-warning">
+                                                    <button type="submit" class="btn btn-dark">
                                                         <i class="bi bi-archive me-1" aria-hidden="true"></i>
                                                         Archive Report
                                                     </button>
@@ -589,11 +589,11 @@
                                             </td>
 
                                             <td>
-                                                {{ $task->start_date ? \Carbon\Carbon::parse($task->start_date)->format('M d, Y') : 'Unassigned' }}
+                                                {{ $task->start_date ? \Carbon\Carbon::parse($task->start_date)->format(\App\Support\BusinessTime::DATE) : 'Unassigned' }}
                                             </td>
 
                                             <td>
-                                                {{ $task->due_date ? \Carbon\Carbon::parse($task->due_date)->format('M d, Y') : 'Unassigned' }}
+                                                {{ $task->due_date ? \Carbon\Carbon::parse($task->due_date)->format(\App\Support\BusinessTime::DATE) : 'Unassigned' }}
                                             </td>
 
                                             <td>

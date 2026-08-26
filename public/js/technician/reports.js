@@ -459,7 +459,7 @@ document.addEventListener("DOMContentLoaded", function () {
             // Drawn from the server's own answer, so a row added without a
             // reload offers exactly what a reloaded one would.
             (report.can_archive
-                ? '<button type="button" class="btn btn-sm btn-warning py-1 px-2" data-archive-report="' +
+                ? '<button type="button" class="btn btn-sm btn-dark py-1 px-2" data-archive-report="' +
                   portal.escapeHtml(report.id) +
                   '" data-report-label="' +
                   portal.escapeHtml(report.display_code + " - " + report.title) +

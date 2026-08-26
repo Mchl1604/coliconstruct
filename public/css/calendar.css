@@ -168,3 +168,40 @@
 .calendar-standard .fc-event.fc-event-readonly {
     opacity: 0.88;
 }
+
+/*
+ * A booking that outlived its assignment: days this technician was on the job
+ * for, on a project they have since been taken off.
+ *
+ * It has to stay legible - it is a record of where somebody was, and their own
+ * calendar is the only place that record shows - while reading as clearly not
+ * live work they are still expected at. Solid black does both: it is the one
+ * value no project status uses, so it cannot be mistaken for a shade of live
+ * work, and white on it is the most readable pairing on the calendar. Fading
+ * was tried first and is the wrong instrument here - a wash takes an outlined
+ * bar close to invisible, which is the same failure `.fc-event-readonly` above
+ * is written around.
+ *
+ * The inline per-event colours are overridden here on purpose, and this is the
+ * one case in this file where that is right. Every other bar is coloured by
+ * what it IS - see Project::calendarEventColors() - and this one is coloured
+ * by what it no longer is, which outranks its project's shade.
+ */
+.calendar-standard .fc-event.fc-event-former {
+    background-color: #000000 !important;
+    border-color: #000000 !important;
+    border-style: solid;
+    color: #ffffff !important;
+}
+
+/* FullCalendar writes the per-event text colour inline on `.fc-event-main`,
+   and calendar.css already sets these children to `inherit` - but the inline
+   value wins over inheritance, so the black bar would keep its project's ink
+   and be unreadable on itself. Named explicitly for that reason. */
+.calendar-standard .fc-event.fc-event-former .fc-event-main,
+.calendar-standard .fc-event.fc-event-former .fc-event-main-frame,
+.calendar-standard .fc-event.fc-event-former .fc-event-title-container,
+.calendar-standard .fc-event.fc-event-former .fc-event-title,
+.calendar-standard .fc-event.fc-event-former .fc-event-time {
+    color: #ffffff !important;
+}

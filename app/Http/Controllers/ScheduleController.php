@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\ActivityLog;
 use App\Models\Project;
+use App\Models\ProjectTechnician;
 use App\Models\Schedule;
 use App\Models\Task;
 use App\Models\Technician;
@@ -16,6 +17,7 @@ use App\Services\ScheduleDateRemoval;
 use App\Services\ScheduleModeRules;
 use App\Services\TaskScheduleRules;
 use App\Services\TechnicianAvailabilityService;
+use App\Support\BusinessTime;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -61,9 +63,11 @@ class ScheduleController extends Controller
                 'projectTechnicians.technician.account',
             ])
             ->where('is_archived', false)
-            // Cancelled work is off this page entirely - calendar, table and
-            // the panel a clicked date opens. The schedules themselves are
-            // untouched and still read on the project's own page.
+            // The working set: everything this page can still act on. Cancelled
+            // work is not in it, because the table's Edit Schedule and the
+            // needs-scheduling panel are both offers to change dates and a
+            // called-off job has none to change. It is fetched separately
+            // below for the calendar, which only reports what happened.
             ->where('status', '!=', 'cancelled')
             ->orderBy('project_id', 'desc')
             ->get();
@@ -96,7 +100,39 @@ class ScheduleController extends Controller
             ->sortBy(fn (Project $project): string => ($project->isOverdue() ? '0' : '1').mb_strtolower($project->name))
             ->values();
 
-        $calendarEvents = $this->buildCalendarEvents($scheduledProjects);
+        // Cancelled work reaches the calendar and nothing else on this page.
+        // The table lists what can still be scheduled and the needs-scheduling
+        // panel lists what is waiting to be; a job that was called off is
+        // neither, and putting it in either would offer an action that cannot
+        // be taken. The calendar is a different kind of thing - a record of
+        // what happened on which day - and weeks that were worked before a
+        // cancellation read as empty without it.
+        //
+        // Only the days actually worked are drawn. cancel() keeps the whole
+        // schedule for the record rather than trimming it, so the bars are
+        // stopped at the cancellation date by buildCalendarEvents() - see
+        // Project::calendarCutoff().
+        $cancelledProjects = Project::query()
+            ->with([
+                'clients',
+                'schedules',
+                'projectTechnicians.technician.account',
+            ])
+            ->where('is_archived', false)
+            ->where('status', 'cancelled')
+            // Nothing to trim a schedule against, so nothing that can be drawn
+            // honestly. Left off, exactly as dateDetails() leaves it off.
+            ->whereNotNull('cancelled_at')
+            ->has('schedules')
+            ->orderBy('project_id', 'desc')
+            ->get();
+
+        // Everything the calendar draws a bar for. Clicking a bar opens that
+        // project's schedule panel, so the view has to render one for each of
+        // these or a cancelled bar would be a click that does nothing.
+        $calendarProjects = $scheduledProjects->concat($cancelledProjects);
+
+        $calendarEvents = $this->buildCalendarEvents($calendarProjects);
         $technicianSchedules = $this->buildTechnicianSchedules();
         $technicianNames = $this->buildTechnicianNames();
         // project_id => reference number, so a clash can say WHICH job is
@@ -110,8 +146,11 @@ class ScheduleController extends Controller
             ])
             ->all();
         // Stated by the model so the dropdowns and the server agree on which
-        // hours exist without the list being written out twice.
+        // hours exist without the list being written out twice. The bounds go
+        // with them for the page's own availability narrowing, which works in
+        // hours rather than in options - one setting, read once.
         $workingHours = Schedule::workingHourOptions();
+        $partialDayHours = Schedule::partialDayHourBounds();
 
         // Whether this reader may correct a booking that has already ended.
         // Decided once here rather than re-derived per row in the view, and
@@ -122,17 +161,31 @@ class ScheduleController extends Controller
             'projects',
             'scheduledProjects',
             'needsSchedulingProjects',
+            'calendarProjects',
             'calendarEvents',
             'technicianSchedules',
             'technicianNames',
             'projectLabels',
             'workingHours',
+            'partialDayHours',
             'mayOverrideLock'
         ));
     }
 
     /**
      * Projects whose schedule covers the clicked calendar date.
+     *
+     * Cancelled work is listed here and nowhere else on this page. The
+     * calendar draws none of it - see Project::showsOnCalendar() - because a
+     * bar spanning a fortnight would go on advertising dates the job was
+     * called off before reaching. A single day is a different question: it
+     * either was worked or it was not, and the days a cancelled project worked
+     * before it stopped are part of the record of that day.
+     *
+     * Archived work stays out. An archive is reversible - restoring puts the
+     * dates back, which is what RestoreScheduleConflicts exists to police - so
+     * its ranges are dormant rather than finished, and a panel that reads as
+     * history is the wrong place to show them.
      */
     public function dateDetails(string $date)
     {
@@ -144,16 +197,49 @@ class ScheduleController extends Controller
 
         $dayString = $day->toDateString();
 
+        // Cancelling does not shorten a schedule the way completing or holding
+        // one does. ProjectCompletion::releaseFutureSchedules() and
+        // ScheduleHoldCutoff both cut the rows off at a line; cancel()
+        // deliberately keeps every range intact for the record and leaves the
+        // technicians free by another route. So a cancelled project still
+        // holds the dates it would have worked, and the line has to be drawn
+        // here or the panel would show a crew on site for a job that had
+        // already stopped.
+        //
+        // Two bounds, and the nearer one wins. The cancellation date, because
+        // nothing was worked after the job was called off. And today, because
+        // a day that has not arrived cannot have been worked either - and the
+        // cancellation date is typed in by hand rather than derived, so
+        // nothing stops it being tomorrow.
+        $listsCancelled = $dayString <= Schedule::businessToday()->toDateString();
+
         $projects = Project::query()
             ->with([
                 'clients',
                 'schedules',
-                'projectTechnicians.technician.account',
+                // The whole membership history, not the team as it stands:
+                // this panel is asked about one day, and the answer is who was
+                // on the project THAT day. See the technicians key below.
+                'teamHistory.technician.account',
             ])
             ->where('is_archived', false)
-            // Kept off this panel for the same reason it is kept off the
-            // calendar and the table: cancelled work has left this page.
-            ->where('status', '!=', 'cancelled')
+            ->where(function ($query) use ($dayString, $listsCancelled): void {
+                $query->where('status', '!=', 'cancelled');
+
+                if (! $listsCancelled) {
+                    return;
+                }
+
+                $query->orWhere(function ($cancelled) use ($dayString): void {
+                    $cancelled->where('status', 'cancelled')
+                        // A project cancelled before the date was recorded
+                        // says nothing about when its work stopped. Left out
+                        // rather than guessed at: showing it would be a claim
+                        // about the day that nothing in the row supports.
+                        ->whereNotNull('cancelled_at')
+                        ->whereDate('cancelled_at', '>=', $dayString);
+                });
+            })
             ->whereHas('schedules', function ($query) use ($dayString): void {
                 $query->whereDate('start_datetime', '<=', $dayString)
                     ->whereDate('end_datetime', '>=', $dayString);
@@ -163,7 +249,7 @@ class ScheduleController extends Controller
 
         return response()->json([
             'date' => $dayString,
-            'label' => $day->format('F j, Y'),
+            'label' => $day->format(BusinessTime::DATE),
             'projects' => $projects->map(function (Project $project) use ($dayString): array {
                 // Only the range(s) that actually cover the clicked day.
                 $covering = $project->schedules->filter(function (Schedule $schedule) use ($dayString): bool {
@@ -182,6 +268,15 @@ class ScheduleController extends Controller
                     'status' => $project->status,
                     'status_label' => $this->statusLabel($project),
                     'on_hold' => (bool) $project->on_hold,
+                    // A cancelled project reaches this panel only for days it
+                    // worked, so the badge alone would read as though the job
+                    // was called off on the day being looked at. The date says
+                    // otherwise, and it is the one thing that explains why a
+                    // cancelled job is on a calendar day at all.
+                    'is_cancelled' => $project->isCancelled(),
+                    'cancelled_on' => $project->cancelled_at
+                        ? CarbonImmutable::parse($project->cancelled_at)->format(BusinessTime::DATE)
+                        : null,
                     // Completed work is a historical record and paused work is
                     // waiting to be resumed: both are listed here, and neither
                     // one's dates can be changed - exactly as on the calendar
@@ -189,9 +284,25 @@ class ScheduleController extends Controller
                     // the endpoint behind Remove This Date agree.
                     'read_only' => ! $project->scheduleIsEditable(),
                     'url' => route('super-admin.projects.show', $project->project_id),
-                    'technicians' => $project->projectTechnicians
-                        ->map(fn ($projectTechnician) => $projectTechnician->technician?->name)
-                        ->filter()
+                    // The crew as this day had it, not as the project has it
+                    // now. Somebody taken off last week still belongs against
+                    // the days they were here for, and somebody who joined
+                    // yesterday does not belong against last month - the two
+                    // halves of the same question, and the second is the one
+                    // nobody notices until an audit asks.
+                    //
+                    // A closed membership is listed with the date it closed
+                    // rather than dropped, because "who was on site" and "who
+                    // is on the team" are different questions and this panel
+                    // is only ever asking the first.
+                    'technicians' => $project->crewOn($dayString)
+                        ->filter(fn (ProjectTechnician $assignment): bool => $assignment->technician !== null)
+                        ->map(fn (ProjectTechnician $assignment): array => [
+                            'name' => $assignment->technician->name,
+                            'removed_on' => $assignment->isRemoved()
+                                ? CarbonImmutable::parse($assignment->removed_at)->format(BusinessTime::DATE)
+                                : null,
+                        ])
                         ->values()
                         ->all(),
                     // One entry per booking covering the day, each removable on
@@ -505,6 +616,72 @@ class ScheduleController extends Controller
      *
      * @param  Collection<int, Schedule>  $schedules
      */
+    /**
+     * A project's ranges as individual labels, for diffing.
+     *
+     * describeSchedules() joins the same labels into one string for prose.
+     * This keeps them apart, because "what changed" is a question about the
+     * set rather than about the sentence.
+     *
+     * @param  Collection<int, Schedule>  $schedules
+     * @return array<int, string>
+     */
+    private function scheduleLabels(Collection $schedules): array
+    {
+        return $schedules
+            ->sortBy('start_datetime')
+            ->map(fn (Schedule $schedule): string => $schedule->describe())
+            ->values()
+            ->all();
+    }
+
+    /**
+     * What actually changed between two sets of ranges, as a short phrase.
+     *
+     * The log used to print both sets in full - "changed the date ranges from
+     * A; B; C; D to A; B; C; E" - which put the whole schedule on the page
+     * twice and left the reader to find the one range that moved. A project
+     * holding four ranges produced a line nobody could read, for a change that
+     * touched one of them.
+     *
+     * The common case is one range out and one in, which is a range being
+     * edited rather than replaced, and it is worth saying that way: "changed
+     * Aug 1 - Aug 5 to Aug 1 - Aug 8". Anything else is listed as what was
+     * added and what was dropped. Ranges that did not move are never
+     * mentioned.
+     *
+     * Returns an empty string when the two sets match, so a caller can leave
+     * the clause out rather than print "changed nothing".
+     *
+     * @param  array<int, string>  $before
+     * @param  array<int, string>  $after
+     */
+    private function describeScheduleChange(array $before, array $after): string
+    {
+        $added = array_values(array_diff($after, $before));
+        $removed = array_values(array_diff($before, $after));
+
+        if ($added === [] && $removed === []) {
+            return '';
+        }
+
+        if (count($added) === 1 && count($removed) === 1) {
+            return sprintf('changed %s to %s', $removed[0], $added[0]);
+        }
+
+        $parts = [];
+
+        if ($added !== []) {
+            $parts[] = 'added '.implode(', ', $added);
+        }
+
+        if ($removed !== []) {
+            $parts[] = 'removed '.implode(', ', $removed);
+        }
+
+        return implode('; ', $parts);
+    }
+
     private function describeSchedules(Collection $schedules): string
     {
         if ($schedules->isEmpty()) {
@@ -639,8 +816,9 @@ class ScheduleController extends Controller
         $mayOverrideLock = (bool) ($validated['override_past_lock'] ?? false)
             && (bool) $request->user()?->isSuperAdmin();
 
-        // Read before anything moves, so the log can say what it changed from.
+        // Read before anything moves, so the log can say what changed.
         $rangesBefore = $this->describeSchedules($project->schedules);
+        $labelsBefore = $this->scheduleLabels($project->schedules);
         $overrode = false;
 
         try {
@@ -720,7 +898,9 @@ class ScheduleController extends Controller
             });
 
             $project->unsetRelation('schedules');
-            $rangesAfter = $this->describeSchedules($project->schedules()->orderBy('start_datetime')->get());
+            $stored = $project->schedules()->orderBy('start_datetime')->get();
+            $rangesAfter = $this->describeSchedules($stored);
+            $change = $this->describeScheduleChange($labelsBefore, $this->scheduleLabels($stored));
 
             $this->activityLogger->record(
                 ActivityLog::PROJECT_RESCHEDULED,
@@ -731,11 +911,10 @@ class ScheduleController extends Controller
                     // already on the record. The actor is recorded by the
                     // logger itself.
                     $overrode
-                        ? "Overrode the past-schedule lock on '%s' and changed its date ranges from %s to %s."
-                        : "Changed the date ranges on '%s' from %s to %s.",
+                        ? "Overrode the past-schedule lock on '%s': %s."
+                        : "On '%s': %s.",
                     $project->reference_no ?? $project->name,
-                    $rangesBefore,
-                    $rangesAfter
+                    $change !== '' ? $change : 'saved the schedule with no change to its dates'
                 ),
                 $project
             );
@@ -795,9 +974,9 @@ class ScheduleController extends Controller
         $removal = app(ScheduleDateRemoval::class);
         $clearedTasks = collect();
 
-        // Read before anything moves, so the log can say what it changed from.
-        $rangesBefore = $this->describeSchedules($project->schedules);
-        $label = $day->format('F j, Y');
+        // Read before anything moves, so the log can say what changed.
+        $labelsBefore = $this->scheduleLabels($project->schedules);
+        $label = $day->format(BusinessTime::DATE);
 
         try {
             DB::transaction(function () use ($project, $schedule, $day, $removal, $mayOverrideLock, &$clearedTasks): void {
@@ -822,7 +1001,9 @@ class ScheduleController extends Controller
         }
 
         $project->unsetRelation('schedules');
-        $rangesAfter = $this->describeSchedules($project->schedules()->orderBy('start_datetime')->get());
+        $stored = $project->schedules()->orderBy('start_datetime')->get();
+        $rangesAfter = $this->describeSchedules($stored);
+        $change = $this->describeScheduleChange($labelsBefore, $this->scheduleLabels($stored));
 
         $this->activityLogger->record(
             ActivityLog::PROJECT_RESCHEDULED,
@@ -831,13 +1012,18 @@ class ScheduleController extends Controller
                 // Named as an override when the day had already passed, so the
                 // trail separates giving up a booked day from correcting the
                 // record of one that was worked.
+                //
+                // The day removed is named first because that is the action.
+                // What follows is what the action did to the ranges, and only
+                // the ranges it touched are named - the log used to reprint
+                // the project's whole schedule twice over to say that one of
+                // them got a day shorter.
                 $day->lt(Schedule::businessToday())
-                    ? "Overrode the past-schedule lock on '%2\$s' and removed %1\$s from it. Its dates changed from %3\$s to %4\$s."
-                    : "Removed %1\$s from the schedule on '%2\$s'. Its dates changed from %3\$s to %4\$s.",
+                    ? "Overrode the past-schedule lock on '%2\$s' and removed %1\$s from it%3\$s."
+                    : "Removed %1\$s from the schedule on '%2\$s'%3\$s.",
                 $label,
                 $project->reference_no ?? $project->name,
-                $rangesBefore,
-                $rangesAfter
+                $change !== '' ? ' - '.$change : ''
             ),
             $project
         );
@@ -905,7 +1091,7 @@ class ScheduleController extends Controller
         if (! $mayOverrideLock) {
             throw new RuntimeException(sprintf(
                 '%s has already passed and cannot be removed. Super Admin access is required to change it.',
-                $day->format('F j, Y')
+                $day->format(BusinessTime::DATE)
             ));
         }
     }
@@ -1172,13 +1358,23 @@ class ScheduleController extends Controller
                 continue;
             }
 
+            // Null for everything except a cancelled project, whose bars stop
+            // on the day it was called off - see Project::calendarCutoff().
+            $cutoff = $project->calendarCutoff();
+
             foreach ($project->schedules as $schedule) {
+                // A range that begins after the cancellation is days the job
+                // never reached. There is no shortened version of it to draw.
+                if (! $schedule->startsOnOrBefore($cutoff)) {
+                    continue;
+                }
+
                 $events[] = [
                     'id' => $schedule->schedule_id,
                     'title' => $project->reference_no,
                     // A partial day comes back as a timed event, so the bar
                     // carries its hours instead of reading as a whole day.
-                    ...$schedule->toCalendarTimes(),
+                    ...$schedule->toCalendarTimesThrough($cutoff),
                     // Filled for a whole-day booking, outlined for a partial
                     // one - see Project::calendarEventColors().
                     ...$project->calendarEventColors($schedule->isDateBased()),

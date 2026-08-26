@@ -3,6 +3,7 @@
 namespace App\Mail;
 
 use App\Models\User;
+use App\Support\BusinessTime;
 
 /**
  * Tells the old address that the account has moved to a new one.
@@ -38,7 +39,7 @@ class EmailChangedMail extends SystemMail
             'account' => $this->account,
             'previousEmail' => $this->previousEmail,
             'newEmail' => $this->newEmail,
-            'changedAt' => now()->format('M j, Y g:i A'),
+            'changedAt' => now()->format(BusinessTime::DATE_TIME),
         ];
     }
 }

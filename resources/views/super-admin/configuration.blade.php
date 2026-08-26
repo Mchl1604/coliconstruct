@@ -71,7 +71,7 @@
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
                 <div>
                     <h5 class="fw-bold mb-0">User Management</h5>
-                    <span class="text-secondary small">Every employee and client account in the system.</span>
+                    <span class="text-secondary small">Every employee and Registered User account in the system.</span>
                 </div>
 
                 <div class="d-flex flex-wrap gap-2">
@@ -155,23 +155,28 @@
                 </div>
             </div>
 
-            {{-- ---------------- Clients ----------------
-                 `id` so the dashboard's Clients quick action can open this tab
-                 at this table rather than needing a page of its own. --}}
+            {{-- ---------------- Registered Users ----------------
+                 A Registered User is an account on the public website - opened
+                 by the person themselves or by an administrator here. Not to be
+                 confused with a project's client, which is contact information
+                 held on the project and keeps that name throughout.
+
+                 `id` stays `clients` so the dashboard's quick action, and any
+                 link already saved, still open this tab at this table. --}}
             <div class="card shadow-sm border-0 rounded-2" id="clients">
                 <div class="card-body p-3">
                     <div class="config-table-header">
                         <div>
                             <h6 class="config-table-title mb-0">
-                                <i class="bi bi-building me-1" aria-hidden="true"></i>
-                                Clients
+                                <i class="bi bi-person-check me-1" aria-hidden="true"></i>
+                                Registered Users
                             </h6>
                             <span class="text-secondary small" data-client-count></span>
                         </div>
 
                         <div class="config-table-controls">
                             <input type="search" class="form-control form-control-sm config-search"
-                                placeholder="Search user ID, name or email&hellip;" aria-label="Search clients"
+                                placeholder="Search user ID, name or email&hellip;" aria-label="Search registered users"
                                 data-client-search>
 
                             <select class="form-select form-select-sm config-filter" aria-label="Filter by status"
@@ -200,14 +205,14 @@
 
                     <div class="text-secondary small py-3 px-1" data-client-loading>
                         <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-                        Loading clients&hellip;
+                        Loading registered users&hellip;
                     </div>
 
                     <div class="schedule-empty-state mt-2 d-none" data-client-empty>
-                        No client accounts match these filters.
+                        No Registered User accounts match these filters.
                     </div>
 
-                    <nav class="config-pagination d-none" aria-label="Client pages" data-client-pagination></nav>
+                    <nav class="config-pagination d-none" aria-label="Registered User pages" data-client-pagination></nav>
                 </div>
             </div>
         </div>
@@ -225,6 +230,18 @@
                         @endif
                     </span>
                 </div>
+
+                {{-- Not drawn conditionally: whoever reaches this tab may
+                     export it, and the endpoint sits behind the same role
+                     check the tab does. What differs between an Admin and a
+                     Super Admin is which rows come out, and that is decided
+                     server-side by the same scope this table is drawn
+                     through - see ActivityLog::scopeVisibleTo(). --}}
+                <button type="button" class="btn btn-success" data-bs-toggle="modal"
+                    data-bs-target="#exportLogsModal">
+                    <i class="bi bi-file-earmark-arrow-down me-1" aria-hidden="true"></i>
+                    Export Logs
+                </button>
             </div>
 
             <div class="card shadow-sm border-0 rounded-2">
@@ -335,6 +352,123 @@
                     </div>
 
                     <nav class="config-pagination d-none" aria-label="Activity log pages" data-log-pagination></nav>
+                </div>
+            </div>
+
+            {{-- ==================== EXPORT ACTIVITY LOGS ==================== --}}
+            {{-- A plain GET form, so the browser downloads the file itself and
+                 nothing has to be held in the page.
+
+                 The two visible fields are the export's own. The hidden ones
+                 carry whatever the table is currently filtered by, filled in
+                 by the script when the dialog opens, so the file matches the
+                 list it was asked for from. Every one of them is validated
+                 again server-side; none of them is trusted for being
+                 hidden. --}}
+            <div class="modal fade" id="exportLogsModal" tabindex="-1" aria-labelledby="exportLogsModalLabel"
+                aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content">
+                        <form method="GET" action="{{ route('super-admin.configuration.activity-logs.export') }}"
+                            data-log-export-form>
+
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="exportLogsModalLabel">
+                                    <i class="bi bi-file-earmark-arrow-down me-2" aria-hidden="true"></i>
+                                    Export Activity Logs
+                                </h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"
+                                    aria-label="Close"></button>
+                            </div>
+
+                            <div class="modal-body">
+                                {{-- Both ends are required. An export is a
+                                     document somebody files, and one with no
+                                     period on it is the whole trail every time
+                                     - which is neither useful to read nor
+                                     something a PDF can hold. `max` is today
+                                     because nothing was ever logged later than
+                                     that; the endpoint checks all of it
+                                     again. --}}
+                                <div class="row g-2 mb-3">
+                                    <div class="col-sm-6">
+                                        <label class="form-label fw-semibold" for="exportLogsFrom">From</label>
+                                        <input type="date" class="form-control" id="exportLogsFrom" name="from"
+                                            max="{{ \App\Support\BusinessTime::today()->format('Y-m-d') }}" required
+                                            data-log-export-from>
+                                    </div>
+
+                                    <div class="col-sm-6">
+                                        <label class="form-label fw-semibold" for="exportLogsTo">To</label>
+                                        <input type="date" class="form-control" id="exportLogsTo" name="to"
+                                            max="{{ \App\Support\BusinessTime::today()->format('Y-m-d') }}" required
+                                            data-log-export-to>
+                                    </div>
+                                </div>
+
+                                {{-- Searched rather than chosen from a list.
+                                     Every account that has ever done anything
+                                     can appear here, which is a list nobody
+                                     scrolls - so it is typed into, and the
+                                     matches drop down beneath. Empty means
+                                     every user, which is the default and
+                                     needs no choosing. --}}
+                                <div class="mb-3 config-actor-search" data-log-export-actor>
+                                    <label class="form-label fw-semibold" for="exportLogsUser">User</label>
+
+                                    <div class="input-group">
+                                        <span class="input-group-text">
+                                            <i class="bi bi-search" aria-hidden="true"></i>
+                                        </span>
+                                        <input type="text" class="form-control" id="exportLogsUser"
+                                            placeholder="All users &mdash; type a name to narrow"
+                                            autocomplete="off" role="combobox" aria-expanded="false"
+                                            aria-controls="exportLogsUserResults" data-log-export-user-search>
+                                        <button type="button" class="btn btn-outline-secondary d-none"
+                                            aria-label="Clear the chosen user" data-log-export-user-clear>
+                                            <i class="bi bi-x-lg" aria-hidden="true"></i>
+                                        </button>
+                                    </div>
+
+                                    {{-- The value that is actually submitted.
+                                         Typing alone never sets it: only
+                                         picking somebody does, so a half-typed
+                                         name cannot quietly become a filter. --}}
+                                    <input type="hidden" name="actor_id" data-log-export-user-id>
+
+                                    <ul class="config-actor-results d-none" id="exportLogsUserResults" role="listbox"
+                                        data-log-export-user-results></ul>
+
+                                    <div class="form-text" data-log-export-user-hint>
+                                        Leave this empty to include every user.
+                                    </div>
+                                </div>
+
+                                {{-- What the table is filtered by right now, so
+                                     the file matches the list it was asked for
+                                     from. Filled in by the script as the dialog
+                                     opens, and every one of them validated
+                                     again server-side - none is trusted for
+                                     being hidden. The date range is not among
+                                     them: the two fields above are the export's
+                                     own, and they are what decides its
+                                     period. --}}
+                                <input type="hidden" name="search" data-log-export-search>
+                                <input type="hidden" name="role" data-log-export-role>
+                                <input type="hidden" name="module" data-log-export-module>
+                                <input type="hidden" name="sort" data-log-export-sort>
+                                <input type="hidden" name="direction" data-log-export-direction>
+                            </div>
+
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                <button type="submit" class="btn btn-success">
+                                    <i class="bi bi-file-earmark-pdf me-1" aria-hidden="true"></i>
+                                    Download PDF
+                                </button>
+                            </div>
+                        </form>
+                    </div>
                 </div>
             </div>
         </div>
@@ -701,7 +835,9 @@
                     <div class="modal-body">
 
                         {{-- Step 1: account type. Hidden while editing, because an
-                             account never changes between employee and client. --}}
+                             account never changes between employee and Registered
+                             User. The submitted value stays `client`: it is the
+                             stored role, and only its label has changed. --}}
                         <div class="mb-4" data-account-type-step>
                             <label class="form-label fw-semibold">Account Type</label>
                             <div class="config-type-choices">
@@ -716,9 +852,9 @@
                                 <label class="config-type-choice">
                                     <input type="radio" name="account_type" value="client" class="visually-hidden"
                                         data-account-type>
-                                    <i class="bi bi-building" aria-hidden="true"></i>
-                                    <strong>Client</strong>
-                                    <span>A company or homeowner account</span>
+                                    <i class="bi bi-person-check" aria-hidden="true"></i>
+                                    <strong>Registered User</strong>
+                                    <span>A public website account for a company or homeowner</span>
                                 </label>
                             </div>
                         </div>
@@ -760,7 +896,7 @@
                                 </div>
                             </div>
 
-                            {{-- Client name --}}
+                            {{-- Registered User name --}}
                             <div class="row g-3 mb-3 d-none" data-client-only>
                                 <div class="col-12">
                                     <label class="form-label small fw-semibold mb-1" for="userFullName">
@@ -807,7 +943,7 @@
                                     <input type="email" id="userEmail" class="form-control" name="email"
                                         maxlength="255" autocomplete="off">
                                     <div class="form-text d-none" data-email-locked-note>
-                                        This is the client's sign-in address. Use Change Email on their row to move it.
+                                        This is the Registered User's sign-in address.
                                     </div>
                                 </div>
                             </div>
@@ -815,7 +951,7 @@
                             {{-- No profile picture field. An internal account
                                  starts on the default avatar and its owner sets
                                  their own picture from their Profile page;
-                                 clients never have one at all. --}}
+                                 Registered Users never have one at all. --}}
 
                             {{-- ---------------- Employment ---------------- --}}
                             <div data-employee-only>
@@ -1074,6 +1210,63 @@
             </div>
         </div>
     @endif
+
+    {{-- ============ REGISTERED USER PROJECTS MODAL ============
+         The other direction of the link the project details page edits: which
+         projects one Registered User account is connected to. Read-only, and
+         every value is written in by script with textContent rather than as
+         markup - see the inquiry dialog below, which is written the same way
+         and for the same reason. --}}
+    <div class="modal fade" id="registeredUserProjectsModal" tabindex="-1" aria-hidden="true"
+        aria-labelledby="registeredUserProjectsModalLabel" data-user-projects-modal>
+        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content">
+
+                <div class="modal-header">
+                    <div>
+                        <h5 class="modal-title" id="registeredUserProjectsModalLabel">Projects</h5>
+                        <p class="text-secondary small mb-0" data-user-projects-subtitle></p>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+
+                <div class="modal-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover table-striped align-middle mb-0">
+                            <thead class="table-info">
+                                <tr>
+                                    <th>Project ID</th>
+                                    <th>Reference No.</th>
+                                    <th>Project</th>
+                                    <th>Project Type</th>
+                                    <th>Schedule</th>
+                                    <th>Status</th>
+                                    <th class="text-center">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody data-user-projects-body></tbody>
+                        </table>
+                    </div>
+
+                    <div class="text-secondary small py-3 px-1 d-none" data-user-projects-loading>
+                        <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                        Loading projects&hellip;
+                    </div>
+
+                    <div class="schedule-empty-state mt-2 d-none" data-user-projects-empty>
+                        No Projects Assigned
+                    </div>
+
+                    <div class="alert alert-danger mt-3 mb-0 d-none" role="alert" data-user-projects-error></div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+
+            </div>
+        </div>
+    </div>
 
     {{-- ==================== INQUIRY DETAILS MODAL ==================== --}}
     {{-- Every value is written in by script with textContent, never as markup:
@@ -1416,6 +1609,11 @@
                 openInquiries: @json(request()->query('inquiries') === \App\Models\Inquiry::FILTER_PENDING
                     ? \App\Models\Inquiry::FILTER_PENDING
                     : null),
+                // Who the Export Logs dialog's user search may find. Already
+                // narrowed server-side to the accounts this administrator may
+                // read entries for, so the search itself needs no rules of its
+                // own - see ConfigurationController::index().
+                logActors: @json($logActors),
             };
         </script>
         <script src="/js/super-admin/configuration.js"></script>

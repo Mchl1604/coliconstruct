@@ -7,6 +7,7 @@ use App\Models\SystemContent;
 use App\Models\User;
 use App\Services\ActivityLogger;
 use App\Services\SystemContentService;
+use Illuminate\Contracts\Validation\Validator as ValidatorContract;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -69,6 +70,8 @@ class SystemContentController extends Controller
         // app only renders exceptions as JSON for api/* paths, so a thrown
         // ValidationException here would answer with an HTML redirect.
         $validator = Validator::make($request->all(), $rules, $messages);
+
+        $this->assertTimesAreInOrder($validator, $section, (array) $request->input('values', []));
 
         if ($validator->fails()) {
             return response()->json(['error' => $validator->errors()->first()], 422);
@@ -186,6 +189,73 @@ class SystemContentController extends Controller
     }
 
     /**
+     * Settings that have to come in order, checked as a pair.
+     *
+     * A per-field rule cannot say "earlier than that other field", so the
+     * relationship is declared in the catalogue instead - `before` on the
+     * earlier of the two - and read here. That keeps one statement of the rule
+     * for a pair rather than a hand-written comparison per pair, and it is the
+     * same entry the editor reads to check the two in the browser before
+     * anything is sent.
+     *
+     * Equal times fail as well as reversed ones: a window that starts and ends
+     * at the same hour is not a short window, it is no window at all, and
+     * nothing could be booked inside it.
+     *
+     * @param  array<string, mixed>  $values
+     */
+    private function assertTimesAreInOrder(ValidatorContract $validator, string $section, array $values): void
+    {
+        $validator->after(function (ValidatorContract $validator) use ($section, $values): void {
+            foreach (SystemContent::definitionsFor($section) as $key => $definition) {
+                $laterKey = $definition['before'] ?? null;
+
+                if ($laterKey === null) {
+                    continue;
+                }
+
+                $earlier = $this->minutesOfDay($values[$key] ?? null);
+                $later = $this->minutesOfDay($values[$laterKey] ?? null);
+
+                // Either one unreadable is already somebody else's complaint -
+                // the field's own rules said so - and repeating it here would
+                // put two sentences on one mistake.
+                if ($earlier === null || $later === null || $earlier < $later) {
+                    continue;
+                }
+
+                $validator->errors()->add(
+                    'values.'.str_replace('.', '\.', $laterKey),
+                    $definition['messages']['before']
+                        ?? sprintf('%s must be later than %s.',
+                            SystemContent::DEFINITIONS[$laterKey]['label'] ?? $laterKey,
+                            $definition['label']
+                        )
+                );
+            }
+        });
+    }
+
+    /**
+     * 'HH:MM' as minutes since midnight, or null when it is not a time.
+     */
+    private function minutesOfDay(mixed $value): ?int
+    {
+        if (! is_string($value) || ! preg_match('/^(\d{1,2}):(\d{2})$/', trim($value), $matches)) {
+            return null;
+        }
+
+        $hour = (int) $matches[1];
+        $minute = (int) $matches[2];
+
+        if ($hour > 23 || $minute > 59) {
+            return null;
+        }
+
+        return $hour * 60 + $minute;
+    }
+
+    /**
      * The rules and the wording for one section's fields.
      *
      * Website copy is all the same shape - some text, not too long - and a
@@ -257,6 +327,16 @@ class SystemContentController extends Controller
                     'value' => $isImage ? null : ($stored[$key] ?? $definition['default'] ?? ''),
                     'url' => $isImage ? $this->content->image($key) : null,
                     'is_default' => ! $isImage && ! array_key_exists($key, $stored),
+                    // The field this one has to come before, if any, so the
+                    // editor can check the pair without knowing which pair it
+                    // is. Null for everything that stands on its own.
+                    'before' => $definition['before'] ?? null,
+                    'before_message' => $definition['messages']['before'] ?? null,
+                    // What the field's own shape rule says, so the editor can
+                    // refuse a value in the same words the server would - a
+                    // time field is on the hour, and being told so before the
+                    // save is better than being told after it.
+                    'format_message' => $definition['messages']['regex'] ?? null,
                 ];
             })
             ->values()

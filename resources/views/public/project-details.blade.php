@@ -39,7 +39,7 @@
                                 <p class="mb-2 text-secondary">
                                     Work finished
                                     @if ($card['completed_on'])
-                                        <strong>{{ \App\Support\BusinessTime::format($card['completed_on'], 'F j, Y') }}</strong>
+                                        <strong>{{ \App\Support\BusinessTime::format($card['completed_on']) }}</strong>
                                     @endif
                                     . Review the report below and confirm.
                                 </p>
@@ -50,7 +50,7 @@
                                             {{ $card['confirmation_countdown'] }}
                                         </span>
                                         Completes automatically on
-                                        <strong>{{ \App\Support\BusinessTime::format($card['confirmation_deadline'], 'F j, Y') }}</strong>
+                                        <strong>{{ \App\Support\BusinessTime::format($card['confirmation_deadline']) }}</strong>
                                         if we do not hear from you.
                                     </p>
                                 @endif
@@ -179,7 +179,7 @@
                             @if ($project->completed_at)
                                 <p class="text-secondary small mb-1">
                                     Work completed
-                                    {{ \App\Support\BusinessTime::format($project->completed_at, 'M d, Y') }}
+                                    {{ \App\Support\BusinessTime::format($project->completed_at) }}
                                 </p>
                             @endif
 
@@ -187,7 +187,7 @@
                                 <p class="text-secondary small mb-1">
                                     {{ $card['completion_method_label'] }}@if ($project->client_confirmed_at)
                                         on
-                                        {{ \App\Support\BusinessTime::format($project->client_confirmed_at, 'M d, Y') }}
+                                        {{ \App\Support\BusinessTime::format($project->client_confirmed_at) }}
                                     @endif
                                 </p>
                             @endif
@@ -400,7 +400,7 @@
                                     </div>
 
                                     <small class="text-muted text-nowrap">
-                                        {{ \Carbon\CarbonImmutable::parse($report->report_date)->format('M d, Y') }}
+                                        {{ \Carbon\CarbonImmutable::parse($report->report_date)->format(\App\Support\BusinessTime::DATE) }}
                                     </small>
                                 </header>
 

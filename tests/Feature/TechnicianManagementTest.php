@@ -487,9 +487,14 @@ class TechnicianManagementTest extends TestCase
 
         $response->assertOk();
 
+        // A removal closes the membership rather than deleting it - the row
+        // carries the dates that technician worked, and deleting it took them
+        // with it. What must be gone is the ASSIGNMENT, so the assertion is
+        // that no OPEN membership survives. See ProjectTechnician.
         $this->assertDatabaseMissing('tbl_project_technicians', [
             'project_id' => $project->project_id,
             'technician_id' => $ana->technician_id,
+            'removed_at' => null,
         ]);
         // The lead is untouched.
         $this->assertDatabaseHas('tbl_project_technicians', [
@@ -624,9 +629,14 @@ class TechnicianManagementTest extends TestCase
         $response->assertOk();
 
         // Outgoing lead is gone, incoming lead is on the project.
+        // A removal closes the membership rather than deleting it - the row
+        // carries the dates that technician worked, and deleting it took them
+        // with it. What must be gone is the ASSIGNMENT, so the assertion is
+        // that no OPEN membership survives. See ProjectTechnician.
         $this->assertDatabaseMissing('tbl_project_technicians', [
             'project_id' => $project->project_id,
             'technician_id' => $lead->technician_id,
+            'removed_at' => null,
         ]);
         $this->assertDatabaseHas('tbl_project_technicians', [
             'project_id' => $project->project_id,
@@ -643,11 +653,24 @@ class TechnicianManagementTest extends TestCase
             'project_technician_id' => $newAssignment->project_technician_id,
         ]);
 
-        // Project still has exactly two technicians, one of them a lead.
+        // Project still has exactly two technicians on it, one of them a lead.
+        // Counted through active(), because the outgoing lead's row is still
+        // there - closed - and it is the team that must be two, not the table.
         $this->assertSame(
             2,
+            ProjectTechnician::where('project_id', $project->project_id)->active()->count()
+        );
+
+        // And the outgoing lead's membership survives as a record, which is
+        // the whole reason removal stopped deleting it.
+        $this->assertSame(
+            3,
             ProjectTechnician::where('project_id', $project->project_id)->count()
         );
+
+        // The schedule is still to come, so the outgoing lead's booking on it
+        // was released: those days are a promise being withdrawn, not days
+        // they worked.
         $this->assertSame(2, ScheduleTechnician::count());
     }
 
@@ -747,10 +770,12 @@ class TechnicianManagementTest extends TestCase
 
     /**
      * A project's lead is derived from the account role, so it can only have
-     * one. A lead technician is therefore only offered projects that don't
-     * already have a lead.
+     * one. A lead technician who is free for a project that already has a
+     * lead is therefore offered it as a REPLACEMENT rather than refused: the
+     * payload names the sitting lead, and nothing happens until somebody
+     * confirms it.
      */
-    public function test_a_lead_technician_is_only_offered_projects_without_a_lead(): void
+    public function test_a_free_lead_technician_is_offered_a_led_project_as_a_replacement(): void
     {
         $incoming = $this->leadTechnician('Carlo Ramirez');
         $existingLead = $this->leadTechnician('Jose Garcia');
@@ -767,14 +792,303 @@ class TechnicianManagementTest extends TestCase
 
         $response->assertOk();
 
-        $eligible = collect($response->json('projects'))->pluck('name')->all();
-        $blocked = collect($response->json('blocked'));
+        $eligible = collect($response->json('projects'));
 
-        $this->assertSame(['Needs A Lead'], $eligible);
-        $this->assertTrue(
-            $blocked->contains(fn (array $row): bool => $row['name'] === 'Already Led'
-                && str_contains((string) $row['reason'], 'Jose Garcia')
-                && str_contains((string) $row['reason'], 'Already led by'))
+        $this->assertEqualsCanonicalizing(
+            ['Already Led', 'Needs A Lead'],
+            $eligible->pluck('name')->all()
+        );
+
+        $led = $eligible->firstWhere('name', 'Already Led');
+        $this->assertSame(
+            (int) $existingLead->technician_id,
+            $led['lead_replacement']['technician_id']
+        );
+        $this->assertSame('Jose Garcia', $led['lead_replacement']['name']);
+
+        // A project with no lead is an ordinary assignment, not a replacement.
+        $this->assertNull($eligible->firstWhere('name', 'Needs A Lead')['lead_replacement']);
+    }
+
+    /**
+     * Availability outranks the lead question. A lead who cannot work the
+     * project's remaining dates is not offered it at all, and the reason given
+     * is the calendar one rather than a replacement that could never be made.
+     */
+    public function test_an_unavailable_lead_technician_is_not_offered_a_replacement(): void
+    {
+        $incoming = $this->leadTechnician('Carlo Ramirez');
+        $existingLead = $this->leadTechnician('Jose Garcia');
+
+        // Carlo is already booked over the same days.
+        $booked = $this->project('Carlo Own Work', [$incoming]);
+        $this->schedule($booked, $this->day(5), $this->day(6));
+
+        $ledAlready = $this->project('Already Led', [$existingLead]);
+        $this->schedule($ledAlready, $this->day(5), $this->day(6));
+
+        $response = $this->getJson(route('super-admin.technicians.assignable', $incoming->technician_id));
+
+        $response->assertOk();
+
+        $this->assertNotContains(
+            'Already Led',
+            collect($response->json('projects'))->pluck('name')->all()
+        );
+
+        $blocked = collect($response->json('blocked'))->firstWhere('name', 'Already Led');
+
+        $this->assertNotNull($blocked);
+        $this->assertStringContainsString('unavailable', (string) $blocked['reason']);
+        $this->assertNull($blocked['lead_replacement']);
+    }
+
+    /**
+     * A schedule that has already ended is history, not a claim on anybody's
+     * diary. A lead who was busy back then is free for the project's remaining
+     * dates, and is offered the replacement.
+     */
+    public function test_a_past_clash_does_not_block_a_lead_replacement(): void
+    {
+        $incoming = $this->leadTechnician('Carlo Ramirez');
+        $existingLead = $this->leadTechnician('Jose Garcia');
+
+        // Carlo worked days -10 to -8. Over, and no longer anybody's business.
+        $finished = $this->project('Last Month', [$incoming]);
+        $this->schedule($finished, $this->day(-10), $this->day(-8));
+
+        // The destination held those same days AND has a week still to come.
+        $ledAlready = $this->project('Already Led', [$existingLead]);
+        $this->schedule($ledAlready, $this->day(-10), $this->day(-8));
+        $this->schedule($ledAlready, $this->day(20), $this->day(21));
+
+        $response = $this->getJson(route('super-admin.technicians.assignable', $incoming->technician_id));
+
+        $response->assertOk();
+
+        $led = collect($response->json('projects'))->firstWhere('name', 'Already Led');
+
+        $this->assertNotNull($led, 'A past clash must not withhold the replacement.');
+        $this->assertSame(
+            (int) $existingLead->technician_id,
+            $led['lead_replacement']['technician_id']
+        );
+    }
+
+    /**
+     * Confirming the replacement leaves exactly one lead: the incoming one on
+     * the team, the outgoing one off it entirely.
+     */
+    public function test_a_confirmed_replacement_leaves_exactly_one_lead(): void
+    {
+        $incoming = $this->leadTechnician('Carlo Ramirez');
+        $existingLead = $this->leadTechnician('Jose Garcia');
+        $ana = $this->technician('Ana Mendoza');
+
+        $project = $this->project('Already Led', [$existingLead, $ana]);
+        $this->schedule($project, $this->day(5), $this->day(6));
+
+        $response = $this->postJson(
+            route('super-admin.technicians.projects.store', $incoming->technician_id),
+            [
+                'project_ids' => [$project->project_id],
+                'lead_replacements' => [[
+                    'project_id' => $project->project_id,
+                    'replacing_technician_id' => $existingLead->technician_id,
+                ]],
+            ]
+        );
+
+        $response->assertOk();
+
+        $this->assertDatabaseHas('tbl_project_technicians', [
+            'project_id' => $project->project_id,
+            'technician_id' => $incoming->technician_id,
+        ]);
+        // A removal closes the membership rather than deleting it - the row
+        // carries the dates that technician worked, and deleting it took them
+        // with it. What must be gone is the ASSIGNMENT, so the assertion is
+        // that no OPEN membership survives. See ProjectTechnician.
+        $this->assertDatabaseMissing('tbl_project_technicians', [
+            'project_id' => $project->project_id,
+            'technician_id' => $existingLead->technician_id,
+            'removed_at' => null,
+        ]);
+
+        // The schedule rows go with the team row, so the outgoing lead reads
+        // as free for those dates again.
+        $this->assertSame(0, ScheduleTechnician::query()
+            ->whereHas('projectTechnician', fn ($query) => $query
+                ->where('technician_id', $existingLead->technician_id))
+            ->count());
+
+        $project->load('projectTechnicians.technician.account');
+
+        $this->assertSame(1, $project->projectTechnicians
+            ->filter(fn (ProjectTechnician $assignment): bool => optional($assignment->technician?->account)->role === 'lead_technician')
+            ->count());
+    }
+
+    /**
+     * Without a confirmation nothing is replaced. This is the refusal the page
+     * has always given, and it is unchanged.
+     */
+    public function test_an_unconfirmed_lead_assignment_is_still_refused(): void
+    {
+        $incoming = $this->leadTechnician('Carlo Ramirez');
+        $existingLead = $this->leadTechnician('Jose Garcia');
+
+        $project = $this->project('Already Led', [$existingLead]);
+        $this->schedule($project, $this->day(5), $this->day(6));
+
+        $response = $this->postJson(
+            route('super-admin.technicians.projects.store', $incoming->technician_id),
+            ['project_ids' => [$project->project_id]]
+        );
+
+        $response->assertStatus(422);
+        $response->assertJsonPath('error', 'Already Led is already led by Jose Garcia.');
+
+        $this->assertDatabaseHas('tbl_project_technicians', [
+            'project_id' => $project->project_id,
+            'technician_id' => $existingLead->technician_id,
+        ]);
+        $this->assertDatabaseMissing('tbl_project_technicians', [
+            'project_id' => $project->project_id,
+            'technician_id' => $incoming->technician_id,
+        ]);
+    }
+
+    /**
+     * A confirmation naming a lead who is no longer there was agreed to on a
+     * stale page. Refused whole - the project keeps the lead it actually has.
+     */
+    public function test_a_stale_lead_replacement_is_refused(): void
+    {
+        $incoming = $this->leadTechnician('Carlo Ramirez');
+        $currentLead = $this->leadTechnician('Jose Garcia');
+        $someoneElse = $this->leadTechnician('Maria Santos');
+
+        $project = $this->project('Already Led', [$currentLead]);
+        $this->schedule($project, $this->day(5), $this->day(6));
+
+        $response = $this->postJson(
+            route('super-admin.technicians.projects.store', $incoming->technician_id),
+            [
+                'project_ids' => [$project->project_id],
+                'lead_replacements' => [[
+                    'project_id' => $project->project_id,
+                    // The page was showing Maria as the lead.
+                    'replacing_technician_id' => $someoneElse->technician_id,
+                ]],
+            ]
+        );
+
+        $response->assertStatus(422);
+
+        $this->assertDatabaseHas('tbl_project_technicians', [
+            'project_id' => $project->project_id,
+            'technician_id' => $currentLead->technician_id,
+        ]);
+        $this->assertDatabaseMissing('tbl_project_technicians', [
+            'project_id' => $project->project_id,
+            'technician_id' => $incoming->technician_id,
+        ]);
+    }
+
+    /**
+     * A replacement is still an assignment, so it is still refused when the
+     * incoming lead cannot work the dates - confirmation or no confirmation.
+     */
+    public function test_a_confirmed_replacement_is_refused_when_the_incoming_lead_is_busy(): void
+    {
+        $incoming = $this->leadTechnician('Carlo Ramirez');
+        $existingLead = $this->leadTechnician('Jose Garcia');
+
+        $booked = $this->project('Carlo Own Work', [$incoming]);
+        $this->schedule($booked, $this->day(5), $this->day(6));
+
+        $project = $this->project('Already Led', [$existingLead]);
+        $this->schedule($project, $this->day(5), $this->day(6));
+
+        $response = $this->postJson(
+            route('super-admin.technicians.projects.store', $incoming->technician_id),
+            [
+                'project_ids' => [$project->project_id],
+                'lead_replacements' => [[
+                    'project_id' => $project->project_id,
+                    'replacing_technician_id' => $existingLead->technician_id,
+                ]],
+            ]
+        );
+
+        $response->assertStatus(422);
+
+        // Nothing partial: the sitting lead is untouched.
+        $this->assertDatabaseHas('tbl_project_technicians', [
+            'project_id' => $project->project_id,
+            'technician_id' => $existingLead->technician_id,
+        ]);
+        $this->assertDatabaseMissing('tbl_project_technicians', [
+            'project_id' => $project->project_id,
+            'technician_id' => $incoming->technician_id,
+        ]);
+    }
+
+    /**
+     * A project whose only schedule has already ended cannot make anybody
+     * unavailable for it, so a technician booked over those same days is still
+     * offered the project.
+     */
+    public function test_a_project_with_only_past_schedules_does_not_block_a_technician(): void
+    {
+        $ana = $this->technician('Ana Mendoza');
+        $lead = $this->leadTechnician('Jose Garcia');
+
+        $finished = $this->project('Last Month', [$ana]);
+        $this->schedule($finished, $this->day(-10), $this->day(-8));
+
+        $sameOldWeek = $this->project('Same Old Week', [$lead]);
+        $this->schedule($sameOldWeek, $this->day(-10), $this->day(-8));
+
+        $response = $this->getJson(route('super-admin.technicians.assignable', $ana->technician_id));
+
+        $response->assertOk();
+
+        $this->assertContains(
+            'Same Old Week',
+            collect($response->json('projects'))->pluck('name')->all()
+        );
+    }
+
+    /**
+     * Past ranges are dropped; the ones still to come are all kept. A clash on
+     * ANY remaining range still refuses the technician.
+     */
+    public function test_a_future_range_still_blocks_when_an_earlier_range_has_ended(): void
+    {
+        $ana = $this->technician('Ana Mendoza');
+        $lead = $this->leadTechnician('Jose Garcia');
+
+        // Ana is free over the old week and busy over the coming one.
+        $ownWork = $this->project('Ana Own Work', [$ana]);
+        $this->schedule($ownWork, $this->day(20), $this->day(21));
+
+        $mixed = $this->project('Mixed Dates', [$lead]);
+        $this->schedule($mixed, $this->day(-10), $this->day(-8));
+        $this->schedule($mixed, $this->day(20), $this->day(21));
+
+        $response = $this->getJson(route('super-admin.technicians.assignable', $ana->technician_id));
+
+        $response->assertOk();
+
+        $this->assertNotContains(
+            'Mixed Dates',
+            collect($response->json('projects'))->pluck('name')->all()
+        );
+        $this->assertContains(
+            'Mixed Dates',
+            collect($response->json('blocked'))->pluck('name')->all()
         );
     }
 

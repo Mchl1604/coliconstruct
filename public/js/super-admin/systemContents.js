@@ -99,6 +99,26 @@ document.addEventListener('DOMContentLoaded', function() {
                     help + '</div>';
             }
 
+            // Stepped to the hour, because everything a setting like this
+            // bounds is counted in whole hours - the pickers it feeds offer
+            // whole hours and availability is measured in whole-hour slots.
+            // The field it must come before, when it has one, travels with it
+            // so the pair can be checked before anything is sent.
+            if (field.type === 'time') {
+                const before = field.before
+                    ? ' data-content-before="' + escapeHtml(field.before) + '"' +
+                    ' data-content-before-message="' + escapeHtml(field.before_message || '') + '"'
+                    : '';
+
+                return '<div class="col-md-4"><label class="form-label fw-semibold" for="' + id + '">' +
+                    escapeHtml(field.label) + badge + '</label>' +
+                    '<input type="time" step="3600" class="form-control" id="' + id + '" value="' +
+                    escapeHtml(field.value) + '" data-content-input="' + escapeHtml(field.key) + '"' +
+                    ' data-content-time data-content-format-message="' +
+                    escapeHtml(field.format_message || '') + '"' +
+                    before + '>' + help + '</div>';
+            }
+
             if (field.type === 'textarea' || field.type === 'html') {
                 // A long field gets a taller box. The Terms and Conditions is
                 // the only one of these somebody writes at length, and four
@@ -117,6 +137,107 @@ document.addEventListener('DOMContentLoaded', function() {
                 '<input type="text" class="form-control" id="' + id + '" value="' +
                 escapeHtml(field.value) + '" data-content-input="' + escapeHtml(field.key) + '">' +
                 help + '</div>';
+        }
+
+        /**
+         * 'HH:MM' as minutes since midnight, or null when it is not a time.
+         */
+        function minutesOfDay(value) {
+            const parts = /^(\d{1,2}):(\d{2})$/.exec(String(value || '').trim());
+
+            if (!parts) {
+                return null;
+            }
+
+            const hour = Number(parts[1]);
+            const minute = Number(parts[2]);
+
+            return hour > 23 || minute > 59 ? null : hour * 60 + minute;
+        }
+
+        /**
+         * The first pair of times this form holds that does not come in order,
+         * as the sentence to show about it - or null when they all do.
+         *
+         * Which fields are a pair is not written here: the server sends it with
+         * the field, from the same catalogue entry its own check reads, so the
+         * two cannot disagree about what the rule is. Equal times fail with the
+         * reversed ones - a window that starts and ends at the same hour has
+         * nothing inside it.
+         */
+        function timesOutOfOrder(values) {
+            const inputs = Array.from(fieldsWrap.querySelectorAll('[data-content-before]'));
+
+            for (const input of inputs) {
+                const earlier = minutesOfDay(values[input.dataset.contentInput]);
+                const later = minutesOfDay(values[input.dataset.contentBefore]);
+
+                if (earlier === null || later === null || earlier < later) {
+                    continue;
+                }
+
+                return input.dataset.contentBeforeMessage ||
+                    'These times have to come in order.';
+            }
+
+            return null;
+        }
+
+        /**
+         * Hold a time field to the hour it names.
+         *
+         * These settings bound something the rest of the system counts in
+         * whole hours - the pickers they feed offer whole hours and
+         * availability is measured in whole-hour slots - so half past eight is
+         * a mistake rather than a finer setting. step="3600" makes the spinner
+         * and the browser's own picker move by the hour; this is for the case
+         * they cannot cover, which is somebody typing the minutes.
+         *
+         * Corrected on blur rather than on every keystroke, so the field is
+         * not fighting the person while they are still in it, and the
+         * correction is visible in the box before anything is saved.
+         */
+        function bindHourOnlyTimes() {
+            fieldsWrap.querySelectorAll('[data-content-time]').forEach(function(input) {
+                input.addEventListener('blur', function() {
+                    const parts = /^(\d{1,2}):(\d{2})$/.exec(input.value.trim());
+
+                    if (!parts || parts[2] === '00') {
+                        return;
+                    }
+
+                    input.value = parts[1].padStart(2, '0') + ':00';
+                });
+            });
+        }
+
+        /**
+         * The first time field holding something other than a whole hour, as
+         * the sentence to show about it - or null when they all do.
+         *
+         * The wording is the field's own, sent with it from the catalogue, so
+         * this says what the server would say about the same value.
+         */
+        function timeOffTheHour(values) {
+            const inputs = Array.from(fieldsWrap.querySelectorAll('[data-content-time]'));
+
+            for (const input of inputs) {
+                const value = String(values[input.dataset.contentInput] || '').trim();
+
+                // Blank is the `required` rule's to complain about, and it is
+                // the server's rule; two sentences about one empty box is one
+                // too many.
+                if (value === '') {
+                    continue;
+                }
+
+                if (!/^\d{1,2}:00$/.test(value)) {
+                    return input.dataset.contentFormatMessage ||
+                        'Choose a time on the hour.';
+                }
+            }
+
+            return null;
         }
 
         function bindImageActions() {
@@ -203,6 +324,7 @@ document.addEventListener('DOMContentLoaded', function() {
         function render(payload) {
             fieldsWrap.innerHTML = (payload.fields || []).map(fieldMarkup).join('');
             bindImageActions();
+            bindHourOnlyTimes();
             showExtrasFor(payload.section || currentSection);
 
             const title = pane.querySelector('[data-content-section-title]');
@@ -287,6 +409,22 @@ document.addEventListener('DOMContentLoaded', function() {
             const sectionForFields = firstKey
                 ? firstKey.slice(0, firstKey.lastIndexOf('.'))
                 : currentSection;
+
+            const offTheHour = timeOffTheHour(values);
+
+            if (offTheHour) {
+                showError(offTheHour);
+
+                return;
+            }
+
+            const ordering = timesOutOfOrder(values);
+
+            if (ordering) {
+                showError(ordering);
+
+                return;
+            }
 
             showError('');
             savedFlag?.classList.add('d-none');

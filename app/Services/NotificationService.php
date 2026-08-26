@@ -511,11 +511,15 @@ class NotificationService
      *
      * @param  array<int, string>  $blockers
      */
-    public function projectCompletionOverridden(Project $project, array $blockers, string $reason): void
-    {
+    public function projectCompletionOverridden(
+        Project $project,
+        array $blockers,
+        string $reason,
+        array $summaries = []
+    ): void {
         $this->deliver(
             $this->excludingActor($this->administrators()),
-            'Project Completed Over Its Blockers',
+            $this->overrideTitle($summaries),
             sprintf(
                 '%s was marked complete by %s even though it was not ready. %s Reason given: %s',
                 $this->projectLabel($project),
@@ -527,6 +531,49 @@ class NotificationService
             $project,
             $this->projectLink($project)
         );
+    }
+
+    /**
+     * "Completed despite 1 open task by Ana Mendoza".
+     *
+     * A title is the only part of a notification read in a list, so it says
+     * what was overridden and who decided rather than leaving both to the
+     * body. The short forms come from the policy that raised the objections -
+     * the `summary` on each of ProjectPolicy::blockerDetailsFor()'s entries -
+     * so there is one wording for each, not a second set written here.
+     *
+     * With nothing to name it falls back to the plain statement, which is what
+     * a caller that did not pass any summaries gets.
+     *
+     * @param  array<int, string>  $summaries
+     */
+    private function overrideTitle(array $summaries): string
+    {
+        $summaries = array_values(array_filter($summaries));
+
+        return $summaries === []
+            ? sprintf('Completed before it was ready by %s', $this->actorName())
+            : sprintf(
+                'Completed despite %s by %s',
+                $this->joinList($summaries),
+                $this->actorName()
+            );
+    }
+
+    /**
+     * "A", "A and B", "A, B and C".
+     *
+     * @param  array<int, string>  $items
+     */
+    private function joinList(array $items): string
+    {
+        if (count($items) < 3) {
+            return implode(' and ', $items);
+        }
+
+        $last = array_pop($items);
+
+        return implode(', ', $items).' and '.$last;
     }
 
     /**
@@ -1320,8 +1367,8 @@ class NotificationService
     {
         $this->deliver(
             $this->administrators(),
-            'New Client Registration',
-            sprintf('%s registered a client account.', $account->fullName()),
+            'New Registered User',
+            sprintf('%s registered a Registered User account.', $account->fullName()),
             Notification::MODULE_USER_MANAGEMENT,
             $account,
             $this->accountLink()

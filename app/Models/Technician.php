@@ -98,7 +98,28 @@ class Technician extends Model
         );
     }
 
+    /**
+     * The projects this technician is on now.
+     *
+     * Scoped to open memberships for the same reason
+     * Project::projectTechnicians() is: every workload count, dashboard tile
+     * and "what is this technician on?" read means the current team, and a
+     * membership row now outlives the membership. See ProjectTechnician.
+     */
     public function projectTechnicians(): HasMany
+    {
+        return $this->hasMany(ProjectTechnician::class, 'technician_id', 'technician_id')
+            ->whereNull('removed_at');
+    }
+
+    /**
+     * Every project this technician has ever been on, the ones they have been
+     * taken off included.
+     *
+     * What their own calendar reads, so the days they were booked for stay on
+     * it after they leave the team.
+     */
+    public function projectHistory(): HasMany
     {
         return $this->hasMany(ProjectTechnician::class, 'technician_id', 'technician_id');
     }

@@ -111,6 +111,152 @@ class ProjectTeamScheduleLinkTest extends TestCase
         }
     }
 
+    // ------------------------------------------------------------------
+    // Ranges that have already ended
+    // ------------------------------------------------------------------
+
+    /**
+     * Joining a team is a decision about the work still to come, so it books
+     * the dates still to come. A row on a week the project finished last month
+     * would say the newcomer was on site for it.
+     */
+    public function test_adding_a_technician_does_not_book_them_onto_a_finished_range(): void
+    {
+        $project = $this->createProject();
+        $lead = $this->createTechnician('Lead Person', 'lead_technician');
+        $joiner = $this->createTechnician('Later Joiner');
+
+        $finished = $this->addRange($project, $this->day(-16), $this->day(-14));
+        $upcoming = $this->addRange($project, $this->day(12), $this->day(14));
+
+        $this->put(route('super-admin.projects.team.update', $project->project_id), [
+            'lead_tech' => $lead->technician_id,
+            'technicians' => [$joiner->technician_id],
+        ])->assertSessionHas('success');
+
+        foreach ([$lead, $joiner] as $technician) {
+            $this->assertSame(0, $this->scheduleLinkCount($finished, $technician));
+            $this->assertSame(1, $this->scheduleLinkCount($upcoming, $technician));
+        }
+    }
+
+    /**
+     * A range that began before today has not ended, so the joiner is booked
+     * onto it - the days it has left are a real claim on their diary.
+     */
+    public function test_adding_a_technician_books_them_onto_a_range_that_is_still_running(): void
+    {
+        $project = $this->createProject();
+        $lead = $this->createTechnician('Lead Person', 'lead_technician');
+
+        $running = $this->addRange($project, $this->day(-2), $this->day(3));
+
+        $this->put(route('super-admin.projects.team.update', $project->project_id), [
+            'lead_tech' => $lead->technician_id,
+            'technicians' => [],
+        ])->assertSessionHas('success');
+
+        $this->assertSame(1, $this->scheduleLinkCount($running, $lead));
+    }
+
+    /**
+     * The half that makes the whole change hold together. The team editor now
+     * accepts somebody whose only clash was on a range that has ended; booking
+     * them onto that very range afterwards would hand back the clash the
+     * screening just decided did not count.
+     */
+    public function test_a_technician_accepted_despite_an_old_clash_is_not_booked_into_it(): void
+    {
+        $project = $this->createProject();
+        $finished = $this->addRange($project, $this->day(-16), $this->day(-14));
+        $upcoming = $this->addRange($project, $this->day(20), $this->day(21));
+
+        $lead = $this->createTechnician('Lead Person', 'lead_technician');
+        $wasBusy = $this->createTechnician('Kevin Lopez');
+
+        // Kevin worked somebody else's job over the same old week.
+        $elsewhere = $this->createProject();
+        $this->addRange($elsewhere, $this->day(-16), $this->day(-14));
+        $this->put(route('super-admin.projects.team.update', $elsewhere->project_id), [
+            'lead_tech' => $this->createTechnician('Other Lead', 'lead_technician')->technician_id,
+            'technicians' => [$wasBusy->technician_id],
+        ])->assertSessionHas('success');
+
+        $this->put(route('super-admin.projects.team.update', $project->project_id), [
+            'lead_tech' => $lead->technician_id,
+            'technicians' => [$wasBusy->technician_id],
+        ])->assertSessionHas('success');
+
+        // On the team, on the range still to come, and NOT on the old week -
+        // where he was somebody else's, and remains only theirs.
+        $this->assertSame(1, $this->scheduleLinkCount($upcoming, $wasBusy));
+        $this->assertSame(0, $this->scheduleLinkCount($finished, $wasBusy));
+    }
+
+    /**
+     * attach() adds and never removes, so a member who really did work an
+     * earlier range keeps the row that says so.
+     */
+    public function test_an_existing_link_on_a_finished_range_is_left_alone(): void
+    {
+        $project = $this->createProject();
+        $lead = $this->createTechnician('Lead Person', 'lead_technician');
+        $veteran = $this->createTechnician('Long Server');
+
+        $upcoming = $this->addRange($project, $this->day(12), $this->day(14));
+        $finished = $this->addRange($project, $this->day(-16), $this->day(-14));
+
+        // Both are already on the team and on both ranges - the state a
+        // project reaches by having been scheduled while they were on it.
+        foreach ([$lead, $veteran] as $technician) {
+            $assignment = ProjectTechnician::create([
+                'project_id' => $project->project_id,
+                'technician_id' => $technician->technician_id,
+            ]);
+
+            foreach ([$upcoming, $finished] as $schedule) {
+                ScheduleTechnician::create([
+                    'schedule_id' => $schedule->schedule_id,
+                    'project_technician_id' => $assignment->project_technician_id,
+                ]);
+            }
+        }
+
+        // Saving the team again re-attaches everybody.
+        $this->put(route('super-admin.projects.team.update', $project->project_id), [
+            'lead_tech' => $lead->technician_id,
+            'technicians' => [$veteran->technician_id],
+        ])->assertSessionHas('success');
+
+        $this->assertSame(1, $this->scheduleLinkCount($finished, $veteran));
+        $this->assertSame(1, $this->scheduleLinkCount($upcoming, $veteran));
+    }
+
+    /**
+     * The audit and the repair have to draw the same line attach() draws, or
+     * the repair puts back every row attach() deliberately declined to write.
+     */
+    public function test_the_audit_does_not_report_a_missing_link_on_a_finished_range(): void
+    {
+        $project = $this->createProject();
+        $technician = $this->createTechnician('Later Joiner');
+
+        $finished = $this->addRange($project, $this->day(-16), $this->day(-14));
+
+        ProjectTechnician::create([
+            'project_id' => $project->project_id,
+            'technician_id' => $technician->technician_id,
+        ]);
+
+        Artisan::call('project-team:audit', ['--project' => $project->project_id]);
+
+        $this->assertStringContainsString('Nothing to repair', Artisan::output());
+
+        Artisan::call('project-team:repair', ['--project' => $project->project_id, '--force' => true]);
+
+        $this->assertSame(0, $this->scheduleLinkCount($finished, $technician));
+    }
+
     /**
      * The point of the join rows: somebody added to a scheduled project has to
      * read as busy everywhere else, immediately.
@@ -183,9 +329,14 @@ class ProjectTeamScheduleLinkTest extends TestCase
         ])->assertSessionHas('success');
 
         $this->assertSame(0, $this->scheduleLinkCount($schedule, $leaving));
+        // A removal closes the membership rather than deleting it - the row
+        // carries the dates that technician worked, and deleting it took them
+        // with it. What must be gone is the ASSIGNMENT, so the assertion is
+        // that no OPEN membership survives. See ProjectTechnician.
         $this->assertDatabaseMissing('tbl_project_technicians', [
             'project_id' => $project->project_id,
             'technician_id' => $leaving->technician_id,
+            'removed_at' => null,
         ]);
 
         // Unfinished work is released; what they already completed is a record

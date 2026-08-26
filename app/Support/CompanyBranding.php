@@ -12,6 +12,43 @@ namespace App\Support;
 class CompanyBranding
 {
     /**
+     * The letterhead every exported PDF is printed on.
+     *
+     * Held here rather than in a controller because more than one page
+     * exports one now - the system reports and the audit trail - and a second
+     * copy of the company's own name is exactly the sort of thing that drifts.
+     *
+     * Deliberately not read from config/company.php: those values are the
+     * email footer's and a deployment may leave them blank, which is fine in
+     * an inbox and not fine on a document. Move both to a settings table if
+     * they ever become editable in-app.
+     *
+     * @return array<string, string>
+     */
+    public static function letterhead(): array
+    {
+        return [
+            'name' => 'Coliconstruct',
+            'address' => 'Carmona, Cavite, Philippines',
+            'system' => 'Coliconstruct Project Management System',
+        ];
+    }
+
+    /**
+     * The logo as bytes, because dompdf cannot fetch one over HTTP.
+     */
+    public static function logoDataUri(): ?string
+    {
+        $path = public_path('img/coliconstructlogor.png');
+
+        if (! is_file($path)) {
+            return null;
+        }
+
+        return 'data:image/png;base64,'.base64_encode((string) file_get_contents($path));
+    }
+
+    /**
      * @return array{
      *     name: string,
      *     tagline: string,

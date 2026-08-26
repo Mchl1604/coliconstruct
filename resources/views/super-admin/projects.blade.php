@@ -160,12 +160,14 @@
                                                 </button>
                                             @endif
 
-                                            {{-- Only work that is actually under way. A Pending,
+                                            {{-- Only work that is actually under way. An
                                                  Unscheduled or paused project has had nobody on site
                                                  yet, so there is nothing to close out - the same rule
-                                                 the technician portal draws the button by. See
-                                                 Project::isCompletable(). --}}
-                                            @if ($project->isCompletable())
+                                                 the technician portal draws the button by. A Super
+                                                 Admin additionally gets Pending work, which is theirs
+                                                 to close out early. See Project::isCompletableBy(),
+                                                 which ProjectController::complete() asks again. --}}
+                                            @if ($project->isCompletableBy(auth()->user()))
                                                 <button class="btn btn-sm btn-success py-1 px-2" data-bs-toggle="modal"
                                                     data-bs-target="#completeProjectModal{{ $project->project_id }}"
                                                     title="Complete Project">
@@ -291,7 +293,7 @@
                             </div>
 
                             <!-- COMPLETE PROJECT MODAL -->
-                            @if ($project->isCompletable())
+                            @if ($project->isCompletableBy(auth()->user()))
                             <div class="modal fade" id="completeProjectModal{{ $project->project_id }}" tabindex="-1"
                                 aria-labelledby="completeProjectModalLabel{{ $project->project_id }}" aria-hidden="true">
 
@@ -342,10 +344,6 @@
                                                             name="completion_override_reason" rows="2" minlength="10"
                                                             maxlength="500" required
                                                             placeholder="Why is this being completed with the above outstanding?"></textarea>
-                                                        <div class="form-text">
-                                                            Recorded in the activity log. Other administrators are
-                                                            notified.
-                                                        </div>
                                                     </div>
                                                 @endif
 

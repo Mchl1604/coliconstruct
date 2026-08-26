@@ -2,12 +2,14 @@
 
 namespace Tests\Feature;
 
+use App\Http\Controllers\ConfigurationController;
 use App\Models\ActivityLog;
 use App\Models\User;
 use App\Services\ActivityLogger;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\View;
 use Illuminate\Testing\TestResponse;
 use Tests\TestCase;
 
@@ -66,6 +68,63 @@ class ActivityLogsTest extends TestCase
         return $this->getJson(
             route('super-admin.configuration.activity-logs').'?'.http_build_query($query)
         );
+    }
+
+    /**
+     * An export request.
+     *
+     * Both dates are required, so unless a test is about the window it gets
+     * one wide enough to be beside the point - a test about the user filter
+     * should not have to think about dates. A test that IS about the window
+     * passes its own, and one about them being missing passes an empty
+     * string, which is what an untouched date field submits.
+     */
+    private function export(array $query = []): TestResponse
+    {
+        $query += [
+            'from' => CarbonImmutable::today()->subYears(10)->toDateString(),
+            'to' => CarbonImmutable::today()->toDateString(),
+        ];
+
+        return $this->get(
+            route('super-admin.configuration.activity-logs.export').'?'.http_build_query($query)
+        );
+    }
+
+    /**
+     * What the exported document is actually printed from.
+     *
+     * Read off the view rather than out of the PDF: the bytes are a rendering
+     * of this, and asserting against them would be testing dompdf. The
+     * endpoint is still exercised end to end - it is the request below that
+     * fills this in - so nothing between the filters and the page is skipped.
+     *
+     * @return array<string, mixed>
+     */
+    private function exported(array $query = []): array
+    {
+        $captured = [];
+
+        View::composer('super-admin.activity-logs-pdf', function ($view) use (&$captured): void {
+            $captured = $view->getData();
+        });
+
+        $this->export($query)->assertOk();
+
+        return $captured;
+    }
+
+    /**
+     * The Name column of every printed row, which is what most of these
+     * tests are really asking about.
+     *
+     * @return array<int, string>
+     */
+    private function exportedNames(array $query = []): array
+    {
+        return collect($this->exported($query)['rows'] ?? [])
+            ->map(fn (array $row): string => $row[2])
+            ->all();
     }
 
     // ------------------------------------------------------------------
@@ -391,6 +450,376 @@ class ActivityLogsTest extends TestCase
 
         $this->assertSame('Technician Person', $row['actor_name']);
         $this->assertSame('Technician', $row['role_label']);
+    }
+
+    // ------------------------------------------------------------------
+    // Export
+    // ------------------------------------------------------------------
+
+    public function test_the_export_is_a_pdf(): void
+    {
+        $this->actingAsSuperAdmin();
+
+        $this->log(['actor_name' => 'Ana Mendoza', 'description' => 'Rewired the riser.']);
+
+        $response = $this->export();
+
+        $response->assertOk();
+        $response->assertHeader('content-type', 'application/pdf');
+        $this->assertStringStartsWith('%PDF-', $response->getContent());
+    }
+
+    public function test_the_export_carries_the_headings_and_one_row_per_entry(): void
+    {
+        $this->actingAsSuperAdmin();
+
+        $this->log(['actor_name' => 'Ana Mendoza', 'description' => 'Rewired the riser.']);
+        $this->log(['actor_name' => 'Jose Garcia', 'action' => ActivityLog::PROJECT_CREATED]);
+
+        $document = $this->exported();
+
+        // Exactly the columns the Activity Logs table shows. The address and
+        // device an entry was made from stay on the row and off the document.
+        $this->assertSame(
+            ['Log ID', 'Date & Time', 'Name', 'Role', 'Module', 'Action', 'Details'],
+            array_keys($document['columns'])
+        );
+
+        // The two entries above. The entry recording the export itself is
+        // written after the rows are read, so a document never contains a
+        // record of its own creation - and the count it prints matches the
+        // rows beneath it.
+        $this->assertCount(2, $document['rows']);
+        $this->assertSame(2, $document['matched']);
+
+        $names = $document['rows']->map(fn (array $row): string => $row[2])->all();
+
+        $this->assertContains('Ana Mendoza', $names);
+        $this->assertContains('Jose Garcia', $names);
+    }
+
+    /**
+     * The dates a person reads in the file are the ones they read on the page.
+     */
+    public function test_the_export_writes_dates_in_the_one_display_format(): void
+    {
+        $this->actingAsSuperAdmin();
+
+        $entry = $this->log(['created_at' => CarbonImmutable::parse('2026-01-01 15:04:00')]);
+
+        $line = collect($this->exported()['rows'])
+            ->first(fn (array $row): bool => $row[0] === (string) $entry->activity_log_id);
+
+        $this->assertNotNull($line);
+        $this->assertStringStartsWith('Jan 1, 2026', $line[1]);
+    }
+
+    public function test_the_export_narrows_to_the_chosen_date_range(): void
+    {
+        $this->actingAsSuperAdmin();
+
+        $today = CarbonImmutable::today();
+
+        $this->log(['actor_name' => 'Recent', 'created_at' => $today->subDays(2)]);
+        $this->log(['actor_name' => 'Older', 'created_at' => $today->subDays(40)]);
+
+        $names = $this->exportedNames([
+            'from' => $today->subDays(7)->toDateString(),
+            'to' => $today->toDateString(),
+        ]);
+
+        $this->assertContains('Recent', $names);
+        $this->assertNotContains('Older', $names);
+    }
+
+    /**
+     * Both ends are required. An export with no period on it is the whole
+     * trail, which is neither a useful document nor something a PDF holds -
+     * so an untouched date field is refused rather than quietly meaning
+     * "everything".
+     */
+    public function test_the_export_requires_both_ends_of_the_date_range(): void
+    {
+        $this->actingAsSuperAdmin();
+
+        $today = CarbonImmutable::today();
+
+        $missingFrom = $this->export(['from' => '', 'to' => $today->toDateString()]);
+        $missingFrom->assertRedirect(route('super-admin.configuration.index'));
+        $missingFrom->assertSessionHas('error', 'Choose the date to export from.');
+
+        $missingTo = $this->export(['from' => $today->subDays(7)->toDateString(), 'to' => '']);
+        $missingTo->assertSessionHas('error', 'Choose the date to export to.');
+
+        $neither = $this->export(['from' => '', 'to' => '']);
+        $neither->assertSessionHas('error', 'Choose the date to export from.');
+
+        // Nothing was produced, so nothing was recorded as having been.
+        $this->assertSame(0, ActivityLog::where('action', ActivityLog::ACTIVITY_LOGS_EXPORTED)->count());
+    }
+
+    public function test_a_range_given_back_to_front_is_refused(): void
+    {
+        $this->actingAsSuperAdmin();
+
+        $today = CarbonImmutable::today();
+
+        $this->export([
+            'from' => $today->toDateString(),
+            'to' => $today->subDays(7)->toDateString(),
+        ])->assertSessionHas('error', 'The To date cannot be before the From date.');
+    }
+
+    /**
+     * The chosen window is what the export uses, whichever named range the
+     * table happened to be showing behind it.
+     */
+    public function test_the_chosen_window_beats_the_range_the_table_was_showing(): void
+    {
+        $this->actingAsSuperAdmin();
+
+        $today = CarbonImmutable::today();
+
+        $this->log(['actor_name' => 'Recent', 'created_at' => $today->subDays(2)]);
+        $this->log(['actor_name' => 'Older', 'created_at' => $today->subDays(40)]);
+
+        $names = $this->exportedNames([
+            'range' => 'today',
+            'from' => $today->subDays(60)->toDateString(),
+            'to' => $today->toDateString(),
+        ]);
+
+        $this->assertContains('Recent', $names);
+        $this->assertContains('Older', $names);
+    }
+
+    /**
+     * The table's own range filter stays optional and open at either end -
+     * "All Time" is a thing somebody reads on screen, and a half-filled
+     * custom window must narrow rather than quietly widen to everything.
+     */
+    public function test_the_table_honours_a_one_sided_date_range(): void
+    {
+        $this->actingAsSuperAdmin();
+
+        $today = CarbonImmutable::today();
+
+        $this->log(['actor_name' => 'Recent', 'created_at' => $today->subDays(2)]);
+        $this->log(['actor_name' => 'Older', 'created_at' => $today->subDays(40)]);
+
+        $from = $this->fetch([
+            'range' => 'custom',
+            'from' => $today->subDays(7)->toDateString(),
+        ]);
+
+        $this->assertSame(['Recent'], collect($from->json('rows'))->pluck('actor_name')->all());
+
+        $to = $this->fetch([
+            'range' => 'custom',
+            'to' => $today->subDays(20)->toDateString(),
+        ]);
+
+        $this->assertSame(['Older'], collect($to->json('rows'))->pluck('actor_name')->all());
+    }
+
+    public function test_the_export_narrows_to_the_chosen_user(): void
+    {
+        $this->actingAsSuperAdmin();
+
+        $ana = $this->account('technician', 'ana@example.test');
+        $jose = $this->account('technician', 'jose@example.test');
+
+        $this->log(['actor_id' => $ana->id, 'actor_name' => 'Ana Mendoza']);
+        $this->log(['actor_id' => $jose->id, 'actor_name' => 'Jose Garcia']);
+
+        $names = $this->exportedNames(['actor_id' => $ana->id]);
+
+        $this->assertContains('Ana Mendoza', $names);
+        $this->assertNotContains('Jose Garcia', $names);
+    }
+
+    public function test_the_export_respects_the_search_role_and_module_filters(): void
+    {
+        $this->actingAsSuperAdmin();
+
+        $this->log(['actor_name' => 'Ana Mendoza', 'actor_role' => 'technician', 'module' => ActivityLog::MODULE_TASKS]);
+        $this->log(['actor_name' => 'Jose Garcia', 'actor_role' => 'client', 'module' => ActivityLog::MODULE_TASKS]);
+        $this->log(['actor_name' => 'Ana Mendoza', 'actor_role' => 'technician', 'module' => ActivityLog::MODULE_PROJECTS]);
+
+        $names = $this->exportedNames([
+            'role' => 'technician',
+            'module' => ActivityLog::MODULE_TASKS,
+            'search' => 'Mendoza',
+        ]);
+
+        $this->assertSame(['Ana Mendoza'], $names);
+    }
+
+    /**
+     * The file may never carry a row the page would have hidden. An Admin
+     * cannot read a Super Admin's or a peer's trail, and exporting is not a
+     * way round that.
+     */
+    public function test_an_admin_exports_only_what_they_may_read(): void
+    {
+        $owner = $this->account('super_admin', 'owner@example.test');
+        $peer = $this->account('admin', 'peer@example.test');
+        $admin = $this->account('admin', 'admin@example.test');
+
+        $this->log(['actor_id' => $owner->id, 'actor_name' => 'The owner', 'actor_role' => 'super_admin']);
+        $this->log(['actor_id' => $peer->id, 'actor_name' => 'The other admin', 'actor_role' => 'admin']);
+        $this->log(['actor_id' => $admin->id, 'actor_name' => 'This admin', 'actor_role' => 'admin']);
+        $this->log(['actor_name' => 'A technician', 'actor_role' => 'technician']);
+
+        $this->actingAs($admin);
+
+        $names = $this->exportedNames();
+
+        $this->assertContains('This admin', $names);
+        $this->assertContains('A technician', $names);
+        $this->assertNotContains('The owner', $names);
+        $this->assertNotContains('The other admin', $names);
+    }
+
+    /**
+     * Naming another account is not a way past the scope either: the actor
+     * filter narrows the visible rows, it does not widen them.
+     */
+    public function test_naming_a_hidden_actor_does_not_widen_the_export(): void
+    {
+        $owner = $this->account('super_admin', 'owner@example.test');
+        $admin = $this->account('admin', 'admin@example.test');
+
+        $this->log(['actor_id' => $owner->id, 'actor_name' => 'The owner', 'actor_role' => 'super_admin']);
+
+        $this->actingAs($admin);
+
+        $this->assertSame([], $this->exportedNames(['actor_id' => $owner->id]));
+    }
+
+    public function test_a_technician_cannot_export_the_trail(): void
+    {
+        $this->actingAs($this->account('technician', 'tech@example.test'));
+
+        $this->export()->assertRedirect(route('technician.schedule'));
+    }
+
+    public function test_a_client_cannot_export_the_trail(): void
+    {
+        $this->actingAs($this->account('client', 'client@example.test'));
+
+        $this->export()->assertRedirect(route('landing.home'));
+    }
+
+    public function test_a_signed_out_visitor_cannot_export_the_trail(): void
+    {
+        $this->export()->assertRedirect(route('auth.login'));
+    }
+
+    public function test_the_export_is_itself_recorded_with_what_it_was_narrowed_to(): void
+    {
+        $admin = $this->actingAsSuperAdmin();
+
+        $ana = $this->account('technician', 'ana@example.test');
+        $today = CarbonImmutable::today();
+
+        $this->export([
+            'from' => $today->subDays(7)->toDateString(),
+            'to' => $today->toDateString(),
+            'actor_id' => $ana->id,
+        ])->assertOk();
+
+        $entry = ActivityLog::where('action', ActivityLog::ACTIVITY_LOGS_EXPORTED)->first();
+
+        $this->assertNotNull($entry);
+        $this->assertSame($admin->id, $entry->actor_id);
+        $this->assertSame(ActivityLog::MODULE_CONFIGURATION, $entry->module);
+        $this->assertStringContainsString('as PDF', (string) $entry->description);
+        $this->assertStringContainsString($today->format('M j, Y'), (string) $entry->description);
+        $this->assertStringContainsString($ana->fullName(), (string) $entry->description);
+    }
+
+    /**
+     * The user filter is a search box rather than a list, and what it can
+     * find is narrowed server-side: an Admin cannot search their way to a
+     * Super Admin and be handed a blank document.
+     */
+    public function test_the_user_search_can_only_find_actors_the_reader_may_audit(): void
+    {
+        $owner = $this->account('super_admin', 'owner@example.test');
+        $tech = $this->account('technician', 'tech@example.test');
+        $admin = $this->account('admin', 'admin@example.test');
+
+        $this->log(['actor_id' => $owner->id, 'actor_name' => 'The owner', 'actor_role' => 'super_admin']);
+        $this->log(['actor_id' => $tech->id, 'actor_name' => 'The technician', 'actor_role' => 'technician']);
+
+        $response = $this->actingAs($admin)->get(route('super-admin.configuration.index'));
+
+        $response->assertOk();
+        $response->assertSee('Export Logs');
+        $response->assertSee('data-log-export-user-search', false);
+
+        $searchable = collect($response->viewData('logActors'))->pluck('id')->all();
+
+        $this->assertContains($tech->id, $searchable);
+        $this->assertNotContains($owner->id, $searchable);
+    }
+
+    /**
+     * A PDF has a ceiling the trail does not. Past it the newest entries are
+     * printed and the document is handed the figures it needs to say so on
+     * its face - a truncated export must never look complete.
+     */
+    public function test_a_document_past_the_row_limit_says_how_much_it_left_out(): void
+    {
+        $this->actingAsSuperAdmin();
+
+        $limit = (new \ReflectionClass(ConfigurationController::class))
+            ->getConstant('EXPORT_ROW_LIMIT');
+
+        // Written straight to the table: the point is the count, and one
+        // insert per row through the model would make this test crawl.
+        $now = CarbonImmutable::now();
+        $rows = [];
+
+        for ($i = 0; $i <= $limit; $i++) {
+            $rows[] = [
+                'actor_id' => null,
+                'actor_name' => 'Someone',
+                'actor_role' => 'technician',
+                'action' => ActivityLog::LOGIN,
+                'module' => ActivityLog::MODULE_AUTHENTICATION,
+                'description' => 'Something happened.',
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+        }
+
+        foreach (array_chunk($rows, 500) as $chunk) {
+            DB::table('tbl_activity_logs')->insert($chunk);
+        }
+
+        $document = $this->exported();
+
+        $this->assertCount($limit, $document['rows']);
+        $this->assertSame($limit + 1, $document['matched']);
+        $this->assertSame($limit, $document['limit']);
+
+        $entry = ActivityLog::where('action', ActivityLog::ACTIVITY_LOGS_EXPORTED)->first();
+
+        $this->assertStringContainsString(
+            sprintf('Exported %d of %d', $limit, $limit + 1),
+            (string) $entry->description
+        );
+    }
+
+    public function test_an_unknown_user_is_refused_rather_than_ignored(): void
+    {
+        $this->actingAsSuperAdmin();
+
+        $this->export(['actor_id' => 999999])
+            ->assertRedirect(route('super-admin.configuration.index'))
+            ->assertSessionHas('error');
     }
 
     public function test_each_role_gets_its_own_badge_colour(): void

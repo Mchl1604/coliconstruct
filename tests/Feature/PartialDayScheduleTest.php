@@ -196,9 +196,6 @@ class PartialDayScheduleTest extends TestCase
         $this->assertSame('Aug 6, 2026 · 8:00 AM - 12:00 PM', $partialDay->describe());
         $this->assertSame('Aug 6, 2026', $oneDay->describe());
         $this->assertSame('Aug 6, 2026 - Aug 9, 2026', $severalDays->describe());
-
-        // Callers that want a different date format keep their own.
-        $this->assertSame('August 6, 2026 · 8:00 AM - 12:00 PM', $partialDay->describe('F j, Y'));
     }
 
     public function test_the_project_details_page_shows_the_hours_of_a_partial_day(): void

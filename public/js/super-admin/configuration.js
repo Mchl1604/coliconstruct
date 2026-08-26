@@ -212,7 +212,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     /**
      * A row's person: their picture where they have one, their initials where
-     * they never will. Clients carry no picture anywhere in the system, so the
+     * they never will. Registered Users carry no picture anywhere in the system, so the
      * server sends avatar_url as null for them and this shows the initials
      * instead.
      */
@@ -570,7 +570,20 @@ document.addEventListener("DOMContentLoaded", function () {
                 statusCell(row) +
                 "</td>" +
                 '<td class="text-center"><div class="config-row-actions">' +
-                actionButton("edit", row.id, "bi-pencil", "Edit client", "primary") +
+                actionButton(
+                    "edit",
+                    row.id,
+                    "bi-pencil",
+                    "Edit registered user",
+                    "primary",
+                ) +
+                actionButton(
+                    "view-projects",
+                    row.id,
+                    "bi-folder2-open",
+                    "View projects",
+                    "info",
+                ) +
                 actionButton(
                     "reset-password",
                     row.id,
@@ -848,6 +861,295 @@ document.addEventListener("DOMContentLoaded", function () {
             });
         });
 
+        // -----------------------------------------------------------
+        // Export
+        // -----------------------------------------------------------
+        // The dialog owns its own date range and user. Everything else the
+        // table is currently narrowed by is copied into hidden fields as the
+        // dialog opens, so the file matches the list that was being looked at.
+        //
+        // Nothing here decides what may be exported. The endpoint validates
+        // every field again and narrows the rows to what this account may
+        // read, so a hidden input edited in the console buys nothing.
+        const exportForm = document.querySelector("[data-log-export-form]");
+        const exportModalEl = document.querySelector("#exportLogsModal");
+
+        if (exportForm && exportModalEl) {
+            const exportFrom = exportForm.querySelector("[data-log-export-from]");
+            const exportTo = exportForm.querySelector("[data-log-export-to]");
+
+            // -------------------------------------------------------
+            // The user filter: a search box, not a list
+            // -------------------------------------------------------
+            // Every account that has ever done anything can appear here, and
+            // that is a list nobody scrolls. So it is typed into and the
+            // matches drop down beneath, the way every other search on this
+            // page works.
+            //
+            // The hidden field is what is submitted, and only picking somebody
+            // sets it - a half-typed name is not a filter. Empty means every
+            // user, which is why nothing has to be chosen for the common case.
+            const actorSearch = exportForm.querySelector(
+                "[data-log-export-user-search]",
+            );
+            const actorId = exportForm.querySelector("[data-log-export-user-id]");
+            const actorResults = exportForm.querySelector(
+                "[data-log-export-user-results]",
+            );
+            const actorClear = exportForm.querySelector(
+                "[data-log-export-user-clear]",
+            );
+
+            // Already narrowed server-side to the accounts this administrator
+            // may read entries for, so the search has no rules of its own.
+            const actors = Array.isArray(
+                window.configurationOptions && window.configurationOptions.logActors,
+            )
+                ? window.configurationOptions.logActors
+                : [];
+
+            const ACTOR_RESULT_LIMIT = 8;
+
+            function actorLabel(actor) {
+                return actor.name + " — " + actor.role;
+            }
+
+            function closeActorResults() {
+                if (!actorResults) {
+                    return;
+                }
+
+                actorResults.classList.add("d-none");
+                actorResults.innerHTML = "";
+
+                if (actorSearch) {
+                    actorSearch.setAttribute("aria-expanded", "false");
+                }
+            }
+
+            function chooseActor(actor) {
+                if (actorId) {
+                    actorId.value = String(actor.id);
+                }
+
+                if (actorSearch) {
+                    actorSearch.value = actorLabel(actor);
+                }
+
+                if (actorClear) {
+                    actorClear.classList.remove("d-none");
+                }
+
+                closeActorResults();
+            }
+
+            function clearActor(refocus) {
+                if (actorId) {
+                    actorId.value = "";
+                }
+
+                if (actorSearch) {
+                    actorSearch.value = "";
+                }
+
+                if (actorClear) {
+                    actorClear.classList.add("d-none");
+                }
+
+                closeActorResults();
+
+                if (refocus && actorSearch) {
+                    actorSearch.focus();
+                }
+            }
+
+            function renderActorResults(term) {
+                if (!actorResults) {
+                    return;
+                }
+
+                const needle = term.trim().toLowerCase();
+
+                if (!needle) {
+                    closeActorResults();
+
+                    return;
+                }
+
+                // Name, account code and address all match, because all three
+                // are things somebody knows an account by.
+                const matches = actors
+                    .filter(function (actor) {
+                        return [actor.name, actor.code, actor.email, actor.role].some(
+                            function (field) {
+                                return (
+                                    field &&
+                                    String(field).toLowerCase().indexOf(needle) !== -1
+                                );
+                            },
+                        );
+                    })
+                    .slice(0, ACTOR_RESULT_LIMIT);
+
+                if (!matches.length) {
+                    actorResults.innerHTML =
+                        '<li class="config-actor-empty">No matching user. Leave it empty for all users.</li>';
+                    actorResults.classList.remove("d-none");
+                    actorSearch.setAttribute("aria-expanded", "true");
+
+                    return;
+                }
+
+                actorResults.innerHTML = matches
+                    .map(function (actor) {
+                        return (
+                            '<li><button type="button" class="config-actor-option" data-actor-id="' +
+                            escapeHtml(String(actor.id)) +
+                            '" role="option">' +
+                            '<span class="config-actor-name">' +
+                            escapeHtml(actor.name) +
+                            "</span>" +
+                            '<span class="config-actor-meta">' +
+                            escapeHtml(actor.role) +
+                            (actor.code ? " · " + escapeHtml(actor.code) : "") +
+                            "</span>" +
+                            "</button></li>"
+                        );
+                    })
+                    .join("");
+
+                actorResults.classList.remove("d-none");
+                actorSearch.setAttribute("aria-expanded", "true");
+            }
+
+            if (actorSearch) {
+                actorSearch.addEventListener("input", function () {
+                    // Editing after picking somebody drops the pick: the box
+                    // must never show one name and submit another.
+                    if (actorId && actorId.value) {
+                        actorId.value = "";
+
+                        if (actorClear) {
+                            actorClear.classList.add("d-none");
+                        }
+                    }
+
+                    renderActorResults(actorSearch.value);
+                });
+
+                actorSearch.addEventListener("keydown", function (event) {
+                    if (event.key === "Escape") {
+                        closeActorResults();
+                    }
+
+                    // Enter in the search box picks the first match rather
+                    // than submitting the form half-filled.
+                    if (event.key === "Enter" && actorResults) {
+                        const first = actorResults.querySelector(
+                            "[data-actor-id]",
+                        );
+
+                        if (first) {
+                            event.preventDefault();
+                            first.click();
+                        }
+                    }
+                });
+            }
+
+            if (actorResults) {
+                actorResults.addEventListener("click", function (event) {
+                    const option = event.target.closest("[data-actor-id]");
+
+                    if (!option) {
+                        return;
+                    }
+
+                    const chosen = actors.find(function (actor) {
+                        return String(actor.id) === option.dataset.actorId;
+                    });
+
+                    if (chosen) {
+                        chooseActor(chosen);
+                    }
+                });
+            }
+
+            if (actorClear) {
+                actorClear.addEventListener("click", function () {
+                    clearActor(true);
+                });
+            }
+
+            // A name typed but never picked is not a filter, and it must not
+            // look like one on the way out either.
+            exportForm.addEventListener("submit", function () {
+                if (actorId && !actorId.value && actorSearch) {
+                    actorSearch.value = "";
+                }
+            });
+
+            document.addEventListener("click", function (event) {
+                if (!exportForm.contains(event.target)) {
+                    closeActorResults();
+                }
+            });
+
+            // The table's own date filter is deliberately not among these:
+            // the dialog's two date fields are required and are what decide
+            // the exported period.
+            const carried = [
+                ["[data-log-export-search]", "[data-log-search]"],
+                ["[data-log-export-role]", "[data-log-role]"],
+                ["[data-log-export-module]", "[data-log-module]"],
+            ];
+
+            exportModalEl.addEventListener("show.bs.modal", function () {
+                carried.forEach(function (pair) {
+                    const target = exportForm.querySelector(pair[0]);
+                    const source = document.querySelector(pair[1]);
+
+                    if (target) {
+                        target.value = source ? source.value : "";
+                    }
+                });
+
+                const sortField = exportForm.querySelector(
+                    "[data-log-export-sort]",
+                );
+                const directionField = exportForm.querySelector(
+                    "[data-log-export-direction]",
+                );
+
+                if (sortField) {
+                    sortField.value = logSort;
+                }
+
+                if (directionField) {
+                    directionField.value = logDirection;
+                }
+
+                // The table's own custom window is where the dialog starts,
+                // so the obvious "export what I am looking at" needs no
+                // retyping. Both fields are required, so anything else the
+                // table is showing leaves them to be filled in.
+                if (logRange && logRange.value === "custom") {
+                    if (exportFrom && logFrom) {
+                        exportFrom.value = logFrom.value;
+                    }
+
+                    if (exportTo && logTo) {
+                        exportTo.value = logTo.value;
+                    }
+                }
+
+                // A dialog reopened is a fresh question, and nothing on the
+                // table picks a user.
+                clearActor(false);
+            });
+
+        }
+
         // Loaded when the tab is first opened rather than on page load: the
         // audit trail is the second tab, and most visits never reach it.
         const logsTab = document.querySelector("#activityLogsTab");
@@ -1043,7 +1345,7 @@ document.addEventListener("DOMContentLoaded", function () {
         accountHistory.classList.remove("d-none");
 
         userModalTitle.textContent = account.is_client
-            ? "Edit Client Account"
+            ? "Edit Registered User Account"
             : "Edit Employee Account";
         userSubmitLabel.textContent = "Save Changes";
 
@@ -1343,6 +1645,143 @@ document.addEventListener("DOMContentLoaded", function () {
     });
 
     // ---------------------------------------------------------------
+    // A Registered User's projects
+    //
+    // The reverse of the assignment edited on a project's own page: the same
+    // link read from the account's end. Read-only, so there is no table
+    // machinery here - one request, one render, and every value written in
+    // with textContent so a project name can never become markup.
+    // ---------------------------------------------------------------
+
+    const userProjectsModalEl = document.querySelector("[data-user-projects-modal]");
+    const userProjectsBody = document.querySelector("[data-user-projects-body]");
+    const userProjectsSubtitle = document.querySelector(
+        "[data-user-projects-subtitle]",
+    );
+    const userProjectsLoading = document.querySelector(
+        "[data-user-projects-loading]",
+    );
+    const userProjectsEmpty = document.querySelector("[data-user-projects-empty]");
+    const userProjectsError = document.querySelector("[data-user-projects-error]");
+
+    function projectCell(text) {
+        const cell = document.createElement("td");
+
+        cell.textContent = text || "—";
+
+        return cell;
+    }
+
+    function renderUserProjects(rows) {
+        userProjectsBody.replaceChildren();
+
+        rows.forEach(function (row) {
+            const tr = document.createElement("tr");
+
+            tr.appendChild(projectCell(row.code));
+            tr.appendChild(projectCell(row.reference_no));
+
+            const nameCell = document.createElement("td");
+            const name = document.createElement("div");
+
+            name.className = "fw-semibold";
+            name.textContent = row.name || "—";
+            nameCell.appendChild(name);
+
+            if (row.address) {
+                const address = document.createElement("div");
+
+                address.className = "text-secondary small";
+                address.textContent = row.address;
+                nameCell.appendChild(address);
+            }
+
+            tr.appendChild(nameCell);
+
+            const typesCell = document.createElement("td");
+
+            if (row.types && row.types.length) {
+                row.types.forEach(function (type) {
+                    const chip = document.createElement("span");
+
+                    chip.className = "project-type-chip";
+                    chip.textContent = type;
+                    typesCell.appendChild(chip);
+                });
+            } else {
+                typesCell.textContent = "—";
+            }
+
+            tr.appendChild(typesCell);
+            tr.appendChild(projectCell(row.dates));
+
+            const statusCellEl = document.createElement("td");
+            const badge = document.createElement("span");
+
+            badge.className = "badge " + (row.status_badge_class || "bg-secondary");
+            badge.textContent = row.status_label || "—";
+            statusCellEl.appendChild(badge);
+            tr.appendChild(statusCellEl);
+
+            const actionCell = document.createElement("td");
+
+            actionCell.className = "text-center";
+
+            const link = document.createElement("a");
+
+            link.className = "btn btn-sm btn-outline-primary py-1 px-2";
+            link.href = row.url;
+            link.title = "Open project";
+            link.setAttribute("aria-label", "Open project");
+            link.innerHTML = '<i class="bi bi-box-arrow-up-right"></i>';
+            actionCell.appendChild(link);
+            tr.appendChild(actionCell);
+
+            userProjectsBody.appendChild(tr);
+        });
+    }
+
+    function openUserProjects(account) {
+        if (!userProjectsModalEl) {
+            return;
+        }
+
+        userProjectsBody.replaceChildren();
+        setAlert(userProjectsError, "");
+        userProjectsEmpty.classList.add("d-none");
+        userProjectsLoading.classList.remove("d-none");
+        userProjectsSubtitle.textContent =
+            account.full_name + " · " + account.email;
+
+        bootstrapModal(userProjectsModalEl)?.show();
+
+        requestJson(routes.userBase + "/" + account.id + "/projects").then(
+            function (result) {
+                userProjectsLoading.classList.add("d-none");
+
+                if (!result.ok) {
+                    setAlert(
+                        userProjectsError,
+                        result.body.error || "Unable to load projects.",
+                    );
+
+                    return;
+                }
+
+                const rows = result.body.rows || [];
+
+                if (!rows.length) {
+                    userProjectsEmpty.classList.remove("d-none");
+
+                    return;
+                }
+
+                renderUserProjects(rows);
+            },
+        );
+    }
+
+    // ---------------------------------------------------------------
     // Row actions
     // ---------------------------------------------------------------
 
@@ -1372,6 +1811,12 @@ document.addEventListener("DOMContentLoaded", function () {
 
             if (action === "edit") {
                 openEdit(account);
+
+                return;
+            }
+
+            if (action === "view-projects") {
+                openUserProjects(account);
 
                 return;
             }

@@ -17,6 +17,7 @@ use App\Models\Technician;
 use App\Models\User;
 use App\Services\DashboardMetrics;
 use App\Services\TechnicianAvailabilityService;
+use App\Support\BusinessTime;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -1142,7 +1143,7 @@ class ProjectCompletionConfirmationTest extends TestCase
         $response->assertSee('Contact Support');
         // The report under review, and the deadline it is under.
         $response->assertSee('Everything on site is finished.');
-        $response->assertSee($project->confirmationDeadline()->format('F j, Y'));
+        $response->assertSee($project->confirmationDeadline()->format(BusinessTime::DATE));
         $response->assertSee(route('public.projects.confirm', $project->project_id), false);
     }
 

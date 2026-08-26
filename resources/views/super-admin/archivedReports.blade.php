@@ -71,10 +71,10 @@
                                     </div>
                                 </td>
                                 <td data-order="{{ $report->report_date?->timestamp ?? 0 }}">
-                                    {{ $report->report_date?->format('M j, Y') ?? '—' }}
+                                    {{ $report->report_date?->format(\App\Support\BusinessTime::DATE) ?? '—' }}
                                 </td>
                                 <td data-order="{{ $report->archived_at?->timestamp ?? 0 }}">
-                                    {{ $report->archived_at?->format('M j, Y') ?? '—' }}
+                                    {{ $report->archived_at?->format(\App\Support\BusinessTime::DATE) ?? '—' }}
                                 </td>
                                 <td>{{ $report->archiver?->fullName() ?? '—' }}</td>
                                 <td class="text-center">

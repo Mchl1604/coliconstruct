@@ -471,7 +471,7 @@ class PublicSiteTest extends TestCase
         $this->actingAs($admin)
             ->get(route('public.projects'))
             ->assertOk()
-            ->assertSee('This page is for client accounts.')
+            ->assertSee('This page is for Registered User accounts.')
             ->assertDontSee('Please log in to view your projects.')
             ->assertDontSee('Aircon Installation - Greenfield Offices');
     }

@@ -1,0 +1,247 @@
+{{-- The audit trail as a document.
+
+     Deliberately the same letterhead, footer and table styling as
+     reports-pdf.blade.php - both come out of the same system and a person
+     filing them should not be able to tell they were written separately. The
+     letterhead itself comes from CompanyBranding, so neither template holds
+     its own copy of the company's name. --}}
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <title>Activity Logs</title>
+    <style>
+        @page {
+            margin: 118px 28px 60px 28px;
+        }
+
+        body {
+            font-family: DejaVu Sans, sans-serif;
+            font-size: 9px;
+            color: #1e293b;
+            margin: 0;
+        }
+
+        /* Repeated on every page by dompdf because of the fixed position. */
+        header {
+            position: fixed;
+            top: -100px;
+            left: 0;
+            right: 0;
+            height: 94px;
+        }
+
+        footer {
+            position: fixed;
+            bottom: -44px;
+            left: 0;
+            right: 0;
+            height: 30px;
+            border-top: 1px solid #e5e7eb;
+            padding-top: 5px;
+            font-size: 8px;
+            color: #64748b;
+        }
+
+        /* dompdf resolves counter(page) without needing PHP enabled. */
+        .page-number:after {
+            content: counter(page);
+        }
+
+        .brand-row {
+            width: 100%;
+            border-bottom: 2px solid #2563eb;
+            padding-bottom: 6px;
+        }
+
+        .brand-logo {
+            height: 38px;
+        }
+
+        .company-name {
+            font-size: 15px;
+            font-weight: bold;
+            color: #0f172a;
+        }
+
+        .company-meta {
+            font-size: 8px;
+            color: #64748b;
+        }
+
+        .report-title {
+            font-size: 14px;
+            font-weight: bold;
+            color: #2563eb;
+            text-align: right;
+        }
+
+        .report-meta {
+            font-size: 8px;
+            color: #475569;
+            text-align: right;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        table.data {
+            table-layout: fixed;
+        }
+
+        table.data th {
+            background: #1e293b;
+            color: #ffffff;
+            font-size: 8px;
+            text-align: left;
+            padding: 5px 6px;
+        }
+
+        table.data td {
+            font-size: 8px;
+            padding: 4px 6px;
+            border-bottom: 1px solid #eef2f7;
+            vertical-align: top;
+            /* Descriptions run long; they wrap rather than push the columns
+               beside them off the page. */
+            word-wrap: break-word;
+        }
+
+        /* Alternating rows are set on the row as it is printed rather than
+           with :nth-child. dompdf evaluates a structural selector against
+           every cell it lays out, and on a table this long that is the single
+           most expensive thing on the page. */
+        tr.stripe td {
+            background: #f8fafc;
+        }
+
+        .nowrap {
+            white-space: nowrap;
+        }
+
+        .muted {
+            color: #94a3b8;
+            font-style: italic;
+        }
+
+        /* Said on the document itself rather than only in the dialog that
+           asked for it: a truncated export must never look complete. */
+        .truncation-notice {
+            border: 1px solid #fcd34d;
+            border-left: 3px solid #f59e0b;
+            background: #fffbeb;
+            color: #92400e;
+            padding: 6px 9px;
+            margin-bottom: 8px;
+            font-size: 8.5px;
+        }
+
+        .empty-notice {
+            border: 1px dashed #cbd5e1;
+            background: #f8fafc;
+            color: #64748b;
+            padding: 14px;
+            text-align: center;
+            font-size: 9.5px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+
+<body>
+
+    <header>
+        <table class="brand-row">
+            <tr>
+                <td style="width: 55%;">
+                    @if ($logoData)
+                        <img src="{{ $logoData }}" alt="" class="brand-logo">
+                    @endif
+                    <div class="company-name">{{ $company['name'] }}</div>
+                    <div class="company-meta">
+                        {{ $company['address'] }}<br>
+                        {{ $company['system'] }}
+                    </div>
+                </td>
+                <td style="width: 45%;">
+                    <div class="report-title">Activity Logs</div>
+                    <div class="report-meta">
+                        Filters: {{ $appliedFilters }}<br>
+                        Entries: {{ number_format($rows->count()) }}
+                        @if ($matched > $rows->count())
+                            of {{ number_format($matched) }} matching
+                        @endif
+                        <br>
+                        Generated By: {{ $generatedBy }}<br>
+                        Generated: {{ \App\Support\BusinessTime::format($generatedAt, \App\Support\BusinessTime::DATE_TIME) }}
+                    </div>
+                </td>
+            </tr>
+        </table>
+    </header>
+
+    <footer>
+        <table>
+            <tr>
+                <td style="width: 40%;">{{ $company['name'] }}</td>
+                <td style="width: 35%; text-align: center;">
+                    Entries are shown only where the account exporting them may read them.
+                </td>
+                <td style="width: 25%; text-align: right;">
+                    Page <span class="page-number"></span>
+                </td>
+            </tr>
+        </table>
+    </footer>
+
+    <main>
+
+        @if ($matched > $rows->count())
+            <div class="truncation-notice">
+                <strong>This document is not the whole match.</strong>
+                {{ number_format($matched) }} entries matched these filters and the
+                {{ number_format($limit) }} most recent are printed here. Narrow the date
+                range or choose a user to export the rest.
+            </div>
+        @endif
+
+        @if ($rows->isEmpty())
+            <div class="empty-notice">
+                No activity log entries match these filters.
+            </div>
+        @else
+            <table class="data">
+                <thead>
+                    <tr>
+                        @foreach ($columns as $heading => $width)
+                            <th style="width:{{ $width }}">{{ $heading }}</th>
+                        @endforeach
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach ($rows as $row)
+                        <tr @class(['stripe' => $loop->even])>
+                            {{-- The first two columns are an id and a
+                                 timestamp: neither is ever worth breaking
+                                 across two lines. --}}
+                            <td class="nowrap">#{{ $row[0] }}</td>
+                            <td class="nowrap">{{ $row[1] }}</td>
+                            <td>{{ $row[2] }}</td>
+                            <td>{{ $row[3] }}</td>
+                            <td>{{ $row[4] }}</td>
+                            <td>{{ $row[5] }}</td>
+                            <td>{{ $row[6] }}</td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </table>
+        @endif
+
+    </main>
+
+</body>
+
+</html>

@@ -22,6 +22,7 @@ use App\Services\ImportableTeamSources;
 use App\Services\NotificationService;
 use App\Services\ProjectCompletion;
 use App\Services\ProjectEmails;
+use App\Services\ProjectRegisteredUser;
 use App\Services\ProjectReopen;
 use App\Services\ProjectStatusRules;
 use App\Services\ProjectTeam;
@@ -34,6 +35,7 @@ use App\Services\ScheduleModeRules;
 use App\Services\TaskScheduleRules;
 use App\Services\TechnicianAvailabilityService;
 use App\Services\TechnicianTaskLoad;
+use App\Support\BusinessTime;
 use App\Support\PersonName;
 use App\Support\UploadStore;
 use Carbon\CarbonImmutable;
@@ -62,10 +64,11 @@ class ProjectController extends Controller
         private readonly NotificationService $notifications,
         private readonly ProjectEmails $clientEmails,
         private readonly ProjectTeam $projectTeam,
-        private readonly ScheduleHoldCutoff $holdCutoff
+        private readonly ScheduleHoldCutoff $holdCutoff,
+        private readonly ProjectRegisteredUser $registeredUsers
     ) {}
 
-    public function index()
+    public function index(Request $request)
     {
         $this->updateStatus(); // Call the function to update project statuses
 
@@ -106,7 +109,7 @@ class ProjectController extends Controller
 
         $completionBlockers = $projects
             ->mapWithKeys(fn (Project $project): array => [
-                $project->project_id => $project->isReadOnly() ? [] : $policy->blockersFor($project),
+                $project->project_id => $project->isReadOnly() ? [] : $policy->blockersFor($project, $request->user()),
             ])
             ->all();
 
@@ -153,8 +156,11 @@ class ProjectController extends Controller
 
         $technicianSchedules = $this->buildTechnicianSchedules();
         // Stated by the model so the dropdowns and the server agree on which
-        // hours exist without the list being written out twice.
+        // hours exist without the list being written out twice. The bounds go
+        // with them for the wizard's own availability narrowing, which works in
+        // hours rather than in options - one setting, read once.
         $workingHours = Schedule::workingHourOptions();
+        $partialDayHours = Schedule::partialDayHourBounds();
 
         return view('super-admin.createProject', compact(
             'projectTypes',
@@ -162,7 +168,8 @@ class ProjectController extends Controller
             'suggestedTechnicians',
             'otherTechnicians',
             'technicianSchedules',
-            'workingHours'
+            'workingHours',
+            'partialDayHours'
         ));
     }
 
@@ -197,9 +204,12 @@ class ProjectController extends Controller
             : null;
 
         if ($destination) {
-            $ranges = $destination->schedules
-                ->map(fn (Schedule $schedule): array => $schedule->toAvailabilityRange())
-                ->all();
+            // Screened against the destination's work still to come. A range
+            // it has already finished cannot be staffed differently now, so
+            // letting one refuse a technician only hid crews that are in fact
+            // free for the dates the project has left. Every remaining range
+            // is asked about - see Schedule::upcomingAvailabilityRanges().
+            $ranges = Schedule::upcomingAvailabilityRanges($destination->schedules);
         } else {
             $schedule = $request->only([
                 'scheduling_mode',
@@ -327,8 +337,10 @@ class ProjectController extends Controller
                     'remarks' => 'Created from project wizard',
                 ]);
 
-                $selectedTechnicianIds->each(function (int $technicianId) use ($project): void {
-                    $this->projectTeam->attach($project, $technicianId);
+                $createdBy = $request->user()?->id;
+
+                $selectedTechnicianIds->each(function (int $technicianId) use ($project, $createdBy): void {
+                    $this->projectTeam->attach($project, $technicianId, $createdBy);
                 });
 
                 $this->syncStatusWithSchedule($project);
@@ -660,10 +672,380 @@ class ProjectController extends Controller
         return $files->count();
     }
 
+    /**
+     * How each recorded action is coloured in the history dialog.
+     *
+     * Three meanings, not seven: something was gained, something was given up,
+     * or something moved. A reader scanning the list is looking for the shape
+     * of the change, and a palette with one colour per action name would carry
+     * no more information than the action names already do.
+     *
+     * @var array<string, string>
+     */
+    private const ENTRY_KINDS = [
+        ActivityLog::TECHNICIAN_ASSIGNED => 'added',
+        ActivityLog::LEAD_TECHNICIAN_ASSIGNED => 'added',
+        ActivityLog::TECHNICIAN_REMOVED => 'removed',
+        ActivityLog::PROJECT_RESCHEDULED => 'changed',
+        // A hold takes dates away and a resume does not give them back, so
+        // both read as a loss rather than as a move.
+        ActivityLog::PROJECT_PUT_ON_HOLD => 'removed',
+        ActivityLog::PROJECT_RESUMED => 'changed',
+    ];
+
+    /**
+     * One line saying who joined a project's team and who left it.
+     *
+     * Names rather than counts. "Added Ana Mendoza; removed Juan Dela Cruz"
+     * is the whole of what somebody reading a team history wants; "4
+     * technician(s), 1 newly added" - what this used to say - is a
+     * description of the form that was submitted rather than of the change it
+     * made.
+     *
+     * A save that changed nothing still records a line: somebody opened the
+     * team editor and pressed save, and a trail that silently drops that is a
+     * trail with a hole where an action was.
+     *
+     * @param  array<int, string>  $added
+     * @param  array<int, string>  $removed
+     */
+    private function describeTeamChange(Project $project, array $added, array $removed): string
+    {
+        $label = $project->reference_no ?: $project->name;
+
+        $parts = [];
+
+        if ($added !== []) {
+            $parts[] = 'added '.$this->nameList($added);
+        }
+
+        if ($removed !== []) {
+            $parts[] = 'removed '.$this->nameList($removed);
+        }
+
+        if ($parts === []) {
+            return sprintf("Saved the assigned team on '%s' with no change.", $label);
+        }
+
+        return sprintf("On '%s': %s.", $label, ucfirst(implode('; ', $parts)));
+    }
+
+    /**
+     * "Ana Mendoza", "Ana Mendoza and Kevin Lopez", "Ana, Kevin and Juan".
+     *
+     * @param  array<int, string>  $names
+     */
+    private function nameList(array $names): string
+    {
+        if (count($names) === 1) {
+            return $names[0];
+        }
+
+        $last = array_pop($names);
+
+        return implode(', ', $names).' and '.$last;
+    }
+
+    /**
+     * What has changed about a project's team, or about its dates.
+     *
+     * Two questions the project details page could not answer at all. The
+     * panels there show the state of things now - who is on the team, which
+     * ranges the project holds - and a state tells you nothing about how it
+     * got that way. "Why is this technician not on this any more?" and "who
+     * moved these dates?" were both answerable only by reading the whole
+     * system activity log and filtering it by eye.
+     *
+     * Two sources, deliberately:
+     *
+     *   - the activity log, which records the ACTIONS people took, with who
+     *     took them and when;
+     *   - for the team, the membership timeline itself (see ProjectTechnician),
+     *     which records the SPANS those actions produced.
+     *
+     * The log says "Michael removed 2 technicians on 14 August"; the timeline
+     * says "Juan was on this project from 3 July to 27 August". They answer
+     * different halves of the same question and neither is derivable from the
+     * other - the log's descriptions are prose written for a human, and the
+     * timeline has no actor or reason on it.
+     */
+    public function history(Request $request, int $id, string $section)
+    {
+        $project = Project::query()
+            ->with([
+                'teamHistory.technician.account',
+                'teamHistory.joinedBy',
+                'teamHistory.removedBy',
+            ])
+            ->findOrFail($id);
+
+        // The team reads its changes off the spans, which name people for the
+        // whole of a project's life; the schedule has no equivalent record and
+        // reads the activity log. See membershipEntries().
+        $entries = $section === 'team'
+            ? $this->membershipEntries($project)
+            : $this->activityEntries($project, $section);
+
+        return response()->json([
+            'section' => $section,
+            'project' => [
+                'reference_no' => $project->reference_no,
+                'name' => $project->name,
+            ],
+            'entries' => $entries,
+            // Only the team has a second source. A schedule range keeps no
+            // record of its own past - it is edited in place - so the log is
+            // the whole of what can be said about it.
+            'memberships' => $section === 'team'
+                ? $this->membershipTimeline($project)
+                : [],
+        ]);
+    }
+
+    /**
+     * The actions recorded against this project that belong to one section.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function activityEntries(Project $project, string $section): array
+    {
+        $actions = $section === 'team'
+            ? [
+                ActivityLog::TECHNICIAN_ASSIGNED,
+                ActivityLog::TECHNICIAN_REMOVED,
+                ActivityLog::LEAD_TECHNICIAN_ASSIGNED,
+            ]
+            : [
+                ActivityLog::PROJECT_RESCHEDULED,
+                // A hold cuts the schedule off at the day it was placed and a
+                // resume does not put the released dates back, so both belong
+                // in a history of the dates - see ScheduleHoldCutoff.
+                ActivityLog::PROJECT_PUT_ON_HOLD,
+                ActivityLog::PROJECT_RESUMED,
+            ];
+
+        return ActivityLog::query()
+            ->where('record_type', 'Project')
+            ->where('record_id', $project->project_id)
+            ->whereIn('action', $actions)
+            ->orderByDesc('created_at')
+            ->orderByDesc('activity_log_id')
+            ->limit(100)
+            ->get()
+            ->map(fn (ActivityLog $log): array => [
+                'kind' => self::ENTRY_KINDS[$log->action] ?? 'changed',
+                'action' => $log->action,
+                'description' => $log->description,
+                'actor' => $log->actor_name ?: 'System',
+                'at' => CarbonImmutable::parse($log->created_at)->format(BusinessTime::DATE_TIME),
+                'at_iso' => CarbonImmutable::parse($log->created_at)->toIso8601String(),
+            ])
+            ->all();
+    }
+
+    /**
+     * The team's changes, taken from the membership spans rather than from the
+     * activity log.
+     *
+     * The log records one line per SAVE - "on PRJ-0019: added Ana Mendoza;
+     * removed Juan Dela Cruz" - which is what happened, and it only names
+     * people for saves made since that wording was fixed. Everything older
+     * says "4 technician(s), 1 newly added", which names nobody at all.
+     *
+     * The spans have no such gap. Every membership carries when it opened and
+     * when it closed, backfilled for rows that predate the columns, so one
+     * arrival and one departure per person can be stated exactly however long
+     * ago it happened. That is what a reader wants from this panel: not which
+     * form was submitted, but who came and went.
+     *
+     * Both ends of a span become their own entry, so somebody who joined in
+     * June and left in August appears twice, in the right two places down the
+     * list.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function membershipEntries(Project $project): array
+    {
+        $entries = [];
+
+        foreach ($project->teamHistory as $assignment) {
+            $name = $assignment->technician?->name;
+
+            if ($name === null) {
+                continue;
+            }
+
+            if ($assignment->joined_at !== null) {
+                $entries[] = $this->membershipEntry(
+                    'added',
+                    'Technician Added',
+                    $name.' was added to the team.',
+                    $assignment->joinedBy?->name,
+                    $assignment->joined_at
+                );
+            }
+
+            if ($assignment->removed_at !== null) {
+                $entries[] = $this->membershipEntry(
+                    'removed',
+                    'Technician Removed',
+                    $name.' was removed from the team.',
+                    $assignment->removedBy?->name,
+                    $assignment->removed_at
+                );
+            }
+        }
+
+        // Newest first, matching the activity entries beside it.
+        usort($entries, fn (array $a, array $b): int => strcmp($b['at_iso'], $a['at_iso']));
+
+        return $entries;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function membershipEntry(
+        string $kind,
+        string $action,
+        string $description,
+        ?string $actor,
+        mixed $at
+    ): array {
+        $moment = CarbonImmutable::parse($at);
+
+        return [
+            'kind' => $kind,
+            'action' => $action,
+            'description' => $description,
+            // Nothing recorded who made the change before joined_by and
+            // removed_by existed, and a backfill would have had to guess at an
+            // administrator. Said plainly instead.
+            'actor' => $actor ?? 'Not recorded',
+            'at' => $moment->format(BusinessTime::DATE_TIME),
+            'at_iso' => $moment->toIso8601String(),
+        ];
+    }
+
+    /**
+     * Every membership this project has held, as spans.
+     *
+     * Ordered by who is still here first, then most recently joined - so the
+     * current team reads at the top and the people who have left fall below
+     * it in the order they arrived.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function membershipTimeline(Project $project): array
+    {
+        return $project->teamHistory
+            ->filter(fn (ProjectTechnician $assignment): bool => $assignment->technician !== null)
+            ->sortBy([
+                fn (ProjectTechnician $a, ProjectTechnician $b): int => ($a->isRemoved() ? 1 : 0) <=> ($b->isRemoved() ? 1 : 0),
+                fn (ProjectTechnician $a, ProjectTechnician $b): int => ($b->joined_at?->timestamp ?? 0) <=> ($a->joined_at?->timestamp ?? 0),
+            ])
+            ->map(fn (ProjectTechnician $assignment): array => [
+                'name' => $assignment->technician->name,
+                'is_lead' => optional($assignment->technician->account)->role === 'lead_technician',
+                'joined_on' => $assignment->joined_at
+                    ? CarbonImmutable::parse($assignment->joined_at)->format(BusinessTime::DATE)
+                    : null,
+                'removed_on' => $assignment->removed_at
+                    ? CarbonImmutable::parse($assignment->removed_at)->format(BusinessTime::DATE)
+                    : null,
+                'added_by' => $assignment->joinedBy?->name,
+                'removed_by' => $assignment->removedBy?->name,
+                'is_current' => ! $assignment->isRemoved(),
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Connect this project to a Registered User account, or move it to a
+     * different one.
+     *
+     * Administrators only, and stated here as well as on the route: the route
+     * group admits Admin and Super Admin, and an endpoint that changes who can
+     * read a project's whole history should not depend on a group declaration
+     * to say so.
+     *
+     * The project's client details are not touched. Whoever the job is booked
+     * for stays exactly as it is written on the project; this decides which
+     * account follows the work on the public website.
+     */
+    public function updateRegisteredUser(Request $request, int $id)
+    {
+        $this->guardRegisteredUserManagement($request);
+
+        $project = Project::findOrFail($id);
+
+        $validated = Validator::make($request->all(), [
+            'registered_user_id' => ['required', 'integer', 'exists:users,id'],
+        ], [
+            'registered_user_id.required' => 'Choose a Registered User to assign.',
+            'registered_user_id.exists' => 'That account no longer exists.',
+        ])->validate();
+
+        $account = User::find($validated['registered_user_id']);
+
+        try {
+            $changed = DB::transaction(fn (): bool => $this->registeredUsers->assign($project, $account));
+        } catch (RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        } catch (Throwable $e) {
+            return back()->with('error', $this->safeErrorMessage($e, 'Unable to save the Registered User. Nothing was changed.'));
+        }
+
+        return back()->with('success', $changed
+            ? sprintf('%s is now the Registered User on this project.', $account->fullName())
+            : sprintf('%s was already the Registered User on this project.', $account->fullName()));
+    }
+
+    /**
+     * Take the Registered User off this project.
+     *
+     * Nothing is deleted: the account keeps its details and its other
+     * projects, and the project keeps everything it has. Only the connection
+     * between the two ends.
+     */
+    public function removeRegisteredUser(Request $request, int $id)
+    {
+        $this->guardRegisteredUserManagement($request);
+
+        $project = Project::findOrFail($id);
+
+        try {
+            $removed = DB::transaction(fn (): bool => $this->registeredUsers->remove($project));
+        } catch (Throwable $e) {
+            return back()->with('error', $this->safeErrorMessage($e, 'Unable to remove the Registered User. Nothing was changed.'));
+        }
+
+        return back()->with($removed ? 'success' : 'error', $removed
+            ? 'Registered User removed. The account and the project were both kept.'
+            : 'This project has no Registered User assigned.');
+    }
+
+    /**
+     * Only an Admin or a Super Admin manages these assignments. A Registered
+     * User never reaches this controller at all - the portal is closed to
+     * them - and a technician who does may read a project without deciding who
+     * else can.
+     */
+    private function guardRegisteredUserManagement(Request $request): void
+    {
+        abort_unless(
+            in_array($request->user()?->role, User::ADMINISTRATOR_ROLES, true),
+            403
+        );
+    }
+
     public function show(Request $request, int $id)
     {
         $project = Project::with([
-            'clients',
+            // `clients.account` so the Registered User panel names the account
+            // the project is connected to without a query of its own.
+            'clients.account',
             'documents',
             'schedule',
             'schedules',
@@ -789,12 +1171,22 @@ class ProjectController extends Controller
         // asks for a reason.
         $completionBlockers = $project->isReadOnly()
             ? []
-            : app(ProjectPolicy::class)->blockersFor($project);
+            : app(ProjectPolicy::class)->blockersFor($project, $request->user());
 
         // Archiving belongs to the Super Admin, and only to a project the
         // archive will accept - Project::isArchivable() is the same question
         // the endpoint asks, so the button cannot offer what the route refuses.
         $canArchive = (bool) $request->user()?->isSuperAdmin() && $project->isArchivable();
+
+        // Who the project is connected to on the public website, and who it
+        // could be connected to instead. Both are administrators' business
+        // only - see guardRegisteredUserManagement, which is what the two
+        // endpoints behind these controls ask.
+        $canManageRegisteredUser = in_array($request->user()?->role, User::ADMINISTRATOR_ROLES, true);
+        $assignedRegisteredUser = $project->registeredUserAccount();
+        $registeredUserOptions = $canManageRegisteredUser
+            ? app(ProjectRegisteredUser::class)->candidates()
+            : collect();
 
         // Every completion cycle this project has been through, already
         // loaded. Never the current report: that one is read off the project.
@@ -818,7 +1210,10 @@ class ProjectController extends Controller
             'reopenBlockedDates',
             'completionBlockers',
             'canArchive',
-            'previousCompletionReports'
+            'previousCompletionReports',
+            'canManageRegisteredUser',
+            'assignedRegisteredUser',
+            'registeredUserOptions'
         ));
 
     }
@@ -1082,7 +1477,7 @@ class ProjectController extends Controller
                 sprintf(
                     "Put project '%s' on hold as of %s. %s Its team was kept.",
                     $project->reference_no,
-                    Schedule::businessToday()->format('F j, Y'),
+                    Schedule::businessToday()->format(BusinessTime::DATE),
                     $this->describeHoldCutoff($summary)
                 ),
                 $project
@@ -1192,7 +1587,12 @@ class ProjectController extends Controller
         // refused; an administrator may go ahead, but only by saying why. The
         // rules used to be asked on the technician's route and nowhere else,
         // so from this page they were not applied at all.
-        $blockers = app(ProjectPolicy::class)->blockersFor($project);
+        $policy = app(ProjectPolicy::class);
+        $blockerDetails = $policy->blockerDetailsFor($project, $request->user());
+        $blockers = array_column($blockerDetails, 'message');
+        // The same objections in a few words each, for the notification's
+        // title - see ProjectPolicy::blockerSummariesFor().
+        $blockerSummaries = array_column($blockerDetails, 'summary');
         $overrideReason = trim((string) ($validated['completion_override_reason'] ?? ''));
 
         if ($blockers !== [] && $overrideReason === '') {
@@ -1216,7 +1616,13 @@ class ProjectController extends Controller
                 );
             });
 
-            $this->announceCompletionRequest($project, $completion, $blockers, $overrideReason);
+            $this->announceCompletionRequest(
+                $project,
+                $completion,
+                $blockers,
+                $overrideReason,
+                $blockerSummaries
+            );
 
             return redirect()
                 ->route('super-admin.projects')
@@ -1414,7 +1820,8 @@ class ProjectController extends Controller
         Project $project,
         ProjectCompletion $completion,
         array $overriddenBlockers = [],
-        string $overrideReason = ''
+        string $overrideReason = '',
+        array $blockerSummaries = []
     ): void {
         try {
             $this->activityLogger->record(
@@ -1424,7 +1831,7 @@ class ProjectController extends Controller
                     "Marked project '%s' complete as of %s and sent it for client confirmation "
                         .'(Ongoing -> Awaiting Client Confirmation). Its schedule now holds %s.',
                     $project->reference_no ?? $project->name,
-                    $project->completed_at?->format('F j, Y') ?? 'today',
+                    $project->completed_at?->format(BusinessTime::DATE) ?? 'today',
                     $completion->describeRemainingSchedule($project)
                 ),
                 $project
@@ -1452,7 +1859,8 @@ class ProjectController extends Controller
                 $this->notifications->projectCompletionOverridden(
                     $project,
                     $overriddenBlockers,
-                    $overrideReason
+                    $overrideReason,
+                    $blockerSummaries
                 );
             }
 
@@ -2265,14 +2673,22 @@ class ProjectController extends Controller
         $teamBefore = $this->notifications->projectTeam($project);
         $previousLeadId = $this->notifications->projectLead($project)?->id;
 
-        // Every one of the project's schedules has to be checked, not just the
-        // first one, and every day inside each range - a technician who is free on
-        // the endpoints but booked mid-range must still be rejected. A partial-day
+        // Every one of the project's schedules that has not finished has to be
+        // checked, not just the first one and not just the overall span, and
+        // every day inside each range - a technician who is free on the
+        // endpoints but booked mid-range must still be rejected. A partial-day
         // schedule only asks about its own hours, so joining a team booked for a
         // morning does not require the whole day to be free.
-        $ranges = $project->schedules
-            ->map(fn (Schedule $schedule): array => $schedule->toAvailabilityRange())
-            ->all();
+        //
+        // The ranges that have ended are left out, and only those. Adding
+        // somebody to a team is a decision about the work still to come, so a
+        // week this project spent in August has no say in who may be put on it
+        // for September - screening against it refused technicians over dates
+        // that cannot be staffed differently now. A range that started before
+        // today keeps the days it has left, because those are still a real
+        // claim. The picker draws on the same rule through
+        // ProjectTeamCandidates, so what it offers is what this accepts.
+        $ranges = Schedule::upcomingAvailabilityRanges($project->schedules);
 
         if ($ranges !== [] && $newlyAddedIds->isNotEmpty()) {
             $availability = app(TechnicianAvailabilityService::class);
@@ -2297,13 +2713,25 @@ class ProjectController extends Controller
         // told to people after it commits.
         $unassignedWork = [];
 
-        DB::transaction(function () use ($project, $technicianIds, &$unassignedWork): void {
+        $removedBy = $request->user()?->id;
+
+        // Who actually came off and who actually went on, by name, gathered as
+        // it happens so the audit line can say so. It used to read "4
+        // technician(s), 1 newly added", which is a count of the outcome
+        // rather than a record of the change: it named nobody, so the one
+        // question a team history is opened to answer - who left, and when -
+        // could not be answered from it at all.
+        $removedNames = [];
+
+        DB::transaction(function () use ($project, $technicianIds, $removedBy, &$unassignedWork, &$removedNames): void {
             $project->projectTechnicians()
                 ->with('technician.account')
                 ->whereNotIn('technician_id', $technicianIds->all())
                 ->get()
-                ->each(function (ProjectTechnician $assignment) use ($project, &$unassignedWork): void {
-                    $released = $this->projectTeam->detach($project, $assignment);
+                ->each(function (ProjectTechnician $assignment) use ($project, $removedBy, &$unassignedWork, &$removedNames): void {
+                    $released = $this->projectTeam->detach($project, $assignment, $removedBy);
+
+                    $removedNames[] = $assignment->technician?->name ?? 'A technician';
 
                     if ($released->isNotEmpty()) {
                         $unassignedWork[] = [
@@ -2313,20 +2741,28 @@ class ProjectController extends Controller
                     }
                 });
 
-            $technicianIds->each(function (int $technicianId) use ($project): void {
-                $this->projectTeam->attach($project, $technicianId);
+            $technicianIds->each(function (int $technicianId) use ($project, $removedBy): void {
+                // Same actor as the removals above: one save, one person
+                // behind every change in it.
+                $this->projectTeam->attach($project, $technicianId, $removedBy);
             });
         });
+
+        // Fetched as models and mapped rather than plucked: Technician::$name
+        // is an accessor over the linked account (see getNameAttribute), not a
+        // column, so pluck('name') selects a field the table does not have.
+        $addedNames = Technician::query()
+            ->with('account')
+            ->whereIn('technician_id', $newlyAddedIds->all())
+            ->orderBy('technician_id')
+            ->get()
+            ->map(fn (Technician $technician): string => $technician->name)
+            ->all();
 
         $this->activityLogger->record(
             ActivityLog::TECHNICIAN_ASSIGNED,
             null,
-            sprintf(
-                "Updated the assigned team on '%s': %d technician(s), %d newly added.",
-                $project->reference_no,
-                $technicianIds->count(),
-                $newlyAddedIds->count()
-            ),
+            $this->describeTeamChange($project, $addedNames, $removedNames),
             $project
         );
 

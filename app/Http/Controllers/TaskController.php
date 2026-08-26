@@ -514,7 +514,11 @@ class TaskController extends Controller
     private function assignedTechnicianRule(Project $project): Exists
     {
         return Rule::exists('tbl_project_technicians', 'technician_id')
-            ->where('project_id', $project->project_id);
+            ->where('project_id', $project->project_id)
+            // Somebody taken off the team keeps their row - it carries the
+            // dates they worked - so the membership has to be an open one or
+            // a removed technician would still pass as assignable here.
+            ->whereNull('removed_at');
     }
 
     /**

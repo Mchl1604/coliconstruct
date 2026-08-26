@@ -30,6 +30,26 @@ use DateTimeInterface;
 class BusinessTime
 {
     /**
+     * The one format every date shown to a person is written in: "Jan 1, 2026".
+     *
+     * Abbreviated month, no leading zero on the day, always the year. The
+     * whole system reads dates in this one shape - a table, a card, a modal, a
+     * filter and an exported file all say the same thing the same way - so
+     * this constant is the single place it is decided.
+     *
+     * Stored values are untouched by it. A date column is still a date and an
+     * ISO string still leaves the server as one; this is display only.
+     */
+    public const DATE = 'M j, Y';
+
+    /**
+     * The same date with the time of day: "Jan 1, 2026 3:04 PM". Used wherever
+     * an entry is an instant rather than a day - an audit row, a sign-in, an
+     * enquiry - and the date half of it matches DATE exactly.
+     */
+    public const DATE_TIME = 'M j, Y g:i A';
+
+    /**
      * Now, at the office. The clock a page prints and a date input defaults
      * to.
      */
@@ -65,7 +85,7 @@ class BusinessTime
      */
     public static function format(
         DateTimeInterface|string|null $value,
-        string $format = 'M j, Y',
+        string $format = self::DATE,
         string $fallback = '—'
     ): string {
         return self::at($value)?->format($format) ?? $fallback;

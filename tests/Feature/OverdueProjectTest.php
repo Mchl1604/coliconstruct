@@ -258,7 +258,7 @@ class OverdueProjectTest extends TestCase
         $response->assertSee('This project is overdue');
         $response->assertSee('Add New Schedule');
         $response->assertSee('Mark as Complete');
-        $response->assertSee('completeOverdueProjectModal', false);
+        $response->assertSee('completeProjectModal', false);
         $response->assertSee(route('super-admin.projects.complete', $late->project_id), false);
     }
 
@@ -271,7 +271,9 @@ class OverdueProjectTest extends TestCase
 
         $response->assertOk();
         $response->assertDontSee('This project is overdue');
-        $response->assertDontSee('completeOverdueProjectModal', false);
+        // The banner's own way out. Completion itself is still offered from
+        // the header, which is not what this test is about.
+        $response->assertDontSee('Mark as Complete');
     }
 
     // ------------------------------------------------------------------

@@ -253,6 +253,22 @@ Route::prefix('super-admin')
         Route::get('/projects/importable-teams', [ProjectController::class, 'importableTeams'])
             ->name('projects.importable-teams');
         Route::get('/projects/{id}', [ProjectController::class, 'show'])->name('projects.show');
+        // What has changed about a project's team, or about its dates. Read by
+        // the two history buttons on the project details page; `section` says
+        // which of the two is asking.
+        Route::get('/projects/{id}/history/{section}', [ProjectController::class, 'history'])
+            ->whereIn('section', ['team', 'schedule'])
+            ->name('projects.history');
+        // Which Registered User account a project is connected to. Admin and
+        // Super Admin both manage this - the group above admits exactly those
+        // two - and the controller asks the same question again rather than
+        // trusting the group, because this decides who may read a project's
+        // whole history on the public website.
+        Route::put('/projects/{id}/registered-user', [ProjectController::class, 'updateRegisteredUser'])
+            ->name('projects.registered-user.update');
+        Route::delete('/projects/{id}/registered-user', [ProjectController::class, 'removeRegisteredUser'])
+            ->name('projects.registered-user.destroy');
+
         Route::put('/projects/{id}/hold', [ProjectController::class, 'putOnHold'])->name('projects.hold');
         Route::put('/projects/{id}/resume', [ProjectController::class, 'resume'])->name('projects.resume');
         Route::post('/projects/{id}/complete', [ProjectController::class, 'complete'])->name('projects.complete');
@@ -372,7 +388,13 @@ Route::prefix('super-admin')
                 ->middleware('role:super_admin')
                 ->name('users.archived');
 
-            // Activity Logs.
+            // Activity Logs, and the same trail as a file. The export sits
+            // inside this group and nowhere else, so whoever may read the page
+            // may export it and nobody else can - and the controller narrows
+            // the rows to what the reader may see on top of that. Declared
+            // before the table route so the literal segment wins.
+            Route::get('/activity-logs/export', [ConfigurationController::class, 'exportActivityLogs'])
+                ->name('activity-logs.export');
             Route::get('/activity-logs', [ConfigurationController::class, 'activityLogs'])->name('activity-logs');
 
             // Inquiries: the messages written in from the public Contact page.
@@ -433,6 +455,12 @@ Route::prefix('super-admin')
             // than PUT for the updates: both carry a multipart profile picture,
             // which PHP does not parse from a PUT body.
             Route::get('/users/{user}', [ConfigurationController::class, 'show'])->name('users.show');
+
+            // The projects a Registered User is connected to, behind the View
+            // Projects action on their row. Read-only, and inside the same
+            // administrative group as the rest of User Management.
+            Route::get('/users/{user}/projects', [ConfigurationController::class, 'userProjects'])
+                ->name('users.projects');
             Route::post('/users/{user}/employee', [ConfigurationController::class, 'updateEmployee'])->name('users.employees.update');
             Route::post('/users/{user}/client', [ConfigurationController::class, 'updateClient'])->name('users.clients.update');
             Route::put('/users/{user}/password', [ConfigurationController::class, 'resetPassword'])->name('users.password.reset');

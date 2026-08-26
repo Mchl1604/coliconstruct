@@ -301,6 +301,8 @@ class DashboardMetrics
     public function urgentActions(): array
     {
         $projects = route('super-admin.projects');
+        $schedules = route('super-admin.schedules.index');
+        $outsideHours = $this->partialDaysOutsideHours();
 
         return collect([
             [
@@ -351,6 +353,21 @@ class DashboardMetrics
                 'url' => route('super-admin.configuration.index').'?inquiries='.Inquiry::FILTER_PENDING,
             ],
             [
+                // Bookings the working day no longer covers. Only work still to
+                // come, and only on live projects: a partial day already worked
+                // outside today's window is the record of a day that happened.
+                'key' => 'partial_days_outside_hours',
+                'count' => $outsideHours->count(),
+                'singular' => 'Partial Day Outside Working Hours',
+                'plural' => 'Partial Days Outside Working Hours',
+                'icon' => 'bi-clock-history',
+                // Straight to the booking: the schedules page with that
+                // project's editor already open, where the row flags itself.
+                'url' => $outsideHours->isEmpty()
+                    ? $schedules
+                    : $schedules.'?openSchedule='.$outsideHours->first()->project_id,
+            ],
+            [
                 'key' => 'projects_without_technicians',
                 'count' => Project::query()->missingTechnicians()->count(),
                 'singular' => 'Project Without Technicians',
@@ -372,6 +389,37 @@ class DashboardMetrics
             ])
             ->values()
             ->all();
+    }
+
+    /**
+     * Partial-day bookings still to come whose hours the configured window no
+     * longer covers.
+     *
+     * Narrowing Partial Day Start/End Hour in Project Settings deliberately
+     * leaves existing bookings where they are - work already promised is not
+     * moved by a setting. That is right, and it is also exactly how a booking
+     * quietly stops matching the working day nobody meant it to fall outside
+     * of, so the ones that can still be put right are surfaced rather than
+     * left to be noticed.
+     *
+     * Live projects only. A completed, cancelled or archived project's dates
+     * are its record, and there is nothing to correct on one.
+     *
+     * @return Collection<int, Schedule>
+     */
+    public function partialDaysOutsideHours(): Collection
+    {
+        return Schedule::query()
+            ->upcomingPartialDay()
+            ->whereHas('project', fn ($project) => $project
+                ->where('is_archived', false)
+                ->whereIn('status', Project::DERIVED_LIVE_STATUSES))
+            ->orderBy('start_datetime')
+            // The hour test lives on the model, so this list and the flag the
+            // row draws on itself are the same question asked once.
+            ->get()
+            ->filter(fn (Schedule $schedule): bool => $schedule->needsHourCorrection())
+            ->values();
     }
 
     /**
@@ -547,7 +595,7 @@ class DashboardMetrics
                     // The card shows this instead of the two dates when the
                     // booking is only part of a day, where "Aug 6 – Aug 6"
                     // would say less than nothing.
-                    'schedule_label' => $schedule->describe('M j'),
+                    'schedule_label' => $schedule->describe(),
                     'is_partial_day' => $schedule->isPartialDay(),
                     // Tasks done out of tasks set: the nearest thing this
                     // system has to "how far along is it".

@@ -564,6 +564,9 @@
         <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
         <script>
             window.projectWizardData = @json($technicianWizardData);
+            {{-- The one place the partial-day window is decided, handed to the
+                 wizard rather than repeated in it. See Schedule. --}}
+            window.partialDayHours = @json($partialDayHours);
         </script>
         <script src="/js/importTeam.js"></script>
         <script src="/js/super-admin/createProject.js"></script>

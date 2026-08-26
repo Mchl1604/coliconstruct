@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -81,6 +82,14 @@ class User extends Authenticatable
      * Every role the RBAC enum accepts, with the label the interface shows.
      * Anything other than `client` is an employee account.
      *
+     * The `client` key is the stored value and is deliberately left alone -
+     * every row in `users`, every activity log entry and every foreign key
+     * already carries it. What the interface calls that account type is a
+     * Registered User: somebody with an account on the public site, whether
+     * they opened it themselves or an administrator opened it for them. It is
+     * not the same thing as a project's client, which is contact information
+     * on the project itself and keeps its own name throughout.
+     *
      * @var array<string, string>
      */
     public const ROLES = [
@@ -88,7 +97,7 @@ class User extends Authenticatable
         'admin' => 'Admin',
         'lead_technician' => 'Lead Technician',
         'technician' => 'Technician',
-        'client' => 'Client',
+        'client' => 'Registered User',
     ];
 
     /**
@@ -189,6 +198,37 @@ class User extends Authenticatable
     public function archiver(): BelongsTo
     {
         return $this->belongsTo(self::class, 'archived_by', 'id');
+    }
+
+    /**
+     * The project contact rows this account has been linked to.
+     *
+     * Registered Users only - an employee never has one. The rows carry the
+     * project's client details; what makes them this account's is `user_id`,
+     * written when the account registers or when an administrator assigns it.
+     */
+    public function clientContacts(): HasMany
+    {
+        return $this->hasMany(Client::class, 'user_id', 'id');
+    }
+
+    /**
+     * The projects this Registered User is connected to.
+     *
+     * The other direction of the same link the project details page reads -
+     * see Project::registeredUser(). Nothing new is stored for it: a project
+     * is theirs because its contact row names their account.
+     */
+    public function assignedProjects(): HasManyThrough
+    {
+        return $this->hasManyThrough(
+            Project::class,
+            Client::class,
+            'user_id',
+            'project_id',
+            'id',
+            'project_id'
+        );
     }
 
     /**

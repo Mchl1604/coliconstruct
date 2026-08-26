@@ -9,6 +9,8 @@ use App\Models\TechnicianReport;
 use App\Models\User;
 use App\Services\ActivityLogger;
 use App\Services\SystemReportService;
+use App\Support\BusinessTime;
+use App\Support\CompanyBranding;
 use App\Support\DisplayCode;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\CarbonImmutable;
@@ -40,18 +42,6 @@ class ReportController extends Controller
      * the Configuration page so a page of rows is the same size everywhere.
      */
     private const PER_PAGE = 10;
-
-    /**
-     * Letterhead details for the exported PDF. The single place to change
-     * them; move to a settings table if they ever become editable in-app.
-     *
-     * @var array<string, string>
-     */
-    private const COMPANY = [
-        'name' => 'Coliconstruct',
-        'address' => 'Carmona, Cavite, Philippines',
-        'system' => 'Coliconstruct Project Management System',
-    ];
 
     /**
      * The granularities a dashboard chart can be switched between.
@@ -249,7 +239,7 @@ class ReportController extends Controller
         return response()->json($this->reportRow($report, $request->user()) + [
             // An archived report is still read in full; the viewer says so
             // rather than pretending otherwise.
-            'archived_at_label' => $report->archived_at?->format('M j, Y') ?? '—',
+            'archived_at_label' => $report->archived_at?->format(BusinessTime::DATE) ?? '—',
             'archived_by' => $report->archiver?->fullName() ?? '—',
             'can_restore' => (bool) $request->user()?->can('restore', $report),
             'description' => $report->report_description,
@@ -391,8 +381,8 @@ class ReportController extends Controller
             'appliedFilters' => $this->appliedFilters($reportType, $input),
             'generatedBy' => auth()->user()->name ?? 'Super Admin',
             'generatedAt' => CarbonImmutable::now(),
-            'logoData' => $this->logoDataUri(),
-            'company' => self::COMPANY,
+            'logoData' => CompanyBranding::logoDataUri(),
+            'company' => CompanyBranding::letterhead(),
         ])->setPaper('a4', 'landscape');
 
         $fileName = sprintf(
@@ -565,7 +555,7 @@ class ReportController extends Controller
             'submitted_by' => $report->submitterName(),
             'submitted_by_avatar' => $report->submitterAvatarUrl(),
             'report_date' => $report->report_date?->toDateString(),
-            'report_date_label' => $report->report_date?->format('M j, Y') ?? '—',
+            'report_date_label' => $report->report_date?->format(BusinessTime::DATE) ?? '—',
             'image_count' => $report->images->count(),
             'is_archived' => $report->isArchived(),
             // What the row is allowed to offer. The endpoint asks the same
@@ -585,7 +575,7 @@ class ReportController extends Controller
         return $this->reportRow($report, $user) + [
             'description' => $report->report_description,
             'can_restore' => (bool) $user?->can('restore', $report),
-            'archived_at_label' => $report->archived_at?->format('M j, Y') ?? '—',
+            'archived_at_label' => $report->archived_at?->format(BusinessTime::DATE) ?? '—',
             'archived_by' => $report->archiver?->fullName() ?? '—',
             'project_url' => $report->project
                 ? route('super-admin.projects.show', $report->project->project_id)
@@ -640,19 +630,5 @@ class ReportController extends Controller
                 : [null, null],
             default => [null, null],
         };
-    }
-
-    /**
-     * dompdf cannot fetch over HTTP, so the logo has to be inlined.
-     */
-    private function logoDataUri(): ?string
-    {
-        $path = public_path('img/coliconstructlogor.png');
-
-        if (! is_file($path)) {
-            return null;
-        }
-
-        return 'data:image/png;base64,'.base64_encode((string) file_get_contents($path));
     }
 }

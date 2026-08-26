@@ -170,6 +170,141 @@ class ProjectTeamCandidatesTest extends TestCase
         $this->assertSame('', $candidate['reason']);
     }
 
+    // ------------------------------------------------------------------
+    // Only the ranges that have not ended
+    // ------------------------------------------------------------------
+
+    /**
+     * The bug this replaces: a range the project had already finished still
+     * screened the picker, so somebody busy back then was refused for work
+     * whose remaining dates are weeks away.
+     */
+    public function test_a_clash_during_a_finished_range_does_not_block_a_technician(): void
+    {
+        $technician = $this->createTechnician('Jose Garcia');
+
+        $pastStart = CarbonImmutable::today()->subDays(16)->toDateString();
+        $pastEnd = CarbonImmutable::today()->subDays(14)->toDateString();
+        $future = CarbonImmutable::today()->addDays(20)->toDateString();
+
+        $project = $this->createProject();
+        $this->addRange($project, $pastStart, $pastEnd);
+        $this->addRange($project, $future, $future);
+
+        // Busy over the week the project has already worked, free after.
+        $this->book($this->createProject(), $technician, $pastStart, $pastEnd);
+
+        $candidate = $this->candidate($this->candidatesFor($project), $technician);
+
+        $this->assertTrue($candidate['available']);
+        $this->assertSame('', $candidate['reason']);
+    }
+
+    /**
+     * Dropping the finished ranges does not drop the rest of the rule: every
+     * range still to come is checked, and a clash on any one of them refuses.
+     */
+    public function test_a_clash_during_a_later_future_range_still_blocks(): void
+    {
+        $technician = $this->createTechnician('Ana Cruz');
+
+        $pastStart = CarbonImmutable::today()->subDays(16)->toDateString();
+        $pastEnd = CarbonImmutable::today()->subDays(14)->toDateString();
+        $soon = CarbonImmutable::today()->addDays(2)->toDateString();
+        $later = CarbonImmutable::today()->addDays(20)->toDateString();
+
+        $project = $this->createProject();
+        $this->addRange($project, $pastStart, $pastEnd);
+        $this->addRange($project, $soon, $soon);
+        $this->addRange($project, $later, $later);
+
+        // Free for the near range, busy for the far one.
+        $this->book($this->createProject(), $technician, $later, $later);
+
+        $candidate = $this->candidate($this->candidatesFor($project), $technician);
+
+        $this->assertFalse($candidate['available']);
+        $this->assertStringContainsString('Booked on', $candidate['reason']);
+    }
+
+    /**
+     * A project with nothing but finished ranges has nothing left to staff
+     * for, so nobody can clash with it.
+     */
+    public function test_a_project_with_only_finished_ranges_blocks_nobody(): void
+    {
+        $technician = $this->createTechnician('Mark Reyes');
+
+        $pastStart = CarbonImmutable::today()->subDays(16)->toDateString();
+        $pastEnd = CarbonImmutable::today()->subDays(14)->toDateString();
+
+        $project = $this->createProject();
+        $this->addRange($project, $pastStart, $pastEnd);
+
+        $this->book($this->createProject(), $technician, $pastStart, $pastEnd);
+
+        $candidate = $this->candidate($this->candidatesFor($project), $technician);
+
+        $this->assertTrue($candidate['available']);
+    }
+
+    /**
+     * A range that began before today is not discarded for it. The days it has
+     * left are still a real claim, so a clash on one of them still refuses -
+     * while a clash on a day it has already worked does not.
+     */
+    public function test_a_running_range_keeps_the_days_it_has_left(): void
+    {
+        $blockedLater = $this->createTechnician('Lito Santos');
+        $blockedEarlier = $this->createTechnician('Rita Delgado');
+
+        $started = CarbonImmutable::today()->subDays(2)->toDateString();
+        $endsSoon = CarbonImmutable::today()->addDays(3)->toDateString();
+
+        $project = $this->createProject();
+        $this->addRange($project, $started, $endsSoon);
+
+        // One busy on a day the range has still to run.
+        $this->book($this->createProject(), $blockedLater, $endsSoon, $endsSoon);
+        // One busy only on a day the range has already worked.
+        $this->book($this->createProject(), $blockedEarlier, $started, $started);
+
+        $candidates = $this->candidatesFor($project);
+
+        $this->assertFalse($this->candidate($candidates, $blockedLater)['available']);
+        $this->assertTrue($this->candidate($candidates, $blockedEarlier)['available']);
+    }
+
+    /**
+     * The save enforces the same rule the picker draws, so a technician the
+     * picker offers is one the team editor accepts.
+     */
+    public function test_the_team_editor_accepts_somebody_blocked_only_by_a_finished_range(): void
+    {
+        $pastStart = CarbonImmutable::today()->subDays(16)->toDateString();
+        $pastEnd = CarbonImmutable::today()->subDays(14)->toDateString();
+        $future = CarbonImmutable::today()->addDays(20)->toDateString();
+
+        $project = $this->createProject();
+        $this->addRange($project, $pastStart, $pastEnd);
+        $this->addRange($project, $future, $future);
+
+        $lead = $this->createTechnician('Lead Person', 'lead_technician');
+        $wasBusy = $this->createTechnician('Kevin Lopez');
+        $this->book($this->createProject(), $wasBusy, $pastStart, $pastEnd);
+
+        $response = $this->put(route('super-admin.projects.team.update', $project->project_id), [
+            'lead_tech' => $lead->technician_id,
+            'technicians' => [$wasBusy->technician_id],
+        ]);
+
+        $response->assertSessionHas('success');
+        $this->assertDatabaseHas('tbl_project_technicians', [
+            'project_id' => $project->project_id,
+            'technician_id' => $wasBusy->technician_id,
+        ]);
+    }
+
     /**
      * A technician's booking for THIS project must not read as a clash with it.
      */

@@ -162,7 +162,7 @@
                                     </div>
                                 </td>
                                 <td data-order="{{ $report->report_date?->timestamp ?? 0 }}">
-                                    {{ $report->report_date?->format('M j, Y') ?? '—' }}
+                                    {{ $report->report_date?->format(\App\Support\BusinessTime::DATE) ?? '—' }}
                                 </td>
                                 <td class="text-center">
                                     <div class="d-inline-flex gap-1">
@@ -175,7 +175,7 @@
                                              themselves, decided by the same policy
                                              the endpoint enforces. --}}
                                         @can('archive', $report)
-                                            <button type="button" class="btn btn-sm btn-warning py-1 px-2"
+                                            <button type="button" class="btn btn-sm btn-dark py-1 px-2"
                                                 data-archive-report="{{ $report->id }}"
                                                 data-report-label="{{ $report->displayCode() }} - {{ $report->report_title }}"
                                                 title="Archive report">
@@ -275,7 +275,7 @@
 
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-warning" data-archive-report-confirm>
+                    <button type="button" class="btn btn-dark" data-archive-report-confirm>
                         <span class="spinner-border spinner-border-sm me-1 d-none" role="status" aria-hidden="true"
                             data-spinner></span>
                         <i class="bi bi-archive me-1" aria-hidden="true"></i>

@@ -112,7 +112,11 @@ class ScheduleCalendarAssignTest extends TestCase
         $response->assertJsonPath('date', $this->day(7));
         $response->assertJsonCount(1, 'projects');
         $response->assertJsonPath('projects.0.name', 'Covering Project');
-        $response->assertJsonPath('projects.0.technicians.0', 'Jose Garcia');
+        // The crew is reported as of the clicked day, so each entry carries
+        // whether that membership has since been closed - see
+        // ScheduleController::dateDetails().
+        $response->assertJsonPath('projects.0.technicians.0.name', 'Jose Garcia');
+        $response->assertJsonPath('projects.0.technicians.0.removed_on', null);
     }
 
     public function test_assignable_excludes_projects_by_status_and_hold(): void

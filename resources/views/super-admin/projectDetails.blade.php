@@ -33,15 +33,17 @@
         // pickers grey those days out.
         $taskDateHint = app(\App\Services\TaskScheduleRules::class)->describeSelectable($scheduleRanges->all());
 
-        // Only work that is actually under way may be closed out. A Pending,
+        // Only work that is actually under way may be closed out. An
         // Unscheduled or paused project has had nobody on site yet, so there
         // is nothing to close out - the same rule the technician portal draws
-        // its button by. See Project::isCompletable().
+        // its button by. A Super Admin additionally gets Pending work, which
+        // is theirs to close out early. See Project::isCompletableBy(), which
+        // ProjectController::complete() asks again before writing anything.
         //
         // An overdue project satisfies it: overdue is derived, and a late
         // project is stored as Ongoing. Closing it off is exactly what the
         // banner below asks for.
-        $canComplete = $project->isCompletable();
+        $canComplete = $project->isCompletableBy(auth()->user());
     @endphp
     {{-- `project-details-page` is what applies the brand blue from the
          client's own project page; the layout below is unchanged. --}}
@@ -58,6 +60,20 @@
                      can never offer what the endpoint refuses. An already
                      archived project is not offered it, which is what keeps
                      View from turning into a second archive. --}}
+                {{-- The overdue banner below already offers this on a late
+                     project, and two buttons for one dialog on one page is one
+                     too many - so the header carries it for everything else
+                     that may be closed out, which is what puts a Pending
+                     project within a Super Admin's reach here as well as on
+                     the Projects page. --}}
+                @if ($canComplete && ! $project->isOverdue())
+                    <button type="button" class="btn btn-success" data-bs-toggle="modal"
+                        data-bs-target="#completeProjectModal">
+                        <i class="bi bi-check-circle me-1" aria-hidden="true"></i>
+                        Complete Project
+                    </button>
+                @endif
+
                 @if ($canArchive)
                     <button type="button" class="btn btn-dark" data-bs-toggle="modal"
                         data-bs-target="#archiveProjectModal">
@@ -168,7 +184,7 @@
                             $requestedBy = $project->completionRequestedByUser?->fullName();
                             $sentence = $project->completion_requested_at
                                 ? 'Sent '
-                                    . \App\Support\BusinessTime::format($project->completion_requested_at, 'F j, Y')
+                                    . \App\Support\BusinessTime::format($project->completion_requested_at)
                                     . ($requestedBy ? ' by ' . $requestedBy : '') . '.'
                                 : '';
                         @endphp
@@ -177,10 +193,9 @@
                             {{ $sentence }}
                             @if ($project->confirmationDeadline())
                                 Completes automatically on
-                                <strong>{{ $project->confirmationDeadline()->format('F j, Y') }}</strong>
-                                ({{ $project->confirmationCountdown() }}) unless the client replies.
+                                <strong>{{ $project->confirmationDeadline()->format(\App\Support\BusinessTime::DATE) }}</strong>
+                                ({{ $project->confirmationCountdown() }}).
                             @endif
-                            Locked until then.
                         </p>
 
                         @if ($canReopen)
@@ -222,7 +237,7 @@
 
                         @php
                             $reopenedBy = $project->reopenedByUser?->fullName();
-                            $reopenedOn = \App\Support\BusinessTime::format($project->reopened_at, 'F j, Y', '');
+                            $reopenedOn = \App\Support\BusinessTime::format($project->reopened_at, \App\Support\BusinessTime::DATE, '');
                         @endphp
 
                         <p class="mb-2">
@@ -469,7 +484,7 @@
                 <i class="bi bi-check2-circle me-2 text-success" aria-hidden="true"></i>
                 <strong>{{ $project->completionMethodLabel() }}</strong>
                 @if ($project->client_confirmed_at)
-                    on {{ \App\Support\BusinessTime::format($project->client_confirmed_at, 'F j, Y') }}
+                    on {{ \App\Support\BusinessTime::format($project->client_confirmed_at) }}
                 @endif
                 . A completed project is a historical record and cannot be reopened.
             </div>
@@ -489,7 +504,7 @@
                         <h5 class="alert-heading mb-1">This project is overdue</h5>
                         <p class="mb-2">
                             Last scheduled day was
-                            <strong>{{ $project->scheduleEndsOn()->format('F j, Y') }}</strong>.
+                            <strong>{{ $project->scheduleEndsOn()->format(\App\Support\BusinessTime::DATE) }}</strong>.
                             Extend the schedule or mark it complete.
                         </p>
 
@@ -502,7 +517,7 @@
 
                             @if ($canComplete)
                                 <button type="button" class="btn btn-sm btn-success" data-bs-toggle="modal"
-                                    data-bs-target="#completeOverdueProjectModal">
+                                    data-bs-target="#completeProjectModal">
                                     <i class="bi bi-check-circle me-1" aria-hidden="true"></i>
                                     Mark as Complete
                                 </button>
@@ -515,8 +530,8 @@
             @if ($canComplete)
             {{-- Same fields as the Projects page completion modal, so both
                  routes into completion collect identical information. --}}
-            <div class="modal fade" id="completeOverdueProjectModal" tabindex="-1"
-                aria-labelledby="completeOverdueProjectModalLabel" aria-hidden="true">
+            <div class="modal fade" id="completeProjectModal" tabindex="-1"
+                aria-labelledby="completeProjectModalLabel" aria-hidden="true">
                 <div class="modal-dialog modal-lg">
                     <div class="modal-content">
                         <form method="POST"
@@ -525,7 +540,7 @@
                             @csrf
 
                             <div class="modal-header bg-success text-white">
-                                <h5 class="modal-title" id="completeOverdueProjectModalLabel">
+                                <h5 class="modal-title" id="completeProjectModalLabel">
                                     <i class="bi bi-check-circle me-2"></i>
                                     Complete Project &mdash; {{ $project->reference_no }}
                                 </h5>
@@ -560,9 +575,6 @@
                                             name="completion_override_reason" rows="2" minlength="10" maxlength="500"
                                             required
                                             placeholder="Why is this being completed with the above outstanding?"></textarea>
-                                        <div class="form-text">
-                                            Recorded in the activity log. Other administrators are notified.
-                                        </div>
                                     </div>
                                 @endif
 
@@ -735,7 +747,7 @@
 
                         <div class="mb-2">
                             <span class="fw-semibold me-2">Completion Date:</span>
-                            <span>{{ \App\Support\BusinessTime::format($project->completed_at, 'M d, Y', 'N/A') }}</span>
+                            <span>{{ \App\Support\BusinessTime::format($project->completed_at, \App\Support\BusinessTime::DATE, 'N/A') }}</span>
                         </div>
 
                         <div class="mb-2">
@@ -829,7 +841,7 @@
 
                         <div class="mb-2">
                             <span class="fw-semibold me-2">Cancellation Date:</span>
-                            <span>{{ \App\Support\BusinessTime::format($project->cancelled_at, 'M d, Y', 'N/A') }}</span>
+                            <span>{{ \App\Support\BusinessTime::format($project->cancelled_at, \App\Support\BusinessTime::DATE, 'N/A') }}</span>
                         </div>
 
                         <div class="mb-2">
@@ -923,6 +935,116 @@
 
             </div>
         </div>
+        {{-- Registered User Account.
+
+             Deliberately a section of its own, beside the client details
+             rather than inside them. The Client Information above is what the
+             project says about who the work is for - a name, an address, a
+             number, written when the job was booked and belonging to the
+             project. This is which account on the public website follows the
+             work, which is a different fact and can be got wrong on its own.
+             Neither one edits the other. --}}
+        <div class="card shadow-sm mb-4" id="registered-user" style="scroll-margin-top: 1.5rem;">
+
+            <div class="card-header bg-white d-flex flex-wrap justify-content-between align-items-center gap-2">
+
+                <h4 class="mb-0 fw-bold">
+                    <i class="bi bi-person-check text-brand-blue me-1" aria-hidden="true"></i>
+                    Registered User Account
+                </h4>
+
+                {{-- Admin and Super Admin only. The two endpoints behind these
+                     buttons ask the same question again, so hiding them is a
+                     courtesy rather than the rule. --}}
+                @if ($canManageRegisteredUser)
+                    <div class="d-flex flex-wrap align-items-center gap-2">
+                        <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal"
+                            data-bs-target="#editRegisteredUserModal">
+                            <i class="bi bi-person-gear me-1" aria-hidden="true"></i>
+                            Edit Registered User
+                        </button>
+
+                        @if ($assignedRegisteredUser)
+                            <button type="button" class="btn btn-outline-danger btn-sm" data-bs-toggle="modal"
+                                data-bs-target="#removeRegisteredUserModal">
+                                <i class="bi bi-person-dash me-1" aria-hidden="true"></i>
+                                Remove Registered User
+                            </button>
+                        @endif
+                    </div>
+                @endif
+
+            </div>
+
+            <div class="card-body">
+
+                @if ($assignedRegisteredUser)
+                    <div class="d-flex align-items-start gap-3">
+
+                        <x-user-avatar :user="$assignedRegisteredUser" size="md" />
+
+                        <div class="flex-grow-1 min-w-0">
+
+                            <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+                                <span class="fw-semibold fs-5">{{ $assignedRegisteredUser->fullName() }}</span>
+                                <span class="badge bg-primary">Assigned</span>
+
+                                {{-- The account's own state, which is not the
+                                     same thing as the assignment: a deactivated
+                                     account is still the one this project
+                                     belongs to, and saying so is how somebody
+                                     works out why the client cannot sign in. --}}
+                                <span class="badge {{ $assignedRegisteredUser->statusBadgeClass() }}">
+                                    {{ $assignedRegisteredUser->statusLabel() }}
+                                </span>
+                            </div>
+
+                            <div class="text-muted">
+                                <span class="me-3">
+                                    <i class="bi bi-person-vcard" aria-hidden="true"></i>
+                                    {{ $assignedRegisteredUser->user_code ?? 'N/A' }}
+                                </span>
+
+                                <span class="me-3">
+                                    <i class="bi bi-envelope" aria-hidden="true"></i>
+                                    {{ $assignedRegisteredUser->email }}
+                                </span>
+
+                                <span>
+                                    <i class="bi bi-telephone" aria-hidden="true"></i>
+                                    {{ $assignedRegisteredUser->contact_number ?? 'N/A' }}
+                                </span>
+                            </div>
+
+                            <div class="text-muted small mt-1">
+                                Registered
+                                {{ \App\Support\BusinessTime::format($assignedRegisteredUser->created_at, \App\Support\BusinessTime::DATE, 'N/A') }}
+                                &middot; This project appears on their My Projects page.
+                            </div>
+
+                        </div>
+
+                    </div>
+                @else
+                    {{-- The empty state is a fact worth stating rather than a
+                         blank panel: a project with nobody following it is
+                         ordinary at the start and a mistake later on. --}}
+                    <div class="d-flex align-items-center gap-3 text-muted">
+                        <i class="bi bi-person-slash fs-3" aria-hidden="true"></i>
+                        <div>
+                            <div class="fw-semibold">No Registered User Assigned</div>
+                            <div class="small">
+                                Nobody follows this project on the public website yet. The project's client
+                                details above are unaffected.
+                            </div>
+                        </div>
+                    </div>
+                @endif
+
+            </div>
+
+        </div>
+
         <!-- Team + Date -->
         <div class="row mb-4">
 
@@ -941,16 +1063,32 @@
                         <h4 class="mb-0 fw-bold">
                             Assigned Team
                         </h4>
-                        @unless ($isReadOnly)
-                            {{-- Disabled rather than hidden while the project is
-                                 paused: the control stays where it always is, and
-                                 the reason it cannot be used is on it. --}}
-                            <button class="btn btn-outline-primary" data-bs-toggle="modal"
-                                data-bs-target="#editAssignedTeamModal" @disabled($isOnHold)
-                                title="{{ $isOnHold ? 'This project is on hold. Resume it before changing its assigned technicians.' : 'Edit assigned team' }}">
-                                <i class="bi bi-pencil-square"></i>
+
+                        <div class="d-flex align-items-center gap-2">
+                            {{-- Outside the @unless below on purpose: reading
+                                 who used to be on a project is not editing it,
+                                 so a completed, cancelled or paused project
+                                 keeps this button when it has lost the other
+                                 one. History is the thing a closed record is
+                                 most often opened for. --}}
+                            <button type="button" class="btn btn-outline-secondary"
+                                data-project-history="team"
+                                title="View assigned team history"
+                                aria-label="View assigned team history">
+                                <i class="bi bi-clock-history" aria-hidden="true"></i>
                             </button>
-                        @endunless
+
+                            @unless ($isReadOnly)
+                                {{-- Disabled rather than hidden while the project is
+                                     paused: the control stays where it always is, and
+                                     the reason it cannot be used is on it. --}}
+                                <button class="btn btn-outline-primary" data-bs-toggle="modal"
+                                    data-bs-target="#editAssignedTeamModal" @disabled($isOnHold)
+                                    title="{{ $isOnHold ? 'This project is on hold. Resume it before changing its assigned technicians.' : 'Edit assigned team' }}">
+                                    <i class="bi bi-pencil-square"></i>
+                                </button>
+                            @endunless
+                        </div>
 
                     </div>
 
@@ -1039,21 +1177,32 @@
                             Project Schedule
                         </h4>
 
-                        @unless ($isReadOnly)
-                            @if ($isOnHold)
-                                <button type="button" class="btn btn-outline-primary btn-sm" disabled
-                                    title="This project is on hold. Resume it before adding schedules.">
-                                    <i class="bi bi-calendar-week me-1"></i>
-                                    Update Schedule
-                                </button>
-                            @else
-                                <a href="{{ route('super-admin.schedules.index', ['openSchedule' => $project->project_id]) }}"
-                                    class="btn btn-outline-primary btn-sm">
-                                    <i class="bi bi-calendar-week me-1"></i>
-                                    Update Schedule
-                                </a>
-                            @endif
-                        @endunless
+                        <div class="d-flex align-items-center gap-2">
+                            {{-- Kept for read-only projects for the same
+                                 reason the team's is - see there. --}}
+                            <button type="button" class="btn btn-outline-secondary btn-sm"
+                                data-project-history="schedule"
+                                title="View project schedule history"
+                                aria-label="View project schedule history">
+                                <i class="bi bi-clock-history" aria-hidden="true"></i>
+                            </button>
+
+                            @unless ($isReadOnly)
+                                @if ($isOnHold)
+                                    <button type="button" class="btn btn-outline-primary btn-sm" disabled
+                                        title="This project is on hold. Resume it before adding schedules.">
+                                        <i class="bi bi-calendar-week me-1"></i>
+                                        Update Schedule
+                                    </button>
+                                @else
+                                    <a href="{{ route('super-admin.schedules.index', ['openSchedule' => $project->project_id]) }}"
+                                        class="btn btn-outline-primary btn-sm">
+                                        <i class="bi bi-calendar-week me-1"></i>
+                                        Update Schedule
+                                    </a>
+                                @endif
+                            @endunless
+                        </div>
 
                     </div>
 
@@ -1219,7 +1368,7 @@
 
                                         <small class="text-muted d-block">
 
-                                            {{ \Carbon\Carbon::parse($report->report_date)->format('M d, Y') }}
+                                            {{ \Carbon\Carbon::parse($report->report_date)->format(\App\Support\BusinessTime::DATE) }}
 
                                         </small>
 
@@ -1231,7 +1380,7 @@
                                              says may do it, and refused by the
                                              endpoint on the same terms. --}}
                                         @can('archive', $report)
-                                            <button type="button" class="btn btn-sm btn-outline-secondary mt-2"
+                                            <button type="button" class="btn btn-sm btn-dark mt-2"
                                                 data-bs-toggle="modal"
                                                 data-bs-target="#archiveReportModal{{ $report->id }}">
 
@@ -1311,7 +1460,7 @@
                                                 <form method="POST"
                                                     action="{{ route('technician-reports.archive', $report->id) }}">
                                                     @csrf
-                                                    <button type="submit" class="btn btn-warning">
+                                                    <button type="submit" class="btn btn-dark">
                                                         <i class="bi bi-archive me-1"></i>
                                                         Archive Report
                                                     </button>
@@ -1406,11 +1555,11 @@
                                             </td>
 
                                             <td>
-                                                {{ $task->start_date ? \Carbon\Carbon::parse($task->start_date)->format('M d, Y') : 'Unassigned' }}
+                                                {{ $task->start_date ? \Carbon\Carbon::parse($task->start_date)->format(\App\Support\BusinessTime::DATE) : 'Unassigned' }}
                                             </td>
 
                                             <td>
-                                                {{ $task->due_date ? \Carbon\Carbon::parse($task->due_date)->format('M d, Y') : 'Unassigned' }}
+                                                {{ $task->due_date ? \Carbon\Carbon::parse($task->due_date)->format(\App\Support\BusinessTime::DATE) : 'Unassigned' }}
                                             </td>
 
                                             <td>
@@ -1986,6 +2135,133 @@
     </div>
     <!-- END OF EDIT ASSIGNED TEAM MODAL -->
 
+    @if ($canManageRegisteredUser)
+        <!-- EDIT REGISTERED USER MODAL -->
+        <div class="modal fade" id="editRegisteredUserModal" tabindex="-1"
+            aria-labelledby="editRegisteredUserModalLabel" aria-hidden="true">
+
+            <div class="modal-dialog modal-dialog-centered">
+
+                <form action="{{ route('super-admin.projects.registered-user.update', $project->project_id) }}"
+                    method="POST">
+
+                    @csrf
+                    @method('PUT')
+
+                    <div class="modal-content">
+
+                        <div class="modal-header bg-primary text-white">
+                            <h5 class="modal-title" id="editRegisteredUserModalLabel">
+                                <i class="bi bi-person-gear me-2" aria-hidden="true"></i>
+                                Edit Registered User
+                            </h5>
+
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
+                                aria-label="Close"></button>
+                        </div>
+
+                        <div class="modal-body">
+
+                            <p class="text-muted small">
+                                Choose the account that follows this project on the public website. The
+                                project's own client details are not changed by this.
+                            </p>
+
+                            <label for="registeredUserSelect" class="form-label fw-bold">
+                                Registered User <span class="text-danger">*</span>
+                            </label>
+
+                            <select class="form-select" id="registeredUserSelect" name="registered_user_id" required>
+                                <option value="" disabled {{ $assignedRegisteredUser ? '' : 'selected' }}>
+                                    Select a Registered User
+                                </option>
+
+                                @foreach ($registeredUserOptions as $candidate)
+                                    <option value="{{ $candidate->id }}"
+                                        {{ $assignedRegisteredUser && $assignedRegisteredUser->id === $candidate->id ? 'selected' : '' }}>
+                                        {{ $candidate->fullName() }} &mdash; {{ $candidate->email }}@unless ($candidate->isActive()) (Deactivated) @endunless
+                                    </option>
+                                @endforeach
+                            </select>
+
+                            @if ($registeredUserOptions->isEmpty())
+                                <div class="form-text text-danger">
+                                    There are no Registered User accounts yet. Open one in Configuration,
+                                    under User Management, first.
+                                </div>
+                            @endif
+
+                        </div>
+
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+
+                            <button type="submit" class="btn btn-primary" @disabled($registeredUserOptions->isEmpty())>
+                                <i class="bi bi-check-lg me-1" aria-hidden="true"></i>
+                                Save Registered User
+                            </button>
+                        </div>
+
+                    </div>
+
+                </form>
+
+            </div>
+
+        </div>
+        <!-- END OF EDIT REGISTERED USER MODAL -->
+
+        @if ($assignedRegisteredUser)
+            <!-- REMOVE REGISTERED USER MODAL -->
+            <div class="modal fade" id="removeRegisteredUserModal" tabindex="-1"
+                aria-labelledby="removeRegisteredUserModalLabel" aria-hidden="true">
+
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content">
+
+                        <div class="modal-header">
+                            <h5 class="modal-title" id="removeRegisteredUserModalLabel">
+                                Remove {{ $assignedRegisteredUser->fullName() }} from this project?
+                            </h5>
+
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"
+                                aria-label="Close"></button>
+                        </div>
+
+                        {{-- The two things somebody deciding this does not
+                             already know: nothing is deleted, and what actually
+                             stops. --}}
+                        <div class="modal-body">
+                            <strong>Nothing is deleted.</strong> The account keeps its details and its other
+                            projects, and this project keeps its client information, team, schedule, tasks and
+                            reports. Only the connection ends - the project stops appearing on their My Projects
+                            page.
+                        </div>
+
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+
+                            <form
+                                action="{{ route('super-admin.projects.registered-user.destroy', $project->project_id) }}"
+                                method="POST">
+                                @csrf
+                                @method('DELETE')
+
+                                <button type="submit" class="btn btn-danger">
+                                    <i class="bi bi-person-dash me-1" aria-hidden="true"></i>
+                                    Remove Registered User
+                                </button>
+                            </form>
+                        </div>
+
+                    </div>
+                </div>
+
+            </div>
+            <!-- END OF REMOVE REGISTERED USER MODAL -->
+        @endif
+    @endif
+
     <x-import-team-modal />
 
     @push('scripts')
@@ -2273,6 +2549,61 @@
 
 
 
+
+    {{-- One dialog for both history buttons. The two sections ask the same
+         shape of question - what changed, when, and who did it - so they get
+         the same panel with a different title and a different fetch, rather
+         than two dialogs that would drift apart. --}}
+    <div class="modal fade" id="projectHistoryModal" tabindex="-1" aria-hidden="true"
+        data-project-history-modal data-project-id="{{ $project->project_id }}">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+
+                <div class="modal-header">
+                    <div>
+                        <span class="project-history-eyebrow" data-history-eyebrow>History</span>
+                        <h5 class="modal-title mb-0" data-history-title>Change History</h5>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+
+                <div class="modal-body">
+
+                    <div class="text-secondary small py-4 text-center d-none" data-history-loading>
+                        Loading history&hellip;
+                    </div>
+
+                    <div class="alert alert-danger mb-0 d-none" role="alert" data-history-error></div>
+
+                    {{-- Team only. The spans the actions below produced: who
+                         has been on this project and for how long. A schedule
+                         range keeps no equivalent record - it is edited in
+                         place - so this whole block is hidden for it. --}}
+                    <div class="d-none" data-history-memberships-wrap>
+                        <div class="project-history-heading">
+                            <i class="bi bi-people-fill" aria-hidden="true"></i>
+                            Who has been on this project
+                        </div>
+                        <div data-history-memberships></div>
+                    </div>
+
+                    <div class="d-none" data-history-entries-wrap>
+                        <div class="project-history-heading">
+                            <i class="bi bi-clock-history" aria-hidden="true"></i>
+                            Recorded changes
+                        </div>
+                        <div data-history-entries></div>
+                    </div>
+
+                    <div class="project-history-empty d-none" data-history-empty>
+                        Nothing has been recorded here yet.
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </div>
+
     @push('scripts')
         <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
         <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
@@ -2283,7 +2614,9 @@
         <script src="/js/imagePreview.js"></script>
         <script src="/js/importTeam.js"></script>
         <script src="/js/super-admin/projectDetails.js"></script>
+        <script src="/js/super-admin/projectHistory.js"></script>
         <script>
+            window.projectHistoryUrl = @json(route('super-admin.projects.history', ['id' => $project->project_id, 'section' => '__SECTION__']));
             window.assignedTeamData = @json($assignedTeamLookup);
             window.assignedTeamState = @json([
                 'leadTechId' => $currentLeadTechnicianId,

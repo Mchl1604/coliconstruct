@@ -74,6 +74,24 @@
                         </div>
                     </div>
 
+                    {{-- State 1b: a date from a project this technician has
+                         since been taken off. The dates stay on the calendar
+                         because they are a record of where they were, but the
+                         project itself is no longer theirs to read - so this
+                         is written entirely from what the calendar event
+                         already carries, and nothing is fetched. --}}
+                    <div class="d-none" data-panel-former>
+                        <div class="technician-eyebrow mb-2">Project Information</div>
+                        <div class="panel-former-note">
+                            <div class="panel-former-ref" data-former-ref></div>
+                            <div class="panel-former-range">
+                                <i class="bi bi-calendar3" aria-hidden="true"></i>
+                                <span data-former-range></span>
+                            </div>
+                            <p class="panel-former-body mb-0" data-former-message></p>
+                        </div>
+                    </div>
+
                     {{-- State 2: loading --}}
                     <div class="d-none" data-panel-loading>
                         <div class="technician-eyebrow mb-2">Project Information</div>
@@ -117,7 +135,9 @@
 
                         <div class="panel-section-heading">
                             <i class="bi bi-people-fill" aria-hidden="true"></i>
-                            Assigned Technicians
+                            {{-- Today's team, not the crew on any one of the
+                                 dates listed above. --}}
+                            Currently Assigned Technicians
                         </div>
 
                         <div class="panel-lead-row">

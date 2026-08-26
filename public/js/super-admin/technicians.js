@@ -1266,7 +1266,21 @@ document.addEventListener("DOMContentLoaded", function () {
 
             removeBtn.classList.toggle("d-none", Boolean(data.read_only));
 
-            if (data.read_only) {
+            // Two different reasons the removal controls are withheld, and
+            // they must not borrow each other's wording. A former assignment
+            // is read-only because there is nothing left to remove - the
+            // project itself may be perfectly live, so saying "this project is
+            // ongoing, its team cannot be changed" would be false twice over.
+            if (data.is_former) {
+                setAlert(
+                    errorEl,
+                    data.removed_on
+                        ? "This technician was removed from this project on " +
+                              data.removed_on +
+                              ". These dates are kept as a record of when they were booked."
+                        : "This technician is no longer assigned to this project. These dates are kept as a record of when they were booked.",
+                );
+            } else if (data.read_only) {
                 setAlert(
                     errorEl,
                     "This project is " +
@@ -1434,6 +1448,15 @@ document.addEventListener("DOMContentLoaded", function () {
         const saveBtn = modal.querySelector("[data-add-save]");
         const saveSpinner = modal.querySelector("[data-add-save-spinner]");
 
+        const browserEl = modal.querySelector("[data-add-browser]");
+        const dismissBtn = modal.querySelector("[data-add-dismiss]");
+        const leadConfirmEl = modal.querySelector("[data-add-lead-confirm]");
+        const leadIntroEl = modal.querySelector("[data-add-lead-intro]");
+        const leadListEl = modal.querySelector("[data-add-lead-list]");
+        const leadCancelBtn = modal.querySelector("[data-add-lead-cancel]");
+        const leadConfirmBtn = modal.querySelector("[data-add-lead-confirm-save]");
+        const leadSpinner = modal.querySelector("[data-add-lead-spinner]");
+
         let projects = [];
         let selectedIds = [];
 
@@ -1543,12 +1566,40 @@ document.addEventListener("DOMContentLoaded", function () {
                 meta.join(" &middot; ") +
                 '</span><span class="schedule-pick-techs">' +
                 technicianChips(project.technicians) +
-                '</span><span class="schedule-pick-reason' +
+                "</span>" +
+                // A project this technician can only join by taking the lead
+                // role off somebody says so here, before it is ticked - so the
+                // confirmation that follows is never the first anybody hears
+                // of it.
+                (project.lead_replacement
+                    ? '<span class="schedule-pick-reason" data-pick-lead-note>' +
+                      "Already led by " +
+                      escapeHtml(project.lead_replacement.name) +
+                      ". Assigning will replace them." +
+                      "</span>"
+                    : "") +
+                '<span class="schedule-pick-reason' +
                 (project.reason ? "" : " d-none") +
                 '" data-pick-reason>' +
                 escapeHtml(project.reason || "") +
                 "</span></span></label>"
             );
+        }
+
+        /**
+         * The ticked projects whose lead would be replaced, in the order they
+         * are listed.
+         */
+        function pendingLeadReplacements() {
+            return selectedIds
+                .map(function (id) {
+                    return projects.find(function (item) {
+                        return item.project_id === id;
+                    });
+                })
+                .filter(function (project) {
+                    return project && project.lead_replacement;
+                });
         }
 
         function render(body) {
@@ -1612,13 +1663,80 @@ document.addEventListener("DOMContentLoaded", function () {
                 ")";
         });
 
-        saveBtn.addEventListener("click", function () {
-            if (!selectedIds.length) {
-                return;
-            }
+        /**
+         * Back to the project list from the replacement confirmation, leaving
+         * every tick exactly as it was. Cancelling changes nothing - the
+         * current lead keeps the project.
+         */
+        function closeLeadConfirm() {
+            leadConfirmEl.classList.add("d-none");
+            leadConfirmBtn.classList.add("d-none");
+            leadCancelBtn.classList.add("d-none");
+            leadSpinner.classList.add("d-none");
+            leadConfirmBtn.disabled = false;
+            browserEl.classList.remove("d-none");
+            saveBtn.classList.remove("d-none");
+            dismissBtn.classList.remove("d-none");
+            refreshStates();
+        }
 
-            saveBtn.disabled = true;
-            saveSpinner.classList.remove("d-none");
+        /**
+         * Name every lead about to be replaced and ask, once, before anything
+         * is sent. A lead is never replaced automatically.
+         */
+        function openLeadConfirm(replacing) {
+            setAlert(errorEl, "");
+
+            leadIntroEl.textContent =
+                replacing.length === 1
+                    ? "Replace " +
+                      replacing[0].lead_replacement.name +
+                      " with " +
+                      selectedTechnician.name +
+                      " as lead technician?"
+                    : "Replace the lead technician on " +
+                      replacing.length +
+                      " projects with " +
+                      selectedTechnician.name +
+                      "?";
+
+            leadListEl.innerHTML = replacing
+                .map(function (project) {
+                    return (
+                        '<div class="technician-lead-option is-selected is-static">' +
+                        "<span>" +
+                        '<span class="technician-lead-name">' +
+                        escapeHtml(project.name) +
+                        "</span>" +
+                        '<span class="technician-lead-skills">' +
+                        "Currently led by " +
+                        escapeHtml(project.lead_replacement.name) +
+                        "</span>" +
+                        "</span>" +
+                        "</div>"
+                    );
+                })
+                .join("");
+
+            browserEl.classList.add("d-none");
+            saveBtn.classList.add("d-none");
+            dismissBtn.classList.add("d-none");
+            leadConfirmEl.classList.remove("d-none");
+            leadConfirmBtn.classList.remove("d-none");
+            leadCancelBtn.classList.remove("d-none");
+        }
+
+        /**
+         * Send the assignment. `replacing` carries, per project, the lead the
+         * person was looking at when they confirmed - the server checks the
+         * same lead is still there before taking anybody off anything.
+         */
+        function submit(replacing) {
+            const busyBtn = replacing.length ? leadConfirmBtn : saveBtn;
+            const busySpinner = replacing.length ? leadSpinner : saveSpinner;
+
+            busyBtn.disabled = true;
+            busySpinner.classList.remove("d-none");
             setAlert(errorEl, "");
 
             request(
@@ -1627,13 +1745,29 @@ document.addEventListener("DOMContentLoaded", function () {
                     "/projects",
                 {
                     method: "POST",
-                    body: JSON.stringify({ project_ids: selectedIds }),
+                    body: JSON.stringify({
+                        project_ids: selectedIds,
+                        lead_replacements: replacing.map(function (project) {
+                            return {
+                                project_id: project.project_id,
+                                replacing_technician_id:
+                                    project.lead_replacement.technician_id,
+                            };
+                        }),
+                    }),
                 },
             ).then(function (result) {
-                saveSpinner.classList.add("d-none");
+                busySpinner.classList.add("d-none");
 
                 if (!result.ok) {
-                    saveBtn.disabled = false;
+                    busyBtn.disabled = false;
+
+                    // Back to the list, so a refused replacement is read
+                    // beside the projects it is about.
+                    if (replacing.length) {
+                        closeLeadConfirm();
+                    }
+
                     setAlert(
                         errorEl,
                         result.body.error || "Unable to save assignment.",
@@ -1641,6 +1775,17 @@ document.addEventListener("DOMContentLoaded", function () {
 
                     return;
                 }
+
+                // Back to the list to show what happened. The save button
+                // stays disabled - the selection has just been spent, and the
+                // dialog closes on its own a moment from now.
+                leadConfirmEl.classList.add("d-none");
+                leadConfirmBtn.classList.add("d-none");
+                leadCancelBtn.classList.add("d-none");
+                browserEl.classList.remove("d-none");
+                saveBtn.classList.remove("d-none");
+                saveBtn.disabled = true;
+                dismissBtn.classList.remove("d-none");
 
                 setAlert(successEl, result.body.message);
 
@@ -1660,17 +1805,44 @@ document.addEventListener("DOMContentLoaded", function () {
                     }, 800);
                 });
             });
+        }
+
+        saveBtn.addEventListener("click", function () {
+            if (!selectedIds.length) {
+                return;
+            }
+
+            const replacing = pendingLeadReplacements();
+
+            // A sitting lead is never replaced automatically. Anything that
+            // would take the role off somebody is asked about first; anything
+            // that would not is saved straight away, exactly as before.
+            if (replacing.length) {
+                openLeadConfirm(replacing);
+
+                return;
+            }
+
+            submit([]);
         });
+
+        leadConfirmBtn.addEventListener("click", function () {
+            submit(pendingLeadReplacements());
+        });
+
+        leadCancelBtn.addEventListener("click", closeLeadConfirm);
 
         modal.addEventListener("hidden.bs.modal", function () {
             setAlert(errorEl, "");
             setAlert(successEl, "");
+            closeLeadConfirm();
         });
 
         return {
             open: function () {
                 projects = [];
                 selectedIds = [];
+                closeLeadConfirm();
                 nameEl.textContent = selectedTechnician.name;
                 listEl.innerHTML = "";
                 blockedList.innerHTML = "";

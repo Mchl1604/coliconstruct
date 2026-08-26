@@ -49,7 +49,7 @@
                                 <div class="col-md-6">
                                     <span class="fw-semibold d-block">Completion Date:</span>
                                     <span>
-                                        {{ \App\Support\BusinessTime::format($previousReport->completed_at, 'M d, Y', 'N/A') }}
+                                        {{ \App\Support\BusinessTime::format($previousReport->completed_at, \App\Support\BusinessTime::DATE, 'N/A') }}
                                     </span>
                                 </div>
 
@@ -72,7 +72,7 @@
                                 <div class="col-md-6">
                                     <span class="fw-semibold d-block">Superseded On:</span>
                                     <span>
-                                        {{ \App\Support\BusinessTime::format($previousReport->superseded_at, 'M d, Y', 'N/A') }}
+                                        {{ \App\Support\BusinessTime::format($previousReport->superseded_at, \App\Support\BusinessTime::DATE, 'N/A') }}
                                         @if ($previousReport->supersededByUser)
                                             by {{ $previousReport->supersededByUser->fullName() }}
                                         @endif

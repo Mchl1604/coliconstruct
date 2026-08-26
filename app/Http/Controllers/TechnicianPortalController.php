@@ -6,6 +6,7 @@ use App\Models\ActivityLog;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
 use App\Models\Schedule;
+use App\Models\ScheduleTechnician;
 use App\Models\Task;
 use App\Models\TaskImage;
 use App\Models\Technician;
@@ -21,6 +22,7 @@ use App\Services\ProjectEmails;
 use App\Services\TaskAssignmentRules;
 use App\Services\TaskScheduleRules;
 use App\Services\TechnicianTaskLoad;
+use App\Support\BusinessTime;
 use App\Support\UploadStore;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
@@ -75,18 +77,29 @@ class TechnicianPortalController extends Controller
     // ------------------------------------------------------------------
 
     /**
-     * My Schedule: a calendar of every project this lead is booked on, with
-     * the clicked project's details loaded into the panel beside it.
+     * My Schedule: a calendar of every date this technician was booked for,
+     * with the clicked project's details loaded into the panel beside it.
+     *
+     * Built from the bookings rather than from the current team, and that
+     * distinction is the whole point of this page. My Projects answers "what
+     * am I on?" and drops a project the moment somebody takes you off it. This
+     * answers "where was I, and where am I going to be?", and the days you
+     * worked in July are still days you worked whatever happened in August.
+     * Reading both from the same source is what made them unable to disagree.
+     *
+     * A booking that outlives the membership is drawn as a record - see
+     * calendarEvent() - and its panel says so rather than opening the project.
      */
     public function schedule(Request $request)
     {
         $technician = $this->technician($request);
         $projects = $this->assignedProjects($technician);
 
-        $events = $projects
-            ->filter(fn (Project $project): bool => $project->showsOnCalendar())
-            ->flatMap(fn (Project $project) => $project->schedules->map(
-                fn (Schedule $schedule): array => $this->calendarEvent($project, $schedule)
+        $events = $this->bookedSchedules($technician)
+            ->map(fn (Schedule $schedule): array => $this->calendarEvent(
+                $schedule->project,
+                $schedule,
+                $this->membershipFor($schedule, $technician)
             ))
             ->values();
 
@@ -889,7 +902,7 @@ class TechnicianPortalController extends Controller
                 "Marked project '%s' complete as of %s and sent it for client confirmation "
                     .'(Ongoing -> Awaiting Client Confirmation). Its schedule now holds %s.',
                 $project->reference_no ?? $project->name,
-                $project->completed_at?->format('F j, Y') ?? 'today',
+                $project->completed_at?->format(BusinessTime::DATE) ?? 'today',
                 $completion->describeRemainingSchedule($project)
             ),
             $project
@@ -986,7 +999,11 @@ class TechnicianPortalController extends Controller
     private function assignedTechnicianRule(Project $project): Exists
     {
         return Rule::exists('tbl_project_technicians', 'technician_id')
-            ->where('project_id', $project->project_id);
+            ->where('project_id', $project->project_id)
+            // Somebody taken off the team keeps their row - it carries the
+            // dates they worked - so the membership has to be an open one or
+            // a removed technician would still pass as assignable here.
+            ->whereNull('removed_at');
     }
 
     /**
@@ -1006,17 +1023,87 @@ class TechnicianPortalController extends Controller
     }
 
     /**
+     * Every schedule this technician holds a booking on.
+     *
+     * The booking is the record: tbl_schedule_technicians says which ranges a
+     * person was actually put on, which is not the same as every range their
+     * project happens to hold. Somebody who joined a job in week three was
+     * never on weeks one and two - ProjectTeam refuses to write those links
+     * for exactly that reason - and somebody taken off in week five keeps the
+     * weeks they worked, because removal only releases the dates still ahead.
+     *
+     * Read through the membership rather than the current team, so a closed
+     * membership still carries its dates onto this calendar. That is the one
+     * thing this page needs that My Projects must not do.
+     *
+     * @return Collection<int, Schedule>
+     */
+    private function bookedSchedules(Technician $technician): Collection
+    {
+        return Schedule::query()
+            ->whereHas('project', function ($query): void {
+                $query->where('is_archived', false)
+                    ->whereNotIn('status', self::HIDDEN_STATUSES);
+            })
+            ->whereHas('scheduleTechnicians.projectTechnician', function ($query) use ($technician): void {
+                $query->where('technician_id', $technician->technician_id);
+            })
+            // project.schedules is needed because isOverdue() inspects every
+            // range; without it each event would fire its own query.
+            ->with([
+                'project.clients',
+                'project.schedules',
+                'scheduleTechnicians.projectTechnician',
+            ])
+            ->orderBy('start_datetime')
+            ->get()
+            // HIDDEN_STATUSES above already keeps cancelled work off this
+            // calendar - the administrative ones draw it, a technician's own
+            // does not - so in practice this only drops archived work today.
+            // The cutoff is asked anyway, here and in calendarEvent(), so all
+            // three calendars run the same rule and letting cancelled work
+            // through would be a one-line change rather than a rewrite.
+            ->filter(fn (Schedule $schedule): bool => ($schedule->project?->showsOnCalendar() ?? false)
+                && $schedule->startsOnOrBefore($schedule->project->calendarCutoff()))
+            ->values();
+    }
+
+    /**
+     * This technician's membership of the project the schedule belongs to,
+     * taken from the booking already loaded against it.
+     *
+     * Read off the link rather than queried again: the schedule is only here
+     * because one of their memberships is booked on it, so the row is in hand.
+     */
+    private function membershipFor(Schedule $schedule, Technician $technician): ?ProjectTechnician
+    {
+        return $schedule->scheduleTechnicians
+            ->map(fn (ScheduleTechnician $link): ?ProjectTechnician => $link->projectTechnician)
+            ->filter(fn (?ProjectTechnician $assignment): bool => $assignment !== null
+                && (int) $assignment->technician_id === (int) $technician->technician_id)
+            ->first();
+    }
+
+    /**
      * @return array<string, mixed>
      */
-    private function calendarEvent(Project $project, Schedule $schedule): array
-    {
+    private function calendarEvent(
+        Project $project,
+        Schedule $schedule,
+        ?ProjectTechnician $membership = null
+    ): array {
+        $isFormer = $membership?->isRemoved() ?? false;
+
         return [
             'id' => $schedule->schedule_id,
             'title' => $project->reference_no,
             // A partial day comes back as a timed event, so the bar carries
             // its hours instead of reading as a whole day.
-            ...$schedule->toCalendarTimes(),
+            ...$schedule->toCalendarTimesThrough($project->calendarCutoff()),
             ...$project->calendarEventColors($schedule->isDateBased()),
+            // Drawn flat and grey, so days that are a record of where you were
+            // do not read as work you are still expected at.
+            ...($isFormer ? ['classNames' => ['fc-event-former']] : []),
             'extendedProps' => [
                 'projectId' => $project->project_id,
                 'referenceNo' => $project->reference_no,
@@ -1024,6 +1111,17 @@ class TechnicianPortalController extends Controller
                 'client' => $this->clientName($project),
                 'statusLabel' => $project->statusLabel(),
                 'rangeLabel' => $schedule->describe(),
+                // Everything the panel needs to explain a former booking is
+                // here, and deliberately nothing more. A technician who has
+                // been taken off a project should not get its client contact
+                // details, its task board or its current state back by
+                // clicking an old date - so the browser renders the note from
+                // what it already holds and never asks the server for the
+                // project at all. See the schedule page's eventClick.
+                'isFormer' => $isFormer,
+                'removedOn' => $isFormer
+                    ? CarbonImmutable::parse($membership->removed_at)->format(BusinessTime::DATE)
+                    : null,
             ],
         ];
     }
@@ -1096,8 +1194,8 @@ class TechnicianPortalController extends Controller
             'status' => $project->status,
             'status_label' => $project->statusLabel(),
             'status_badge_class' => $project->statusBadgeClass(),
-            'start_date' => $start ? CarbonImmutable::parse($start)->format('M j, Y') : null,
-            'end_date' => $end ? CarbonImmutable::parse($end)->format('M j, Y') : null,
+            'start_date' => $start ? CarbonImmutable::parse($start)->format(BusinessTime::DATE) : null,
+            'end_date' => $end ? CarbonImmutable::parse($end)->format(BusinessTime::DATE) : null,
             'ranges' => $schedules->map(fn (Schedule $schedule): array => [
                 // The shared formatter, so a technician sees the hours they
                 // are expected on site rather than a date twice over.
@@ -1134,14 +1232,14 @@ class TechnicianPortalController extends Controller
             'status_badge_class' => $task->statusBadgeClass(),
             'start_date' => $task->start_date ? CarbonImmutable::parse($task->start_date)->toDateString() : null,
             'due_date' => $task->due_date ? CarbonImmutable::parse($task->due_date)->toDateString() : null,
-            'start_date_label' => $task->start_date ? CarbonImmutable::parse($task->start_date)->format('M j, Y') : '—',
-            'due_date_label' => $task->due_date ? CarbonImmutable::parse($task->due_date)->format('M j, Y') : '—',
+            'start_date_label' => $task->start_date ? CarbonImmutable::parse($task->start_date)->format(BusinessTime::DATE) : '—',
+            'due_date_label' => $task->due_date ? CarbonImmutable::parse($task->due_date)->format(BusinessTime::DATE) : '—',
             'is_mine' => (int) $task->technician_id === (int) $viewer->technician_id,
             // A lead may close anything on a project they run, so this asks
             // the policy rather than re-deriving the rule.
             'can_complete' => request()->user()?->can('complete', $task) ?? false,
             'completion_notes' => $task->completion_notes,
-            'completed_at_label' => $task->completed_at?->format('M j, Y'),
+            'completed_at_label' => $task->completed_at?->format(BusinessTime::DATE),
             'closed_on_behalf' => $task->wasClosedOnBehalf(),
             'completed_by' => $task->completedBy?->fullName(),
             'images' => $task->relationLoaded('images')
@@ -1173,7 +1271,7 @@ class TechnicianPortalController extends Controller
             'submitted_by' => $report->submitterName(),
             'submitted_by_avatar' => $report->submitterAvatarUrl(),
             'date' => $report->report_date?->toDateString(),
-            'date_label' => $report->report_date?->format('M j, Y') ?? '—',
+            'date_label' => $report->report_date?->format(BusinessTime::DATE) ?? '—',
             // The sort key the table's Date column reads, matching the
             // data-order the Blade rows carry.
             'date_order' => $report->report_date?->timestamp ?? 0,
@@ -1181,7 +1279,7 @@ class TechnicianPortalController extends Controller
                 'url' => $image->url(),
             ])->all(),
             'is_archived' => $report->isArchived(),
-            'archived_at_label' => $report->archived_at?->format('M j, Y') ?? '—',
+            'archived_at_label' => $report->archived_at?->format(BusinessTime::DATE) ?? '—',
             'archived_by' => $report->archiver?->fullName() ?? '—',
             // Whether this account may act on the report. The endpoint asks the
             // same policy again, so these only decide whether a button is

@@ -9,7 +9,14 @@
  * nothing is written.
  *
  * Availability comes from the server, which asks TechnicianAvailabilityService
- * the same question every other scheduling screen asks it.
+ * the same question every other scheduling screen asks it - about the
+ * destination's schedule still to come, so a range it has already finished
+ * cannot make anybody look busy.
+ *
+ * What each card shows is the answer to "who could I import from here?": the
+ * technicians who are free, and nothing about the ones who are not. A team
+ * with nobody free says so in one sentence and offers no action, because
+ * there is nothing there to take.
  */
 (function (global) {
     'use strict';
@@ -83,10 +90,21 @@
             return haystack.indexOf(term) !== -1;
         }
 
+        // The server has already worked out who is free for the destination's
+        // remaining dates; `importable` is that list. The fallback keeps a
+        // response from an older deployment readable.
         function importableOf(project) {
+            if (project.importable) {
+                return project.importable;
+            }
+
             return (project.technicians || []).filter(function (technician) {
                 return technician.available;
             });
+        }
+
+        function hasImportable(project) {
+            return importableOf(project).length > 0;
         }
 
         function memberChip(technician) {
@@ -107,24 +125,23 @@
             );
         }
 
+        /**
+         * What a team with nobody free has to say for itself: one sentence.
+         *
+         * Listing every technician and the dates each is booked on told a
+         * person a great deal they could act on in no way at all - the team
+         * cannot be imported either way - and made the teams that CAN be
+         * imported harder to find among it. A team with somebody free says
+         * nothing here; its free names are the list, and they are enough.
+         */
         function reasonsMarkup(project) {
-            if (!project.unavailable || !project.unavailable.length) {
+            if (hasImportable(project)) {
                 return '';
             }
 
             return (
                 '<div class="import-team-reasons">' +
-                project.unavailable
-                    .map(function (technician) {
-                        return (
-                            '<div><strong>' +
-                            escapeHtml(technician.name) +
-                            '</strong> — ' +
-                            escapeHtml(technician.reason) +
-                            '</div>'
-                        );
-                    })
-                    .join('') +
+                "All technicians are not available for this project's future schedule." +
                 '</div>'
             );
         }
@@ -132,13 +149,11 @@
         function actionMarkup(project) {
             const importable = importableOf(project);
 
+            // Nobody free means nothing to import, so there is no action at
+            // all - a disabled button restating the sentence above it was one
+            // more thing to read and no more to do.
             if (!importable.length) {
-                return (
-                    '<div class="import-team-actions">' +
-                    '<button type="button" class="btn btn-sm btn-outline-secondary" disabled>' +
-                    'Nobody on this team is free' +
-                    '</button></div>'
-                );
+                return '';
             }
 
             const partial = importable.length < (project.technicians || []).length;
@@ -151,9 +166,7 @@
                 project.project_id +
                 '">' +
                 '<i class="bi bi-people me-1" aria-hidden="true"></i>' +
-                (partial
-                    ? 'Import the ' + importable.length + ' who are free'
-                    : 'Import this team') +
+                (partial ? 'Import free technicians' : 'Import this team') +
                 '</button></div>'
             );
         }
@@ -176,6 +189,14 @@
                   ? ' is-partial'
                   : ' is-blocked';
 
+            // Only the people who could actually come across are listed. The
+            // ones who cannot are not the point of this card: the person is
+            // choosing a crew to copy, and what they need is the names they
+            // would get.
+            const chips = importable.length
+                ? importable.map(memberChip).join('')
+                : '';
+
             return (
                 '<div class="import-team-card' + state + '">' +
                 '<div class="import-team-card-top">' +
@@ -195,9 +216,7 @@
                 '<i class="bi bi-calendar3" aria-hidden="true"></i>' +
                 escapeHtml(project.schedule_label) +
                 '</span>' +
-                '<div class="import-team-members">' +
-                (project.technicians || []).map(memberChip).join('') +
-                '</div>' +
+                (chips ? '<div class="import-team-members">' + chips + '</div>' : '') +
                 reasonsMarkup(project) +
                 actionMarkup(project) +
                 '</div>'
@@ -205,27 +224,30 @@
         }
 
         /**
-         * One status group: the teams that are free, then - folded away, but
-         * never hidden - the ones that are not.
+         * One status group: the teams something can be imported from, then -
+         * folded away, but never hidden - the ones nobody is free on.
+         *
+         * The line is drawn at "is there anybody to import?" rather than "is
+         * everybody free?". A crew of five with one free technician is a team
+         * this project can take somebody from, and burying it under a fold
+         * labelled unavailable hid the one name that mattered.
          */
         function sectionMarkup(key, label, groupProjects, collapsed) {
             if (!groupProjects.length) {
                 return '';
             }
 
-            const available = groupProjects.filter(function (project) {
-                return project.available;
-            });
+            const available = groupProjects.filter(hasImportable);
 
             const blocked = groupProjects.filter(function (project) {
-                return !project.available;
+                return !hasImportable(project);
             });
 
             const body =
                 '<div class="import-team-list">' +
                 (available.length
                     ? available.map(cardMarkup).join('')
-                    : '<div class="import-team-empty">Every team here has somebody who is not free.</div>') +
+                    : '<div class="import-team-empty">No team here has anybody who is free.</div>') +
                 '</div>' +
                 (blocked.length
                     ? '<div class="import-blocked-wrap">' +

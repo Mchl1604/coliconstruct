@@ -369,14 +369,13 @@ class ScheduleModeRules
                 continue;
             }
 
-            if (! Schedule::isWorkingHour($time)) {
+            // Only the shape of the time here. Whether the hour is one this
+            // system will book is asked below, and only of a row that is
+            // actually being changed - see there.
+            if (! Schedule::isOnTheHour($time)) {
                 $validator->errors()->add(
                     $keyPrefix.$field,
-                    sprintf(
-                        'Choose a time on the hour between %s and %s.',
-                        $this->hourLabel(Schedule::WORKING_HOUR_START),
-                        $this->hourLabel(Schedule::WORKING_HOUR_END)
-                    )
+                    'Choose a time on the hour.'
                 );
             }
         }
@@ -401,24 +400,51 @@ class ScheduleModeRules
             return null;
         }
 
-        // Stated separately from isWorkingHour() so the reason reads as the
-        // rule it broke rather than as a generic out-of-range complaint.
-        if ($end->hour > Schedule::WORKING_HOUR_END
-            || ($end->hour === Schedule::WORKING_HOUR_END && $end->minute > 0)) {
-            $validator->errors()->add(
-                $keyPrefix.'end_time',
-                'The end time cannot be later than '.$this->hourLabel(Schedule::WORKING_HOUR_END).'.'
-            );
-
-            return null;
-        }
-
         // The same rule as a whole-day range: hours already sat through cannot
         // be re-promised, but a row nobody is moving keeps them.
         $unchanged = $existing !== null
             && $existing->isPartialDay()
             && CarbonImmutable::parse($existing->start_datetime)->equalTo($start)
             && CarbonImmutable::parse($existing->end_datetime ?? $existing->start_datetime)->equalTo($end);
+
+        // The configured window binds what is being PROMISED, not what has
+        // already been promised. Narrowing it to nine o'clock does not move a
+        // booking somebody already made for eight, and must not refuse the
+        // form that booking is sitting on - a range resubmitted exactly as it
+        // stands is not a new promise about those hours. Change one minute of
+        // it and it is, and then the window applies like anything else.
+        if (! $unchanged) {
+            $bounds = Schedule::partialDayHourBounds();
+
+            foreach ([['start_time', $startTime], ['end_time', $endTime]] as [$field, $time]) {
+                if (! Schedule::isWorkingHour($time)) {
+                    $validator->errors()->add(
+                        $keyPrefix.$field,
+                        sprintf(
+                            'Choose a time on the hour between %s and %s.',
+                            $bounds['start_label'],
+                            $bounds['end_label']
+                        )
+                    );
+                }
+            }
+
+            if ($validator->errors()->hasAny([$keyPrefix.'start_time', $keyPrefix.'end_time'])) {
+                return null;
+            }
+
+            // Stated separately from isWorkingHour() so the reason reads as
+            // the rule it broke rather than as a generic out-of-range
+            // complaint.
+            if ($end->hour > $bounds['end'] || ($end->hour === $bounds['end'] && $end->minute > 0)) {
+                $validator->errors()->add(
+                    $keyPrefix.'end_time',
+                    'The end time cannot be later than '.$bounds['end_label'].'.'
+                );
+
+                return null;
+            }
+        }
 
         if ($existing !== null && ! $unchanged
             && ! $this->assertMayChange($validator, $existing, $keyPrefix, 'project_date', $mayOverrideLock)) {
@@ -539,10 +565,5 @@ class ScheduleModeRules
         } catch (Throwable) {
             return null;
         }
-    }
-
-    private function hourLabel(int $hour): string
-    {
-        return CarbonImmutable::today()->setTime($hour, 0)->format('g:i A');
     }
 }

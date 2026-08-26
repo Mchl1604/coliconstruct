@@ -315,7 +315,12 @@
 
                                 <div class="panel-section-heading">
                                     <i class="bi bi-people-fill" aria-hidden="true"></i>
-                                    Assigned Technicians
+                                    {{-- Today's team. The ranges above may
+                                         reach back over days a different crew
+                                         worked, and for a technician who has
+                                         been taken off this project it is not
+                                         their own name in this list at all. --}}
+                                    Currently Assigned Technicians
                                 </div>
 
                                 <div class="panel-lead-row">
@@ -556,40 +561,70 @@
                 </div>
 
                 <div class="modal-body">
-                    <div class="schedule-section-heading">
-                        <span><i class="bi bi-list-check me-1" aria-hidden="true"></i> Available projects</span>
-                        <span class="schedule-count-pill d-none" data-add-count></span>
-                    </div>
+                    <div data-add-browser>
+                        <div class="schedule-section-heading">
+                            <span><i class="bi bi-list-check me-1" aria-hidden="true"></i> Available projects</span>
+                            <span class="schedule-count-pill d-none" data-add-count></span>
+                        </div>
 
-                    <div class="text-secondary small py-3" data-add-loading>
-                        <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-                        Checking availability&hellip;
-                    </div>
+                        <div class="text-secondary small py-3" data-add-loading>
+                            <span class="spinner-border spinner-border-sm me-2" role="status"
+                                aria-hidden="true"></span>
+                            Checking availability&hellip;
+                        </div>
 
-                    <div class="schedule-eligible-list" data-add-list></div>
+                        <div class="schedule-eligible-list" data-add-list></div>
 
-                    <div class="schedule-empty-state d-none" data-add-empty>
-                        There are no projects this technician can join right now.
-                    </div>
+                        <div class="schedule-empty-state d-none" data-add-empty>
+                            There are no projects this technician can join right now.
+                        </div>
 
-                    <div class="schedule-blocked-wrap d-none" data-add-blocked-wrap>
-                        <button type="button" class="schedule-blocked-toggle" data-add-blocked-toggle>
-                            <i class="bi bi-chevron-right" aria-hidden="true"></i>
-                            <span data-add-blocked-label>Show unavailable projects</span>
-                        </button>
-                        <div class="schedule-blocked-list d-none" data-add-blocked-list></div>
+                        <div class="schedule-blocked-wrap d-none" data-add-blocked-wrap>
+                            <button type="button" class="schedule-blocked-toggle" data-add-blocked-toggle>
+                                <i class="bi bi-chevron-right" aria-hidden="true"></i>
+                                <span data-add-blocked-label>Show unavailable projects</span>
+                            </button>
+                            <div class="schedule-blocked-list d-none" data-add-blocked-list></div>
+                        </div>
                     </div>
 
                     <div class="alert alert-danger mt-3 d-none" role="alert" data-add-error></div>
                     <div class="alert alert-success mt-3 d-none" role="alert" data-add-success></div>
+
+                    {{-- Shown in place of the list when the technician being
+                         placed is a Lead Technician and one of the ticked
+                         projects already has one. A lead is never replaced
+                         without somebody saying so, and this is where they say
+                         it. Inline rather than a second dialog, matching the
+                         Import Team and Remove Technician confirmations. --}}
+                    <div class="technician-lead-panel d-none" data-add-lead-confirm>
+                        <div class="panel-section-heading">
+                            <i class="bi bi-person-badge" aria-hidden="true"></i>
+                            Replace Lead Technician
+                        </div>
+                        <p class="text-muted small mb-2" data-add-lead-intro></p>
+                        <div class="technician-lead-options" data-add-lead-list></div>
+                    </div>
                 </div>
 
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"
+                        data-add-dismiss>Cancel</button>
+
+                    <button type="button" class="btn btn-link btn-sm d-none" data-add-lead-cancel>
+                        Cancel
+                    </button>
+
                     <button type="button" class="btn btn-success" data-add-save disabled>
                         <span class="spinner-border spinner-border-sm me-1 d-none" role="status" aria-hidden="true"
                             data-add-save-spinner></span>
                         Assign Technician
+                    </button>
+
+                    <button type="button" class="btn btn-danger d-none" data-add-lead-confirm-save>
+                        <span class="spinner-border spinner-border-sm me-1 d-none" role="status" aria-hidden="true"
+                            data-add-lead-spinner></span>
+                        Replace Lead Technician
                     </button>
                 </div>
 

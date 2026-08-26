@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Schedule;
 use App\Models\Task;
+use App\Support\BusinessTime;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Validation\Validator;
@@ -184,9 +185,9 @@ class TaskScheduleRules
     public function describe(array $ranges): string
     {
         return collect($ranges)
-            ->map(fn (array $range): string => Carbon::parse($range['start'])->format('M j, Y')
+            ->map(fn (array $range): string => Carbon::parse($range['start'])->format(BusinessTime::DATE)
                 .' - '
-                .Carbon::parse($range['end'])->format('M j, Y'))
+                .Carbon::parse($range['end'])->format(BusinessTime::DATE))
             ->join('; ');
     }
 
@@ -204,9 +205,9 @@ class TaskScheduleRules
             return '';
         }
 
-        return Carbon::parse($window['start'])->format('M j, Y')
+        return Carbon::parse($window['start'])->format(BusinessTime::DATE)
             .' - '
-            .Carbon::parse($window['end'])->format('M j, Y');
+            .Carbon::parse($window['end'])->format(BusinessTime::DATE);
     }
 
     /**

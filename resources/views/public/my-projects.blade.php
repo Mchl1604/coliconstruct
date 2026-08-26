@@ -18,7 +18,7 @@
                         @elseif ($isGuest)
                             Sign in to view your projects.
                         @else
-                            This page shows a client's own projects.
+                            This page shows a Registered User's own projects.
                         @endif
                     </p>
                 </div>
@@ -36,7 +36,7 @@
         <div class="container">
 
             @if (! $isClient)
-                {{-- Nobody without a client account is shown project information
+                {{-- Nobody without a Registered User account is shown project information
                      at all - not a name, not a date, not a status. --}}
                 <div class="public-empty-state">
                     @if ($isGuest)
@@ -46,12 +46,12 @@
                             Your projects appear once you sign in with the email address they were booked
                             under.
                         </p>
-                        <a class="btn btn-brand-blue btn-pill px-4" href="{{ route('auth.login') }}">Client Login</a>
+                        <a class="btn btn-brand-blue btn-pill px-4" href="{{ route('auth.login') }}">Sign In</a>
                     @else
                         {{-- Signed in, but as staff: telling them to log in would
                              be nonsense, so they are pointed at their own portal. --}}
                         <i class="bi bi-person-badge fs-1 d-block mb-3 text-secondary" aria-hidden="true"></i>
-                        <h2 class="h5 fw-bold text-dark mb-2">This page is for client accounts.</h2>
+                        <h2 class="h5 fw-bold text-dark mb-2">This page is for Registered User accounts.</h2>
                         <p class="mb-4">
                             You are signed in as {{ auth()->user()->roleLabel() }} - open your portal instead.
                         </p>
@@ -170,9 +170,9 @@
                                     @if ($card['start_date'])
                                         <p class="project-card-meta">
                                             <strong>Timeline:</strong>
-                                            {{ \Carbon\CarbonImmutable::parse($card['start_date'])->format('M j, Y') }}
+                                            {{ \Carbon\CarbonImmutable::parse($card['start_date'])->format(\App\Support\BusinessTime::DATE) }}
                                             &ndash;
-                                            {{ \Carbon\CarbonImmutable::parse($card['end_date'] ?? $card['start_date'])->format('M j, Y') }}
+                                            {{ \Carbon\CarbonImmutable::parse($card['end_date'] ?? $card['start_date'])->format(\App\Support\BusinessTime::DATE) }}
                                         </p>
                                     @else
                                         <p class="project-card-meta text-secondary">

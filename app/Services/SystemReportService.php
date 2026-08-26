@@ -7,6 +7,7 @@ use App\Models\Schedule;
 use App\Models\Task;
 use App\Models\Technician;
 use App\Models\User;
+use App\Support\BusinessTime;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -702,6 +703,11 @@ class SystemReportService
     private function leadTechnicianQuery()
     {
         $query = DB::table('tbl_project_technicians as pt')
+            // Live assignments only. The table keeps closed memberships now so
+            // a project's history survives a staffing change - see
+            // ProjectTechnician - and a chart of who is leading what today
+            // must not count somebody taken off in March.
+            ->whereNull('pt.removed_at')
             ->join('tbl_projects as p', 'p.project_id', '=', 'pt.project_id')
             ->join('tbl_technicians as t', 't.technician_id', '=', 'pt.technician_id')
             // The role on the account, never the order the team was assigned
@@ -1420,6 +1426,9 @@ class SystemReportService
         return DB::table('tbl_project_technicians')
             ->whereIn('project_id', $projectIds->all())
             ->whereIn('technician_id', $technicianIds->all())
+            // Closed memberships are kept for the record and are not
+            // assignments any more - see ProjectTechnician.
+            ->whereNull('removed_at')
             ->get(['technician_id', 'project_id'])
             ->groupBy('technician_id')
             ->map(fn (Collection $rows): array => $rows
@@ -1757,6 +1766,6 @@ class SystemReportService
 
     private function formatDate($value): string
     {
-        return $value ? CarbonImmutable::parse($value)->format('M j, Y') : '—';
+        return $value ? CarbonImmutable::parse($value)->format(BusinessTime::DATE) : '—';
     }
 }

@@ -109,10 +109,10 @@
                                         </div>
                                     </td>
                                     <td data-order="{{ $task->start_date ? \Carbon\CarbonImmutable::parse($task->start_date)->timestamp : 0 }}">
-                                        {{ $task->start_date ? \Carbon\CarbonImmutable::parse($task->start_date)->format('M j, Y') : '—' }}
+                                        {{ $task->start_date ? \Carbon\CarbonImmutable::parse($task->start_date)->format(\App\Support\BusinessTime::DATE) : '—' }}
                                     </td>
                                     <td data-order="{{ $task->due_date ? \Carbon\CarbonImmutable::parse($task->due_date)->timestamp : 0 }}">
-                                        {{ $task->due_date ? \Carbon\CarbonImmutable::parse($task->due_date)->format('M j, Y') : '—' }}
+                                        {{ $task->due_date ? \Carbon\CarbonImmutable::parse($task->due_date)->format(\App\Support\BusinessTime::DATE) : '—' }}
                                     </td>
                                     <td>
                                         <span class="badge {{ $task->statusBadgeClass() }}">

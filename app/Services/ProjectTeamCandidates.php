@@ -15,6 +15,12 @@ use Illuminate\Support\Collection;
  * shows exactly what the save would accept - screening on the first date range
  * alone used to offer people the server then rejected.
  *
+ * The question asked is about the work still to come: only the project's
+ * ranges that have not finished are screened against, so a week it spent in
+ * August cannot refuse somebody for a job whose remaining dates are in
+ * September. Every one of those remaining ranges is checked - see
+ * Schedule::upcomingAvailabilityRanges().
+ *
  * On top of that it ranks: a technician whose skills cover one of the
  * project's types is suggested first, everyone else free follows, and the ones
  * who are booked come last so they can be shown but not chosen.
@@ -139,12 +145,19 @@ class ProjectTeamCandidates
         // range about every day it covers, a partial day about its hours. So a
         // technician booked elsewhere in the afternoon is still offered for a
         // project that runs in the morning.
-        $ranges = $project->schedules
-            ->map(fn (Schedule $schedule): array => $schedule->toAvailabilityRange())
-            ->all();
+        //
+        // Only the ranges that have not finished are asked about. Putting
+        // somebody on a team is a decision about the work still to come, and a
+        // week the project spent in August cannot be staffed differently now -
+        // screening against it only refused technicians over dates nobody can
+        // change. Every remaining range is still checked, and a range that
+        // started before today keeps the days it has left; see
+        // Schedule::toUpcomingAvailabilityRange().
+        $ranges = Schedule::upcomingAvailabilityRanges($project->schedules);
 
         if ($ranges === []) {
-            // Nothing is scheduled yet, so nobody can clash with it.
+            // Nothing is scheduled yet, or nothing is left to schedule for, so
+            // there is nothing anybody can clash with.
             return [];
         }
 

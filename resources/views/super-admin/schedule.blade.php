@@ -56,7 +56,10 @@
                             <th>Project ID</th>
                             <th>Reference No.</th>
                             <th>Project</th>
-                            <th>Assigned Technicians</th>
+                            {{-- Today's team, like the panels the row opens.
+                                 Who was on site on a particular day is the
+                                 date panel's answer, not this column's. --}}
+                            <th>Currently Assigned Technicians</th>
                             <th>Date Ranges</th>
                             <th>Status</th>
                             <th class="text-center">Actions</th>
@@ -169,7 +172,14 @@
                             <div class="schedule-modal-team">
                                 <span class="schedule-modal-team-label">
                                     <i class="bi bi-people-fill" aria-hidden="true"></i>
-                                    Assigned Technicians
+                                    {{-- "Currently": this panel lists the team
+                                         as it stands today, while the ranges
+                                         below it reach back over dates that may
+                                         have been worked by somebody else
+                                         entirely. Who was on site on a given
+                                         day is the date panel's answer, not
+                                         this one's. --}}
+                                    Currently Assigned Technicians
                                 </span>
 
                                 <div class="schedule-modal-team-chips">
@@ -256,10 +266,14 @@
     @endforeach
 
     {{-- The same panel, read rather than written. A completed project - and a
-         held one - is clickable everywhere an editable one is, on the calendar
-         and from the table, and shows exactly what it is scheduled for with
-         nothing to change. --}}
-    @foreach ($scheduledProjects->reject(fn ($project) => $project->scheduleIsEditable()) as $project)
+         held or cancelled one - is clickable everywhere an editable one is, on
+         the calendar and from the table, and shows exactly what it is
+         scheduled for with nothing to change.
+
+         Drawn from the calendar's own list rather than the table's: a
+         cancelled project has a bar but no row, and every bar has to open
+         something. --}}
+    @foreach ($calendarProjects->reject(fn ($project) => $project->scheduleIsEditable()) as $project)
         <div class="modal fade" id="scheduleViewModal{{ $project->project_id }}" tabindex="-1"
             aria-labelledby="scheduleViewModalLabel{{ $project->project_id }}" aria-hidden="true"
             data-schedule-view-modal data-project-id="{{ $project->project_id }}">
@@ -293,7 +307,9 @@
                         <div class="schedule-modal-team">
                             <span class="schedule-modal-team-label">
                                 <i class="bi bi-people-fill" aria-hidden="true"></i>
-                                Assigned Technicians
+                                {{-- See the editor's copy of this label: the
+                                     team is today's, the ranges are history. --}}
+                                Currently Assigned Technicians
                             </span>
 
                             <div class="schedule-modal-team-chips">
@@ -430,7 +446,7 @@
                                                     &middot; {{ $client }}
                                                 @endif
                                                 @if ($ranSince)
-                                                    &middot; Due {{ $ranSince->format('M j, Y') }}
+                                                    &middot; Due {{ $ranSince->format(\App\Support\BusinessTime::DATE) }}
                                                 @endif
                                             </div>
                                         </div>
@@ -721,6 +737,9 @@
 
     @push('scripts')
         <script>
+            {{-- The one place the partial-day window is decided, handed to the
+                 page rather than repeated in it. See Schedule. --}}
+            window.partialDayHours = @json($partialDayHours);
             window.scheduleCalendarEvents = @json($calendarEvents);
             window.scheduleTechnicianAvailability = @json($technicianSchedules);
             window.scheduleTechnicianNames = @json($technicianNames);

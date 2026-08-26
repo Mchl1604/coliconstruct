@@ -21,6 +21,22 @@
     $startTime = $isPartialDay ? $schedule->start_datetime->format('H:i') : null;
     $endTime = $isPartialDay ? ($schedule->end_datetime ?? $schedule->start_datetime)->format('H:i') : null;
 
+    // The hours this row may show, which is the configured window plus
+    // whatever this booking already holds outside it. Narrowing the window in
+    // Project Settings must not blank a select that is sitting on a promise
+    // already made - see Schedule::workingHourOptionsIncluding(). An hour only
+    // kept this way is offered as kept: selectable on the row that holds it,
+    // disabled everywhere else, so it can be left alone but not newly chosen.
+    $hourOptions = \App\Models\Schedule::workingHourOptionsIncluding($startTime, $endTime);
+
+    // A booking still to come whose hours the configured window no longer
+    // covers. Flagged on the row rather than left to be spotted: the dashboard
+    // counts these and links straight here, and this is the thing it was
+    // pointing at. Asked of the model, so the count and the flag are the same
+    // question - see Schedule::needsHourCorrection().
+    $needsHourCorrection = (bool) $schedule?->needsHourCorrection();
+    $partialDayWindow = \App\Models\Schedule::partialDayHourBounds();
+
     // How much of this booking may still change. Asked of the same service the
     // save is validated by, so a field this row leaves open is a field the
     // server will accept - see ScheduleModeRules::editabilityOf().
@@ -48,7 +64,7 @@
     // So it is formatted here instead, in flatpickr's own altFormat, and the
     // machine value is not missed: a locked row submits nothing at all.
     $display = fn (?string $value): ?string => $value && $isReadOnly
-        ? \Carbon\CarbonImmutable::parse($value)->format('M j, Y')
+        ? \Carbon\CarbonImmutable::parse($value)->format(\App\Support\BusinessTime::DATE)
         : $value;
 @endphp
 
@@ -60,8 +76,8 @@
      ended is the project's record of work that happened and is drawn read-only;
      one that is under way has its start frozen, because those days are worked.
      See Schedule::lockState(). --}}
-<div class="schedule-range-row schedule-range-{{ $lockState }} {{ $isReadOnly ? 'is-locked' : '' }}"
-    data-range-row
+<div class="schedule-range-row schedule-range-{{ $lockState }} {{ $isReadOnly ? 'is-locked' : '' }} {{ $needsHourCorrection ? 'needs-hours' : '' }}"
+    data-range-row @if ($needsHourCorrection) data-needs-hours @endif
     data-lock-state="{{ $lockState }}"
     {{-- Carried on the row as well as in the hidden field, so a row can still
          be found by id after its hidden field has gone - which is how a locked
@@ -85,6 +101,16 @@
         {{-- Numbered by CSS counter rather than by index, so a row added after
              a removal still reads in order without any renumbering. --}}
         <span class="schedule-range-index"></span>
+
+        {{-- The hours no longer sit inside the working day. Ahead of the
+             lock flag because it is the one thing on this row somebody has
+             been sent here to change. --}}
+        @if ($needsHourCorrection)
+            <span class="schedule-range-flag schedule-range-flag-hours">
+                <i class="bi bi-clock-history" aria-hidden="true"></i>
+                Outside working hours
+            </span>
+        @endif
 
         {{-- Which of the three this row is, said on the row rather than left
              to be inferred from the dates. --}}
@@ -136,6 +162,20 @@
         </p>
     @endif
 
+    @if ($needsHourCorrection)
+        <p class="schedule-range-hours-note">
+            <i class="bi bi-exclamation-triangle" aria-hidden="true"></i>
+            <span>
+                This booking runs
+                {{ \App\Models\Schedule::hourLabel((int) explode(':', $startTime)[0]) }} to
+                {{ \App\Models\Schedule::hourLabel((int) explode(':', $endTime)[0]) }}, outside the
+                {{ $partialDayWindow['start_label'] }} to {{ $partialDayWindow['end_label'] }}
+                partial-day hours. It was booked before those hours were set and has not been
+                changed - pick times inside them to bring it back in, or leave it as it is.
+            </span>
+        </p>
+    @endif
+
     <div class="schedule-range-fields">
         <div class="schedule-range-field" data-range-date-based @if ($isPartialDay) hidden @endif>
             <label class="schedule-range-label">Start date</label>
@@ -180,8 +220,9 @@
                 @if ($named) name="{{ $field('start_time') }}" @endif data-range-start-time
                 @if ($isPartialDay && ! $isReadOnly) required @else disabled @endif>
                 <option value="">Select</option>
-                @foreach ($workingHours as $hour)
-                    <option value="{{ $hour['value'] }}" @selected($startTime === $hour['value'])>
+                @foreach ($hourOptions as $hour)
+                    <option value="{{ $hour['value'] }}" @selected($startTime === $hour['value'])
+                        @disabled($hour['outside'] && $startTime !== $hour['value'])>
                         {{ $hour['label'] }}
                     </option>
                 @endforeach
@@ -194,8 +235,9 @@
                 @if ($named) name="{{ $field('end_time') }}" @endif data-range-end-time
                 @if ($isPartialDay && ! $isReadOnly) required @else disabled @endif>
                 <option value="">Select</option>
-                @foreach ($workingHours as $hour)
-                    <option value="{{ $hour['value'] }}" @selected($endTime === $hour['value'])>
+                @foreach ($hourOptions as $hour)
+                    <option value="{{ $hour['value'] }}" @selected($endTime === $hour['value'])
+                        @disabled($hour['outside'] && $endTime !== $hour['value'])>
                         {{ $hour['label'] }}
                     </option>
                 @endforeach

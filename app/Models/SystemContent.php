@@ -114,6 +114,14 @@ class SystemContent extends Model
     public const TYPE_NUMBER = 'number';
 
     /**
+     * An hour of the working day, stored and edited as 'HH:MM' on a 24-hour
+     * clock. The editor draws a time input stepped to the hour, because every
+     * setting of this kind bounds something the rest of the system counts in
+     * whole hours.
+     */
+    public const TYPE_TIME = 'time';
+
+    /**
      * The types that hold an uploaded file rather than typed-in words.
      *
      * @var array<int, string>
@@ -524,6 +532,47 @@ class SystemContent extends Model
             ],
         ],
 
+        // The window a partial-day booking may be made in.
+        //
+        // A pair rather than two independent numbers: neither one means
+        // anything without the other, and the end has to be later than the
+        // start or there is no window at all. That relationship is declared
+        // once, here, as `before` on the earlier of the two - the editor reads
+        // it to check the pair in the browser and SystemContentController
+        // reads the same entry to check it again on the way in, so there is
+        // one statement of the rule rather than two that can disagree.
+        //
+        // Partial days only. A whole-day range runs midnight to midnight and
+        // has no hours to bound, so nothing here reaches one.
+        'project_settings.partial_day_start_hour' => [
+            'label' => 'Partial Day Start Hour',
+            'type' => self::TYPE_TIME,
+            'section' => self::SECTION_PROJECT_SETTINGS,
+            'help' => 'The earliest a partial-day schedule may start. On the hour; used for the time pickers, the availability checks and the validation behind them.',
+            // Read from the model so the shipped default and the runtime
+            // fallback cannot drift apart.
+            'default' => Schedule::DEFAULT_PARTIAL_DAY_START,
+            'rules' => ['required', 'string', 'regex:/^([01]\d|2[0-3]):00$/'],
+            'before' => 'project_settings.partial_day_end_hour',
+            'messages' => [
+                'required' => 'Enter the hour a partial day may start at.',
+                'regex' => 'Choose a start time on the hour, such as 08:00.',
+                'before' => 'The partial day end hour must be later than the start hour.',
+            ],
+        ],
+        'project_settings.partial_day_end_hour' => [
+            'label' => 'Partial Day End Hour',
+            'type' => self::TYPE_TIME,
+            'section' => self::SECTION_PROJECT_SETTINGS,
+            'help' => 'The latest a partial-day schedule may end. On the hour, and later than the start hour.',
+            'default' => Schedule::DEFAULT_PARTIAL_DAY_END,
+            'rules' => ['required', 'string', 'regex:/^([01]\d|2[0-3]):00$/'],
+            'messages' => [
+                'required' => 'Enter the hour a partial day may end at.',
+                'regex' => 'Choose an end time on the hour, such as 17:00.',
+            ],
+        ],
+
         // ------------------------------------------------------- Inquiry Settings
         'inquiry_settings.submission_limit_minutes' => [
             'label' => 'Inquiry Submission Limit (minutes)',
@@ -581,10 +630,10 @@ class SystemContent extends Model
      * whose meaning has to be looked up.
      */
     private const DEFAULT_TERMS = <<<'TEXT'
-        Please read these terms before opening a Coliconstruct client account.
+        Please read these terms before opening a Coliconstruct Registered User account.
 
         1. Your account
-        A client account is for following the work Coliconstruct is carrying out for you. You are responsible for the accuracy of the details you register with, for keeping your password to yourself, and for everything done through your account. Tell us at once if you believe somebody else has access to it.
+        A Registered User account is for following the work Coliconstruct is carrying out for you. You are responsible for the accuracy of the details you register with, for keeping your password to yourself, and for everything done through your account. Tell us at once if you believe somebody else has access to it.
 
         2. Who may register
         You must be at least 18 years old. Registering on behalf of a company means you are authorised to do so. Accounts for Coliconstruct staff are created by an administrator and are never opened from this form.
@@ -599,7 +648,7 @@ class SystemContent extends Model
         We collect your name, email address, contact number and date of birth to operate your account, and we use them for that purpose. We do not sell your information. Records connected to your projects are retained as part of our business records.
 
         6. Acceptable use
-        Do not attempt to reach another client's projects, interfere with the system, or use it for anything unlawful. We may deactivate an account that is used this way.
+        Do not attempt to reach another Registered User's projects, interfere with the system, or use it for anything unlawful. We may deactivate an account that is used this way.
 
         7. Availability and changes
         The system may be unavailable during maintenance or for reasons outside our control. We may update these terms; continuing to use your account after a change means you accept the updated terms.

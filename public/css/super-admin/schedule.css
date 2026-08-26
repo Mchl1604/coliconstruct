@@ -229,6 +229,38 @@
     color: #084298;
 }
 
+/* Hours the working day no longer covers. Amber rather than red: nothing is
+   broken and nothing was lost - the booking stands exactly as it was made -
+   but it is the row somebody following the dashboard link came to look at, so
+   it has to be the row the eye lands on. */
+.schedule-range-flag-hours {
+    background: #fff3cd;
+    color: #664d03;
+}
+
+.schedule-range-row.needs-hours {
+    border-color: #ffda6a;
+    background: #fffdf6;
+}
+
+.schedule-range-row.needs-hours:hover {
+    border-color: #ffc107;
+}
+
+.schedule-range-hours-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.35rem;
+    margin: 0 0 0.6rem;
+    font-size: 0.76rem;
+    line-height: 1.4;
+    color: #664d03;
+}
+
+.schedule-range-hours-note i {
+    margin-top: 0.1rem;
+}
+
 /* Why a row cannot be changed, on the row rather than in a toast that arrives
    after somebody has already tried. */
 .schedule-range-locked-note {
@@ -513,6 +545,27 @@
     padding: 0.15rem 0.65rem 0.15rem 0.2rem;
 }
 
+/* Somebody who was on the crew that day but has since been taken off the
+   project. Listed, because the day is a record and they are in it; muted and
+   annotated, because a plain chip would read as current team. */
+.schedule-tech-chip.is-former {
+    gap: 0.35rem;
+    padding-left: 0.65rem;
+    color: #64748b;
+    background: #f8fafc;
+    border-style: dashed;
+    border-color: #cbd5e1;
+}
+
+.schedule-tech-chip-note {
+    font-size: 0.66rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    color: #94a3b8;
+    white-space: nowrap;
+}
+
 /* ---- Date-details modal ---- */
 
 .schedule-section-heading {
@@ -572,6 +625,24 @@
     font-size: 0.8rem;
     color: #64748b;
     margin-top: 0.15rem;
+}
+
+/* Cancelled work appears on this panel for the days it was worked before it
+   stopped, and for no others. It is the one card here that is purely a record,
+   so the edge says so at a glance and the note underneath says when. */
+.schedule-date-card.is-cancelled {
+    border-left-color: #dc2626;
+    background: #fffbfb;
+}
+
+.schedule-date-cancelled {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin-top: 0.3rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #b91c1c;
 }
 
 /* The list holds two kinds of project. The tag says which, so a row that

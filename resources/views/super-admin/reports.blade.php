@@ -732,7 +732,7 @@
 
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-warning" data-archive-report-confirm>
+                    <button type="button" class="btn btn-dark" data-archive-report-confirm>
                         <span class="spinner-border spinner-border-sm me-1 d-none" role="status" aria-hidden="true"
                             data-archive-report-spinner></span>
                         <i class="bi bi-archive me-1" aria-hidden="true"></i>

@@ -277,6 +277,124 @@ class ImportTechnicianTeamTest extends TestCase
     }
 
     /**
+     * A team with somebody free carries the free ones as `importable`, which
+     * is the list the dialog shows. Naming the ones who are not free was a
+     * great deal of text about people who could not be imported either way.
+     */
+    public function test_a_partly_free_team_reports_who_can_actually_come_across(): void
+    {
+        $destination = $this->createProject('Destination Project', [$this->createTechnician('Ana Mendoza')]);
+        $this->book($destination, $this->day(5), $this->day(9));
+
+        $free = $this->createTechnician('Kevin Lopez');
+        $busy = $this->createTechnician('Maria Santos');
+        $alsoBusy = $this->createTechnician('John Cruz');
+
+        $this->createProject('Mixed Team', [$free, $busy, $alsoBusy]);
+
+        $elsewhere = $this->createProject('Elsewhere', [$busy, $alsoBusy]);
+        $this->book($elsewhere, $this->day(6), $this->day(7));
+
+        $payload = $this->find(
+            $this->sources(['project_id' => $destination->project_id])->json('projects'),
+            'Mixed Team'
+        );
+
+        $this->assertTrue($payload['has_importable']);
+        $this->assertFalse($payload['available'], 'Not everybody is free, so it is not a whole-team import.');
+        $this->assertSame(
+            ['Kevin Lopez'],
+            collect($payload['importable'])->pluck('name')->all()
+        );
+    }
+
+    /**
+     * A team with nobody free has nothing to import. The dialog says so in one
+     * sentence and offers no action, so the payload only has to report that
+     * there is nothing there.
+     */
+    public function test_a_team_with_nobody_free_reports_nothing_importable(): void
+    {
+        $destination = $this->createProject('Destination Project', [$this->createTechnician('Ana Mendoza')]);
+        $this->book($destination, $this->day(5), $this->day(9));
+
+        $busy = $this->createTechnician('Maria Santos');
+        $alsoBusy = $this->createTechnician('John Cruz');
+
+        $this->createProject('Fully Booked Team', [$busy, $alsoBusy]);
+
+        $elsewhere = $this->createProject('Elsewhere', [$busy, $alsoBusy]);
+        $this->book($elsewhere, $this->day(6), $this->day(7));
+
+        $payload = $this->find(
+            $this->sources(['project_id' => $destination->project_id])->json('projects'),
+            'Fully Booked Team'
+        );
+
+        $this->assertFalse($payload['has_importable']);
+        $this->assertFalse($payload['available']);
+        $this->assertSame([], $payload['importable']);
+    }
+
+    // ------------------------------------------------------------------
+    // Only the destination's schedule still to come
+    // ------------------------------------------------------------------
+
+    /**
+     * A destination range that has already ended cannot be staffed differently
+     * now, so a technician who was busy over it is still free to import.
+     */
+    public function test_a_finished_destination_range_does_not_make_anybody_unavailable(): void
+    {
+        $destination = $this->createProject('Destination Project', [$this->createTechnician('Ana Mendoza')]);
+        $this->book($destination, $this->day(-10), $this->day(-8));
+        $this->book($destination, $this->day(20), $this->day(21));
+
+        $wasBusy = $this->createTechnician('Kevin Lopez');
+        $this->createProject('Source Team', [$wasBusy]);
+
+        $elsewhere = $this->createProject('Elsewhere', [$wasBusy]);
+        $this->book($elsewhere, $this->day(-10), $this->day(-8));
+
+        $payload = $this->find(
+            $this->sources(['project_id' => $destination->project_id])->json('projects'),
+            'Source Team'
+        );
+
+        $this->assertTrue($payload['available']);
+        $this->assertTrue($payload['has_importable']);
+        $this->assertSame(['Kevin Lopez'], collect($payload['importable'])->pluck('name')->all());
+    }
+
+    /**
+     * Dropping the finished ranges drops nothing else: every range the
+     * destination still has to come is screened, and a clash on any of them
+     * keeps the technician out.
+     */
+    public function test_a_later_destination_range_still_blocks_an_importable_technician(): void
+    {
+        $destination = $this->createProject('Destination Project', [$this->createTechnician('Ana Mendoza')]);
+        $this->book($destination, $this->day(-10), $this->day(-8));
+        $this->book($destination, $this->day(2), $this->day(3));
+        $this->book($destination, $this->day(20), $this->day(21));
+
+        $busyLater = $this->createTechnician('Maria Santos');
+        $this->createProject('Source Team', [$busyLater]);
+
+        // Free for the near range, booked over the far one.
+        $elsewhere = $this->createProject('Elsewhere', [$busyLater]);
+        $this->book($elsewhere, $this->day(20), $this->day(21));
+
+        $payload = $this->find(
+            $this->sources(['project_id' => $destination->project_id])->json('projects'),
+            'Source Team'
+        );
+
+        $this->assertFalse($payload['has_importable']);
+        $this->assertSame([], $payload['importable']);
+    }
+
+    /**
      * The destination's own bookings are not a reason to refuse its own team.
      */
     public function test_the_destinations_own_dates_do_not_count_against_a_source(): void
@@ -519,9 +637,13 @@ class ImportTechnicianTeamTest extends TestCase
             'technician_id' => $importedLead->technician_id,
         ]);
 
+        // A removal closes the membership rather than deleting it - the row
+        // carries the dates that technician worked - so what must be gone is
+        // the ASSIGNMENT, not the record of it. See ProjectTechnician.
         $this->assertDatabaseMissing('tbl_project_technicians', [
             'project_id' => $destination->project_id,
             'technician_id' => $currentLead->technician_id,
+            'removed_at' => null,
         ]);
     }
 

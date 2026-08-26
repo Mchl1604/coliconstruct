@@ -174,9 +174,10 @@ class PortalImprovementsTest extends TestCase
 
     /**
      * Completing a project stays with both administrative roles. What decides
-     * whether the button is drawn is the project's state, not who is looking:
-     * a Pending, Unscheduled or paused project has had nobody on site yet, so
-     * there is nothing to close out.
+     * whether the button is drawn is mostly the project's state rather than
+     * who is looking: an Unscheduled or paused project has had nobody on site
+     * yet, so there is nothing to close out. Pending is the one exception, and
+     * it belongs to a Super Admin alone - see the test below.
      *
      * Overdue keeps its button. Overdue is derived rather than stored - a late
      * project is stored as Ongoing - and closing it off is exactly what the
@@ -199,7 +200,7 @@ class PortalImprovementsTest extends TestCase
      */
     public static function nonCompletableProjectStates(): array
     {
-        return ['pending' => ['pending'], 'unscheduled' => ['unscheduled'], 'on hold' => ['on_hold']];
+        return ['unscheduled' => ['unscheduled'], 'on hold' => ['on_hold']];
     }
 
     /**
@@ -215,11 +216,6 @@ class PortalImprovementsTest extends TestCase
         $project = $this->project('c@example.test');
 
         match ($state) {
-            // Booked, not started: the first day has not arrived.
-            'pending' => $project->schedules()->update([
-                'start_datetime' => now()->addDays(3),
-                'end_datetime' => now()->addDays(5),
-            ]),
             // No dates at all.
             'unscheduled' => $project->schedules()->delete(),
             // Paused. The calendar does not decide a held project's status, so
@@ -236,6 +232,35 @@ class PortalImprovementsTest extends TestCase
                     escape: false
                 );
         }
+    }
+
+    /**
+     * Pending is the one state a Super Admin is trusted with and an Admin is
+     * not: work that is booked but has not reached its first day is still
+     * theirs to close out - see Project::SUPER_ADMIN_COMPLETABLE_STATUSES.
+     *
+     * Booked forward rather than by writing the status, for the reason above.
+     */
+    public function test_only_a_super_admin_is_offered_completion_for_pending_work(): void
+    {
+        $project = $this->project('c@example.test');
+
+        $project->schedules()->update([
+            'start_datetime' => now()->addDays(3),
+            'end_datetime' => now()->addDays(5),
+        ]);
+
+        $target = 'data-bs-target="#completeProjectModal'.$project->project_id.'"';
+
+        $this->actingAs($this->account('super_admin', 'o@example.test'))
+            ->get(route('super-admin.projects'))
+            ->assertOk()
+            ->assertSee($target, escape: false);
+
+        $this->actingAs($this->account('admin', 'a@example.test'))
+            ->get(route('super-admin.projects'))
+            ->assertOk()
+            ->assertDontSee($target, escape: false);
     }
 
     public function test_a_super_admin_keeps_the_archive(): void

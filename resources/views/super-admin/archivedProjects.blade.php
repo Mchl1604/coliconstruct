@@ -71,7 +71,7 @@
                                     &#8369; {{ number_format((float) $project->quotation, 2) }}
                                 </td>
                                 <td data-order="{{ $project->archived_at?->timestamp ?? 0 }}">
-                                    {{ \App\Support\BusinessTime::format($project->archived_at, 'M d, Y', 'N/A') }}
+                                    {{ \App\Support\BusinessTime::format($project->archived_at, \App\Support\BusinessTime::DATE, 'N/A') }}
                                 </td>
                                 <td>{{ $project->archivedByUser?->fullName() ?? '—' }}</td>
                                 <td class="text-center">

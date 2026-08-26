@@ -18,6 +18,7 @@ use App\Services\SystemReportService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 /**
@@ -403,8 +404,58 @@ class HighSeverityAuditFixesTest extends TestCase
         $this->assertStringContainsString('task is still open', (string) $entry->description);
         $this->assertStringContainsString('Client signed off on site', (string) $entry->description);
 
+        // The title carries the objection and the person who overrode it, so
+        // the entry says the whole thing without being opened.
         $this->assertContains(
-            'Project Completed Over Its Blockers',
+            'Completed despite 1 open task by Test Administrator',
+            Notification::forUser($other)->get()->pluck('title')->all()
+        );
+    }
+
+    /**
+     * The title is built from the objections the policy raised, so it counts
+     * and it agrees with itself.
+     *
+     * @return array<string, array{0: int, 1: string}>
+     */
+    public static function overrideTitles(): array
+    {
+        return [
+            'one open task' => [1, 'Completed despite 1 open task by Test Administrator'],
+            'several open tasks' => [3, 'Completed despite 3 open tasks by Test Administrator'],
+            'no tasks at all' => [0, 'Completed despite no tasks by Test Administrator'],
+        ];
+    }
+
+    #[DataProvider('overrideTitles')]
+    public function test_the_override_notification_names_the_objection_and_the_person(int $openTasks, string $expected): void
+    {
+        $other = User::create([
+            'user_code' => 'EMP-0700', 'name' => 'Other Admin', 'first_name' => 'Other',
+            'last_name' => 'Admin', 'email' => 'other.admin@example.test', 'role' => 'admin',
+            'status' => User::STATUS_ACTIVE, 'password' => 'secret-password',
+        ]);
+
+        $lead = $this->technician('Real Lead', 'lead_technician');
+        $project = $this->project([$lead]);
+        $this->book($project, 0, 4);
+
+        for ($i = 0; $i < $openTasks; $i++) {
+            Task::create([
+                'project_id' => $project->project_id,
+                'technician_id' => $lead->technician_id,
+                'task_title' => 'Still to do '.$i,
+                'task_description' => 'Description',
+                'status' => 'pending',
+            ]);
+        }
+
+        $this->post(route('super-admin.projects.complete', $project->project_id), $this->completionPayload([
+            'completion_override_reason' => 'Client signed off on site; the rest was cancelled by them.',
+        ]))->assertSessionHas('success');
+
+        $this->assertContains(
+            $expected,
             Notification::forUser($other)->get()->pluck('title')->all()
         );
     }
@@ -433,6 +484,101 @@ class HighSeverityAuditFixesTest extends TestCase
         $this->assertFalse($project->completionWasOverridden());
         $this->assertNull($project->completion_overridden_by);
         $this->assertSame(0, ActivityLog::where('action', ActivityLog::PROJECT_COMPLETION_OVERRIDDEN)->count());
+    }
+
+    // ==================================================================
+    // Pending work, closed out by a Super Admin
+    // ==================================================================
+
+    /**
+     * The whole of the ordinary completion flow runs: the status moves to
+     * Awaiting Client Confirmation, the completion report is written, the
+     * dates still booked ahead are released, and the activity log says so.
+     * Nothing about it is special-cased for the status it came from.
+     */
+    public function test_a_super_admin_completes_a_pending_project_through_the_normal_flow(): void
+    {
+        $lead = $this->technician('Real Lead', 'lead_technician');
+        $project = $this->project([$lead], 'pending');
+        $this->book($project, 3, 5);
+        $this->finishedWork($project);
+
+        $this->post(route('super-admin.projects.complete', $project->project_id), $this->completionPayload())
+            ->assertSessionHas('success');
+
+        $project->refresh();
+
+        $this->assertSame(Project::STATUS_AWAITING_CLIENT_CONFIRMATION, $project->status);
+        $this->assertSame('The work on site is finished.', $project->completion_summary);
+        $this->assertNotNull($project->completed_at);
+        $this->assertNotNull($project->completion_requested_at);
+
+        // Booked days that had not arrived are given back, exactly as they are
+        // for work completed early from any other status.
+        $this->assertSame(0, Schedule::where('project_id', $project->project_id)->count());
+
+        // Nothing objected, so nothing is recorded as overridden.
+        $this->assertFalse($project->completionWasOverridden());
+
+        $this->assertSame(
+            1,
+            ActivityLog::where('action', ActivityLog::PROJECT_COMPLETION_REQUESTED)
+                ->where('record_id', $project->project_id)
+                ->count()
+        );
+    }
+
+    /**
+     * The status is not a blocker for a Super Admin, but the work recorded on
+     * the project still is: a Pending project with a task left open is refused
+     * without a reason, on the same terms as any other.
+     */
+    public function test_a_pending_project_with_open_work_still_needs_a_reason(): void
+    {
+        $lead = $this->technician('Real Lead', 'lead_technician');
+        $project = $this->project([$lead], 'pending');
+        $this->book($project, 3, 5);
+
+        Task::create([
+            'project_id' => $project->project_id,
+            'technician_id' => $lead->technician_id,
+            'task_title' => 'Still to do',
+            'task_description' => 'Description',
+            'status' => 'pending',
+        ]);
+
+        $this->post(route('super-admin.projects.complete', $project->project_id), $this->completionPayload())
+            ->assertSessionHas('error');
+
+        $this->assertSame('pending', $project->fresh()->status);
+    }
+
+    /**
+     * The rule is enforced where it is written, not only where the button is
+     * drawn: an Admin posting the completion of a Pending project directly is
+     * told the project has not started, and nothing is written.
+     */
+    public function test_an_admin_is_still_refused_a_pending_project_without_a_reason(): void
+    {
+        $admin = User::create([
+            'user_code' => 'EMP-0600', 'name' => 'Plain Admin', 'first_name' => 'Plain',
+            'last_name' => 'Admin', 'email' => 'plain.admin@example.test', 'role' => 'admin',
+            'status' => User::STATUS_ACTIVE, 'password' => 'secret-password',
+        ]);
+
+        $lead = $this->technician('Real Lead', 'lead_technician');
+        $project = $this->project([$lead], 'pending');
+        $this->book($project, 3, 5);
+        $this->finishedWork($project);
+
+        $this->actingAs($admin)
+            ->post(route('super-admin.projects.complete', $project->project_id), $this->completionPayload())
+            ->assertSessionHas('error');
+
+        $this->assertSame('pending', $project->fresh()->status);
+
+        // The booked days are untouched: a refusal writes nothing.
+        $this->assertSame(1, Schedule::where('project_id', $project->project_id)->count());
     }
 
     public function test_the_completion_dialog_shows_what_it_is_being_asked_to_override(): void

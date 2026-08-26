@@ -12,9 +12,31 @@ document.addEventListener('DOMContentLoaded', function() {
     const MODE_DATE_BASED = 'date_based';
     const MODE_PARTIAL_DAY = 'partial_day';
     const MINUTES_PER_DAY = 1440;
-    // The working day, mirroring Schedule::WORKING_HOUR_START / _END.
-    const WORKING_HOUR_START = 8;
-    const WORKING_HOUR_END = 17;
+    /**
+     * The window a partial-day booking may be made in, handed over by the page
+     * from Schedule::partialDayHourBounds() - the one place it is decided, and
+     * an administrator's setting rather than a number written here. See
+     * Configuration -> System Settings -> Project Settings.
+     *
+     * Null when the page did not hand one over, which is not a licence to
+     * invent a working day: the narrowing below simply stands down and the
+     * server, which reads the same setting, decides. A second copy of the
+     * hours living in this file is exactly what the setting exists to remove.
+     */
+    const PARTIAL_DAY_HOURS = (function () {
+        const bounds = window.partialDayHours;
+        const start = Number(bounds?.start);
+        const end = Number(bounds?.end);
+
+        return Number.isInteger(start) && Number.isInteger(end) && start < end
+            ? { start: start, end: end, endLabel: String(bounds.end_label || '') }
+            : null;
+    })();
+
+    /** The last minute of the day a booking may run to, or null. */
+    function latestBookableMinute() {
+        return PARTIAL_DAY_HOURS ? PARTIAL_DAY_HOURS.end * 60 : null;
+    }
 
     const steps = Array.from(form.querySelectorAll('[data-wizard-step]'));
     const progressSteps = Array.from(document.querySelectorAll('[data-progress-step]'));
@@ -109,7 +131,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         if (field.type === 'date') {
-            return new Date(`${value}T00:00:00`).toLocaleDateString();
+            return friendlyDate(value);
         }
 
         return value;
@@ -308,7 +330,11 @@ document.addEventListener('DOMContentLoaded', function() {
     function hasFreeHourOn(technician, date) {
         const intervals = busyIntervalsOn(technician, date);
 
-        for (let hour = WORKING_HOUR_START; hour < WORKING_HOUR_END; hour++) {
+        if (!PARTIAL_DAY_HOURS) {
+            return true;
+        }
+
+        for (let hour = PARTIAL_DAY_HOURS.start; hour < PARTIAL_DAY_HOURS.end; hour++) {
             if (isFreeBetween(intervals, hour * 60, (hour + 1) * 60)) {
                 return true;
             }
@@ -389,22 +415,27 @@ document.addEventListener('DOMContentLoaded', function() {
         }, []);
     }
 
-    function formatDateList(dates) {
-        const currentYear = new Date().getFullYear();
-        const allCurrentYear = dates.every(function(date) {
-            return Number(date.slice(0, 4)) === currentYear;
-        });
+    /**
+     * "Aug 25, 2026" - the one shape a date is shown in anywhere in the
+     * system, matching BusinessTime::DATE on the server.
+     */
+    function friendlyDate(dateString) {
+        if (!dateString) {
+            return '';
+        }
 
+        return new Date(dateString + 'T00:00:00').toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+        });
+    }
+
+    function formatDateList(dates) {
         const shown = dates.slice(0, 8);
         const remaining = dates.length - shown.length;
 
-        const labels = shown.map(function(date) {
-            const parsed = new Date(date + 'T00:00:00');
-
-            return parsed.toLocaleDateString(undefined, allCurrentYear
-                ? { month: 'long', day: 'numeric' }
-                : { month: 'long', day: 'numeric', year: 'numeric' });
-        });
+        const labels = shown.map(friendlyDate);
 
         if (remaining > 0) {
             labels.push(remaining + ' more date' + (remaining === 1 ? '' : 's'));
@@ -508,8 +539,9 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
             const from = minutesFromTime(option.value);
-            // 5 PM can only ever end a booking.
-            const bookable = from !== null && from < WORKING_HOUR_END * 60;
+            // The last bookable hour can only ever end a booking.
+            const latest = latestBookableMinute();
+            const bookable = from !== null && (latest === null || from < latest);
 
             option.disabled = !date ? false : !(bookable && freeBetween(from, from + 60));
         });
@@ -1200,8 +1232,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 return false;
             }
 
-            if (to !== null && to > WORKING_HOUR_END * 60) {
-                const message = 'The end time cannot be later than 5:00 PM.';
+            const latest = latestBookableMinute();
+
+            if (to !== null && latest !== null && to > latest) {
+                const message = 'The end time cannot be later than ' +
+                    PARTIAL_DAY_HOURS.endLabel + '.';
                 endTimeSelect.setCustomValidity(message);
                 showScheduleError(message);
 

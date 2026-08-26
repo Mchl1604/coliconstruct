@@ -77,13 +77,28 @@ class SystemSettingsTest extends TestCase
     /**
      * Save one settings section as the editor does.
      *
+     * The editor posts every field of the section it is showing, so the values
+     * given here are laid over the section's current ones rather than sent
+     * alone. A test naming the one setting it cares about is then testing that
+     * setting, not the fact that its neighbours were left out of the request.
+     *
      * @param  array<string, string>  $values
      */
     private function saveSection(string $section, array $values): TestResponse
     {
+        $current = [];
+
+        foreach (SystemContent::definitionsFor($section) as $key => $definition) {
+            if (in_array($definition['type'], SystemContent::FILE_TYPES, true)) {
+                continue;
+            }
+
+            $current[$key] = (string) ($this->storedSetting($key) ?? $definition['default'] ?? '');
+        }
+
         return $this->putJson(
             route('super-admin.configuration.contents.update', $section),
-            ['values' => $values]
+            ['values' => array_merge($current, $values)]
         );
     }
 

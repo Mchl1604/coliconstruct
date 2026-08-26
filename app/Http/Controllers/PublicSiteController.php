@@ -241,7 +241,7 @@ class PublicSiteController extends Controller
                     'end' => $schedule->end_datetime ?? $schedule->start_datetime,
                     // A client should see the hours somebody is coming, not a
                     // date printed twice. Same formatter as every other screen.
-                    'label' => $schedule->describe('M d, Y'),
+                    'label' => $schedule->describe(),
                 ])
                 ->values(),
         ]);

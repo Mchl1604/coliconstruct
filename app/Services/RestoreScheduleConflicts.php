@@ -255,7 +255,7 @@ class RestoreScheduleConflicts
 
         return [
             'schedule_id' => (int) $schedule->schedule_id,
-            'label' => $schedule->describe('M j, Y'),
+            'label' => $schedule->describe(),
             'scheduling_mode' => $schedule->scheduling_mode ?? Schedule::MODE_DATE_BASED,
             'partial_day' => $schedule->isPartialDay(),
             'start_date' => $schedule->startsOn()->toDateString(),

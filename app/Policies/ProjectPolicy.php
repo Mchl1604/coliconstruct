@@ -113,7 +113,7 @@ class ProjectPolicy
     {
         return $user->isLeadTechnician()
             && $this->viewAssigned($user, $project)
-            && $this->blockersFor($project) === [];
+            && $this->blockersFor($project, $user) === [];
     }
 
     /**
@@ -123,11 +123,13 @@ class ProjectPolicy
      * wants the wording and nothing else. The technician portal wants the
      * links as well and reads blockerDetailsFor() instead.
      *
+     * @param  User|null  $viewer  Who is asking. Only the status blocker
+     *                             depends on it - see blockerDetailsFor().
      * @return array<int, string>
      */
-    public function blockersFor(Project $project): array
+    public function blockersFor(Project $project, ?User $viewer = null): array
     {
-        return array_column($this->blockerDetailsFor($project), 'message');
+        return array_column($this->blockerDetailsFor($project, $viewer), 'message');
     }
 
     /**
@@ -141,9 +143,19 @@ class ProjectPolicy
      * screen that fixes it, and the two dialogs that close a project render
      * it as a link rather than reprinting the sentence.
      *
-     * @return array<int, array{message: string, action: array{label: string, url: string}|null}>
+     * Who is asking matters in exactly one place: a Super Admin may close out
+     * a project that has not reached its first scheduled day, so "Not started
+     * yet" is not a refusal for them - see Project::isCompletableBy(). Every
+     * other blocker below reads the work recorded on the project and is the
+     * same sentence for everybody, an administrator included: they may go
+     * ahead with it outstanding, but only by saying why.
+     *
+     * @param  User|null  $viewer  Who is asking. Omitted where the answer is
+     *                             wanted for the project rather than for a
+     *                             person, which is the stricter reading.
+     * @return array<int, array{message: string, summary: string, action: array{label: string, url: string}|null}>
      */
-    public function blockerDetailsFor(Project $project): array
+    public function blockerDetailsFor(Project $project, ?User $viewer = null): array
     {
         // Every link here points into the technician portal, because a lead is
         // the only person these are a refusal for. An administrator sees the
@@ -156,19 +168,23 @@ class ProjectPolicy
             // Nothing to fix and nowhere to send anybody: the work is already
             // closed, and this is a statement of fact rather than a to-do.
             return [$this->blocker(
-                sprintf('This project is already %s.', $project->statusLabel())
+                sprintf('This project is already %s.', $project->statusLabel()),
+                sprintf('already %s', mb_strtolower($project->statusLabel()))
             )];
         }
 
         if ($project->on_hold) {
             return [$this->blocker(
                 'This project is on hold. An administrator has to resume it before it can be completed.',
+                'a hold',
                 'Open the project',
                 $projectUrl
             )];
         }
 
-        if (! in_array($project->status, Project::COMPLETABLE_STATUSES, true)) {
+        // Read-only, archived and on-hold projects were turned away above, so
+        // what is left for this to decide is the status alone.
+        if (! $project->isCompletableBy($viewer)) {
             return [$this->statusBlocker($project, $projectUrl)];
         }
 
@@ -190,6 +206,7 @@ class ProjectPolicy
                 $openTasks === 1
                     ? '1 task is still open. Every task has to be completed first.'
                     : $openTasks.' tasks are still open. Every task has to be completed first.',
+                $openTasks === 1 ? '1 open task' : $openTasks.' open tasks',
                 $openTasks === 1 ? 'Go to the open task' : 'Go to the open tasks',
                 $tasksUrl
             );
@@ -198,6 +215,7 @@ class ProjectPolicy
         if ($allTasks === 0) {
             $blockers[] = $this->blocker(
                 'No tasks yet - there is nothing to close out.',
+                'no tasks',
                 'Add the first task',
                 $tasksUrl
             );
@@ -215,26 +233,42 @@ class ProjectPolicy
      * from, worded for the status it actually is: Pending and Unscheduled are
      * two different reasons nobody has finished anything yet.
      *
-     * @return array{message: string, action: array{label: string, url: string}|null}
+     * @return array{message: string, summary: string, action: array{label: string, url: string}|null}
      */
     private function statusBlocker(Project $project, string $projectUrl): array
     {
-        $message = match ($project->status) {
-            'unscheduled' => 'Not scheduled yet. An administrator has to schedule it first.',
-            'pending' => 'Not started yet. It can be completed once its first scheduled day arrives.',
-            default => sprintf('A %s project cannot be completed.', $project->statusLabel()),
+        [$message, $summary] = match ($project->status) {
+            'unscheduled' => ['Not scheduled yet. An administrator has to schedule it first.', 'no schedule'],
+            'pending' => ['Not started yet. It can be completed once its first scheduled day arrives.', 'work not started'],
+            default => [
+                sprintf('A %s project cannot be completed.', $project->statusLabel()),
+                sprintf('a %s project', mb_strtolower($project->statusLabel())),
+            ],
         };
 
-        return $this->blocker($message, 'Check the booked dates', $projectUrl);
+        return $this->blocker($message, $summary, 'Check the booked dates', $projectUrl);
     }
 
     /**
-     * @return array{message: string, action: array{label: string, url: string}|null}
+     * @param  string  $summary  The same objection in a few words - "1 open
+     *                           task", "no tasks" - for a line with no room
+     *                           for the whole sentence. A notification title
+     *                           is the case that needs it: "Completed despite
+     *                           1 open task by Ana Mendoza" says the whole
+     *                           thing at a glance, where the message above is
+     *                           written to be read in a dialog and to tell the
+     *                           reader what to go and do about it.
+     * @return array{message: string, summary: string, action: array{label: string, url: string}|null}
      */
-    private function blocker(string $message, ?string $label = null, ?string $url = null): array
-    {
+    private function blocker(
+        string $message,
+        string $summary,
+        ?string $label = null,
+        ?string $url = null
+    ): array {
         return [
             'message' => $message,
+            'summary' => $summary,
             'action' => $label !== null && $url !== null
                 ? ['label' => $label, 'url' => $url]
                 : null,

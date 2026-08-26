@@ -12,6 +12,7 @@ use App\Models\Task;
 use App\Models\Technician;
 use App\Models\User;
 use App\Services\TechnicianAvailabilityService;
+use App\Support\BusinessTime;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -322,7 +323,7 @@ class ScheduleDateRemovalTest extends TestCase
 
         $this->assertNotNull($entry);
         $this->assertStringContainsString(
-            CarbonImmutable::parse($this->day(13))->format('F j, Y'),
+            CarbonImmutable::parse($this->day(13))->format(BusinessTime::DATE),
             $entry->description
         );
     }

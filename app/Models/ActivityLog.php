@@ -151,19 +151,27 @@ class ActivityLog extends Model
 
     public const EMPLOYEE_RESTORED = 'Employee Restored';
 
-    public const CLIENT_CREATED = 'Client Account Created';
+    /**
+     * The Registered User account type - the `client` role. The constant names
+     * keep the stored role's word so they line up with User::ROLE_CLIENT; the
+     * sentences are what an auditor reads, and those say Registered User.
+     *
+     * Entries recorded before the rename keep their old wording, which is the
+     * point of an audit trail: a row says what it said when it was written.
+     */
+    public const CLIENT_CREATED = 'Registered User Account Created';
 
-    public const CLIENT_UPDATED = 'Client Updated';
+    public const CLIENT_UPDATED = 'Registered User Updated';
 
-    public const CLIENT_PASSWORD_RESET = 'Client Password Reset';
+    public const CLIENT_PASSWORD_RESET = 'Registered User Password Reset';
 
-    public const CLIENT_ACTIVATED = 'Client Activated';
+    public const CLIENT_ACTIVATED = 'Registered User Activated';
 
-    public const CLIENT_DEACTIVATED = 'Client Deactivated';
+    public const CLIENT_DEACTIVATED = 'Registered User Deactivated';
 
-    public const CLIENT_ARCHIVED = 'Client Archived';
+    public const CLIENT_ARCHIVED = 'Registered User Archived';
 
-    public const CLIENT_RESTORED = 'Client Restored';
+    public const CLIENT_RESTORED = 'Registered User Restored';
 
     /**
      * The specialty approval workflow. A technician asks; an administrator
@@ -231,6 +239,21 @@ class ActivityLog extends Model
      */
     public const INVITATION_EMAIL_SENT = 'Invitation Email Sent';
 
+    /**
+     * Which Registered User account a project is connected to.
+     *
+     * Three entries rather than one because three different things happen and
+     * they answer different questions: an account was put on a project that had
+     * none, one account was swapped for another, or the project was left with
+     * none at all. The project's own client details are untouched by all three
+     * - this is about who follows the work on the public website.
+     */
+    public const REGISTERED_USER_ASSIGNED = 'Registered User Assigned';
+
+    public const REGISTERED_USER_ASSIGNMENT_CHANGED = 'Registered User Assignment Changed';
+
+    public const REGISTERED_USER_REMOVED = 'Registered User Assignment Removed';
+
     public const LEAD_TECHNICIAN_ASSIGNED = 'Lead Technician Assigned';
 
     public const TECHNICIAN_ASSIGNED = 'Technician Assigned';
@@ -280,6 +303,15 @@ class ActivityLog extends Model
     // ------------------------------------------------------------------
 
     public const SYSTEM_SETTINGS_UPDATED = 'System Settings Updated';
+
+    /**
+     * Somebody took a copy of the audit trail away with them.
+     *
+     * Filed under Configuration, which is the page it happens on. It is an
+     * entry in the very table it describes, which is the point: who read the
+     * trail, when, and with what filters is itself something an auditor asks.
+     */
+    public const ACTIVITY_LOGS_EXPORTED = 'Activity Logs Exported';
 
     // The catalogue of work the company does. A project type and a technician
     // specialty are the same entry, so one action covers both halves.
@@ -380,6 +412,9 @@ class ActivityLog extends Model
         self::PROJECT_RESUMED => self::MODULE_PROJECTS,
         self::PROJECT_RESCHEDULED => self::MODULE_PROJECTS,
         self::INVITATION_EMAIL_SENT => self::MODULE_PROJECTS,
+        self::REGISTERED_USER_ASSIGNED => self::MODULE_PROJECTS,
+        self::REGISTERED_USER_ASSIGNMENT_CHANGED => self::MODULE_PROJECTS,
+        self::REGISTERED_USER_REMOVED => self::MODULE_PROJECTS,
         self::LEAD_TECHNICIAN_ASSIGNED => self::MODULE_PROJECTS,
         self::TECHNICIAN_ASSIGNED => self::MODULE_PROJECTS,
         self::TECHNICIAN_REMOVED => self::MODULE_PROJECTS,
@@ -400,6 +435,7 @@ class ActivityLog extends Model
         self::REPORT_RESTORED => self::MODULE_REPORTS,
 
         self::SYSTEM_SETTINGS_UPDATED => self::MODULE_CONFIGURATION,
+        self::ACTIVITY_LOGS_EXPORTED => self::MODULE_CONFIGURATION,
         self::CONTACT_INQUIRY_SENT => self::MODULE_CONFIGURATION,
         self::INQUIRY_STATUS_CHANGED => self::MODULE_CONFIGURATION,
         self::INQUIRY_REPLY_SENT => self::MODULE_CONFIGURATION,
@@ -518,6 +554,12 @@ class ActivityLog extends Model
 
     /**
      * Narrow to one of the date windows the filter offers.
+     *
+     * A custom window may be open at either end. "Everything since March" and
+     * "everything up to March" are both things somebody exporting the trail
+     * asks for, and neither of them is a reason to hand back the whole table -
+     * which is what requiring both ends used to do. No bounds at all still
+     * means every date, which is what "all" has always meant.
      */
     public function scopeWithinRange(
         Builder $query,
@@ -531,21 +573,24 @@ class ActivityLog extends Model
             'today' => [$today, $today->endOfDay()],
             'week' => [$today->subDays(6), $today->endOfDay()],
             'month' => [$today->subDays(29), $today->endOfDay()],
-            'custom' => $from && $to
-                ? [CarbonImmutable::parse($from)->startOfDay(), CarbonImmutable::parse($to)->endOfDay()]
-                : [null, null],
+            'custom' => [
+                $from ? CarbonImmutable::parse($from)->startOfDay() : null,
+                $to ? CarbonImmutable::parse($to)->endOfDay() : null,
+            ],
             default => [null, null],
         };
 
-        if (! $start || ! $end) {
+        if (! $start && ! $end) {
             return $query;
         }
 
         // Given back to front, a custom range still means what was intended.
-        if ($start->gt($end)) {
+        if ($start && $end && $start->gt($end)) {
             [$start, $end] = [$end->startOfDay(), $start->endOfDay()];
         }
 
-        return $query->whereBetween('created_at', [$start, $end]);
+        return $query
+            ->when($start, fn (Builder $q): Builder => $q->where('created_at', '>=', $start))
+            ->when($end, fn (Builder $q): Builder => $q->where('created_at', '<=', $end));
     }
 }

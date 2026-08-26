@@ -3,6 +3,7 @@
 namespace App\Mail;
 
 use App\Models\Project;
+use App\Support\BusinessTime;
 
 /**
  * A change worth telling a client about, on a project they own.
@@ -207,11 +208,11 @@ class ProjectUpdateMail extends SystemMail
     {
         return match ($this->event) {
             self::AWAITING_CONFIRMATION, self::CONFIRMATION_REMINDER => [
-                'Completion date' => $this->project->completed_at?->format('F j, Y'),
-                'Confirm by' => $this->project->confirmationDeadline()?->format('F j, Y'),
+                'Completion date' => $this->project->completed_at?->format(BusinessTime::DATE),
+                'Confirm by' => $this->project->confirmationDeadline()?->format(BusinessTime::DATE),
             ],
             self::CONFIRMED, self::AUTO_COMPLETED => [
-                'Completion date' => $this->project->completed_at?->format('F j, Y'),
+                'Completion date' => $this->project->completed_at?->format(BusinessTime::DATE),
             ],
             // The new dates are the actionable half of a reopening, so they
             // travel in this email rather than in a second one sent a moment

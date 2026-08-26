@@ -476,3 +476,207 @@
     background: #f8fafc;
     border-top: 1px solid #e5e7eb;
 }
+
+/* ---- Change history dialog ----
+ *
+ * Opened by the icon-only buttons on the Assigned Team and Project Schedule
+ * cards. Two kinds of row sit in it and they are deliberately different
+ * shapes: a membership is a SPAN (somebody was here between two dates), an
+ * entry is an EVENT (somebody did something at one moment). Drawing both as
+ * the same row made it impossible to tell at a glance which you were reading.
+ */
+.project-history-eyebrow {
+    display: block;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #94a3b8;
+}
+
+.project-history-heading {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #64748b;
+    margin: 0.35rem 0 0.6rem;
+}
+
+/* The second heading needs air above it; the first must not push the dialog's
+   own padding around. */
+.project-history-heading:not(:first-child),
+[data-history-entries-wrap] .project-history-heading {
+    margin-top: 1.25rem;
+}
+
+/* Green for somebody on the team, black for somebody who has left - the same
+   black a former booking is drawn in on the calendars, so the two screens
+   agree on what "no longer assigned" looks like. */
+.project-history-member {
+    border: 1px solid #d7ede0;
+    border-left: 3px solid #146c43;
+    border-radius: 0.45rem;
+    padding: 0.55rem 0.75rem;
+    margin-bottom: 0.4rem;
+    background: #f6fbf8;
+}
+
+.project-history-member.is-former {
+    border-color: #e5e7eb;
+    border-left-color: #000;
+    background: #f8fafc;
+}
+
+.project-history-member-main {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.project-history-name {
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.project-history-tag {
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    padding: 0.05rem 0.4rem;
+    border-radius: 999px;
+    background: #e0edff;
+    color: #0b5ed7;
+}
+
+.project-history-member .project-history-span {
+    color: #146c43;
+    font-weight: 600;
+}
+
+.project-history-member.is-former .project-history-span {
+    color: #475569;
+    font-weight: 500;
+}
+
+.project-history-tag.is-former {
+    background: #111827;
+    color: #fff;
+}
+
+.project-history-span {
+    font-size: 0.8rem;
+    color: #475569;
+    margin-top: 0.15rem;
+}
+
+.project-history-entry {
+    border-left: 2px solid #e5e7eb;
+    padding: 0 0 0.85rem 0.85rem;
+    margin-left: 0.35rem;
+    position: relative;
+}
+
+/* The dot on the spine. Absolutely placed so the text baseline is unaffected
+   by it, which keeps entries of different heights aligned down the column. */
+.project-history-entry::before {
+    content: "";
+    position: absolute;
+    left: -0.3rem;
+    top: 0.35rem;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: #94a3b8;
+}
+
+.project-history-entry:last-child {
+    padding-bottom: 0;
+    border-left-color: transparent;
+}
+
+/* Three meanings, three colours - see ProjectController::ENTRY_KINDS. Green
+   gained, red given up, amber moved. Carried on the dot and the spine rather
+   than as a background wash: the entries sit in a column and a run of tinted
+   blocks reads as a table, which is not what a timeline is. */
+.project-history-entry.is-added {
+    border-left-color: #a9d5bd;
+}
+
+.project-history-entry.is-added::before {
+    background: #146c43;
+}
+
+.project-history-entry.is-removed {
+    border-left-color: #f2b8be;
+}
+
+.project-history-entry.is-removed::before {
+    background: #dc3545;
+}
+
+.project-history-entry.is-changed {
+    border-left-color: #f6dda0;
+}
+
+.project-history-entry.is-changed::before {
+    background: #b26b00;
+}
+
+.project-history-entry.is-added .project-history-action {
+    color: #146c43;
+}
+
+.project-history-entry.is-removed .project-history-action {
+    color: #b02a37;
+}
+
+.project-history-entry.is-changed .project-history-action {
+    color: #8a5300;
+}
+
+.project-history-entry-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.6rem;
+}
+
+.project-history-action {
+    font-weight: 700;
+    font-size: 0.82rem;
+    color: #0f172a;
+}
+
+.project-history-at {
+    font-size: 0.72rem;
+    color: #94a3b8;
+    white-space: nowrap;
+}
+
+.project-history-desc {
+    font-size: 0.82rem;
+    color: #475569;
+    margin-top: 0.15rem;
+    line-height: 1.45;
+}
+
+.project-history-sub {
+    font-size: 0.72rem;
+    color: #94a3b8;
+    margin-top: 0.2rem;
+}
+
+.project-history-empty {
+    border: 1px dashed #d1d5db;
+    border-radius: 0.55rem;
+    padding: 1.25rem;
+    text-align: center;
+    color: #94a3b8;
+    font-size: 0.85rem;
+}

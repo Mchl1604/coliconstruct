@@ -341,6 +341,17 @@
     background: #f5f9ff;
 }
 
+/* The replacement confirmation lists the projects it is about rather than
+   offering a choice among them - the choice was made by ticking them. Same
+   card, nothing to click. */
+.technician-lead-option.is-static {
+    cursor: default;
+}
+
+.technician-lead-option.is-static:hover {
+    border-color: #2563eb;
+}
+
 .technician-lead-option input[type="radio"] {
     margin-top: 0.2rem;
     flex-shrink: 0;
@@ -542,4 +553,42 @@
 .technician-request-remove {
     background: #fbdcdc;
     color: #8f2626;
+}
+
+/*
+ * The panel a technician gets when they click a date from a project they have
+ * since been taken off.
+ *
+ * Deliberately plain and a little dimmer than the live project panel beside
+ * it: it is an explanation of why an old date is still on their calendar, not
+ * a project view. Everything it says comes from the calendar event itself -
+ * nothing about the project is fetched - so there is nothing here to make look
+ * like the real thing.
+ */
+.panel-former-note {
+    border: 1px dashed #cbd5e1;
+    border-radius: 0.55rem;
+    background: #f8fafc;
+    padding: 0.9rem;
+}
+
+.panel-former-ref {
+    font-weight: 700;
+    color: #475569;
+}
+
+.panel-former-range {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-top: 0.3rem;
+    font-size: 0.8rem;
+    color: #64748b;
+}
+
+.panel-former-body {
+    margin-top: 0.7rem;
+    font-size: 0.82rem;
+    line-height: 1.5;
+    color: #64748b;
 }

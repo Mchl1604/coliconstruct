@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Schedule;
 use App\Models\ScheduleTechnician;
+use App\Support\BusinessTime;
 use Carbon\CarbonImmutable;
 use RuntimeException;
 
@@ -53,7 +54,7 @@ class ScheduleDateRemoval
             throw new RuntimeException(sprintf(
                 'The schedule for %s does not cover %s.',
                 $schedule->describe(),
-                $day->format('F j, Y')
+                $day->format(BusinessTime::DATE)
             ));
         }
 

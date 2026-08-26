@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Project;
 use App\Models\Schedule;
 use App\Models\Technician;
+use App\Support\BusinessTime;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use RuntimeException;
@@ -243,7 +244,9 @@ class TechnicianAvailabilityService
      */
     private function hasFreeWorkingHour(array $intervals): bool
     {
-        for ($hour = Schedule::WORKING_HOUR_START; $hour < Schedule::WORKING_HOUR_END; $hour++) {
+        ['start' => $windowStart, 'end' => $windowEnd] = Schedule::partialDayHourBounds();
+
+        for ($hour = $windowStart; $hour < $windowEnd; $hour++) {
             $slot = ['from' => $hour * 60, 'to' => ($hour + 1) * 60];
             $taken = false;
 
@@ -892,12 +895,15 @@ class TechnicianAvailabilityService
     }
 
     /**
-     * "Aug 1", "Aug 1 and Aug 2", "Aug 1, Aug 2, and Aug 3".
+     * "Aug 1, 2026", "Aug 1, 2026 and Aug 2, 2026",
+     * "Aug 1, 2026, Aug 2, 2026, and Aug 3, 2026".
      *
-     * Abbreviated on purpose: a technician blocked on six dates produced a
-     * sentence nobody read to the end, and the month is the part that repeats.
-     * This is the same shape the date pickers show ("Aug 25, 2026"), so a date
-     * quoted in a refusal reads as the date on the field it came from.
+     * Truncated at eight on purpose: a technician blocked on twenty dates
+     * produced a sentence nobody read to the end. Each date itself is written
+     * in the one format the whole system uses - BusinessTime::DATE - so a date
+     * quoted in a refusal reads as the date on the field it came from. The
+     * year used to be dropped when every date fell in the current one, which
+     * made the same date read two different ways depending on the calendar.
      *
      * @param  array<int, string>  $dates
      */
@@ -907,17 +913,11 @@ class TechnicianAvailabilityService
             return '';
         }
 
-        $currentYear = CarbonImmutable::now()->year;
-        $allCurrentYear = collect($dates)->every(
-            fn (string $date): bool => CarbonImmutable::parse($date)->year === $currentYear
-        );
-        $format = $allCurrentYear ? 'M j' : 'M j, Y';
-
         $shown = array_slice($dates, 0, 8);
         $remaining = count($dates) - count($shown);
 
         $labels = array_map(
-            fn (string $date): string => CarbonImmutable::parse($date)->format($format),
+            fn (string $date): string => CarbonImmutable::parse($date)->format(BusinessTime::DATE),
             $shown
         );
 

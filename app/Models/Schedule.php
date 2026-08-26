@@ -2,7 +2,10 @@
 
 namespace App\Models;
 
+use App\Services\SystemContentService;
+use App\Support\BusinessTime;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -58,11 +61,35 @@ class Schedule extends Model
      */
     public const BUSINESS_TIMEZONE = 'Asia/Manila';
 
-    /** First hour of the working day, 8:00 AM. */
-    public const WORKING_HOUR_START = 8;
+    /**
+     * The settings the partial-day window is stored under.
+     *
+     * Configuration -> System Settings -> Project Settings. They bound a
+     * PARTIAL-DAY booking and nothing else: a whole-day range runs from
+     * midnight to the end of the day and has no hours to bound, so moving
+     * these never touches one.
+     */
+    public const SETTING_PARTIAL_DAY_START = 'project_settings.partial_day_start_hour';
 
-    /** Last hour of the working day, 5:00 PM. Nothing may end after it. */
-    public const WORKING_HOUR_END = 17;
+    public const SETTING_PARTIAL_DAY_END = 'project_settings.partial_day_end_hour';
+
+    /**
+     * The window the system ships with: 8:00 AM to 5:00 PM.
+     *
+     * The numbers it starts with, not the numbers it uses. Everything that
+     * needs the window asks partialDayHourBounds() rather than reading these,
+     * so an administrator's setting reaches every picker, every validator and
+     * every availability check at once. These are what that method falls back
+     * to on a fresh installation, and on one where the setting has been
+     * cleared or written to something impossible.
+     *
+     * Stored as 'HH:MM' because that is what the setting itself holds and what
+     * a time input hands back, so the shipped default and the saved value are
+     * the same kind of thing.
+     */
+    public const DEFAULT_PARTIAL_DAY_START = '08:00';
+
+    public const DEFAULT_PARTIAL_DAY_END = '17:00';
 
     public $timestamps = false;
 
@@ -230,6 +257,86 @@ class Schedule extends Model
     }
 
     /**
+     * The same range, narrowed to the part of it that has not been worked yet
+     * - or null when there is no such part.
+     *
+     * toAvailabilityRange() answers "when is this booking?", which is the
+     * right question for a schedule being written or a conflict being
+     * reviewed. It is the wrong question for staffing: asking whether somebody
+     * may join a project's crew is a question about the work still to come,
+     * and a range that finished last month is a record of what happened rather
+     * than a claim on anybody's diary. Screened against it, a technician who
+     * was busy back then reads as unavailable for a project whose only
+     * remaining dates are weeks away.
+     *
+     * Two rules, and no more than two:
+     *
+     *   - A range that has completely ended - Schedule::isLocked(), the same
+     *     line the editor, the calendar and the validator already draw - is
+     *     dropped. It cannot make anybody unavailable for anything.
+     *
+     *   - A range that began in the past and is still running is kept, clamped
+     *     to start today. Its remaining days are still a real claim, so they
+     *     still have to be free; the days already worked are not, and would
+     *     only refuse a technician over a week nobody can change.
+     *
+     * A partial day needs no clamping. It occupies one date, so it is either
+     * already over - and dropped by the first rule - or entirely still to
+     * come, hours and all, which is what keeps the time-based conflict rules
+     * working exactly as they do everywhere else.
+     *
+     * @return array{start: CarbonImmutable, end: CarbonImmutable, mode: string}|null
+     */
+    public function toUpcomingAvailabilityRange(): ?array
+    {
+        if ($this->isLocked()) {
+            return null;
+        }
+
+        $range = $this->toAvailabilityRange();
+
+        if ($this->isPartialDay()) {
+            return $range;
+        }
+
+        $today = self::businessToday();
+
+        return [
+            'start' => $range['start']->lt($today) ? $today : $range['start'],
+            'end' => $range['end'],
+            'mode' => $range['mode'],
+        ];
+    }
+
+    /**
+     * Every one of a project's ranges that still has days to come, in the
+     * shape TechnicianAvailabilityService reads.
+     *
+     * Deliberately returns them ALL rather than merging them into one span:
+     * a project running Aug 24-26 and again Sep 6-8 has to have both weeks
+     * checked, and a technician free for one but not the other is not free for
+     * the project. Merging would also invent a three-week booking out of two
+     * short ones and refuse everybody in between.
+     *
+     * @param  iterable<int, Schedule>  $schedules
+     * @return array<int, array{start: CarbonImmutable, end: CarbonImmutable, mode: string}>
+     */
+    public static function upcomingAvailabilityRanges(iterable $schedules): array
+    {
+        $ranges = [];
+
+        foreach ($schedules as $schedule) {
+            $range = $schedule->toUpcomingAvailabilityRange();
+
+            if ($range !== null) {
+                $ranges[] = $range;
+            }
+        }
+
+        return $ranges;
+    }
+
+    /**
      * The actual stretch of time this row occupies, for comparing one
      * schedule against another directly.
      *
@@ -270,6 +377,50 @@ class Schedule extends Model
      *
      * @return array{start: string, end: string, allDay: bool}
      */
+    /**
+     * Whether any part of this range falls on or before the given day.
+     *
+     * A range starting after a project's cancellation is days the job never
+     * reached, and there is nothing of it to draw.
+     */
+    public function startsOnOrBefore(?CarbonImmutable $cutoff): bool
+    {
+        return $cutoff === null || $this->startsOn()->lte($cutoff);
+    }
+
+    /**
+     * This range as a calendar event, stopped at the given day.
+     *
+     * A whole-day range that crosses the cutoff is drawn short: Aug 1 - Aug 10
+     * on a project cancelled on the 4th is four days on the calendar, because
+     * four days is what was worked. The stored row is untouched - it is the
+     * record of what was booked, and the cutoff is a statement about what
+     * happened, not a correction of what was agreed.
+     *
+     * A partial day occupies a single date, so it is drawn whole or not at
+     * all: it cannot straddle a line it starts on the far side of.
+     *
+     * Null cutoff draws the range as it stands, which is every project bar a
+     * cancelled one - see Project::calendarCutoff().
+     *
+     * @return array<string, mixed>
+     */
+    public function toCalendarTimesThrough(?CarbonImmutable $cutoff): array
+    {
+        $times = $this->toCalendarTimes();
+
+        if ($cutoff === null || $this->isPartialDay() || $this->endsOn()->lte($cutoff)) {
+            return $times;
+        }
+
+        // FullCalendar reads an all-day `end` as exclusive, which is why
+        // toCalendarTimes() adds a day to it - so the last day drawn is the
+        // cutoff itself.
+        $times['end'] = $cutoff->addDay()->toDateString();
+
+        return $times;
+    }
+
     public function toCalendarTimes(): array
     {
         if ($this->isPartialDay()) {
@@ -311,18 +462,19 @@ class Schedule extends Model
      *   one day        "Aug 6, 2026"
      *   several days   "Aug 6, 2026 - Aug 9, 2026"
      *
-     * The date format is a parameter because the screens that show this do not
-     * all agree on one, and this is not the change that settles that.
+     * The date format used to be a parameter because the screens that show
+     * this did not agree on one. They do now - BusinessTime::DATE is the only
+     * shape a date is ever shown in - so there is nothing left to pass.
      */
-    public function describe(string $dateFormat = 'M j, Y'): string
+    public function describe(): string
     {
-        $start = $this->startsOn()->format($dateFormat);
+        $start = $this->startsOn()->format(BusinessTime::DATE);
 
         if ($this->isPartialDay()) {
             return $start.' · '.$this->timeRange();
         }
 
-        $end = $this->endsOn()->format($dateFormat);
+        $end = $this->endsOn()->format(BusinessTime::DATE);
 
         return $start === $end ? $start : $start.' - '.$end;
     }
@@ -354,19 +506,102 @@ class Schedule extends Model
     }
 
     /**
-     * The bookable hours, in the order they are offered:
-     * 8:00 AM through 5:00 PM, on the hour.
+     * The window a partial-day booking may be made in, as configured.
+     *
+     * The single place the hours are decided. Every picker, every validator,
+     * every availability check and the two scheduling scripts read them from
+     * here - through the payload the pages hand over - so changing the setting
+     * changes all of them at once and none of them can drift.
+     *
+     * A pair that does not describe a window - unparseable, off the hour,
+     * outside the clock, or an end at or before the start - falls back to the
+     * shipped pair rather than being passed on. Validation stops such a pair
+     * being saved; this stops one mattering if it ever gets in, which is the
+     * same stance SystemContentService::number() takes for the numeric
+     * settings. Both halves fall back together: half a configured window and
+     * half a default one is a third window nobody chose.
+     *
+     * @return array{start: int, end: int, start_label: string, end_label: string}
+     */
+    public static function partialDayHourBounds(): array
+    {
+        $content = app(SystemContentService::class);
+
+        $start = self::hourFromSetting($content->get(self::SETTING_PARTIAL_DAY_START, self::DEFAULT_PARTIAL_DAY_START));
+        $end = self::hourFromSetting($content->get(self::SETTING_PARTIAL_DAY_END, self::DEFAULT_PARTIAL_DAY_END));
+
+        if ($start === null || $end === null || $start >= $end) {
+            $start = self::hourFromSetting(self::DEFAULT_PARTIAL_DAY_START);
+            $end = self::hourFromSetting(self::DEFAULT_PARTIAL_DAY_END);
+        }
+
+        return [
+            'start' => $start,
+            'end' => $end,
+            'start_label' => self::hourLabel($start),
+            'end_label' => self::hourLabel($end),
+        ];
+    }
+
+    /**
+     * The first hour a partial day may start at.
+     */
+    public static function partialDayStartHour(): int
+    {
+        return self::partialDayHourBounds()['start'];
+    }
+
+    /**
+     * The last hour a partial day may end at. Nothing may end after it.
+     */
+    public static function partialDayEndHour(): int
+    {
+        return self::partialDayHourBounds()['end'];
+    }
+
+    /**
+     * An hour of the clock as the interface says it: 17 reads as "5:00 PM".
+     */
+    public static function hourLabel(int $hour): string
+    {
+        return CarbonImmutable::today()->setTime($hour, 0)->format('g:i A');
+    }
+
+    /**
+     * 'HH:MM' as the hour it names, or null when it is not an hour of the
+     * clock on the hour.
+     *
+     * Deliberately strict about the minutes: the whole of scheduling is hour
+     * granular - the pickers offer whole hours, availability is counted in
+     * whole-hour slots - so "08:30" is a mistake rather than half past eight.
+     */
+    private static function hourFromSetting(?string $time): ?int
+    {
+        if (! is_string($time) || ! preg_match('/^(\d{1,2}):(\d{2})$/', trim($time), $matches)) {
+            return null;
+        }
+
+        $hour = (int) $matches[1];
+
+        return (int) $matches[2] === 0 && $hour >= 0 && $hour <= 23 ? $hour : null;
+    }
+
+    /**
+     * The bookable hours, in the order they are offered: the configured start
+     * through the configured end, on the hour.
      *
      * @return array<int, array{value: string, label: string}>
      */
     public static function workingHourOptions(): array
     {
+        ['start' => $start, 'end' => $end] = self::partialDayHourBounds();
+
         $options = [];
 
-        for ($hour = self::WORKING_HOUR_START; $hour <= self::WORKING_HOUR_END; $hour++) {
+        for ($hour = $start; $hour <= $end; $hour++) {
             $options[] = [
                 'value' => sprintf('%02d:00', $hour),
-                'label' => CarbonImmutable::today()->setTime($hour, 0)->format('g:i A'),
+                'label' => self::hourLabel($hour),
             ];
         }
 
@@ -374,20 +609,138 @@ class Schedule extends Model
     }
 
     /**
-     * Whether 'HH:MM' is one of the bookable hours. Anything off the hour, or
-     * outside 8 AM to 5 PM, is not.
+     * Whether this booking's hours fall outside the window as it stands now.
+     *
+     * Nothing is wrong with such a booking - it was made under the window in
+     * force at the time, and narrowing that window does not move work already
+     * promised. It is worth being able to find, though, which is what this is
+     * for: see needsHourCorrection(), the question the dashboard actually
+     * asks.
+     *
+     * Whole-day ranges are never outside anything. They run midnight to
+     * midnight and have no hours to bound.
      */
-    public static function isWorkingHour(?string $time): bool
+    public function isOutsidePartialDayHours(): bool
     {
-        if (! is_string($time) || ! preg_match('/^(\d{2}):(\d{2})$/', $time, $matches)) {
+        if (! $this->isPartialDay()) {
             return false;
         }
 
-        $hour = (int) $matches[1];
-        $minute = (int) $matches[2];
+        ['start' => $windowStart, 'end' => $windowEnd] = self::partialDayHourBounds();
 
-        return $minute === 0
-            && $hour >= self::WORKING_HOUR_START
-            && $hour <= self::WORKING_HOUR_END;
+        $start = CarbonImmutable::parse($this->start_datetime);
+        $end = CarbonImmutable::parse($this->end_datetime ?? $this->start_datetime);
+
+        return $start->hour * 60 + $start->minute < $windowStart * 60
+            || $end->hour * 60 + $end->minute > $windowEnd * 60;
+    }
+
+    /**
+     * Whether somebody still needs to do something about those hours.
+     *
+     * Only work still to come. A partial day that has already been worked
+     * outside the current window is the record of a day that happened, and
+     * there is nothing to correct about it - putting it on a to-do list would
+     * be asking for a booking to be rewritten after the fact, which is the one
+     * thing the schedule lock exists to prevent.
+     *
+     * The single definition behind both the dashboard's count and the flag on
+     * the row itself, so the two can never disagree about which bookings are
+     * meant.
+     */
+    public function needsHourCorrection(): bool
+    {
+        return $this->isOutsidePartialDayHours()
+            && $this->startsOn()->gte(self::businessToday());
+    }
+
+    /**
+     * Partial-day bookings that have not happened yet - the set
+     * needsHourCorrection() is then asked of.
+     *
+     * A coarse narrowing done in SQL, with the hour test left to PHP: the
+     * comparison is stated once, in isOutsidePartialDayHours(), rather than a
+     * second time in a dialect both MySQL and SQLite would have to agree on.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeUpcomingPartialDay(Builder $query): Builder
+    {
+        return $query
+            ->where('scheduling_mode', self::MODE_PARTIAL_DAY)
+            ->whereDate('start_datetime', '>=', self::businessToday()->toDateString());
+    }
+
+    /**
+     * The bookable hours, widened to keep any hour a saved booking already
+     * holds.
+     *
+     * Narrowing the window must not rewrite work that is already promised. A
+     * range booked 8:00 AM - 12:00 PM under an eight-o'clock window is still
+     * booked for those hours after the window moves to nine, so the row that
+     * shows it has to be able to show 8:00 AM - a select whose value is not
+     * among its options selects nothing, and saving the form would silently
+     * move the booking.
+     *
+     * The extra hours come back flagged rather than blended in, so the row can
+     * offer them as kept and not as choosable: the same stance the assigned
+     * team takes towards a technician whose account was switched off, which
+     * can be kept but never re-added.
+     *
+     * @return array<int, array{value: string, label: string, outside: bool}>
+     */
+    public static function workingHourOptionsIncluding(?string ...$times): array
+    {
+        $options = collect(self::workingHourOptions())
+            ->map(fn (array $option): array => $option + ['outside' => false])
+            ->keyBy('value');
+
+        foreach ($times as $time) {
+            $hour = self::hourFromSetting($time);
+
+            if ($hour === null || $options->has(sprintf('%02d:00', $hour))) {
+                continue;
+            }
+
+            $options->put(sprintf('%02d:00', $hour), [
+                'value' => sprintf('%02d:00', $hour),
+                'label' => self::hourLabel($hour),
+                'outside' => true,
+            ]);
+        }
+
+        return $options->sortKeys()->values()->all();
+    }
+
+    /**
+     * Whether 'HH:MM' names an hour of the clock, on the hour.
+     *
+     * Separate from isWorkingHour() because the two rules have different
+     * reach. Nothing anywhere may book half past eight - the pickers offer
+     * whole hours and availability is counted in whole-hour slots - while
+     * whether eight o'clock itself is bookable is a setting, and a booking
+     * made before that setting changed still holds the hour it was given.
+     */
+    public static function isOnTheHour(?string $time): bool
+    {
+        return self::hourFromSetting($time) !== null;
+    }
+
+    /**
+     * Whether 'HH:MM' is one of the bookable hours. Anything off the hour, or
+     * outside the configured window, is not.
+     */
+    public static function isWorkingHour(?string $time): bool
+    {
+        $hour = self::hourFromSetting($time);
+
+        if ($hour === null) {
+            return false;
+        }
+
+        ['start' => $start, 'end' => $end] = self::partialDayHourBounds();
+
+        return $hour >= $start && $hour <= $end;
     }
 }

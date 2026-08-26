@@ -151,6 +151,13 @@ class ClientProjects
     /**
      * "This contact is theirs": by account, or by address, or either.
      *
+     * The account id is the answer wherever there is one. The address only
+     * speaks for a contact that has no account against it - a project booked
+     * before its client registered - and never for one an administrator has
+     * deliberately cleared, which is what user_unlinked_at records. Without
+     * that second condition, removing an assignment would not survive the next
+     * page load: the address would hand the project straight back.
+     *
      * @param  \Illuminate\Contracts\Database\Query\Builder|Builder<Client>  $query
      */
     private function applyOwnership($query, ?User $user, string $normalisedEmail): void
@@ -162,10 +169,12 @@ class ClientProjects
 
             if ($normalisedEmail !== '') {
                 // Compared in SQL on both sides so the whole match stays one
-                // scan rather than a filter in PHP. Still needed alongside the
-                // id: a project booked before its client registered carries no
-                // id until they do.
-                $owned->orWhereRaw('LOWER(TRIM(email_address)) = ?', [$normalisedEmail]);
+                // scan rather than a filter in PHP.
+                $owned->orWhere(function ($byAddress) use ($normalisedEmail): void {
+                    $byAddress->whereNull('user_id')
+                        ->whereNull('user_unlinked_at')
+                        ->whereRaw('LOWER(TRIM(email_address)) = ?', [$normalisedEmail]);
+                });
             }
         });
     }
@@ -250,6 +259,7 @@ class ClientProjects
         }
 
         return Client::query()
+            ->whereNull('user_unlinked_at')
             ->whereRaw('LOWER(TRIM(email_address)) = ?', [$normalised])
             ->get();
     }

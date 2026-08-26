@@ -245,7 +245,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     // again, so a row that answers false here is refused there
                     // too - see TechnicianReportArchiveController.
                     (report.can_archive
-                        ? '<button type="button" class="btn btn-sm btn-warning py-1 px-2" ' +
+                        ? '<button type="button" class="btn btn-sm btn-dark py-1 px-2" ' +
                           'data-archive-report="' +
                           report.id +
                           '" data-report-label="' +

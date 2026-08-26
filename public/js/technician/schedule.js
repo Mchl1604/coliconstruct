@@ -18,6 +18,7 @@ document.addEventListener("DOMContentLoaded", function () {
     const emptyEl = panelEl.querySelector("[data-panel-empty]");
     const loadingEl = panelEl.querySelector("[data-panel-loading]");
     const projectEl = panelEl.querySelector("[data-panel-project]");
+    const formerEl = panelEl.querySelector("[data-panel-former]");
     const errorEl = panelEl.querySelector("[data-panel-error]");
     const tasksEl = panelEl.querySelector("[data-panel-tasks]");
     const tasksEmptyEl = panelEl.querySelector("[data-panel-tasks-empty]");
@@ -29,6 +30,47 @@ document.addEventListener("DOMContentLoaded", function () {
         emptyEl.classList.toggle("d-none", state !== "empty");
         loadingEl.classList.toggle("d-none", state !== "loading");
         projectEl.classList.toggle("d-none", state !== "project");
+
+        if (formerEl) {
+            formerEl.classList.toggle("d-none", state !== "former");
+        }
+    }
+
+    // A date belonging to a project this technician has been taken off.
+    //
+    // Written from the calendar event alone - no fetch. The dates stay on the
+    // calendar because they record where this person was, but the project
+    // stopped being theirs to read the moment they came off the team, and
+    // asking the server for it would be asking for exactly what they should no
+    // longer see.
+    function renderFormer(props) {
+        if (!formerEl) {
+            return;
+        }
+
+        currentProjectId = null;
+
+        const setFormer = function (selector, value) {
+            const element = formerEl.querySelector(selector);
+
+            if (element) {
+                element.textContent = value;
+            }
+        };
+
+        setFormer("[data-former-ref]", props.referenceNo || "This project");
+        setFormer("[data-former-range]", props.rangeLabel || "");
+        setFormer(
+            "[data-former-message]",
+            props.removedOn
+                ? "You were removed from this project on " +
+                      props.removedOn +
+                      ". These dates stay on your schedule as a record of when you were booked, but the project is no longer assigned to you."
+                : "You are no longer assigned to this project. These dates stay on your schedule as a record of when you were booked.",
+        );
+
+        errorEl.classList.add("d-none");
+        setState("former");
     }
 
     function setText(selector, value) {
@@ -245,13 +287,27 @@ document.addEventListener("DOMContentLoaded", function () {
                     props.client,
                     props.rangeLabel,
                     props.statusLabel,
+                    // Said on the bar itself, so it is clear before clicking
+                    // why an old job is still on the calendar.
+                    props.isFormer
+                        ? "No longer assigned" +
+                          (props.removedOn ? " · removed " + props.removedOn : "")
+                        : null,
                 ]
                     .filter(Boolean)
                     .join(" · "),
             );
         },
         eventClick: function (info) {
-            loadProject(info.event.extendedProps.projectId);
+            const props = info.event.extendedProps;
+
+            if (props.isFormer) {
+                renderFormer(props);
+
+                return;
+            }
+
+            loadProject(props.projectId);
         },
     });
 

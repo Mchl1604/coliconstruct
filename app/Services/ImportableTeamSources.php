@@ -19,9 +19,15 @@ use Illuminate\Support\Collection;
  *
  * Availability is TechnicianAvailabilityService's answer, asked the same way
  * ProjectTeamCandidates asks it - each technician against every range the
- * destination holds, ignoring what the destination itself has booked. Nothing
- * here decides who is free; it only says who was asked about and what came
- * back.
+ * destination still has to come, ignoring what the destination itself has
+ * booked. Nothing here decides who is free; it only says who was asked about
+ * and what came back.
+ *
+ * Which ranges those are is the caller's to say, and the caller says the same
+ * thing the team editor does: the destination's work still ahead of it. A week
+ * it finished in August cannot be staffed differently now, so letting one
+ * refuse a technician hid crews that are in fact free for the dates the
+ * project has left.
  *
  * Only the team is ever read. A source project's dates, tasks, reports,
  * status, client, documents and notes are none of the destination's business,
@@ -138,6 +144,10 @@ class ImportableTeamSources
             ->values();
 
         $lead = $members->firstWhere('is_lead', true);
+        // Who could actually be copied across. This is the list the modal
+        // shows: naming everybody who is NOT free told a person a great deal
+        // they could do nothing with, and buried the one name they could.
+        $importable = $members->where('available', true)->values();
         $unavailable = $members->where('available', false)->values();
 
         return [
@@ -158,7 +168,14 @@ class ImportableTeamSources
             // Everybody on the team, the lead included: the modal lists the
             // crew as it stands, and names the lead separately.
             'technicians' => $members->all(),
+            // The ones the destination could actually take, in the same shape.
+            'importable' => $importable->all(),
             'available' => $unavailable->isEmpty(),
+            // Whether there is anything here to import at all. A team with one
+            // free technician is worth offering; a team with none is not, and
+            // the modal says so in one sentence rather than listing the crew
+            // and a reason each.
+            'has_importable' => $importable->isNotEmpty(),
             'unavailable' => $unavailable->all(),
         ];
     }

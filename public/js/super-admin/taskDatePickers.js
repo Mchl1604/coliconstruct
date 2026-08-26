@@ -31,7 +31,7 @@
     }
 
     function formatDate(dateString) {
-        return new Date(dateString + 'T00:00:00').toLocaleDateString(undefined, {
+        return new Date(dateString + 'T00:00:00').toLocaleDateString('en-US', {
             month: 'short',
             day: 'numeric',
             year: 'numeric',

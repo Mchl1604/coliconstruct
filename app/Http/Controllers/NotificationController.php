@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Notification;
 use App\Models\User;
+use App\Support\BusinessTime;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -202,7 +203,7 @@ class NotificationController extends Controller
             'icon' => $notification->icon(),
             'is_read' => (bool) $notification->is_read,
             'relative_time' => $notification->relativeTime(),
-            'created_at' => $notification->created_at?->format('M j, Y g:i A'),
+            'created_at' => $notification->created_at?->format(BusinessTime::DATE_TIME),
             'open_url' => route('notifications.open', $notification->notification_id),
         ];
     }

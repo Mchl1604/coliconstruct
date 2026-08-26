@@ -263,7 +263,7 @@ class UserAccountService
             ActivityLog::CLIENT_CREATED,
             $user,
             sprintf(
-                'Client Account Created - %s (%s), self-registered',
+                'Registered User Account Created - %s (%s), self-registered',
                 $user->fullName(),
                 $user->user_code
             )
@@ -650,8 +650,12 @@ class UserAccountService
             return 0;
         }
 
+        // Never a contact an administrator has deliberately taken an account
+        // off: that null is a decision, not an absence, and registering again
+        // must not undo it. See the user_unlinked_at migration.
         return Client::query()
             ->whereNull('user_id')
+            ->whereNull('user_unlinked_at')
             ->whereRaw('LOWER(TRIM(email_address)) = ?', [$address])
             ->update(['user_id' => $user->id]);
     }

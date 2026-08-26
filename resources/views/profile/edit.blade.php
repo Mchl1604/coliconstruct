@@ -104,7 +104,7 @@
                                 <dt>Date of Birth</dt>
                                 {{-- Blank on an account opened before the
                                      birthdate was collected. --}}
-                                <dd>{{ $account->birthdate?->format('M j, Y') ?? 'Not set' }}</dd>
+                                <dd>{{ $account->birthdate?->format(\App\Support\BusinessTime::DATE) ?? 'Not set' }}</dd>
                             </div>
                             <div>
                                 <dt>Member Since</dt>

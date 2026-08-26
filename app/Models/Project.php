@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\HasOneThrough;
 use Illuminate\Support\Collection;
 
 class Project extends Model
@@ -140,6 +141,23 @@ class Project extends Model
     public const COMPLETABLE_STATUSES = ['ongoing'];
 
     /**
+     * What a Super Admin may additionally close out: work that is booked but
+     * has not reached its first day.
+     *
+     * "Nobody has been on site yet" is a good reason to keep the button away
+     * from a lead technician, and a poor one to trap the person who owns the
+     * system. A job called off after it was booked, or finished early off the
+     * books, has to be closable by somebody, and a Super Admin is who that is.
+     *
+     * It is an addition to COMPLETABLE_STATUSES rather than a replacement for
+     * it, so nothing already allowed is taken away, and it is read only
+     * through isCompletableBy() - the one place the viewer is consulted.
+     *
+     * @var array<int, string>
+     */
+    public const SUPER_ADMIN_COMPLETABLE_STATUSES = ['pending'];
+
+    /**
      * Deep red, reserved for overdue. Bootstrap has no such background
      * utility, so `badge-overdue` is defined in superAdminNav.css.
      *
@@ -148,9 +166,10 @@ class Project extends Model
      * on the calendar, where both are drawn as outlines, late work and work
      * that has not started yet were told apart only by reading the label. Red
      * is a different hue rather than a different shade of the same one, and it
-     * is deliberately deeper than Cancelled's #dc3545: the two are never drawn
-     * side by side (a cancelled project leaves the calendar and the schedules
-     * page entirely), and where they do meet in a table the labels differ.
+     * is deliberately deeper than Cancelled's #dc3545, and where the two meet
+     * in a table the labels differ. On a calendar they never meet at all:
+     * cancelled bookings are drawn in CALENDAR_INK's plum rather than in any
+     * red, precisely so late work and called-off work cannot be confused.
      */
     public const OVERDUE_COLOR = '#c9302c';
 
@@ -280,9 +299,50 @@ class Project extends Model
         );
     }
 
+    /**
+     * The team as it stands: memberships nobody has closed.
+     *
+     * Scoped rather than raw, because "the team" is what every screen, guard
+     * and count in the application means when it reads this relation, and a
+     * membership row now outlives the membership - see ProjectTechnician. An
+     * unscoped relation here would put everybody ever removed back onto the
+     * project details page, the assign-task picker and the availability
+     * checker in one go.
+     */
     public function projectTechnicians(): HasMany
     {
+        return $this->hasMany(ProjectTechnician::class, 'project_id', 'project_id')
+            ->whereNull('removed_at');
+    }
+
+    /**
+     * Every membership this project has ever held, closed ones included.
+     *
+     * The deliberate look backwards. Used where the question is about a past
+     * date rather than about now - who was on site that day, whose name
+     * belongs against a schedule that has already run - and nowhere else.
+     */
+    public function teamHistory(): HasMany
+    {
         return $this->hasMany(ProjectTechnician::class, 'project_id', 'project_id');
+    }
+
+    /**
+     * Who was on this project's team on the given date.
+     *
+     * Reads teamHistory rather than the current team, so a technician removed
+     * last week is still listed against the days they were actually here, and
+     * one who joined yesterday is not listed against last month.
+     *
+     * @return \Illuminate\Support\Collection<int, ProjectTechnician>
+     */
+    public function crewOn(string $date): \Illuminate\Support\Collection
+    {
+        $this->loadMissing('teamHistory.technician.account');
+
+        return $this->teamHistory
+            ->filter(fn (ProjectTechnician $assignment): bool => $assignment->coveredOn($date))
+            ->values();
     }
 
     /**
@@ -387,6 +447,53 @@ class Project extends Model
     public function displayCode(): string
     {
         return DisplayCode::format(DisplayCode::PROJECT, $this->project_id);
+    }
+
+    /**
+     * The project's contact row - its client details.
+     *
+     * A project is created with exactly one, so first() is the whole of it.
+     * Kept in one place because half a dozen callers reach for it and the
+     * relation has to be loaded for any of them to be cheap.
+     */
+    public function primaryContact(): ?Client
+    {
+        return $this->clients->first();
+    }
+
+    /**
+     * The Registered User account this project is connected to, if any.
+     *
+     * Distinct from the project's client, which is contact information written
+     * on the project itself and belongs to nobody. This is the account on the
+     * public website that follows this work - the link that puts the project on
+     * their My Projects page. It is held on the contact row, which is where it
+     * has always been; see the link migration on tbl_clients.
+     */
+    public function registeredUser(): HasOneThrough
+    {
+        return $this->hasOneThrough(
+            User::class,
+            Client::class,
+            'project_id',
+            'id',
+            'project_id',
+            'user_id'
+        );
+    }
+
+    /**
+     * The same account, read off the already-loaded contact row rather than
+     * queried again. Callers should eager load `clients.account`.
+     */
+    public function registeredUserAccount(): ?User
+    {
+        return $this->primaryContact()?->account;
+    }
+
+    public function hasRegisteredUser(): bool
+    {
+        return $this->registeredUserAccount() !== null;
     }
 
     /**
@@ -544,6 +651,32 @@ class Project extends Model
             && ! $this->isArchived()
             && ! $this->on_hold
             && in_array($this->status, self::COMPLETABLE_STATUSES, true);
+    }
+
+    /**
+     * The same question, asked on behalf of somebody.
+     *
+     * Everyone gets isCompletable(). A Super Admin gets Pending as well - see
+     * SUPER_ADMIN_COMPLETABLE_STATUSES. Nothing else about the state is
+     * relaxed: a completed, cancelled, archived or paused project is still
+     * closed to them, because those are decisions rather than a stage the work
+     * has not reached yet.
+     *
+     * Every button that offers completion draws itself from this, and
+     * ProjectController::complete() asks it again before writing anything, so
+     * the answer is the same whichever end it is asked from.
+     */
+    public function isCompletableBy(?User $user): bool
+    {
+        if ($this->isCompletable()) {
+            return true;
+        }
+
+        return $user?->isSuperAdmin() === true
+            && ! $this->isReadOnly()
+            && ! $this->isArchived()
+            && ! $this->on_hold
+            && in_array($this->status, self::SUPER_ADMIN_COMPLETABLE_STATUSES, true);
     }
 
     public function isAwaitingClientConfirmation(): bool
@@ -1265,12 +1398,33 @@ class Project extends Model
      */
     public const CALENDAR_INK = [
         'on_hold' => '#5a6570',
-        'pending' => '#b26b00',
+        // Light yellow. The one colour in this palette that white lettering
+        // cannot sit on and that cannot be read as lettering itself, which is
+        // why calendarEventColors() stopped hardcoding either - see
+        // contrastTextOn() and legibleOnWhite() below.
+        'pending' => '#f2c94c',
         'ongoing' => '#0a58ca',
-        'overdue' => '#9a2620',
+        // Deep orange, and deliberately a long way round the wheel from
+        // Cancelled's red: late work and called-off work are the two states
+        // most costly to confuse, and on a calendar the label is often too
+        // small to settle it.
+        'overdue' => '#e65100',
         self::STATUS_AWAITING_CLIENT_CONFIRMATION => '#3f7d53',
         'completed' => '#146c43',
+        // Cancelled work is drawn only for the days it worked before it
+        // stopped - see calendarCutoff() - and needs a shade of its own or it
+        // would fall through to the Ongoing blue below and read as live work.
+        // The same red the Cancelled badge uses everywhere else.
+        'cancelled' => '#dc3545',
     ];
+
+    /**
+     * The lettering used where white will not read - on a light fill.
+     *
+     * Near-black rather than black: it matches the page's own body colour, so
+     * a pale bar reads as part of the calendar rather than as a hole in it.
+     */
+    private const CALENDAR_DARK_INK = '#1f2937';
 
     /**
      * The colour this project's bookings are drawn WITH, as opposed to filled
@@ -1317,9 +1471,12 @@ class Project extends Model
             return [
                 'backgroundColor' => $ink,
                 'borderColor' => $ink,
-                // The ink colours sit at roughly 5:1 against white, so white
-                // lettering on them is comfortably readable.
-                'textColor' => '#ffffff',
+                // Whichever of white or near-black actually reads on this
+                // fill. It used to be white unconditionally, on the stated
+                // grounds that every ink sat around 5:1 against white - true
+                // of the palette as it was, and false the moment Pending
+                // became a light yellow, where white lettering disappears.
+                'textColor' => self::contrastTextOn($ink),
             ];
         }
 
@@ -1329,7 +1486,129 @@ class Project extends Model
             // in that tint.
             'backgroundColor' => 'transparent',
             'borderColor' => $ink,
-            'textColor' => $ink,
+            // The outline keeps the true colour; the lettering takes a shade
+            // dark enough to be read against the day cell behind it. For most
+            // of the palette those are the same value and nothing changes. For
+            // a light yellow they cannot be: as lettering on white it is not
+            // far off invisible.
+            'textColor' => self::legibleOnWhite($ink),
+        ];
+    }
+
+    /**
+     * The lettering for a filled bar: white unless the fill is too light to
+     * carry it, in which case near-black.
+     *
+     * White wins ties and near-ties on purpose, rather than whichever ratio is
+     * arithmetically higher. Deep orange is the case that shows why - white
+     * scores 3.79 on it and near-black 3.88, a difference nobody can see,
+     * while the two look nothing alike: white on a deep orange bar is what the
+     * rest of the interface does, and near-black on it reads as a mistake.
+     *
+     * 3:1 is the bar because that is WCAG AA for large or bold text, and every
+     * calendar bar is set bold - see calendar.css. A fill that fails even that
+     * is genuinely unreadable under white, which is exactly the light yellow
+     * case this exists for.
+     */
+    public static function contrastTextOn(string $hex): string
+    {
+        $onWhite = self::contrastRatio(
+            self::relativeLuminance($hex),
+            self::relativeLuminance('#ffffff')
+        );
+
+        return $onWhite >= 3.0 ? '#ffffff' : self::CALENDAR_DARK_INK;
+    }
+
+    /**
+     * The given colour, darkened only as far as it must be to be read as text
+     * on a white page.
+     *
+     * Returns the colour untouched when it is already dark enough, which is
+     * most of CALENDAR_INK - so this is a floor on legibility rather than a
+     * restyling. Darkening is a straight scale of the channels, which holds
+     * the hue: a dark yellow still reads as the yellow in the legend beside
+     * it, which matters because the legend dot is drawn in the true ink.
+     *
+     * WCAG AA for normal text is 4.5:1, and that is the bar used here even
+     * though calendar bars are set bold - a booking's reference number is the
+     * one thing on the calendar that has to be read rather than recognised.
+     */
+    public static function legibleOnWhite(string $hex): string
+    {
+        $white = self::relativeLuminance('#ffffff');
+        [$red, $green, $blue] = self::channels($hex);
+
+        // 20 steps of 5% reaches near-black, which is darker than any colour
+        // needs, so the loop always terminates on the condition rather than on
+        // running out of room.
+        for ($step = 0; $step <= 20; $step++) {
+            $scale = 1 - ($step * 0.05);
+
+            $candidate = sprintf(
+                '#%02x%02x%02x',
+                (int) round($red * $scale),
+                (int) round($green * $scale),
+                (int) round($blue * $scale)
+            );
+
+            if (self::contrastRatio(self::relativeLuminance($candidate), $white) >= 4.5) {
+                return $candidate;
+            }
+        }
+
+        return self::CALENDAR_DARK_INK;
+    }
+
+    /**
+     * WCAG relative luminance, 0 for black and 1 for white.
+     */
+    private static function relativeLuminance(string $hex): float
+    {
+        [$red, $green, $blue] = self::channels($hex);
+
+        $linear = static function (int $channel): float {
+            $value = $channel / 255;
+
+            return $value <= 0.03928
+                ? $value / 12.92
+                : (($value + 0.055) / 1.055) ** 2.4;
+        };
+
+        return 0.2126 * $linear($red)
+            + 0.7152 * $linear($green)
+            + 0.0722 * $linear($blue);
+    }
+
+    /**
+     * The WCAG contrast ratio between two luminances, 1 for identical and 21
+     * for black against white. Order does not matter.
+     */
+    private static function contrastRatio(float $first, float $second): float
+    {
+        $lighter = max($first, $second);
+        $darker = min($first, $second);
+
+        return ($lighter + 0.05) / ($darker + 0.05);
+    }
+
+    /**
+     * '#rrggbb' as three 0-255 channels. Shorthand '#rgb' is expanded.
+     *
+     * @return array{int, int, int}
+     */
+    private static function channels(string $hex): array
+    {
+        $hex = ltrim($hex, '#');
+
+        if (strlen($hex) === 3) {
+            $hex = $hex[0].$hex[0].$hex[1].$hex[1].$hex[2].$hex[2];
+        }
+
+        return [
+            (int) hexdec(substr($hex, 0, 2)),
+            (int) hexdec(substr($hex, 2, 2)),
+            (int) hexdec(substr($hex, 4, 2)),
         ];
     }
 
@@ -1357,6 +1636,7 @@ class Project extends Model
             ['label' => 'Overdue', 'colour' => self::CALENDAR_INK['overdue']],
             ['label' => 'Completed', 'colour' => self::CALENDAR_INK['completed']],
             ['label' => 'On Hold', 'colour' => self::CALENDAR_INK['on_hold']],
+            ['label' => 'Cancelled', 'colour' => self::CALENDAR_INK['cancelled']],
         ];
     }
 
@@ -1381,8 +1661,43 @@ class Project extends Model
      */
     public function showsOnCalendar(): bool
     {
-        return ! $this->isArchived()
-            && $this->status !== 'cancelled';
+        if ($this->isArchived()) {
+            return false;
+        }
+
+        // Cancelled work is drawn for the days it actually worked before it
+        // stopped, and calendarCutoff() is what keeps the rest off - see
+        // there. A cancellation with no date recorded cannot be trimmed, and
+        // an untrimmed one would advertise every day the job was booked for
+        // and never reached, so it is left off rather than guessed at. The
+        // same line the date-details panel draws.
+        if ($this->isCancelled()) {
+            return $this->cancelled_at !== null;
+        }
+
+        return true;
+    }
+
+    /**
+     * The last day of this project a calendar may draw, or null where every
+     * day it holds is fair game.
+     *
+     * Only cancellation needs one. Completing a project releases its future
+     * dates outright (ProjectCompletion::releaseFutureSchedules) and so does
+     * putting one on hold (ScheduleHoldCutoff), so by the time either reaches
+     * a calendar the rows themselves already stop where the work stopped.
+     * cancel() deliberately deletes nothing - the schedule, the team and the
+     * task history are all kept for the record - which leaves a cancelled
+     * project still holding the dates it would have worked. Drawing those
+     * would put a crew on site for a job that had already been called off.
+     */
+    public function calendarCutoff(): ?CarbonImmutable
+    {
+        if (! $this->isCancelled() || $this->cancelled_at === null) {
+            return null;
+        }
+
+        return CarbonImmutable::parse($this->cancelled_at)->startOfDay();
     }
 
     /**

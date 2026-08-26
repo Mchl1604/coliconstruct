@@ -11,6 +11,7 @@ use App\Models\SpecialtyRequest;
 use App\Models\Technician;
 use App\Models\User;
 use App\Services\DashboardMetrics;
+use App\Support\BusinessTime;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -91,7 +92,7 @@ class DashboardTest extends TestCase
             ->assertOk()
             ->assertSee('Welcome back, Super_admin')
             ->assertSee('Super Admin')
-            ->assertSee(now()->format('l, F j, Y'))
+            ->assertSee(now()->format('l, '.BusinessTime::DATE))
             ->assertSee('New Project')
             ->assertSee('Upcoming Work')
             ->assertSee('Urgent Actions')

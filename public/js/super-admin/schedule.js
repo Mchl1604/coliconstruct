@@ -20,9 +20,31 @@ document.addEventListener("DOMContentLoaded", function () {
     const MODE_DATE_BASED = "date_based";
     const MODE_PARTIAL_DAY = "partial_day";
     const MINUTES_PER_DAY = 1440;
-    // The working day, mirroring Schedule::WORKING_HOUR_START / _END.
-    const WORKING_HOUR_START = 8;
-    const WORKING_HOUR_END = 17;
+    /**
+     * The window a partial-day booking may be made in, handed over by the page
+     * from Schedule::partialDayHourBounds() - the one place it is decided, and
+     * an administrator's setting rather than a number written here. See
+     * Configuration -> System Settings -> Project Settings.
+     *
+     * Null when the page did not hand one over, which is not a licence to
+     * invent a working day: the narrowing below simply stands down and the
+     * server, which reads the same setting, decides. A second copy of the
+     * hours living in this file is exactly what the setting exists to remove.
+     */
+    const PARTIAL_DAY_HOURS = (function () {
+        const bounds = window.partialDayHours;
+        const start = Number(bounds?.start);
+        const end = Number(bounds?.end);
+
+        return Number.isInteger(start) && Number.isInteger(end) && start < end
+            ? { start: start, end: end, endLabel: String(bounds.end_label || '') }
+            : null;
+    })();
+
+    /** The last minute of the day a booking may run to, or null. */
+    function latestBookableMinute() {
+        return PARTIAL_DAY_HOURS ? PARTIAL_DAY_HOURS.end * 60 : null;
+    }
 
     /**
      * Dates read as "Aug 25, 2026" and are still submitted as 2026-08-25.
@@ -136,27 +158,15 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function formatDateList(dates) {
-        const currentYear = new Date().getFullYear();
-        const allCurrentYear = dates.every(function (date) {
-            return Number(date.slice(0, 4)) === currentYear;
-        });
-
         const shown = dates.slice(0, 8);
         const remaining = dates.length - shown.length;
 
-        // Abbreviated, matching the server's formatDateList(): a technician
-        // blocked on six dates produced a sentence nobody read to the end, and
-        // the month is the part that repeats. It is also the shape the date
-        // pickers show, so a date quoted in a refusal reads as the date on the
-        // field it came from.
-        const labels = shown.map(function (date) {
-            return new Date(date + "T00:00:00").toLocaleDateString(
-                undefined,
-                allCurrentYear
-                    ? { month: "short", day: "numeric" }
-                    : { month: "short", day: "numeric", year: "numeric" },
-            );
-        });
+        // Truncated at eight, matching the server's formatDateList(): a
+        // technician blocked on twenty dates produced a sentence nobody read
+        // to the end. Each date is written in the one format the whole system
+        // uses, so a date quoted in a refusal reads as the date on the field
+        // it came from.
+        const labels = shown.map(friendlyDate);
 
         if (remaining > 0) {
             labels.push(
@@ -320,7 +330,11 @@ document.addEventListener("DOMContentLoaded", function () {
     function hasFreeHourOn(technicianId, date, excludeProjectId) {
         const intervals = busyIntervalsOn(technicianId, date, excludeProjectId);
 
-        for (let hour = WORKING_HOUR_START; hour < WORKING_HOUR_END; hour++) {
+        if (!PARTIAL_DAY_HOURS) {
+            return true;
+        }
+
+        for (let hour = PARTIAL_DAY_HOURS.start; hour < PARTIAL_DAY_HOURS.end; hour++) {
             if (isFreeBetween(intervals, hour * 60, (hour + 1) * 60)) {
                 return true;
             }
@@ -660,8 +674,9 @@ document.addEventListener("DOMContentLoaded", function () {
             }
 
             const from = minutesFromTime(option.value);
-            // 5 PM can only ever end a booking.
-            const bookable = from !== null && from < WORKING_HOUR_END * 60;
+            // The last bookable hour can only ever end a booking.
+            const latest = latestBookableMinute();
+            const bookable = from !== null && (latest === null || from < latest);
 
             option.disabled = !date
                 ? false
@@ -1454,16 +1469,42 @@ document.addEventListener("DOMContentLoaded", function () {
         );
     }
 
-    function technicianChips(names) {
-        if (!names || !names.length) {
+    // Two callers, two shapes. The assignable-projects list passes plain
+    // names, because it is asking who is on a project now and there is nothing
+    // else to say. The date panel passes {name, removed_on}, because it is
+    // asking who was on it that day and somebody may have left since. Both are
+    // accepted here rather than split into two near-identical functions, so a
+    // crew chip cannot end up looking like two different things.
+    function technicianChips(members) {
+        if (!members || !members.length) {
             return '<span class="text-muted small">No technicians assigned</span>';
         }
 
-        return names
-            .map(function (name) {
+        return members
+            .map(function (member) {
+                const name = typeof member === "string" ? member : member.name;
+                const removedOn =
+                    typeof member === "string" ? null : member.removed_on;
+
+                if (!removedOn) {
+                    return (
+                        '<span class="schedule-tech-chip">' +
+                        escapeHtml(name) +
+                        "</span>"
+                    );
+                }
+
+                // Still listed, because they were here on the day being
+                // looked at. Marked, because they are not on the team any
+                // more and a bare chip would read as though they were.
                 return (
-                    '<span class="schedule-tech-chip">' +
+                    '<span class="schedule-tech-chip is-former" title="Removed from this project on ' +
+                    escapeHtml(removedOn) +
+                    '">' +
                     escapeHtml(name) +
+                    '<span class="schedule-tech-chip-note">removed ' +
+                    escapeHtml(removedOn) +
+                    "</span>" +
                     "</span>"
                 );
             })
@@ -1948,8 +1989,24 @@ document.addEventListener("DOMContentLoaded", function () {
                         })
                         .join("");
 
+                    // A cancelled project is only ever listed for a day it
+                    // worked before it stopped, which is not something the
+                    // status badge can say on its own - so the card carries
+                    // the date the job was called off, and is marked as a
+                    // record rather than as live work.
+                    const cancelledNote =
+                        project.is_cancelled && project.cancelled_on
+                            ? '<div class="schedule-date-cancelled">' +
+                              '<i class="bi bi-slash-circle" aria-hidden="true"></i>' +
+                              "Cancelled " +
+                              escapeHtml(project.cancelled_on) +
+                              "</div>"
+                            : "";
+
                     return (
-                        '<div class="schedule-date-card">' +
+                        '<div class="schedule-date-card' +
+                        (project.is_cancelled ? " is-cancelled" : "") +
+                        '">' +
                         '<div class="schedule-date-card-top">' +
                         "<div>" +
                         '<div class="schedule-date-card-name">' +
@@ -1966,6 +2023,7 @@ document.addEventListener("DOMContentLoaded", function () {
                             ? " &middot; " + escapeHtml(project.client)
                             : "") +
                         "</div>" +
+                        cancelledNote +
                         "</div>" +
                         '<span class="badge ' +
                         statusBadgeClass(project.status, project.status_label) +
@@ -2533,8 +2591,9 @@ document.addEventListener("DOMContentLoaded", function () {
                 }
 
                 const from = minutesFromTime(option.value);
-                // 5 PM can only ever end a booking.
-                const bookable = from !== null && from < WORKING_HOUR_END * 60;
+                // The last bookable hour can only ever end a booking.
+                const latest = latestBookableMinute();
+                const bookable = from !== null && (latest === null || from < latest);
 
                 option.disabled = !date
                     ? false
@@ -2837,6 +2896,30 @@ document.addEventListener("DOMContentLoaded", function () {
         initUnscheduledModal(unscheduledModalEl);
     }
 
+    // Open the date panel on a 'YYYY-MM-DD', spelling the day out for its
+    // heading. Built from the parts rather than parsed, because `new
+    // Date("2026-08-14")` is read as UTC midnight and lands on the 13th for
+    // anybody west of Greenwich - which would caption the panel with a
+    // different day from the one it is showing.
+    function openDay(dateStr) {
+        if (!dateModal || !dateStr) {
+            return;
+        }
+
+        const parts = dateStr.split("-").map(Number);
+        const local = new Date(parts[0], parts[1] - 1, parts[2]);
+
+        dateModal.open(
+            dateStr,
+            local.toLocaleDateString("en-US", {
+                weekday: "long",
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+            }),
+        );
+    }
+
     const calendarEl = document.getElementById("schedulesCalendar");
 
     if (calendarEl && window.FullCalendar) {
@@ -2856,19 +2939,7 @@ document.addEventListener("DOMContentLoaded", function () {
             },
             // Every calendar day opens the date-details modal.
             dateClick: function (info) {
-                if (!dateModal) {
-                    return;
-                }
-
-                dateModal.open(
-                    info.dateStr,
-                    info.date.toLocaleDateString(undefined, {
-                        weekday: "long",
-                        year: "numeric",
-                        month: "long",
-                        day: "numeric",
-                    }),
-                );
+                openDay(info.dateStr);
             },
             eventDidMount: function (info) {
                 const projectName = info.event.extendedProps.projectName || "";
@@ -2907,8 +2978,15 @@ document.addEventListener("DOMContentLoaded", function () {
 
                 info.el.setAttribute("title", tooltipParts.join(" · "));
             },
-            // A completed project opens as a record of its dates; everything
-            // else opens the editor.
+            // A bar is the project, so clicking one opens the project: its
+            // whole schedule, every range it holds, in the editor or - for a
+            // completed, cancelled or paused job - the view-only panel.
+            //
+            // The day panel answers the other question, and a day is clicked
+            // to ask it. The two are deliberately different: "show me this
+            // job" and "show me this date" are not the same request, and the
+            // calendar offers both because the bar and the cell underneath it
+            // are separate targets.
             eventClick: function (info) {
                 const projectId = info.event.extendedProps.projectId;
                 const modalEl = info.event.extendedProps.readOnly
