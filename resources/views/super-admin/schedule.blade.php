@@ -353,11 +353,57 @@
                                     <input type="hidden" name="historical_add_technicians" value="0"
                                         data-historical-add-flag>
 
+                                    {{-- Step three, and only ever reached when
+                                         somebody named above is already down as
+                                         working elsewhere on one of these days.
+
+                                         Deliberately NOT drawn as an error. A
+                                         clash in the future is a booking that
+                                         cannot be made; this is two records
+                                         disagreeing about a day that has gone,
+                                         and the correction may well be the
+                                         right one. So it states what it found,
+                                         names the other project, and asks. The
+                                         save is refused only while the box is
+                                         unticked - see the same check on the
+                                         server in ScheduleController::update(),
+                                         which is what actually enforces it. --}}
+                                    <div class="schedule-historical-conflicts d-none" data-historical-conflict-step>
+                                        <div class="schedule-historical-conflicts-head">
+                                            <i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i>
+                                            <div>
+                                                <h6 class="schedule-historical-title">Historical Schedule Conflict</h6>
+                                                <p class="schedule-historical-lead mb-0">
+                                                    The record already places these people on another project on
+                                                    these dates. You can continue if what you are recording here is
+                                                    accurate.
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        <div class="schedule-historical-conflict-list" data-historical-conflict-list>
+                                        </div>
+
+                                        <label class="schedule-historical-acknowledge">
+                                            <input type="checkbox" data-historical-conflict-acknowledge>
+                                            <span>
+                                                I have checked these and the work recorded here is accurate.
+                                            </span>
+                                        </label>
+                                    </div>
+
+                                    {{-- Set only once the box above is ticked.
+                                         The server refuses the save without it
+                                         whenever a clash is found. --}}
+                                    <input type="hidden" name="historical_conflicts_confirmed" value="0"
+                                        data-historical-conflict-flag>
+
                                     <p class="schedule-modal-note">
                                         <i class="bi bi-info-circle" aria-hidden="true"></i>
                                         <span>
                                             This is recorded against your account, with the dates, the range
-                                            before and after, and the names you choose here.
+                                            before and after, the names you choose here, and any conflict you
+                                            confirm.
                                         </span>
                                     </p>
 

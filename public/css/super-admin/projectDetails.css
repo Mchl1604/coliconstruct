@@ -36,6 +36,36 @@
     color: var(--project-blue-deep);
 }
 
+/* ---- The other half of the client's name ----
+   Under the heading, and clearly subordinate to it: on commercial work the
+   company is who the project is FOR and this is the person to ring about it,
+   which is a different kind of fact and must not compete with the name above.
+   The label is what keeps it from reading as a second client.
+
+   Not scoped to .project-details-page: the technician portal draws the same
+   header from the same stylesheet without that wrapper class. */
+.project-client-secondary {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: -0.15rem;
+}
+
+.project-client-secondary-name {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #475467;
+}
+
+.project-client-secondary-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #98a2b3;
+}
+
 /* The project type pills: outlined blue on a pale blue field, in place of the
    grey bordered ones. */
 .project-details-page .project-type-badge {

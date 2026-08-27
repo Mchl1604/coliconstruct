@@ -15,6 +15,24 @@
         );
     };
 
+    /**
+     * The same, for a task rather than a project. Task states are their own
+     * set - Unassigned and Finished Late exist here and nowhere else, and
+     * Pending is grey on a task where it is amber on a project - so they carry
+     * their own colours rather than being looked up in the project map and
+     * silently coming back grey.
+     */
+    $taskBadge = function (?string $key, ?string $label): string {
+        [$background, $ink] = \App\Support\TaskStatus::colorFor((string) $key);
+
+        return sprintf(
+            '<span class="badge" style="background:%s;color:%s;">%s</span>',
+            $background,
+            $ink,
+            e($label ?: '—')
+        );
+    };
+
     /** Several values in one cell, stacked rather than run together. */
     $stack = function (array $values, string $empty = '—'): string {
         if ($values === []) {
@@ -468,7 +486,7 @@
                                         <td>{{ $row['task'] }}</td>
                                         <td class="nowrap">{{ $row['start_date'] }}</td>
                                         <td class="nowrap">{{ $row['due_date'] }}</td>
-                                        <td>{!! $badge($row['status_key'], $row['status_label']) !!}</td>
+                                        <td>{!! $taskBadge($row['status_key'], $row['status_label']) !!}</td>
                                     </tr>
                                 @endforeach
                             </tbody>

@@ -7,6 +7,9 @@
     <link href="/css/super-admin/schedule.css" rel="stylesheet">
     <link href="/css/super-admin/technicians.css" rel="stylesheet">
     <link href="/css/taskModal.css" rel="stylesheet">
+    {{-- The Urgent Actions panel and the row badges, shared with the Super
+         Admin Tasks page. --}}
+    <link href="/css/taskAttention.css" rel="stylesheet">
 @endpush
 
 @section('content')
@@ -36,6 +39,12 @@
             @endif
         </div>
     </div>
+
+    {{-- A lead has no dashboard, so what needs arranging is said here, above
+         the board and above the project filter. Empty for a plain technician,
+         whose board is their own work and holds nothing they could assign -
+         see TechnicianPortalController::tasks(). --}}
+    <x-task-attention-alerts :summary="$attentionSummary" :read-only-note="$attentionReadOnly" />
 
     <div class="card shadow-sm border-0 rounded-2 mb-3">
         <div class="card-body p-3">

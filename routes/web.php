@@ -269,6 +269,13 @@ Route::prefix('super-admin')
         Route::delete('/projects/{id}/registered-user', [ProjectController::class, 'removeRegisteredUser'])
             ->name('projects.registered-user.destroy');
 
+        // Putting a project's contact address onto the one its Registered User
+        // signs in with. One direction only, and only ever the project: the
+        // account's own address is a login credential and is changed by the
+        // client themselves behind an emailed code, never from here.
+        Route::put('/projects/{id}/contact-email', [ProjectController::class, 'useAccountEmail'])
+            ->name('projects.contact-email.account');
+
         Route::put('/projects/{id}/hold', [ProjectController::class, 'putOnHold'])->name('projects.hold');
         Route::put('/projects/{id}/resume', [ProjectController::class, 'resume'])->name('projects.resume');
 
@@ -290,6 +297,14 @@ Route::prefix('super-admin')
         Route::put('/projects/{id}/resume-schedule', [ProjectController::class, 'updateResumeSchedule'])
             ->name('projects.resume-schedule');
         Route::post('/projects/{id}/complete', [ProjectController::class, 'complete'])->name('projects.complete');
+
+        // The confirmation that did not come through the website: the client
+        // said so by telephone, in person or on paper, and an administrator is
+        // writing it down. The other action allowed on a project locked by
+        // Awaiting Client Confirmation, beside Reopen - and like Reopen it
+        // works on that one status only, which the controller asks again.
+        Route::post('/projects/{id}/client-confirmation', [ProjectController::class, 'recordClientConfirmation'])
+            ->name('projects.client-confirmation');
 
         // Putting a project that is waiting on its client back to work. The
         // only action allowed on a locked project, and only on that one status

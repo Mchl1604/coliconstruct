@@ -500,6 +500,57 @@ document.addEventListener("DOMContentLoaded", function () {
             renderRequest();
         });
 
+        // Straight from this dialog to the Schedules tab, landing on the
+        // technician it is showing. The tab switch and the picker are both
+        // done through the controls that already exist - the tab's own
+        // trigger, and window.technicianSchedules.show() - so this is a
+        // shortcut through the page rather than a second way of loading a
+        // calendar.
+        const viewScheduleBtn = modal.querySelector("[data-details-view-schedule]");
+
+        if (viewScheduleBtn) {
+            viewScheduleBtn.addEventListener("click", function () {
+                if (technicianId === null) {
+                    return;
+                }
+
+                const wanted = technicianId;
+
+                // The calendar is measured as the tab is revealed, so the
+                // technician is chosen after the switch rather than before it.
+                const schedulesTab = document.getElementById(
+                    "technicianSchedulesTab",
+                );
+
+                const openSchedule = function () {
+                    if (window.bootstrap && schedulesTab) {
+                        window.bootstrap.Tab.getOrCreateInstance(schedulesTab).show();
+                    }
+
+                    if (window.technicianSchedules) {
+                        window.technicianSchedules.show(wanted);
+                    }
+                };
+
+                if (window.bootstrap) {
+                    const instance = window.bootstrap.Modal.getInstance(modal);
+
+                    if (instance) {
+                        // Waiting for the dialog to finish closing keeps the
+                        // backdrop from being left over the tab underneath.
+                        modal.addEventListener("hidden.bs.modal", openSchedule, {
+                            once: true,
+                        });
+                        instance.hide();
+
+                        return;
+                    }
+                }
+
+                openSchedule();
+            });
+        }
+
         return {
             open: function (id) {
                 technicianId = id;
@@ -955,64 +1006,307 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
+    // ---------------------------------------------------------------
+    // The technician picker
+    //
+    // The same searchable list the Export Logs dialog uses - type any part of
+    // a name, code, address or role, and the matches drop down beneath. It
+    // replaced a native <datalist>, which matched only the start of the value
+    // in some browsers, so a surname found nobody.
+    // ---------------------------------------------------------------
+
+    const pickerResults = document.querySelector(
+        "[data-technician-picker-results]",
+    );
+    const pickerClear = document.querySelector("[data-technician-picker-clear]");
+
+    const PICKER_RESULT_LIMIT = 8;
+
+    function pickerLabel(technician) {
+        return technician.display_code + " — " + technician.name;
+    }
+
+    function closePickerResults() {
+        if (!pickerResults) {
+            return;
+        }
+
+        pickerResults.classList.add("d-none");
+        pickerResults.innerHTML = "";
+
+        if (picker) {
+            picker.setAttribute("aria-expanded", "false");
+        }
+    }
+
+    function renderPickerResults(term) {
+        if (!pickerResults) {
+            return;
+        }
+
+        const needle = String(term || "").trim().toLowerCase();
+
+        if (!needle) {
+            closePickerResults();
+
+            return;
+        }
+
+        const contains = function (field) {
+            return Boolean(
+                field && String(field).toLowerCase().indexOf(needle) !== -1,
+            );
+        };
+
+        // A match on who they are outranks a match on what they are: every
+        // technician's role reads "Technician", so that word alone would
+        // otherwise fill the list with people whose ROLE matched while the one
+        // whose NAME matched was cut off the end.
+        const byIdentity = directory.filter(function (technician) {
+            return (
+                contains(technician.name) ||
+                contains(technician.display_code) ||
+                contains(technician.code) ||
+                contains(technician.email)
+            );
+        });
+
+        const byRole = directory.filter(function (technician) {
+            return (
+                byIdentity.indexOf(technician) === -1 &&
+                contains(technician.role_label)
+            );
+        });
+
+        const ranked = byIdentity.concat(byRole);
+        const matches = ranked.slice(0, PICKER_RESULT_LIMIT);
+        const hidden = ranked.length - matches.length;
+
+        if (!matches.length) {
+            pickerResults.innerHTML =
+                '<li class="config-actor-empty">No technician by that name.</li>';
+            pickerResults.classList.remove("d-none");
+            picker.setAttribute("aria-expanded", "true");
+
+            return;
+        }
+
+        pickerResults.innerHTML = matches
+            .map(function (technician) {
+                // An account that cannot take new work still gets a row - their
+                // calendar is the point of this tab - but says so, because it
+                // is why the Add button will not appear once they are chosen.
+                const inactive =
+                    technician.can_receive_work === false
+                        ? " · " +
+                          escapeHtml(technician.status_label || "inactive")
+                        : "";
+
+                return (
+                    '<li><button type="button" class="config-actor-option" data-picker-id="' +
+                    escapeHtml(String(technician.technician_id)) +
+                    '" role="option">' +
+                    '<span class="config-actor-name">' +
+                    escapeHtml(technician.name) +
+                    "</span>" +
+                    '<span class="config-actor-meta">' +
+                    escapeHtml(technician.display_code) +
+                    " · " +
+                    escapeHtml(technician.role_label || "Technician") +
+                    inactive +
+                    "</span>" +
+                    "</button></li>"
+                );
+            })
+            .join("");
+
+        if (hidden > 0) {
+            pickerResults.innerHTML +=
+                '<li class="config-actor-empty">' +
+                hidden +
+                " more match" +
+                (hidden === 1 ? "" : "es") +
+                ". Keep typing to narrow the list.</li>";
+        }
+
+        pickerResults.classList.remove("d-none");
+        picker.setAttribute("aria-expanded", "true");
+    }
+
+    /**
+     * Nobody chosen: the calendar goes back to its resting state.
+     *
+     * `message` is what the hint says - which differs between "you have not
+     * picked anybody yet" and "what you typed matches nobody".
+     */
+    function clearSelectedTechnician(message) {
+        selectedTechnician = null;
+
+        calendarEl.classList.add("d-none");
+        calendarPlaceholderEl.classList.remove("d-none");
+        calendarPlaceholderEl.textContent =
+            "Select a technician to view their schedule.";
+        calendarEmptyEl.classList.add("d-none");
+        calendarCountEl.classList.add("d-none");
+        calendarNameEl.textContent = "No technician selected";
+        addOpenBtn.classList.add("d-none");
+        pickerHint.textContent =
+            message || "Pick a technician to load their calendar.";
+
+        assignmentsBodyEl.innerHTML = "";
+        assignmentsEmptyEl.classList.add("d-none");
+        assignmentsCountEl.classList.add("d-none");
+        assignmentsPlaceholderEl.classList.remove("d-none");
+
+        if (pickerClear) {
+            pickerClear.classList.add("d-none");
+        }
+
+        if (detailsPanel) {
+            detailsPanel.reset();
+        }
+    }
+
+    /**
+     * Load a technician's calendar, from the picker or from anywhere else that
+     * wants to land on somebody - see the View Schedule button on the details
+     * dialog, which calls this through window.technicianSchedules.
+     */
+    function selectTechnician(technician) {
+        if (!technician) {
+            return;
+        }
+
+        selectedTechnician = technician;
+
+        if (picker) {
+            picker.value = pickerLabel(technician);
+        }
+
+        if (pickerClear) {
+            pickerClear.classList.remove("d-none");
+        }
+
+        closePickerResults();
+
+        // A switched-off account keeps every date it was booked on, so the
+        // calendar is still worth reading - it is only NEW work they cannot be
+        // given. So the schedule loads either way and just the Add button goes,
+        // with the hint saying why rather than leaving a control to vanish
+        // unexplained.
+        const employable = technician.can_receive_work !== false;
+
+        pickerHint.textContent = employable
+            ? "Showing schedule for " + technician.name + "."
+            : "Showing " +
+              technician.name +
+              "'s schedule. Their account is " +
+              (technician.status_label || "inactive").toLowerCase() +
+              " and cannot take new projects.";
+
+        addOpenBtn.classList.toggle("d-none", !employable);
+
+        // A new technician means any previously shown project is stale.
+        if (detailsPanel) {
+            detailsPanel.reset();
+        }
+
+        loadCalendar();
+    }
+
     if (picker) {
-        picker.addEventListener("change", function () {
-            const match = resolveTechnician(picker.value);
+        picker.addEventListener("input", function () {
+            // Editing after picking somebody drops the pick: the box must never
+            // show one name and load another's calendar.
+            if (selectedTechnician) {
+                clearSelectedTechnician("Pick a technician to load their calendar.");
+            }
 
-            if (!match) {
-                selectedTechnician = null;
-                calendarEl.classList.add("d-none");
-                calendarPlaceholderEl.classList.remove("d-none");
-                calendarPlaceholderEl.textContent =
-                    "Select a technician to view their schedule.";
-                calendarEmptyEl.classList.add("d-none");
-                calendarCountEl.classList.add("d-none");
-                calendarNameEl.textContent = "No technician selected";
-                addOpenBtn.classList.add("d-none");
-                pickerHint.textContent = picker.value
-                    ? "No match - pick one from the list."
-                    : "Pick a technician to load their calendar.";
+            renderPickerResults(picker.value);
+        });
 
-                assignmentsBodyEl.innerHTML = "";
-                assignmentsEmptyEl.classList.add("d-none");
-                assignmentsCountEl.classList.add("d-none");
-                assignmentsPlaceholderEl.classList.remove("d-none");
+        picker.addEventListener("focus", function () {
+            if (picker.value && !selectedTechnician) {
+                renderPickerResults(picker.value);
+            }
+        });
 
-                if (detailsPanel) {
-                    detailsPanel.reset();
+        picker.addEventListener("keydown", function (event) {
+            if (event.key === "Escape") {
+                closePickerResults();
+            }
+
+            // Enter picks the first match rather than leaving the box holding
+            // a name nothing was done with.
+            if (event.key === "Enter" && pickerResults) {
+                event.preventDefault();
+
+                const first = pickerResults.querySelector("[data-picker-id]");
+
+                if (first) {
+                    first.click();
                 }
+            }
+        });
+    }
 
+    if (pickerResults) {
+        pickerResults.addEventListener("click", function (event) {
+            const option = event.target.closest("[data-picker-id]");
+
+            if (!option) {
                 return;
             }
 
-            selectedTechnician = match;
-            picker.value = match.display_code + " — " + match.name;
-
-            // A switched-off account keeps every date it was booked on, so the
-            // calendar is still worth reading - it is only NEW work they
-            // cannot be given. So the schedule loads either way and just the
-            // Add button goes, with the hint saying why rather than leaving a
-            // control to vanish unexplained.
-            const employable = match.can_receive_work !== false;
-
-            pickerHint.textContent = employable
-                ? "Showing schedule for " + match.name + "."
-                : "Showing " +
-                  match.name +
-                  "'s schedule. Their account is " +
-                  (match.status_label || "inactive").toLowerCase() +
-                  " and cannot take new projects.";
-
-            addOpenBtn.classList.toggle("d-none", !employable);
-
-            // A new technician means any previously shown project is stale.
-            if (detailsPanel) {
-                detailsPanel.reset();
-            }
-
-            loadCalendar();
+            selectTechnician(
+                directory.find(function (technician) {
+                    return (
+                        String(technician.technician_id) === option.dataset.pickerId
+                    );
+                }),
+            );
         });
     }
+
+    if (pickerClear) {
+        pickerClear.addEventListener("click", function () {
+            picker.value = "";
+            clearSelectedTechnician("Pick a technician to load their calendar.");
+            closePickerResults();
+            picker.focus();
+        });
+    }
+
+    // Clicking away closes the list without choosing anything.
+    document.addEventListener("click", function (event) {
+        const search = document.querySelector("[data-technician-search]");
+
+        if (search && !search.contains(event.target)) {
+            closePickerResults();
+        }
+    });
+
+    /**
+     * Land on a technician from elsewhere on the page.
+     *
+     * The details dialog's View Schedule button uses this: it switches to the
+     * Schedules tab and hands over an id, and the picker fills itself in as
+     * though it had been typed. Exposed rather than duplicated so there is one
+     * path into a technician's calendar.
+     */
+    window.technicianSchedules = {
+        show: function (technicianId) {
+            const technician = directory.find(function (item) {
+                return String(item.technician_id) === String(technicianId);
+            });
+
+            if (technician) {
+                selectTechnician(technician);
+            }
+
+            return Boolean(technician);
+        },
+    };
 
     // Switching to the Schedules tab reveals the calendar container, which
     // FullCalendar needs to re-measure.
@@ -1088,16 +1382,17 @@ document.addEventListener("DOMContentLoaded", function () {
             selectedLeadId = null;
         }
 
-        function taskBadgeClass(status) {
-            return (
-                {
-                    unassigned: "bg-warning text-dark",
-                    pending: "bg-secondary",
-                    ongoing: "bg-primary",
-                    completed: "bg-success",
-                    cancelled: "bg-danger",
-                }[status] || "bg-secondary"
-            );
+        /**
+         * The badge a task is drawn in.
+         *
+         * The server sends it, already derived from the due date and the
+         * completion instant - see TaskStatus. This used to map the raw status
+         * column here instead, which had no way of knowing about Overdue or
+         * Finished Late and so drew a late task in Pending's grey. The
+         * fallback covers a payload from a cached older page.
+         */
+        function taskBadgeClass(task) {
+            return task.status_badge_class || "bg-secondary";
         }
 
         function renderTasks(tasks) {
@@ -1118,7 +1413,7 @@ document.addEventListener("DOMContentLoaded", function () {
                             : "") +
                         '<div class="panel-task-meta">' +
                         '<span class="badge ' +
-                        taskBadgeClass(task.status) +
+                        taskBadgeClass(task) +
                         '">' +
                         escapeHtml(task.status_label) +
                         "</span>" +

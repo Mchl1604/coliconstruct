@@ -1171,7 +1171,11 @@ class SystemReportService
                         'task' => $task->task_title,
                         'start_date' => $this->formatDate($task->start_date),
                         'due_date' => $this->formatDate($task->due_date),
-                        'status_key' => $task->isOverdue() ? 'overdue' : (string) $task->status,
+                        // Both from the one derivation, so the report agrees
+                        // with every screen - and so its summary counts a task
+                        // closed late under Finished Late rather than folding
+                        // it into Completed. See TaskStatus.
+                        'status_key' => $task->derivedStatus(),
                         'status_label' => $task->statusLabel(),
                     ])
                     ->values(),

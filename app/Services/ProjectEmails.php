@@ -27,7 +27,11 @@ class ProjectEmails
 {
     public function __construct(
         private readonly EmailService $email,
-        private readonly ActivityLogger $activityLogger
+        private readonly ActivityLogger $activityLogger,
+        // Not a normaliser of its own: address comparison is ClientProjects'
+        // job everywhere else in the system, and a second lower/trim written
+        // here is how "Office@Company.ph" comes to be mailed twice.
+        private readonly ClientProjects $clientProjects
     ) {}
 
     /**
@@ -159,7 +163,7 @@ class ProjectEmails
 
     private function update(Project $project, string $event, ?string $detail = null): void
     {
-        foreach ($this->contacts($project) as $contact) {
+        foreach ($this->recipients($project) as $contact) {
             $this->email->send($contact->email_address, new ProjectUpdateMail(
                 $project,
                 $event,
@@ -183,9 +187,81 @@ class ProjectEmails
         $project->loadMissing('clients');
 
         return $project->clients
-            ->filter(fn (Client $client): bool => filter_var($client->email_address, FILTER_VALIDATE_EMAIL) !== false)
-            ->unique('email_address')
+            ->filter(fn (Client $client): bool => $this->isReachable($client))
+            ->unique(fn (Client $client): string => $this->clientProjects->normalise($client->email_address))
             ->values();
+    }
+
+    /**
+     * Everyone who should hear that something happened to this project: its
+     * contacts, plus the address the Registered User actually signs in with.
+     *
+     * The two are separate facts and stay separate - the project's contact may
+     * be a company mailbox, the account is a person - so this adds rather than
+     * chooses. The contact address is never dropped because an account exists:
+     * whoever the job was booked with is still the person the company writes
+     * to about it.
+     *
+     * What the addition fixes is the case that used to fail silently. A
+     * project booked to office@company.ph and followed by maria@gmail.com sent
+     * "please confirm this project" to the office, while the only person who
+     * could press Confirm was Maria - who was never told. Now both are.
+     *
+     * Deliberately not used by projectCreated(): that email exists to tell an
+     * address which account to open, and an account that already exists needs
+     * no invitation to itself.
+     *
+     * @return Collection<int, Client>
+     */
+    private function recipients(Project $project): Collection
+    {
+        $project->loadMissing('clients.account');
+
+        return $project->clients
+            ->flatMap(fn (Client $client): array => [$client, $this->accountRecipient($client)])
+            ->filter(fn (?Client $client): bool => $client !== null && $this->isReachable($client))
+            // Normalised on both sides, so one address written two ways is one
+            // email. Where a contact and an account share an address - the
+            // ordinary case - this is what leaves exactly one copy.
+            ->unique(fn (Client $client): string => $this->clientProjects->normalise($client->email_address))
+            ->values();
+    }
+
+    /**
+     * A stand-in contact carrying the account holder's address and name.
+     *
+     * Never saved and never has a key: it exists so the mail can be addressed
+     * to Maria at her own address while every other thing the message knows
+     * about the project - the client type, the company it is booked to - stays
+     * exactly as the project records it. Null when there is no account, or
+     * when the account signs in with the address the project already holds.
+     */
+    private function accountRecipient(Client $contact): ?Client
+    {
+        $account = $contact->account;
+
+        if ($account === null || ! filled($account->email)) {
+            return null;
+        }
+
+        if ($this->clientProjects->normalise($account->email) === $this->clientProjects->normalise($contact->email_address)) {
+            return null;
+        }
+
+        $recipient = $contact->replicate();
+        $recipient->email_address = $account->email;
+        $recipient->fullname = $account->fullName();
+
+        return $recipient;
+    }
+
+    /**
+     * Whether an address is one this system will try to send to at all. An
+     * empty or malformed address is skipped rather than queued and bounced.
+     */
+    private function isReachable(Client $contact): bool
+    {
+        return filter_var((string) $contact->email_address, FILTER_VALIDATE_EMAIL) !== false;
     }
 
     /**

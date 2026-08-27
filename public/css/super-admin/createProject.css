@@ -381,6 +381,29 @@
     margin-bottom: 1.25rem;
 }
 
+/* A note about what a step is asking for, as opposed to how to fill it in.
+   Tinted and boxed rather than set as more grey small print under the
+   subtitle, because it is the one line on the step that corrects an
+   assumption - that the dates asked for here are the whole of the project's
+   schedule - and grey small print is exactly what gets skipped. */
+.wizard-step-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.45rem;
+    padding: 0.55rem 0.75rem;
+    border-left: 3px solid #0d6efd;
+    border-radius: 0 6px 6px 0;
+    background: #eef4ff;
+    color: #16407a;
+    font-size: 0.83rem;
+    line-height: 1.45;
+}
+
+.wizard-step-note i {
+    margin-top: 0.1rem;
+    flex: 0 0 auto;
+}
+
 .wizard-footer {
     display: flex;
     align-items: center;
@@ -397,8 +420,13 @@
     gap: 1.25rem;
 }
 
+/* Blue edges on the review cards. The last step is a wall of text the reader
+   is being asked to check, and a grey hairline gave it no structure to scan -
+   the eye could not tell where one group ended and the next began. Blue rather
+   than a heavier grey because nothing on this step is a warning: it is the
+   brand colour doing the dividing. */
 .review-group {
-    border: 1px solid #e9ecef;
+    border: 1px solid #b6d0f7;
     border-radius: 14px;
     overflow: hidden;
     background: #fff;
@@ -409,8 +437,8 @@
     align-items: center;
     gap: 0.6rem;
     padding: 0.9rem 1.25rem;
-    background: #f8f9fb;
-    border-bottom: 1px solid #e9ecef;
+    background: #f2f7ff;
+    border-bottom: 1px solid #b6d0f7;
 }
 
 .review-group-icon {
@@ -499,4 +527,55 @@
     .wizard-footer .btn {
         flex: 1 1 auto;
     }
+}
+/* ---- Reset, inside the calendar ----
+   Per field and appended to the flatpickr panel rather than sitting beside the
+   input or down in a form footer: the calendar is where the date was chosen,
+   so it is where somebody looks to unchoose it. */
+
+.flatpickr-reset-row {
+    display: flex;
+    justify-content: flex-end;
+    padding: 0.4rem 0.6rem;
+    border-top: 1px solid #e9ecef;
+    background: #fbfcfe;
+}
+
+.flatpickr-reset-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    border: 1px solid #d6e2f5;
+    background: #fff;
+    color: #2563eb;
+    border-radius: 8px;
+    padding: 0.2rem 0.6rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    line-height: 1.4;
+    transition: 0.15s ease;
+}
+
+.flatpickr-reset-button:hover,
+.flatpickr-reset-button:focus-visible {
+    background: #eef4ff;
+    border-color: #2563eb;
+}
+
+/* The visible half of an altInput pair. flatpickr does not grey it out when
+   the real field is disabled, so it is told to here - see
+   setDateFieldDisabled(). */
+.flatpickr-alt-input.is-disabled,
+.flatpickr-alt-input:disabled {
+    background-color: #e9ecef;
+    opacity: 1;
+}
+
+/* ---- The lead technician picker ----
+   The same control as the technicians one below it, so it inherits that
+   styling wholesale; only the resting label needs saying, because a single
+   choice shows a name where the multi-select shows a count. */
+
+.technician-dropdown-toggle.is-empty {
+    color: #6c757d;
 }

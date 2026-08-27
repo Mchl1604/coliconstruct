@@ -1,0 +1,70 @@
+/**
+ * The searchable picker: type a name, pick from the list that drops down.
+ *
+ * Shared, because the same control answers the same question in two places -
+ * "which account?" on the Export Logs dialog, and "which technician?" on the
+ * Technicians page's Schedules tab. It used to live in configuration.css,
+ * which is why the second one was a native <datalist> instead: the styling was
+ * not reachable from that page.
+ *
+ * The class names are the ones the export dialog already used, so nothing that
+ * referenced them had to change.
+ */
+
+/* The results hang off the field rather than pushing the dialog taller, so
+   the buttons beneath it do not move while somebody is typing. */
+.config-actor-search {
+    position: relative;
+}
+
+.config-actor-results {
+    position: absolute;
+    z-index: 5;
+    left: 0;
+    right: 0;
+    margin: 0.2rem 0 0;
+    padding: 0.25rem;
+    list-style: none;
+    max-height: 14rem;
+    overflow-y: auto;
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.5rem;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
+}
+
+.config-actor-option {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 0.35rem 0.5rem;
+    border: 0;
+    border-radius: 0.35rem;
+    background: transparent;
+    line-height: 1.25;
+}
+
+.config-actor-option:hover,
+.config-actor-option:focus {
+    background: #eff6ff;
+    outline: none;
+}
+
+.config-actor-name {
+    display: block;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #0f172a;
+}
+
+.config-actor-meta {
+    display: block;
+    font-size: 0.75rem;
+    color: #64748b;
+}
+
+.config-actor-empty {
+    padding: 0.45rem 0.5rem;
+    font-size: 0.8125rem;
+    color: #64748b;
+}

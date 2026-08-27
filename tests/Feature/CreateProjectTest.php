@@ -95,6 +95,145 @@ class CreateProjectTest extends TestCase
         return $payload;
     }
 
+    /**
+     * The wizard asks for dates once, which reads like the whole of a
+     * project's schedule - so the step says in as many words that it is not.
+     *
+     * Copy only: the assertions below this one cover the behaviour, and none
+     * of it changes.
+     */
+    public function test_the_schedule_step_says_the_dates_are_only_the_initial_schedule(): void
+    {
+        $page = $this->get(route('super-admin.projects.create'))->assertOk();
+
+        $page->assertSee('Input Project Initial Schedule');
+        $page->assertSee('This is the initial schedule for the project.');
+        $page->assertSee('More schedule dates can be added later.');
+
+        // The note has to be read BEFORE the dates are filled in, so it must
+        // come above the date inputs in the document rather than sitting under
+        // them as a footnote.
+        $body = $page->getContent();
+
+        $this->assertLessThan(
+            strpos($body, 'id="startDate"'),
+            strpos($body, 'More schedule dates can be added later.'),
+            'The explanatory note must appear before the date inputs.'
+        );
+
+        // And the wizard must not promise a fuller schedule anywhere else on
+        // the way through: not on the progress rail, and not on the review
+        // panel that is the last thing read before Create.
+        $page->assertSee('Initial Schedule &amp; Team', false);
+        $page->assertDontSee('>Schedule &amp; Team<', false);
+    }
+
+    public function test_the_schedule_step_still_offers_every_scheduling_control(): void
+    {
+        // The copy change must leave the controls themselves alone: the date
+        // range, the partial-day mode, the lead and the crew.
+        $page = $this->get(route('super-admin.projects.create'))->assertOk();
+
+        foreach ([
+            'id="startDate"',
+            'id="endDate"',
+            // The lead is picked from the same dropdown the technicians use,
+            // so what has to be present is the button, its menu and the hidden
+            // input that carries the choice.
+            'data-lead-tech-button',
+            'data-lead-tech-menu',
+            'name="lead_tech"',
+            'data-scheduling-mode-radio',
+            'data-schedule-date-input',
+            'data-technician-selected-list',
+        ] as $control) {
+            $page->assertSee($control, false);
+        }
+    }
+
+    /**
+     * The quotation is typed with thousands separators, and submitted without
+     * them: the visible field carries the commas and the hidden one carries
+     * the number, so `numeric` validation is handed what it always was.
+     */
+    public function test_the_quotation_field_is_paired_for_grouped_input(): void
+    {
+        $page = $this->get(route('super-admin.projects.create'))->assertOk();
+
+        $page->assertSee('data-money-field', false);
+        $page->assertSee('data-money-input', false);
+        $page->assertSee('data-money-value', false);
+        $page->assertSee('/js/moneyInput.js', false);
+
+        // The name is on the hidden half, and the visible half has none - or
+        // the browser would submit the comma-formatted text instead.
+        $page->assertSee('<input type="hidden" name="quotation_amount"', false);
+        $page->assertDontSee('type="number" name="quotation_amount"', false);
+    }
+
+    /**
+     * The promise the new copy makes, kept.
+     *
+     * "More schedule dates can be added later" is only worth printing if it is
+     * true, so this walks the whole way: create the project through the wizard
+     * with its single initial range, then add a second one through the
+     * Schedules page the way an administrator would. Both ranges survive - the
+     * initial one is not replaced.
+     */
+    public function test_a_second_schedule_range_can_be_added_after_the_project_is_created(): void
+    {
+        ProjectType::create(['type_name' => 'Aircon Installation']);
+
+        $leadTechnician = $this->createWizardTechnician('lead_technician', 'Lead Technician');
+        $technician = $this->createWizardTechnician('technician', 'Juan Technician');
+
+        $this->post(
+            route('super-admin.projects.create.store'),
+            $this->baseProjectPayload($leadTechnician, $technician)
+        )->assertRedirect(route('super-admin.projects'));
+
+        $project = Project::firstOrFail();
+        $initial = $project->schedules()->firstOrFail();
+
+        $this->assertDatabaseCount('tbl_schedule', 1);
+
+        // The existing range is resubmitted alongside a new one, which is what
+        // the Schedules editor posts when a range is added to a project.
+        $this->put(route('super-admin.schedules.update', $project->project_id), [
+            'ranges' => [
+                [
+                    'schedule_id' => $initial->schedule_id,
+                    'scheduling_mode' => Schedule::MODE_DATE_BASED,
+                    'start_date' => $this->scheduleStart(),
+                    'end_date' => $this->scheduleEnd(),
+                ],
+                [
+                    'scheduling_mode' => Schedule::MODE_DATE_BASED,
+                    'start_date' => CarbonImmutable::today()->addDays(20)->toDateString(),
+                    'end_date' => CarbonImmutable::today()->addDays(22)->toDateString(),
+                ],
+            ],
+        ])->assertSessionHas('success');
+
+        $this->assertDatabaseCount('tbl_schedule', 2);
+
+        // The initial range is still there, unchanged - the second was added
+        // to it rather than replacing it.
+        $this->assertDatabaseHas('tbl_schedule', [
+            'schedule_id' => $initial->schedule_id,
+            'project_id' => $project->project_id,
+        ]);
+
+        $this->assertSame(
+            [$this->scheduleStart(), CarbonImmutable::today()->addDays(20)->toDateString()],
+            $project->fresh()->schedules
+                ->map(fn (Schedule $schedule): string => $schedule->startsOn()->toDateString())
+                ->sort()
+                ->values()
+                ->all()
+        );
+    }
+
     public function test_it_stores_a_residential_project_and_omits_the_contract_document(): void
     {
         ProjectType::create(['type_name' => 'Aircon Installation']);

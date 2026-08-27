@@ -8,6 +8,9 @@
         <link rel="stylesheet" href="/css/taskModal.css">
         {{-- The Import Team dialog, shared with the project wizard. --}}
         <link rel="stylesheet" href="/css/importTeam.css">
+        {{-- The type-to-search picker on the Edit Registered User dialog, the
+             same control and the same stylesheet as Export Activity Logs. --}}
+        <link rel="stylesheet" href="/css/actorSearch.css">
         {{-- The Schedule Conflict dialog a refused Resume opens. The same
              dialog the archive's Restore opens - see scheduleRecovery.js. It
              also carries the Reset footer flatpickr appends inside its own
@@ -17,6 +20,24 @@
         <link rel="stylesheet" href="/css/super-admin/restoreConflicts.css">
     @endpush
     @php
+        // What the Edit Registered User picker searches. Built here rather
+        // than inside the @json() directive further down: Blade reads that
+        // directive by matching brackets, and a multi-line array literal
+        // inside it compiles to PHP that will not parse.
+        $registeredUserPickerOptions = $registeredUserOptions
+            ->map(
+                fn($candidate) => [
+                    'id' => $candidate->id,
+                    'name' => $candidate->fullName(),
+                    'email' => $candidate->email,
+                    'code' => $candidate->user_code,
+                    // Printed only when it is worth knowing: a deactivated
+                    // account is still one a project may belong to.
+                    'status' => $candidate->isActive() ? null : $candidate->statusLabel(),
+                ],
+            )
+            ->values();
+
         $scheduleStart = $project->schedules->min('start_datetime');
         $scheduleEnd = $project->schedules->max('end_datetime');
         $hasSchedule = $scheduleStart && $scheduleEnd;
@@ -138,6 +159,129 @@
             </div>
         @endif
 
+        <!-- COMPLETE PROJECT MODAL -->
+        {{-- Both ways into completion - the header button and the overdue
+             banner's "Mark as Complete" - open this one dialog, so it lives
+             out here rather than inside the banner. Defined in there it was
+             missing on exactly the projects the header offers it for: the
+             banner is drawn only when the project is overdue, and the header
+             button only when it is not. --}}
+        @if ($canComplete)
+            {{-- Same fields as the Projects page completion modal, so both
+                 routes into completion collect identical information. --}}
+            <div class="modal fade" id="completeProjectModal" tabindex="-1"
+                aria-labelledby="completeProjectModalLabel" aria-hidden="true">
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <form method="POST"
+                            action="{{ route('super-admin.projects.complete', $project->project_id) }}"
+                            enctype="multipart/form-data">
+                            @csrf
+
+                            <div class="modal-header bg-success text-white">
+                                <h5 class="modal-title" id="completeProjectModalLabel">
+                                    <i class="bi bi-check-circle me-2"></i>
+                                    Complete Project &mdash; {{ $project->reference_no }}
+                                </h5>
+                                <button type="button" class="btn-close btn-close-white"
+                                    data-bs-dismiss="modal"></button>
+                            </div>
+
+                            <div class="modal-body">
+                                <p class="mb-3">
+                                    Mark <strong>{{ $project->reference_no }}</strong> as completed?
+                                </p>
+
+                                {{-- Said before the project starts waiting rather than
+                                     after, because afterwards it is a week too late to
+                                     be useful. Not a blocker and deliberately not
+                                     styled as one: completion is never refused for want
+                                     of a registered client. --}}
+                                @if ($confirmabilityState === \App\Services\CompletionConfirmability::UNREACHABLE)
+                                    <div class="alert alert-warning d-flex gap-2" role="status">
+                                        <i class="bi bi-person-slash fs-5 lh-1" aria-hidden="true"></i>
+                                        <div>
+                                            <p class="fw-semibold mb-1">
+                                                No registered client can currently confirm this project.
+                                            </p>
+                                            <p class="mb-0 small">
+                                                It will go to Awaiting Client Confirmation as usual and
+                                                complete automatically after
+                                                {{ \App\Models\Project::completionConfirmationDays() }} days
+                                                if no confirmation is received. If the client registers
+                                                before then they can confirm it themselves, and an
+                                                administrator can record a confirmation given by phone,
+                                                in person or on paper at any time.
+                                            </p>
+                                        </div>
+                                    </div>
+                                @endif
+
+                                {{-- What the completion rules object to. A lead technician is
+                                     refused outright; an administrator may go ahead, but the
+                                     reason is written onto the project and into the activity
+                                     log, so the decision is never a silent one. --}}
+                                @if (! empty($completionBlockers))
+                                    <div class="alert alert-warning" role="alert">
+                                        <p class="fw-semibold mb-2">
+                                            <i class="bi bi-exclamation-triangle me-1"></i>
+                                            This project is not ready to be completed
+                                        </p>
+                                        <ul class="mb-2 ps-3">
+                                            @foreach ($completionBlockers as $blocker)
+                                                <li>{{ $blocker }}</li>
+                                            @endforeach
+                                        </ul>
+                                        <label class="form-label fw-semibold mb-1" for="completionOverrideReason">
+                                            Reason for completing it anyway
+                                        </label>
+                                        <textarea class="form-control" id="completionOverrideReason"
+                                            name="completion_override_reason" rows="2" minlength="10" maxlength="500"
+                                            required
+                                            placeholder="Why is this being completed with the above outstanding?"></textarea>
+                                    </div>
+                                @endif
+
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold">Completion Date</label>
+                                    <input type="date" class="form-control" name="completion_date"
+                                        value="{{ \App\Support\BusinessTime::today()->format('Y-m-d') }}"
+                                        max="{{ \App\Support\BusinessTime::today()->format('Y-m-d') }}" required>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold">Completion Summary</label>
+                                    <textarea class="form-control" name="completion_summary" rows="3"
+                                        placeholder="Summarize the work that was completed..." required></textarea>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold">Completion Remarks</label>
+                                    <textarea class="form-control" name="completion_remarks" rows="2"
+                                        placeholder="Any additional remarks (optional)"></textarea>
+                                </div>
+
+                                <div class="mb-1">
+                                    <label class="form-label fw-semibold">Upload Completion Photos</label>
+                                    <input type="file" class="form-control" name="completion_photos[]"
+                                        accept=".jpg,.jpeg,.png" multiple>
+                                    <div class="form-text">JPG, JPEG, or PNG. You can select multiple photos.</div>
+                                </div>
+                            </div>
+
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                <button type="submit" class="btn btn-success">
+                                    <i class="bi bi-check-lg me-1"></i>
+                                    Confirm Completion
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        @endif
+
         {{-- Paused. Everything below stays readable - the history is the point
              of keeping it - but nothing on this page may take new work until
              the project is resumed. Each disabled control says so on its own as
@@ -227,13 +371,42 @@
                             @endif
                         </p>
 
-                        @if ($canReopen)
-                            <button type="button" class="btn btn-sm btn-outline-dark" data-bs-toggle="modal"
-                                data-bs-target="#reopenProjectModal">
-                                <i class="bi bi-arrow-counterclockwise me-1" aria-hidden="true"></i>
-                                Reopen Project
-                            </button>
+                        {{-- Nobody can answer this. The project is waiting on a
+                             reply that cannot arrive, which reads exactly like a
+                             project whose client is still thinking about it - so
+                             it is said out loud rather than left to be worked out
+                             from an empty Registered User panel further down.
+
+                             A statement, not a fault: a project booked before its
+                             client registered is ordinary, and the moment they
+                             register this notice goes away on its own. See
+                             CompletionConfirmability. --}}
+                        @if ($confirmabilityState === \App\Services\CompletionConfirmability::UNREACHABLE)
+                            <div class="alert alert-warning border-0 py-2 px-3 mb-2" role="status">
+                                <i class="bi bi-person-slash me-1" aria-hidden="true"></i>
+                                <strong>No registered client can confirm this online.</strong>
+                                It will complete automatically unless the client registers, or an
+                                administrator records a confirmation given another way.
+                            </div>
                         @endif
+
+                        <div class="d-flex flex-wrap gap-2">
+                            @if ($canRecordClientConfirmation)
+                                <button type="button" class="btn btn-sm btn-success" data-bs-toggle="modal"
+                                    data-bs-target="#recordClientConfirmationModal">
+                                    <i class="bi bi-clipboard-check me-1" aria-hidden="true"></i>
+                                    Record Client Confirmation
+                                </button>
+                            @endif
+
+                            @if ($canReopen)
+                                <button type="button" class="btn btn-sm btn-outline-dark" data-bs-toggle="modal"
+                                    data-bs-target="#reopenProjectModal">
+                                    <i class="bi bi-arrow-counterclockwise me-1" aria-hidden="true"></i>
+                                    Reopen Project
+                                </button>
+                            @endif
+                        </div>
                     </div>
                 </div>
             </div>
@@ -553,6 +726,33 @@
                     on {{ \App\Support\BusinessTime::format($project->client_confirmed_at) }}
                 @endif
                 . A completed project is a historical record and cannot be reopened.
+
+                {{-- A confirmation with no click behind it rests on somebody's
+                     word, so the word is shown with it: how it arrived, who
+                     wrote it down, and what they said. Without this the entry
+                     above would be a claim the page cannot support. --}}
+                @if ($project->wasConfirmedByAdministrator())
+                    <div class="mt-2 pt-2 border-top small">
+                        <div>
+                            <span class="text-muted">Received:</span>
+                            {{ $project->clientConfirmationChannelLabel() ?? 'Not recorded' }}
+                            @if ($project->clientConfirmationRecordedByUser)
+                                &middot;
+                                <span class="text-muted">Recorded by:</span>
+                                {{ $project->clientConfirmationRecordedByUser->fullName() }}
+                            @endif
+                            @if ($project->client_confirmation_recorded_at)
+                                on {{ \App\Support\BusinessTime::format($project->client_confirmation_recorded_at) }}
+                            @endif
+                        </div>
+                        @if (filled($project->client_confirmation_note))
+                            <div class="mt-1">
+                                <span class="text-muted">Reason:</span>
+                                {{ $project->client_confirmation_note }}
+                            </div>
+                        @endif
+                    </div>
+                @endif
             </div>
         @endif
 
@@ -592,107 +792,27 @@
                     </div>
                 </div>
             </div>
-
-            @if ($canComplete)
-            {{-- Same fields as the Projects page completion modal, so both
-                 routes into completion collect identical information. --}}
-            <div class="modal fade" id="completeProjectModal" tabindex="-1"
-                aria-labelledby="completeProjectModalLabel" aria-hidden="true">
-                <div class="modal-dialog modal-lg">
-                    <div class="modal-content">
-                        <form method="POST"
-                            action="{{ route('super-admin.projects.complete', $project->project_id) }}"
-                            enctype="multipart/form-data">
-                            @csrf
-
-                            <div class="modal-header bg-success text-white">
-                                <h5 class="modal-title" id="completeProjectModalLabel">
-                                    <i class="bi bi-check-circle me-2"></i>
-                                    Complete Project &mdash; {{ $project->reference_no }}
-                                </h5>
-                                <button type="button" class="btn-close btn-close-white"
-                                    data-bs-dismiss="modal"></button>
-                            </div>
-
-                            <div class="modal-body">
-                                <p class="mb-3">
-                                    Mark <strong>{{ $project->reference_no }}</strong> as completed?
-                                </p>
-
-                                {{-- What the completion rules object to. A lead technician is
-                                     refused outright; an administrator may go ahead, but the
-                                     reason is written onto the project and into the activity
-                                     log, so the decision is never a silent one. --}}
-                                @if (! empty($completionBlockers))
-                                    <div class="alert alert-warning" role="alert">
-                                        <p class="fw-semibold mb-2">
-                                            <i class="bi bi-exclamation-triangle me-1"></i>
-                                            This project is not ready to be completed
-                                        </p>
-                                        <ul class="mb-2 ps-3">
-                                            @foreach ($completionBlockers as $blocker)
-                                                <li>{{ $blocker }}</li>
-                                            @endforeach
-                                        </ul>
-                                        <label class="form-label fw-semibold mb-1" for="completionOverrideReason">
-                                            Reason for completing it anyway
-                                        </label>
-                                        <textarea class="form-control" id="completionOverrideReason"
-                                            name="completion_override_reason" rows="2" minlength="10" maxlength="500"
-                                            required
-                                            placeholder="Why is this being completed with the above outstanding?"></textarea>
-                                    </div>
-                                @endif
-
-                                <div class="mb-3">
-                                    <label class="form-label fw-semibold">Completion Date</label>
-                                    <input type="date" class="form-control" name="completion_date"
-                                        value="{{ \App\Support\BusinessTime::today()->format('Y-m-d') }}"
-                                        max="{{ \App\Support\BusinessTime::today()->format('Y-m-d') }}" required>
-                                </div>
-
-                                <div class="mb-3">
-                                    <label class="form-label fw-semibold">Completion Summary</label>
-                                    <textarea class="form-control" name="completion_summary" rows="3"
-                                        placeholder="Summarize the work that was completed..." required></textarea>
-                                </div>
-
-                                <div class="mb-3">
-                                    <label class="form-label fw-semibold">Completion Remarks</label>
-                                    <textarea class="form-control" name="completion_remarks" rows="2"
-                                        placeholder="Any additional remarks (optional)"></textarea>
-                                </div>
-
-                                <div class="mb-1">
-                                    <label class="form-label fw-semibold">Upload Completion Photos</label>
-                                    <input type="file" class="form-control" name="completion_photos[]"
-                                        accept=".jpg,.jpeg,.png" multiple>
-                                    <div class="form-text">JPG, JPEG, or PNG. You can select multiple photos.</div>
-                                </div>
-                            </div>
-
-                            <div class="modal-footer">
-                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                                <button type="submit" class="btn btn-success">
-                                    <i class="bi bi-check-lg me-1"></i>
-                                    Confirm Completion
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            </div>
-            @endif
         @endif
 
         <!-- Project Information -->
         <div class="card shadow-sm mb-4">
             <div class="card-body">
+                @php
+                    // Whose project this is, said in the words that identify
+                    // it: the company on commercial work, the person on
+                    // residential. One rule for both portals - see
+                    // Client::primaryName() - so the same project never reads
+                    // one way here and another way in the technician portal.
+                    // Both values stay on screen; only which of them leads
+                    // changes.
+                    $headlineClient = $project->clients->first();
+                @endphp
+
                 <div class="d-flex justify-content-between">
                     <div>
                         <div class="d-flex align-items-center mb-2">
-                            <h2 class="fw-bold mb-0">
-                                {{ $project->clients->first()?->fullname ?? 'N/A' }}
+                            <h2 class="fw-bold mb-0" data-project-client-name>
+                                {{ $headlineClient?->primaryName() ?? 'N/A' }}
                             </h2>
 
                             @unless ($isReadOnly)
@@ -702,6 +822,22 @@
                                 </button>
                             @endunless
                         </div>
+
+                        @if ($headlineClient?->secondaryName())
+                            {{-- The other half of the pair, directly under the
+                                 heading and labelled for what it is: a bare
+                                 second name under a company reads as a second
+                                 client. --}}
+                            <div class="project-client-secondary mb-2">
+                                <span class="project-client-secondary-name">
+                                    {{ $headlineClient->secondaryName() }}
+                                </span>
+                                <span class="project-client-secondary-label">
+                                    {{ $headlineClient->secondaryLabel() }}
+                                </span>
+                            </div>
+                        @endif
+
                         <span class="fw-bold me-4 mb-3 project-reference">
                             {{ $project->reference_no }}
                         </span>
@@ -727,18 +863,17 @@
                             };
                         @endphp
 
+                        {{-- The "Company: ..." line that used to sit here is
+                             gone: the company is the heading now on commercial
+                             work, and the secondary line carries it on
+                             residential work that has one. Saying it a third
+                             time in smaller text was the page repeating
+                             itself. --}}
                         <div class="text-muted">
                             <span>
                                 <i class="{{ $clientTypeClass }}"></i>
                                 {{ $client?->client_type ?? 'N/A' }}
                             </span>
-
-                            @if (strtolower($client?->client_type ?? '') === 'commercial')
-                                <span class="ms-3">
-                                    Company:
-                                    {{ $project->clients->first()?->company_name ?? 'N/A' }}
-                                </span>
-                            @endif
                         </div>
 
                         <div class="text-muted mb-3">
@@ -1087,6 +1222,36 @@
                                 {{ \App\Support\BusinessTime::format($assignedRegisteredUser->created_at, \App\Support\BusinessTime::DATE, 'N/A') }}
                                 &middot; This project appears on their My Projects page.
                             </div>
+
+                            {{-- The two addresses differ, which is allowed and is
+                                 often correct: a job booked to a company mailbox and
+                                 followed by a person is an ordinary arrangement. What
+                                 is not acceptable is an administrator not knowing,
+                                 so it is stated - as information, not as an error.
+
+                                 Both addresses receive this project's messages (see
+                                 ProjectEmails::recipients), so this is not a warning
+                                 that anybody is being missed. The button is here for
+                                 the other case: the project's address is simply
+                                 wrong, and the account's is the right one. --}}
+                            @if ($accountEmailDiffers)
+                                <div class="alert alert-info border-0 mt-3 mb-0 py-2 px-3 small" role="status">
+                                    <div class="d-flex flex-wrap align-items-center gap-2">
+                                        <div class="flex-grow-1">
+                                            This registered user's email doesn't match the project's.
+                                            Change the project's email to this one?
+                                        </div>
+
+                                        @if ($canManageRegisteredUser)
+                                            <button type="button" class="btn btn-sm btn-outline-primary"
+                                                data-bs-toggle="modal" data-bs-target="#useAccountEmailModal">
+                                                <i class="bi bi-envelope-check me-1" aria-hidden="true"></i>
+                                                Use account email
+                                            </button>
+                                        @endif
+                                    </div>
+                                </div>
+                            @endif
 
                         </div>
 
@@ -1593,7 +1758,7 @@
                                 <tbody>
 
                                     @foreach ($tasks as $task)
-                                        <tr data-status="{{ $task->status }}">
+                                        <tr data-status="{{ $task->derivedStatus() }}">
 
                                             <td>
                                                 <div class="fw-semibold">
@@ -1629,27 +1794,17 @@
                                             </td>
 
                                             <td>
-                                                @switch($task->status)
-                                                    @case('unassigned')
-                                                        <span class="badge bg-warning text-dark">Unassigned</span>
-                                                    @break
-
-                                                    @case('pending')
-                                                        <span class="badge bg-secondary">Pending</span>
-                                                    @break
-
-                                                    @case('ongoing')
-                                                        <span class="badge bg-primary">Ongoing</span>
-                                                    @break
-
-                                                    @case('completed')
-                                                        <span class="badge bg-success">Completed</span>
-                                                    @break
-
-                                                    @case('cancelled')
-                                                        <span class="badge bg-danger">Cancelled</span>
-                                                    @break
-                                                @endswitch
+                                                {{-- Asked of the task rather than
+                                                     switched on its status column.
+                                                     This table used to read the column
+                                                     directly, which is how a task whose
+                                                     due date went by last month still
+                                                     said "Pending" here while the Tasks
+                                                     board called the same task Overdue.
+                                                     See TaskStatus. --}}
+                                                <span class="badge {{ $task->statusBadgeClass() }}">
+                                                    {{ $task->statusLabel() }}
+                                                </span>
                                             </td>
 
                                             <td class="text-start">
@@ -1954,14 +2109,23 @@
                                 Quotation
                             </label>
 
-                            <div class="input-group">
+                            {{-- Grouped as it is typed, exactly as the create
+                                 wizard groups it - see moneyInput.js. The
+                                 visible field carries the commas; the hidden
+                                 one carries the raw number and the name, so
+                                 `numeric` validation is handed what it has
+                                 always been handed. --}}
+                            <div class="input-group" data-money-field>
 
                                 <span class="input-group-text">
                                     ₱
                                 </span>
 
-                                <input type="number" class="form-control" name="quotation"
-                                    value="{{ $project->quotation }}">
+                                <input type="text" class="form-control" inputmode="decimal"
+                                    autocomplete="off" value="{{ $project->quotation }}" data-money-input>
+
+                                <input type="hidden" name="quotation" value="{{ $project->quotation }}"
+                                    data-money-value>
 
                             </div>
 
@@ -2233,22 +2397,51 @@
                                 project's own client details are not changed by this.
                             </p>
 
-                            <label for="registeredUserSelect" class="form-label fw-bold">
-                                Registered User <span class="text-danger">*</span>
-                            </label>
+                            {{-- Searched rather than chosen from a list, for the
+                                 reason the Export Logs dialog is: every Registered
+                                 User in the system can appear here, and that is a
+                                 list nobody scrolls. Typed into instead, with the
+                                 matches dropping down beneath - the same control,
+                                 the same classes, the same stylesheet.
 
-                            <select class="form-select" id="registeredUserSelect" name="registered_user_id" required>
-                                <option value="" disabled {{ $assignedRegisteredUser ? '' : 'selected' }}>
-                                    Select a Registered User
-                                </option>
+                                 Unlike that one, a choice here is required: this
+                                 dialog exists to set the account, so an empty box
+                                 is not a meaningful answer and the submit button
+                                 stays disabled until somebody has picked. --}}
+                            <div class="config-actor-search" data-account-picker="registeredUserOptions">
+                                <label for="registeredUserSearch" class="form-label fw-bold">
+                                    Registered User <span class="text-danger">*</span>
+                                </label>
 
-                                @foreach ($registeredUserOptions as $candidate)
-                                    <option value="{{ $candidate->id }}"
-                                        {{ $assignedRegisteredUser && $assignedRegisteredUser->id === $candidate->id ? 'selected' : '' }}>
-                                        {{ $candidate->fullName() }} &mdash; {{ $candidate->email }}@unless ($candidate->isActive()) (Deactivated) @endunless
-                                    </option>
-                                @endforeach
-                            </select>
+                                <div class="input-group">
+                                    <span class="input-group-text">
+                                        <i class="bi bi-search" aria-hidden="true"></i>
+                                    </span>
+
+                                    <input type="text" class="form-control" id="registeredUserSearch"
+                                        placeholder="Search by name, email or account code"
+                                        autocomplete="off" role="combobox" aria-expanded="false"
+                                        aria-controls="registeredUserResults"
+                                        value="{{ $assignedRegisteredUser ? $assignedRegisteredUser->fullName().' — '.$assignedRegisteredUser->email : '' }}"
+                                        @disabled($registeredUserOptions->isEmpty())
+                                        data-picker-search>
+
+                                    <button type="button"
+                                        class="btn btn-outline-secondary {{ $assignedRegisteredUser ? '' : 'd-none' }}"
+                                        aria-label="Clear the chosen Registered User" data-picker-clear>
+                                        <i class="bi bi-x-lg" aria-hidden="true"></i>
+                                    </button>
+                                </div>
+
+                                {{-- What is actually submitted. Typing alone never
+                                     sets it: only picking somebody does, so a
+                                     half-typed name cannot be saved as a choice. --}}
+                                <input type="hidden" name="registered_user_id"
+                                    value="{{ $assignedRegisteredUser?->id }}" data-picker-id>
+
+                                <ul class="config-actor-results d-none" id="registeredUserResults" role="listbox"
+                                    data-picker-results></ul>
+                            </div>
 
                             @if ($registeredUserOptions->isEmpty())
                                 <div class="form-text text-danger">
@@ -2262,7 +2455,9 @@
                         <div class="modal-footer">
                             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
 
-                            <button type="submit" class="btn btn-primary" @disabled($registeredUserOptions->isEmpty())>
+                            <button type="submit" class="btn btn-primary"
+                                @disabled($registeredUserOptions->isEmpty() || ! $assignedRegisteredUser)
+                                data-picker-submit>
                                 <i class="bi bi-check-lg me-1" aria-hidden="true"></i>
                                 Save Registered User
                             </button>
@@ -2326,6 +2521,167 @@
             </div>
             <!-- END OF REMOVE REGISTERED USER MODAL -->
         @endif
+
+        @if ($accountEmailDiffers)
+            <!-- USE ACCOUNT EMAIL MODAL -->
+            {{-- Confirmed rather than done on the click, because it overwrites a
+                 field somebody typed on purpose. What it will and will not touch
+                 is spelled out here: this is the one place in the system where an
+                 account's details are copied onto a project, and the thing people
+                 will fear is that it works the other way too. --}}
+            <div class="modal fade" id="useAccountEmailModal" tabindex="-1"
+                aria-labelledby="useAccountEmailModalLabel" aria-hidden="true">
+
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content">
+
+                        <div class="modal-header">
+                            <h5 class="modal-title" id="useAccountEmailModalLabel">
+                                Use the account's email for this project?
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"
+                                aria-label="Close"></button>
+                        </div>
+
+                        <div class="modal-body">
+                            <p class="mb-3">
+                                This project's contact email changes from
+                                <strong>{{ $project->clients->first()?->email_address }}</strong>
+                                to <strong>{{ $assignedRegisteredUser->email }}</strong>.
+                            </p>
+
+                            <p class="mb-0">
+                                <strong>Only the project changes.</strong>
+                                {{ $assignedRegisteredUser->fullName() }}'s account keeps the address it
+                                signs in with - nothing here can change an account's email or its
+                                password, and the client changes their own address from their profile.
+                            </p>
+                        </div>
+
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+
+                            <form action="{{ route('super-admin.projects.contact-email.account', $project->project_id) }}"
+                                method="POST">
+                                @csrf
+                                @method('PUT')
+
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="bi bi-envelope-check me-1" aria-hidden="true"></i>
+                                    Use account email
+                                </button>
+                            </form>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+            <!-- END OF USE ACCOUNT EMAIL MODAL -->
+        @endif
+    @endif
+
+    @if ($canRecordClientConfirmation)
+        <!-- RECORD CLIENT CONFIRMATION MODAL -->
+        {{-- The client already said the work is finished; this writes down that
+             they did. Three fields and all three required, because a confirmation
+             with no click behind it is only as good as the account of it: how it
+             arrived, when, and from whom.
+
+             Who recorded it is not a field. It is taken from the session - see
+             ProjectController::recordClientConfirmation() - so nobody can file a
+             confirmation under somebody else's name. --}}
+        <div class="modal fade" id="recordClientConfirmationModal" tabindex="-1"
+            aria-labelledby="recordClientConfirmationModalLabel" aria-hidden="true">
+
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <form method="POST"
+                        action="{{ route('super-admin.projects.client-confirmation', $project->project_id) }}">
+                        @csrf
+
+                        <div class="modal-header bg-success text-white">
+                            <h5 class="modal-title" id="recordClientConfirmationModalLabel">
+                                <i class="bi bi-clipboard-check me-2" aria-hidden="true"></i>
+                                Record Client Confirmation &mdash; {{ $project->reference_no }}
+                            </h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
+                                aria-label="Close"></button>
+                        </div>
+
+                        <div class="modal-body">
+
+                            <p class="mb-3">
+                                Use this when the client has already confirmed that the work is finished,
+                                but did so somewhere other than the website. This completes
+                                <strong>{{ $project->reference_no }}</strong> straight away rather than
+                                waiting out the remaining
+                                {{ \App\Models\Project::completionConfirmationDays() }}-day window.
+                            </p>
+
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold" for="clientConfirmationChannel">
+                                    Confirmation Method <span class="text-danger">*</span>
+                                </label>
+                                <select class="form-select" id="clientConfirmationChannel"
+                                    name="client_confirmation_channel" required>
+                                    <option value="" selected disabled>How did the client confirm?</option>
+                                    @foreach (\App\Models\Project::CLIENT_CONFIRMATION_CHANNELS as $value => $label)
+                                        <option value="{{ $value }}"
+                                            @selected(old('client_confirmation_channel') === $value)>
+                                            {{ $label }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold" for="clientConfirmationDate">
+                                    Confirmation Date <span class="text-danger">*</span>
+                                </label>
+                                {{-- Bounded the way the completion date is: not in the
+                                     future, and not before the client was asked. A
+                                     client cannot have agreed to something nobody had
+                                     told them about yet. --}}
+                                <input type="date" class="form-control" id="clientConfirmationDate"
+                                    name="client_confirmation_date"
+                                    value="{{ old('client_confirmation_date', \App\Support\BusinessTime::today()->format('Y-m-d')) }}"
+                                    @if ($project->completion_requested_at)
+                                        min="{{ $project->completion_requested_at->format('Y-m-d') }}"
+                                    @endif
+                                    max="{{ \App\Support\BusinessTime::today()->format('Y-m-d') }}" required>
+                                <div class="form-text">
+                                    The day the client confirmed, which may be before today.
+                                </div>
+                            </div>
+
+                            <div class="mb-1">
+                                <label class="form-label fw-semibold" for="clientConfirmationNote">
+                                    Reason / Notes <span class="text-danger">*</span>
+                                </label>
+                                <textarea class="form-control" id="clientConfirmationNote"
+                                    name="client_confirmation_note" rows="3" minlength="10" maxlength="500" required
+                                    placeholder="e.g. Client confirmed completion by call to Ana Mendoza.">{{ old('client_confirmation_note') }}</textarea>
+                                <div class="form-text">
+                                    Say who received the confirmation and from whom. This is kept with the
+                                    project and in the activity log.
+                                </div>
+                            </div>
+
+                        </div>
+
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                            <button type="submit" class="btn btn-success">
+                                <i class="bi bi-check-lg me-1" aria-hidden="true"></i>
+                                Record Confirmation
+                            </button>
+                        </div>
+
+                    </form>
+                </div>
+            </div>
+        </div>
+        <!-- END OF RECORD CLIENT CONFIRMATION MODAL -->
     @endif
 
     <x-import-team-modal />
@@ -2684,7 +3040,17 @@
         {{-- The Schedule Conflict dialog a refused Resume opens. --}}
         <script src="/js/super-admin/scheduleRecovery.js"></script>
         <script src="/js/imagePreview.js"></script>
+        {{-- Thousands separators on the quotation, shared with the create wizard. --}}
+        <script src="/js/moneyInput.js"></script>
         <script src="/js/importTeam.js"></script>
+        {{-- Every account the picker may offer, already narrowed by
+             ProjectRegisteredUser::candidates(). Deactivated accounts are
+             included on purpose - one switched off today may be switched back
+             on, and the label says which they are. --}}
+        <script>
+            window.registeredUserOptions = @json($registeredUserPickerOptions);
+        </script>
+        <script src="/js/accountPicker.js"></script>
         <script src="/js/super-admin/projectDetails.js"></script>
         <script src="/js/super-admin/projectHistory.js"></script>
         <script>

@@ -347,6 +347,17 @@ a.dash-stat:hover {
     color: var(--dash-blue-dark);
 }
 
+/* The qualifier under an entry whose count needs one - "5 tasks need a
+   technician or date". Lighter and unbolded, so the heading still reads as
+   the heading. */
+.dash-urgent-detail {
+    display: block;
+    margin-top: .1rem;
+    font-size: .8rem;
+    font-weight: 400;
+    color: #6b7a90;
+}
+
 .dash-urgent-view {
     flex: 0 0 auto;
     font-size: .85rem;

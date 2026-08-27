@@ -313,6 +313,15 @@
     color: #fff;
 }
 
+/* Work that landed, but after its deadline. Green would say it went fine and
+   red would say it is still outstanding; this is a completion that cost time,
+   so it is drawn as the amber-edged green it deserves - readable as "done"
+   at a glance, distinguishable from on-time on a second's look. */
+.badge-finished-late {
+    background-color: #7a6410;
+    color: #fff;
+}
+
 /* Overdue warning banner on the project details page. */
 .overdue-banner {
     border-left: 4px solid #c9302c !important;

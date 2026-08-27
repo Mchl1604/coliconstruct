@@ -19,6 +19,7 @@ use App\Services\ActivityLogger;
 use App\Services\NotificationService;
 use App\Services\ProjectCompletion;
 use App\Services\ProjectEmails;
+use App\Services\TaskAssignmentGaps;
 use App\Services\TaskAssignmentRules;
 use App\Services\TaskScheduleRules;
 use App\Services\TechnicianTaskLoad;
@@ -304,9 +305,54 @@ class TechnicianPortalController extends Controller
             $project->project_id => $this->projectPolicy->manageTasks($user, $project),
         ]);
 
+        // Work on this board that cannot proceed: nobody holds it, it has no
+        // dates, or neither.
+        //
+        // A lead has no dashboard of their own and is not getting one for
+        // this, so the alert lives at the top of the page they already run the
+        // board from. The scope handed over is deliberately theirs and not the
+        // whole board - visibleTo() plus the projects they are actually on -
+        // so a lead is never told about a stuck task on somebody else's job.
+        // What counts as stuck is not theirs to decide: that is
+        // Task::scopeNeedsAssignment(), the same rule the Super Admin
+        // dashboard counts by.
+        //
+        // Offered to leads only. A plain technician's board is their own work,
+        // an unheld task is never on it, and they may not assign anybody - so
+        // for them this would be an alert about nothing they can reach.
+        $attentionSummary = ['total' => 0, 'counts' => [], 'lines' => []];
+        $attentionReadOnly = null;
+
+        if ($user->isLeadTechnician()) {
+            $mine = fn (): Builder => Task::query()
+                ->visibleTo($user)
+                ->whereIn('project_id', $projects->pluck('project_id'));
+
+            $attentionSummary = app(TaskAssignmentGaps::class)->summarise($mine());
+
+            // Which projects the stuck tasks are actually on, so the note
+            // below is about this backlog rather than about the page.
+            $affected = $mine()->needsAssignment()->distinct()->pluck('project_id');
+
+            // A lead only runs the board on a live, scheduled project of their
+            // own (see ProjectPolicy::manageTasks). Where they cannot, the row
+            // opens read-only - the task dialog is handed no technician list
+            // and no form action - so the alert says who to ask rather than
+            // implying a control that is not there.
+            $canResolveAny = $affected->contains(
+                fn ($projectId): bool => (bool) ($manageable[$projectId] ?? false)
+            );
+
+            if ($attentionSummary['total'] > 0 && ! $canResolveAny) {
+                $attentionReadOnly = 'These tasks are on projects you cannot edit, so an administrator will need to fill in what is missing.';
+            }
+        }
+
         return view('technician.tasks', [
             'projects' => $projects,
             'tasksByProject' => $tasks,
+            'attentionSummary' => $attentionSummary,
+            'attentionReadOnly' => $attentionReadOnly,
             'techniciansByProject' => $techniciansByProject,
             'rangesByProject' => $rangesByProject,
             'technicianActiveTaskCounts' => $technicianActiveTaskCounts,
@@ -1227,9 +1273,9 @@ class TechnicianPortalController extends Controller
             'description' => $task->task_description,
             'technician_id' => $task->technician_id,
             'technician' => $task->technician?->name ?? 'Unassigned',
-            'status' => $task->status,
-            'status_label' => $task->statusLabel(),
-            'status_badge_class' => $task->statusBadgeClass(),
+            // status, status_key, status_label and status_badge_class, all
+            // from the one derivation - see TaskStatus.
+            ...$task->statusPayload(),
             'start_date' => $task->start_date ? CarbonImmutable::parse($task->start_date)->toDateString() : null,
             'due_date' => $task->due_date ? CarbonImmutable::parse($task->due_date)->toDateString() : null,
             'start_date_label' => $task->start_date ? CarbonImmutable::parse($task->start_date)->format(BusinessTime::DATE) : '—',
@@ -1239,7 +1285,13 @@ class TechnicianPortalController extends Controller
             // the policy rather than re-deriving the rule.
             'can_complete' => request()->user()?->can('complete', $task) ?? false,
             'completion_notes' => $task->completion_notes,
-            'completed_at_label' => $task->completed_at?->format(BusinessTime::DATE),
+            // Through BusinessTime, not formatted off the stored instant: the
+            // column is UTC, so a task closed at 7 AM in Manila is stored on
+            // the previous UTC day and printed as the wrong date. The task
+            // modal has always read it this way; this payload had not.
+            'completed_at_label' => $task->completed_at
+                ? BusinessTime::format($task->completed_at)
+                : null,
             'closed_on_behalf' => $task->wasClosedOnBehalf(),
             'completed_by' => $task->completedBy?->fullName(),
             'images' => $task->relationLoaded('images')

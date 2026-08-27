@@ -83,8 +83,14 @@
                                     $canComplete = $task->isOpen()
                                         && $task->status !== 'unassigned'
                                         && ($canManage || $isMine);
+                                    // What, if anything, is stopping this task
+                                    // proceeding. One rule decides it - see
+                                    // Task::assignmentGap() - and the attention
+                                    // chips above the board filter on this
+                                    // attribute.
+                                    $gap = $task->assignmentGap();
                                 @endphp
-                                <tr>
+                                <tr @if ($gap) data-task-gap="{{ $gap }}" @endif>
                                     <td>
                                         <div class="fw-semibold">{{ $task->task_title }}</div>
                                         <small class="text-muted">
@@ -118,6 +124,21 @@
                                         <span class="badge {{ $task->statusBadgeClass() }}">
                                             {{ $task->statusLabel() }}
                                         </span>
+
+                                        {{-- What is actually missing, said in
+                                             as many words. The status badge
+                                             alone cannot: a task with an owner
+                                             and no due date reads "Pending",
+                                             and one with dates and no owner
+                                             reads "Unassigned" whether or not
+                                             the dates are the problem. --}}
+                                        @if ($gap)
+                                            <span class="badge task-gap-badge gap-{{ $gap }} mt-1 d-block">
+                                                <i class="bi bi-exclamation-triangle-fill me-1"
+                                                    aria-hidden="true"></i>
+                                                {{ $task->assignmentGapLabel() }}
+                                            </span>
+                                        @endif
                                     </td>
                                     <td class="text-center">
                                         <div class="d-flex justify-content-center gap-2">

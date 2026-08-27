@@ -69,6 +69,38 @@ class Project extends Model
     public const METHOD_AUTO_COMPLETED = 'auto_completed';
 
     /**
+     * The client confirmed, but not on the website.
+     *
+     * A third way of reaching Completed and a genuinely different fact from
+     * the other two: the client did agree - by telephone, in person, on paper -
+     * and an administrator wrote it down. Recording it as METHOD_CLIENT_CONFIRMED
+     * would claim they pressed a button they never saw, and leaving it to
+     * METHOD_AUTO_COMPLETED would claim nobody ever answered. Neither is true,
+     * so this says what happened.
+     */
+    public const METHOD_ADMIN_CONFIRMED = 'admin_confirmed';
+
+    /**
+     * The channels a client's off-site confirmation can arrive through, and
+     * how each reads once it is recorded.
+     *
+     * A short closed list rather than free text: "how did they confirm?" is a
+     * question an auditor filters on, and a hundred spellings of "phone" is
+     * not a filterable answer. Three, because there are three ways a client
+     * actually reaches the office - they write, they ring, or they are stood
+     * in front of somebody - and a longer list would only be guessed at. The
+     * note beside the channel is required whichever is chosen, so the detail
+     * that does not fit in one word always has somewhere to go.
+     *
+     * @var array<string, string>
+     */
+    public const CLIENT_CONFIRMATION_CHANNELS = [
+        'message' => 'Message',
+        'call' => 'Call',
+        'in_person' => 'In person',
+    ];
+
+    /**
      * Statuses that count as "locked" / view-only records.
      *
      * Awaiting Client Confirmation is one of them, and that single line is
@@ -237,6 +269,10 @@ class Project extends Model
         'client_confirmed_at',
         'client_confirmed_by',
         'completion_method',
+        'client_confirmation_channel',
+        'client_confirmation_note',
+        'client_confirmation_recorded_by',
+        'client_confirmation_recorded_at',
         'completion_override_reason',
         'completion_override_blockers',
         'completion_overridden_by',
@@ -259,6 +295,7 @@ class Project extends Model
         'completion_requested_at' => 'datetime',
         'completion_reminder_sent_at' => 'datetime',
         'client_confirmed_at' => 'datetime',
+        'client_confirmation_recorded_at' => 'datetime',
         'completion_override_blockers' => 'array',
         'reopened_at' => 'datetime',
         'cancelled_at' => 'datetime',
@@ -334,9 +371,9 @@ class Project extends Model
      * last week is still listed against the days they were actually here, and
      * one who joined yesterday is not listed against last month.
      *
-     * @return \Illuminate\Support\Collection<int, ProjectTechnician>
+     * @return Collection<int, ProjectTechnician>
      */
-    public function crewOn(string $date): \Illuminate\Support\Collection
+    public function crewOn(string $date): Collection
     {
         $this->loadMissing('teamHistory.technician.account');
 
@@ -408,10 +445,26 @@ class Project extends Model
      * The client account that confirmed. Null when the seven days ran out and
      * the system closed the project instead - which is exactly the case
      * completion_method is there to distinguish.
+     *
+     * Also null on a confirmation an administrator recorded on the client's
+     * behalf, and deliberately so: the client who confirmed by telephone may
+     * have no account at all, and filling this with the administrator would
+     * make the column say something it does not mean. Who wrote it down is
+     * clientConfirmationRecordedByUser().
      */
     public function clientConfirmedByUser(): BelongsTo
     {
         return $this->belongsTo(User::class, 'client_confirmed_by', 'id');
+    }
+
+    /**
+     * The administrator who recorded a confirmation that reached the company
+     * some other way. Null on every confirmation made through the website and
+     * on every project the system completed itself.
+     */
+    public function clientConfirmationRecordedByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'client_confirmation_recorded_by', 'id');
     }
 
     public function reopenedByUser(): BelongsTo
@@ -854,8 +907,29 @@ class Project extends Model
                 'Completed automatically after %d days without a reply',
                 self::completionConfirmationDays()
             ),
+            self::METHOD_ADMIN_CONFIRMED => 'Confirmed by an administrator on behalf of the client',
             default => null,
         };
+    }
+
+    /**
+     * "Phone", "In person" - how an off-site confirmation reached the company.
+     *
+     * Null on every other project, so a caller can print it beside the method
+     * label without asking which method this was.
+     */
+    public function clientConfirmationChannelLabel(): ?string
+    {
+        return self::CLIENT_CONFIRMATION_CHANNELS[$this->client_confirmation_channel] ?? null;
+    }
+
+    /**
+     * Whether an administrator recorded this project's confirmation rather
+     * than the client making it themselves.
+     */
+    public function wasConfirmedByAdministrator(): bool
+    {
+        return $this->completion_method === self::METHOD_ADMIN_CONFIRMED;
     }
 
     public function isCancelled(): bool
@@ -999,6 +1073,83 @@ class Project extends Model
             ->whereDoesntHave('schedules', function (Builder $scheduleQuery): void {
                 $scheduleQuery->whereDate('end_datetime', '>=', Schedule::businessToday()->toDateString());
             });
+    }
+
+    /**
+     * There is a crew on this job today.
+     *
+     * THE rule, for every portal's projects table and for the dashboard's
+     * Active Today figure. A project is active today when the office's current
+     * date falls inside at least ONE of its booked ranges - every range is
+     * consulted, not the first or the latest, because a job booked Aug 24-26
+     * and again Sep 6-8 is happening on Sep 7 and is not happening on Aug 27.
+     *
+     * Deliberately not read off the status column. Status says what stage the
+     * work is at, not whether anybody is on site this morning: an Ongoing
+     * project between two booked ranges is not active today, and a Pending one
+     * whose first range opens this morning is. What status IS used for is
+     * exclusion, through the same rule the rest of the system applies -
+     * archived, finished and paused work is not happening today whatever dates
+     * it still holds. Those dates are the record of days already worked.
+     *
+     * A display state only: nothing is written, so a project starts and stops
+     * being highlighted as the date rolls over, with nothing to migrate.
+     *
+     * Reads the loaded schedules rather than querying, so a table eager-loads
+     * `schedules` once and asks every row - the same way isOverdue() is used.
+     */
+    public function isActiveToday(): bool
+    {
+        if (! $this->isEligibleToBeActive()) {
+            return false;
+        }
+
+        $today = Schedule::businessToday();
+
+        return $this->schedules->contains(
+            fn (Schedule $schedule): bool => $schedule->startsOn()->lte($today)
+                && $schedule->endsOn()->gte($today)
+        );
+    }
+
+    /**
+     * The same question in SQL, for counts and lists.
+     *
+     * Kept beside isActiveToday() and asking the same three things in the same
+     * order, so a figure and the rows behind it can never disagree.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeActiveToday(Builder $query): Builder
+    {
+        $today = Schedule::businessToday()->toDateString();
+
+        return $query
+            ->where('is_archived', false)
+            ->whereNotIn('status', self::READ_ONLY_STATUSES)
+            ->where(fn (Builder $paused) => $paused->where('on_hold', false)->orWhereNull('on_hold'))
+            // whereHas, not a join: one range covering today is enough, and a
+            // project with two of them is still one job happening.
+            ->whereHas('schedules', fn (Builder $schedules) => $schedules
+                ->whereDate('start_datetime', '<=', $today)
+                ->whereDate('end_datetime', '>=', $today));
+    }
+
+    /**
+     * Whether this project is the kind of work that can be happening at all.
+     *
+     * Archived work is out of the way, finished and cancelled work is a
+     * record - including work sitting with the client for confirmation, whose
+     * dates are the days the crew already worked - and a paused project holds
+     * nobody by definition. The row-level half of scopeActiveToday()'s first
+     * three conditions.
+     */
+    private function isEligibleToBeActive(): bool
+    {
+        return ! $this->isArchived()
+            && ! $this->isReadOnly()
+            && ! $this->on_hold;
     }
 
     /**

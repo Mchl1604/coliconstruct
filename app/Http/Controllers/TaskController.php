@@ -8,6 +8,7 @@ use App\Models\Task;
 use App\Models\TaskImage;
 use App\Services\ActivityLogger;
 use App\Services\NotificationService;
+use App\Services\TaskAssignmentGaps;
 use App\Services\TaskAssignmentRules;
 use App\Services\TaskScheduleRules;
 use App\Services\TechnicianTaskLoad;
@@ -75,6 +76,16 @@ class TaskController extends Controller
         $technicianActiveTaskCounts = app(TechnicianTaskLoad::class)
             ->forProjects($projects->pluck('project_id'));
 
+        // Tasks on this page that cannot proceed, summarised by what each one
+        // is missing. An administrator reads every board, so the scope handed
+        // over is the whole of it; the lead technician page passes its own
+        // narrower scope to the same service.
+        //
+        // Task::scopeNeedsAssignment() confines this to live, workable
+        // projects, which is exactly the set listed above - so the panel can
+        // never count a task the board does not show.
+        $attentionSummary = app(TaskAssignmentGaps::class)->summarise(Task::query());
+
         // Only projects that can actually receive new tasks are selectable in
         // the Add Task modal: completed, cancelled and archived are excluded.
         // An unscheduled project stays on the list and the form-data
@@ -93,7 +104,8 @@ class TaskController extends Controller
             'rangesByProject',
             'manageable',
             'schedulableProjects',
-            'technicianActiveTaskCounts'
+            'technicianActiveTaskCounts',
+            'attentionSummary'
         ));
     }
 

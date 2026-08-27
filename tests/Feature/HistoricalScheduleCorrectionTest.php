@@ -152,9 +152,14 @@ class HistoricalScheduleCorrectionTest extends TestCase
         array $ranges,
         bool $override = false,
         array $technicianIds = [],
-        bool $addTechnicians = false
+        bool $addTechnicians = false,
+        bool $confirmConflicts = false
     ) {
         $payload = ['ranges' => $ranges];
+
+        if ($confirmConflicts) {
+            $payload['historical_conflicts_confirmed'] = '1';
+        }
 
         if ($override) {
             $payload['override_past_lock'] = '1';
@@ -720,10 +725,17 @@ class HistoricalScheduleCorrectionTest extends TestCase
 
     /**
      * A day that has gone cannot be double-booked, so a correction is not
-     * refused because the technician's name is on another job that week - that
+     * REFUSED because the technician's name is on another job that week - that
      * is a fact about the past rather than a reason to leave the record wrong.
+     *
+     * It is now questioned, though, which is a different thing: the two records
+     * disagree about a day that has happened, and a Super Admin is the only one
+     * who can say which is right. So the save is held while the clash is put on
+     * screen, and the same submission goes through once it is confirmed - never
+     * refused, and never passed over silently. See
+     * HistoricalTechnicianConflictTest, which covers the behaviour in full.
      */
-    public function test_a_past_correction_is_not_blocked_by_other_work_that_week(): void
+    public function test_a_past_correction_is_questioned_rather_than_blocked_by_other_work_that_week(): void
     {
         $this->actingAsSuperAdmin();
 
@@ -734,11 +746,24 @@ class HistoricalScheduleCorrectionTest extends TestCase
 
         $project = $this->project([$shared]);
 
+        // First pass: the clash is raised, and it is not an error.
         $this->save(
             $project,
             [$this->range(null, -5, -3)],
             override: true,
             technicianIds: [$shared->technician_id]
+        )->assertSessionHasNoErrors();
+
+        $this->assertNotNull(session('historicalConflicts'));
+        $this->assertSame([], $this->rangesOf($project), 'Nothing is written while the question stands.');
+
+        // Second pass, confirmed: the correction goes through untouched.
+        $this->save(
+            $project,
+            [$this->range(null, -5, -3)],
+            override: true,
+            technicianIds: [$shared->technician_id],
+            confirmConflicts: true
         )->assertSessionHasNoErrors();
 
         $this->assertSame([['start' => $this->day(-5), 'end' => $this->day(-3)]], $this->rangesOf($project));
@@ -912,6 +937,64 @@ class HistoricalScheduleCorrectionTest extends TestCase
         $this->assertSame('Lead Technician', $member['role_label']);
         $this->assertSame('jose.garcia@example.test', $member['email']);
         $this->assertArrayHasKey('code', $member);
+    }
+
+    /**
+     * Every technician who could have been on site is reachable, not just the
+     * ones already on the project.
+     *
+     * The editor's search box is fed entirely from this payload, so anybody
+     * missing here is somebody a Super Admin simply cannot name - and the whole
+     * point of the step is recording who really worked a day, which is not
+     * always the crew the project carries now.
+     */
+    public function test_every_assignable_technician_is_offered_for_the_added_dates(): void
+    {
+        $this->actingAsSuperAdmin();
+
+        $jose = $this->leadTechnician('Jose Garcia');
+        $project = $this->project([$jose]);
+        $existing = $this->book($project, -6, -4);
+
+        // Nobody on this project, and deliberately last in the alphabet - the
+        // position that used to make somebody unreachable.
+        $stranger = $this->technician('zoe Winters');
+
+        $response = $this->postJson(
+            route('super-admin.schedules.historical-check', $project->project_id),
+            ['ranges' => [$this->range($existing, -8, -4)]]
+        )->assertOk();
+
+        $offered = array_merge(
+            array_column($response->json('members'), 'name'),
+            array_column($response->json('others'), 'name')
+        );
+
+        $this->assertContains('Jose Garcia', $offered);
+        $this->assertContains('zoe Winters', $offered, 'A technician off the project must still be reachable.');
+
+        // The search matches on role as well as name, so every candidate has to
+        // carry one - and a role shared by everybody is exactly why the editor
+        // ranks name matches above role matches. See renderHistoricalResults().
+        foreach ($response->json('others') as $candidate) {
+            $this->assertArrayHasKey('role_label', $candidate);
+            $this->assertNotEmpty($candidate['name']);
+        }
+
+        // An account that can no longer sign in is the one exclusion, and it is
+        // the same rule the rest of the app assigns work by.
+        $gone = $this->technician('Gone Away');
+        $gone->account->forceFill(['status' => User::STATUS_DEACTIVATED])->save();
+
+        $after = $this->postJson(
+            route('super-admin.schedules.historical-check', $project->project_id),
+            ['ranges' => [$this->range($existing, -8, -4)]]
+        )->assertOk();
+
+        $this->assertNotContains(
+            'Gone Away',
+            array_column($after->json('others'), 'name')
+        );
     }
 
     /**

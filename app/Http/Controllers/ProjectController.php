@@ -18,6 +18,7 @@ use App\Policies\ProjectPolicy;
 use App\Rules\NotAnEmployeeEmail;
 use App\Services\ActivityLogger;
 use App\Services\ClientProjects;
+use App\Services\CompletionConfirmability;
 use App\Services\ImportableTeamSources;
 use App\Services\NotificationService;
 use App\Services\ProjectCompletion;
@@ -65,7 +66,8 @@ class ProjectController extends Controller
         private readonly ProjectEmails $clientEmails,
         private readonly ProjectTeam $projectTeam,
         private readonly ScheduleHoldCutoff $holdCutoff,
-        private readonly ProjectRegisteredUser $registeredUsers
+        private readonly ProjectRegisteredUser $registeredUsers,
+        private readonly CompletionConfirmability $confirmability
     ) {}
 
     public function index(Request $request)
@@ -79,7 +81,10 @@ class ProjectController extends Controller
             // needsRecrew(), which reads each assigned technician's account to
             // decide whether they can still sign in. Without it that is two
             // queries per row on the busiest page in the portal.
-            ->with(['clients', 'documents', 'schedule', 'schedules', 'projectTypes', 'projectTechnicians.technician.account'])
+            // `clients.account` so the confirmability of a project awaiting its
+            // client is read off a loaded relation rather than queried per row
+            // - see CompletionConfirmability, which the awaiting rows below ask.
+            ->with(['clients.account', 'documents', 'schedule', 'schedules', 'projectTypes', 'projectTechnicians.technician.account'])
             // What the completion rules will object to, per project, as two
             // subqueries rather than two queries per row - see
             // ProjectPolicy::blockersFor(), which reads these when they are
@@ -113,7 +118,14 @@ class ProjectController extends Controller
             ])
             ->all();
 
-        return view('super-admin.projects', compact('projects', 'statusTabs', 'completionBlockers'));
+        // Whether anybody can confirm each project, for the two places the
+        // table needs it: the badge beside a project already waiting on its
+        // client, and the notice in the completion dialog of one about to be.
+        // Asked of every row rather than of the awaiting ones alone, because
+        // the dialog has to say so BEFORE the project starts waiting.
+        $confirmability = $this->confirmability->statesFor($projects);
+
+        return view('super-admin.projects', compact('projects', 'statusTabs', 'completionBlockers', 'confirmability'));
     }
 
     public function archivedIndex()
@@ -1034,10 +1046,157 @@ class ProjectController extends Controller
      */
     private function guardRegisteredUserManagement(Request $request): void
     {
+        $this->guardAdministratorAction($request);
+    }
+
+    /**
+     * The administrators' door, asked here as well as on the route.
+     *
+     * The route group already admits exactly these two roles. It is asked
+     * again because these endpoints decide things about a project that nobody
+     * else may decide - who follows it, what address it is reachable at, and
+     * whether its client has signed it off - and a permission that depends on
+     * a group declaration somewhere else is one refactor away from not being a
+     * permission at all.
+     */
+    private function guardAdministratorAction(Request $request): void
+    {
         abort_unless(
             in_array($request->user()?->role, User::ADMINISTRATOR_ROLES, true),
             403
         );
+    }
+
+    /**
+     * Record a confirmation the client gave off the website.
+     *
+     * Clients confirm by telephone, in person and on paper, and until this
+     * existed none of it could be written down: a project whose client had
+     * already said the work was finished still sat out the confirmation window
+     * as though nobody had answered, and the fact that they had answered was
+     * recorded nowhere at all.
+     *
+     * Nothing here is a second way of completing a project. The confirmation
+     * goes through ProjectCompletion::confirm() exactly as the client's own
+     * does, ends the project in the same state, and sends the same messages;
+     * what differs is only the recorded method, and the channel, note and
+     * administrator written beside it.
+     */
+    public function recordClientConfirmation(Request $request, int $id)
+    {
+        $this->guardAdministratorAction($request);
+
+        $project = Project::findOrFail($id);
+        $back = redirect()->route('super-admin.projects.show', $id);
+
+        // Re-read rather than trusted from the page, for the reason the
+        // client's own route re-reads it: the window is days long, and the
+        // project may have been auto-completed or reopened in another tab
+        // since this form was drawn.
+        if (! $project->isAwaitingClientConfirmation()) {
+            return $back->with('error', $project->isCompleted()
+                ? 'This project is already complete.'
+                : sprintf('Only a project awaiting client confirmation can be confirmed. This one is %s.', $project->statusLabel()));
+        }
+
+        $completion = app(ProjectCompletion::class);
+
+        $validated = $request->validate(
+            $completion->adminConfirmationRules($project),
+            $completion->adminConfirmationMessages()
+        );
+
+        $administrator = $request->user();
+
+        try {
+            DB::transaction(function () use ($completion, $project, $validated, $administrator): void {
+                $completion->recordAdminConfirmation($project, $validated, $administrator);
+            });
+        } catch (Throwable $e) {
+            return $back->with('error', $this->safeErrorMessage($e, 'Unable to record the confirmation. Nothing was changed.'));
+        }
+
+        $this->announceAdminConfirmation($project, $validated);
+
+        return $back->with('success', sprintf(
+            '%s is now complete, recorded as confirmed by the client %s.',
+            $project->reference_no ?? $project->name,
+            mb_strtolower(Project::CLIENT_CONFIRMATION_CHANNELS[$validated['client_confirmation_channel']])
+        ));
+    }
+
+    /**
+     * The trail and the messages that follow an off-site confirmation.
+     *
+     * Outside the transaction and inside its own try, exactly as
+     * announceCompletionRequest() is: the project is closed by this point, and
+     * a mail server that is down must not undo it.
+     *
+     * @param  array<string, mixed>  $validated
+     */
+    private function announceAdminConfirmation(Project $project, array $validated): void
+    {
+        try {
+            $this->activityLogger->record(
+                ActivityLog::PROJECT_COMPLETION_RECORDED_BY_ADMIN,
+                null,
+                sprintf(
+                    "Recorded the client's confirmation of project '%s', given %s on %s "
+                        .'(Awaiting Client Confirmation -> Completed, confirmed by an administrator on the client\'s behalf). '
+                        .'Reason given: %s',
+                    $project->reference_no ?? $project->name,
+                    mb_strtolower(Project::CLIENT_CONFIRMATION_CHANNELS[$validated['client_confirmation_channel']]),
+                    CarbonImmutable::parse($validated['client_confirmation_date'])->format(BusinessTime::DATE),
+                    $validated['client_confirmation_note']
+                ),
+                $project
+            );
+
+            // The same pair the client's own confirmation sends. A
+            // confirmation is a confirmation however it reached the company,
+            // and the people watching the project should not have to know
+            // which door it came through to hear that the work is signed off.
+            $this->notifications->clientConfirmedCompletion($project);
+            $this->clientEmails->completionConfirmed($project->refresh());
+        } catch (Throwable $exception) {
+            report($exception);
+        }
+    }
+
+    /**
+     * Put this project's contact address onto the one its Registered User
+     * signs in with.
+     *
+     * Deliberately an action rather than a synchronisation. The two addresses
+     * are different facts and are allowed to stay different - a project booked
+     * to a company mailbox and followed by a person is the ordinary case - so
+     * nothing moves on its own and nothing moves the other way. This is an
+     * administrator saying "the project's address is wrong, use the account's",
+     * and it changes the project only.
+     */
+    public function useAccountEmail(Request $request, int $id)
+    {
+        $this->guardAdministratorAction($request);
+
+        $project = Project::findOrFail($id);
+
+        try {
+            $changed = DB::transaction(fn (): ?array => $this->registeredUsers->useAccountEmail($project));
+        } catch (RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        } catch (Throwable $e) {
+            return back()->with('error', $this->safeErrorMessage($e, 'Unable to update the contact email. Nothing was changed.'));
+        }
+
+        if ($changed === null) {
+            return back()->with('error', 'This project already uses the account\'s email address.');
+        }
+
+        return back()->with('success', sprintf(
+            'Project contact email changed from %s to %s. The account was not changed.',
+            $changed['previous'],
+            $changed['current']
+        ));
     }
 
     public function show(Request $request, int $id)
@@ -1188,6 +1347,27 @@ class ProjectController extends Controller
             ? app(ProjectRegisteredUser::class)->candidates()
             : collect();
 
+        // Whether anybody can confirm this project's completion as things
+        // stand - which is not the same question as whether an account is
+        // assigned, and is not a decision about the project: see
+        // CompletionConfirmability. Asked on every read because the answer
+        // changes the moment the client registers.
+        $confirmabilityState = $this->confirmability->state($project);
+        $confirmabilityHint = $this->confirmability->hint($project);
+
+        // Recording a confirmation the client gave elsewhere. Administrators
+        // only and only while the project is actually waiting on one - the
+        // endpoint asks both questions again.
+        $canRecordClientConfirmation = $canManageRegisteredUser
+            && $project->isAwaitingClientConfirmation();
+
+        // The project's contact address and the account's are separate facts
+        // and may legitimately differ. This only says that they do, so an
+        // administrator is never surprised by which of the two a message went
+        // to; nothing is changed unless they ask for it.
+        $accountEmailDiffers = $assignedRegisteredUser !== null
+            && $this->registeredUsers->accountEmailDiffers($project);
+
         // Every completion cycle this project has been through, already
         // loaded. Never the current report: that one is read off the project.
         $previousCompletionReports = $project->completionReports;
@@ -1213,7 +1393,11 @@ class ProjectController extends Controller
             'previousCompletionReports',
             'canManageRegisteredUser',
             'assignedRegisteredUser',
-            'registeredUserOptions'
+            'registeredUserOptions',
+            'confirmabilityState',
+            'confirmabilityHint',
+            'canRecordClientConfirmation',
+            'accountEmailDiffers'
         ));
 
     }

@@ -105,7 +105,24 @@
             <div class="card-body">
                 <div class="d-flex justify-content-between flex-wrap gap-3">
                     <div>
-                        <h2 class="fw-bold mb-2">{{ $client?->fullname ?? 'N/A' }}</h2>
+                        {{-- Whose project this is: the company on commercial
+                             work, the person on residential. Decided by
+                             Client::primaryName(), the same rule the Super
+                             Admin page asks, so a lead and an administrator
+                             looking at the same project read the same
+                             heading. --}}
+                        <h2 class="fw-bold mb-2" data-project-client-name>{{ $client?->primaryName() ?? 'N/A' }}</h2>
+
+                        @if ($client?->secondaryName())
+                            <div class="project-client-secondary mb-2">
+                                <span class="project-client-secondary-name">
+                                    {{ $client->secondaryName() }}
+                                </span>
+                                <span class="project-client-secondary-label">
+                                    {{ $client->secondaryLabel() }}
+                                </span>
+                            </div>
+                        @endif
 
                         <span class="fw-bold me-4 mb-3 project-reference">{{ $project->reference_no }}</span>
 
@@ -121,15 +138,14 @@
                             </span>
                         </div>
 
+                        {{-- The "Company: ..." line that used to sit here is
+                             gone: both names are above now, and the third
+                             mention was the page repeating itself. --}}
                         <div class="text-muted">
                             <span>
                                 <i class="{{ $clientTypeClass }}" aria-hidden="true"></i>
                                 {{ $client?->client_type ?? 'N/A' }}
                             </span>
-
-                            @if (strtolower($client?->client_type ?? '') === 'commercial')
-                                <span class="ms-3">Company: {{ $client?->company_name ?? 'N/A' }}</span>
-                            @endif
                         </div>
 
                         <div class="text-muted mb-3">
@@ -563,7 +579,7 @@
                                      it, the same way it does on My Projects. --}}
                                 <tbody>
                                     @foreach ($tasks as $task)
-                                        <tr data-status="{{ $task->status }}">
+                                        <tr data-status="{{ $task->derivedStatus() }}">
                                             <td>
                                                 <div class="fw-semibold">{{ $task->task_title }}</div>
                                                 <small class="text-muted">

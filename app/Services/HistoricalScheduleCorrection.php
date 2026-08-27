@@ -281,6 +281,250 @@ class HistoricalScheduleCorrection
     }
 
     /**
+     * What the record already says about the people being named for days that
+     * have gone.
+     *
+     * This is step three of the correction: the days are known, the Super
+     * Admin has said who worked them, and before any of it is written the
+     * system asks whether those same people are already down as being
+     * somewhere else on those same days.
+     *
+     * It is a QUESTION, not a refusal. A clash in the future is a booking that
+     * cannot be made; a clash in the past is two records that disagree, and
+     * the whole point of this screen is that a Super Admin is the one who gets
+     * to say which is right. So a clash is reported, shown, and confirmed -
+     * never silently rejected. See ScheduleController::update(), which refuses
+     * only an UNCONFIRMED clash.
+     *
+     * Each technician is asked about separately, because the answer differs
+     * per person: naming three people for a day where one of them is already
+     * booked elsewhere must flag that one and leave the other two alone.
+     *
+     * Partial-day hours are honoured because the requests handed to the
+     * availability service carry the mode and times of the range that produced
+     * each day - so an afternoon correction against somebody's booked morning
+     * is not a clash, and against their booked afternoon it is. That is the
+     * existing overlap rule, not a second one: see
+     * TechnicianAvailabilityService::historicalOccupancy().
+     *
+     * @param  array<int, string>  $dates  the newly added past days, ascending
+     * @param  array<int, int>  $technicianIds  who is being named
+     * @param  Collection<int, array{schedule_id: ?int, mode: string, start: CarbonImmutable, end: CarbonImmutable}>  $ranges
+     * @param  array<int, array{added: array<int, string>, removed: array<int, string>}>  $rangeAssessment
+     * @return array<int, array{
+     *     technician_id: int,
+     *     technician: string,
+     *     entries: array<int, array{date: string, date_label: string, project_id: int, project: string, reference: ?string, schedule_id: int, schedule: string, status: string}>
+     * }>
+     */
+    public function conflictsFor(
+        Project $project,
+        array $dates,
+        array $technicianIds,
+        Collection $ranges,
+        array $rangeAssessment
+    ): array {
+        $technicianIds = collect($technicianIds)
+            ->map(fn ($id): int => (int) $id)
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($dates === [] || $technicianIds->isEmpty()) {
+            return [];
+        }
+
+        $requests = $this->historicalRequests($dates, $ranges, $rangeAssessment);
+
+        if ($requests === []) {
+            return [];
+        }
+
+        $found = app(TechnicianAvailabilityService::class)->historicalOccupancy(
+            $technicianIds,
+            $requests,
+            // The project's own bookings are not a clash with itself. This is
+            // the days it is claiming measured against everybody ELSE'S.
+            (int) $project->project_id
+        );
+
+        if ($found === []) {
+            return [];
+        }
+
+        // Looked up rather than taken from the caller, so the read-only
+        // pre-flight and the save both name people the same way without one of
+        // them having to build memberships first.
+        $names = Technician::query()
+            ->whereIn('technician_id', $technicianIds->all())
+            ->with('account:id,name,first_name,middle_name,last_name')
+            ->get()
+            ->mapWithKeys(fn (Technician $technician): array => [
+                (int) $technician->technician_id => $technician->name,
+            ]);
+
+        $schedules = Schedule::query()
+            ->with('project:project_id,name,reference_no,status')
+            ->whereIn('schedule_id', collect($found)->flatten(1)->pluck('schedule_id')->unique()->all())
+            ->get()
+            ->keyBy('schedule_id');
+
+        $conflicts = [];
+
+        foreach ($found as $technicianId => $hits) {
+            $entries = [];
+
+            foreach ($hits as $hit) {
+                $schedule = $schedules->get($hit['schedule_id']);
+                $other = $schedule?->project;
+
+                $entries[] = [
+                    'date' => $hit['date'],
+                    'date_label' => BusinessTime::format($hit['date']),
+                    'project_id' => $hit['project_id'],
+                    'project' => $other?->name ?? 'Another project',
+                    'reference' => $other?->reference_no,
+                    'schedule_id' => $hit['schedule_id'],
+                    // The booking that is already there, in the words the rest
+                    // of the system describes a booking in.
+                    'schedule' => $schedule?->describe() ?? '',
+                    'status' => $other ? $other->statusLabel() : '',
+                ];
+            }
+
+            $conflicts[] = [
+                'technician_id' => (int) $technicianId,
+                'technician' => $names[(int) $technicianId] ?? 'Technician',
+                'entries' => $entries,
+            ];
+        }
+
+        usort($conflicts, fn (array $first, array $second): int => strcmp(
+            mb_strtolower($first['technician']),
+            mb_strtolower($second['technician'])
+        ));
+
+        return $conflicts;
+    }
+
+    /**
+     * The newly added past days, as availability requests carrying the hours
+     * of the range each one came from.
+     *
+     * A day is only checked against the shape it is actually being booked in.
+     * A whole-day correction asks about the whole day; a partial-day one asks
+     * about its hours and nothing else, which is what stops an afternoon
+     * correction reading as a clash with a booked morning.
+     *
+     * @param  array<int, string>  $dates
+     * @param  Collection<int, array{schedule_id: ?int, mode: string, start: CarbonImmutable, end: CarbonImmutable}>  $ranges
+     * @param  array<int, array{added: array<int, string>, removed: array<int, string>}>  $rangeAssessment
+     * @return array<int, array{start: CarbonImmutable, end: CarbonImmutable, mode: string}>
+     */
+    private function historicalRequests(array $dates, Collection $ranges, array $rangeAssessment): array
+    {
+        $wanted = array_flip($dates);
+        $requests = [];
+
+        foreach ($ranges as $index => $range) {
+            $added = $rangeAssessment[$index]['added'] ?? [];
+
+            foreach ($added as $date) {
+                if (! isset($wanted[$date])) {
+                    continue;
+                }
+
+                if ($range['mode'] === Schedule::MODE_PARTIAL_DAY) {
+                    // One date, and the hours it was booked for.
+                    $requests[] = [
+                        'start' => $range['start'],
+                        'end' => $range['end'],
+                        'mode' => Schedule::MODE_PARTIAL_DAY,
+                    ];
+
+                    continue;
+                }
+
+                // A whole-day request confined to the single day being added,
+                // rather than the whole range: the rest of the range may be
+                // days the project already held, and those are not being newly
+                // claimed.
+                $day = CarbonImmutable::parse($date);
+
+                $requests[] = [
+                    'start' => $day->startOfDay(),
+                    'end' => $day->endOfDay(),
+                    'mode' => Schedule::MODE_DATE_BASED,
+                ];
+            }
+        }
+
+        return $requests;
+    }
+
+    /**
+     * A confirmed clash, flattened for the audit row.
+     *
+     * Written to the correction so that somebody reading the record later can
+     * see what the system objected to and that a person overruled it on
+     * purpose - see the `conflicts` column on tbl_schedule_corrections.
+     *
+     * @param  array<int, array<string, mixed>>  $conflicts  as conflictsFor() returns
+     * @return array<int, array<string, mixed>>
+     */
+    public function describeConflicts(array $conflicts, ?User $actor): array
+    {
+        $rows = [];
+
+        foreach ($conflicts as $conflict) {
+            foreach ($conflict['entries'] as $entry) {
+                $rows[] = [
+                    'technician_id' => $conflict['technician_id'],
+                    'technician' => $conflict['technician'],
+                    'date' => $entry['date'],
+                    'conflicting_project_id' => $entry['project_id'],
+                    'conflicting_project' => $entry['project'],
+                    'conflicting_reference' => $entry['reference'],
+                    'conflicting_schedule_id' => $entry['schedule_id'],
+                    'conflicting_schedule' => $entry['schedule'],
+                    // Stated rather than implied: the row exists BECAUSE
+                    // somebody was asked and said yes.
+                    'confirmed' => true,
+                    'confirmed_by_id' => $actor?->id,
+                    'confirmed_by' => $actor?->fullName(),
+                    'confirmed_at' => Schedule::businessNow()->toDateTimeString(),
+                ];
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * "John Smith on Aug 20, 2026 (Harbour Fit-Out)" for each clash, for the
+     * activity log and the toast.
+     *
+     * @param  array<int, array<string, mixed>>  $conflicts
+     */
+    public function describeConflictSummary(array $conflicts): string
+    {
+        $parts = [];
+
+        foreach ($conflicts as $conflict) {
+            foreach ($conflict['entries'] as $entry) {
+                $parts[] = sprintf(
+                    '%s on %s (%s)',
+                    $conflict['technician'],
+                    $entry['date_label'],
+                    $entry['reference'] ?: $entry['project']
+                );
+            }
+        }
+
+        return implode('; ', $parts);
+    }
+
+    /**
      * Turn the chosen technicians into memberships that can carry the work.
      *
      * Every id is checked against the same rule the picker drew: a member whose
@@ -497,8 +741,10 @@ class HistoricalScheduleCorrection
      *     removed: array<int, string>,
      *     technicians: array<int, array{technician_id: int, name: string}>
      * }>  $entries
+     * @param  array<int, array<string, mixed>>  $conflicts  clashes a Super Admin
+     *                                                       confirmed, flattened by describeConflicts()
      */
-    public function record(Project $project, array $entries, ?User $actor): void
+    public function record(Project $project, array $entries, ?User $actor, array $conflicts = []): void
     {
         $now = Schedule::businessNow();
 
@@ -506,6 +752,17 @@ class HistoricalScheduleCorrection
             if ($entry['added'] === [] && $entry['removed'] === []) {
                 continue;
             }
+
+            // A confirmed clash belongs on the rows that actually added days:
+            // it is a statement about work newly claimed, and a row that only
+            // gave days up has nothing to answer for. Narrowed to the days
+            // this row added, so a correction spanning two rows does not file
+            // the same clash under both.
+            $addedHere = array_flip($entry['added']);
+            $rowConflicts = array_values(array_filter(
+                $conflicts,
+                fn (array $conflict): bool => isset($addedHere[$conflict['date']])
+            ));
 
             ScheduleCorrection::create([
                 'project_id' => $project->project_id,
@@ -518,6 +775,7 @@ class HistoricalScheduleCorrection
                 'added_dates' => array_values($entry['added']),
                 'removed_dates' => array_values($entry['removed']),
                 'technicians' => array_values($entry['technicians']),
+                'conflicts' => $rowConflicts === [] ? null : $rowConflicts,
                 'created_at' => $now,
             ]);
         }

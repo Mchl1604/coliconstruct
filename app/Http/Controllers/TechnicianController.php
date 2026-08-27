@@ -905,8 +905,7 @@ class TechnicianController extends Controller
         Technician $outgoing,
         ?int $replacementLeadId,
         ?int $addedBy = null
-    ): void
-    {
+    ): void {
         if (! $replacementLeadId) {
             throw new RuntimeException(
                 $outgoing->name.' leads this project. Choose a replacement first.'
@@ -1190,8 +1189,10 @@ class TechnicianController extends Controller
                     'task_id' => $task->task_id,
                     'title' => $task->task_title,
                     'description' => $task->task_description,
-                    'status' => $task->status,
-                    'status_label' => ucfirst((string) $task->status),
+                    // The derived state, not ucfirst() of the stored column -
+                    // which reported an overdue task as "Pending" and a task
+                    // closed a fortnight late as "Completed". See TaskStatus.
+                    ...$task->statusPayload(),
                     'technician' => $task->technician?->name,
                     'range_label' => $task->start_date && $task->due_date
                         ? CarbonImmutable::parse($task->start_date)->format(BusinessTime::DATE)

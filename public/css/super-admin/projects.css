@@ -121,6 +121,48 @@
     }
 }
     
+/* ---- A project with a crew on it today ----
+   Whether a row gets this is Project::isActiveToday(), asked by all four
+   portals, so a project looks the same whoever is reading the table.
+
+   A green edge and a pale wash: enough to pick the row out while scanning a
+   full table, light enough that the text on it is no harder to read than any
+   other row's. Green because this is the one flag on the table that is not a
+   problem - it is where the work is happening.
+
+   `!important` because table-striped paints its own background on alternate
+   rows, and a striped row would otherwise show the flag only half the time.
+
+   Deliberately declared BEFORE the needs-recrew rules below, which have the
+   same specificity and therefore win on a row that is both. That is the right
+   way round: a crew that cannot sign in is something to act on, and "this is
+   happening today" is only more reason to act on it. The ACTIVE TODAY pill
+   still shows, so nothing is lost - only the row tint defers. */
+
+.project-row-active-today > * {
+    background-color: #eefaf1 !important;
+}
+
+.project-row-active-today > *:first-child {
+    box-shadow: inset 4px 0 0 0 #1a9e52;
+}
+
+.project-active-today-flag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    margin-top: 0.2rem;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    color: #0f6b39;
+    background: #d3f2df;
+    border-radius: 999px;
+    padding: 0.1rem 0.5rem;
+    white-space: nowrap;
+    cursor: help;
+}
+
 /* ---- A project whose crew includes an account that can no longer sign in ----
    Flagged on the row itself so an administrator does not have to open every
    project to find the ones that need re-crewing. A left edge and a warm tint

@@ -148,6 +148,19 @@
     color: #14532d;
 }
 
+/* How far past the deadline the work landed. Inside the green completion
+   panel, so it is deliberately NOT green: the work is done, and this is the
+   one line in the panel that is not good news. */
+.task-completion-late {
+    margin-top: 0.35rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.task-completion .task-completion-late {
+    color: #7a6410;
+}
+
 .task-completion-image {
     height: 200px;
     width: 100%;

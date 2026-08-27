@@ -165,6 +165,96 @@ class TechnicianAvailabilityService
     }
 
     /**
+     * What the record already says these technicians were doing on days that
+     * have gone.
+     *
+     * The historical twin of findConflicts(), and deliberately NOT a second
+     * conflict system: it reads the same occupancy map, through the same
+     * overlap test, honouring partial-day hours exactly as every other check
+     * here does. Two things differ, and only two:
+     *
+     *   - It looks at projects of ANY status. A day in the past is most often
+     *     recorded against a project that has since finished, and the active
+     *     filter would hide precisely the clash being looked for.
+     *   - It ANSWERS rather than refuses. A future clash is a booking that
+     *     cannot be made; a past one is two records that disagree, and only a
+     *     Super Admin can say which is right. So this returns what was found,
+     *     per technician and per day, and the decision belongs to the caller.
+     *
+     * @param  Collection<int, int>|array<int, int>  $technicianIds
+     * @param  array<int, array{start: CarbonImmutable, end: CarbonImmutable, mode?: string}>  $ranges
+     * @param  array<int, int>  $excludeScheduleIds
+     * @return array<int, array<int, array{date: string, project_id: int, schedule_id: int, from: int, to: int}>>
+     *                                                                                                            technicianId => list of clashes, ascending by date
+     */
+    public function historicalOccupancy(
+        Collection|array $technicianIds,
+        array $ranges,
+        ?int $excludeProjectId = null,
+        array $excludeScheduleIds = []
+    ): array {
+        $requests = $this->normaliseRanges($ranges);
+
+        if ($requests === []) {
+            return [];
+        }
+
+        $intervals = $this->occupiedIntervals(
+            $technicianIds,
+            $ranges,
+            $excludeProjectId,
+            $excludeScheduleIds,
+            // The whole point: a finished project's days still count as a
+            // record of where somebody was.
+            true
+        );
+
+        $found = [];
+
+        foreach ($intervals as $technicianId => $days) {
+            $seen = [];
+
+            foreach ($requests as $request) {
+                foreach ($this->eachDate($request['start'], $request['end']) as $day) {
+                    foreach ($days[$day] ?? [] as $interval) {
+                        if (! $this->overlaps($request, $interval)) {
+                            continue;
+                        }
+
+                        // One row per day per booking: two requests landing on
+                        // the same clash is one thing to be told about, not
+                        // two.
+                        $key = $day.'|'.$interval['schedule_id'];
+
+                        if (isset($seen[$key])) {
+                            continue;
+                        }
+
+                        $seen[$key] = true;
+
+                        $found[(int) $technicianId][] = [
+                            'date' => $day,
+                            'project_id' => (int) $interval['project_id'],
+                            'schedule_id' => (int) $interval['schedule_id'],
+                            'from' => (int) $interval['from'],
+                            'to' => (int) $interval['to'],
+                        ];
+                    }
+                }
+            }
+
+            if (isset($found[(int) $technicianId])) {
+                usort(
+                    $found[(int) $technicianId],
+                    fn (array $first, array $second): int => strcmp($first['date'], $second['date'])
+                );
+            }
+        }
+
+        return $found;
+    }
+
+    /**
      * The calendar days a date picker has to refuse for a team, over a window.
      *
      * Read from the same occupancy every other check here is read from, so a
@@ -497,7 +587,8 @@ class TechnicianAvailabilityService
         Collection|array $technicianIds,
         array $ranges,
         ?int $excludeProjectId,
-        array $excludeScheduleIds
+        array $excludeScheduleIds,
+        bool $anyProjectStatus = false
     ): array {
         $technicianIds = $this->normaliseTechnicianIds($technicianIds);
         $requests = $this->normaliseRanges($ranges);
@@ -514,7 +605,8 @@ class TechnicianAvailabilityService
             $windowStart,
             $windowEnd,
             $excludeProjectId,
-            $excludeScheduleIds
+            $excludeScheduleIds,
+            $anyProjectStatus
         );
 
         $intervals = [];
@@ -538,6 +630,12 @@ class TechnicianAvailabilityService
                 foreach ($days as $day => $window) {
                     $intervals[(int) $technicianId][$day][] = [
                         'project_id' => $projectId,
+                        // Carried so a caller can name the booking and not only
+                        // the project it belongs to. The historical warning has
+                        // to show WHICH schedule it is warning about, and an
+                        // audit row has to be able to point at it afterwards.
+                        // Every other reader ignores it.
+                        'schedule_id' => (int) $schedule->schedule_id,
                         'from' => $window['from'],
                         'to' => $window['to'],
                     ];
@@ -553,6 +651,7 @@ class TechnicianAvailabilityService
             foreach ($dates as $day => $ignored) {
                 $intervals[(int) $technicianId][$day][] = [
                     'project_id' => 0,
+                    'schedule_id' => 0,
                     'from' => 0,
                     'to' => self::MINUTES_PER_DAY,
                 ];
@@ -749,6 +848,15 @@ class TechnicianAvailabilityService
      * Completed, cancelled, archived, on-hold and unscheduled projects
      * are ignored, matching the rules already used across the app.
      *
+     * `$anyProjectStatus` lifts exactly that filter, and is for one caller:
+     * the historical check behind a Super Admin's correction of a past
+     * schedule. The question there is not "may this technician be booked?" -
+     * the day has gone, nobody is being booked - but "does the record already
+     * say they were somewhere else?". A finished project is the most likely
+     * place for that record to be, so screening it out would hide the very
+     * clash the check exists to surface. Every other caller keeps the active
+     * filter and behaves exactly as it did.
+     *
      * @param  Collection<int, int>  $technicianIds
      * @param  array<int, int>  $excludeScheduleIds
      * @return \Illuminate\Database\Eloquent\Collection<int, Schedule>
@@ -758,12 +866,15 @@ class TechnicianAvailabilityService
         string $windowStart,
         string $windowEnd,
         ?int $excludeProjectId,
-        array $excludeScheduleIds
+        array $excludeScheduleIds,
+        bool $anyProjectStatus = false
     ) {
         return Schedule::query()
-            ->whereHas('project', function ($query): void {
-                $query->whereIn('status', Project::ACTIVE_PROJECT_STATUSES)
-                    ->where('is_archived', false);
+            ->when(! $anyProjectStatus, function ($query): void {
+                $query->whereHas('project', function ($project): void {
+                    $project->whereIn('status', Project::ACTIVE_PROJECT_STATUSES)
+                        ->where('is_archived', false);
+                });
             })
             ->when($excludeProjectId !== null, function ($query) use ($excludeProjectId): void {
                 $query->where('project_id', '!=', $excludeProjectId);

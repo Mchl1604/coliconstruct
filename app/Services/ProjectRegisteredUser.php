@@ -31,7 +31,13 @@ use RuntimeException;
  */
 class ProjectRegisteredUser
 {
-    public function __construct(private readonly ActivityLogger $activityLogger) {}
+    public function __construct(
+        private readonly ActivityLogger $activityLogger,
+        // For normalise() only. Comparing two addresses is done one way in
+        // this system, and a second lower/trim written here would report a
+        // difference between "Office@Company.ph" and "office@company.ph".
+        private readonly ClientProjects $clientProjects
+    ) {}
 
     /**
      * The accounts an administrator may choose from.
@@ -167,6 +173,108 @@ class ProjectRegisteredUser
     public function currentAccount(Project $project): ?User
     {
         return $project->registeredUser()->first();
+    }
+
+    /**
+     * Whether this project's contact address and its account's address are
+     * different things.
+     *
+     * False when there is no account, and false when the two are the same
+     * address written differently - the comparison is the normalised one, so
+     * trailing spaces and capitals are not a difference worth telling an
+     * administrator about.
+     */
+    public function accountEmailDiffers(Project $project): bool
+    {
+        return $this->divergentContacts($project)->isNotEmpty();
+    }
+
+    /**
+     * Move this project's contact address onto the one its Registered User
+     * signs in with.
+     *
+     * The one deliberate crossing between the two records this class otherwise
+     * keeps apart, and it only ever runs one way. The account is not touched:
+     * its address is a login credential, changing it belongs to the client
+     * themselves behind an emailed code (see ProfileService::changeEmail), and
+     * nothing an administrator does on a project page may reach it.
+     *
+     * Only contacts actually held by that account are moved. A project
+     * carrying a second contact row for somebody else keeps it, because that
+     * row is not this account's to rewrite.
+     *
+     * @return array{previous: string, current: string}|null what changed, or
+     *                                                       null when there was nothing to change
+     *
+     * @throws RuntimeException when the project has no Registered User
+     */
+    public function useAccountEmail(Project $project): ?array
+    {
+        $account = $this->currentAccount($project);
+
+        if ($account === null) {
+            throw new RuntimeException('This project has no Registered User to take an address from.');
+        }
+
+        if (! filled($account->email)) {
+            throw new RuntimeException('That account has no email address to copy.');
+        }
+
+        $contacts = $this->divergentContacts($project);
+
+        if ($contacts->isEmpty()) {
+            return null;
+        }
+
+        // The addresses being replaced, gathered before the write so the trail
+        // can say what this project used to be reachable at.
+        $previous = $contacts
+            ->pluck('email_address')
+            ->filter()
+            ->unique()
+            ->implode(', ');
+
+        Client::query()
+            ->whereIn('client_id', $contacts->pluck('client_id')->all())
+            ->update(['email_address' => $account->email]);
+
+        $this->activityLogger->record(
+            ActivityLog::PROJECT_CONTACT_EMAIL_UPDATED,
+            $account,
+            sprintf(
+                "Changed the contact email on project '%s' from %s to %s, the address on Registered User %s. "
+                    .'The account itself was not changed.',
+                $this->projectLabel($project),
+                $previous,
+                $account->email,
+                $account->fullName()
+            ),
+            $project
+        );
+
+        return ['previous' => $previous, 'current' => (string) $account->email];
+    }
+
+    /**
+     * The contact rows this account holds whose address is not the account's
+     * own.
+     *
+     * @return EloquentCollection<int, Client>
+     */
+    private function divergentContacts(Project $project): EloquentCollection
+    {
+        $account = $this->currentAccount($project);
+
+        if ($account === null || ! filled($account->email)) {
+            return Client::query()->whereRaw('1 = 0')->get();
+        }
+
+        $address = $this->clientProjects->normalise($account->email);
+
+        return $this->contactsFor($project)
+            ->filter(fn (Client $contact): bool => $contact->user_id === $account->id
+                && $this->clientProjects->normalise($contact->email_address) !== $address)
+            ->values();
     }
 
     /**

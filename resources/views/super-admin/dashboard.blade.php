@@ -107,7 +107,17 @@
                                 <i class="bi {{ $action['icon'] }}"></i>
                             </span>
 
-                            <span class="dash-urgent-label">{{ $action['label'] }}</span>
+                            {{-- Most entries say everything in the label
+                                 ("3 Overdue Projects"). One whose number needs
+                                 a qualifier explains it underneath instead of
+                                 cramming it into the heading. --}}
+                            <span class="dash-urgent-label">
+                                {{ $action['label'] }}
+
+                                @if ($action['detail'])
+                                    <small class="dash-urgent-detail">{{ $action['detail'] }}</small>
+                                @endif
+                            </span>
 
                             <a class="dash-urgent-view" href="{{ $action['url'] }}"
                                 data-urgent-action="{{ $action['key'] }}">

@@ -1268,6 +1268,10 @@ document.addEventListener("DOMContentLoaded", function () {
         const historicalHint = modal.querySelector("[data-historical-hint]");
         const historicalAddFlag = modal.querySelector("[data-historical-add-flag]");
         const historicalError = modal.querySelector("[data-historical-error]");
+        const historicalConflictStep = modal.querySelector("[data-historical-conflict-step]");
+        const historicalConflictList = modal.querySelector("[data-historical-conflict-list]");
+        const historicalConflictBox = modal.querySelector("[data-historical-conflict-acknowledge]");
+        const historicalConflictFlag = modal.querySelector("[data-historical-conflict-flag]");
         const historicalConfirm = modal.querySelector("[data-historical-confirm]");
         const historicalBack = modal.querySelector("[data-historical-back]");
         const saveButton = modal.querySelector("[data-schedule-submit]");
@@ -1460,30 +1464,50 @@ document.addEventListener("DOMContentLoaded", function () {
                 return;
             }
 
+            const contains = function (field) {
+                return Boolean(
+                    field && String(field).toLowerCase().indexOf(needle) !== -1,
+                );
+            };
+
             // Name, employee code, address and role all match, because all four
             // are things somebody knows a technician by.
-            const matches = historicalCandidates
-                .filter(function (person) {
-                    const chosen = historicalPicked.some(function (other) {
-                        return other.id === person.id;
-                    });
+            //
+            // They are not worth the same, though. Every plain technician's
+            // role reads "Technician", so typing that word matches the entire
+            // directory - and the list used to fill up with people whose ROLE
+            // matched while the person whose NAME matched was cut off the end.
+            // Somebody called "technician Sample" was unreachable: alphabetical
+            // order put them last of thirteen, and only eight were ever drawn.
+            //
+            // So a match on the name, the code or the email outranks a match on
+            // the role, and the two are only mixed once the better kind runs
+            // out.
+            const available = historicalCandidates.filter(function (person) {
+                const chosen = historicalPicked.some(function (other) {
+                    return other.id === person.id;
+                });
 
-                    if (chosen) {
-                        return false;
-                    }
+                return !chosen;
+            });
 
-                    return [
-                        person.name,
-                        person.code,
-                        person.email,
-                        person.role_label,
-                    ].some(function (field) {
-                        return (
-                            field && String(field).toLowerCase().indexOf(needle) !== -1
-                        );
-                    });
-                })
-                .slice(0, HISTORICAL_RESULT_LIMIT);
+            const byName = available.filter(function (person) {
+                return (
+                    contains(person.name) ||
+                    contains(person.code) ||
+                    contains(person.email)
+                );
+            });
+
+            const byRole = available.filter(function (person) {
+                return (
+                    !byName.includes(person) && contains(person.role_label)
+                );
+            });
+
+            const ranked = byName.concat(byRole);
+            const matches = ranked.slice(0, HISTORICAL_RESULT_LIMIT);
+            const hidden = ranked.length - matches.length;
 
             if (!matches.length) {
                 historicalResults.innerHTML =
@@ -1513,6 +1537,18 @@ document.addEventListener("DOMContentLoaded", function () {
                     );
                 })
                 .join("");
+
+            // A list that stops at eight has to say so. Silently cutting the
+            // rest off is what made somebody at the end of the alphabet look
+            // like somebody who is not in the system.
+            if (hidden > 0) {
+                historicalResults.innerHTML +=
+                    '<li class="schedule-historical-more">' +
+                    hidden +
+                    " more match" +
+                    (hidden === 1 ? "" : "es") +
+                    ". Keep typing to narrow the list.</li>";
+            }
 
             historicalResults.classList.remove("d-none");
             historicalSearch.setAttribute("aria-expanded", "true");
@@ -1606,6 +1642,95 @@ document.addEventListener("DOMContentLoaded", function () {
                 historicalError.classList.add("d-none");
                 historicalError.textContent = "";
             }
+
+            clearHistoricalConflicts();
+        }
+
+        /**
+         * Put the conflict question away and un-answer it.
+         *
+         * Called whenever the step closes or the names change: an
+         * acknowledgement is about one particular set of clashes, and carrying
+         * it over would be a confirmation given for something else.
+         */
+        function clearHistoricalConflicts() {
+            if (historicalConflictStep) {
+                historicalConflictStep.classList.add("d-none");
+            }
+
+            if (historicalConflictList) {
+                historicalConflictList.innerHTML = "";
+            }
+
+            if (historicalConflictBox) {
+                historicalConflictBox.checked = false;
+            }
+
+            if (historicalConflictFlag) {
+                historicalConflictFlag.value = "0";
+            }
+        }
+
+        /**
+         * What the record already says, drawn per technician.
+         *
+         * Each person gets their own block with their own days, because the
+         * answer differs per person: naming three people where one of them is
+         * already booked elsewhere has to flag that one and leave the other
+         * two alone.
+         */
+        function renderHistoricalConflicts(conflicts) {
+            if (!historicalConflictList) {
+                return;
+            }
+
+            historicalConflictList.innerHTML = conflicts
+                .map(function (conflict) {
+                    const rows = conflict.entries
+                        .map(function (entry) {
+                            const where = entry.reference
+                                ? entry.reference + " - " + entry.project
+                                : entry.project;
+
+                            return (
+                                '<li class="schedule-historical-conflict-row">' +
+                                '<span class="schedule-historical-conflict-date">' +
+                                escapeHtml(entry.date_label) +
+                                "</span>" +
+                                '<span class="schedule-historical-conflict-where">' +
+                                escapeHtml(where) +
+                                (entry.status
+                                    ? ' <span class="schedule-historical-conflict-status">' +
+                                      escapeHtml(entry.status) +
+                                      "</span>"
+                                    : "") +
+                                "</span>" +
+                                (entry.schedule
+                                    ? '<span class="schedule-historical-conflict-booking">' +
+                                      escapeHtml(entry.schedule) +
+                                      "</span>"
+                                    : "") +
+                                "</li>"
+                            );
+                        })
+                        .join("");
+
+                    return (
+                        '<div class="schedule-historical-conflict">' +
+                        '<div class="schedule-historical-conflict-name">' +
+                        '<i class="bi bi-person-exclamation" aria-hidden="true"></i>' +
+                        escapeHtml(conflict.technician) +
+                        "</div>" +
+                        '<ul class="schedule-historical-conflict-rows">' +
+                        rows +
+                        "</ul></div>"
+                    );
+                })
+                .join("");
+
+            if (historicalConflictStep) {
+                historicalConflictStep.classList.remove("d-none");
+            }
         }
 
         /**
@@ -1670,6 +1795,7 @@ document.addEventListener("DOMContentLoaded", function () {
             closeHistoricalResults();
             renderHistoricalChosen();
             refreshHistoricalChoice();
+            clearHistoricalConflicts();
 
             historicalStep.classList.remove("d-none");
 
@@ -1710,7 +1836,68 @@ document.addEventListener("DOMContentLoaded", function () {
                         overrideInput.value = "1";
                     }
 
-                    onConfirmed();
+                    // Already shown a clash and been told it is accurate:
+                    // nothing more to ask.
+                    if (
+                        historicalConflictStep &&
+                        !historicalConflictStep.classList.contains("d-none")
+                    ) {
+                        if (!historicalConflictBox || !historicalConflictBox.checked) {
+                            if (historicalError) {
+                                historicalError.textContent =
+                                    "Confirm the historical conflict before saving.";
+                                historicalError.classList.remove("d-none");
+                            }
+
+                            return;
+                        }
+
+                        if (historicalConflictFlag) {
+                            historicalConflictFlag.value = "1";
+                        }
+
+                        onConfirmed();
+
+                        return;
+                    }
+
+                    // Step three: with names given, ask what the record
+                    // already says about those people on those days. The
+                    // server answers the same question the save will ask, so
+                    // what is shown here is what would otherwise refuse it.
+                    historicalConfirm.disabled = true;
+
+                    requestHistoricalCheck()
+                        .then(function (answer) {
+                            historicalConfirm.disabled = false;
+
+                            const conflicts =
+                                answer && Array.isArray(answer.conflicts)
+                                    ? answer.conflicts
+                                    : [];
+
+                            if (conflicts.length === 0) {
+                                onConfirmed();
+
+                                return;
+                            }
+
+                            renderHistoricalConflicts(conflicts);
+
+                            if (historicalError) {
+                                historicalError.classList.add("d-none");
+                                historicalError.textContent = "";
+                            }
+                        })
+                        .catch(function () {
+                            historicalConfirm.disabled = false;
+
+                            // The check could not be made. The save still runs
+                            // it server-side, so the worst case is the question
+                            // being put a moment later rather than being
+                            // skipped.
+                            onConfirmed();
+                        });
                 };
             }
 
@@ -1772,6 +1959,13 @@ document.addEventListener("DOMContentLoaded", function () {
                     payload.append(prefix + "[end_date]", entry.end || "");
                 },
             );
+
+            // Who has been named so far. Empty on the first pass, when the
+            // question is still "which days?"; on the second it is what the
+            // conflict check is run against.
+            historicalPicked.forEach(function (person) {
+                payload.append("historical_technicians[]", person.id);
+            });
 
             return payload;
         }

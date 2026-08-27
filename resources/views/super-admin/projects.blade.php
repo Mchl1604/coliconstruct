@@ -97,18 +97,27 @@
                                 // should not have to open every project to find
                                 // the ones that need re-crewing.
                                 $needsRecrew = $project->needsRecrew();
+                                // A crew is on this job today. Derived from the
+                                // booked ranges rather than the status column -
+                                // see Project::isActiveToday(), the one rule all
+                                // four portals ask.
+                                $isActiveToday = $project->isActiveToday();
                             @endphp
                             <tr data-tab="{{ $project->tabKey() }}"
                                 data-status="{{ $project->status }}"
                                 data-overdue="{{ $project->isOverdue() ? '1' : '0' }}"
                                 data-on-hold="{{ $project->on_hold ? '1' : '0' }}"
+                                data-active-today="{{ $isActiveToday ? '1' : '0' }}"
                                 {{-- The attention tabs this row also answers -
                                      overlapping, so a list rather than a second
                                      status. See Project::attentionTabKeys(). --}}
                                 data-tab-extra="{{ implode(' ', $project->attentionTabKeys()) }}"
-                                class="{{ $needsRecrew ? 'project-row-needs-recrew' : '' }}">
+                                class="{{ $isActiveToday ? 'project-row-active-today' : '' }} {{ $needsRecrew ? 'project-row-needs-recrew' : '' }}">
                                 <td>
                                     {{ $project->displayCode() }}
+
+                                    <x-project-active-today-flag :project="$project" />
+
                                     @if ($needsRecrew)
                                         <span class="project-recrew-flag"
                                             title="{{ $project->hasLead()
@@ -137,6 +146,27 @@
                                 <td class="text-success fw-semibold">₱ {{ number_format($project->quotation, 2) }}</td>
                                 <td>
                                     <x-project-status-badge :project="$project" />
+
+                                    {{-- A project waiting on a reply that cannot arrive
+                                         reads exactly like one whose client is still
+                                         thinking about it, and for the length of the
+                                         confirmation window it sat here indistinguishable
+                                         from it. This is the difference, said in one word
+                                         beside the status rather than by changing it: the
+                                         project really is Awaiting Client Confirmation,
+                                         and nothing about the underlying state is being
+                                         bent to carry a display concern.
+
+                                         It disappears on its own the moment the client
+                                         registers - see CompletionConfirmability. --}}
+                                    @if ($project->isAwaitingClientConfirmation()
+                                        && ($confirmability[$project->project_id] ?? null) === \App\Services\CompletionConfirmability::UNREACHABLE)
+                                        <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle d-inline-flex align-items-center gap-1 mt-1"
+                                            title="No registered client can confirm this project online. It completes automatically when the window ends, unless an administrator records a confirmation given another way.">
+                                            <i class="bi bi-person-slash" aria-hidden="true"></i>
+                                            No client to confirm
+                                        </span>
+                                    @endif
                                 </td>
                                 <td class="text-center">
                                     @php
@@ -336,6 +366,30 @@
                                                 <p class="mb-3">
                                                     Mark <strong>{{ $project->reference_no }}</strong> as completed?
                                                 </p>
+
+                                                {{-- Said before the project starts waiting, because
+                                                     afterwards it is a window too late to be useful.
+                                                     Not a blocker, and deliberately not styled as one:
+                                                     completion is never refused for want of a
+                                                     registered client. The same notice the project's
+                                                     own page shows, because both dialogs complete a
+                                                     project on identical terms. --}}
+                                                @if (($confirmability[$project->project_id] ?? null) === \App\Services\CompletionConfirmability::UNREACHABLE)
+                                                    <div class="alert alert-warning d-flex gap-2" role="status">
+                                                        <i class="bi bi-person-slash fs-5 lh-1" aria-hidden="true"></i>
+                                                        <div>
+                                                            <p class="fw-semibold mb-1">
+                                                                No registered client can currently confirm this project.
+                                                            </p>
+                                                            <p class="mb-0 small">
+                                                                It will go to Awaiting Client Confirmation as usual and
+                                                                complete automatically after
+                                                                {{ \App\Models\Project::completionConfirmationDays() }}
+                                                                days if no confirmation is received.
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                @endif
 
                                                 {{-- What the completion rules object to. A lead technician
                                                      is refused outright; an administrator may go ahead, but

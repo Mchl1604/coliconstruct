@@ -4,6 +4,9 @@
     <link href="/css/super-admin/projects.css" rel="stylesheet">
     <link href="/css/super-admin/schedule.css" rel="stylesheet">
     <link href="/css/super-admin/technicians.css" rel="stylesheet">
+    {{-- The searchable technician picker on the Schedules tab, the same
+         control the Export Logs dialog uses. --}}
+    <link href="/css/actorSearch.css" rel="stylesheet">
     <link href="/css/calendar.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.css">
 @endpush
@@ -179,29 +182,43 @@
                             <label for="technicianPicker" class="form-label small fw-semibold mb-1">
                                 Technician
                             </label>
-                            <input list="technicianPickerOptions" id="technicianPicker" class="form-control"
-                                placeholder="Search by technician ID or name&hellip;" autocomplete="off"
-                                data-technician-picker>
-                            <datalist id="technicianPickerOptions">
-                                @foreach ($technicians as $technician)
-                                    {{-- An inactive account is still listed: their
-                                         calendar is worth reading, because they are
-                                         still holding every date they were booked
-                                         on. It is only new work they cannot take.
+                            {{-- The same typeahead the Export Logs dialog uses -
+                                 see the actor search in configuration.blade.php
+                                 and renderActorResults() beside it.
 
-                                         The marker goes in the option's value rather
-                                         than its `label`, which browsers disagree
-                                         about - Firefox shows the label INSTEAD of
-                                         the value, which would hide the name. The
-                                         picker resolves on the TECH code at the
-                                         front, so the suffix costs nothing, and the
-                                         field is rewritten to the tidy form the
-                                         moment a name is chosen. --}}
-                                    <option
-                                        value="{{ $technician->displayCode() }} — {{ $technician->name }}{{ $technician->isAssignable() ? '' : ' (inactive account)' }}">
-                                    </option>
-                                @endforeach
-                            </datalist>
+                                 It replaced a native <datalist>, which browsers
+                                 disagree about badly enough to be unusable here:
+                                 some match only the start of the value, so
+                                 typing a surname found nobody; some show the
+                                 label instead of the value, hiding the name; and
+                                 none of them can show what the account is or
+                                 whether it is still active. A list drawn by the
+                                 page matches on any part of any field, says who
+                                 each person is, and behaves the same everywhere.
+
+                                 An inactive account is still listed: their
+                                 calendar is worth reading, because they are
+                                 still holding every date they were booked on.
+                                 It is only new work they cannot take. --}}
+                            <div class="config-actor-search" data-technician-search>
+                                <div class="input-group">
+                                    <span class="input-group-text">
+                                        <i class="bi bi-search" aria-hidden="true"></i>
+                                    </span>
+                                    <input type="text" id="technicianPicker" class="form-control"
+                                        placeholder="Search by technician ID, name or role&hellip;"
+                                        autocomplete="off" role="combobox" aria-expanded="false"
+                                        aria-controls="technicianPickerResults" data-technician-picker>
+                                    <button type="button" class="btn btn-outline-secondary d-none"
+                                        aria-label="Clear the chosen technician" data-technician-picker-clear>
+                                        <i class="bi bi-x-lg" aria-hidden="true"></i>
+                                    </button>
+                                </div>
+
+                                <ul class="config-actor-results d-none" id="technicianPickerResults" role="listbox"
+                                    data-technician-picker-results></ul>
+                            </div>
+
                             <div class="form-text" data-technician-picker-hint>
                                 Pick a technician to load their calendar.
                             </div>
@@ -535,6 +552,20 @@
 
                 <div class="modal-footer">
                     <span class="technician-pending-note me-auto d-none" data-details-pending></span>
+
+                    {{-- Straight from the person to their calendar. Reading a
+                         technician's details and then wanting to see what they
+                         are booked on is the obvious next question, and
+                         answering it used to mean closing this, switching tab
+                         and typing the name back in. This closes the dialog,
+                         switches to Schedules and fills the picker in for
+                         them - see window.technicianSchedules.show(), the same
+                         path a typed search takes. --}}
+                    <button type="button" class="btn btn-outline-primary" data-details-view-schedule>
+                        <i class="bi bi-calendar3 me-1" aria-hidden="true"></i>
+                        View Schedule
+                    </button>
+
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                     <button type="button" class="btn btn-primary" data-details-save disabled>
                         <span class="spinner-border spinner-border-sm me-1 d-none" role="status" aria-hidden="true"
@@ -644,6 +675,13 @@
                         // What the picker prints and matches on.
                         'display_code' => $technician->displayCode(),
                         'name' => $technician->name,
+                        // The other things somebody knows a technician by. The
+                        // picker matches on all four - the same fields the
+                        // Export Logs user search matches on - so a surname, a
+                        // staff code, an address or a role all find them.
+                        'code' => $technician->account?->user_code,
+                        'email' => $technician->account?->email,
+                        'role_label' => $technician->account?->roleLabel() ?? 'Technician',
                         // Whether Add Technician to Project is offered for
                         // them at all. The server refuses it either way; this
                         // is what stops the button being drawn to be refused.

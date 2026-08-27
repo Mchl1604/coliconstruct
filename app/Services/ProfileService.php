@@ -32,7 +32,9 @@ class ProfileService
         private readonly ActivityLogger $activityLogger,
         private readonly NotificationService $notifications,
         private readonly OtpService $otp,
-        private readonly EmailService $email
+        private readonly EmailService $email,
+        // For normalise() only - the one address comparison in the system.
+        private readonly ClientProjects $clientProjects
     ) {}
 
     // ------------------------------------------------------------------
@@ -241,12 +243,9 @@ class ProfileService
 
         $this->otp->clear($newEmail, OtpVerification::PURPOSE_EMAIL_CHANGE);
 
-        // The address on this client's own projects moves with them. Their
-        // work is held by the account rather than by the address, so the
-        // projects would follow either way - but a contact row still saying
-        // the old address is a project whose contact details are wrong, and
-        // it is what every outgoing email to that client is addressed to.
-        $this->carryProjectContactsToNewAddress($user, $newEmail);
+        // The projects whose contact address WAS this account's address move
+        // with it. The ones written to some other address do not - see below.
+        $this->carryProjectContactsToNewAddress($user, $previousEmail, $newEmail);
 
         $this->activityLogger->record(
             ActivityLog::EMAIL_CHANGED,
@@ -265,23 +264,47 @@ class ProfileService
     }
 
     /**
-     * Move a client's project contact details onto their new address.
+     * Move a client's project contact details onto their new address - but
+     * only the ones that were on the old address to begin with.
      *
-     * Only their own: the rows are found by the account id, which is exactly
-     * the link that makes this safe. Rows still matched by the old address
-     * alone - a project booked for them before they registered - are claimed
-     * here too, because that address has just stopped being theirs.
+     * The narrowing is the whole of this method. A project's contact address
+     * and its client's account address are separate facts and are allowed to
+     * differ: a job booked to office@company.ph and followed by maria@gmail.com
+     * is an ordinary arrangement, and that office address is nothing to do with
+     * which mailbox Maria signs in from. This used to rewrite it anyway, which
+     * silently destroyed a value somebody had set on purpose.
+     *
+     * Where the two DID match, they were not two facts but one, and moving both
+     * keeps them one. That is the case this exists for: a client who registered
+     * under the address their work was booked with, changing it.
+     *
+     * A row left behind is not left stranded. Project mail reaches the account's
+     * address as well as the contact's - see ProjectEmails::recipients - and
+     * the project page now says when the two differ, with a button to move it
+     * deliberately. So nothing here has to guess.
+     *
+     * Only this client's own rows, found by the account id: that link is what
+     * makes any of it safe.
      *
      * @return int how many contacts moved
      */
-    private function carryProjectContactsToNewAddress(User $user, string $newEmail): int
+    private function carryProjectContactsToNewAddress(User $user, string $previousEmail, string $newEmail): int
     {
         if (! $user->isClient()) {
             return 0;
         }
 
+        $previous = $this->clientProjects->normalise($previousEmail);
+
+        if ($previous === '') {
+            return 0;
+        }
+
         return Client::query()
             ->where('user_id', $user->id)
+            // Normalised on both sides, so a contact stored as
+            // "Maria@Old.test " is still recognised as the old address.
+            ->whereRaw('LOWER(TRIM(email_address)) = ?', [$previous])
             ->update(['email_address' => $newEmail]);
     }
 

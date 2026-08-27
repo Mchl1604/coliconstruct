@@ -6,6 +6,9 @@
     <link href="/css/super-admin/projects.css" rel="stylesheet">
     <link href="/css/super-admin/technicians.css" rel="stylesheet">
     <link href="/css/super-admin/configuration.css" rel="stylesheet">
+    {{-- The user search in the Export Logs dialog, shared with the
+         Technicians page. --}}
+    <link href="/css/actorSearch.css" rel="stylesheet">
 @endpush
 
 @section('content')

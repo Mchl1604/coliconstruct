@@ -7,6 +7,9 @@
     {{-- The Assign To picker cards and the completion record, shared with the
          technician portal's task dialogs. --}}
     <link href="/css/taskModal.css" rel="stylesheet">
+    {{-- The Urgent Actions panel and the row badges, shared with the lead
+         technician's Tasks page. --}}
+    <link href="/css/taskAttention.css" rel="stylesheet">
 @endpush
 
 @section('content')
@@ -32,6 +35,11 @@
             </button>
         </div>
     </div>
+
+    {{-- Above the project filter, so the work that cannot proceed is read
+         before the board it is buried in. Reached from the dashboard's Urgent
+         Actions, which arrives with ?attention=all already set. --}}
+    <x-task-attention-alerts :summary="$attentionSummary" />
 
     <div class="card shadow-sm border-0 rounded-2 mb-3">
         <div class="card-body p-3">

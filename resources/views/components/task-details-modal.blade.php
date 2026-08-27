@@ -165,6 +165,14 @@
                         <h6 class="task-completion-heading">
                             <i class="bi bi-check-circle-fill" aria-hidden="true"></i>
                             Completion Details
+
+                            {{-- The state the rest of the system shows for this
+                                 task, said here too: a reader who opens a task
+                                 from a table reading "Finished Late" must not
+                                 find a panel that only says Completed. --}}
+                            <span class="badge {{ $task->statusBadgeClass() }} ms-2">
+                                {{ $task->statusLabel() }}
+                            </span>
                         </h6>
 
                         {{-- Closed by somebody other than the technician holding it,
@@ -209,6 +217,20 @@
                                         <span class="text-muted">&middot; by {{ $closer->fullName() }}</span>
                                     @endif
                                 </p>
+
+                                {{-- By how much, for the record. The badge above
+                                     says it was late; this says what late meant
+                                     on this task. --}}
+                                @php $daysLate = \App\Support\TaskStatus::daysLate($task); @endphp
+
+                                @if ($daysLate !== null)
+                                    <p class="task-completion-late mb-0">
+                                        <i class="bi bi-clock-history me-1" aria-hidden="true"></i>
+                                        {{ $daysLate }} {{ \Illuminate\Support\Str::plural('day', $daysLate) }}
+                                        after the due date of
+                                        {{ \Carbon\CarbonImmutable::parse($task->due_date)->format(\App\Support\BusinessTime::DATE) }}.
+                                    </p>
+                                @endif
                             @else
                                 {{-- Work closed before this system recorded when and by whom.
                                      Said plainly rather than left as an absent row: a missing

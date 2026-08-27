@@ -6,10 +6,10 @@ use App\Models\Inquiry;
 use App\Models\Project;
 use App\Models\Schedule;
 use App\Models\SpecialtyRequest;
+use App\Models\Task;
 use App\Models\Technician;
 use App\Models\User;
 use Carbon\CarbonImmutable;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 
@@ -243,23 +243,15 @@ class DashboardMetrics
      */
     private function activeTodayCount(): int
     {
-        $today = CarbonImmutable::today()->toDateString();
-
-        // Finished work is not happening today, whichever side of the client's
-        // confirmation it sits on - the dates it still holds are the days the
-        // crew already worked.
-        return Project::query()
-            ->where('is_archived', false)
-            ->whereNotIn('status', Project::READ_ONLY_STATUSES)
-            // A paused project is not happening today whatever dates it still
-            // holds - a hold keeps the days already worked as the project's
-            // record, and this figure is about who has a crew on site now.
-            // The calendar has always hidden held work for the same reason.
-            ->where(fn ($paused) => $paused->where('on_hold', false)->orWhereNull('on_hold'))
-            ->whereHas('schedules', fn ($query) => $query
-                ->whereDate('start_datetime', '<=', $today)
-                ->whereDate('end_datetime', '>=', $today))
-            ->count();
+        // The rule itself lives on the model - see Project::scopeActiveToday()
+        // and its row-level twin isActiveToday(), which is what puts the
+        // ACTIVE TODAY flag on a projects table row in every portal. This
+        // figure and those rows are therefore the same question asked once.
+        //
+        // It used to be a copy of that query stated here, measured against the
+        // server's date rather than the office's, so for eight hours a day the
+        // dashboard and the calendar disagreed about which day it was.
+        return Project::query()->activeToday()->count();
     }
 
     /**
@@ -296,13 +288,18 @@ class DashboardMetrics
      * point of the section is that it stops mentioning something the moment it
      * is dealt with.
      *
-     * @return array<int, array{key: string, label: string, count: int, icon: string, url: string}>
+     * @return array<int, array{key: string, label: string, detail: ?string, count: int, icon: string, url: string}>
      */
     public function urgentActions(): array
     {
         $projects = route('super-admin.projects');
         $schedules = route('super-admin.schedules.index');
         $outsideHours = $this->partialDaysOutsideHours();
+        // Every task, unfiltered: an administrator reads the whole board. A
+        // lead runs the same figure over their own projects instead - see
+        // TaskAssignmentGaps, which is handed the scope rather than choosing
+        // one.
+        $unassignedTasks = Task::query()->needsAssignment()->count();
 
         return collect([
             [
@@ -375,14 +372,37 @@ class DashboardMetrics
                 'icon' => 'bi-people',
                 'url' => $projects.'?status=no_technicians',
             ],
+            [
+                // Open tasks that cannot proceed: nobody holds them, they have
+                // no dates, or neither. Counted by the one rule both portals
+                // read - Task::scopeNeedsAssignment() - so this figure and the
+                // lead's own alert can never describe different work.
+                //
+                // The label does not lead with the number the way its siblings
+                // do, because the number needs a qualifier: "5 Unassigned
+                // Tasks" would say four of them are missing a technician when
+                // some are only missing a date. The detail line carries it.
+                'key' => 'unassigned_tasks',
+                'count' => $unassignedTasks,
+                'label' => $unassignedTasks === 1 ? 'Unassigned Task' : 'Unassigned Tasks',
+                'detail' => TaskAssignmentGaps::dashboardSummary($unassignedTasks),
+                'icon' => 'bi-clipboard-x',
+                // Opens the Tasks board with the attention filter already on,
+                // so the reader lands on exactly these tasks with each one
+                // saying what it is missing.
+                'url' => route('super-admin.tasks.index').'?attention=all',
+            ],
         ])
             ->filter(fn (array $action): bool => $action['count'] > 0)
             ->map(fn (array $action): array => [
                 'key' => $action['key'],
                 // "3 Unscheduled Projects" / "1 Overdue Project" - the whole
                 // message, so the view prints one string and cannot get the
-                // agreement wrong.
-                'label' => $action['count'].' '.($action['count'] === 1 ? $action['singular'] : $action['plural']),
+                // agreement wrong. An entry that cannot be worded that way
+                // states its own label and explains the number underneath.
+                'label' => $action['label']
+                    ?? $action['count'].' '.($action['count'] === 1 ? $action['singular'] : $action['plural']),
+                'detail' => $action['detail'] ?? null,
                 'count' => $action['count'],
                 'icon' => $action['icon'],
                 'url' => $action['url'],
@@ -458,15 +478,14 @@ class DashboardMetrics
         // The cached value is a plain array, not the Collection this returns -
         // see remember()'s note on why nothing but arrays and scalars go in.
         $rows = $this->remember('activeTechniciansToday', function (): array {
-            $today = CarbonImmutable::today()->toDateString();
-
+            // Project::scopeActiveToday() decides what "on site today" means,
+            // here as everywhere else, so this panel and the figure above it
+            // cannot describe two different days' work.
             return Technician::query()
                 ->with('account')
                 ->whereHas('account', fn ($query) => $query->whereIn('role', User::TECHNICIAN_ROLES))
-                ->whereHas('projectTechnicians.project', fn ($project) => $this
-                    ->scopeToTodaysWork($project, $today))
-                ->with(['projectTechnicians.project' => fn ($project) => $this
-                    ->scopeToTodaysWork($project, $today)])
+                ->whereHas('projectTechnicians.project', fn ($project) => $project->activeToday())
+                ->with(['projectTechnicians.project' => fn ($project) => $project->activeToday()])
                 ->get()
                 ->map(fn (Technician $technician): array => [
                     'name' => $technician->name,
@@ -498,25 +517,6 @@ class DashboardMetrics
     public function activeTechnicianCountToday(): int
     {
         return $this->activeTechniciansToday(PHP_INT_MAX)->count();
-    }
-
-    /**
-     * "This project has a crew on it today": live, not paused, not finished,
-     * and holding a date range that covers the date given.
-     *
-     * The same three conditions activeTodayCount() applies, stated once so the
-     * figure and the list of names cannot drift apart.
-     *
-     * @param  \Illuminate\Contracts\Database\Query\Builder|Builder<Project>  $query
-     */
-    private function scopeToTodaysWork($query, string $today): void
-    {
-        $query->where('is_archived', false)
-            ->whereNotIn('status', Project::READ_ONLY_STATUSES)
-            ->where(fn ($paused) => $paused->where('on_hold', false)->orWhereNull('on_hold'))
-            ->whereHas('schedules', fn ($schedules) => $schedules
-                ->whereDate('start_datetime', '<=', $today)
-                ->whereDate('end_datetime', '>=', $today));
     }
 
     /**

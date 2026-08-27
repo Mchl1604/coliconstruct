@@ -56,7 +56,12 @@ document.addEventListener('DOMContentLoaded', function() {
     const technicianDropdownMenu = form.querySelector('[data-technician-dropdown-menu]');
     const technicianSelectedList = form.querySelector('[data-technician-selected-list]');
     const technicianHiddenInputs = form.querySelector('[data-technician-hidden-inputs]');
-    const leadTechSelect = form.querySelector('[data-lead-tech-select]');
+    // The lead is picked from the same dropdown the technicians use, so it is
+    // three elements rather than a <select>: the button that shows the choice,
+    // the menu of leads, and the hidden input that is actually submitted.
+    const leadTechButton = form.querySelector('[data-lead-tech-button]');
+    const leadTechMenu = form.querySelector('[data-lead-tech-menu]');
+    const leadTechInput = form.querySelector('[data-lead-tech-input]');
     const startDateInput = form.querySelector('[data-summary-input="start_date"]');
     const endDateInput = form.querySelector('[data-summary-input="end_date"]');
     const projectDateInput = form.querySelector('[data-summary-input="project_date"]');
@@ -77,6 +82,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // Whether the unavailable section of the picker is expanded, kept out here
     // so re-rendering after a pick does not collapse it again.
     let blockedTechniciansOpen = false;
+    // The lead picker's own fold, kept separate from the technicians' one so
+    // opening either does not open the other.
+    let blockedLeadsOpen = false;
     // Set once the Import Team dialog is wired up; the schedule fields call it
     // as they change, and it is absent until then.
     let refreshImportTeamButton = null;
@@ -130,7 +138,10 @@ document.addEventListener('DOMContentLoaded', function() {
             return 'Not filled yet';
         }
 
-        if (field.type === 'date') {
+        // Recognised by the shape of the value rather than by field.type:
+        // flatpickr rewrites the type of the input it takes over, and the
+        // review would otherwise print a bare 2026-08-01.
+        if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
             return friendlyDate(value);
         }
 
@@ -250,7 +261,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function activeTechnicianIds() {
-        const leadTechnicianId = leadTechSelect && leadTechSelect.value ? String(leadTechSelect.value) : null;
+        const leadTechnicianId = leadTechInput && leadTechInput.value ? String(leadTechInput.value) : null;
 
         return Array.from(new Set([
             ...(leadTechnicianId ? [leadTechnicianId] : []),
@@ -425,7 +436,10 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         return new Date(dateString + 'T00:00:00').toLocaleDateString('en-US', {
-            month: 'short',
+            // The month written out: "August 1, 2026". The same shape the date
+            // fields themselves show, so the review restates the schedule
+            // rather than translating it.
+            month: 'long',
             day: 'numeric',
             year: 'numeric',
         });
@@ -575,17 +589,41 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    /**
+     * Disable a date field, both halves of it.
+     *
+     * altInput means the field on screen is not the field with the name on it,
+     * and disabling only the real one leaves a typable box that submits
+     * nothing. flatpickr does not keep the two in step by itself.
+     */
+    function setDateFieldDisabled(input, disabled) {
+        if (!input) {
+            return;
+        }
+
+        input.disabled = disabled;
+
+        const shown = input._flatpickr && input._flatpickr.altInput;
+
+        if (shown) {
+            shown.disabled = disabled;
+            shown.classList.toggle('is-disabled', disabled);
+        }
+    }
+
     function refreshDatePickers() {
         const enabled = scheduleInputsReady();
         const partialDay = isPartialDay();
 
         [startDateInput, endDateInput].forEach(function(input) {
-            if (input) {
-                input.disabled = partialDay || !enabled;
-            }
+            setDateFieldDisabled(input, partialDay || !enabled);
         });
 
-        [projectDateInput, startTimeSelect, endTimeSelect].forEach(function(input) {
+        [projectDateInput].forEach(function(input) {
+            setDateFieldDisabled(input, !partialDay || !enabled);
+        });
+
+        [startTimeSelect, endTimeSelect].forEach(function(input) {
             if (input) {
                 input.disabled = !partialDay || !enabled;
             }
@@ -618,6 +656,44 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
+    /**
+     * A Reset inside the calendar panel itself.
+     *
+     * Per field, and appended to the panel rather than added as a button
+     * beside the input or down in a footer: the calendar is where the date was
+     * chosen, so it is where the person looks to unchoose it. Clearing runs
+     * the same path a change does, because an emptied date changes who is
+     * available just as much as a filled one does.
+     */
+    function addCalendarReset(picker, label) {
+        if (!picker || !picker.calendarContainer) {
+            return;
+        }
+
+        const footer = document.createElement('div');
+        footer.className = 'flatpickr-reset-row';
+
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'flatpickr-reset-button';
+        button.innerHTML = '<i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i> Reset';
+        button.setAttribute('aria-label', 'Clear the ' + label);
+
+        button.addEventListener('click', function() {
+            picker.clear();
+            picker.close();
+
+            refreshDatePickers();
+            validateScheduleInputs();
+            renderTechnicianDropdown();
+            renderLeadTechnicianDropdown();
+            updateSummary();
+        });
+
+        footer.appendChild(button);
+        picker.calendarContainer.appendChild(footer);
+    }
+
     function initializeDatePickers() {
         if (!window.flatpickr) {
             return;
@@ -627,13 +703,19 @@ document.addEventListener('DOMContentLoaded', function() {
             refreshDatePickers();
             validateScheduleInputs();
             renderTechnicianDropdown();
-            renderLeadTechnicianOptions();
+            renderLeadTechnicianDropdown();
             updateSummary();
         };
 
         if (startDateInput && endDateInput) {
             startPicker = window.flatpickr(startDateInput, {
                 dateFormat: 'Y-m-d',
+                // What the field shows: "August 1, 2026". altInput keeps the
+                // real input holding the Y-m-d the server validates, so the
+                // friendlier reading costs the payload nothing.
+                altInput: true,
+                altFormat: 'F j, Y',
+                altInputClass: 'form-control flatpickr-alt-input',
                 allowInput: true,
                 minDate: 'today',
                 onChange: function() {
@@ -647,6 +729,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
             endPicker = window.flatpickr(endDateInput, {
                 dateFormat: 'Y-m-d',
+                // What the field shows: "August 1, 2026". altInput keeps the
+                // real input holding the Y-m-d the server validates, so the
+                // friendlier reading costs the payload nothing.
+                altInput: true,
+                altFormat: 'F j, Y',
+                altInputClass: 'form-control flatpickr-alt-input',
                 allowInput: true,
                 minDate: 'today',
                 onChange: afterChange,
@@ -656,6 +744,12 @@ document.addEventListener('DOMContentLoaded', function() {
         if (projectDateInput) {
             projectDatePicker = window.flatpickr(projectDateInput, {
                 dateFormat: 'Y-m-d',
+                // What the field shows: "August 1, 2026". altInput keeps the
+                // real input holding the Y-m-d the server validates, so the
+                // friendlier reading costs the payload nothing.
+                altInput: true,
+                altFormat: 'F j, Y',
+                altInputClass: 'form-control flatpickr-alt-input',
                 allowInput: true,
                 minDate: 'today',
                 onChange: function() {
@@ -672,6 +766,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 },
             });
         }
+
+        addCalendarReset(startPicker, 'start date');
+        addCalendarReset(endPicker, 'end date');
+        addCalendarReset(projectDatePicker, 'project date');
 
         refreshDatePickers();
     }
@@ -705,11 +803,11 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function selectedLeadTechnician() {
-        if (!leadTechSelect || !leadTechSelect.value) {
+        if (!leadTechInput || !leadTechInput.value) {
             return null;
         }
 
-        return technicianLookup.get(String(leadTechSelect.value)) || null;
+        return technicianLookup.get(String(leadTechInput.value)) || null;
     }
 
     function updateSelectedState() {
@@ -887,13 +985,25 @@ document.addEventListener('DOMContentLoaded', function() {
      * Lead technicians get the same three bands as the team picker, expressed
      * as optgroups so an unavailable lead can be shown but not chosen.
      */
-    function renderLeadTechnicianOptions() {
-        if (!leadTechSelect) {
+    /**
+     * The lead picker, drawn the way the technicians picker is drawn.
+     *
+     * Same sections, same rows, same fold for the ones who cannot take it:
+     * the two fields sit next to each other and are answering the same
+     * question, so they had no business answering it in two different shapes.
+     * What differs is only that a project has one lead, so choosing replaces
+     * rather than adds.
+     *
+     * The chosen id lives in the hidden input, which is what the form
+     * submits - see the markup in createProject.blade.php.
+     */
+    function renderLeadTechnicianDropdown() {
+        if (!leadTechMenu) {
             return;
         }
 
         const projectTypes = selectedProjectTypes();
-        const currentValue = leadTechSelect.value;
+        const currentValue = leadTechInput ? String(leadTechInput.value || '') : '';
 
         const leads = wizardData
             .filter(function(technician) {
@@ -906,7 +1016,10 @@ document.addEventListener('DOMContentLoaded', function() {
                     id: technician.id,
                     name: technician.name,
                     matched: matchedSkills(technician, projectTypes),
-                    available: reason === '',
+                    // Whoever is already chosen stays choosable, or the field
+                    // would hold a value its own menu refuses to show. The
+                    // schedule error still calls the clash out.
+                    available: reason === '' || String(technician.id) === currentValue,
                     reason: reason,
                 };
             })
@@ -914,26 +1027,45 @@ document.addEventListener('DOMContentLoaded', function() {
                 return right.matched.length - left.matched.length || left.name.localeCompare(right.name);
             });
 
-        const optionMarkup = function(lead) {
-            const label = escapeHtml(lead.name) +
-                (lead.matched.length ? ' — ' + escapeHtml(lead.matched.join(', ')) : '') +
-                (lead.available ? '' : ' (' + escapeHtml(lead.reason) + ')');
-            // Never disable the option already chosen, or the select would lose
-            // its value; the schedule conflict message still calls it out.
-            const disabled = !lead.available && String(lead.id) !== String(currentValue) ? ' disabled' : '';
-            const selected = String(lead.id) === String(currentValue) ? ' selected' : '';
+        const renderButtons = function(items) {
+            return items.map(function(lead) {
+                const isSelected = String(lead.id) === currentValue;
+                const skills = lead.matched.join(', ');
 
-            return '<option value="' + lead.id + '"' + disabled + selected + '>' + label + '</option>';
+                return '<li><button type="button" class="dropdown-item technician-option' +
+                    (isSelected ? ' active' : '') + '" ' +
+                    'data-lead-option="' + lead.id + '" ' +
+                    'data-lead-name="' + escapeHtml(lead.name) + '" ' +
+                    'aria-pressed="' + (isSelected ? 'true' : 'false') + '">' +
+                    '<span class="technician-option-name">' + escapeHtml(lead.name) + '</span>' +
+                    (skills ? '<span class="technician-option-skills">' + escapeHtml(skills) + '</span>' : '') +
+                    '</button></li>';
+            }).join('');
         };
 
-        const group = function(label, items) {
+        // Plain rows, not buttons: there is nothing here to click.
+        const renderBlocked = function(items) {
             if (!items.length) {
                 return '';
             }
 
-            return '<optgroup label="' + escapeHtml(label) + '">' +
-                items.map(optionMarkup).join('') +
-                '</optgroup>';
+            const rows = items.map(function(lead) {
+                return '<div class="technician-option is-disabled" aria-disabled="true">' +
+                    '<span class="technician-option-name">' + escapeHtml(lead.name) + '</span>' +
+                    '<span class="technician-option-reason">' + escapeHtml(lead.reason) + '</span>' +
+                    '</div>';
+            }).join('');
+
+            return '<li><hr class="dropdown-divider"></li>' +
+                '<li class="technician-blocked-wrap">' +
+                '<button type="button" class="schedule-blocked-toggle' +
+                (blockedLeadsOpen ? ' is-open' : '') + '" data-lead-blocked-toggle>' +
+                '<i class="bi bi-chevron-right" aria-hidden="true"></i>' +
+                '<span>' + (blockedLeadsOpen ? 'Hide' : 'Show') + ' unavailable lead technicians (' +
+                items.length + ')</span>' +
+                '</button>' +
+                '<div class="schedule-blocked-list' + (blockedLeadsOpen ? '' : ' d-none') + '">' +
+                rows + '</div></li>';
         };
 
         const free = leads.filter(function(lead) {
@@ -952,11 +1084,77 @@ document.addEventListener('DOMContentLoaded', function() {
             return !lead.available;
         });
 
-        leadTechSelect.innerHTML =
-            '<option value=""' + (currentValue ? '' : ' selected') + ' disabled>Select Lead Technician</option>' +
-            group('Suggested — matches this project', suggested) +
-            group(suggested.length ? 'Other available' : 'Available', others) +
-            group(isPartialDay() ? 'Unavailable at this time' : 'Unavailable for these dates', blocked);
+        const suggestedHtml = suggested.length
+            ? renderButtons(suggested)
+            : '<li><span class="dropdown-item-text text-secondary">No suggested lead technicians yet.</span></li>';
+
+        const otherHtml = others.length
+            ? renderButtons(others)
+            : '<li><span class="dropdown-item-text text-secondary">No other lead technicians available.</span></li>';
+
+        leadTechMenu.innerHTML = [
+            '<li class="dropdown-header text-uppercase small text-secondary">Suggested Lead Technicians</li>',
+            suggestedHtml,
+            '<li><hr class="dropdown-divider"></li>',
+            '<li class="dropdown-header text-uppercase small text-secondary">Other Lead Technicians</li>',
+            otherHtml,
+            renderBlocked(blocked),
+        ].join('');
+
+        leadTechMenu.querySelectorAll('[data-lead-option]').forEach(function(button) {
+            button.addEventListener('click', function() {
+                const leadId = button.dataset.leadOption || '';
+
+                // Pressing the chosen lead again clears the field, the way
+                // pressing a chosen technician removes them.
+                setLeadTechnician(String(leadId) === currentValue ? '' : leadId);
+            });
+        });
+
+        const blockedToggle = leadTechMenu.querySelector('[data-lead-blocked-toggle]');
+
+        if (blockedToggle) {
+            blockedToggle.addEventListener('click', function() {
+                blockedLeadsOpen = !blockedLeadsOpen;
+                renderLeadTechnicianDropdown();
+            });
+        }
+
+        updateLeadTechnicianButton();
+    }
+
+    /**
+     * Choose a lead, or clear the choice, and tell the rest of the wizard.
+     *
+     * The hidden input is the value; everything downstream reads it through
+     * selectedLeadTechnician(). A `change` event is dispatched because the
+     * form listens for one to keep the review in step - a hidden input never
+     * fires its own.
+     */
+    function setLeadTechnician(leadId) {
+        if (!leadTechInput) {
+            return;
+        }
+
+        leadTechInput.value = leadId ? String(leadId) : '';
+        leadTechInput.dispatchEvent(new Event('change', { bubbles: true }));
+
+        updateScheduleFieldState();
+        validateScheduleInputs();
+        renderTechnicianDropdown();
+        renderLeadTechnicianDropdown();
+        updateSummary();
+    }
+
+    function updateLeadTechnicianButton() {
+        if (!leadTechButton) {
+            return;
+        }
+
+        const lead = selectedLeadTechnician();
+
+        leadTechButton.textContent = lead ? lead.name : 'Select Lead Technician';
+        leadTechButton.classList.toggle('is-empty', !lead);
     }
 
     function updateTechnicianDropdownButton() {
@@ -1172,7 +1370,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // changes who counts as available - so the picker is restated here
         // rather than at each of the call sites.
         renderTechnicianDropdown();
-        renderLeadTechnicianOptions();
+        renderLeadTechnicianDropdown();
     }
 
     function showScheduleError(message) {
@@ -1335,7 +1533,14 @@ document.addEventListener('DOMContentLoaded', function() {
             client_phone: formatFieldValue(form.querySelector('[data-summary-input="client_phone"]')),
             project_address: formatFieldValue(form.querySelector(
                 '[data-summary-input="project_address"]')),
-            quotation_amount: formatFieldValue(quotationAmountInput),
+            // Already grouped by moneyInput.js, so the review restates the
+            // figure exactly as it was typed - with the peso sign the field
+            // itself carries in its input group.
+            quotation_amount: (function() {
+                const amount = formatFieldValue(quotationAmountInput);
+
+                return amount === 'Not filled yet' ? amount : '₱ ' + amount;
+            })(),
             project_types: selectedProjectTypes().join(', '),
             project_documents: selectedFiles().join(', '),
             project_description: formatFieldValue(form.querySelector(
@@ -1416,7 +1621,22 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
 
+        // The lead is a dropdown rather than a <select> now, so its "you have
+        // to pick one" is checked here instead of by the browser - exactly as
+        // the technicians picker below it has always been checked.
+        if (currentStep.value === 3 && !selectedLeadTechnician()) {
+            showScheduleError('Choose a lead technician for this project.');
+
+            if (leadTechButton) {
+                leadTechButton.focus();
+            }
+
+            return false;
+        }
+
         if (currentStep.value === 3 && selectedTechnicians().length === 0) {
+            showScheduleError('Choose at least one technician for this project.');
+
             if (technicianDropdownButton) {
                 technicianDropdownButton.focus();
             }
@@ -1466,7 +1686,7 @@ document.addEventListener('DOMContentLoaded', function() {
             applySchedulingMode();
             validateScheduleInputs();
             renderTechnicianDropdown();
-            renderLeadTechnicianOptions();
+            renderLeadTechnicianDropdown();
             updateSummary();
         });
     });
@@ -1480,7 +1700,7 @@ document.addEventListener('DOMContentLoaded', function() {
             refreshTimeOptions();
             validateScheduleInputs();
             renderTechnicianDropdown();
-            renderLeadTechnicianOptions();
+            renderLeadTechnicianDropdown();
             updateSummary();
         });
     });
@@ -1490,7 +1710,7 @@ document.addEventListener('DOMContentLoaded', function() {
             syncSelectableCards();
             renderTechnicianDropdown();
 
-            renderLeadTechnicianOptions();
+            renderLeadTechnicianDropdown();
 
             if (projectTypeError) {
                 projectTypeError.classList.add('d-none');
@@ -1500,13 +1720,6 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
-    if (leadTechSelect) {
-        leadTechSelect.addEventListener('change', function() {
-            updateScheduleFieldState();
-            validateScheduleInputs();
-            updateSummary();
-        });
-    }
 
     // Last line of defence: the review step can be reached before a technician
     // change invalidates the chosen schedule, so re-check on submit too. The
@@ -1538,7 +1751,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const refreshTechnicianAvailability = function() {
         validateScheduleInputs();
         renderTechnicianDropdown();
-        renderLeadTechnicianOptions();
+        renderLeadTechnicianDropdown();
     };
 
     [startDateInput, endDateInput, projectDateInput].forEach(function(input) {
@@ -1573,15 +1786,7 @@ document.addEventListener('DOMContentLoaded', function() {
             params: importTeamParams,
             onImport: function (result) {
                 if (result.lead) {
-                    const option = leadTechSelect.querySelector(
-                        'option[value="' + result.lead.id + '"]'
-                    );
-
-                    if (option) {
-                        option.disabled = false;
-                    }
-
-                    leadTechSelect.value = String(result.lead.id);
+                    setLeadTechnician(String(result.lead.id));
                 }
 
                 result.technicians.forEach(function (technician) {
@@ -1647,7 +1852,7 @@ document.addEventListener('DOMContentLoaded', function() {
     syncSelectableCards();
     updateClientType();
     renderTechnicianDropdown();
-    renderLeadTechnicianOptions();
+    renderLeadTechnicianDropdown();
     renderTechnicianChips();
     initializeDatePickers();
     refreshImportTeamButton = initImportTeam();

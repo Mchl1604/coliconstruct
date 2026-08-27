@@ -591,6 +591,17 @@
     color: #64748b;
 }
 
+/* The list is capped, so it says how much it is not showing. Without this a
+   technician at the end of the alphabet reads as one who is not in the
+   system. */
+.schedule-historical-more {
+    padding: 0.4rem 0.5rem;
+    border-top: 1px solid #eef2f7;
+    font-size: 0.75rem;
+    font-style: italic;
+    color: #94a3b8;
+}
+
 .schedule-historical-chosen {
     display: flex;
     flex-wrap: wrap;
@@ -1162,4 +1173,117 @@
    flatpickr sizes the panel from the day grid alone. */
 .flatpickr-calendar.open {
     height: auto;
+}
+
+/* ---- Historical schedule conflict ----
+   Shown when somebody named for a day that has gone is already down as working
+   elsewhere on it. Drawn in the amber of the historical step around it rather
+   than in red: this is not a refusal. A clash in the future is a booking that
+   cannot be made; this is two records disagreeing about a day that has already
+   happened, and the correction being made may well be the right one. So it
+   reads as a question with the evidence attached, and the tick below it is the
+   answer. */
+
+.schedule-historical-conflicts {
+    margin-top: 0.85rem;
+    padding: 0.85rem 0.9rem;
+    border: 1px solid #f3b7b7;
+    border-radius: 0.6rem;
+    background: #fdf4f4;
+}
+
+.schedule-historical-conflicts-head {
+    display: flex;
+    gap: 0.7rem;
+}
+
+.schedule-historical-conflicts-head > i {
+    margin-top: 0.15rem;
+    font-size: 1.05rem;
+    color: #b42318;
+}
+
+.schedule-historical-conflicts .schedule-historical-title {
+    color: #7a271a;
+}
+
+.schedule-historical-conflicts .schedule-historical-lead {
+    color: #912018;
+}
+
+.schedule-historical-conflict-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    margin-top: 0.75rem;
+}
+
+/* One block per person, because the answer differs per person: naming three
+   people where one is booked elsewhere flags that one and leaves the rest. */
+.schedule-historical-conflict {
+    padding: 0.55rem 0.7rem;
+    border: 1px solid #f0d3d3;
+    border-radius: 0.5rem;
+    background: #fff;
+}
+
+.schedule-historical-conflict-name {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #7a271a;
+}
+
+.schedule-historical-conflict-rows {
+    list-style: none;
+    margin: 0.35rem 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.schedule-historical-conflict-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.4rem;
+    font-size: 0.78rem;
+    color: #475467;
+}
+
+.schedule-historical-conflict-date {
+    font-weight: 700;
+    color: #1f2937;
+}
+
+.schedule-historical-conflict-status {
+    font-size: 0.72rem;
+    color: #98a2b3;
+}
+
+.schedule-historical-conflict-booking {
+    flex-basis: 100%;
+    font-size: 0.74rem;
+    color: #98a2b3;
+}
+
+/* The answer. Deliberately a deliberate act: the save is refused until it is
+   ticked, on the server as well as here. */
+.schedule-historical-acknowledge {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.45rem;
+    margin-top: 0.75rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #7a271a;
+    cursor: pointer;
+}
+
+.schedule-historical-acknowledge input {
+    margin-top: 0.15rem;
+    flex: 0 0 auto;
 }

@@ -42,6 +42,7 @@ class ScheduleCorrection extends Model
         'added_dates',
         'removed_dates',
         'technicians',
+        'conflicts',
         'created_at',
     ];
 
@@ -49,6 +50,7 @@ class ScheduleCorrection extends Model
         'added_dates' => 'array',
         'removed_dates' => 'array',
         'technicians' => 'array',
+        'conflicts' => 'array',
         'created_at' => 'datetime',
     ];
 

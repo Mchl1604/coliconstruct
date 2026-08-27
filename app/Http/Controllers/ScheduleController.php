@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Exceptions\HistoricalConflictException;
 use App\Models\ActivityLog;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
@@ -818,6 +819,12 @@ class ScheduleController extends Controller
             // The Super Admin naming somebody the record does not already put
             // on this project for those days, deliberately.
             'historical_add_technicians' => ['nullable', 'boolean'],
+            // The Super Admin has been shown that somebody they are naming is
+            // already down as working elsewhere on one of these days, and is
+            // saying the correction is right anyway. Without this the save is
+            // refused - see the conflict check below - and with it the clash is
+            // written into the audit rather than passed over.
+            'historical_conflicts_confirmed' => ['nullable', 'boolean'],
             ...$scheduleRules->rules('ranges.*.'),
         ], $scheduleRules->messages('ranges.*.'));
 
@@ -840,6 +847,7 @@ class ScheduleController extends Controller
             ->all();
         $overrode = false;
         $corrected = [];
+        $confirmedConflicts = [];
 
         try {
             DB::transaction(function () use (
@@ -851,7 +859,8 @@ class ScheduleController extends Controller
                 $actor,
                 $storedLabels,
                 &$overrode,
-                &$corrected
+                &$corrected,
+                &$confirmedConflicts
             ): void {
                 $ranges = $this->resolveSubmittedRanges(
                     $project,
@@ -889,6 +898,32 @@ class ScheduleController extends Controller
                     $historical,
                     $actor?->id
                 );
+
+                // Step three: the days are known and somebody has been named
+                // for them, so ask what the record already says about those
+                // people on those days.
+                //
+                // A clash here is NOT a refusal. Two records disagreeing about
+                // a day that has gone is exactly the situation only a Super
+                // Admin can settle, so the save is refused only while the
+                // clash is unconfirmed; once it is confirmed the correction
+                // goes through and the clash is written into the audit. See
+                // HistoricalScheduleCorrection::conflictsFor().
+                $conflicts = $assessment['added'] === []
+                    ? []
+                    : $historical->conflictsFor(
+                        $project,
+                        $assessment['added'],
+                        $crew->map(fn (ProjectTechnician $assignment): int => (int) $assignment->technician_id)->all(),
+                        $ranges,
+                        $assessment['ranges']
+                    );
+
+                if ($conflicts !== [] && ! (bool) ($validated['historical_conflicts_confirmed'] ?? false)) {
+                    throw new HistoricalConflictException($conflicts);
+                }
+
+                $confirmedConflicts = $conflicts;
 
                 // A booking that has ended is the record of work that
                 // happened, and it survives whatever the form sends. Omitting
@@ -990,7 +1025,12 @@ class ScheduleController extends Controller
                     ];
                 }
 
-                $historical->record($project, $corrected, $actor);
+                $historical->record(
+                    $project,
+                    $corrected,
+                    $actor,
+                    $historical->describeConflicts($confirmedConflicts, $actor)
+                );
 
                 // Ranges that run into each other are one booking, so they are
                 // merged before anything downstream reads them - including the
@@ -1039,6 +1079,29 @@ class ScheduleController extends Controller
             return redirect()
                 ->route('super-admin.schedules.index')
                 ->with('success', $this->saveMessage($project, $corrected, $historical));
+        } catch (HistoricalConflictException $e) {
+            // Not an error, and deliberately not worded as one: the record
+            // disagrees with itself about a day that has gone, and the answer
+            // may well be that the correction is the right one. The editor
+            // reopens on the clash with a confirmation to tick - see
+            // schedule.js - and the same submission with that box ticked goes
+            // straight through.
+            return redirect()
+                ->route('super-admin.schedules.index')
+                ->withInput()
+                ->with('historicalConflicts', [
+                    'project_id' => (int) $project->project_id,
+                    'conflicts' => $e->conflicts(),
+                ])
+                // Said out loud as well as handed to the editor. The editor
+                // normally puts this question before the save is ever
+                // attempted, so arriving here means that check did not run -
+                // and a redirect that silently changed nothing would look like
+                // a save that worked.
+                ->with('warning', sprintf(
+                    'Nothing was saved. The record already places %s. Reopen the schedule and confirm the correction to save it.',
+                    $historical->describeConflictSummary($e->conflicts())
+                ));
         } catch (Throwable $e) {
             return redirect()
                 ->route('super-admin.schedules.index')
@@ -1072,10 +1135,23 @@ class ScheduleController extends Controller
         $validator = Validator::make($request->all(), [
             'ranges' => ['nullable', 'array'],
             'ranges.*.schedule_id' => ['nullable', 'integer'],
+            // Asked a second time, once names have been chosen: the same
+            // endpoint answers "which days?" and "does the record already put
+            // these people somewhere else on them?", so the editor makes one
+            // round trip per step rather than needing an endpoint each.
+            'historical_technicians' => ['nullable', 'array'],
+            'historical_technicians.*' => ['integer'],
             ...$scheduleRules->rules('ranges.*.'),
         ]);
 
-        $nothing = ['required' => false, 'dates' => [], 'label' => '', 'members' => [], 'others' => []];
+        $nothing = [
+            'required' => false,
+            'dates' => [],
+            'label' => '',
+            'members' => [],
+            'others' => [],
+            'conflicts' => [],
+        ];
 
         if ($validator->fails() || ! $request->user()?->isSuperAdmin() || $project->isReadOnly()) {
             return response()->json($nothing);
@@ -1102,11 +1178,29 @@ class ScheduleController extends Controller
             return response()->json($nothing);
         }
 
+        // Only once somebody has been named is there anything to check. On
+        // the first pass this is empty and the editor is still asking "who?".
+        $chosen = array_values(array_filter(array_map(
+            fn ($id): int => (int) $id,
+            $request->input('historical_technicians', []) ?? []
+        )));
+
+        $conflicts = $chosen === [] ? [] : $historical->conflictsFor(
+            $project,
+            $assessment['added'],
+            $chosen,
+            $ranges,
+            $assessment['ranges']
+        );
+
         return response()->json([
             'required' => true,
             'dates' => $assessment['added'],
             'label' => $historical->describeDates($assessment['added']),
             ...$historical->candidates($project, $assessment['added']),
+            // A warning to be confirmed, never a refusal - see
+            // HistoricalScheduleCorrection::conflictsFor().
+            'conflicts' => $conflicts,
         ]);
     }
 

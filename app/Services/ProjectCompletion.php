@@ -12,7 +12,7 @@ use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\File;
-use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 
 /**
  * Closing a project out: what it does to the booked dates, and the three
@@ -132,6 +132,14 @@ class ProjectCompletion
             'client_confirmed_at' => null,
             'client_confirmed_by' => null,
             'completion_method' => null,
+            // And the same for an off-site confirmation an administrator
+            // recorded: a project reopened and completed again is being put to
+            // the client afresh, so last cycle's telephone call must not be
+            // sitting on it while this one is still unanswered.
+            'client_confirmation_channel' => null,
+            'client_confirmation_note' => null,
+            'client_confirmation_recorded_by' => null,
+            'client_confirmation_recorded_at' => null,
         ]);
 
         $this->storePhotos($project, $photos);
@@ -185,22 +193,136 @@ class ProjectCompletion
     /**
      * Close the project for good.
      *
-     * Reached two ways - the client pressed Confirm Completion, or seven days
-     * went by without a reply - and the only difference between them is who is
-     * recorded and how. Neither touches a schedule: the dates were settled
-     * when completion was requested, and the history stands.
+     * Reached three ways - the client pressed Confirm Completion, seven days
+     * went by without a reply, or the client confirmed off the website and an
+     * administrator recorded it - and the only difference between them is who
+     * is recorded and how. None of them touches a schedule: the dates were
+     * settled when completion was requested, and the history stands.
+     *
+     * The third way goes through here rather than beside it. An administrator
+     * recording a confirmation ends the project in exactly the state the other
+     * two do; a second closing path would be a second set of columns to keep
+     * in step, and the first thing to fall out of step would be whatever this
+     * one learns to write next.
      *
      * @param  string  $method  One of the Project::METHOD_* constants.
+     * @param  array{channel?: string|null, note?: string|null, recorded_by?: User|null, confirmed_at?: mixed}  $details
+     *                                                                                                                    Only ever filled for METHOD_ADMIN_CONFIRMED -
+     *                                                                                                                    see recordAdminConfirmation(), which is what
+     *                                                                                                                    assembles it.
      */
-    public function confirm(Project $project, ?User $client, string $method): void
+    public function confirm(Project $project, ?User $client, string $method, array $details = []): void
     {
+        $recordedBy = $details['recorded_by'] ?? null;
+
         $project->update([
             'status' => 'completed',
             'on_hold' => false,
-            'client_confirmed_at' => CarbonImmutable::now(),
+            // When the confirmation became official. Now for a client pressing
+            // the button and for the sweep closing the project; the date the
+            // administrator was given when they are recording one that reached
+            // the company days ago.
+            'client_confirmed_at' => isset($details['confirmed_at'])
+                ? CarbonImmutable::parse($details['confirmed_at'])
+                : CarbonImmutable::now(),
             'client_confirmed_by' => $client?->id,
             'completion_method' => $method,
+            // Written on every path, not only the administrator's. A project
+            // reopened and completed again must not inherit last cycle's
+            // telephone call - the same reasoning overrideColumns() is built
+            // on, and the same failure if it is skipped.
+            'client_confirmation_channel' => $details['channel'] ?? null,
+            'client_confirmation_note' => $this->trimmedOrNull($details['note'] ?? null),
+            'client_confirmation_recorded_by' => $recordedBy?->id,
+            'client_confirmation_recorded_at' => $recordedBy ? CarbonImmutable::now() : null,
         ]);
+    }
+
+    /**
+     * What an administrator has to give to record a confirmation that reached
+     * the company some other way.
+     *
+     * The note is required, and that is the point of the form rather than a
+     * formality: an off-site confirmation has no other evidence behind it, so
+     * the sentence saying who said what to whom IS the evidence. The same
+     * standard the completion override is held to, and the same length.
+     *
+     * @return array<string, array<int, mixed>>
+     */
+    public function adminConfirmationRules(Project $project): array
+    {
+        return [
+            'client_confirmation_channel' => [
+                'required',
+                'string',
+                Rule::in(array_keys(Project::CLIENT_CONFIRMATION_CHANNELS)),
+            ],
+            // Bounded at both ends, and for the same reasons the completion
+            // date is. The office's today, not the server's - see rules() -
+            // and never before the client was asked, because a client cannot
+            // have agreed to a completion nobody had told them about yet.
+            'client_confirmation_date' => array_values(array_filter([
+                'required',
+                'date',
+                'before_or_equal:'.BusinessTime::today()->toDateString(),
+                $project->completion_requested_at
+                    ? 'after_or_equal:'.CarbonImmutable::parse($project->completion_requested_at)->toDateString()
+                    : null,
+            ])),
+            'client_confirmation_note' => ['required', 'string', 'min:10', 'max:500'],
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function adminConfirmationMessages(): array
+    {
+        return [
+            'client_confirmation_channel.required' => 'Choose how the client confirmed.',
+            'client_confirmation_channel.in' => 'Choose one of the listed confirmation methods.',
+            'client_confirmation_date.required' => 'Enter the date the client confirmed.',
+            'client_confirmation_date.before_or_equal' => 'The confirmation date cannot be in the future.',
+            'client_confirmation_date.after_or_equal' => 'The client cannot have confirmed before completion was sent to them.',
+            'client_confirmation_note.required' => 'Say how and by whom the confirmation was received.',
+            'client_confirmation_note.min' => 'Describe the confirmation in at least 10 characters.',
+            'client_confirmation_note.max' => 'Keep the confirmation note to 500 characters or fewer.',
+        ];
+    }
+
+    /**
+     * Record a confirmation the client made off the website.
+     *
+     * A thin assembly on top of confirm() and deliberately nothing more: the
+     * project is closed by the same method, in the same transaction shape, and
+     * ends in the same state as one the client confirmed themselves. What is
+     * different is only what is written alongside - the channel, the note, and
+     * the administrator who is answerable for both.
+     *
+     * The administrator is taken from the session by the caller and passed
+     * here; nothing about who performed it is read from the form.
+     *
+     * @param  array<string, mixed>  $validated
+     */
+    public function recordAdminConfirmation(Project $project, array $validated, User $administrator): void
+    {
+        $this->confirm($project, null, Project::METHOD_ADMIN_CONFIRMED, [
+            'channel' => $validated['client_confirmation_channel'],
+            'note' => $validated['client_confirmation_note'],
+            'recorded_by' => $administrator,
+            'confirmed_at' => $validated['client_confirmation_date'],
+        ]);
+    }
+
+    /**
+     * An empty note and a missing one are the same fact, and the column says
+     * so with a null rather than with an empty string.
+     */
+    private function trimmedOrNull(?string $value): ?string
+    {
+        $value = trim((string) $value);
+
+        return $value === '' ? null : $value;
     }
 
     /**

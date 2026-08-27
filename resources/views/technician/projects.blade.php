@@ -65,14 +65,23 @@
                                 // does not have to open every project to find
                                 // the one that is short-handed.
                                 $needsRecrew = $flagsInactiveCrew && $project->needsRecrew();
+                                // Exactly as the administrative table decides
+                                // it - Project::isActiveToday() - so a lead and
+                                // an administrator looking at the same project
+                                // see the same flag.
+                                $isActiveToday = $project->isActiveToday();
                             @endphp
                             <tr data-tab="{{ $project->tabKey() }}"
                                 data-status="{{ $project->status }}"
                                 data-overdue="{{ $project->isOverdue() ? '1' : '0' }}"
                                 data-on-hold="{{ $project->on_hold ? '1' : '0' }}"
-                                class="{{ $needsRecrew ? 'project-row-needs-recrew' : '' }}">
+                                data-active-today="{{ $isActiveToday ? '1' : '0' }}"
+                                class="{{ $isActiveToday ? 'project-row-active-today' : '' }} {{ $needsRecrew ? 'project-row-needs-recrew' : '' }}">
                                 <td>
                                     {{ $project->reference_no }}
+
+                                    <x-project-active-today-flag :project="$project" />
+
                                     @if ($needsRecrew)
                                         <span class="project-recrew-flag"
                                             title="{{ $project->hasLead()

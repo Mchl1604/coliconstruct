@@ -217,6 +217,18 @@ class ActivityLog extends Model
 
     public const PROJECT_COMPLETION_CONFIRMED = 'Project Completion Confirmed';
 
+    /**
+     * The client confirmed, but not on the website, and an administrator wrote
+     * it down.
+     *
+     * Kept apart from PROJECT_COMPLETION_CONFIRMED for the reason the override
+     * above is kept apart: a confirmation with no click behind it rests
+     * entirely on somebody's word, and "which projects were closed on an
+     * administrator's say-so, and what did they say?" has to be a question the
+     * trail can be filtered for rather than read for.
+     */
+    public const PROJECT_COMPLETION_RECORDED_BY_ADMIN = 'Project Completion Recorded By Administrator';
+
     public const PROJECT_AUTO_COMPLETED = 'Project Automatically Completed';
 
     public const PROJECT_REOPENED = 'Project Reopened';
@@ -253,6 +265,17 @@ class ActivityLog extends Model
     public const REGISTERED_USER_ASSIGNMENT_CHANGED = 'Registered User Assignment Changed';
 
     public const REGISTERED_USER_REMOVED = 'Registered User Assignment Removed';
+
+    /**
+     * An administrator moved a project's contact address onto the one its
+     * Registered User signs in with.
+     *
+     * Filed here beside the assignment entries rather than under User
+     * Management, because that is what it is about: nothing on the account
+     * changes, and the account's own address is never touched. Only the
+     * project's contact details move - see ProjectRegisteredUser::useAccountEmail().
+     */
+    public const PROJECT_CONTACT_EMAIL_UPDATED = 'Project Contact Email Updated';
 
     public const LEAD_TECHNICIAN_ASSIGNED = 'Lead Technician Assigned';
 
@@ -403,6 +426,7 @@ class ActivityLog extends Model
         self::PROJECT_COMPLETION_REQUESTED => self::MODULE_PROJECTS,
         self::PROJECT_COMPLETION_OVERRIDDEN => self::MODULE_PROJECTS,
         self::PROJECT_COMPLETION_CONFIRMED => self::MODULE_PROJECTS,
+        self::PROJECT_COMPLETION_RECORDED_BY_ADMIN => self::MODULE_PROJECTS,
         self::PROJECT_AUTO_COMPLETED => self::MODULE_PROJECTS,
         self::PROJECT_REOPENED => self::MODULE_PROJECTS,
         self::PROJECT_CANCELLED => self::MODULE_PROJECTS,
@@ -415,6 +439,7 @@ class ActivityLog extends Model
         self::REGISTERED_USER_ASSIGNED => self::MODULE_PROJECTS,
         self::REGISTERED_USER_ASSIGNMENT_CHANGED => self::MODULE_PROJECTS,
         self::REGISTERED_USER_REMOVED => self::MODULE_PROJECTS,
+        self::PROJECT_CONTACT_EMAIL_UPDATED => self::MODULE_PROJECTS,
         self::LEAD_TECHNICIAN_ASSIGNED => self::MODULE_PROJECTS,
         self::TECHNICIAN_ASSIGNED => self::MODULE_PROJECTS,
         self::TECHNICIAN_REMOVED => self::MODULE_PROJECTS,

@@ -133,9 +133,12 @@ class TechnicianManagementTest extends TestCase
 
         $response->assertOk();
         $response->assertSee($code);
-        // The picker's datalist entry, which the page's script matches on.
-        $response->assertSee($code.' — Ana Mendoza', escape: false);
+        // The picker is a searchable list drawn by the page rather than a
+        // native <datalist>, so the code reaches it through the directory
+        // payload and the label is built when somebody is picked. See
+        // renderPickerResults() in technicians.js.
         $response->assertSee('"display_code":"'.$code.'"', escape: false);
+        $response->assertSee('data-technician-picker-results', escape: false);
     }
 
     public function test_it_returns_technician_details(): void
@@ -1412,6 +1415,63 @@ class TechnicianManagementTest extends TestCase
     }
 
     /**
+     * The Schedules tab's picker searches the way the Export Logs one does.
+     *
+     * It replaced a native <datalist>, which matched only the start of the
+     * value in some browsers - so a surname found nobody. The list is drawn by
+     * the page now, and matches on any part of the four things somebody knows
+     * a technician by, so all four have to reach it.
+     */
+    public function test_the_schedules_picker_carries_everything_it_searches_on(): void
+    {
+        $technician = $this->technician('Ana Mendoza');
+
+        $page = $this->get(route('super-admin.technicians.index'))->assertOk();
+
+        // The control itself, in the shape the shared stylesheet expects.
+        $page->assertSee('data-technician-picker', escape: false);
+        $page->assertSee('data-technician-picker-results', escape: false);
+        $page->assertSee('data-technician-picker-clear', escape: false);
+        $page->assertSee('/css/actorSearch.css', escape: false);
+
+        // The browser-side <datalist> is gone, along with the matching rules
+        // that varied between browsers.
+        $page->assertDontSee('technicianPickerOptions', escape: false);
+        $page->assertDontSee('<datalist', escape: false);
+
+        // Name, technician code, staff code, address and role - every field
+        // renderPickerResults() matches on.
+        foreach ([
+            '"name":"Ana Mendoza"',
+            '"display_code":"'.sprintf('TECH-%04d', $technician->technician_id).'"',
+            '"code":"'.$technician->account->user_code.'"',
+            '"email":"'.$technician->account->email.'"',
+            '"role_label":"Technician"',
+        ] as $field) {
+            $page->assertSee($field, escape: false);
+        }
+    }
+
+    /**
+     * Reading a technician's details and then wanting their calendar is the
+     * obvious next question, so the dialog answers it rather than making
+     * somebody close it, switch tab and type the name back in.
+     */
+    public function test_the_details_dialog_offers_a_way_through_to_the_schedule(): void
+    {
+        $this->technician('Ana Mendoza');
+
+        $this->get(route('super-admin.technicians.index'))
+            ->assertOk()
+            ->assertSee('data-details-view-schedule', escape: false)
+            ->assertSee('View Schedule')
+            // What it drives: the Schedules tab's own trigger, and the picker
+            // it lands in.
+            ->assertSee('id="technicianSchedulesTab"', escape: false)
+            ->assertSee('data-technician-picker', escape: false);
+    }
+
+    /**
      * The picker's directory says who may be given work, which is what decides
      * whether Add Technician to Project is drawn at all.
      */
@@ -1428,10 +1488,13 @@ class TechnicianManagementTest extends TestCase
         $page->assertSee('"can_receive_work":false', false);
         $page->assertSee('"status_label":"Deactivated"', false);
 
-        // And the option itself is marked, so the hidden button is not a
-        // surprise when the name is picked.
-        $page->assertSee('Gone Away (inactive account)');
-        $page->assertDontSee('Ana Mendoza (inactive account)');
+        // Those two flags are what mark the row in the picker, so the
+        // hidden Add button is not a surprise when the name is chosen - the
+        // list prints the status beside anybody who cannot take new work.
+        // They used to be baked into a datalist option's text; the searchable
+        // picker reads them from the payload instead.
+        $page->assertSee('"email":"'.$gone->account->email.'"', escape: false);
+        $page->assertSee('"role_label":', escape: false);
 
         $this->assertFalse($gone->fresh()->isAssignable());
     }

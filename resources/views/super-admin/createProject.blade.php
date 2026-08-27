@@ -12,7 +12,7 @@
     <div class="create-project-header">
         <div>
             <h4 class="fw-bold mb-1">Create New Project</h4>
-            <p class="text-secondary small mb-0">Use the wizard to capture client, project, and schedule details in order.
+            <p class="text-secondary small mb-0">Fill all the necessary details to create a new project.
             </p>
         </div>
         <div class="create-project-step-counter text-secondary small">
@@ -38,7 +38,9 @@
 
             <div class="client-progress-step" data-progress-step="3">
                 <div class="client-progress-circle">3</div>
-                <div class="client-progress-label">Schedule</div>
+                {{-- Named for what the step collects, so the rail does not
+                     promise a fuller schedule than the step asks for. --}}
+                <div class="client-progress-label">Initial Schedule</div>
             </div>
 
             <div class="client-progress-line" aria-hidden="true"></div>
@@ -168,11 +170,21 @@
 
                         <div class="col-md-6">
                             <label for="quotationAmount" class="form-label">Quotation Amount</label>
-                            <div class="input-group">
+
+                            {{-- Grouped as it is typed - see moneyInput.js.
+                                 The visible field carries the commas and so
+                                 cannot be submitted; the hidden one beside it
+                                 carries the raw number and the name, which is
+                                 what keeps `numeric` validation seeing exactly
+                                 what it always saw. --}}
+                            <div class="input-group" data-money-field>
                                 <span class="input-group-text">&#8369;</span>
-                                <input type="number" name="quotation_amount" id="quotationAmount" class="form-control"
-                                    min="0" step="0.01" inputmode="decimal"
-                                    placeholder="Enter quotation amount" data-summary-input="quotation_amount" required>
+                                <input type="text" id="quotationAmount" class="form-control"
+                                    inputmode="decimal" autocomplete="off"
+                                    placeholder="Enter quotation amount" data-money-input
+                                    data-summary-input="quotation_amount" required>
+                                <input type="hidden" name="quotation_amount" value="{{ old('quotation_amount') }}"
+                                    data-money-value>
                             </div>
                         </div>
 
@@ -259,26 +271,64 @@
                 </section>
 
                 <section class="wizard-step" data-wizard-step="3" hidden>
+                    {{-- "Initial", not "Schedule", and said before any date is
+                         typed. A project takes as many booked ranges as the
+                         work needs, added afterwards from the Schedules page -
+                         but this form asks for dates once, which reads like the
+                         whole of it, and people were filling in a single range
+                         to cover a job that runs in several visits. The note
+                         below is the fix: nothing about the form's behaviour
+                         changes, only what it tells you it is asking for. --}}
                     <div class="wizard-step-header">
-                        <h5 class="mb-1">Schedule</h5>
-                        <p class="text-secondary small mb-0">Assign the lead tech, choose the technicians, then set the
+                        <h5 class="mb-1">Input Project Initial Schedule</h5>
+                        <p class="text-secondary small mb-2">Assign the lead tech, choose the technicians, then set the
                             dates.</p>
+
+                        <p class="wizard-step-note mb-0">
+                            <i class="bi bi-info-circle" aria-hidden="true"></i>
+                            <span>
+                                This is the initial schedule for the project.
+                                More schedule dates can be added later.
+                            </span>
+                        </p>
                     </div>
 
                     <div class="row g-3">
                         <div class="col-md-12">
-                            <label for="leadTech" class="form-label">Lead Technician</label>
-                            <select name="lead_tech" id="leadTech" class="form-select" required data-lead-tech-select>
-                                <option value="" selected disabled>Select Lead Technician</option>
+                            <label for="leadTechDropdown" class="form-label">Lead Technician</label>
 
-                                @foreach ($technicians as $technician)
-                                    @if ($technician->role == 'lead_technician')
-                                        <option value="{{ $technician->technician_id }}">
-                                            {{ $technician->name }}
-                                        </option>
-                                    @endif
-                                @endforeach
-                            </select>
+                            {{-- The same picker the Technicians field below
+                                 uses, and for the same reasons: it shows the
+                                 specialties each lead matches on this project,
+                                 and it can fold the unavailable ones away
+                                 behind a count with the reason each is out.
+                                 A <select> could show none of that - an
+                                 <option> takes text and nothing else - so the
+                                 two fields sitting next to each other were
+                                 answering the same question in two different
+                                 languages.
+
+                                 Single-select, so the chosen lead is held in
+                                 the hidden input rather than in a chip list.
+                                 See renderLeadTechnicianDropdown(). --}}
+                            <div class="technician-picker" data-lead-tech-picker>
+                                <div class="dropdown w-100">
+                                    <button type="button" class="form-select technician-dropdown-toggle text-start"
+                                        id="leadTechDropdown" data-bs-toggle="dropdown"
+                                        data-bs-auto-close="outside" aria-expanded="false"
+                                        data-lead-tech-button>
+                                        Select Lead Technician
+                                    </button>
+
+                                    <ul class="dropdown-menu technician-dropdown-menu w-100" data-lead-tech-menu>
+                                        <li><span class="dropdown-item-text text-secondary">Loading lead
+                                                technicians...</span></li>
+                                    </ul>
+                                </div>
+
+                                <input type="hidden" name="lead_tech" value="{{ old('lead_tech') }}"
+                                    data-lead-tech-input>
+                            </div>
                         </div>
 
                         <div class="col-md-12">
@@ -513,7 +563,7 @@
                         <div class="review-group">
                             <div class="review-group-header">
                                 <span class="review-group-icon"><i class="bi bi-people" aria-hidden="true"></i></span>
-                                <h6 class="mb-0">Schedule &amp; Team</h6>
+                                <h6 class="mb-0">Initial Schedule &amp; Team</h6>
                             </div>
                             <div class="review-group-body">
                                 <div class="review-item">
@@ -525,7 +575,12 @@
                                     <span class="review-item-value" data-summary-target="scheduling_mode">Date-Based</span>
                                 </div>
                                 <div class="review-item">
-                                    <span class="review-item-label">Schedule</span>
+                                    {{-- The review is the last thing read
+                                         before Create, so it says the same
+                                         thing the step said: these dates are
+                                         the first range, not the whole
+                                         schedule. --}}
+                                    <span class="review-item-label">Initial Schedule</span>
                                     <span class="review-item-value" data-summary-target="schedule_range">Not filled
                                         yet</span>
                                 </div>
@@ -569,6 +624,8 @@
             window.partialDayHours = @json($partialDayHours);
         </script>
         <script src="/js/importTeam.js"></script>
+        {{-- Thousands separators on the quotation, shared with Project Details. --}}
+        <script src="/js/moneyInput.js"></script>
         <script src="/js/super-admin/createProject.js"></script>
     @endpush
 @endsection
