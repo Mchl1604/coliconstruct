@@ -411,6 +411,13 @@ class ScheduleLockTest extends TestCase
     // The Super Admin override
     // ------------------------------------------------------------------
 
+    /**
+     * Shortened rather than stretched, deliberately. Giving days back is the
+     * half of a correction that asks nothing: they are days the project no
+     * longer claims, and nobody has to be named for work that did not happen.
+     * A correction that REACHES for days is the other half, and it is asked who
+     * worked them - see HistoricalScheduleCorrectionTest.
+     */
     public function test_a_super_admin_may_correct_a_locked_range(): void
     {
         $this->actingAsSuperAdmin();
@@ -418,11 +425,11 @@ class ScheduleLockTest extends TestCase
         $project = $this->project();
         $locked = $this->book($project, -8, -6);
 
-        $this->save($project, [$this->range($locked, -9, -7)], override: true)
+        $this->save($project, [$this->range($locked, -8, -7)], override: true)
             ->assertSessionHasNoErrors();
 
         $this->assertSame(
-            [['start' => $this->day(-9), 'end' => $this->day(-7)]],
+            [['start' => $this->day(-8), 'end' => $this->day(-7)]],
             $this->rangesOf($project)
         );
     }
@@ -481,11 +488,13 @@ class ScheduleLockTest extends TestCase
     }
 
     /**
-     * Overriding a booking that is UNDER WAY only releases its frozen start,
-     * and releases it forwards. Stretching a live booking back over days
-     * nobody worked would be inventing history rather than correcting it.
+     * Stretching a booking that is UNDER WAY back over days nobody worked used
+     * to be refused outright, on the grounds that it invents history. What it
+     * actually does is claim days nobody has been named for - and that claim is
+     * now the thing that is checked. The refusal is no longer "you may not"; it
+     * is "say who was there", which is a question a correction can answer.
      */
-    public function test_an_override_cannot_stretch_a_started_range_further_back(): void
+    public function test_stretching_a_started_range_back_asks_who_worked_the_added_days(): void
     {
         $this->actingAsSuperAdmin();
 
@@ -494,7 +503,7 @@ class ScheduleLockTest extends TestCase
 
         $this->save($project, [$this->range($active, -6, 4)], override: true);
 
-        $this->assertStringContainsString('Choose a start date of today or later', (string) session('error'));
+        $this->assertStringContainsString('Say who worked them', (string) session('error'));
         $this->assertSame(
             [['start' => $this->day(-3), 'end' => $this->day(4)]],
             $this->rangesOf($project)
@@ -566,9 +575,11 @@ class ScheduleLockTest extends TestCase
      * The editor has to be able to SHOW the start it is offering to change.
      *
      * The date picker takes this floor as its minimum, and flatpickr blanks a
-     * value that sits below its minimum - so a floor of today on a booking
-     * that began earlier left the field looking empty, as though the date had
-     * been lost.
+     * value that sits below its minimum - so a floor of today on a booking that
+     * began earlier left the field looking empty, as though the date had been
+     * lost. A Super Admin now gets no floor at all, which cannot exclude
+     * anything; what stops them reaching backwards carelessly is the question
+     * asked on save, not a bound on the picker.
      */
     public function test_the_editor_can_display_the_start_of_a_started_range(): void
     {
@@ -579,8 +590,7 @@ class ScheduleLockTest extends TestCase
 
         $this->get(route('super-admin.schedules.index'))
             ->assertOk()
-            // The floor never excludes the value the field is showing.
-            ->assertSee('data-earliest-start="'.$this->day(-3).'"', false)
+            ->assertSee('data-earliest-start=""', false)
             ->assertSee('value="'.$this->day(-3).'"', false);
     }
 
@@ -617,7 +627,7 @@ class ScheduleLockTest extends TestCase
         $project = $this->project();
         $locked = $this->book($project, -8, -6);
 
-        $this->save($project, [$this->range($locked, -9, -7)], override: true);
+        $this->save($project, [$this->range($locked, -8, -7)], override: true);
 
         $this->assertTrue(
             ActivityLog::query()
@@ -778,9 +788,9 @@ class ScheduleLockTest extends TestCase
      * then refused on save by validateDateBased(). The picker now offers
      * exactly what the save accepts.
      */
-    public function test_a_new_range_row_cannot_reach_into_the_past(): void
+    public function test_a_new_range_row_cannot_reach_into_the_past_for_an_admin(): void
     {
-        $this->actingAsSuperAdmin();
+        $this->actingAs($this->account('admin', 'admin@example.test'));
 
         $this->project();
 
@@ -797,13 +807,35 @@ class ScheduleLockTest extends TestCase
         $this->assertSame(2, substr_count($content, 'data-earliest-start="'.$today.'"'));
         $this->assertSame(2, substr_count($content, 'data-earliest-end="'.$today.'"'));
 
-        // And nothing on the page offers an unbounded start any more.
+        // And nothing on the page offers an unbounded start.
         $this->assertSame(0, substr_count($content, 'data-earliest-start=""'));
+    }
+
+    /**
+     * The same rows for the reader who may record work already done. The floor
+     * is lifted because a past date is not a mistake for them - it is how a day
+     * that was worked and never booked reaches the record. The picker offering
+     * it is still not the picker granting it: the save asks who worked it.
+     */
+    public function test_a_new_range_row_reaches_into_the_past_for_a_super_admin(): void
+    {
+        $this->actingAsSuperAdmin();
+
+        $this->project();
+
+        $response = $this->get(route('super-admin.schedules.index'));
+        $response->assertOk();
+
+        $today = Schedule::businessToday()->toDateString();
+        $content = $response->getContent();
+
+        $this->assertSame(0, substr_count($content, 'data-earliest-start="'.$today.'"'));
+        $this->assertSame(2, substr_count($content, 'data-earliest-start=""'));
     }
 
     public function test_the_new_range_floor_is_the_one_the_save_enforces(): void
     {
-        $this->actingAsSuperAdmin();
+        $this->actingAs($this->account('admin', 'floor.admin@example.test'));
 
         $project = $this->project();
 
@@ -821,6 +853,18 @@ class ScheduleLockTest extends TestCase
         ]]);
 
         $this->assertSame([], $this->rangesOf($project));
+    }
+
+    /**
+     * And the floor the Super Admin's picker carries, which is none - the pair
+     * to the test above, read off the same service the row component reads.
+     */
+    public function test_the_new_range_floor_is_lifted_for_a_correction(): void
+    {
+        $limits = app(ScheduleModeRules::class)->limitsForNewRange(true);
+
+        $this->assertNull($limits['earliestStart']);
+        $this->assertNull($limits['earliestEnd']);
     }
 
     // ------------------------------------------------------------------

@@ -347,6 +347,15 @@ Route::prefix('super-admin')
         Route::delete('/schedules/{schedule}/dates/{date}', [ScheduleController::class, 'removeDate'])
             ->whereNumber('schedule')
             ->name('schedules.dates.destroy');
+        // Whether a schedule about to be saved would claim days that have
+        // already gone, and who could be named for them. Asked by the editor
+        // on its way to saving, so the question is put while the form is still
+        // open. Restricted to a Super Admin because correcting the record is
+        // theirs alone - the same rule the save itself applies.
+        Route::post('/schedules/{id}/historical-check', [ScheduleController::class, 'historicalCheck'])
+            ->whereNumber('id')
+            ->middleware('role:super_admin')
+            ->name('schedules.historical-check');
         Route::put('/schedules/{id}', [ScheduleController::class, 'update'])->name('schedules.update');
 
         // ROUTE FOR SUPER ADMIN REPORTS PAGE

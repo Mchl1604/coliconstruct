@@ -46,9 +46,14 @@
     // cannot be promised for a day that has gone - so its floor is today at
     // both ends rather than no floor at all, which is what used to leave last
     // month clickable in the pickers.
+    //
+    // A Super Admin gets no floor on either kind of row, because for them a
+    // past date is not a mistake but a correction to the record. Picking one
+    // does not make it: the save asks who worked those days first, and refuses
+    // without an answer. See HistoricalScheduleCorrection.
     $limits = $schedule
         ? $rules->editabilityOf($schedule, (bool) $mayOverrideLock)
-        : $rules->limitsForNewRange();
+        : $rules->limitsForNewRange((bool) $mayOverrideLock);
 
     // A booking that has ended and that this reader may not correct: drawn as
     // the record it is, with nothing on it to fill in.

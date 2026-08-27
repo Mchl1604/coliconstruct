@@ -130,6 +130,13 @@
             data-schedule-edit-modal
             data-project-id="{{ $project->project_id }}"
             data-partial-day-allowed="{{ $project->isResidential() ? '1' : '0' }}"
+            {{-- Whether this reader may put days that have already gone onto
+                 the schedule, and where to ask what that would cost. Both are
+                 absent for an Admin, whose pickers stop at today. --}}
+            data-may-correct-history="{{ $mayOverrideLock ? '1' : '0' }}"
+            @if ($mayOverrideLock)
+                data-historical-check-url="{{ route('super-admin.schedules.historical-check', $project->project_id) }}"
+            @endif
             data-technician-ids="{{ $project->projectTechnicians->pluck('technician_id')->implode(',') }}">
 
             <div class="modal-dialog modal-lg">
@@ -169,6 +176,12 @@
                         </div>
 
                         <div class="modal-body">
+                            {{-- The editor proper. Hidden while the historical
+                                 step below is asking who worked the days this
+                                 save would newly claim - one dialog, two steps,
+                                 rather than a second modal stacked on top of
+                                 this one. --}}
+                            <div data-schedule-step>
                             <div class="schedule-modal-team">
                                 <span class="schedule-modal-team-label">
                                     <i class="bi bi-people-fill" aria-hidden="true"></i>
@@ -244,17 +257,130 @@
                                         A Partial Day schedule books set hours on one date, leaving the rest of
                                         that day free.
                                     @endif
+                                    @if ($mayOverrideLock)
+                                        Dates that have already passed can be booked here to record work that was
+                                        done but never scheduled; you will be asked who worked them.
+                                    @endif
                                 </span>
                             </p>
+                            </div>
+
+                            @if ($mayOverrideLock)
+                                {{-- Step two, and only ever reached when the
+                                     save would put days that have already gone
+                                     onto this project. A schedule row records
+                                     that the job was on site; it must never say
+                                     so without saying who. Filled in by
+                                     schedule.js from the answer the server gives
+                                     to the same question the save will ask. --}}
+                                <div class="schedule-historical d-none" data-historical-step>
+                                    <div class="schedule-historical-head">
+                                        <i class="bi bi-clock-history" aria-hidden="true"></i>
+                                        <div>
+                                            <h6 class="schedule-historical-title">Who worked these dates?</h6>
+                                            <p class="schedule-historical-lead">
+                                                These dates are in the past and were not previously scheduled for
+                                                this project:
+                                            </p>
+                                            <p class="schedule-historical-dates" data-historical-dates></p>
+                                        </div>
+                                    </div>
+
+                                    {{-- The other half of a correction: ranges
+                                         that had already ended and are being
+                                         changed anyway. Nobody is asked who
+                                         worked days being GIVEN UP - they are
+                                         days this project no longer claims -
+                                         but the change is worth seeing before
+                                         it is made. --}}
+                                    <div class="schedule-historical-warning d-none" data-historical-warning></div>
+
+                                    {{-- Searched rather than chosen from a list,
+                                         the way the activity-log export picks
+                                         its user: every technician in the
+                                         system can appear here, which is a list
+                                         nobody scrolls. Several may be named -
+                                         a day's crew is rarely one person - so
+                                         each pick becomes a chip below rather
+                                         than filling the box.
+
+                                         The names come from the server's answer
+                                         to "who worked these days?", which
+                                         marks who the record already puts on
+                                         this project for them. --}}
+                                    <div class="schedule-historical-search" data-historical-search>
+                                        <label class="schedule-historical-group-label"
+                                            for="historicalSearch{{ $project->project_id }}">
+                                            Who was on site
+                                        </label>
+
+                                        <div class="input-group">
+                                            <span class="input-group-text">
+                                                <i class="bi bi-search" aria-hidden="true"></i>
+                                            </span>
+                                            <input type="text" class="form-control"
+                                                id="historicalSearch{{ $project->project_id }}"
+                                                placeholder="Type a name to find who worked these dates"
+                                                autocomplete="off" role="combobox" aria-expanded="false"
+                                                aria-controls="historicalResults{{ $project->project_id }}"
+                                                data-historical-input>
+                                        </div>
+
+                                        <ul class="schedule-historical-results d-none" role="listbox"
+                                            id="historicalResults{{ $project->project_id }}"
+                                            data-historical-results></ul>
+
+                                        {{-- The names actually being submitted.
+                                             Typing alone never adds one: only
+                                             picking does, so a half-typed name
+                                             cannot quietly become a crew
+                                             member. --}}
+                                        {{-- The crew the project holds today
+                                             arrives already chipped - see
+                                             schedule.js - so the common answer
+                                             needs no typing. Nothing announces
+                                             it: the chips are visible, and each
+                                             one can be taken off. --}}
+                                        <div class="schedule-historical-chosen" data-historical-chosen></div>
+
+                                        <div class="schedule-historical-hint" data-historical-hint></div>
+                                    </div>
+
+                                    {{-- Set only when somebody the record does
+                                         not put on this project for these dates
+                                         is chosen, which is what tells the
+                                         server the addition was deliberate. --}}
+                                    <input type="hidden" name="historical_add_technicians" value="0"
+                                        data-historical-add-flag>
+
+                                    <p class="schedule-modal-note">
+                                        <i class="bi bi-info-circle" aria-hidden="true"></i>
+                                        <span>
+                                            This is recorded against your account, with the dates, the range
+                                            before and after, and the names you choose here.
+                                        </span>
+                                    </p>
+
+                                    <div class="schedule-range-error d-none" data-historical-error></div>
+                                </div>
+                            @endif
                         </div>
 
                         <div class="modal-footer">
                             <button type="button" class="btn btn-light" data-bs-dismiss="modal">
                                 Cancel
                             </button>
+                            <button type="button" class="btn btn-light d-none" data-historical-back>
+                                <i class="bi bi-arrow-left me-1" aria-hidden="true"></i>
+                                Back to dates
+                            </button>
                             <button type="submit" class="btn btn-primary" data-schedule-submit>
                                 <i class="bi bi-check-lg me-1" aria-hidden="true"></i>
                                 Save Schedule
+                            </button>
+                            <button type="button" class="btn btn-warning d-none" data-historical-confirm>
+                                <i class="bi bi-clock-history me-1" aria-hidden="true"></i>
+                                Record and save
                             </button>
                         </div>
                     </form>
@@ -727,12 +853,18 @@
     {{-- Row templates used by JS when adding a schedule. Two of them, because
          whether the mode selector belongs in a row depends on the project, and
          a single page-level template is shared by every modal. --}}
+    {{-- The floor on a new row is today for an Admin and nothing at all for a
+         Super Admin, who may put a day that has gone onto a project to record
+         work that was done and never booked. Both templates are page-level and
+         shared by every modal, so the reader decides it once here. --}}
     <template data-range-template>
-        <x-schedule-range-row :working-hours="$workingHours" :partial-day-allowed="false" />
+        <x-schedule-range-row :working-hours="$workingHours" :partial-day-allowed="false"
+            :may-override-lock="$mayOverrideLock" />
     </template>
 
     <template data-range-template-residential>
-        <x-schedule-range-row :working-hours="$workingHours" :partial-day-allowed="true" />
+        <x-schedule-range-row :working-hours="$workingHours" :partial-day-allowed="true"
+            :may-override-lock="$mayOverrideLock" />
     </template>
 
     @push('scripts')

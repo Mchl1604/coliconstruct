@@ -7,6 +7,7 @@ use App\Models\ProjectTechnician;
 use App\Models\Schedule;
 use App\Models\ScheduleTechnician;
 use App\Models\Task;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 
 /**
@@ -120,6 +121,90 @@ class ProjectTeam
 
         foreach ($this->unfinishedScheduleIds($project) as $scheduleId) {
             $this->link($scheduleId, (int) $assignment->project_technician_id);
+        }
+
+        return $assignment;
+    }
+
+    /**
+     * Make a membership cover days that have already been worked.
+     *
+     * The backwards twin of attach(), and deliberately not the same thing.
+     * attach() answers "who is joining this project?" and opens a span at
+     * today, because a newcomer did not work last week. This answers "who was
+     * on site on those days?" - asked only by a Super Admin correcting the
+     * record through the historical flow - and the answer is a claim about a
+     * week that has gone, so the span has to reach back over it or the very
+     * booking being recorded would sit outside the membership carrying it.
+     *
+     * Three shapes, and the difference between them matters:
+     *
+     *   no membership at all   a span is opened over exactly those days and
+     *                          closed the day after them. Recording that
+     *                          somebody worked in July is not a decision to put
+     *                          them on the team today, and leaving the span
+     *                          open would do exactly that - they would appear
+     *                          on the crew, be screened for the project's
+     *                          remaining dates, and be booked onto them.
+     *   an open membership     joined_at is moved back to cover the days. They
+     *                          are on the team and stay on it.
+     *   a closed membership    joined_at is moved back the same way, and the
+     *                          close is pushed past the days when it sat before
+     *                          them. Somebody who left in June and is now
+     *                          recorded as working in July was there in July.
+     *
+     * Nothing is booked here. Which schedule rows the crew is written against
+     * is the correction's own decision - see HistoricalScheduleCorrection.
+     *
+     * @param  CarbonImmutable  $from  the first day being recorded
+     * @param  CarbonImmutable  $to  the last day being recorded
+     * @param  int|null  $actorId  the Super Admin making the correction
+     */
+    public function coverHistoricalWork(
+        Project $project,
+        int $technicianId,
+        CarbonImmutable $from,
+        CarbonImmutable $to,
+        ?int $actorId = null
+    ): ProjectTechnician {
+        $from = $from->startOfDay();
+        $to = $to->startOfDay();
+
+        $assignment = ProjectTechnician::query()
+            ->where('project_id', $project->project_id)
+            ->where('technician_id', $technicianId)
+            ->first();
+
+        if ($assignment === null) {
+            return ProjectTechnician::create([
+                'project_id' => $project->project_id,
+                'technician_id' => $technicianId,
+                'joined_at' => $from,
+                'joined_by' => $actorId,
+                // Exclusive, the way every membership close is - see
+                // ProjectTechnician::coveredOn() - so the last recorded day is
+                // still inside the span.
+                'removed_at' => $to->addDay(),
+                'removed_by' => $actorId,
+            ]);
+        }
+
+        $changes = [];
+
+        if ($assignment->joined_at === null
+            || CarbonImmutable::parse($assignment->joined_at)->gt($from)) {
+            $changes['joined_at'] = $from;
+            $changes['joined_by'] = $actorId;
+        }
+
+        if ($assignment->removed_at !== null
+            && CarbonImmutable::parse($assignment->removed_at)->lte($to)) {
+            $changes['removed_at'] = $to->addDay();
+            $changes['removed_by'] = $actorId;
+        }
+
+        if ($changes !== []) {
+            $assignment->update($changes);
         }
 
         return $assignment;

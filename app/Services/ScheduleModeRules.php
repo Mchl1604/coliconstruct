@@ -157,20 +157,27 @@ class ScheduleModeRules
      * date the save will bounce. The editor used to hand its new rows no floor
      * at all, so last month was there to be clicked.
      *
+     * A Super Admin gets no floor, because for them a past date on a new row
+     * is not a mistake: it is how work that was done but never booked reaches
+     * the record. The save still refuses it unless they confirm the
+     * correction AND say who worked those days - see
+     * HistoricalScheduleCorrection - so the picker offering the date is not
+     * the picker granting it.
+     *
      * Shaped exactly like editabilityOf() so the row component can hand either
      * to the same pickers without asking which it got.
      *
-     * @return array{editable: bool, startFrozen: bool, earliestStart: CarbonImmutable, earliestEnd: CarbonImmutable}
+     * @return array{editable: bool, startFrozen: bool, earliestStart: ?CarbonImmutable, earliestEnd: ?CarbonImmutable}
      */
-    public function limitsForNewRange(): array
+    public function limitsForNewRange(bool $mayCorrectHistory = false): array
     {
         $today = Schedule::businessToday();
 
         return [
             'editable' => true,
             'startFrozen' => false,
-            'earliestStart' => $today,
-            'earliestEnd' => $today,
+            'earliestStart' => $mayCorrectHistory ? null : $today,
+            'earliestEnd' => $mayCorrectHistory ? null : $today,
         ];
     }
 
@@ -187,12 +194,19 @@ class ScheduleModeRules
      *   earliestStart the earliest the start may be set to, null for no bound
      *   earliestEnd   the earliest the end may be set to, null for no bound
      *
-     * The two overrides differ, which is the point of them. Correcting a
-     * booking that has ENDED means its dates were wrong, so any dates may
-     * replace them - that is what a correction is. Overriding one that is
-     * UNDER WAY only releases its frozen start, and releases it forwards:
-     * stretching a live booking back over days nobody worked would be
-     * inventing history rather than fixing it.
+     * A confirmed override lifts the floors on every one of the three, and it
+     * lifts them in both directions. Correcting a booking means its dates were
+     * wrong, and a date can be wrong by being too late as easily as too early:
+     * a range that has ENDED may be replaced outright, one that is UNDER WAY
+     * may be stretched back over days that were worked but never booked, and
+     * one still to COME may be moved onto days that have gone.
+     *
+     * Reaching backwards used to be refused outright here, on the grounds that
+     * it invents history. What it actually does is claim days nobody has been
+     * named for - and that claim is now the thing that is checked, by asking
+     * who worked them. See HistoricalScheduleCorrection: every day a save newly
+     * lands on in the past has to carry a technician, so a floor that refuses
+     * the whole idea is guarding a door that already has a lock on it.
      *
      * @return array{editable: bool, startFrozen: bool, earliestStart: ?CarbonImmutable, earliestEnd: ?CarbonImmutable}
      */
@@ -200,30 +214,21 @@ class ScheduleModeRules
     {
         $today = Schedule::businessToday();
 
+        if ($mayOverrideLock) {
+            return ['editable' => true, 'startFrozen' => false, 'earliestStart' => null, 'earliestEnd' => null];
+        }
+
         return match ($schedule->lockState()) {
-            Schedule::LOCK_LOCKED => $mayOverrideLock
-                ? ['editable' => true, 'startFrozen' => false, 'earliestStart' => null, 'earliestEnd' => null]
-                : ['editable' => false, 'startFrozen' => true, 'earliestStart' => null, 'earliestEnd' => null],
+            Schedule::LOCK_LOCKED => [
+                'editable' => false, 'startFrozen' => true, 'earliestStart' => null, 'earliestEnd' => null,
+            ],
 
             // Started already: those days are worked, so the start stays put,
             // and the end may not retreat past today either - pulling it back
             // would discard days the crew was on site for.
-            //
-            // The override floor is where the booking ALREADY starts, not
-            // today. Forward means forward from where it is: a booking that
-            // began on the 20th may stay on the 20th or be moved later, and
-            // may not be stretched back to the 19th. Using today here instead
-            // would refuse the start it already holds - which would make an
-            // override stricter than no override, and leave a Super Admin
-            // unable to extend the end of a live booking at all.
-            Schedule::LOCK_ACTIVE => $mayOverrideLock
-                ? [
-                    'editable' => true,
-                    'startFrozen' => false,
-                    'earliestStart' => $schedule->startsOn(),
-                    'earliestEnd' => $today,
-                ]
-                : ['editable' => true, 'startFrozen' => true, 'earliestStart' => null, 'earliestEnd' => $today],
+            Schedule::LOCK_ACTIVE => [
+                'editable' => true, 'startFrozen' => true, 'earliestStart' => null, 'earliestEnd' => $today,
+            ],
 
             default => [
                 'editable' => true,
@@ -324,8 +329,18 @@ class ScheduleModeRules
         // Everything below is a booking with no saved row to measure against:
         // a brand new one, or one a screening endpoint is asking about. Nothing
         // may be newly promised for a day that has gone.
-        $mayKeepPastDates = $unchanged || ($isExisting && $existing === null);
+        //
+        // A confirmed Super Admin correction is the exception, and it is not a
+        // promise: it is a record of work that was done and never booked. The
+        // dates are let through here so the caller can ask the question that
+        // actually matters about them - who worked them - which this validator
+        // has no way to ask. See HistoricalScheduleCorrection.
+        $mayKeepPastDates = $unchanged || $mayOverrideLock || ($isExisting && $existing === null);
 
+        // Left as the plain refusal it has always been. The same message is
+        // what the calendar's assign endpoint answers with, and that screen
+        // cannot record work already done however senior the reader is, so
+        // naming who could would be an offer nothing there can honour.
         if (! $mayKeepPastDates && $startDate->lt(Schedule::businessToday())) {
             $validator->errors()->add($keyPrefix.'start_date', 'The start date cannot be in the past.');
 

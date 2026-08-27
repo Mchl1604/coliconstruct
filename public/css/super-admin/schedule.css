@@ -449,6 +449,234 @@
     color: #94a3b8;
 }
 
+/* ------------------------------------------------------------------
+   Step two of the editor: who worked the days a save would newly claim.
+
+   Amber throughout, and deliberately not red. Nothing here is an error -
+   recording work that was done and never booked is a correction somebody
+   meant to make - but it writes to the record of what happened, so it must
+   not look like the ordinary half of the form either.
+   ------------------------------------------------------------------ */
+.schedule-historical-head {
+    display: flex;
+    gap: 0.7rem;
+    padding: 0.85rem 0.9rem;
+    border: 1px solid #fcd9a4;
+    border-radius: 0.6rem;
+    background: #fffbf2;
+}
+
+.schedule-historical-head > i {
+    margin-top: 0.15rem;
+    font-size: 1.05rem;
+    color: #b45309;
+}
+
+.schedule-historical-title {
+    margin: 0 0 0.25rem;
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #7c2d12;
+}
+
+.schedule-historical-lead {
+    margin: 0;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    color: #78350f;
+}
+
+/* The dates themselves are the content of this step, so they are the largest
+   thing on it. */
+.schedule-historical-dates {
+    margin: 0.4rem 0 0;
+    font-size: 1rem;
+    font-weight: 700;
+    color: #7c2d12;
+}
+
+.schedule-historical-warning {
+    margin-top: 0.7rem;
+    padding: 0.55rem 0.7rem;
+    border: 1px solid #fcd9a4;
+    border-radius: 0.45rem;
+    background: #fef6e7;
+    color: #78350f;
+    font-size: 0.78rem;
+    line-height: 1.5;
+}
+
+/* Typed into rather than scrolled, the same shape the activity-log export's
+   user filter takes: the matches drop over whatever is beneath, and the picks
+   collect underneath as chips because a day's crew is rarely one person. */
+.schedule-historical-search {
+    position: relative;
+    margin-top: 0.9rem;
+}
+
+.schedule-historical-group-label {
+    display: block;
+    margin-bottom: 0.4rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: #94a3b8;
+}
+
+.schedule-historical-results {
+    position: absolute;
+    z-index: 5;
+    left: 0;
+    right: 0;
+    margin: 0.2rem 0 0;
+    padding: 0.25rem;
+    list-style: none;
+    max-height: 14rem;
+    overflow-y: auto;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.5rem;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
+}
+
+.schedule-historical-option {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 0.35rem 0.5rem;
+    border: 0;
+    border-radius: 0.35rem;
+    background: transparent;
+    line-height: 1.25;
+}
+
+.schedule-historical-option:hover,
+.schedule-historical-option:focus {
+    background: #fffbf2;
+    outline: none;
+}
+
+.schedule-historical-option-name {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #0f172a;
+}
+
+/* The rank, said on the row: exactly one of the names chosen has to carry it,
+   so it has to be readable before choosing rather than after. */
+.schedule-historical-option-lead {
+    padding: 0.05rem 0.35rem;
+    border-radius: 999px;
+    background: #ede9fe;
+    color: #5b21b6;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
+
+.schedule-historical-option-note {
+    display: block;
+    font-size: 0.75rem;
+    color: #64748b;
+}
+
+.schedule-historical-empty {
+    padding: 0.45rem 0.5rem;
+    font-size: 0.8125rem;
+    color: #64748b;
+}
+
+.schedule-historical-chosen {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.5rem;
+}
+
+.schedule-historical-chosen:empty {
+    margin-top: 0;
+}
+
+.schedule-historical-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.25rem 0.3rem 0.25rem 0.35rem;
+    border: 1px solid #fcd9a4;
+    border-radius: 999px;
+    background: #fffbf2;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #7c2d12;
+}
+
+/* The one who led the day. Exactly one of the chips carries this, which is
+   what the step will not save without. */
+.schedule-historical-chip.is-lead {
+    border-color: #c4b5fd;
+}
+
+/* Somebody the record does not put on this project for these dates. Dashed,
+   because choosing them writes a membership as well as a booking. */
+.schedule-historical-chip.is-addition {
+    border-style: dashed;
+}
+
+.schedule-historical-chip-avatar {
+    width: 1.35rem;
+    height: 1.35rem;
+    border-radius: 999px;
+    object-fit: cover;
+}
+
+.schedule-historical-chip-role {
+    padding: 0.05rem 0.35rem;
+    border-radius: 999px;
+    background: #ede9fe;
+    color: #5b21b6;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
+
+.schedule-historical-chip-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.25rem;
+    height: 1.25rem;
+    padding: 0;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: #b45309;
+    font-size: 0.65rem;
+}
+
+.schedule-historical-chip-remove:hover {
+    background: #fde8c8;
+}
+
+.schedule-historical-hint {
+    margin-top: 0.45rem;
+    font-size: 0.76rem;
+    color: #94a3b8;
+}
+
+/* What is still missing before this can be recorded - no crew yet, no lead,
+   or two of them. Said in the colour of the step rather than in red: nothing
+   is wrong, it is simply not finished. */
+.schedule-historical-hint.is-blocking {
+    color: #b45309;
+    font-weight: 600;
+}
+
 /* Every calendar day is clickable, so make that discoverable. */
 #schedulesCalendar .fc-daygrid-day {
     cursor: pointer;

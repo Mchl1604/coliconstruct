@@ -9,6 +9,7 @@ use App\Models\Schedule;
 use App\Models\Task;
 use App\Models\Technician;
 use App\Services\ActivityLogger;
+use App\Services\HistoricalScheduleCorrection;
 use App\Services\NotificationService;
 use App\Services\ProjectStatusRules;
 use App\Services\ProjectTeam;
@@ -23,6 +24,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 use RuntimeException;
 use Throwable;
 
@@ -807,6 +809,15 @@ class ScheduleController extends Controller
             'ranges' => ['nullable', 'array'],
             'ranges.*.schedule_id' => ['nullable', 'integer', 'exists:tbl_schedule,schedule_id'],
             'override_past_lock' => ['nullable', 'boolean'],
+            // Who worked the days this save newly lands on in the past. Read
+            // only when there are such days - see the historical correction
+            // below - and never used to change anybody's booking on the work
+            // still to come.
+            'historical_technicians' => ['nullable', 'array'],
+            'historical_technicians.*' => ['integer'],
+            // The Super Admin naming somebody the record does not already put
+            // on this project for those days, deliberately.
+            'historical_add_technicians' => ['nullable', 'boolean'],
             ...$scheduleRules->rules('ranges.*.'),
         ], $scheduleRules->messages('ranges.*.'));
 
@@ -816,13 +827,32 @@ class ScheduleController extends Controller
         $mayOverrideLock = (bool) ($validated['override_past_lock'] ?? false)
             && (bool) $request->user()?->isSuperAdmin();
 
+        $actor = $request->user();
+        $historical = app(HistoricalScheduleCorrection::class);
+
         // Read before anything moves, so the log can say what changed.
         $rangesBefore = $this->describeSchedules($project->schedules);
         $labelsBefore = $this->scheduleLabels($project->schedules);
+        $storedLabels = $project->schedules
+            ->mapWithKeys(fn (Schedule $schedule): array => [
+                (int) $schedule->schedule_id => $schedule->describe(),
+            ])
+            ->all();
         $overrode = false;
+        $corrected = [];
 
         try {
-            DB::transaction(function () use ($validated, $project, $scheduleRules, $mayOverrideLock, &$overrode): void {
+            DB::transaction(function () use (
+                $validated,
+                $project,
+                $scheduleRules,
+                $mayOverrideLock,
+                $historical,
+                $actor,
+                $storedLabels,
+                &$overrode,
+                &$corrected
+            ): void {
                 $ranges = $this->resolveSubmittedRanges(
                     $project,
                     $validated['ranges'] ?? [],
@@ -834,6 +864,31 @@ class ScheduleController extends Controller
                 $this->assertRangesAvailable($project, $ranges);
 
                 $keepScheduleIds = $ranges->pluck('schedule_id')->filter()->values();
+
+                // What this submission does to days that have already gone,
+                // worked out before a single row is touched. Three answers come
+                // back: the days the project newly claims, the days it gives
+                // up, and which row is responsible for each.
+                //
+                // The stored dates are compared with the submitted ones row by
+                // row, which is the whole point: a range resubmitted as it
+                // stands has added nothing and is asked nothing, while the same
+                // range with its start pulled back three days has added exactly
+                // those three.
+                $assessment = $historical->assess(
+                    $project,
+                    $ranges,
+                    $this->survivingScheduleIds($project, $keepScheduleIds, $mayOverrideLock)
+                );
+
+                $crew = $this->crewForHistoricalWork(
+                    $project,
+                    $assessment['added'],
+                    $validated,
+                    $mayOverrideLock,
+                    $historical,
+                    $actor?->id
+                );
 
                 // A booking that has ended is the record of work that
                 // happened, and it survives whatever the form sends. Omitting
@@ -855,7 +910,10 @@ class ScheduleController extends Controller
                         $schedule->delete();
                     });
 
-                $ranges->each(function (array $range) use ($project, &$overrode): void {
+                foreach ($ranges as $index => $range) {
+                    $addedHere = $assessment['ranges'][$index]['added'] ?? [];
+                    $removedHere = $assessment['ranges'][$index]['removed'] ?? [];
+
                     if ($range['schedule_id']) {
                         if ($range['used_override']) {
                             $overrode = true;
@@ -870,20 +928,69 @@ class ScheduleController extends Controller
                                 'scheduling_mode' => $range['mode'],
                             ]);
 
-                        return;
+                        $schedule = Schedule::find($range['schedule_id']);
+                    } else {
+                        $schedule = Schedule::create([
+                            'project_id' => $project->project_id,
+                            'start_datetime' => $range['start'],
+                            'end_datetime' => $range['end'],
+                            'scheduling_mode' => $range['mode'],
+                            'status' => 'scheduled',
+                            'remarks' => $addedHere !== [] && $this->isEntirelyHistorical($range)
+                                ? 'Recorded from the schedules page as work already done'
+                                : 'Added from schedules page',
+                        ]);
+
+                        // The current team is booked onto a new range because a
+                        // new range is work this project is taking on. A range
+                        // that lies WHOLLY in the past is not that: it is a
+                        // record of a day somebody was on site, and the only
+                        // honest answer to "who?" is the one the Super Admin
+                        // just gave. Booking today's crew onto last month would
+                        // put names against days they may never have worked,
+                        // which is the exact thing the confirmation exists to
+                        // prevent.
+                        if (! $this->isEntirelyHistorical($range)) {
+                            $this->projectTeam->linkScheduleToTeam($schedule, $project);
+                        }
                     }
 
-                    $schedule = Schedule::create([
-                        'project_id' => $project->project_id,
-                        'start_datetime' => $range['start'],
-                        'end_datetime' => $range['end'],
-                        'scheduling_mode' => $range['mode'],
-                        'status' => 'scheduled',
-                        'remarks' => 'Added from schedules page',
-                    ]);
+                    if ($addedHere === [] && $removedHere === []) {
+                        continue;
+                    }
 
-                    $this->projectTeam->linkScheduleToTeam($schedule, $project);
-                });
+                    if ($addedHere !== []) {
+                        $historical->link($schedule, $crew);
+                    }
+
+                    $corrected[] = [
+                        'schedule_id' => (int) $schedule->schedule_id,
+                        'original_range' => $range['schedule_id']
+                            ? ($storedLabels[(int) $range['schedule_id']] ?? null)
+                            : null,
+                        'new_range' => $schedule->describe(),
+                        'added' => $addedHere,
+                        'removed' => $removedHere,
+                        'technicians' => $addedHere !== [] ? $historical->describeCrew($crew) : [],
+                    ];
+                }
+
+                // A row deleted outright gives up whatever it held. Nobody is
+                // asked about those days - they are days the project is no
+                // longer claiming, not days it newly claims - but the record of
+                // them changing has to survive the row that carried them.
+                foreach ($assessment['dropped'] as $dropped) {
+                    $corrected[] = [
+                        'schedule_id' => (int) $dropped['schedule']->schedule_id,
+                        'original_range' => $storedLabels[(int) $dropped['schedule']->schedule_id] ?? null,
+                        'new_range' => null,
+                        'added' => [],
+                        'removed' => $dropped['removed'],
+                        'technicians' => [],
+                    ];
+                }
+
+                $historical->record($project, $corrected, $actor);
 
                 // Ranges that run into each other are one booking, so they are
                 // merged before anything downstream reads them - including the
@@ -905,17 +1012,22 @@ class ScheduleController extends Controller
             $this->activityLogger->record(
                 ActivityLog::PROJECT_RESCHEDULED,
                 null,
-                sprintf(
+                Str::limit(sprintf(
                     // Named as an override when one was used, so the trail
                     // separates a routine reschedule from a correction to work
                     // already on the record. The actor is recorded by the
                     // logger itself.
-                    $overrode
-                        ? "Overrode the past-schedule lock on '%s': %s."
-                        : "On '%s': %s.",
+                    $overrode || $corrected !== []
+                        ? "Overrode the past-schedule lock on '%s': %s.%s"
+                        : "On '%s': %s.%s",
                     $project->reference_no ?? $project->name,
-                    $change !== '' ? $change : 'saved the schedule with no change to its dates'
-                ),
+                    $change !== '' ? $change : 'saved the schedule with no change to its dates',
+                    // The days that changed hands in the past, and whose name
+                    // is against the ones that were added. The full facts are
+                    // in tbl_schedule_corrections; this is the sentence
+                    // somebody reading the trail needs to know to go and look.
+                    $this->describeHistoricalCorrection($corrected, $historical)
+                ), 255),
                 $project
             );
 
@@ -926,17 +1038,234 @@ class ScheduleController extends Controller
 
             return redirect()
                 ->route('super-admin.schedules.index')
-                ->with('success', $project->schedules()->exists()
-                    ? 'Schedule updated successfully.'
-                    : sprintf(
-                        '%s is now Unscheduled.',
-                        $project->name
-                    ));
+                ->with('success', $this->saveMessage($project, $corrected, $historical));
         } catch (Throwable $e) {
             return redirect()
                 ->route('super-admin.schedules.index')
                 ->with('error', $this->safeErrorMessage($e, 'Unable to save schedule. Nothing was changed.'));
         }
+    }
+
+    /**
+     * What a submission would do to days already worked, before it is saved.
+     *
+     * The editor asks this the moment Save is pressed, so the question "who
+     * worked these days?" can be put on screen while the form is still open
+     * and answered in the same breath. Nothing here writes anything.
+     *
+     * A submission that cannot be read at all - a half-filled row, an end
+     * before its start - is reported as needing nothing. The save itself
+     * refuses it a moment later with the specific complaint, and answering a
+     * question about dates that do not parse would be answering about nothing.
+     */
+    public function historicalCheck(Request $request, int $id)
+    {
+        $project = Project::with(['schedules', 'projectTechnicians', 'teamHistory.technician.account'])
+            ->findOrFail($id);
+
+        $scheduleRules = app(ScheduleModeRules::class);
+        $historical = app(HistoricalScheduleCorrection::class);
+
+        // Validated by hand rather than via $request->validate(): a thrown
+        // ValidationException would redirect with HTML, which is no use to the
+        // browser waiting on JSON here. Same reason assignableProjects() does.
+        $validator = Validator::make($request->all(), [
+            'ranges' => ['nullable', 'array'],
+            'ranges.*.schedule_id' => ['nullable', 'integer'],
+            ...$scheduleRules->rules('ranges.*.'),
+        ]);
+
+        $nothing = ['required' => false, 'dates' => [], 'label' => '', 'members' => [], 'others' => []];
+
+        if ($validator->fails() || ! $request->user()?->isSuperAdmin() || $project->isReadOnly()) {
+            return response()->json($nothing);
+        }
+
+        try {
+            $ranges = $this->resolveSubmittedRanges(
+                $project,
+                $request->input('ranges', []) ?? [],
+                $scheduleRules,
+                true
+            );
+
+            $assessment = $historical->assess(
+                $project,
+                $ranges,
+                $this->survivingScheduleIds($project, $ranges->pluck('schedule_id')->filter()->values(), true)
+            );
+        } catch (Throwable) {
+            return response()->json($nothing);
+        }
+
+        if ($assessment['added'] === []) {
+            return response()->json($nothing);
+        }
+
+        return response()->json([
+            'required' => true,
+            'dates' => $assessment['added'],
+            'label' => $historical->describeDates($assessment['added']),
+            ...$historical->candidates($project, $assessment['added']),
+        ]);
+    }
+
+    /**
+     * The stored rows this save will keep even though the form did not mention
+     * them.
+     *
+     * The editor draws a booking somebody may not change read-only and submits
+     * nothing at all for it, so an omission is not a deletion - see the
+     * deletion loop in update(), which this has to agree with exactly. Their
+     * days are still the project's, which is what stops a save that leaves them
+     * out reading as one that gave them up.
+     *
+     * @param  Collection<int, mixed>  $keepScheduleIds
+     * @return array<int, int>
+     */
+    private function survivingScheduleIds(Project $project, Collection $keepScheduleIds, bool $mayOverrideLock): array
+    {
+        $submitted = $keepScheduleIds->map(fn ($scheduleId): int => (int) $scheduleId)->all();
+
+        return $project->schedules
+            ->reject(fn (Schedule $schedule): bool => in_array((int) $schedule->schedule_id, $submitted, true))
+            ->filter(fn (Schedule $schedule): bool => $schedule->isLocked() && ! $mayOverrideLock)
+            ->map(fn (Schedule $schedule): int => (int) $schedule->schedule_id)
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Who the Super Admin says worked the days this save newly claims.
+     *
+     * Empty when it claims none, which is every ordinary reschedule. When it
+     * does claim some, the save stops here unless the correction was confirmed
+     * AND somebody is named for them: a past date that reaches the schedule
+     * with nobody against it is the one outcome this whole path exists to
+     * prevent.
+     *
+     * @param  array<int, string>  $added
+     * @param  array<string, mixed>  $validated
+     * @return Collection<int, ProjectTechnician>
+     */
+    private function crewForHistoricalWork(
+        Project $project,
+        array $added,
+        array $validated,
+        bool $mayOverrideLock,
+        HistoricalScheduleCorrection $historical,
+        ?int $actorId
+    ): Collection {
+        if ($added === []) {
+            return collect();
+        }
+
+        if (! $mayOverrideLock) {
+            throw new RuntimeException(sprintf(
+                '%s %s already passed. Recording work already done takes a Super Admin who has confirmed the correction.',
+                $historical->describeDates($added),
+                count($added) === 1 ? 'has' : 'have'
+            ));
+        }
+
+        return $historical->attribute(
+            $project,
+            $added,
+            $validated['historical_technicians'] ?? [],
+            (bool) ($validated['historical_add_technicians'] ?? false),
+            $actorId
+        );
+    }
+
+    /**
+     * Whether a submitted range lies entirely on days that have gone.
+     *
+     * @param  array{mode: string, start: CarbonImmutable, end: CarbonImmutable}  $range
+     */
+    private function isEntirelyHistorical(array $range): bool
+    {
+        $end = $range['mode'] === Schedule::MODE_PARTIAL_DAY ? $range['start'] : $range['end'];
+
+        return $end->startOfDay()->lt(Schedule::businessToday());
+    }
+
+    /**
+     * The historical half of one save, as a clause for the audit trail.
+     *
+     * @param  array<int, array<string, mixed>>  $corrected
+     */
+    private function describeHistoricalCorrection(array $corrected, HistoricalScheduleCorrection $historical): string
+    {
+        $added = [];
+        $removed = [];
+        $names = [];
+
+        foreach ($corrected as $entry) {
+            $added = array_merge($added, $entry['added']);
+            $removed = array_merge($removed, $entry['removed']);
+
+            foreach ($entry['technicians'] as $technician) {
+                $names[$technician['technician_id']] = $technician['name'];
+            }
+        }
+
+        $parts = [];
+
+        if ($added !== []) {
+            $parts[] = sprintf(
+                'Recorded %s as worked by %s',
+                $historical->describeDates($added),
+                implode(', ', $names)
+            );
+        }
+
+        if ($removed !== []) {
+            $parts[] = sprintf('Took %s off the record', $historical->describeDates($removed));
+        }
+
+        return $parts === [] ? '' : ' '.implode('. ', $parts).'.';
+    }
+
+    /**
+     * What the page says after a save, which is different when the save was a
+     * correction to work already done: the dates and the names are the whole
+     * point of it, and "Schedule updated successfully" hides them.
+     *
+     * @param  array<int, array<string, mixed>>  $corrected
+     */
+    private function saveMessage(Project $project, array $corrected, HistoricalScheduleCorrection $historical): string
+    {
+        $added = [];
+        $removed = [];
+        $names = [];
+
+        foreach ($corrected as $entry) {
+            $added = array_merge($added, $entry['added']);
+            $removed = array_merge($removed, $entry['removed']);
+
+            foreach ($entry['technicians'] as $technician) {
+                $names[$technician['technician_id']] = $technician['name'];
+            }
+        }
+
+        if ($added !== []) {
+            return sprintf(
+                'Schedule updated. %s recorded as worked by %s.',
+                $historical->describeDates($added),
+                implode(', ', $names)
+            );
+        }
+
+        if ($removed !== []) {
+            return sprintf(
+                'Schedule updated. %s is no longer on this project\'s record.',
+                $historical->describeDates($removed)
+            );
+        }
+
+        return $project->schedules()->exists()
+            ? 'Schedule updated successfully.'
+            : sprintf('%s is now Unscheduled.', $project->name);
     }
 
     /**
@@ -1145,6 +1474,19 @@ class ScheduleController extends Controller
      * into a whole day is tested against what that now demands rather than
      * against the hours it used to occupy.
      *
+     * Only the part of a range that has not been worked is checked. A day that
+     * has gone cannot be double-booked in any sense that matters: nobody can be
+     * sent anywhere for it, and the question the check answers - "will this
+     * technician be in two places at once?" - has already been settled by what
+     * actually happened. Checking it anyway is what made a historical
+     * correction fail because the technician's name was on another job that
+     * week, which is a fact about the past rather than a reason to refuse a
+     * correction to it. Days from today onwards are checked exactly as before -
+     * a correction that reaches forward onto a busy day is still refused.
+     *
+     * This is the same line Schedule::toUpcomingAvailabilityRange() draws for
+     * stored rows, applied to rows that are not stored yet.
+     *
      * @param  Collection<int, array{schedule_id: ?int, mode: string, start: CarbonImmutable, end: CarbonImmutable}>  $ranges
      */
     private function assertRangesAvailable(Project $project, Collection $ranges): void
@@ -1155,18 +1497,54 @@ class ScheduleController extends Controller
             return;
         }
 
+        $upcoming = $ranges
+            ->map(fn (array $range): ?array => $this->upcomingPortionOf($range))
+            ->filter()
+            ->values();
+
+        if ($upcoming->isEmpty()) {
+            return;
+        }
+
         // The project's own schedules are being replaced by this submission,
         // so they must not count against it. Overlaps between the submitted
         // ranges themselves are caught by assertNoOverlapWithinSubmission().
         app(TechnicianAvailabilityService::class)->assertContinuouslyAvailable(
             $technicianIds,
-            $ranges->map(fn (array $range): array => [
-                'start' => $range['start'],
-                'end' => $range['end'],
-                'mode' => $range['mode'],
-            ])->all(),
+            $upcoming->all(),
             $project->project_id
         );
+    }
+
+    /**
+     * The part of a submitted range that is still to be worked, or null when
+     * none of it is.
+     *
+     * A partial day is never clamped: it occupies one date, so it is either
+     * already over - and dropped - or entirely still to come, hours and all.
+     *
+     * @param  array{mode: string, start: CarbonImmutable, end: CarbonImmutable}  $range
+     * @return array{start: CarbonImmutable, end: CarbonImmutable, mode: string}|null
+     */
+    private function upcomingPortionOf(array $range): ?array
+    {
+        $today = Schedule::businessToday();
+
+        if ($range['mode'] === Schedule::MODE_PARTIAL_DAY) {
+            return $range['start']->startOfDay()->lt($today)
+                ? null
+                : ['start' => $range['start'], 'end' => $range['end'], 'mode' => $range['mode']];
+        }
+
+        if ($range['end']->startOfDay()->lt($today)) {
+            return null;
+        }
+
+        return [
+            'start' => $range['start']->lt($today) ? $today : $range['start'],
+            'end' => $range['end'],
+            'mode' => $range['mode'],
+        ];
     }
 
     /**

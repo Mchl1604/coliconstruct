@@ -92,6 +92,16 @@ document.addEventListener("DOMContentLoaded", function () {
         return year + "-" + month + "-" + day;
     }
 
+    // Read rather than cached: a modal left open across midnight would
+    // otherwise go on measuring against yesterday.
+    function todayString() {
+        return normalizeDateString(new Date());
+    }
+
+    function isPastDate(dateString) {
+        return typeof dateString === "string" && dateString < todayString();
+    }
+
     // Inclusive list of 'YYYY-MM-DD' strings between two date strings.
     function eachDate(fromValue, toValue) {
         const dates = [];
@@ -286,6 +296,17 @@ document.addEventListener("DOMContentLoaded", function () {
      * hours, leaving the rest of that date free for other work.
      */
     function busyIntervalsOn(technicianId, date, excludeProjectId) {
+        // A day that has gone cannot be double-booked. Nobody can be sent
+        // anywhere for it, and who was where that day is settled - so an old
+        // booking is a fact about the past rather than a claim on somebody's
+        // diary. The server stopped measuring availability on past days for
+        // exactly that reason (see ScheduleController::upcomingPortionOf), and
+        // the pickers have to draw the same line or a Super Admin recording
+        // last week's work would find every day of it greyed out.
+        if (isPastDate(date)) {
+            return [];
+        }
+
         const ranges = technicianSchedules[technicianId] || [];
         const intervals = [];
 
@@ -1045,6 +1066,12 @@ document.addEventListener("DOMContentLoaded", function () {
         const errorBox = modal.querySelector("[data-range-error]");
         const form = modal.querySelector("form");
 
+        // Whether this reader may put days that have already gone onto the
+        // schedule at all. An Admin may not, so their rows are measured against
+        // today exactly as they always were.
+        const mayCorrectHistory = modal.dataset.mayCorrectHistory === "1";
+        const historicalUrl = modal.dataset.historicalCheckUrl || "";
+
         if (!container) {
             return;
         }
@@ -1217,6 +1244,552 @@ document.addEventListener("DOMContentLoaded", function () {
                 .filter(Boolean);
         }
 
+        // ---------------------------------------------------------------
+        // Step two: who worked the days this save would newly claim.
+        //
+        // A schedule row is the statement that this project was on site on
+        // those days. Put one on a day that has gone and the only honest way to
+        // save it is with a name against it - the current team is not an answer,
+        // because the current team is who is here now.
+        //
+        // The question is asked of the server rather than worked out here: it
+        // is the same comparison the save itself makes, between the dates being
+        // submitted and the dates already stored, and the two must not be able
+        // to disagree.
+        // ---------------------------------------------------------------
+
+        const scheduleStep = modal.querySelector("[data-schedule-step]");
+        const historicalStep = modal.querySelector("[data-historical-step]");
+        const historicalDates = modal.querySelector("[data-historical-dates]");
+        const historicalWarning = modal.querySelector("[data-historical-warning]");
+        const historicalSearch = modal.querySelector("[data-historical-input]");
+        const historicalResults = modal.querySelector("[data-historical-results]");
+        const historicalChosen = modal.querySelector("[data-historical-chosen]");
+        const historicalHint = modal.querySelector("[data-historical-hint]");
+        const historicalAddFlag = modal.querySelector("[data-historical-add-flag]");
+        const historicalError = modal.querySelector("[data-historical-error]");
+        const historicalConfirm = modal.querySelector("[data-historical-confirm]");
+        const historicalBack = modal.querySelector("[data-historical-back]");
+        const saveButton = modal.querySelector("[data-schedule-submit]");
+
+        // Everybody the server offered for the dates being recorded, and who
+        // has been named so far. Both are replaced each time the step opens:
+        // the answer is about one particular set of days, and a name carried
+        // over from a previous question would be a name given to the wrong one.
+        let historicalCandidates = [];
+        let historicalPicked = [];
+
+        const HISTORICAL_RESULT_LIMIT = 8;
+
+        function closeHistoricalResults() {
+            if (!historicalResults) {
+                return;
+            }
+
+            historicalResults.classList.add("d-none");
+            historicalResults.innerHTML = "";
+
+            if (historicalSearch) {
+                historicalSearch.setAttribute("aria-expanded", "false");
+            }
+        }
+
+        /**
+         * What is missing before this can be recorded, in the order it matters.
+         *
+         * A day on the record has a crew and it has somebody leading it - the
+         * same rule ProjectTeamRules applies to a team being built. Both are
+         * checked again on the way in; this is so the button says why it is not
+         * offering to save rather than leaving it to be discovered.
+         */
+        function historicalProblem() {
+            if (historicalPicked.length === 0) {
+                return "Name at least one technician who worked these dates.";
+            }
+
+            const leads = historicalPicked.filter(function (person) {
+                return person.is_lead;
+            });
+
+            if (leads.length === 0) {
+                return "Name the Lead Technician who worked these dates.";
+            }
+
+            if (leads.length > 1) {
+                return (
+                    leads
+                        .map(function (person) {
+                            return person.name;
+                        })
+                        .join(" and ") +
+                    " are both Lead Technicians. Only one of them can have led these dates."
+                );
+            }
+
+            return "";
+        }
+
+        function refreshHistoricalChoice() {
+            const problem = historicalProblem();
+
+            if (historicalAddFlag) {
+                // Somebody the record does not put on this project for these
+                // dates is an addition, and the server is told so explicitly
+                // rather than left to work it out from the names.
+                historicalAddFlag.value = historicalPicked.some(function (person) {
+                    return person.isAddition;
+                })
+                    ? "1"
+                    : "0";
+            }
+
+            if (historicalConfirm) {
+                historicalConfirm.disabled = problem !== "";
+            }
+
+            if (historicalHint) {
+                historicalHint.textContent =
+                    problem ||
+                    "Everyone named here is recorded as having worked these dates.";
+                historicalHint.classList.toggle("is-blocking", problem !== "");
+            }
+
+            if (!problem && historicalError) {
+                historicalError.classList.add("d-none");
+            }
+        }
+
+        function renderHistoricalChosen() {
+            if (!historicalChosen) {
+                return;
+            }
+
+            historicalChosen.innerHTML = "";
+
+            historicalPicked.forEach(function (person) {
+                const chip = document.createElement("span");
+                chip.className =
+                    "schedule-historical-chip" +
+                    (person.is_lead ? " is-lead" : "") +
+                    (person.isAddition ? " is-addition" : "");
+
+                if (person.avatar_url) {
+                    const avatar = document.createElement("img");
+                    avatar.className = "schedule-historical-chip-avatar";
+                    avatar.src = person.avatar_url;
+                    avatar.alt = "";
+                    chip.appendChild(avatar);
+                }
+
+                const name = document.createElement("span");
+                name.className = "schedule-historical-chip-name";
+                name.textContent = person.name;
+                chip.appendChild(name);
+
+                if (person.is_lead) {
+                    const badge = document.createElement("span");
+                    badge.className = "schedule-historical-chip-role";
+                    badge.textContent = "Lead";
+                    chip.appendChild(badge);
+                }
+
+                // The value that is actually submitted. It exists only for a
+                // name that was picked, which is what keeps a half-typed one
+                // out of the record.
+                const field = document.createElement("input");
+                field.type = "hidden";
+                field.name = "historical_technicians[]";
+                field.value = String(person.id);
+                chip.appendChild(field);
+
+                const remove = document.createElement("button");
+                remove.type = "button";
+                remove.className = "schedule-historical-chip-remove";
+                remove.setAttribute("aria-label", "Remove " + person.name);
+                remove.innerHTML = '<i class="bi bi-x-lg" aria-hidden="true"></i>';
+                remove.addEventListener("click", function () {
+                    historicalPicked = historicalPicked.filter(function (other) {
+                        return other.id !== person.id;
+                    });
+
+                    renderHistoricalChosen();
+                    refreshHistoricalChoice();
+
+                    if (historicalSearch) {
+                        historicalSearch.focus();
+                    }
+                });
+                chip.appendChild(remove);
+
+                historicalChosen.appendChild(chip);
+            });
+        }
+
+        function pickHistorical(person) {
+            const already = historicalPicked.some(function (other) {
+                return other.id === person.id;
+            });
+
+            if (!already) {
+                historicalPicked.push(person);
+            }
+
+            if (historicalSearch) {
+                // Cleared rather than filled with the name: several people may
+                // be named, so the box goes back to being ready for the next
+                // one.
+                historicalSearch.value = "";
+                historicalSearch.focus();
+            }
+
+            closeHistoricalResults();
+            renderHistoricalChosen();
+            refreshHistoricalChoice();
+        }
+
+        function renderHistoricalResults(term) {
+            if (!historicalResults) {
+                return;
+            }
+
+            const needle = term.trim().toLowerCase();
+
+            if (!needle) {
+                closeHistoricalResults();
+
+                return;
+            }
+
+            // Name, employee code, address and role all match, because all four
+            // are things somebody knows a technician by.
+            const matches = historicalCandidates
+                .filter(function (person) {
+                    const chosen = historicalPicked.some(function (other) {
+                        return other.id === person.id;
+                    });
+
+                    if (chosen) {
+                        return false;
+                    }
+
+                    return [
+                        person.name,
+                        person.code,
+                        person.email,
+                        person.role_label,
+                    ].some(function (field) {
+                        return (
+                            field && String(field).toLowerCase().indexOf(needle) !== -1
+                        );
+                    });
+                })
+                .slice(0, HISTORICAL_RESULT_LIMIT);
+
+            if (!matches.length) {
+                historicalResults.innerHTML =
+                    '<li class="schedule-historical-empty">No technician by that name.</li>';
+                historicalResults.classList.remove("d-none");
+                historicalSearch.setAttribute("aria-expanded", "true");
+
+                return;
+            }
+
+            historicalResults.innerHTML = matches
+                .map(function (person) {
+                    return (
+                        '<li><button type="button" class="schedule-historical-option" data-historical-id="' +
+                        escapeHtml(String(person.id)) +
+                        '" role="option">' +
+                        '<span class="schedule-historical-option-name">' +
+                        escapeHtml(person.name) +
+                        (person.is_lead
+                            ? '<span class="schedule-historical-option-lead">Lead</span>'
+                            : "") +
+                        "</span>" +
+                        '<span class="schedule-historical-option-note">' +
+                        escapeHtml(person.note || "") +
+                        "</span>" +
+                        "</button></li>"
+                    );
+                })
+                .join("");
+
+            historicalResults.classList.remove("d-none");
+            historicalSearch.setAttribute("aria-expanded", "true");
+        }
+
+        if (historicalSearch) {
+            historicalSearch.addEventListener("input", function () {
+                renderHistoricalResults(historicalSearch.value);
+            });
+
+            historicalSearch.addEventListener("keydown", function (event) {
+                if (event.key === "Escape") {
+                    closeHistoricalResults();
+                }
+
+                // Enter picks the first match rather than submitting the form
+                // half-filled.
+                if (event.key === "Enter" && historicalResults) {
+                    event.preventDefault();
+
+                    const first = historicalResults.querySelector(
+                        "[data-historical-id]",
+                    );
+
+                    if (first) {
+                        first.click();
+                    }
+                }
+            });
+        }
+
+        if (historicalResults) {
+            historicalResults.addEventListener("click", function (event) {
+                const option = event.target.closest("[data-historical-id]");
+
+                if (!option) {
+                    return;
+                }
+
+                const chosen = historicalCandidates.find(function (person) {
+                    return String(person.id) === option.dataset.historicalId;
+                });
+
+                if (chosen) {
+                    pickHistorical(chosen);
+                }
+            });
+        }
+
+        document.addEventListener("click", function (event) {
+            if (historicalStep && !historicalStep.contains(event.target)) {
+                closeHistoricalResults();
+            }
+        });
+
+        function closeHistoricalStep() {
+            if (!historicalStep) {
+                return;
+            }
+
+            historicalPicked = [];
+
+            renderHistoricalChosen();
+            closeHistoricalResults();
+
+            if (historicalSearch) {
+                historicalSearch.value = "";
+            }
+
+            if (historicalAddFlag) {
+                historicalAddFlag.value = "0";
+            }
+
+            historicalStep.classList.add("d-none");
+
+            if (scheduleStep) {
+                scheduleStep.classList.remove("d-none");
+            }
+
+            [historicalConfirm, historicalBack].forEach(function (button) {
+                if (button) {
+                    button.classList.add("d-none");
+                }
+            });
+
+            if (saveButton) {
+                saveButton.classList.remove("d-none");
+            }
+
+            if (historicalError) {
+                historicalError.classList.add("d-none");
+                historicalError.textContent = "";
+            }
+        }
+
+        /**
+         * @param {{dates: array, label: string, members: array, others: array}} answer
+         * @param {function} onConfirmed what to do once a name has been given
+         */
+        function openHistoricalStep(answer, onConfirmed) {
+            if (!historicalStep) {
+                return;
+            }
+
+            if (historicalDates) {
+                historicalDates.textContent = answer.label || "";
+            }
+
+            // Ranges that had already ended and are being changed anyway. Not
+            // a question - nobody is asked about days being given up - but the
+            // one warning that has to be read before the record is rewritten.
+            const overrides = pendingOverrides();
+
+            if (historicalWarning) {
+                historicalWarning.classList.toggle("d-none", overrides.length === 0);
+                historicalWarning.textContent = overrides.length
+                    ? "Also changing ranges that have already ended: " +
+                      overrides.join("; ") +
+                      ". This is recorded against your account."
+                    : "";
+            }
+
+            // One pool to search, with each name carrying whether choosing it
+            // is a straightforward answer or an addition to the record. The
+            // people the project already puts on these dates come first, so a
+            // search that matches both kinds offers the likelier one first.
+            historicalCandidates = (answer.members || [])
+                .map(function (person) {
+                    return { ...person, isAddition: false };
+                })
+                .concat(
+                    (answer.others || []).map(function (person) {
+                        return { ...person, isAddition: true };
+                    }),
+                );
+
+            // The crew the project holds today, filled in before anybody types.
+            // Most corrections are that crew recording days they worked and
+            // nobody booked, so the common answer arrives already given - and
+            // it is only an answer offered: every chip can be taken off, and
+            // the save records exactly what is left.
+            //
+            // The server decides who is suggested. Somebody who covers these
+            // dates but has since left the project is offered in the search and
+            // NOT filled in: they may well have been there, but the editor must
+            // not put words in their mouth.
+            historicalPicked = historicalCandidates.filter(function (person) {
+                return person.suggested;
+            });
+
+            if (historicalSearch) {
+                historicalSearch.value = "";
+            }
+
+            closeHistoricalResults();
+            renderHistoricalChosen();
+            refreshHistoricalChoice();
+
+            historicalStep.classList.remove("d-none");
+
+            if (scheduleStep) {
+                scheduleStep.classList.add("d-none");
+            }
+
+            if (saveButton) {
+                saveButton.classList.add("d-none");
+            }
+
+            [historicalConfirm, historicalBack].forEach(function (button) {
+                if (button) {
+                    button.classList.remove("d-none");
+                }
+            });
+
+            if (historicalSearch) {
+                historicalSearch.focus();
+            }
+
+            if (historicalConfirm) {
+                historicalConfirm.onclick = function () {
+                    const problem = historicalProblem();
+
+                    if (problem) {
+                        if (historicalError) {
+                            historicalError.textContent = problem;
+                            historicalError.classList.remove("d-none");
+                        }
+
+                        return;
+                    }
+
+                    // The dates are the Super Admin's confirmed correction, so
+                    // the flag the server reads for one is set here.
+                    if (overrideInput) {
+                        overrideInput.value = "1";
+                    }
+
+                    onConfirmed();
+                };
+            }
+
+            if (historicalBack) {
+                historicalBack.onclick = closeHistoricalStep;
+            }
+        }
+
+        modal.addEventListener("hidden.bs.modal", closeHistoricalStep);
+
+        /**
+         * The rows as they stand, in the shape the save posts them - so the
+         * answer that comes back is about the very submission that follows it.
+         */
+        function historicalPayload() {
+            const payload = new FormData();
+
+            payload.append("_token", csrfToken());
+
+            Array.from(container.querySelectorAll("[data-range-row]")).forEach(
+                function (row, index) {
+                    const entry = readRow(row);
+
+                    // A row this reader may not change submits nothing, exactly
+                    // as the form leaves it out.
+                    if (entry.locked) {
+                        return;
+                    }
+
+                    const prefix = "ranges[" + index + "]";
+                    const scheduleId = rowScheduleId(row);
+                    const fieldValue = function (selector) {
+                        const field = row.querySelector(selector);
+
+                        return field ? field.value : "";
+                    };
+
+                    if (scheduleId) {
+                        payload.append(prefix + "[schedule_id]", scheduleId);
+                    }
+
+                    payload.append(prefix + "[scheduling_mode]", entry.mode);
+
+                    if (entry.mode === MODE_PARTIAL_DAY) {
+                        payload.append(prefix + "[project_date]", entry.date || "");
+                        payload.append(
+                            prefix + "[start_time]",
+                            fieldValue("[data-range-start-time]"),
+                        );
+                        payload.append(
+                            prefix + "[end_time]",
+                            fieldValue("[data-range-end-time]"),
+                        );
+
+                        return;
+                    }
+
+                    payload.append(prefix + "[start_date]", entry.start || "");
+                    payload.append(prefix + "[end_date]", entry.end || "");
+                },
+            );
+
+            return payload;
+        }
+
+        function requestHistoricalCheck() {
+            return fetch(historicalUrl, {
+                method: "POST",
+                headers: {
+                    Accept: "application/json",
+                    "X-Requested-With": "XMLHttpRequest",
+                },
+                credentials: "same-origin",
+                body: historicalPayload(),
+            }).then(function (response) {
+                return response.ok ? response.json() : null;
+            });
+        }
+
         if (form) {
             form.addEventListener("submit", function (event) {
                 const rows = Array.from(
@@ -1254,7 +1827,11 @@ document.addEventListener("DOMContentLoaded", function () {
                             return;
                         }
 
-                        if (entry.isNew && entry.date < todayString) {
+                        if (
+                            !mayCorrectHistory &&
+                            entry.isNew &&
+                            entry.date < todayString
+                        ) {
                             hasPastDate = true;
                         }
                     } else {
@@ -1264,7 +1841,14 @@ document.addEventListener("DOMContentLoaded", function () {
                             return;
                         }
 
-                        if (entry.isNew && entry.start < todayString) {
+                        // A new row reaching backwards is a mistake for an
+                        // Admin and a correction for a Super Admin, who is
+                        // asked who worked those days instead of being refused.
+                        if (
+                            !mayCorrectHistory &&
+                            entry.isNew &&
+                            entry.start < todayString
+                        ) {
                             hasPastDate = true;
                         }
 
@@ -1371,30 +1955,73 @@ document.addEventListener("DOMContentLoaded", function () {
                     return;
                 }
 
-                // Correcting work already on the record is the one change on
-                // this form that is asked about before it happens. Everything
-                // else here can be put back by editing again; this cannot,
-                // because what it overwrites is the record of what happened.
-                const overrides = pendingOverrides();
-
-                if (overrides.length) {
-                    const confirmed = window.confirm(
-                        "These ranges have already ended:\n\n" +
-                            overrides.join("\n") +
-                            "\n\nChanging them alters the record of completed work " +
-                            "and is logged against your account. Continue?",
-                    );
-
-                    if (!confirmed) {
-                        event.preventDefault();
-
-                        return;
-                    }
-
-                    if (overrideInput) {
-                        overrideInput.value = "1";
-                    }
+                // Everything below asks something before the form goes.
+                // Once it has been asked and answered the answer travels with
+                // the submission, and this handler steps out of the way.
+                if (form.dataset.historicalCleared === "1") {
+                    return;
                 }
+
+                /**
+                 * Correcting work already on the record is the one change on
+                 * this form that is asked about before it happens. Everything
+                 * else here can be put back by editing again; this cannot,
+                 * because what it overwrites is the record of what happened.
+                 *
+                 * Skipped when the historical step has just made the same point
+                 * at greater length - one confirmation for one decision.
+                 */
+                function send(alreadyConfirmed) {
+                    const overrides = pendingOverrides();
+
+                    if (!alreadyConfirmed && overrides.length) {
+                        const confirmed = window.confirm(
+                            "These ranges have already ended:\n\n" +
+                                overrides.join("\n") +
+                                "\n\nChanging them alters the record of completed work " +
+                                "and is logged against your account. Continue?",
+                        );
+
+                        if (!confirmed) {
+                            return;
+                        }
+
+                        if (overrideInput) {
+                            overrideInput.value = "1";
+                        }
+                    }
+
+                    form.dataset.historicalCleared = "1";
+                    form.submit();
+                }
+
+                event.preventDefault();
+
+                if (!mayCorrectHistory || !historicalUrl || !historicalStep) {
+                    send(false);
+
+                    return;
+                }
+
+                requestHistoricalCheck()
+                    .then(function (answer) {
+                        if (!answer || !answer.required) {
+                            send(false);
+
+                            return;
+                        }
+
+                        openHistoricalStep(answer, function () {
+                            send(true);
+                        });
+                    })
+                    .catch(function () {
+                        // The server asks the same question again on the way
+                        // in and refuses the save without an answer, so a
+                        // preflight that could not be reached costs a refusal
+                        // rather than a date landing in the past unattributed.
+                        send(false);
+                    });
             });
         }
     }
