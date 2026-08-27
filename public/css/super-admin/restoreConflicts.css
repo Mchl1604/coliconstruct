@@ -217,6 +217,25 @@
     color: #6c757d;
 }
 
+/* Whole days or hours, chosen per range. Given a line of its own above the
+   fields rather than sat among them: it decides WHICH fields are there, so it
+   reads as the question the two groups answer. Only drawn for a Residential
+   project - see ProjectScheduleRecovery. */
+.conflict-mode {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    max-width: 220px;
+    margin-bottom: 0.75rem;
+}
+
+.conflict-mode span {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #6c757d;
+}
+
 .conflict-editor-actions {
     display: flex;
     justify-content: flex-end;

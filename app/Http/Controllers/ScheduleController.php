@@ -183,7 +183,7 @@ class ScheduleController extends Controller
      * before it stopped are part of the record of that day.
      *
      * Archived work stays out. An archive is reversible - restoring puts the
-     * dates back, which is what RestoreScheduleConflicts exists to police - so
+     * dates back, which is what ProjectScheduleRecovery exists to police - so
      * its ranges are dormant rather than finished, and a panel that reads as
      * history is the wrong place to show them.
      */

@@ -531,10 +531,21 @@ class ScheduleModeRules
      * range spanning several days gives no answer to "which of those days did
      * you mean?", and guessing one would silently discard the rest.
      *
+     * `$replacingDates` says the caller is supplying the whole new range
+     * rather than keeping the stored one - the recovery dialogs do, because a
+     * partial day arrives there with the single date it is for. There is then
+     * no day left to guess at, which is the only thing the rule above exists
+     * to refuse, so a multi-day range may become an hours-only one. The
+     * schedules page does not pass it: a row edited in place keeps its dates,
+     * and that is exactly the ambiguous case.
+     *
      * @throws RuntimeException
      */
-    public function assertConvertible(Schedule $schedule, string $requestedMode): void
-    {
+    public function assertConvertible(
+        Schedule $schedule,
+        string $requestedMode,
+        bool $replacingDates = false
+    ): void {
         if ($requestedMode === $schedule->scheduling_mode) {
             return;
         }
@@ -546,7 +557,7 @@ class ScheduleModeRules
             return;
         }
 
-        if (! $schedule->spansSingleDay()) {
+        if (! $replacingDates && ! $schedule->spansSingleDay()) {
             throw new RuntimeException(sprintf(
                 'The schedule for %s covers more than one day. Split it into single days first.',
                 $schedule->describe()

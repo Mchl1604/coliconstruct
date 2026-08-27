@@ -76,9 +76,9 @@ class ProjectTeam
      * member who genuinely worked an earlier range keeps the row that says so.
      *
      * @param  int|null  $addedBy  the account making the addition, for the
-     *                              audit trail. Null where no user is behind
-     *                              it - a reopen restoring a team, a console
-     *                              command.
+     *                             audit trail. Null where no user is behind
+     *                             it - a reopen restoring a team, a console
+     *                             command.
      *
      * Somebody rejoining a project they were taken off reopens the membership
      * they already had rather than starting a second one. Their old span stays
@@ -293,6 +293,57 @@ class ProjectTeam
         }
 
         return $missing;
+    }
+
+    /**
+     * Write the links missingScheduleLinks() reports, and say how many were
+     * actually new.
+     *
+     * The write half of that method, kept beside it so the two cannot disagree
+     * about what a correct set of links is: whatever the audit reports as
+     * missing is exactly what this inserts, and nothing else. The repair
+     * command and Resume both go through here rather than each deciding for
+     * itself.
+     *
+     * Resume is the reason this exists on the service rather than only in the
+     * command. A held project keeps its ranges but stops occupying anybody, so
+     * lifting the hold has to put the crew back onto the ranges coming with
+     * it - and doing that by asking what is missing, rather than by assuming
+     * nothing was, is what makes the step idempotent. A project whose links
+     * are already complete comes back with none written and none duplicated.
+     *
+     * Ranges that have ended are left alone, and so is anybody whose
+     * membership of the team is closed - both because missingScheduleLinks()
+     * excludes them, and for the reasons set out there.
+     *
+     * @return int how many rows were inserted
+     */
+    public function restoreScheduleLinks(Project $project): int
+    {
+        // Read fresh: a caller that has just moved, merged or split a range -
+        // which is exactly what Resume has done by this point - would
+        // otherwise be measured against the relation as it was before.
+        $project->unsetRelation('schedules');
+        $project->unsetRelation('projectTechnicians');
+
+        $inserted = 0;
+
+        foreach ($this->missingScheduleLinks($project) as $missing) {
+            $row = ScheduleTechnician::firstOrCreate([
+                'schedule_id' => $missing['schedule_id'],
+                'project_technician_id' => $missing['project_technician_id'],
+            ]);
+
+            if ($row->wasRecentlyCreated) {
+                $inserted++;
+            }
+        }
+
+        if ($inserted > 0) {
+            $project->unsetRelation('schedules');
+        }
+
+        return $inserted;
     }
 
     private function link(int $scheduleId, int $projectTechnicianId): void

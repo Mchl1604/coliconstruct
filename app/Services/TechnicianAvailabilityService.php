@@ -713,9 +713,13 @@ class TechnicianAvailabilityService
     /**
      * "8:00 AM - 10:00 AM on August 6", across however many dates clashed.
      *
+     * Public for the same reason describeDates() is: a caller building a
+     * dialog rather than a sentence still has to say which hours are taken,
+     * and working that out again would be a second copy of the wording.
+     *
      * @param  array<string, array<int, string>>  $busy
      */
-    private function describeBusy(array $busy): string
+    public function describeBusy(array $busy): string
     {
         $clauses = [];
 

@@ -151,7 +151,7 @@
                         @endif
 
                         <div class="alert alert-danger mt-3 mb-0 d-none" role="alert"
-                            data-restore-error></div>
+                            data-recovery-error></div>
                     </div>
 
                     <div class="modal-footer">
@@ -165,14 +165,15 @@
                              the page and reducing it to a toast. This is
                              still a real form: a browser running no script
                              submits it, and the endpoint answers both. --}}
-                        <form method="POST" data-restore-form
+                        <form method="POST" data-recovery-form
                             data-project-id="{{ $project->project_id }}"
                             data-reference="{{ $project->reference_no ?? $project->name }}"
                             data-conflicts-url="{{ route('super-admin.projects.restore-conflicts', $project->project_id) }}"
+                            data-recovery-failure="Unable to restore project. Nothing was changed."
                             action="{{ route('super-admin.projects.restore', $project->project_id) }}">
                             @csrf
                             @method('PUT')
-                            <button type="submit" class="btn btn-success" data-restore-submit>
+                            <button type="submit" class="btn btn-success" data-recovery-submit>
                                 <i class="bi bi-arrow-counterclockwise me-1"></i>
                                 Restore Project
                             </button>
@@ -184,71 +185,11 @@
         </div>
     @endforeach
 
-    {{-- SCHEDULE CONFLICT MODAL
-
-         One dialog for the page rather than one per row: it is opened by a
-         refusal, never by a button, and only one restore can be refused at a
-         time. Everything inside it is drawn by restoreProject.js from what the
-         server answered, because what is in the way is a question about the
-         calendar right now - not something that can be rendered with the page
-         and still be true when somebody presses Restore. --}}
-    <div class="modal fade" id="scheduleConflictModal" tabindex="-1" aria-labelledby="scheduleConflictModalLabel"
-        aria-hidden="true" data-conflict-modal>
-        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
-            <div class="modal-content">
-
-                <div class="modal-header conflict-modal-header">
-                    <div>
-                        <span class="conflict-eyebrow">Restore blocked</span>
-                        <h5 class="modal-title mb-0" id="scheduleConflictModalLabel">Schedule Conflict</h5>
-                    </div>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-
-                <div class="modal-body">
-                    {{-- The verdict on the schedule as a whole, rewritten by
-                         the script every time it is rechecked. --}}
-                    <div class="alert alert-danger" role="alert" data-conflict-summary>
-                        This project's schedule conflicts with the current availability of its team.
-                        Review the affected schedule ranges before restoring the project.
-                    </div>
-
-                    <div class="conflict-restoring" data-conflict-restoring></div>
-
-                    <div class="alert d-none" role="alert" data-conflict-feedback></div>
-
-                    {{-- The project's schedule, one row per range it actually
-                         holds - which is the thing being reviewed and edited
-                         here, not a list of days and not a list of people. --}}
-                    <div data-conflict-list></div>
-                </div>
-
-                <div class="modal-footer conflict-modal-footer">
-                    <span class="conflict-checked text-secondary small me-auto" data-conflict-checked></span>
-
-                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Close</button>
-
-                    <button type="button" class="btn btn-outline-primary" data-conflict-recheck>
-                        <i class="bi bi-arrow-repeat me-1" aria-hidden="true"></i>
-                        Recheck availability
-                    </button>
-
-                    {{-- Enabled only by a recheck that came back clean, and even
-                         then the restore behind it asks the whole question again
-                         before it writes anything. --}}
-                    <button type="button" class="btn btn-success" data-conflict-restore disabled>
-                        <i class="bi bi-arrow-counterclockwise me-1" aria-hidden="true"></i>
-                        Restore Project
-                    </button>
-                </div>
-
-            </div>
-        </div>
-    </div>
+    <x-schedule-conflict-modal />
 
     @push('scripts')
         <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
-        <script src="/js/super-admin/restoreProject.js"></script>
+        <script src="/js/super-admin/scheduleRecovery.js"></script>
     @endpush
 
     @push('scripts')

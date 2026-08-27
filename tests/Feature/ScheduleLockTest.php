@@ -828,11 +828,12 @@ class ScheduleLockTest extends TestCase
     // ------------------------------------------------------------------
 
     /**
-     * A hold is the system cutting bookings off at the day it was placed, not
-     * a person retyping dates - so it still keeps what was worked and releases
-     * what was not, locked rows included.
+     * A hold is the system dividing bookings at the day it was placed, not a
+     * person retyping dates - so it still keeps what was worked on the near
+     * side of that line and preserves the rest as the project's proposal,
+     * locked rows included. The lock rules do not stand in its way.
      */
-    public function test_a_hold_still_cuts_bookings_at_the_day_it_is_placed(): void
+    public function test_a_hold_still_divides_bookings_at_the_day_it_is_placed(): void
     {
         $this->actingAsSuperAdmin();
 
@@ -848,9 +849,12 @@ class ScheduleLockTest extends TestCase
         $this->assertSame([
             // Ended before the hold: kept as it stands.
             ['start' => $this->day(-8), 'end' => $this->day(-6)],
-            // Crossed it: shortened to the day of the hold.
+            // Crossed it: shortened to the day of the hold...
             ['start' => $this->day(-2), 'end' => $this->day(0)],
-            // Entirely ahead of it: released.
+            // ...with the rest of it preserved as a range of its own.
+            ['start' => $this->day(1), 'end' => $this->day(5)],
+            // Entirely ahead of it: preserved whole.
+            ['start' => $this->day(8), 'end' => $this->day(10)],
         ], $this->rangesOf($project));
     }
 

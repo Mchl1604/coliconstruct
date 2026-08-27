@@ -1,11 +1,13 @@
 /**
- * Restoring an archived project, and the Schedule Conflict dialog that opens
- * when its schedule cannot come back as it stands.
+ * The Schedule Conflict dialog, for every flow that brings a project back.
  *
- * An archived project keeps its dates but stops occupying anybody, which is
- * the point of archiving - the crew is free to be booked elsewhere. Restoring
- * puts those dates back into force, so the calendar may have moved underneath
- * them in the meantime.
+ * Restoring an archived project and resuming a held one are the same question
+ * asked of two different reasons the project stopped: its dates were preserved
+ * while it was set aside, they stopped occupying anybody in the meantime, and
+ * the calendar may have moved underneath them. So this is one dialog and one
+ * script, driven entirely by what the server answered - see
+ * ProjectScheduleRecovery, which is where the labels, the endpoints and every
+ * rule below come from.
  *
  * What that refusal is about is a SCHEDULE RANGE. A project's schedule is a
  * handful of ranges - "Aug 24-26", "Sep 6-8" - and one of them is in the way;
@@ -18,27 +20,37 @@
  * record of work that happened, they are not coming back into force, and the
  * server neither screens nor accepts a change to one.
  *
- * The resolution moves THIS project's range. The live work it clashed with is
- * somebody's week already in motion, and a restore is no reason to rewrite it.
+ * A Residential project may resolve a clash by booking HOURS instead of the
+ * whole day, which is what the Scheduling mode selector on an editable range
+ * offers. Whether it appears at all is the server's answer about the project's
+ * stored client record, carried on the range as partial_day_allowed - never a
+ * guess made here from a label on the page. The hours it offers are the
+ * configured Partial Day Start Hour and End Hour, sent with the range, so this
+ * dialog holds no copy of the working day and cannot offer an hour the save
+ * would refuse.
  *
- * Everything here is a convenience. The restore endpoint re-runs the whole
- * check on the way in, against availability at that moment rather than when
- * this dialog opened, so a Restore button this enables can still be refused -
- * and if it is, the dialog redraws with what is in the way now.
+ * The resolution moves THIS project's range. The live work it clashed with is
+ * somebody's week already in motion, and a recovery is no reason to rewrite it.
+ *
+ * Everything here is a convenience. The restore and resume endpoints re-run
+ * the whole check on the way in, against availability at that moment rather
+ * than when this dialog opened, so a button this enables can still be refused
+ * - and if it is, the dialog redraws with what is in the way now.
  */
 (function (global) {
     'use strict';
 
+    const MODE_DATE_BASED = 'date_based';
     const MODE_PARTIAL_DAY = 'partial_day';
 
     const token = document.querySelector('meta[name="csrf-token"]');
     const CSRF = token ? token.getAttribute('content') : '';
 
-    // What is being restored, and what the server last said about it. Held for
-    // the page rather than per row: only one restore can be refused at a time,
-    // because a refusal is what opens the dialog.
+    // What is being recovered, and what the server last said about it. Held
+    // for the page rather than per row: only one recovery can be refused at a
+    // time, because a refusal is what opens the dialog.
     const state = {
-        restoreUrl: null,
+        commitUrl: null,
         conflictsUrl: null,
         report: null,
         busy: false,
@@ -146,16 +158,25 @@
         return payload.message || fallback;
     }
 
+    /** What the flow currently in the dialog calls itself. */
+    function flow() {
+        return (state.report && state.report.flow) || {};
+    }
+
     // ------------------------------------------------------------------
-    // Restore
+    // The trigger: Restore, or Resume
     // ------------------------------------------------------------------
 
-    function restoreError(element, message) {
-        const box = element.closest('.modal-content')
-            ? element.closest('.modal-content').querySelector('[data-restore-error]')
-            : null;
+    function triggerError(element, message) {
+        const content = element.closest('.modal-content');
+        const box = content ? content.querySelector('[data-recovery-error]') : null;
 
         if (!box) {
+            // Not inside a confirmation dialog - the Resume button on the
+            // project page is a bare form - so say it where the page says
+            // everything else.
+            global.alert(message);
+
             return;
         }
 
@@ -163,9 +184,9 @@
         box.classList.remove('d-none');
     }
 
-    function clearRestoreError(element) {
+    function clearTriggerError(element) {
         const content = element.closest('.modal-content');
-        const box = content ? content.querySelector('[data-restore-error]') : null;
+        const box = content ? content.querySelector('[data-recovery-error]') : null;
 
         if (box) {
             box.classList.add('d-none');
@@ -173,7 +194,11 @@
         }
     }
 
-    function submitRestore(restoreForm, button) {
+    /**
+     * Send the recovery itself - Restore or Resume - and open the dialog when
+     * the calendar refuses it.
+     */
+    function submitRecovery(recoveryForm, button) {
         if (state.busy) {
             return;
         }
@@ -184,12 +209,15 @@
             button.disabled = true;
         }
 
-        clearRestoreError(restoreForm);
+        clearTriggerError(recoveryForm);
 
-        state.restoreUrl = restoreForm.getAttribute('action');
-        state.conflictsUrl = restoreForm.dataset.conflictsUrl || null;
+        state.commitUrl = recoveryForm.getAttribute('action');
+        state.conflictsUrl = recoveryForm.dataset.conflictsUrl || null;
 
-        request(state.restoreUrl, Object.assign({ method: 'POST' }, form({ _method: 'PUT' })))
+        const fallback = recoveryForm.dataset.recoveryFailure
+            || 'Unable to change this project. Nothing was changed.';
+
+        request(state.commitUrl, Object.assign({ method: 'POST' }, form({ _method: 'PUT' })))
             .then(function (result) {
                 state.busy = false;
 
@@ -199,7 +227,7 @@
 
                 if (result.ok) {
                     // The success toast belongs on the page the project is now
-                    // on, which is the active Projects list.
+                    // on, which the server names.
                     global.location = result.payload.redirect || global.location.href;
 
                     return;
@@ -208,7 +236,7 @@
                 // 409 is the calendar refusing, and the only refusal that
                 // carries enough with it to be worth a dialog.
                 if (result.status === 409 && result.payload.conflicts) {
-                    const dialog = restoreForm.closest('.modal');
+                    const dialog = recoveryForm.closest('.modal');
 
                     if (dialog && global.bootstrap) {
                         const instance = global.bootstrap.Modal.getInstance(dialog);
@@ -223,7 +251,7 @@
                     return;
                 }
 
-                restoreError(restoreForm, messageFrom(result.payload, 'Unable to restore project. Nothing was changed.'));
+                triggerError(recoveryForm, messageFrom(result.payload, fallback));
             })
             .catch(function () {
                 state.busy = false;
@@ -232,7 +260,7 @@
                     button.disabled = false;
                 }
 
-                restoreError(restoreForm, 'Unable to reach the server. Nothing was changed.');
+                triggerError(recoveryForm, 'Unable to reach the server. Nothing was changed.');
             });
     }
 
@@ -285,12 +313,27 @@
     function projectPanel(project) {
         return ''
             + '<div class="conflict-panel">'
-            + '<span class="conflict-panel-title">Restoring Project</span>'
+            + '<span class="conflict-panel-title">' + escapeHtml(project.heading) + '</span>'
             + '<div class="conflict-project-ref">' + escapeHtml(project.reference_no) + '</div>'
-            + '<div class="conflict-panel-line text-secondary">Returns as '
-            + escapeHtml(project.returns_as) + ', with its original team'
-            + (project.team && project.team.length ? ' (' + escapeHtml(project.team.join(', ')) + ')' : '')
+            + '<div class="conflict-panel-line text-secondary">'
+            + escapeHtml(project.returns_as)
+            + (project.team && project.team.length
+                ? ', with its team (' + escapeHtml(project.team.join(', ')) + ')'
+                : '')
             + '.</div>'
+            // Said out loud rather than left to be inferred from which
+            // controls appear: an administrator who cannot find Partial Day on
+            // a Commercial project should be told why, not left looking.
+            + (project.client_type
+                ? '<div class="conflict-panel-line text-secondary">'
+                    + escapeHtml(project.client_type) + ' client &mdash; '
+                    + (project.partial_day_allowed
+                        ? 'a clash may be resolved with a Partial Day booking of '
+                            + escapeHtml(project.partial_day_window.start_label) + ' to '
+                            + escapeHtml(project.partial_day_window.end_label) + '.'
+                        : 'Partial Day scheduling is for Residential projects only.')
+                    + '</div>'
+                : '')
             + '</div>';
     }
 
@@ -298,7 +341,14 @@
     function conflictDetail(conflict) {
         const lines = (conflict.details || []).map(function (detail) {
             return '<li>' + escapeHtml(detail.technician_name)
-                + ' is unavailable on ' + escapeHtml(detail.dates_label)
+                + ' is '
+                // The hours, when the clash is between two hours-only
+                // bookings: "unavailable on Aug 6" reads as a whole day gone
+                // when only the morning is, and moving the range to the
+                // afternoon is then an obvious move rather than a guess.
+                + (detail.busy_label
+                    ? 'already booked ' + escapeHtml(detail.busy_label)
+                    : 'unavailable on ' + escapeHtml(detail.dates_label))
                 + (detail.projects && detail.projects.length
                     ? ' (booked on ' + escapeHtml(detail.projects.join(', ')) + ')'
                     : '')
@@ -313,6 +363,30 @@
             + '<ul>' + lines + '</ul>'
             + '</details>'
             + '</div>';
+    }
+
+    /**
+     * The bookable hours as a list, never a time box: a partial day is booked
+     * on the hour everywhere else in the system, and a time input would put a
+     * minute field beside the hour that nothing downstream could honour. The
+     * hours come from the server with the range - the configured Partial Day
+     * Start Hour and End Hour - so this dialog offers what the save will
+     * accept and holds no copy of the working day of its own.
+     */
+    function hourSelect(hook, range, selected) {
+        const options = (range.hour_options || []).map(function (option) {
+            // An hour the window no longer covers is kept where the booking
+            // already holds it and offered nowhere else, exactly as the
+            // schedules page keeps it.
+            const disabled = option.outside && option.value !== selected;
+
+            return '<option value="' + escapeHtml(option.value) + '"'
+                + (option.value === selected ? ' selected' : '')
+                + (disabled ? ' disabled' : '') + '>'
+                + escapeHtml(option.label) + '</option>';
+        }).join('');
+
+        return '<select class="form-select form-select-sm" ' + hook + '>' + options + '</select>';
     }
 
     function rangeEditor(range) {
@@ -333,57 +407,68 @@
             return fresh ? ' placeholder="' + text + '"' : '';
         };
 
-        // The bookable hours as a list, never a time box: a partial day is
-        // booked on the hour everywhere else in the system, and a time input
-        // would put a minute field beside the hour that nothing downstream
-        // could honour. The hours come from the server with the range - see
-        // RestoreScheduleConflicts - so this dialog offers what the save will
-        // accept and holds no copy of the working day of its own.
-        const hourSelect = function (hook, range, selected) {
-            const options = (range.hour_options || []).map(function (option) {
-                // An hour the window no longer covers is kept where the
-                // booking already holds it and offered nowhere else, exactly
-                // as the schedules page keeps it.
-                const disabled = option.outside && option.value !== selected;
+        const partialDay = range.scheduling_mode === MODE_PARTIAL_DAY;
 
-                return '<option value="' + escapeHtml(option.value) + '"'
-                    + (option.value === selected ? ' selected' : '')
-                    + (disabled ? ' disabled' : '') + '>'
-                    + escapeHtml(option.label) + '</option>';
-            }).join('');
+        // Both groups are always drawn. Switching mode has to be instant - it
+        // is one of the two answers to a clash - and rebuilding the row would
+        // throw away the pickers already attached to it. The group not in use
+        // is hidden, and saveRange() reads only the fields the chosen mode
+        // names, so nothing left behind in the other one is ever submitted.
+        const dateBasedFields = ''
+            + '<div class="conflict-fields" data-range-group="' + MODE_DATE_BASED + '"'
+            + (partialDay ? ' hidden' : '') + '>'
+            + '<label class="conflict-field">'
+            + '<span>Start date</span>'
+            + '<input type="text" class="form-control form-control-sm" data-range-start'
+            + ' value="' + (partialDay ? '' : value(range.start_date)) + '"'
+            + placeholder('Select a start date')
+            + (range.start_frozen ? ' readonly' : '') + '>'
+            + '</label>'
+            + '<label class="conflict-field">'
+            + '<span>End date</span>'
+            + '<input type="text" class="form-control form-control-sm" data-range-end'
+            + ' value="' + (partialDay ? '' : value(range.end_date)) + '"'
+            + placeholder('Select an end date') + '>'
+            + '</label>'
+            + '</div>';
 
-            return '<select class="form-select form-select-sm" ' + hook + '>'
-                + options + '</select>';
-        };
-
-        const fields = range.partial_day
+        // Only for a project the server says may book hours. A Commercial one
+        // gets no partial-day fields at all, which is the same answer
+        // ScheduleModeRules gives the save.
+        const partialDayFields = range.partial_day_allowed
             ? ''
+                + '<div class="conflict-fields" data-range-group="' + MODE_PARTIAL_DAY + '"'
+                + (partialDay ? '' : ' hidden') + '>'
                 + '<label class="conflict-field">'
                 + '<span>Date</span>'
                 + '<input type="text" class="form-control form-control-sm" data-range-date'
-                + ' value="' + value(range.project_date) + '"' + placeholder('Select a date')
+                + ' value="' + (partialDay ? value(range.project_date) : '') + '"'
+                + placeholder('Select a date')
                 + (range.start_frozen ? ' readonly' : '') + '>'
                 + '</label>'
                 + '<label class="conflict-field">'
-                + '<span>Start</span>'
-                + hourSelect('data-range-start-time', range, range.start_time)
+                + '<span>Start time</span>'
+                + hourSelect('data-range-start-time', range, range.default_start_time)
                 + '</label>'
                 + '<label class="conflict-field">'
-                + '<span>End</span>'
-                + hourSelect('data-range-end-time', range, range.end_time)
+                + '<span>End time</span>'
+                + hourSelect('data-range-end-time', range, range.default_end_time)
                 + '</label>'
-            : ''
-                + '<label class="conflict-field">'
-                + '<span>Start date</span>'
-                + '<input type="text" class="form-control form-control-sm" data-range-start'
-                + ' value="' + value(range.start_date) + '"' + placeholder('Select a start date')
-                + (range.start_frozen ? ' readonly' : '') + '>'
+                + '</div>'
+            : '';
+
+        const modeSelector = range.partial_day_allowed
+            ? ''
+                + '<label class="conflict-mode">'
+                + '<span>Scheduling mode</span>'
+                + '<select class="form-select form-select-sm" data-range-mode>'
+                + '<option value="' + MODE_DATE_BASED + '"'
+                + (partialDay ? '' : ' selected') + '>Date-Based</option>'
+                + '<option value="' + MODE_PARTIAL_DAY + '"'
+                + (partialDay ? ' selected' : '') + '>Partial Day</option>'
+                + '</select>'
                 + '</label>'
-                + '<label class="conflict-field">'
-                + '<span>End date</span>'
-                + '<input type="text" class="form-control form-control-sm" data-range-end'
-                + ' value="' + value(range.end_date) + '"' + placeholder('Select an end date') + '>'
-                + '</label>';
+            : '';
 
         return ''
             + '<div class="conflict-editor d-none" data-range-editor>'
@@ -395,12 +480,26 @@
             + 'Past days, days the team is already booked on, and days this project’s other '
             + 'ranges hold are greyed out.'
             + '</p>'
+            + (range.partial_day_allowed
+                ? '<p class="conflict-editor-note">Partial Day books only the hours you choose on a '
+                    + 'single date, between ' + escapeHtml(range.partial_day_start_label) + ' and '
+                    + escapeHtml(range.partial_day_end_label) + '. A technician who is booked for the '
+                    + 'whole of a day is still unavailable for part of it.</p>'
+                : '')
             + (range.start_frozen
                 ? '<p class="conflict-editor-note">This range is under way, so its start is fixed.</p>'
                 : '')
-            + '<div class="conflict-fields">' + fields + '</div>'
+            + modeSelector
+            + dateBasedFields
+            + partialDayFields
             + '<div class="conflict-editor-actions">'
             + '<button type="button" class="btn btn-sm btn-light" data-range-cancel>Cancel</button>'
+            // Reset puts the fields back to what this range actually holds and
+            // touches nothing else. It is not a save and it is not an undo of
+            // one: the schedule on the server is exactly as it was until Save
+            // range is pressed.
+            + '<button type="button" class="btn btn-sm btn-outline-secondary" data-range-reset>'
+            + '<i class="bi bi-arrow-counterclockwise me-1" aria-hidden="true"></i>Reset</button>'
             + '<button type="button" class="btn btn-sm btn-primary" data-range-save>Save range</button>'
             + '</div>'
             + '</div>';
@@ -408,7 +507,7 @@
 
     function rangeCard(range) {
         const badge = range.state === 'conflict'
-            ? '<span class="range-badge is-conflict">🔴 Schedule Conflict</span>'
+            ? '<span class="range-badge is-conflict">&#128308; Schedule Conflict</span>'
             : (range.state === 'past'
                 ? '<span class="range-badge is-past">Past</span><span class="range-readonly">Read-only</span>'
                 : '<span class="range-badge is-available">Available</span>');
@@ -446,6 +545,16 @@
             return;
         }
 
+        const labels = flow();
+
+        // The dialog names the action that opened it. One markup block serves
+        // both flows, so the words come from the report rather than the page.
+        const eyebrow = element.querySelector('[data-conflict-eyebrow]');
+
+        if (eyebrow && labels.eyebrow) {
+            eyebrow.textContent = labels.eyebrow;
+        }
+
         element.querySelector('[data-conflict-restoring]').innerHTML = projectPanel(report.project);
 
         const list = element.querySelector('[data-conflict-list]');
@@ -458,12 +567,13 @@
         const summary = element.querySelector('[data-conflict-summary]');
 
         summary.className = report.blocked ? 'alert alert-danger' : 'alert alert-success';
-        summary.textContent = report.blocked
-            ? 'This project’s schedule conflicts with the current availability of its team. '
-                + 'Review the affected schedule ranges before restoring the project.'
-            : 'Every current and future schedule range is available. This project can be restored.';
+        summary.textContent = report.blocked ? labels.blocked_summary : labels.clear_summary;
 
-        element.querySelector('[data-conflict-restore]').disabled = Boolean(report.blocked);
+        const commit = element.querySelector('[data-conflict-commit]');
+
+        commit.disabled = Boolean(report.blocked);
+        commit.innerHTML = '<i class="bi ' + escapeHtml(labels.action_icon || 'bi-check2') + ' me-1"'
+            + ' aria-hidden="true"></i>' + escapeHtml(labels.action_label || 'Continue');
 
         const checked = element.querySelector('[data-conflict-checked]');
         const at = report.checked_at ? new Date(report.checked_at) : null;
@@ -474,6 +584,11 @@
                 minute: '2-digit',
             })
             : '';
+
+        // The dialog may have been opened by a refusal that named the two
+        // endpoints; a report arriving any other way carries them too.
+        state.commitUrl = labels.commit_url || state.commitUrl;
+        state.conflictsUrl = labels.conflicts_url || state.conflictsUrl;
 
         attachPickers(list);
     }
@@ -514,7 +629,7 @@
         const endInput = row.querySelector('[data-range-end]');
         const dateInput = row.querySelector('[data-range-date]');
 
-        // Never earlier than today: a restored project's schedule is work
+        // Never earlier than today: a recovered project's schedule is work
         // still to come, and the server refuses a past date whatever a picker
         // offered.
         const earliestStart = range.earliest_start || null;
@@ -592,7 +707,10 @@
             }
         }
 
-        // An hours-only booking only needs one free hour of its single date.
+        // An hours-only booking only needs one free hour of its single date,
+        // which is the shorter of the two lists the server sends. A day
+        // somebody is booked on for the WHOLE of it appears in both, so a
+        // partial day cannot be used to step around a full-day clash.
         if (dateInput && !range.start_frozen) {
             global.flatpickr(dateInput, {
                 dateFormat: 'Y-m-d',
@@ -632,6 +750,102 @@
     }
 
     // ------------------------------------------------------------------
+    // Switching mode, and resetting the fields
+    // ------------------------------------------------------------------
+
+    /** Which kind of booking this row is currently offering to save. */
+    function modeOf(row) {
+        const select = row.querySelector('[data-range-mode]');
+
+        return select ? select.value : MODE_DATE_BASED;
+    }
+
+    function applyMode(row) {
+        const mode = modeOf(row);
+
+        row.querySelectorAll('[data-range-group]').forEach(function (group) {
+            group.hidden = group.dataset.rangeGroup !== mode;
+        });
+    }
+
+    /**
+     * Put the editor back to what the range actually holds.
+     *
+     * Deliberately nothing to do with saving. It clears the pickers and
+     * restores the mode and the configured hours, so somebody who has half
+     * filled a range in can start again without closing the dialog - and the
+     * schedule on the server is untouched either way, exactly as it was before
+     * the editor was opened.
+     */
+    function resetEditor(row, range) {
+        const clear = function (selector) {
+            const field = row.querySelector(selector);
+
+            if (!field) {
+                return;
+            }
+
+            if (field._flatpickr) {
+                field._flatpickr.clear();
+            }
+
+            field.value = '';
+        };
+
+        const fresh = range.state === 'conflict';
+        const partialDay = range.scheduling_mode === MODE_PARTIAL_DAY;
+
+        const restore = function (selector, stored) {
+            const field = row.querySelector(selector);
+
+            if (!field) {
+                return;
+            }
+
+            if (field._flatpickr) {
+                field._flatpickr.setDate(stored || null, false);
+            }
+
+            field.value = stored || '';
+        };
+
+        clear('[data-range-start]');
+        clear('[data-range-end]');
+        clear('[data-range-date]');
+
+        // A range in conflict was drawn empty, because the dates it holds are
+        // the problem; resetting one puts it back to empty rather than back to
+        // the dates that will be refused.
+        if (!fresh) {
+            if (partialDay) {
+                restore('[data-range-date]', range.project_date);
+            } else {
+                restore('[data-range-start]', range.start_date);
+                restore('[data-range-end]', range.end_date);
+            }
+        }
+
+        const startTime = row.querySelector('[data-range-start-time]');
+        const endTime = row.querySelector('[data-range-end-time]');
+
+        if (startTime) {
+            startTime.value = range.default_start_time;
+        }
+
+        if (endTime) {
+            endTime.value = range.default_end_time;
+        }
+
+        const mode = row.querySelector('[data-range-mode]');
+
+        if (mode) {
+            mode.value = range.scheduling_mode;
+        }
+
+        applyMode(row);
+    }
+
+    // ------------------------------------------------------------------
     // Resolving - always this project's own range
     // ------------------------------------------------------------------
 
@@ -646,14 +860,16 @@
             return field && field.value ? field.value : '';
         };
 
+        const mode = modeOf(row);
+
         const body = {
             _method: 'PUT',
             action: 'update',
             schedule_id: range.schedule_id,
-            scheduling_mode: range.scheduling_mode,
+            scheduling_mode: mode,
         };
 
-        if (range.scheduling_mode === MODE_PARTIAL_DAY) {
+        if (mode === MODE_PARTIAL_DAY) {
             body.project_date = read('[data-range-date]');
             body.start_time = read('[data-range-start-time]');
             body.end_time = read('[data-range-end-time]');
@@ -671,7 +887,7 @@
         });
 
         if (missing) {
-            feedback('warning', range.partial_day
+            feedback('warning', mode === MODE_PARTIAL_DAY
                 ? 'Pick a date and the hours for this range.'
                 : 'Pick a start date and an end date for this range.');
 
@@ -720,9 +936,9 @@
 
                 feedback(
                     state.report.blocked ? 'warning' : 'success',
-                    note + (state.report.blocked
-                        ? ' There are still schedule conflicts to resolve.'
-                        : ' No conflicts remain - this project can be restored.')
+                    note + ' ' + (state.report.blocked
+                        ? flow().blocked_note
+                        : flow().clear_note)
                 );
             })
             .catch(function () {
@@ -737,8 +953,8 @@
      *
      * Availability changes while this dialog is open - somebody else may book
      * the same person - so nothing here is decided from what was loaded when
-     * it opened. The restore asks again regardless; this is so the dialog does
-     * not offer a button that is going to bounce.
+     * it opened. The recovery asks again regardless; this is so the dialog
+     * does not offer a button that is going to bounce.
      */
     function recheck(note) {
         if (!state.conflictsUrl) {
@@ -765,8 +981,8 @@
                 feedback(
                     state.report.blocked ? 'warning' : 'success',
                     (note ? note + ' ' : '') + (state.report.blocked
-                        ? 'There are still schedule conflicts to resolve.'
-                        : 'No conflicts remain - this project can be restored.')
+                        ? flow().blocked_note
+                        : flow().clear_note)
                 );
             })
             .catch(function () {
@@ -776,15 +992,15 @@
     }
 
     /**
-     * Restore from inside the dialog, once every current and future range is
-     * showing as available.
+     * Restore or resume from inside the dialog, once every current and future
+     * range is showing as available.
      *
      * Sent to the same endpoint the confirmation dialog sends to, which checks
      * the whole schedule again - so a clash that appeared in the last few
      * seconds redraws this dialog rather than slipping through.
      */
-    function restoreFromDialog(button) {
-        if (state.busy || !state.restoreUrl) {
+    function commitFromDialog(button) {
+        if (state.busy || !state.commitUrl) {
             return;
         }
 
@@ -792,7 +1008,7 @@
         button.disabled = true;
         clearFeedback();
 
-        request(state.restoreUrl, Object.assign({ method: 'POST' }, form({ _method: 'PUT' })))
+        request(state.commitUrl, Object.assign({ method: 'POST' }, form({ _method: 'PUT' })))
             .then(function (result) {
                 state.busy = false;
 
@@ -812,7 +1028,8 @@
                     return;
                 }
 
-                feedback('danger', messageFrom(result.payload, 'Unable to restore project. Nothing was changed.'));
+                feedback('danger', messageFrom(result.payload, flow().failure
+                    || 'Unable to change this project. Nothing was changed.'));
             })
             .catch(function () {
                 state.busy = false;
@@ -830,14 +1047,14 @@
         // drawn per row, and a listener attached to a node that is not there
         // yet is no listener at all.
         document.addEventListener('submit', function (event) {
-            const restoreForm = event.target.closest('[data-restore-form]');
+            const recoveryForm = event.target.closest('[data-recovery-form]');
 
-            if (!restoreForm) {
+            if (!recoveryForm) {
                 return;
             }
 
             event.preventDefault();
-            submitRestore(restoreForm, restoreForm.querySelector('[data-restore-submit]'));
+            submitRecovery(recoveryForm, recoveryForm.querySelector('[data-recovery-submit]'));
         });
 
         const element = modalElement();
@@ -845,6 +1062,14 @@
         if (!element) {
             return;
         }
+
+        element.addEventListener('change', function (event) {
+            const row = event.target.closest('[data-range-row]');
+
+            if (row && event.target.closest('[data-range-mode]')) {
+                applyMode(row);
+            }
+        });
 
         element.addEventListener('click', function (event) {
             const row = event.target.closest('[data-range-row]');
@@ -858,6 +1083,12 @@
 
             if (event.target.closest('[data-range-cancel]') && row) {
                 row.querySelector('[data-range-editor]').classList.add('d-none');
+
+                return;
+            }
+
+            if (event.target.closest('[data-range-reset]') && row && range) {
+                resetEditor(row, range);
 
                 return;
             }
@@ -885,10 +1116,10 @@
                 return;
             }
 
-            const restore = event.target.closest('[data-conflict-restore]');
+            const commit = event.target.closest('[data-conflict-commit]');
 
-            if (restore) {
-                restoreFromDialog(restore);
+            if (commit) {
+                commitFromDialog(commit);
             }
         });
     });

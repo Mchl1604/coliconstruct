@@ -18,12 +18,18 @@ use Tests\TestCase;
 /**
  * A hold is a pause, not an ending.
  *
- * The days still to come go, because they were promises about dates that are
- * no longer promised and the crew must read as free for other work on them.
  * The days already worked stay, up to and including the day of the hold: those
- * are the project's record of what actually happened, not a promise anyone is
- * withdrawing. The crew stays too - the same people are expected to do the
- * work when it resumes, so resuming is a rescheduling rather than a rebuild.
+ * are the project's record of what actually happened. The days still to come
+ * stay as well, as the project's PROPOSED schedule - they are what it intends
+ * to do next, and throwing them away meant rebuilding a schedule from memory
+ * to resume. The crew stays too, so resuming is a rescheduling rather than a
+ * rebuild.
+ *
+ * What is released is the crew's TIME, and the status change is what releases
+ * it: a held project is Unscheduled, which is not one of
+ * Project::ACTIVE_PROJECT_STATUSES, so none of its bookings count against
+ * anybody's availability while the hold stands. That is why the preserved days
+ * are free for other work, and why resuming has to ask whether they still are.
  */
 class ProjectOnHoldTest extends TestCase
 {
@@ -177,7 +183,7 @@ class ProjectOnHoldTest extends TestCase
             ->all();
     }
 
-    public function test_a_hold_releases_the_dates_but_keeps_the_team(): void
+    public function test_a_hold_preserves_the_dates_and_keeps_the_team(): void
     {
         $lead = $this->technician('Jose Garcia', 'lead_technician');
         $ana = $this->technician('Ana Mendoza');
@@ -191,17 +197,31 @@ class ProjectOnHoldTest extends TestCase
 
         $this->assertTrue((bool) $project->on_hold);
         $this->assertSame('On Hold', $project->statusLabel());
-        // It holds nothing ahead of it any more, so it needs new dates before
-        // it can run again.
+        // Unscheduled is what takes the project off the calendar and hands the
+        // crew's time back. It is not a statement that the project has no
+        // dates - it has both halves of the one below.
         $this->assertSame('unscheduled', $project->status);
 
-        // The booking ran from today to four days out. Today was worked, so
-        // today is what is left of it.
-        $this->assertSame([$this->day(0)->toDateString().'|'.$this->day(0)->toDateString()], $this->ranges($project));
+        // The booking ran from today to four days out. Today was worked and is
+        // the record; the rest is preserved as the proposed schedule.
+        $this->assertSame([
+            $this->day(0)->toDateString().'|'.$this->day(0)->toDateString(),
+            $this->day(1)->toDateString().'|'.$this->day(4)->toDateString(),
+        ], $this->ranges($project));
 
-        // The crew stay booked on the part that was kept - one row each, not
-        // a second copy.
-        $this->assertSame(2, ScheduleTechnician::query()->count());
+        // Both crew on both halves: the preserved days are booked to exactly
+        // who the original row was booked to.
+        $this->assertSame(4, ScheduleTechnician::query()->count());
+
+        // And neither half holds anybody, because the project is not active
+        // work while it is paused.
+        $this->assertTrue(
+            app(TechnicianAvailabilityService::class)->findConflicts(
+                [$lead->technician_id, $ana->technician_id],
+                [['start' => $this->day(0), 'end' => $this->day(4)]]
+            )->isEmpty(),
+            'A held project must not hold its technicians, preserved dates or not.'
+        );
 
         // The team is not.
         $assigned = ProjectTechnician::where('project_id', $project->project_id)
@@ -254,14 +274,16 @@ class ProjectOnHoldTest extends TestCase
     }
 
     /**
-     * A task dated on a day the hold released loses its dates.
+     * A task dated on a day still to come keeps its dates too, now that those
+     * days are preserved rather than deleted.
      *
-     * Those days are no longer days this project exists on, so the task is
-     * pointing at dates nobody is booked for - and the task form itself would
-     * refuse them. It goes back to Unassigned and is re-dated when the project
-     * is rescheduled. Its owner is not touched.
+     * A hold used to strand exactly this task, because the days it pointed at
+     * stopped existing on the project. They no longer stop existing - they are
+     * the proposed schedule - so there is nothing about the task that has
+     * stopped being true, and blanking it would throw away a perfectly good
+     * date for the second time.
      */
-    public function test_a_hold_unassigns_a_task_date_that_falls_on_a_released_day(): void
+    public function test_a_hold_keeps_a_task_date_that_falls_on_a_preserved_day(): void
     {
         $ana = $this->technician('Ana Mendoza');
         $project = $this->projectWithTeam([$ana]);
@@ -283,19 +305,22 @@ class ProjectOnHoldTest extends TestCase
 
         $task->refresh();
 
-        $this->assertNull($task->start_date);
-        $this->assertNull($task->due_date);
-        // The person holding it is a separate question, and a hold does not
-        // answer it.
+        $this->assertSame($this->day(5)->toDateString(), (string) $task->start_date);
+        $this->assertSame($this->day(6)->toDateString(), (string) $task->due_date);
         $this->assertSame($ana->technician_id, $task->technician_id);
         $this->assertSame('pending', $task->status);
     }
 
     /**
-     * One task each side of the line, in one hold: the kept date stays and the
-     * released one goes, rather than the whole list being blanked together.
+     * The stranded-date rule itself is untouched: a task pointing at a day the
+     * project does not hold is still unassigned by a hold.
+     *
+     * It is simply no longer a hold that creates such a task, because the hold
+     * no longer takes days off the project. One already pointing outside every
+     * range - left behind by an earlier reschedule, say - is still cleared, and
+     * the tasks sitting inside the schedule are still left alone.
      */
-    public function test_a_hold_only_unassigns_the_tasks_the_cutoff_stranded(): void
+    public function test_a_hold_only_unassigns_the_tasks_that_point_outside_the_schedule(): void
     {
         $ana = $this->technician('Ana Mendoza');
         $project = $this->projectWithTeam([$ana]);
@@ -312,13 +337,14 @@ class ProjectOnHoldTest extends TestCase
             'status' => 'ongoing',
         ]);
 
+        // Never covered by any range this project holds.
         $stranded = Task::create([
             'project_id' => $project->project_id,
             'technician_id' => $ana->technician_id,
-            'task_title' => 'Still to come',
+            'task_title' => 'Pointing at nothing',
             'task_description' => 'Description',
-            'start_date' => $this->day(4)->toDateString(),
-            'due_date' => $this->day(6)->toDateString(),
+            'start_date' => $this->day(20)->toDateString(),
+            'due_date' => $this->day(22)->toDateString(),
             'status' => 'pending',
         ]);
 
@@ -349,8 +375,10 @@ class ProjectOnHoldTest extends TestCase
 
         $this->assertFalse((bool) $project->on_hold);
         $this->assertSame(1, ProjectTechnician::where('project_id', $project->project_id)->count());
-        // Only what the hold kept: resuming restores nothing.
-        $this->assertSame([$this->day(0)->toDateString().'|'.$this->day(0)->toDateString()], $this->ranges($project));
+        // The booking the hold split at today is one booking again: the two
+        // halves are back in force together, and a break between them would be
+        // a break that never happened.
+        $this->assertSame([$this->day(0)->toDateString().'|'.$this->day(4)->toDateString()], $this->ranges($project));
     }
 
     // ------------------------------------------------------------------
@@ -358,11 +386,13 @@ class ProjectOnHoldTest extends TestCase
     // ------------------------------------------------------------------
 
     /**
-     * The whole rule in one project: days already worked stay, the day of the
-     * hold stays, everything after it goes - and each booking is judged on its
-     * own, so the gaps between them survive.
+     * The whole rule in one project: days already worked stay as the record,
+     * the day of the hold stays with them, and everything after it is
+     * preserved as the proposal - split off into a row of its own where a
+     * booking straddles the line. Each booking is judged on its own, so the
+     * gaps between them survive.
      */
-    public function test_a_hold_keeps_worked_days_and_releases_the_rest(): void
+    public function test_a_hold_divides_worked_days_from_proposed_ones(): void
     {
         $ana = $this->technician('Ana Mendoza');
         $project = $this->projectWithTeam([$ana]);
@@ -379,26 +409,30 @@ class ProjectOnHoldTest extends TestCase
         $this->assertSame([
             $this->day(-11)->toDateString().'|'.$this->day(-9)->toDateString(),
             $this->day(-6)->toDateString().'|'.$this->day(-4)->toDateString(),
-            // Shortened to the day of the hold, which is kept.
+            // Shortened to the day of the hold, which is kept...
             $this->day(-1)->toDateString().'|'.$this->day(0)->toDateString(),
+            // ...and the rest of it preserved as a range of its own.
+            $this->day(1)->toDateString().'|'.$this->day(2)->toDateString(),
+            $this->day(4)->toDateString().'|'.$this->day(6)->toDateString(),
+            $this->day(20)->toDateString().'|'.$this->day(22)->toDateString(),
         ], $this->ranges($project));
     }
 
     /**
-     * Each of the four cases on its own, including the two edges the rule
+     * Each of the five cases on its own, including the two edges the rule
      * turns on: a booking that ends on the hold date is untouched, and one
-     * that starts on it keeps that single day.
+     * that starts on it keeps that single day and proposes the rest.
      */
-    public function test_each_booking_is_cut_by_where_it_falls(): void
+    public function test_each_booking_is_divided_by_where_it_falls(): void
     {
         $ana = $this->technician('Ana Mendoza');
 
         foreach ([
-            'ended before' => [[-6, -4], [-6, -4]],
-            'ends on the day' => [[-2, 0], [-2, 0]],
-            'crosses the day' => [[-1, 2], [-1, 0]],
-            'starts on the day' => [[0, 4], [0, 0]],
-            'starts after' => [[1, 3], null],
+            'ended before' => [[-6, -4], [[-6, -4]]],
+            'ends on the day' => [[-2, 0], [[-2, 0]]],
+            'crosses the day' => [[-1, 2], [[-1, 0], [1, 2]]],
+            'starts on the day' => [[0, 4], [[0, 0], [1, 4]]],
+            'starts after' => [[1, 3], [[1, 3]]],
         ] as $case => [$booked, $expected]) {
             $project = $this->projectWithTeam([$ana]);
             $this->book($project, $this->day($booked[0]), $this->day($booked[1]));
@@ -407,11 +441,13 @@ class ProjectOnHoldTest extends TestCase
                 ->assertSessionHasNoErrors();
 
             $this->assertSame(
-                $expected === null
-                    ? []
-                    : [$this->day($expected[0])->toDateString().'|'.$this->day($expected[1])->toDateString()],
+                array_map(
+                    fn (array $range): string => $this->day($range[0])->toDateString()
+                        .'|'.$this->day($range[1])->toDateString(),
+                    $expected
+                ),
                 $this->ranges($project),
-                sprintf('A booking that %s the hold date was cut wrongly.', $case)
+                sprintf('A booking that %s the hold date was divided wrongly.', $case)
             );
 
             // Each case gets its own project, and REF-0001 is not unique.
@@ -421,11 +457,12 @@ class ProjectOnHoldTest extends TestCase
     }
 
     /**
-     * A released booking takes its crew's link to it with it, and a kept one
-     * does not - which is what hands those days back to the technician while
-     * leaving the record of the days they worked alone.
+     * Every row keeps its crew, the tail split off a crossing booking
+     * included: the preserved days are a proposal about the same people doing
+     * the same work, and the technician's time is handed back by the status
+     * change rather than by unpicking the rows.
      */
-    public function test_only_the_assignments_on_released_bookings_go(): void
+    public function test_every_row_keeps_its_crew_including_the_split_tail(): void
     {
         $ana = $this->technician('Ana Mendoza');
         $project = $this->projectWithTeam([$ana]);
@@ -439,9 +476,13 @@ class ProjectOnHoldTest extends TestCase
 
         $this->assertSame(1, ScheduleTechnician::where('schedule_id', $past->schedule_id)->count());
         $this->assertSame(1, ScheduleTechnician::where('schedule_id', $crossing->schedule_id)->count());
-        $this->assertSame(0, ScheduleTechnician::where('schedule_id', $future->schedule_id)->count());
+        $this->assertSame(1, ScheduleTechnician::where('schedule_id', $future->schedule_id)->count());
 
-        // The technician stays on the project itself; only the dates went.
+        // Four rows now - the crossing one became two - and every one of them
+        // carries Ana.
+        $this->assertSame(4, Schedule::where('project_id', $project->project_id)->count());
+        $this->assertSame(4, ScheduleTechnician::query()->count());
+
         $this->assertSame(1, ProjectTechnician::where('project_id', $project->project_id)->count());
     }
 
@@ -468,33 +509,40 @@ class ProjectOnHoldTest extends TestCase
     }
 
     /**
-     * A partial day covers one date, so it is kept whole or released whole -
-     * and a kept one still carries the hours it was booked for.
+     * A partial day covers one date, so it falls wholly on one side of the
+     * line and is never split - and it keeps the hours it was booked for
+     * whichever side that is.
      */
-    public function test_a_partial_day_keeps_its_hours_or_goes_entirely(): void
+    public function test_a_partial_day_is_never_split_and_keeps_its_hours(): void
     {
         $ana = $this->technician('Ana Mendoza');
         $project = $this->projectWithTeam([$ana]);
 
         $today = $this->book($project, $this->day(0), $this->day(0), '08:00', '12:00');
-        $this->book($project, $this->day(3), $this->day(3), '13:00', '17:00');
+        $ahead = $this->book($project, $this->day(3), $this->day(3), '13:00', '17:00');
 
         $this->put(route('super-admin.projects.hold', $project->project_id))
             ->assertSessionHasNoErrors();
 
-        $remaining = Schedule::where('project_id', $project->project_id)->get();
+        $remaining = Schedule::where('project_id', $project->project_id)
+            ->orderBy('start_datetime')
+            ->get();
 
-        $this->assertCount(1, $remaining);
-        $this->assertSame($today->schedule_id, $remaining->first()->schedule_id);
-        $this->assertTrue($remaining->first()->isPartialDay());
+        $this->assertCount(2, $remaining);
+        $this->assertSame(
+            [$today->schedule_id, $ahead->schedule_id],
+            $remaining->pluck('schedule_id')->all()
+        );
+        $this->assertTrue($remaining->every(fn (Schedule $schedule): bool => $schedule->isPartialDay()));
         $this->assertSame('8:00 AM - 12:00 PM', $remaining->first()->timeRange());
+        $this->assertSame('1:00 PM - 5:00 PM', $remaining->last()->timeRange());
     }
 
     /**
-     * Nothing is copied and nothing is merged: a shortened booking is the row
-     * that was already there, and the gap between two bookings stays a gap.
+     * A shortened booking is the row that was already there - the tail is what
+     * is new - and the gap between two separate bookings stays a gap.
      */
-    public function test_the_cutoff_neither_duplicates_nor_merges(): void
+    public function test_the_cutoff_keeps_the_original_rows_and_merges_nothing(): void
     {
         $ana = $this->technician('Ana Mendoza');
         $project = $this->projectWithTeam([$ana]);
@@ -509,20 +557,31 @@ class ProjectOnHoldTest extends TestCase
             ->orderBy('schedule_id')
             ->get();
 
-        $this->assertCount(2, $remaining);
-        // The same two rows, not replacements for them.
+        // Three: the untouched first, the shortened second, and the tail split
+        // off it. The gap between the first and the second is left alone.
+        $this->assertCount(3, $remaining);
         $this->assertSame(
             [$first->schedule_id, $second->schedule_id],
-            $remaining->pluck('schedule_id')->all()
+            $remaining->take(2)->pluck('schedule_id')->all(),
+            'The rows that were already there are the rows that were kept.'
         );
-        $this->assertSame(2, ScheduleTechnician::query()->count());
+        $this->assertSame([
+            $this->day(-8)->toDateString().'|'.$this->day(-6)->toDateString(),
+            $this->day(-2)->toDateString().'|'.$this->day(0)->toDateString(),
+            $this->day(1)->toDateString().'|'.$this->day(5)->toDateString(),
+        ], $this->ranges($project));
+        $this->assertSame(3, ScheduleTechnician::query()->count());
     }
 
     /**
-     * A project whose every booking is still to come keeps none of them - the
-     * behaviour a hold has always had, and still the right one.
+     * A project whose every booking is still to come keeps all of them, whole
+     * and untouched: there is no line running through any of them, and every
+     * one is part of the proposal.
+     *
+     * A hold used to leave such a project with nothing at all, which is what
+     * made resuming it a rebuild.
      */
-    public function test_a_project_booked_only_in_the_future_keeps_nothing(): void
+    public function test_a_project_booked_only_in_the_future_keeps_every_range(): void
     {
         $ana = $this->technician('Ana Mendoza');
         $project = $this->projectWithTeam([$ana]);
@@ -533,9 +592,20 @@ class ProjectOnHoldTest extends TestCase
         $this->put(route('super-admin.projects.hold', $project->project_id))
             ->assertSessionHasNoErrors();
 
-        $this->assertSame([], $this->ranges($project));
-        $this->assertSame(0, ScheduleTechnician::query()->count());
+        $this->assertSame([
+            $this->day(2)->toDateString().'|'.$this->day(4)->toDateString(),
+            $this->day(8)->toDateString().'|'.$this->day(9)->toDateString(),
+        ], $this->ranges($project));
+        $this->assertSame(2, ScheduleTechnician::query()->count());
         $this->assertSame(1, ProjectTechnician::where('project_id', $project->project_id)->count());
+
+        // Preserved, and still holding nobody.
+        $this->assertTrue(
+            app(TechnicianAvailabilityService::class)->findConflicts(
+                [$ana->technician_id],
+                [['start' => $this->day(2), 'end' => $this->day(9)]]
+            )->isEmpty()
+        );
     }
 
     /**
@@ -584,22 +654,36 @@ class ProjectOnHoldTest extends TestCase
     }
 
     /**
-     * Resuming recalculates the status from the dates that are actually left,
-     * rather than promoting on the strength of rows the hold kept as a record.
+     * Resuming recalculates the status from the dates the project actually
+     * holds, rather than assuming one.
      *
-     * A hold releases everything still to come, so a resumed project holds
-     * only days that have been worked - which leaves three cases, and the
-     * status has to tell them apart.
+     * There are three cases and the status has to tell them apart: work still
+     * ahead, work whose every day has passed, and a project left holding no
+     * dates at all.
      */
     public function test_resuming_recalculates_the_status_from_the_remaining_dates(): void
     {
-        // Nothing left at all: every booking was still ahead of the hold.
+        // Booked entirely ahead of the hold, and preserved: resuming puts that
+        // proposal back into force, so the project is booked but not started.
         $ana = $this->technician('Ana Mendoza');
-        $nothingLeft = $this->projectWithTeam([$ana]);
-        $this->book($nothingLeft, $this->day(2), $this->day(4));
+        $stillAhead = $this->projectWithTeam([$ana]);
+        $this->book($stillAhead, $this->day(2), $this->day(4));
+
+        $this->put(route('super-admin.projects.hold', $stillAhead->project_id));
+        $this->get(route('super-admin.projects'));
+        $this->put(route('super-admin.projects.resume', $stillAhead->project_id))
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame('pending', $stillAhead->fresh()->status);
+        $this->assertSame('Pending', $stillAhead->fresh()->statusLabel());
+
+        // Nothing at all: a project put on hold with no dates on it.
+        $dana = $this->technician('Dana Reyes');
+        $nothingLeft = $this->projectWithTeam([$dana], 'ongoing', 'PRJ-EMPTY-1');
+        $this->book($nothingLeft, $this->day(-4), $this->day(-2));
+        Schedule::where('project_id', $nothingLeft->project_id)->delete();
 
         $this->put(route('super-admin.projects.hold', $nothingLeft->project_id));
-        $this->get(route('super-admin.projects'));
         $this->put(route('super-admin.projects.resume', $nothingLeft->project_id))
             ->assertSessionHasNoErrors();
 

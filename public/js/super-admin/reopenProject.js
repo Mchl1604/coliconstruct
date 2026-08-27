@@ -73,6 +73,43 @@
         return dates;
     }
 
+    /**
+     * A Reset footer inside one picker's calendar.
+     *
+     * It goes on the calendar rather than in the dialog because the calendar
+     * is what somebody is looking at when they find they cannot pick the date
+     * they want, and because it belongs to ONE field: a control in the footer
+     * would have to say which of the two it meant, and pressing it would clear
+     * a date the person had deliberately kept.
+     *
+     * Emptying a date field matters more here than it looks. Each calendar is
+     * bounded by whatever the other field holds - the start may not pass the
+     * end, and neither may drag the range over a day the team is booked on -
+     * so a half-filled range can grey out every day left on the calendar, and
+     * the only way on is to let go of one of the two dates. This is that.
+     *
+     * It is deliberately nothing to do with saving. The Reopen dialog writes
+     * nothing at all until Reopen & Schedule is pressed, so the project's
+     * saved schedule is untouched before and after.
+     */
+    function attachResetButton(instance) {
+        const button = document.createElement('button');
+
+        // Explicitly not a submit button: it lives inside a form.
+        button.type = 'button';
+        button.className = 'conflict-picker-clear';
+        button.textContent = 'Reset';
+
+        button.addEventListener('click', function () {
+            // Clearing fires the picker's own change handler, which is what
+            // rebounds the other calendar - so nothing else has to be told.
+            instance.clear();
+            instance.close();
+        });
+
+        instance.calendarContainer.appendChild(button);
+    }
+
     function initForm(form) {
         if (!global.flatpickr) {
             return;
@@ -126,6 +163,9 @@
                 disable: [function (date) {
                     return wholeDayBlocked(date, startInput.value);
                 }],
+                onReady: function (selectedDates, dateString, instance) {
+                    attachResetButton(instance);
+                },
                 onChange: function () {
                     if (!startPicker) {
                         return;
@@ -147,7 +187,13 @@
                 disable: [function (date) {
                     return wholeDayBlocked(date, endInput.value);
                 }],
+                onReady: function (selectedDates, dateString, instance) {
+                    attachResetButton(instance);
+                },
                 onChange: function (selectedDates, dateString) {
+                    // Resetting the start lets the end roam the whole calendar
+                    // again, rather than leaving it pinned behind a date that
+                    // is no longer there.
                     endPicker.set('minDate', dateString || earliest);
                     endPicker.redraw();
                 },
@@ -164,6 +210,9 @@
 
                     return Boolean(dateString && blockedPartialDay[dateString]);
                 }],
+                onReady: function (selectedDates, dateString, instance) {
+                    attachResetButton(instance);
+                },
             });
         }
 

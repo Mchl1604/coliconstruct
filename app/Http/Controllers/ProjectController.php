@@ -24,11 +24,11 @@ use App\Services\ProjectCompletion;
 use App\Services\ProjectEmails;
 use App\Services\ProjectRegisteredUser;
 use App\Services\ProjectReopen;
+use App\Services\ProjectScheduleRecovery;
 use App\Services\ProjectStatusRules;
 use App\Services\ProjectTeam;
 use App\Services\ProjectTeamCandidates;
 use App\Services\ProjectTeamRules;
-use App\Services\RestoreScheduleConflicts;
 use App\Services\ScheduleConsolidation;
 use App\Services\ScheduleHoldCutoff;
 use App\Services\ScheduleModeRules;
@@ -1459,9 +1459,13 @@ class ProjectController extends Controller
             $summary = DB::transaction(function () use ($project): array {
                 $project->update([
                     'on_hold' => true,
-                    // Whatever dates it keeps are days that have already been
-                    // worked; it holds nothing ahead of it, so it needs a new
-                    // schedule before it can run again.
+                    // Unscheduled is what releases the crew. It is not one of
+                    // Project::ACTIVE_PROJECT_STATUSES, so none of this
+                    // project's bookings count against anybody's availability
+                    // while the hold stands - which is exactly why the days
+                    // still to come can be preserved rather than deleted, and
+                    // exactly why resuming has to be screened. See
+                    // ScheduleHoldCutoff and ProjectScheduleRecovery.
                     'status' => 'unscheduled',
                 ]);
 
@@ -1493,44 +1497,101 @@ class ProjectController extends Controller
         }
     }
 
+    /**
+     * Lift the pause on a held project, onto the schedule it kept.
+     *
+     * A hold no longer throws the remaining dates away - it preserves them as
+     * the project's proposed schedule, and releases the crew from them by
+     * taking the project out of the statuses availability counts. So resuming
+     * is a question rather than a formality: are these people still free for
+     * the days this project is about to claim again?
+     *
+     * It is asked of ProjectScheduleRecovery, the same service Restore asks,
+     * which is what lets a clash be resolved here in the same dialog and on
+     * the same terms - including a Residential project being put onto a
+     * partial day. Nothing is written until it comes back clean: a conflicting
+     * range is never silently overwritten, and the two ways out that are not
+     * this project's to take - move the other work, or take the technician off
+     * this team - stay the administrator's decision.
+     */
     public function resume(Request $request, int $id)
     {
         $project = Project::findOrFail($id);
 
+        // Asked here as well as on the route: resuming re-books people's weeks,
+        // and a permission enforced by only one of the two layers is one that
+        // can be posted straight past.
+        if (! $this->mayResume($request)) {
+            return $this->resumeRefusal($request, $id, 'Only an administrator can resume a project.');
+        }
+
         if ($project->isReadOnly()) {
-            return redirect()
-                ->route('super-admin.projects', $id)
-                ->with('error', 'This project is '.$project->status.' and cannot be resumed.');
+            return $this->resumeRefusal(
+                $request,
+                $id,
+                'This project is '.$project->status.' and cannot be resumed.'
+            );
         }
 
         // Resuming something that was never paused is not a no-op: it emails
         // the client that their project has resumed and tells the whole crew.
         if (! $project->on_hold) {
-            return redirect()
-                ->route('super-admin.projects', $id)
-                ->with('error', 'This project is not on hold.');
+            return $this->resumeRefusal($request, $id, 'This project is not on hold.');
         }
 
-        // A hold hands the crew's remaining days back to everybody else, so
-        // somebody may have been booked over them while the project was
-        // paused. Lifting the hold puts those days back into force, and it
-        // must not do so on top of a promise made in the meantime.
-        $clash = $this->resumeConflictMessage($project);
+        // Asked on every attempt, after whatever was changed in the dialog, so
+        // a resolution worked out against availability read a minute ago is
+        // re-tested against availability now.
+        $conflicts = app(ProjectScheduleRecovery::class)
+            ->report($project, ProjectScheduleRecovery::FLOW_RESUME);
 
-        if ($clash !== null) {
+        if ($conflicts['blocked']) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'error' => $conflicts['message'],
+                    'conflicts' => $conflicts,
+                ], 409);
+            }
+
             return redirect()
                 ->route('super-admin.projects', $id)
-                ->with('error', $clash);
+                ->with('error', $conflicts['message']);
         }
 
-        // The hold is lifted first, then the status is worked out from the
-        // dates that are actually left - never assumed. A project resumed with
-        // nothing ahead of it must not read as work in progress just because
-        // the hold kept a record of the days already worked.
-        $project->update(['on_hold' => false]);
-        $project->unsetRelation('schedules');
+        // Everything below is the reactivation, and it happens in one
+        // transaction: a resume that stopped half way would leave a project
+        // out of its hold with a schedule nobody is booked on, or booked on a
+        // schedule whose status still says it is paused.
+        DB::transaction(function () use ($project): void {
+            // The hold is lifted first, then the schedule is put back into
+            // force, and only then is the status worked out - from the dates
+            // that are actually there, never assumed.
+            $project->update(['on_hold' => false]);
+            $project->unsetRelation('schedules');
 
-        app(ProjectStatusRules::class)->apply($project);
+            // A booking the hold split at the day it was placed is one booking
+            // again once the two halves are back in force together: Aug 15-16
+            // worked and Aug 17-18 planned is Aug 15-18, and leaving it as two
+            // rows would have every screen describe a break between the 16th
+            // and the 17th that never happened. The same rule every other
+            // writer of a schedule applies - see ScheduleConsolidation.
+            app(ScheduleConsolidation::class)->consolidate($project);
+            $project->unsetRelation('schedules');
+
+            // Put the crew back onto the ranges that have just come back into
+            // force. Asked as "what is missing?" rather than assumed to be
+            // nothing, so the step is idempotent and repairs a project whose
+            // links had drifted - it is the same question project-team:audit
+            // asks and the same answer project-team:repair writes. See
+            // ProjectTeam::restoreScheduleLinks().
+            $this->projectTeam->restoreScheduleLinks($project);
+
+            // Last, because it reads the schedule this has just settled. A
+            // project resumed with nothing ahead of it must not read as work
+            // in progress just because the hold kept a record of days already
+            // worked - ProjectStatusRules is what tells those apart.
+            app(ProjectStatusRules::class)->apply($project);
+        });
 
         $project->refresh();
 
@@ -1544,13 +1605,77 @@ class ProjectController extends Controller
             $project
         );
 
+        $success = sprintf(
+            'Project resumed - %s.%s',
+            $project->statusLabel(),
+            $project->status === 'unscheduled' ? ' Schedule it again.' : ''
+        );
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'message' => $success,
+                'redirect' => route('super-admin.projects.show', $id),
+            ]);
+        }
+
         return redirect()
             ->route('super-admin.projects', $id)
-            ->with('success', sprintf(
-                'Project resumed - %s.%s',
-                $project->statusLabel(),
-                $project->status === 'unscheduled' ? ' Schedule it again.' : ''
-            ));
+            ->with('success', $success);
+    }
+
+    /**
+     * The state of the calendar for one held project, for the Schedule
+     * Conflict dialog.
+     *
+     * Read when the dialog opens and again on every Recheck, exactly as the
+     * archived one is: availability changes underneath a dialog that stays
+     * open, so a dialog that trusted what it loaded once would offer a Resume
+     * the server then refuses.
+     */
+    public function resumeConflicts(Request $request, int $id)
+    {
+        $project = Project::with(['schedules', 'projectTechnicians'])->findOrFail($id);
+
+        if (! $this->mayResume($request)) {
+            return response()->json(['error' => 'Only an administrator can resume a project.'], 403);
+        }
+
+        if (! $project->on_hold) {
+            return response()->json(['error' => 'This project is not on hold.'], 422);
+        }
+
+        return response()->json(
+            app(ProjectScheduleRecovery::class)->report($project, ProjectScheduleRecovery::FLOW_RESUME)
+        );
+    }
+
+    /**
+     * A resume that cannot go ahead, said the way the caller asked for it.
+     *
+     * The Resume button posts with fetch so a clash can open the dialog rather
+     * than bouncing the page and reducing it to a toast; a browser running no
+     * script submits the same form and reads the same flash.
+     */
+    /**
+     * Whether this reader may resume a project, asked here as well as on the
+     * route - the same reasoning archive() is guarded by, since hiding a
+     * button is not a permission.
+     */
+    private function mayResume(Request $request): bool
+    {
+        return (bool) $request->user()?->isEmployee()
+            && in_array($request->user()?->role, User::ADMINISTRATOR_ROLES, true);
+    }
+
+    private function resumeRefusal(Request $request, int $id, string $message)
+    {
+        if ($request->expectsJson()) {
+            return response()->json(['error' => $message], 422);
+        }
+
+        return redirect()
+            ->route('super-admin.projects', $id)
+            ->with('error', $message);
     }
 
     /**
@@ -1739,17 +1864,16 @@ class ProjectController extends Controller
      * button:
      *
      *   ProjectReopen::assertTeamAvailable()  every technician on the team has
-     *       to be free for the whole of the new range. Asked of the same
-     *       service the reopen itself asks, with this project's own bookings
-     *       left out exactly as they are there - so the project can never read
-     *       as its own blocker.
+     *       to be free for the whole of the new range, with this project's own
+     *       bookings left out exactly as they are there - so the project can
+     *       never read as its own blocker.
      *
      *   ProjectReopen::assertNoSelfOverlap()  the new dates may not land on
-     *       the days the project kept. Those are days the crew actually
-     *       worked, and they are excluded from the availability answer above,
-     *       so they are added back here. A whole-day booking of its own takes
-     *       every hour of the days it covers and so blocks an hours-only
-     *       reopen too; a partial-day one leaves the rest of that day open.
+     *       the days the project kept.
+     *
+     * Both come from ProjectScheduleRecovery, the same service the Restore and
+     * Resume dialogs read, so the three flows cannot disagree about which days
+     * are open or about what a partial day may sit on.
      *
      * The picker is a convenience either way: reopen() re-runs both checks on
      * whatever arrives, so a date typed past a greyed-out one is still
@@ -1759,52 +1883,8 @@ class ProjectController extends Controller
      */
     private function reopenBlockedDates(Project $project): array
     {
-        $from = Schedule::businessToday();
-        $to = $from->addMonths(self::REOPEN_PICKER_HORIZON_MONTHS);
-
-        $technicianIds = $project->projectTechnicians
-            ->pluck('technician_id')
-            ->filter()
-            ->unique()
-            ->values();
-
-        $blocked = $technicianIds->isEmpty()
-            ? ['whole_day' => [], 'partial_day' => []]
-            : app(TechnicianAvailabilityService::class)->blockedDatesInWindow(
-                $technicianIds,
-                $from,
-                $to,
-                (int) $project->project_id
-            );
-
-        $wholeDay = array_flip($blocked['whole_day']);
-        $partialDay = array_flip($blocked['partial_day']);
-
-        foreach ($project->schedules as $schedule) {
-            $start = $schedule->startsOn();
-            $end = $schedule->endsOn();
-
-            for ($day = $start; $day->lte($end); $day = $day->addDay()) {
-                if ($day->lt($from) || $day->gt($to)) {
-                    continue;
-                }
-
-                $date = $day->toDateString();
-                $wholeDay[$date] = true;
-
-                if (! $schedule->isPartialDay()) {
-                    $partialDay[$date] = true;
-                }
-            }
-        }
-
-        $wholeDay = array_keys($wholeDay);
-        $partialDay = array_keys($partialDay);
-
-        sort($wholeDay);
-        sort($partialDay);
-
-        return ['whole_day' => $wholeDay, 'partial_day' => $partialDay];
+        return app(ProjectScheduleRecovery::class)
+            ->blockedDatesForNewRange($project, self::REOPEN_PICKER_HORIZON_MONTHS);
     }
 
     /**
@@ -2055,7 +2135,8 @@ class ProjectController extends Controller
      * nobody told, the clash invisible on both projects because each one only
      * ever shows its own dates. So the same question Resume asks is asked
      * here, of the same service, before anything is written - see
-     * RestoreScheduleConflicts.
+     * ProjectScheduleRecovery, the one service all three recovery flows -
+     * restore, reopen and resume - ask.
      *
      * Only a project whose dates would actually come back into force has to be
      * asked. Completed, cancelled and paused work holds nobody either way, so
@@ -2101,7 +2182,8 @@ class ProjectController extends Controller
         // Asked of the same service the Schedule Conflict dialog reads, on
         // every attempt, so the last word belongs to the server and not to
         // whatever the dialog was showing when the button was pressed.
-        $conflicts = app(RestoreScheduleConflicts::class)->report($project);
+        $conflicts = app(ProjectScheduleRecovery::class)
+            ->report($project, ProjectScheduleRecovery::FLOW_RESTORE);
 
         if ($conflicts['blocked']) {
             // Nothing is written, and nothing is resolved on anybody's behalf.
@@ -2226,34 +2308,22 @@ class ProjectController extends Controller
             return response()->json(['error' => 'Only archived projects can be restored.'], 422);
         }
 
-        return response()->json(app(RestoreScheduleConflicts::class)->report($project));
+        return response()->json(
+            app(ProjectScheduleRecovery::class)->report($project, ProjectScheduleRecovery::FLOW_RESTORE)
+        );
     }
 
     /**
      * Move or drop one range of an archived project's schedule, from the
      * Schedule Conflict dialog.
      *
-     * The thing being resolved is THIS project's schedule. A clash is two
-     * pieces of work wanting the same person on the same day, and either of
-     * them could move in principle - but the other one is live work somebody
-     * is already expecting, and a restore is no reason to rewrite it. So the
-     * archived project's own range is what moves here, and the other project
-     * is not touched at all.
+     * The archived project's own range is what moves here - see
+     * ProjectScheduleRecovery::resolveRange(), which owns every rule that
+     * decides whether the new range is allowed and is the same code the Resume
+     * dialog's endpoint runs.
      *
      * The schedules page cannot do this: an archived project is read-only
-     * there, and rightly so - it is not on the calendar. What is reused is
-     * every rule that decides whether a range is allowed, which is where the
-     * agreement actually has to hold:
-     *
-     *   ScheduleModeRules              what a range may say, and how much of a
-     *                                  saved one may still change
-     *   TechnicianAvailabilityService  whether the team is free for it
-     *   ScheduleConsolidation          ranges that run into each other are one
-     *   Schedule::isLocked()           a range that has ended is history
-     *
-     * A range that is entirely in the past is refused outright. It is not
-     * coming back into force, it never counted against this check, and
-     * changing it would be rewriting a record of work that happened.
+     * there, and rightly so - it is not on the calendar.
      */
     public function updateRestoreSchedule(Request $request, int $id)
     {
@@ -2265,10 +2335,73 @@ class ProjectController extends Controller
 
         if (! $project->isArchived()) {
             return response()->json([
-                'error' => 'Only an archived project\'s schedule can be changed from here.',
+                'error' => "Only an archived project's schedule can be changed from here.",
             ], 422);
         }
 
+        return $this->applyRecoveryRange(
+            $request,
+            $project,
+            ProjectScheduleRecovery::FLOW_RESTORE,
+            'while resolving its restore'
+        );
+    }
+
+    /**
+     * Move or drop one range of a held project's proposed schedule, from the
+     * Schedule Conflict dialog the Resume button opens.
+     *
+     * The same endpoint as the archived one in everything but which project it
+     * will accept: both hand the request straight to
+     * ProjectScheduleRecovery::resolveRange(), so a Residential project may be
+     * put onto a partial day here on exactly the terms it may there, and a
+     * Commercial one may not on either.
+     */
+    public function updateResumeSchedule(Request $request, int $id)
+    {
+        $project = Project::with(['schedules', 'projectTechnicians'])->findOrFail($id);
+
+        if (! $this->mayResume($request)) {
+            return response()->json(['error' => 'Only an administrator can resume a project.'], 403);
+        }
+
+        if (! $project->on_hold) {
+            return response()->json(['error' => 'This project is not on hold.'], 422);
+        }
+
+        if ($project->isReadOnly()) {
+            return response()->json([
+                'error' => 'This project is '.$project->statusLabel().' and its schedule cannot be changed.',
+            ], 422);
+        }
+
+        return $this->applyRecoveryRange(
+            $request,
+            $project,
+            ProjectScheduleRecovery::FLOW_RESUME,
+            'while resolving its resume'
+        );
+    }
+
+    /**
+     * One range of a recovery's schedule, changed or dropped, then the whole
+     * schedule screened again.
+     *
+     * Shared by Restore and Resume rather than written twice: the two differ
+     * only in who may call them and which project they will accept, and every
+     * rule about what a range may become is one service's answer - see
+     * ProjectScheduleRecovery. The recheck at the end is why nothing here
+     * assumes a save cleared anything: an edit can resolve one range and walk
+     * another into trouble, and the dialog has to be told about the schedule
+     * rather than about the range it just saved.
+     */
+    private function applyRecoveryRange(
+        Request $request,
+        Project $project,
+        string $flow,
+        string $context
+    ) {
+        $recovery = app(ProjectScheduleRecovery::class);
         $scheduleRules = app(ScheduleModeRules::class);
 
         $validated = $request->validate([
@@ -2277,89 +2410,33 @@ class ProjectController extends Controller
             ...$scheduleRules->rules(),
         ], $scheduleRules->messages());
 
-        $schedule = $project->schedules
-            ->firstWhere('schedule_id', (int) $validated['schedule_id']);
-
-        if (! $schedule) {
-            return response()->json(['error' => 'That schedule range does not belong to this project.'], 422);
-        }
-
-        if ($schedule->isLocked()) {
-            return response()->json([
-                'error' => 'This schedule range has already ended. It is part of the project\'s history and cannot be changed.',
-            ], 422);
-        }
-
         try {
-            DB::transaction(function () use ($project, $schedule, $validated, $scheduleRules): void {
-                if (($validated['action'] ?? 'update') === 'remove') {
-                    $schedule->delete();
+            DB::transaction(function () use ($recovery, $project, $validated, $context): void {
+                $outcome = $recovery->resolveRange($project, $validated);
 
-                    $this->activityLogger->record(
-                        ActivityLog::PROJECT_RESCHEDULED,
-                        null,
-                        sprintf(
-                            "Removed the %s range from archived project '%s' while resolving its restore.",
-                            $schedule->describe(),
-                            $project->reference_no ?? $project->name
-                        ),
-                        $project
-                    );
-
-                    return;
-                }
-
-                $range = $this->resolveRestoreRange($schedule, $validated, $scheduleRules, $project);
-                $before = $schedule->describe();
-
-                // Its own other ranges, which it may not be booked over: the
-                // same self-overlap rule the schedules page and the reopen
-                // dialog apply.
-                $overlaps = $project->schedules
-                    ->reject(fn (Schedule $other): bool => (int) $other->schedule_id === (int) $schedule->schedule_id)
-                    ->contains(fn (Schedule $other): bool => $scheduleRules->overlaps($range, $other->occupiedInterval()));
-
-                if ($overlaps) {
-                    throw new RuntimeException('This project already has a schedule range covering that time.');
-                }
-
-                // And the question the whole dialog exists for, asked of the
-                // one service every other booking screen asks. The project's
-                // own bookings are excluded, so it can never read as its own
-                // blocker.
-                app(TechnicianAvailabilityService::class)->assertContinuouslyAvailable(
-                    $project->projectTechnicians->pluck('technician_id')->unique()->values(),
-                    [$range],
-                    (int) $project->project_id
-                );
-
-                $schedule->update([
-                    'start_datetime' => $range['start'],
-                    'end_datetime' => $range['end'],
-                    'scheduling_mode' => $range['mode'],
-                ]);
-
-                // Ranges that now run into each other are one booking, which
-                // is the existing system's own rule about what counts as a
-                // separate range - ranges that merely sit near each other are
-                // left alone.
-                app(ScheduleConsolidation::class)->consolidate($project);
-
-                // Tasks are deliberately left where they are. This project is
-                // still archived; its tasks, reports and history are what the
-                // archive preserves, and moving a date on the way past is not
-                // this endpoint's business.
                 $this->activityLogger->record(
                     ActivityLog::PROJECT_RESCHEDULED,
                     null,
-                    sprintf(
-                        "Changed a schedule range on archived project '%s' from %s to %s while resolving its restore.",
-                        $project->reference_no ?? $project->name,
-                        $before,
-                        $schedule->refresh()->describe()
-                    ),
+                    $outcome['action'] === 'remove'
+                        ? sprintf(
+                            "Removed the %s range from project '%s' %s.",
+                            $outcome['before'],
+                            $project->reference_no ?? $project->name,
+                            $context
+                        )
+                        : sprintf(
+                            "Changed a schedule range on project '%s' from %s to %s %s.",
+                            $project->reference_no ?? $project->name,
+                            $outcome['before'],
+                            $outcome['after'],
+                            $context
+                        ),
                     $project
                 );
+
+                // Tasks are deliberately left where they are. This endpoint
+                // resolves a clash on the calendar; what a task points at is
+                // settled when the project actually comes back.
             });
         } catch (Throwable $e) {
             return response()->json([
@@ -2367,142 +2444,39 @@ class ProjectController extends Controller
             ], 422);
         }
 
-        // The whole schedule again, screened from scratch: an edit can resolve
-        // one range and walk another into trouble, and the dialog has to be
-        // told about the schedule rather than about the range it just saved.
         return response()->json(
-            app(RestoreScheduleConflicts::class)->report($project->fresh(['schedules', 'projectTechnicians']))
+            $recovery->report($project->fresh(['schedules', 'projectTechnicians']), $flow)
         );
     }
 
     /**
-     * What one submitted range means, checked by the rules that own the
-     * question.
-     *
-     * @param  array<string, mixed>  $validated
-     * @return array{mode: string, start: CarbonImmutable, end: CarbonImmutable}
-     */
-    private function resolveRestoreRange(
-        Schedule $schedule,
-        array $validated,
-        ScheduleModeRules $scheduleRules,
-        Project $project
-    ): array {
-        $validator = Validator::make([], []);
-
-        $range = $scheduleRules->validateEntry(
-            $validator,
-            $validated,
-            '',
-            $project->isResidential(),
-            true,
-            $schedule
-        );
-
-        if (! $range) {
-            throw new RuntimeException($validator->errors()->first() ?: 'Those dates cannot be used.');
-        }
-
-        // Changing what kind of booking a saved range is has its own rules -
-        // hours cannot be attached to a range covering several days.
-        $scheduleRules->assertConvertible($schedule, $range['mode']);
-
-        return $range;
-    }
-
-    /**
-     * Why this project cannot be resumed yet, or null when it can.
-     *
-     * A held project blocks nobody. Its status is not one the availability
-     * checker counts - see Project::ACTIVE_PROJECT_STATUSES - so the days the
-     * cutoff kept read as free the moment the hold is placed, and another
-     * project may be booked over them. That is the point: a pause that went on
-     * holding the calendar would be a pause in name only.
-     *
-     * The price is that resuming is not a private matter. It puts those days
-     * back into force, and if the crew was promised elsewhere on one of them
-     * the project comes back double-booked with nobody told - the clash is
-     * invisible on both projects, because each one only ever shows its own
-     * dates. So the resume asks the same question a reschedule asks, of the
-     * same service, before it lifts anything: are these people still free on
-     * the days this project is about to claim again?
-     *
-     * The project's own bookings are excluded, which is what makes the
-     * question answerable at all - every day being checked is one it holds
-     * itself. A date reported here therefore always belongs to other work.
-     *
-     * Refusing rather than resuming-and-warning is deliberate. The two ways
-     * out - move the other project, or take the technician off this one - are
-     * both decisions with consequences for somebody's day, and neither is the
-     * resume's to make.
-     */
-    private function resumeConflictMessage(Project $project): ?string
-    {
-        // Read fresh: the cutoff deleted rows when the hold was placed, and a
-        // relation loaded before that would be measured instead of what the
-        // project actually still holds.
-        $schedules = Schedule::query()
-            ->where('project_id', $project->project_id)
-            ->get();
-
-        $technicianIds = ProjectTechnician::query()
-            ->where('project_id', $project->project_id)
-            ->pluck('technician_id')
-            ->map(fn ($technicianId): int => (int) $technicianId)
-            ->unique()
-            ->values();
-
-        if ($schedules->isEmpty() || $technicianIds->isEmpty()) {
-            return null;
-        }
-
-        $availability = app(TechnicianAvailabilityService::class);
-
-        $conflicts = $availability->findConflicts(
-            $technicianIds,
-            $schedules->map(fn (Schedule $schedule): array => $schedule->toAvailabilityRange())->all(),
-            (int) $project->project_id
-        );
-
-        if ($conflicts->isEmpty()) {
-            return null;
-        }
-
-        return 'Unable to resume - the days this project still holds are now booked elsewhere. '
-            .$availability->conflictMessage(
-                $conflicts,
-                ' Reschedule that work or remove them from this team.'
-            );
-    }
-
-    /**
-     * Give a paused project's remaining dates back without breaking up its
-     * crew.
+     * Divide a paused project's schedule at the day of the hold, without
+     * breaking up its crew.
      *
      * A hold is a pause, not an ending: the work is expected to resume, and
      * the same people are expected to do it. So the team stays exactly as
-     * assigned, ready for the project to be rescheduled rather than rebuilt,
-     * while the days still to come are handed back - those were promises about
-     * dates that are no longer promised, and the crew must read as free for
-     * other work on them.
+     * assigned, and the days still to come are PRESERVED rather than thrown
+     * away - they are what the project intends to do next, and Resume is what
+     * asks whether the calendar can still honour them.
      *
-     * What the hold does NOT touch is the record of days already worked.
-     * ScheduleHoldCutoff draws that line at today and keeps everything on the
-     * near side of it, the day of the hold included.
+     * Preserving them does not hold anybody to them. The crew is released by
+     * the status change the hold makes, not by deleting rows: a held project
+     * is Unscheduled, which is not one of Project::ACTIVE_PROJECT_STATUSES, so
+     * its bookings stop counting against availability the moment the hold is
+     * placed and those days are free for other work. See ScheduleHoldCutoff.
      *
-     * Tasks keep their technician for the same reason the team does. What they
-     * keep of their dates is decided by the days the cutoff left behind: a task
-     * sitting inside those days is untouched, and one whose start or deadline
-     * fell on a day the hold released goes back to Unassigned, because it is
-     * now pointing at a date nobody is booked on.
+     * What the hold does NOT touch is the record of days already worked. The
+     * cutoff draws that line at today and leaves everything on the near side
+     * of it exactly as it stands, the day of the hold included.
      *
-     * A hold used to blank the dates of EVERY open task, which threw away
-     * perfectly good dates inside the days it had just kept. The rule applied
-     * here is TaskScheduleRules', the same one the task forms validate against
-     * and the same one a reschedule applies - so a date cleared by a hold is
-     * exactly a date the form would now refuse.
+     * Tasks keep their technician for the same reason the team does, and now
+     * keep their dates too: the days those dates point at are still on the
+     * project. The rule applied here is TaskScheduleRules', the same one the
+     * task forms validate against - so a date cleared by a hold is exactly a
+     * date the form would now refuse, which after the change above is only a
+     * date that was already stranded.
      *
-     * @return array{kept: int, shortened: int, released: int, tasks_unassigned: int}
+     * @return array{kept: int, shortened: int, preserved: int, tasks_unassigned: int}
      */
     private function releaseScheduleOnly(Project $project): array
     {
@@ -2520,7 +2494,7 @@ class ProjectController extends Controller
     /**
      * What the cutoff did, as a sentence for the audit trail.
      *
-     * @param  array{kept: int, shortened: int, released: int, tasks_unassigned?: int}  $summary
+     * @param  array{kept: int, shortened: int, preserved: int, tasks_unassigned?: int}  $summary
      */
     private function describeHoldCutoff(array $summary): string
     {
@@ -2536,17 +2510,17 @@ class ProjectController extends Controller
 
         if ($summary['shortened'] > 0) {
             $parts[] = sprintf(
-                '%d %s shortened to today',
+                '%d %s split at today',
                 $summary['shortened'],
                 $summary['shortened'] === 1 ? 'schedule was' : 'schedules were'
             );
         }
 
-        if ($summary['released'] > 0) {
+        if ($summary['preserved'] > 0) {
             $parts[] = sprintf(
-                '%d future %s released',
-                $summary['released'],
-                $summary['released'] === 1 ? 'schedule was' : 'schedules were'
+                '%d future %s preserved as the proposed schedule',
+                $summary['preserved'],
+                $summary['preserved'] === 1 ? 'schedule was' : 'schedules were'
             );
         }
 

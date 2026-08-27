@@ -3,7 +3,6 @@
 namespace App\Console\Commands;
 
 use App\Models\Project;
-use App\Models\ScheduleTechnician;
 use App\Services\ProjectTeam;
 use Illuminate\Console\Command;
 use Illuminate\Console\ConfirmableTrait;
@@ -67,20 +66,15 @@ class RepairProjectTeamScheduleLinks extends Command
 
         // One transaction for the lot: a repair that stopped half way would
         // leave the data in a third state that neither command describes.
-        $inserted = DB::transaction(function () use ($repairs): int {
+        //
+        // Written through ProjectTeam rather than row by row here, so this and
+        // Resume - which reactivates a held project's schedule the same way -
+        // insert exactly what the audit above reported and nothing else.
+        $inserted = DB::transaction(function () use ($repairs, $projectTeam): int {
             $inserted = 0;
 
             foreach ($repairs as $entry) {
-                foreach ($entry['links'] as $link) {
-                    $row = ScheduleTechnician::firstOrCreate([
-                        'schedule_id' => $link['schedule_id'],
-                        'project_technician_id' => $link['project_technician_id'],
-                    ]);
-
-                    if ($row->wasRecentlyCreated) {
-                        $inserted++;
-                    }
-                }
+                $inserted += $projectTeam->restoreScheduleLinks($entry['project']);
             }
 
             return $inserted;

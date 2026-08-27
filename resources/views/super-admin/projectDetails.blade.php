@@ -8,6 +8,13 @@
         <link rel="stylesheet" href="/css/taskModal.css">
         {{-- The Import Team dialog, shared with the project wizard. --}}
         <link rel="stylesheet" href="/css/importTeam.css">
+        {{-- The Schedule Conflict dialog a refused Resume opens. The same
+             dialog the archive's Restore opens - see scheduleRecovery.js. It
+             also carries the Reset footer flatpickr appends inside its own
+             calendar, which the Reopen dialog's pickers use too: flatpickr
+             attaches the calendar to <body>, so a rule scoped to a modal would
+             never reach it. --}}
+        <link rel="stylesheet" href="/css/super-admin/restoreConflicts.css">
     @endpush
     @php
         $scheduleStart = $project->schedules->min('start_datetime');
@@ -144,17 +151,39 @@
 
                     <div class="flex-grow-1">
                         <h5 class="alert-heading mb-1">This project is on hold</h5>
-                        <p class="mb-0">
+                        <p class="mb-1">
                             Resume it to add schedules, reports, tasks or technicians.
                         </p>
+                        {{-- The hold preserves the days still to come rather
+                             than deleting them, and releases the crew from
+                             them by taking the project off the calendar. So
+                             the schedule below is a proposal until the project
+                             is resumed, and resuming is what asks whether the
+                             team is still free for it. --}}
+                        <p class="mb-0 small text-secondary">
+                            The dates still ahead of it are kept as its proposed schedule. Its team is
+                            free for other work in the meantime, so resuming checks those dates again
+                            before putting them back into force.
+                        </p>
+
+                        <div class="alert alert-danger mt-3 mb-0 d-none" role="alert"
+                            data-recovery-error></div>
                     </div>
 
                     @unless ($isReadOnly)
-                        <form method="POST"
+                        {{-- Sent with fetch so a clash opens the Schedule
+                             Conflict dialog - the same one the archive's
+                             Restore opens - rather than bouncing the page and
+                             reducing the clash to a toast. Still a real form:
+                             a browser running no script submits it, and the
+                             endpoint answers both. --}}
+                        <form method="POST" data-recovery-form
+                            data-conflicts-url="{{ route('super-admin.projects.resume-conflicts', $project->project_id) }}"
+                            data-recovery-failure="Unable to resume project. Nothing was changed."
                             action="{{ route('super-admin.projects.resume', $project->project_id) }}">
                             @csrf
                             @method('PUT')
-                            <button type="submit" class="btn btn-success">
+                            <button type="submit" class="btn btn-success" data-recovery-submit>
                                 <i class="bi bi-play-fill me-1" aria-hidden="true"></i>
                                 Resume Project
                             </button>
@@ -280,7 +309,18 @@
              anybody reading the audit trail will ask. --}}
         @if ($canReopen)
             @php
-                $partialDayAllowed = $project->isResidential();
+                // Residential only, and asked of the project's stored client record -
+                // the same question ProjectScheduleRecovery and ScheduleModeRules ask,
+                // so the dialog offers exactly what the reopen will accept.
+                $recovery = app(\App\Services\ProjectScheduleRecovery::class);
+                $partialDayAllowed = $recovery->partialDayAllowed($project);
+                $partialDayBounds = $recovery->partialDayWindow();
+                $partialDayWindow = [
+                    'start_value' => sprintf('%02d:00', $partialDayBounds['start']),
+                    'end_value' => sprintf('%02d:00', $partialDayBounds['end']),
+                    'start_label' => $partialDayBounds['start_label'],
+                    'end_label' => $partialDayBounds['end_label'],
+                ];
                 $today = \App\Models\Schedule::businessToday()->format('Y-m-d');
             @endphp
 
@@ -362,6 +402,15 @@
                                 </div>
 
                                 @if ($partialDayAllowed)
+                                    {{-- The hours a partial day may be booked in, and the two it
+                                         starts on: the configured Partial Day Start Hour and End
+                                         Hour, read from Project Settings by
+                                         Schedule::partialDayHourBounds() and nowhere else. They are
+                                         shown filled in rather than as "Select" so the window in
+                                         force is visible the moment the mode is chosen, and either
+                                         may still be changed to any other hour the window offers -
+                                         ScheduleModeRules decides whether the pair is accepted, and
+                                         it is asked again on the way in. --}}
                                     <div class="row g-3" data-reopen-partial-day hidden>
                                         <div class="col-md-4">
                                             <label class="form-label fw-semibold" for="reopenProjectDate">Date</label>
@@ -373,22 +422,38 @@
                                         <div class="col-md-4">
                                             <label class="form-label fw-semibold" for="reopenStartTime">Start
                                                 time</label>
-                                            <select class="form-select" id="reopenStartTime" name="start_time" disabled>
-                                                <option value="">Select</option>
+                                            <select class="form-select" id="reopenStartTime" name="start_time"
+                                                disabled>
                                                 @foreach ($workingHours as $hour)
-                                                    <option value="{{ $hour['value'] }}">{{ $hour['label'] }}</option>
+                                                    <option value="{{ $hour['value'] }}"
+                                                        @selected($hour['value'] === $partialDayWindow['start_value'])>
+                                                        {{ $hour['label'] }}
+                                                    </option>
                                                 @endforeach
                                             </select>
                                         </div>
 
                                         <div class="col-md-4">
                                             <label class="form-label fw-semibold" for="reopenEndTime">End time</label>
-                                            <select class="form-select" id="reopenEndTime" name="end_time" disabled>
-                                                <option value="">Select</option>
+                                            <select class="form-select" id="reopenEndTime" name="end_time"
+                                                disabled>
                                                 @foreach ($workingHours as $hour)
-                                                    <option value="{{ $hour['value'] }}">{{ $hour['label'] }}</option>
+                                                    <option value="{{ $hour['value'] }}"
+                                                        @selected($hour['value'] === $partialDayWindow['end_value'])>
+                                                        {{ $hour['label'] }}
+                                                    </option>
                                                 @endforeach
                                             </select>
+                                        </div>
+
+                                        <div class="col-12">
+                                            <div class="form-text">
+                                                Partial Day books only these hours on the one date, between
+                                                {{ $partialDayWindow['start_label'] }} and
+                                                {{ $partialDayWindow['end_label'] }} (Project Settings). A
+                                                technician booked for the whole of a day is still unavailable
+                                                for part of it.
+                                            </div>
                                         </div>
                                     </div>
                                 @endif
@@ -419,6 +484,7 @@
 
                             <div class="modal-footer">
                                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+
                                 <button type="submit" class="btn btn-primary">
                                     <i class="bi bi-arrow-counterclockwise me-1" aria-hidden="true"></i>
                                     Reopen &amp; Schedule
@@ -2604,6 +2670,10 @@
         </div>
     </div>
 
+    @if ($isOnHold)
+        <x-schedule-conflict-modal />
+    @endif
+
     @push('scripts')
         <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
         <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
@@ -2611,6 +2681,8 @@
         <script src="/js/super-admin/taskDatePickers.js"></script>
         {{-- Greys out the days the Reopen dialog cannot book. --}}
         <script src="/js/super-admin/reopenProject.js"></script>
+        {{-- The Schedule Conflict dialog a refused Resume opens. --}}
+        <script src="/js/super-admin/scheduleRecovery.js"></script>
         <script src="/js/imagePreview.js"></script>
         <script src="/js/importTeam.js"></script>
         <script src="/js/super-admin/projectDetails.js"></script>

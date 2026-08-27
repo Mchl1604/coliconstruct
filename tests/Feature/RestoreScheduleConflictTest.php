@@ -576,11 +576,22 @@ class RestoreScheduleConflictTest extends TestCase
 
         $response->assertSee('Restore PRJ-20260716-00013?', false);
         $response->assertSee('Schedule Conflict', false);
-        $response->assertSee('Review the affected schedule ranges before restoring the project', false);
         $response->assertSee('Recheck availability', false);
+        // The dialog is shared with Resume now, so what it calls itself and
+        // what its button says arrive with the report rather than being
+        // rendered here - see ProjectScheduleRecovery::flowPayload(). What the
+        // page still has to carry is the empty dialog and the two endpoints
+        // that fill it.
+        $response->assertSee('data-conflict-modal', false);
+        $response->assertSee('data-conflict-commit', false);
         $response->assertSee(
             route('super-admin.projects.restore-conflicts', $archived->project_id),
             false
+        );
+
+        $this->assertStringContainsString(
+            'Review the affected schedule ranges before restoring the project.',
+            $this->report($archived)['flow']['blocked_summary']
         );
     }
 

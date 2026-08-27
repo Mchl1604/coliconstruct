@@ -2,6 +2,11 @@
 
 @push('styles')
     <link href="/css/super-admin/projects.css" rel="stylesheet">
+    {{-- The Schedule Conflict dialog a refused Resume opens, and the date
+         pickers inside it. Shared with the archive's Restore, which is the
+         same dialog - see scheduleRecovery.js. --}}
+    <link href="/css/super-admin/restoreConflicts.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 @endpush
 
 @section('content')
@@ -270,6 +275,11 @@
 
                                         <div class="modal-body">
                                             Resume <strong>{{ $project->reference_no }}</strong>?
+                                            The dates it kept come back into force, so its team has to
+                                            still be free for them.
+
+                                            <div class="alert alert-danger mt-3 mb-0 d-none" role="alert"
+                                                data-recovery-error></div>
                                         </div>
 
                                         <div class="modal-footer">
@@ -277,12 +287,21 @@
                                                 Cancel
                                             </button>
 
-                                            <form method="POST"
+                                            {{-- Sent with fetch rather than as a plain submit so a
+                                                 refused resume can open the Schedule Conflict dialog
+                                                 with the clash in it, rather than bouncing the page
+                                                 and reducing it to a toast. This is still a real
+                                                 form: a browser running no script submits it, and
+                                                 the endpoint answers both. --}}
+                                            <form method="POST" data-recovery-form
+                                                data-conflicts-url="{{ route('super-admin.projects.resume-conflicts', $project->project_id) }}"
+                                                data-recovery-failure="Unable to resume project. Nothing was changed."
                                                 action="{{ route('super-admin.projects.resume', $project->project_id) }}">
 
                                                 @csrf
                                                 @method('PUT')
-                                                <button type="submit" class="btn btn-success">
+                                                <button type="submit" class="btn btn-success"
+                                                    data-recovery-submit>
                                                     Resume Project
                                                 </button>
                                             </form>
@@ -441,6 +460,13 @@
         </div>
     </div>
 
+
+    <x-schedule-conflict-modal />
+
+    @push('scripts')
+        <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+        <script src="/js/super-admin/scheduleRecovery.js"></script>
+    @endpush
 
     @push('scripts')
         <script>

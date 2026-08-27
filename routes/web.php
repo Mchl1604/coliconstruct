@@ -271,6 +271,24 @@ Route::prefix('super-admin')
 
         Route::put('/projects/{id}/hold', [ProjectController::class, 'putOnHold'])->name('projects.hold');
         Route::put('/projects/{id}/resume', [ProjectController::class, 'resume'])->name('projects.resume');
+
+        // What stands between a held project and the schedule it kept, and how
+        // one range of that schedule is moved out of the way. The same pair
+        // the archive has below, answered by the same service - see
+        // ProjectScheduleRecovery - because resuming and restoring are the
+        // same question asked of two different reasons a project stopped.
+        //
+        // Open to exactly whoever may press Resume, which the group above
+        // already narrows to Admin and Super Admin. Deliberately NOT the
+        // Super-Admin-only door the restore pair is: restoring is a Super
+        // Admin's action, resuming is not, and a dialog an Admin can open onto
+        // an endpoint they are then refused by is worse than no dialog. The
+        // controller asks the same question again rather than trusting the
+        // group, because these name other projects and the people on them.
+        Route::get('/projects/{id}/resume-conflicts', [ProjectController::class, 'resumeConflicts'])
+            ->name('projects.resume-conflicts');
+        Route::put('/projects/{id}/resume-schedule', [ProjectController::class, 'updateResumeSchedule'])
+            ->name('projects.resume-schedule');
         Route::post('/projects/{id}/complete', [ProjectController::class, 'complete'])->name('projects.complete');
 
         // Putting a project that is waiting on its client back to work. The

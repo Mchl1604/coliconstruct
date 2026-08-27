@@ -325,10 +325,16 @@ class SpecifiedImprovementsTest extends TestCase
 
     /**
      * A hold measures each task against the days it leaves the project
-     * holding: a date still on a booked day survives, a date on a released
-     * day is unassigned.
+     * holding, and it now leaves the project holding all of them: the days
+     * still to come are preserved as its proposed schedule rather than
+     * deleted, so a task dated on one of them is pointing at a day the project
+     * still has and keeps its date.
+     *
+     * The stranded-date rule itself is unchanged and still applies - it is
+     * simply no longer a hold that strands anything. See
+     * ProjectOnHoldTest::test_a_hold_only_unassigns_the_tasks_that_point_outside_the_schedule.
      */
-    public function test_a_hold_unassigns_only_the_task_dates_it_stranded(): void
+    public function test_a_hold_leaves_the_task_dates_its_preserved_days_still_cover(): void
     {
         $this->actingAsSuperAdmin();
 
@@ -339,7 +345,7 @@ class SpecifiedImprovementsTest extends TestCase
         $this->book($project, -2, 5);
 
         $worked = Schedule::businessToday()->subDay()->toDateString();
-        $released = Schedule::businessToday()->addDays(4)->toDateString();
+        $ahead = Schedule::businessToday()->addDays(4)->toDateString();
 
         $kept = Task::create([
             'project_id' => $project->project_id,
@@ -351,33 +357,42 @@ class SpecifiedImprovementsTest extends TestCase
             'status' => 'ongoing',
         ]);
 
-        $stranded = Task::create([
+        $proposed = Task::create([
             'project_id' => $project->project_id,
             'technician_id' => $tech->technician_id,
             'task_title' => 'Second fix',
             'task_description' => 'Description',
-            'start_date' => $released,
-            'due_date' => $released,
+            'start_date' => $ahead,
+            'due_date' => $ahead,
             'status' => 'pending',
         ]);
 
         $this->put(route('super-admin.projects.hold', $project->project_id));
 
-        // The booking was cut off at today.
+        $ranges = Schedule::where('project_id', $project->project_id)
+            ->orderBy('start_datetime')
+            ->get();
+
+        // The booking was divided at today: the worked half kept, the rest
+        // preserved as the proposal.
+        $this->assertCount(2, $ranges);
         $this->assertSame(
             Schedule::businessToday()->toDateString(),
-            Schedule::where('project_id', $project->project_id)->first()->endsOn()->toDateString()
+            $ranges->first()->endsOn()->toDateString()
+        );
+        $this->assertSame(
+            Schedule::businessToday()->addDays(5)->toDateString(),
+            $ranges->last()->endsOn()->toDateString()
         );
 
         // A day that was worked is still a day the project holds.
         $this->assertSame($worked, (string) $kept->refresh()->start_date);
         $this->assertSame($worked, (string) $kept->due_date);
 
-        // A day the hold released is not, so the task goes back to
-        // Unassigned - keeping its owner.
-        $this->assertNull($stranded->refresh()->start_date);
-        $this->assertNull($stranded->due_date);
-        $this->assertSame($tech->technician_id, $stranded->technician_id);
+        // And so is a day still ahead of it, so this task keeps its date too.
+        $this->assertSame($ahead, (string) $proposed->refresh()->start_date);
+        $this->assertSame($ahead, (string) $proposed->due_date);
+        $this->assertSame($tech->technician_id, $proposed->technician_id);
     }
 
     // ==================================================================
@@ -588,11 +603,13 @@ class SpecifiedImprovementsTest extends TestCase
     // ==================================================================
 
     /**
-     * A hold releases the dates still to come and keeps the days already
-     * worked. Those days stay on the calendar - that is the record of what
-     * happened - and the released ones are not brought back by drawing it.
+     * A hold keeps the days already worked and preserves the days still to
+     * come. Both stay on the calendar - the first is the record of what
+     * happened, the second is what the project proposes to do next - and both
+     * are drawn read-only and labelled On Hold, because a paused project holds
+     * nobody and nothing on it may be dragged about until it is resumed.
      */
-    public function test_a_held_project_shows_its_past_dates_and_not_its_released_ones(): void
+    public function test_a_held_project_shows_its_worked_and_its_proposed_dates(): void
     {
         $this->actingAsSuperAdmin();
 
@@ -609,14 +626,24 @@ class SpecifiedImprovementsTest extends TestCase
             $this->get(route('super-admin.schedules.index'))->viewData('calendarEvents')
         )->where('extendedProps.projectId', $project->project_id)->values();
 
-        // One booking left: the days that were worked. The future one was
-        // released by the hold and is not redrawn.
-        $this->assertCount(1, $events);
-        $this->assertSame('On Hold', $events->first()['extendedProps']['statusLabel']);
-        $this->assertTrue($events->first()['extendedProps']['readOnly']);
+        // Both bookings: the days that were worked, and the days the hold
+        // preserved as the proposal.
+        $this->assertCount(2, $events);
         $this->assertSame(
-            Schedule::businessToday()->subDays(6)->toDateString(),
-            CarbonImmutable::parse($events->first()['start'])->toDateString()
+            ['On Hold', 'On Hold'],
+            $events->pluck('extendedProps.statusLabel')->all()
+        );
+        $this->assertSame([true, true], $events->pluck('extendedProps.readOnly')->all());
+        $this->assertSame(
+            [
+                Schedule::businessToday()->subDays(6)->toDateString(),
+                Schedule::businessToday()->addDays(3)->toDateString(),
+            ],
+            $events
+                ->map(fn (array $event): string => CarbonImmutable::parse($event['start'])->toDateString())
+                ->sort()
+                ->values()
+                ->all()
         );
     }
 
