@@ -89,10 +89,21 @@
     margin-bottom: 0.75rem;
 }
 
+/* The heading gives way before the controls do: without this the subtitle
+   sets the block's width at its longest line and pushes the period controls
+   onto a second row, which reads as a different card from the one beside it. */
+.report-chart-header > :first-child {
+    flex: 1 1 12rem;
+    min-width: 0;
+}
+
 .report-chart-controls {
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    flex: 0 0 auto;
+    /* Still hard right when the header does wrap on a narrow screen. */
+    margin-left: auto;
 }
 
 .report-chart-select {
@@ -101,6 +112,24 @@
     border-radius: 0.6rem;
     border-color: #e2e8f0;
     font-size: 0.8rem;
+}
+
+/* The month and year pair reads as one control, so they are sized to their
+   own contents rather than to the wider status filter - two 9.5rem selects
+   would push the header onto a second line in a half-width card. */
+.report-chart-select.is-month {
+    min-width: 7.5rem;
+}
+
+.report-chart-select.is-year {
+    min-width: 5.5rem;
+}
+
+/* Not a disabled control so much as an unasked question: "This Month" already
+   names its year, so the year select only opens once a month is chosen. */
+.report-chart-select.is-year:disabled {
+    background-color: #f8fafc;
+    color: #94a3b8;
 }
 
 /* A segmented control rather than two outlined buttons: the pair is one
@@ -199,6 +228,33 @@
 
     .report-chart-split .report-chart-wrap {
         height: 300px;
+    }
+}
+
+/*
+ * A half-width card has no 320px to spare beside its pie until the viewport is
+ * genuinely wide, so between the two it stacks: circle above key, both legible,
+ * rather than a squeezed pie next to a single column of labels.
+ */
+@media (min-width: 1200px) and (max-width: 1499.98px) {
+    .report-chart-split.is-narrow {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 1rem;
+    }
+
+    .report-chart-split.is-narrow .report-chart-wrap {
+        height: 260px;
+    }
+}
+
+@media (min-width: 1500px) {
+    .report-chart-split.is-narrow {
+        grid-template-columns: minmax(0, 220px) minmax(0, 1fr);
+        gap: 1.25rem;
+    }
+
+    .report-chart-split.is-narrow .report-chart-wrap {
+        height: 260px;
     }
 }
 

@@ -220,6 +220,21 @@ class Schedule extends Model
     }
 
     /**
+     * Whether this booking occupies the given date.
+     *
+     * The test used to be written out wherever it was needed - the calendar's
+     * day panel, the reports, the corrections - and one of those spellings was
+     * always going to drift from the others. A partial day needs no special
+     * case: it starts and ends on the same date, so the same comparison
+     * answers it.
+     */
+    public function covers(string $date): bool
+    {
+        return $this->startsOn()->toDateString() <= $date
+            && $this->endsOn()->toDateString() >= $date;
+    }
+
+    /**
      * Whether this row occupies exactly one calendar day. A partial day always
      * does; a date-based range does when its endpoints fall on the same date.
      *

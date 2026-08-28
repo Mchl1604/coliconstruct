@@ -190,10 +190,11 @@
             <div class="alert alert-danger d-none" role="alert" data-system-error></div>
 
             {{-- Charts, in the three sections the page reads as: the work, the
-                 people leading it, and the calendar. Each time-based chart
-                 carries its own Monthly/Yearly toggle - Monthly draws the
-                 current year month by month, Yearly the last five years -
-                 while the snapshots ignore it and show today. --}}
+                 people leading it, and the calendar. Each chart carries its own
+                 period control: a Monthly/Yearly toggle for the trends - Monthly
+                 draws the current year month by month, Yearly the last five
+                 years - or a month and year for the two that report on one
+                 month's intake. The remaining snapshots show today. --}}
             @php
                 $reportSections = [
                     [
@@ -202,23 +203,17 @@
                         'icon' => 'bi-kanban',
                         'charts' => [
                             [
-                                'id' => 'activeProjectBreakdown',
-                                'title' => 'Active Projects Breakdown',
-                                'subtitle' => 'Unscheduled, Pending, Ongoing, On Hold and Overdue work only',
+                                'id' => 'projectBreakdown',
+                                'title' => 'Project Breakdown',
+                                'subtitle' => 'Every project opened in the month, by the state it is in now',
                                 'type' => 'pie',
-                                'col' => 'col-12',
-                                'categorical' => true,
-                                // Full width, so the slices sit beside a
-                                // readable key rather than in a field of white.
-                                'legend' => true,
-                            ],
-                            [
-                                'id' => 'completedProjects',
-                                'title' => 'Completed Projects',
-                                'subtitle' => 'Counted on the date each project was completed',
-                                'type' => 'bar',
                                 'col' => 'col-12 col-xl-6',
-                                'granularity' => true,
+                                'categorical' => true,
+                                // The slices sit beside a readable key rather
+                                // than in a field of white.
+                                'legend' => true,
+                                'legendNarrow' => true,
+                                'month' => true,
                             ],
                             [
                                 'id' => 'projectsByType',
@@ -226,8 +221,16 @@
                                 'subtitle' => 'A project carrying several types is counted under each',
                                 'type' => 'bar',
                                 'col' => 'col-12 col-xl-6',
-                                'granularity' => true,
                                 'categorical' => true,
+                                'month' => true,
+                            ],
+                            [
+                                'id' => 'completedProjects',
+                                'title' => 'Completed Projects',
+                                'subtitle' => 'Counted on the date each project was completed',
+                                'type' => 'bar',
+                                'col' => 'col-12',
+                                'granularity' => true,
                             ],
                             [
                                 'id' => 'residentialVsCommercial',
@@ -365,6 +368,34 @@
                                                 </select>
                                             @endif
 
+                                            @if (! empty($chart['month']))
+                                                {{-- One named month, never a rolling
+                                                     window: "This Month" is resolved
+                                                     server-side, and picking any other
+                                                     month opens the year beside it. --}}
+                                                <select class="form-select form-select-sm report-chart-select is-month"
+                                                    aria-label="{{ $chart['title'] }} month"
+                                                    data-chart-month="{{ $chart['id'] }}">
+                                                    <option value="current" selected>This Month</option>
+                                                    @foreach (range(1, 12) as $month)
+                                                        <option value="{{ $month }}">
+                                                            {{ \Carbon\CarbonImmutable::create(2000, $month, 1)->format('F') }}
+                                                        </option>
+                                                    @endforeach
+                                                </select>
+
+                                                <select class="form-select form-select-sm report-chart-select is-year"
+                                                    aria-label="{{ $chart['title'] }} year" disabled
+                                                    data-chart-year="{{ $chart['id'] }}">
+                                                    @foreach ($reportYears as $year)
+                                                        <option value="{{ $year }}"
+                                                            @selected($year === (int) \App\Support\BusinessTime::today()->format('Y'))>
+                                                            {{ $year }}
+                                                        </option>
+                                                    @endforeach
+                                                </select>
+                                            @endif
+
                                             @if (! empty($chart['granularity']))
                                                 <div class="btn-group btn-group-sm report-chart-toggle" role="group"
                                                     aria-label="{{ $chart['title'] }} granularity">
@@ -386,6 +417,7 @@
 
                                     <div @class([
                                         'report-chart-split' => ! empty($chart['legend']),
+                                        'is-narrow' => ! empty($chart['legendNarrow']),
                                     ])>
                                         <div class="report-chart-wrap @if (! empty($chart['tall'])) is-tall @endif">
                                             <canvas data-chart="{{ $chart['id'] }}"
@@ -639,7 +671,7 @@
                         <div class="col-sm-4">
                             <label class="form-label fw-semibold" for="exportYear">Year</label>
                             <select id="exportYear" class="form-select" data-export-year>
-                                @foreach ($exportYears as $year)
+                                @foreach ($reportYears as $year)
                                     <option value="{{ $year }}" @selected($year === (int) \App\Support\BusinessTime::today()->format('Y'))>
                                         {{ $year }}
                                     </option>
@@ -683,13 +715,10 @@
                         </select>
                     </div>
 
-                    <div class="mb-0">
-                        <label class="form-label fw-semibold" for="exportFormat">Format</label>
-                        <select id="exportFormat" class="form-select" data-export-format>
-                            <option value="pdf" selected>PDF</option>
-                        </select>
-                        <div class="form-text">Archived projects are excluded from every report.</div>
-                    </div>
+                    {{-- No format control: PDF is the only thing this button
+                         has ever produced, and a select with one option asks a
+                         question that has no second answer. --}}
+                    <div class="form-text mb-0">Exports as PDF. Archived projects are excluded from every report.</div>
 
                     <div class="alert alert-danger mt-3 mb-0 d-none" role="alert" data-export-error></div>
                 </div>

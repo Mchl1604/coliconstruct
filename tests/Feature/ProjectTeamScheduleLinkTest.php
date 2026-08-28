@@ -76,6 +76,25 @@ class ProjectTeamScheduleLinkTest extends TestCase
         return CarbonImmutable::today()->addDays($offset)->toDateString();
     }
 
+    /**
+     * Move memberships back to a day before today, for the cases that are
+     * about work already done. attach() deliberately opens a span at today,
+     * which is right for a joiner and wrong for a fixture describing somebody
+     * who was already here.
+     *
+     * @param  array<int, Technician>  $technicians
+     */
+    private function joinedOn(Project $project, array $technicians, string $date): void
+    {
+        ProjectTechnician::query()
+            ->where('project_id', $project->project_id)
+            ->whereIn('technician_id', array_map(
+                fn (Technician $technician): int => (int) $technician->technician_id,
+                $technicians
+            ))
+            ->update(['joined_at' => $date.' 08:00:00']);
+    }
+
     private function scheduleLinkCount(Schedule $schedule, Technician $technician): int
     {
         return ScheduleTechnician::query()
@@ -345,6 +364,105 @@ class ProjectTeamScheduleLinkTest extends TestCase
         $this->assertSame('unassigned', $open->fresh()->status);
         $this->assertSame($leaving->technician_id, $done->fresh()->technician_id);
         $this->assertSame('completed', $done->fresh()->status);
+    }
+
+    /**
+     * A range that is half worked and half promise loses neither half.
+     *
+     * The link is KEPT, because the days before today were worked and it is
+     * the only thing that says by whom - deleting it is how a project's own
+     * history used to disappear because of a staffing decision made after it.
+     * What releases the remaining days is the membership close, not the
+     * deletion: every reader that asks about a date applies the span, so those
+     * days occupy nobody.
+     */
+    public function test_removal_part_way_through_a_running_range_keeps_the_worked_half(): void
+    {
+        $project = $this->createProject();
+        $running = $this->addRange($project, $this->day(-3), $this->day(3));
+
+        $lead = $this->createTechnician('Lead Person', 'lead_technician');
+        $leaving = $this->createTechnician('Leaving Tech');
+
+        $this->put(route('super-admin.projects.team.update', $project->project_id), [
+            'lead_tech' => $lead->technician_id,
+            'technicians' => [$leaving->technician_id],
+        ])->assertSessionHas('success');
+
+        // attach() opens a membership at today, because somebody added today
+        // did not work last week. These two were here before the range began,
+        // so their spans are moved back to say so.
+        $this->joinedOn($project, [$lead, $leaving], $this->day(-5));
+
+        $this->put(route('super-admin.projects.team.update', $project->project_id), [
+            'lead_tech' => $lead->technician_id,
+            'technicians' => [],
+        ])->assertSessionHas('success');
+
+        // The record of the days already worked survives the removal.
+        $this->assertSame(1, $this->scheduleLinkCount($running, $leaving));
+
+        $project->refresh();
+
+        $this->assertContains(
+            $leaving->technician_id,
+            $project->crewOn($this->day(-1))->pluck('technician_id')->all()
+        );
+
+        // And the days still to come are not theirs any more.
+        $this->assertNotContains(
+            $leaving->technician_id,
+            $project->crewOn($this->day(2))->pluck('technician_id')->all()
+        );
+    }
+
+    /**
+     * The other side of keeping that link: it must not go on occupying the
+     * technician for days they have been released from, or they would read as
+     * busy for dates they are in fact free for.
+     */
+    public function test_a_kept_link_does_not_hold_the_days_after_the_removal(): void
+    {
+        $project = $this->createProject();
+        $this->addRange($project, $this->day(-3), $this->day(3));
+
+        $lead = $this->createTechnician('Lead Person', 'lead_technician');
+        $leaving = $this->createTechnician('Leaving Tech');
+
+        $this->put(route('super-admin.projects.team.update', $project->project_id), [
+            'lead_tech' => $lead->technician_id,
+            'technicians' => [$leaving->technician_id],
+        ])->assertSessionHas('success');
+
+        $this->joinedOn($project, [$lead, $leaving], $this->day(-5));
+
+        $this->put(route('super-admin.projects.team.update', $project->project_id), [
+            'lead_tech' => $lead->technician_id,
+            'technicians' => [],
+        ])->assertSessionHas('success');
+
+        $busy = app(\App\Services\TechnicianAvailabilityService::class)
+            ->unavailableDatesByTechnician(
+                [$leaving->technician_id],
+                [[
+                    'start' => CarbonImmutable::parse($this->day(1)),
+                    'end' => CarbonImmutable::parse($this->day(3)),
+                ]]
+            );
+
+        $this->assertSame([], $busy[$leaving->technician_id] ?? []);
+
+        // The lead, who was not removed, is still held by the same range.
+        $leadBusy = app(\App\Services\TechnicianAvailabilityService::class)
+            ->unavailableDatesByTechnician(
+                [$lead->technician_id],
+                [[
+                    'start' => CarbonImmutable::parse($this->day(1)),
+                    'end' => CarbonImmutable::parse($this->day(3)),
+                ]]
+            );
+
+        $this->assertNotEmpty($leadBusy[$lead->technician_id] ?? []);
     }
 
     public function test_a_schedule_added_later_books_the_whole_current_team(): void

@@ -54,6 +54,13 @@ class ReportController extends Controller
     ];
 
     /**
+     * What a chart's month control may submit: "This Month", or a month
+     * number. The year comes separately, so an unmatched pair is impossible
+     * rather than merely discouraged.
+     */
+    private const MONTH_PATTERN = '/^(current|[1-9]|1[0-2])$/';
+
+    /**
      * Export sections, keyed by the value the dialog submits.
      *
      * @var array<string, string>
@@ -98,7 +105,7 @@ class ReportController extends Controller
                     'name' => $technician->name,
                 ])
                 ->values(),
-            'exportYears' => $this->exportYears(),
+            'reportYears' => $this->reportYears(),
         ]);
     }
 
@@ -294,6 +301,10 @@ class ReportController extends Controller
         $validator = Validator::make($request->all(), [
             'granularities' => ['nullable', 'array'],
             'granularities.*' => ['nullable', 'string', 'in:'.implode(',', self::GRANULARITIES)],
+            'months' => ['nullable', 'array'],
+            'months.*' => ['nullable', 'string', 'regex:'.self::MONTH_PATTERN],
+            'years' => ['nullable', 'array'],
+            'years.*' => ['nullable', 'integer', 'between:'.$this->yearBounds()],
             'quotation_status' => ['nullable', 'string', 'in:'.implode(',', array_keys(SystemReportService::QUOTATION_STATUSES))],
         ]);
 
@@ -306,7 +317,9 @@ class ReportController extends Controller
         return response()->json([
             'charts' => $reports->charts(
                 $filters['granularities'] ?? [],
-                $filters['quotation_status'] ?? null
+                $filters['quotation_status'] ?? null,
+                $filters['months'] ?? [],
+                $filters['years'] ?? []
             ),
         ]);
     }
@@ -320,6 +333,8 @@ class ReportController extends Controller
         $validator = Validator::make($request->all(), [
             'chart' => ['required', 'string', 'in:'.implode(',', SystemReportService::CHART_KEYS)],
             'granularity' => ['nullable', 'string', 'in:'.implode(',', self::GRANULARITIES)],
+            'month' => ['nullable', 'string', 'regex:'.self::MONTH_PATTERN],
+            'year' => ['nullable', 'integer', 'between:'.$this->yearBounds()],
             'quotation_status' => ['nullable', 'string', 'in:'.implode(',', array_keys(SystemReportService::QUOTATION_STATUSES))],
         ]);
 
@@ -334,7 +349,9 @@ class ReportController extends Controller
             'data' => $reports->chart(
                 $input['chart'],
                 $input['granularity'] ?? null,
-                $input['quotation_status'] ?? null
+                $input['quotation_status'] ?? null,
+                $input['month'] ?? null,
+                isset($input['year']) ? (int) $input['year'] : null
             ),
         ]);
     }
@@ -409,16 +426,28 @@ class ReportController extends Controller
     // ------------------------------------------------------------------
 
     /**
-     * The years the dialog offers, newest first: back far enough to reach the
-     * archive, forward far enough to report on work already booked.
+     * The years the export dialog and the dashboard's month controls offer,
+     * newest first: back far enough to reach the archive, forward far enough
+     * to report on work already booked.
      *
      * @return array<int, int>
      */
-    private function exportYears(): array
+    private function reportYears(): array
     {
         $thisYear = (int) CarbonImmutable::today()->format('Y');
 
         return range($thisYear + 1, $thisYear - self::YEAR_RANGE);
+    }
+
+    /**
+     * The same span as the years offered above, written for a `between` rule -
+     * so a chart cannot be asked for a year the dialog would never show.
+     */
+    private function yearBounds(): string
+    {
+        $thisYear = (int) CarbonImmutable::today()->format('Y');
+
+        return ($thisYear - self::YEAR_RANGE).','.($thisYear + 1);
     }
 
     /**
@@ -436,7 +465,6 @@ class ReportController extends Controller
             'period' => ['required', 'string', 'in:'.SystemReportService::PERIOD_MONTHLY.','.SystemReportService::PERIOD_YEARLY],
             'month' => ['nullable', 'required_if:period,'.SystemReportService::PERIOD_MONTHLY, 'integer', 'between:1,12'],
             'year' => ['required', 'integer', 'between:'.($thisYear - self::YEAR_RANGE).','.($thisYear + self::YEAR_RANGE)],
-            'format' => ['nullable', 'string', 'in:pdf'],
 
             // Project Report only. Archived is absent from REPORT_STATUSES, so
             // asking for it fails here rather than returning a blank page.

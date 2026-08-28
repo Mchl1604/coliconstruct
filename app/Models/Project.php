@@ -365,20 +365,44 @@ class Project extends Model
     }
 
     /**
-     * Who was on this project's team on the given date.
+     * Who was on site for this project on the given date.
      *
-     * Reads teamHistory rather than the current team, so a technician removed
-     * last week is still listed against the days they were actually here, and
-     * one who joined yesterday is not listed against last month.
+     * Two facts, and the answer is where they meet. tbl_schedule_technicians
+     * says who was booked onto each range - that is what makes this the crew
+     * for THIS date rather than the project's address book. The membership
+     * span in tbl_project_technicians says which of that range's days each of
+     * them actually held - that is what makes the answer historical, so a
+     * technician removed part-way through keeps the days before the removal
+     * and gets none after it.
+     *
+     * Neither half is sufficient alone, and the failure modes are opposite.
+     * The links alone would hand a whole range to somebody who left in the
+     * middle of it. The spans alone - which is what this method used to read,
+     * and the reason a corrected past date listed four people where two were
+     * booked - hand the date to anybody whose membership happens to bracket
+     * it, including memberships widened by a correction that was later
+     * withdrawn. A span is a statement about the team; only the link is a
+     * statement about the work.
      *
      * @return Collection<int, ProjectTechnician>
      */
     public function crewOn(string $date): Collection
     {
-        $this->loadMissing('teamHistory.technician.account');
+        $this->loadMissing(['teamHistory.technician.account', 'schedules.scheduleTechnicians']);
+
+        // The memberships booked onto a range that holds this date. Every
+        // range is consulted, not the first: a project can hold two partial
+        // days on one date, with different people on each.
+        $booked = $this->schedules
+            ->filter(fn (Schedule $schedule): bool => $schedule->covers($date))
+            ->flatMap(fn (Schedule $schedule) => $schedule->scheduleTechnicians)
+            ->map(fn (ScheduleTechnician $link): int => (int) $link->project_technician_id)
+            ->unique()
+            ->flip();
 
         return $this->teamHistory
-            ->filter(fn (ProjectTechnician $assignment): bool => $assignment->coveredOn($date))
+            ->filter(fn (ProjectTechnician $assignment): bool => $assignment->coveredOn($date)
+                && $booked->has((int) $assignment->project_technician_id))
             ->values();
     }
 

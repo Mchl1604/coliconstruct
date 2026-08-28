@@ -621,13 +621,26 @@ class TechnicianAvailabilityService
             $projectId = (int) $schedule->project_id;
 
             foreach ($schedule->scheduleTechnicians as $scheduleTechnician) {
-                $technicianId = $scheduleTechnician->projectTechnician?->technician_id;
+                $membership = $scheduleTechnician->projectTechnician;
+                $technicianId = $membership?->technician_id;
 
                 if (! $technicianId || ! $technicianIds->contains((int) $technicianId)) {
                     continue;
                 }
 
                 foreach ($days as $day => $window) {
+                    // A link is kept on a range that has already started even
+                    // after the member is taken off it, because the days
+                    // before the removal were worked and nothing else records
+                    // that - see ProjectTeam::releaseUnfinishedLinks(). It is
+                    // the membership span, not the link, that says which of
+                    // the range's days are still theirs, so a day outside the
+                    // span occupies nobody and this technician reads as free
+                    // for it.
+                    if (! $membership->coveredOn($day)) {
+                        continue;
+                    }
+
                     $intervals[(int) $technicianId][$day][] = [
                         'project_id' => $projectId,
                         // Carried so a caller can name the booking and not only
@@ -890,7 +903,12 @@ class TechnicianAvailabilityService
             })
             ->with([
                 'scheduleTechnicians:schedule_technician_id,schedule_id,project_technician_id',
-                'scheduleTechnicians.projectTechnician:project_technician_id,technician_id',
+                // joined_at and removed_at are not optional in this list: the
+                // walk above bounds every link by the membership span, and a
+                // column left unselected reads as null, which coveredOn()
+                // takes for "always on the team" - the check would pass for
+                // everybody and silently do nothing.
+                'scheduleTechnicians.projectTechnician:project_technician_id,technician_id,joined_at,removed_at',
             ])
             ->get(['schedule_id', 'project_id', 'start_datetime', 'end_datetime', 'scheduling_mode']);
     }

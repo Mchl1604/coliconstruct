@@ -1108,6 +1108,8 @@ document.addEventListener("DOMContentLoaded", function () {
      * and with each single-chart refresh so a reload never loses a selection.
      */
     const chartGranularities = {};
+    const chartMonths = {};
+    const chartYears = {};
     let quotationStatus = "all";
 
     function chartParams(key) {
@@ -1117,6 +1119,16 @@ document.addEventListener("DOMContentLoaded", function () {
 
         if (chartGranularities[key]) {
             params.set("granularity", chartGranularities[key]);
+        }
+
+        if (chartMonths[key]) {
+            params.set("month", chartMonths[key]);
+
+            // "This Month" names its own year, so sending one alongside it
+            // could only ever contradict it.
+            if (chartMonths[key] !== "current" && chartYears[key]) {
+                params.set("year", chartYears[key]);
+            }
         }
 
         params.set("quotation_status", quotationStatus);
@@ -1167,6 +1179,14 @@ document.addEventListener("DOMContentLoaded", function () {
 
         Object.keys(chartGranularities).forEach(function (key) {
             params.set("granularities[" + key + "]", chartGranularities[key]);
+        });
+
+        Object.keys(chartMonths).forEach(function (key) {
+            params.set("months[" + key + "]", chartMonths[key]);
+
+            if (chartMonths[key] !== "current" && chartYears[key]) {
+                params.set("years[" + key + "]", chartYears[key]);
+            }
         });
 
         requestJson(routes.systemReports + "?" + params.toString()).then(
@@ -1221,6 +1241,50 @@ document.addEventListener("DOMContentLoaded", function () {
             });
         });
 
+    // Per-chart month and year selects. The year only opens once a month is
+    // chosen, because "This Month" already carries one.
+    document.querySelectorAll("[data-chart-month]").forEach(function (select) {
+        const key = select.dataset.chartMonth;
+        const yearSelect = document.querySelector(
+            '[data-chart-year="' + key + '"]',
+        );
+
+        chartMonths[key] = select.value;
+
+        if (yearSelect) {
+            chartYears[key] = yearSelect.value;
+        }
+
+        function syncYearState() {
+            if (yearSelect) {
+                yearSelect.disabled = chartMonths[key] === "current";
+            }
+        }
+
+        syncYearState();
+
+        select.addEventListener("change", function () {
+            if (chartMonths[key] === select.value) {
+                return;
+            }
+
+            chartMonths[key] = select.value;
+            syncYearState();
+            loadChart(key);
+        });
+
+        if (yearSelect) {
+            yearSelect.addEventListener("change", function () {
+                if (chartYears[key] === yearSelect.value) {
+                    return;
+                }
+
+                chartYears[key] = yearSelect.value;
+                loadChart(key);
+            });
+        }
+    });
+
     // The Total Quotation status filter.
     document.querySelectorAll("[data-chart-status]").forEach(function (select) {
         const key = select.dataset.chartStatus;
@@ -1273,7 +1337,6 @@ document.addEventListener("DOMContentLoaded", function () {
             "[data-export-technician]",
         );
         const kindSelect = exportModalEl.querySelector("[data-export-kind]");
-        const formatSelect = exportModalEl.querySelector("[data-export-format]");
         const submitBtn = exportModalEl.querySelector("[data-export-submit]");
         const spinner = exportModalEl.querySelector("[data-export-spinner]");
         const errorEl = exportModalEl.querySelector("[data-export-error]");
@@ -1345,7 +1408,6 @@ document.addEventListener("DOMContentLoaded", function () {
             payload.set("report_type", type);
             payload.set("period", periodSelect.value);
             payload.set("year", yearSelect.value);
-            payload.set("format", formatSelect.value);
 
             if (periodSelect.value === "monthly") {
                 payload.set("month", monthSelect.value);

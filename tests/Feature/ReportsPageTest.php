@@ -716,7 +716,7 @@ class ReportsPageTest extends TestCase
      * The pie splits On Hold and Overdue out of the stored statuses they are
      * hidden inside, so the slices read the way the rest of the app does.
      */
-    public function test_the_active_breakdown_counts_derived_statuses(): void
+    public function test_the_project_breakdown_counts_derived_statuses(): void
     {
         $ongoing = $this->project('Ongoing Project', 'ongoing');
         $this->schedule($ongoing, $this->day(-1), $this->day(5));
@@ -729,7 +729,7 @@ class ReportsPageTest extends TestCase
 
         $this->project('Fresh Project', 'unscheduled');
 
-        $data = $this->chartData('activeProjectBreakdown');
+        $data = $this->chartData('projectBreakdown');
         $slices = array_combine($data['labels'], $data['values']);
 
         $this->assertSame(1, $slices['Unscheduled']);
@@ -742,11 +742,11 @@ class ReportsPageTest extends TestCase
     }
 
     /**
-     * The chart is about work that is still somebody's problem. Finished,
-     * abandoned and filed-away projects are not drawn, and - the part that
-     * matters - they cannot reach the total either.
+     * The chart covers the whole intake, so finished and abandoned work is
+     * drawn rather than dropped: a month that produced five projects reads as
+     * five. Only archived work stays out, as it does everywhere on this page.
      */
-    public function test_the_active_breakdown_leaves_out_finished_and_closed_work(): void
+    public function test_the_project_breakdown_draws_every_status_but_archived(): void
     {
         $ongoing = $this->project('Ongoing Project', 'ongoing');
         $this->schedule($ongoing, $this->day(-1), $this->day(5));
@@ -756,13 +756,71 @@ class ReportsPageTest extends TestCase
         $this->project('Dead Project', 'cancelled');
         $this->project('Filed Project', 'archived', [], 100, true);
 
-        $data = $this->chartData('activeProjectBreakdown');
+        $data = $this->chartData('projectBreakdown');
+        $slices = array_combine($data['labels'], $data['values']);
 
-        $this->assertSame(['Ongoing'], $data['labels']);
-        $this->assertSame([1], $data['values']);
-        // The excluded statuses carry no weight in the headline figure.
-        $this->assertSame(1, array_sum($data['values']));
-        $this->assertSame('Active projects: 1', $data['summary']);
+        $this->assertSame(1, $slices['Ongoing']);
+        $this->assertSame(1, $slices['Completed']);
+        $this->assertSame(1, $slices['Awaiting Client Confirmation']);
+        $this->assertSame(1, $slices['Cancelled']);
+        // Archived work carries no weight in the headline figure.
+        $this->assertArrayNotHasKey('Archived', $slices);
+        $this->assertSame(4, array_sum($data['values']));
+        $this->assertStringEndsWith('projects: 4', $data['summary']);
+    }
+
+    /**
+     * The month control is a window on when a project was opened, and "This
+     * Month" is resolved when the request is served rather than baked into
+     * the page.
+     */
+    public function test_the_project_breakdown_reports_on_one_named_month(): void
+    {
+        $lastMonth = CarbonImmutable::today()->subMonthNoOverflow();
+
+        $this->project('This Month Job', 'ongoing');
+
+        $older = $this->project('Older Job', 'completed');
+        $older->forceFill(['created_at' => $lastMonth->startOfMonth()->addDay()])->save();
+
+        $current = $this->chartData('projectBreakdown');
+        $this->assertSame(['Ongoing'], $current['labels']);
+
+        $chosen = $this->chartData('projectBreakdown', [
+            'month' => (string) $lastMonth->format('n'),
+            'year' => (int) $lastMonth->format('Y'),
+        ]);
+
+        $this->assertSame(['Completed'], $chosen['labels']);
+        $this->assertSame([1], $chosen['values']);
+        $this->assertStringStartsWith($lastMonth->format('F Y'), $chosen['summary']);
+    }
+
+    /**
+     * Projects by Project Type answers for the same month beside it, so the
+     * two charts are read against one window rather than two.
+     */
+    public function test_projects_by_type_follows_its_own_month(): void
+    {
+        $lastMonth = CarbonImmutable::today()->subMonthNoOverflow();
+
+        $older = $this->project('Older Job', 'ongoing');
+        $older->projectTypes()->attach(ProjectType::create(['type_name' => 'Rewiring'])->type_id);
+        $older->forceFill(['created_at' => $lastMonth->startOfMonth()->addDay()])->save();
+
+        $fresh = $this->project('Fresh Job', 'ongoing');
+        $fresh->projectTypes()->attach(ProjectType::create(['type_name' => 'Fit-out'])->type_id);
+
+        $this->assertSame(['Fit-out'], $this->chartData('projectsByType')['labels']);
+
+        $chosen = $this->chartData('projectsByType', [
+            'month' => (string) $lastMonth->format('n'),
+            'year' => (int) $lastMonth->format('Y'),
+        ]);
+
+        $this->assertSame(['Rewiring'], $chosen['labels']);
+        $this->assertSame([1], $chosen['values']);
+        $this->assertStringStartsWith($lastMonth->format('F Y'), $chosen['summary']);
     }
 
     /**
@@ -870,7 +928,7 @@ class ReportsPageTest extends TestCase
 
         $this->project('Not Yet Booked', 'unscheduled', [$lead]);
 
-        $breakdown = $this->chartData('activeProjectBreakdown');
+        $breakdown = $this->chartData('projectBreakdown');
         $slices = array_combine($breakdown['labels'], $breakdown['values']);
 
         $this->assertSame(1, $slices['Unscheduled']);
@@ -1653,8 +1711,13 @@ class ReportsPageTest extends TestCase
     // ------------------------------------------------------------------
 
     /**
-     * A project counts once for a technician however many times it is booked,
-     * and archived work is not theirs to answer for.
+     * One row per assignment: a project counts once for a technician however
+     * many times it is booked, and archived work is not theirs to answer for.
+     *
+     * The bookings do not disappear - they are listed inside the row's own
+     * Schedule cell, which is where the dates a technician actually held
+     * belong. See TechnicianScheduleExportTest for the assignment status and
+     * removal date that cell sits beside.
      */
     public function test_assigned_projects_count_each_project_once(): void
     {
@@ -1671,17 +1734,23 @@ class ReportsPageTest extends TestCase
         $this->schedule($archived, $this->dateThisYear('08-08'), $this->dateThisYear('08-09'));
 
         $section = $this->technicianSection('assigned', 'assigned');
+        $rows = collect($section['rows']);
 
-        $this->assertCount(1, $section['rows']);
         // Two projects, not three bookings and not three projects.
-        $this->assertCount(2, $section['rows'][0]['projects']);
-        $this->assertSame('Technician', $section['rows'][0]['position']);
+        $this->assertCount(2, $rows);
+        $this->assertSame(['Ana Mendoza'], $rows->pluck('technician')->unique()->all());
+        $this->assertSame('Technician', $rows[0]['position']);
         $this->assertSame('Total Assigned Projects: 2', $this->summaryLine($section, 'Total Assigned Projects'));
+        $this->assertSame('Total Technicians: 1', $this->summaryLine($section, 'Total Technicians'));
 
-        foreach ($section['rows'][0]['projects'] as $entry) {
-            $this->assertStringNotContainsString('Filed Job', $entry);
-            $this->assertStringContainsString(' - ', $entry);
-        }
+        $this->assertNotContains(
+            $archived->reference_no,
+            $rows->pluck('reference_no')->all()
+        );
+
+        // The project booked twice keeps both bookings, in its own cell.
+        $twiceBooked = $rows->firstWhere('reference_no', $busy->reference_no);
+        $this->assertCount(2, $twiceBooked['schedules']);
     }
 
     public function test_a_lead_technician_reports_their_position(): void
@@ -1719,10 +1788,19 @@ class ReportsPageTest extends TestCase
 
     /**
      * The technician schedule section obeys the same clipping and duration
-     * rules as the Schedule Report.
+     * rules as the Schedule Report: an overlapping booking prints whole and
+     * counts only the days the period covers.
+     *
+     * It is now one row per run of dates rather than one row per project with
+     * the bookings stacked inside it, and the rows are split into what has
+     * been worked and what is booked - see TechnicianScheduleExportTest, which
+     * is where the per-date resolution behind that is tested. Today is pinned
+     * because the split is measured against it.
      */
     public function test_the_technician_schedule_uses_the_schedule_report_rules(): void
     {
+        $this->travelTo(CarbonImmutable::parse('2026-08-28 04:00:00', 'UTC'));
+
         $ana = $this->technician('Ana Mendoza');
         $project = $this->project('Crossing Job', 'ongoing', [$ana]);
 
@@ -1736,19 +1814,21 @@ class ReportsPageTest extends TestCase
         }
 
         $section = $this->technicianSection('schedule', 'technician_schedule');
-        $row = $section['groups'][0]['rows'][0];
+        $past = collect($section['subsections'])->firstWhere('key', 'past')['rows'];
 
-        $this->assertCount(1, $section['groups']);
-        $this->assertSame('Ana Mendoza', $section['groups'][0]['technician']);
+        // Every overlapping booking, never just the first, and not September.
+        $this->assertCount(3, $past);
+        $this->assertSame(['Ana Mendoza'], $past->pluck('technician')->unique()->all());
+        $this->assertStringNotContainsString('Sep', $past->pluck('schedule')->implode(' '));
 
-        // Every overlapping range, never just the first, and not September.
-        $this->assertCount(3, $row['schedules']);
-        $this->assertStringNotContainsString('Sep', implode(' ', $row['schedules']));
+        // The July booking prints whole and counts as its single August day.
+        $this->assertSame('Jul 28, 2026 - Aug 1, 2026', $past[0]['schedule']);
+        $this->assertSame(1, $past[0]['duration']);
 
         // 1 + 3 + 4, not the 22 days from July 28 to August 18.
-        $this->assertSame(8, $row['duration']);
+        $this->assertSame(8, $past->sum('duration'));
         $this->assertSame('Total Scheduled Days: 8', $this->summaryLine($section, 'Total Scheduled Days'));
-        $this->assertSame('Total Schedule Entries: 3', $this->summaryLine($section, 'Total Schedule Entries'));
+        $this->assertSame('Past Scheduled Days: 8', $this->summaryLine($section, 'Past Scheduled Days'));
     }
 
     /**

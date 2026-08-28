@@ -95,6 +95,14 @@ class SystemReportService
 
     public const GRANULARITY_YEARLY = 'yearly';
 
+    /**
+     * What the month control submits for "This Month": the month is resolved
+     * when the request is served rather than baked into the page, so a tab
+     * left open over midnight on the 31st does not keep reporting on the
+     * month that has ended.
+     */
+    public const MONTH_CURRENT = 'current';
+
     /** How many whole years the yearly view reaches back over, inclusive. */
     private const YEARLY_SPAN = 5;
 
@@ -106,9 +114,9 @@ class SystemReportService
      */
     public const CHART_KEYS = [
         // Projects
-        'activeProjectBreakdown',
-        'completedProjects',
+        'projectBreakdown',
         'projectsByType',
+        'completedProjects',
         'residentialVsCommercial',
         'totalQuotation',
         'topClients',
@@ -168,9 +176,8 @@ class SystemReportService
      * Pending and Ongoing are also where On Hold and Overdue live: both are
      * derived - a flag and a passed schedule - and neither replaces the stored
      * status. So these three, minus the archived ones, are exactly Unscheduled
-     * + Pending + Ongoing + On Hold + Overdue: the same five the Active
-     * Projects Breakdown draws, and the one definition of "active" every
-     * figure on this page counts by.
+     * + Pending + Ongoing + On Hold + Overdue: the one definition of
+     * "active" every figure on this page counts by.
      *
      * Deliberately wider than Project::ACTIVE_PROJECT_STATUSES, which answers
      * a different question: that constant is about whether a technician's
@@ -249,20 +256,69 @@ class SystemReportService
     }
 
     /**
+     * The one calendar month a snapshot chart covers.
+     *
+     * The Project Breakdown and Projects by Project Type are read against a
+     * month rather than a year, because they answer "what came in, and what
+     * became of it" - a question about a period somebody can name. "This
+     * month" is the default and simply resolves to today's, so the control
+     * always describes a real month and never a rolling window.
+     *
+     * @return array{key: string, month: int, year: int, label: string, start: CarbonImmutable, end: CarbonImmutable}
+     */
+    public function resolveMonthWindow(?string $month = null, ?int $year = null): array
+    {
+        $today = CarbonImmutable::today();
+
+        $isCurrent = $month === null || $month === '' || $month === self::MONTH_CURRENT;
+
+        $monthNumber = $isCurrent ? (int) $today->format('n') : (int) $month;
+        $yearNumber = $isCurrent ? (int) $today->format('Y') : ($year ?? (int) $today->format('Y'));
+
+        if ($monthNumber < 1 || $monthNumber > 12) {
+            throw new InvalidArgumentException("Unknown month [{$month}].");
+        }
+
+        $start = CarbonImmutable::create($yearNumber, $monthNumber, 1)->startOfDay();
+
+        return [
+            'key' => $isCurrent ? self::MONTH_CURRENT : $monthNumber.'-'.$yearNumber,
+            'month' => $monthNumber,
+            'year' => $yearNumber,
+            'label' => $start->format('F Y'),
+            'start' => $start,
+            'end' => $start->endOfMonth()->endOfDay(),
+        ];
+    }
+
+    /**
      * Chart.js-ready datasets for every chart, each at its own granularity.
      *
-     * Every chart carries its own Monthly/Yearly toggle, so the caller passes
-     * the state of each one rather than a single period for the whole page.
+     * Every chart carries its own period control - a Monthly/Yearly toggle, or
+     * a month and year - so the caller passes the state of each one rather
+     * than a single period for the whole page.
      *
      * @param  array<string, string>  $granularities  chart key => monthly|yearly
+     * @param  array<string, string>  $months  chart key => current|1-12
+     * @param  array<string, int>  $years  chart key => four-digit year
      * @return array<string, array<string, mixed>>
      */
-    public function charts(array $granularities = [], ?string $quotationStatus = null): array
-    {
+    public function charts(
+        array $granularities = [],
+        ?string $quotationStatus = null,
+        array $months = [],
+        array $years = []
+    ): array {
         $charts = [];
 
         foreach (self::CHART_KEYS as $key) {
-            $charts[$key] = $this->chart($key, $granularities[$key] ?? null, $quotationStatus);
+            $charts[$key] = $this->chart(
+                $key,
+                $granularities[$key] ?? null,
+                $quotationStatus,
+                $months[$key] ?? null,
+                $years[$key] ?? null
+            );
         }
 
         return $charts;
@@ -273,20 +329,27 @@ class SystemReportService
      *
      * @return array<string, mixed>
      */
-    public function chart(string $key, ?string $granularity = null, ?string $quotationStatus = null): array
-    {
+    public function chart(
+        string $key,
+        ?string $granularity = null,
+        ?string $quotationStatus = null,
+        ?string $month = null,
+        ?int $year = null
+    ): array {
         $period = $this->resolveGranularity($granularity);
 
         return match ($key) {
             // Snapshots of where things stand right now, so they have no window
             // and ignore the granularity entirely.
-            'activeProjectBreakdown' => $this->activeProjectBreakdown(),
             'leadTechnicianProjects' => $this->leadTechnicianProjects(),
             'leadTechnicianAvailability' => $this->leadTechnicianAvailability(),
             'scheduleTypeDistribution' => $this->scheduleTypeDistribution(),
 
+            // Read against one named month rather than a year of buckets.
+            'projectBreakdown' => $this->projectBreakdown($this->resolveMonthWindow($month, $year)),
+            'projectsByType' => $this->projectsByType($this->resolveMonthWindow($month, $year)),
+
             'completedProjects' => $this->completedProjects($period),
-            'projectsByType' => $this->projectsByType($period),
             'totalQuotation' => $this->totalQuotation($period, $quotationStatus ?? 'all'),
             'residentialVsCommercial' => $this->residentialVsCommercial($period),
             'topClients' => $this->topClients($period),
@@ -302,21 +365,26 @@ class SystemReportService
     // ------------------------------------------------------------------
 
     /**
-     * Where the live work stands right now, using the same vocabulary the rest
-     * of the app shows: On Hold and Overdue are states in their own right, not
-     * variations of Pending or Ongoing.
+     * Where every project opened in the month stands today, using the same
+     * vocabulary the rest of the app shows: On Hold and Overdue are states in
+     * their own right, not variations of Pending or Ongoing.
      *
-     * Only work that is still someone's problem today is counted. Awaiting
-     * Confirmation, Completed, Cancelled and Archived projects are left out
-     * entirely rather than drawn as slices nobody can act on - which is also
-     * what keeps the total honest: a company with four hundred finished
-     * projects and six live ones should read as six.
+     * The window is on when a project was opened, not on its state - so the
+     * slices are the fate of one month's intake, and the total is exactly how
+     * many projects that month brought in. Finished and abandoned work is
+     * drawn rather than dropped, which is the whole point of a breakdown that
+     * covers everything: a month that produced twelve projects reads as
+     * twelve, however they ended.
      *
+     * Archived projects stay out, as they do everywhere else on this page.
+     *
+     * @param  array{start: CarbonImmutable, end: CarbonImmutable, label: string}  $window
      * @return array<string, mixed>
      */
-    private function activeProjectBreakdown(): array
+    private function projectBreakdown(array $window): array
     {
-        $counts = $this->activeBreakdownQuery()
+        $counts = $this->breakdownQuery()
+            ->whereBetween('created_at', [$window['start'], $window['end']])
             ->selectRaw($this->currentStatusExpression().' as bucket, count(*) as total')
             ->groupBy('bucket')
             ->pluck('total', 'bucket');
@@ -325,6 +393,7 @@ class SystemReportService
         // come out of the CASE above; those projects are moved here out of the
         // Pending and Ongoing slices they were counted in.
         $overdue = Project::overdue()
+            ->whereBetween('created_at', [$window['start'], $window['end']])
             ->selectRaw('status, count(*) as total')
             ->groupBy('status')
             ->pluck('total', 'status');
@@ -339,10 +408,13 @@ class SystemReportService
         // exported PDF are one system rather than three.
         $slices = [
             'unscheduled' => 'Unscheduled',
+            Project::STATUS_AWAITING_CLIENT_CONFIRMATION => 'Awaiting Client Confirmation',
             'pending' => 'Pending',
             'ongoing' => 'Ongoing',
             'on_hold' => 'On Hold',
             'overdue' => 'Overdue',
+            'completed' => 'Completed',
+            'cancelled' => 'Cancelled',
         ];
 
         $present = collect($slices)->filter(fn ($label, $status) => ($counts[$status] ?? 0) > 0);
@@ -352,30 +424,25 @@ class SystemReportService
             'labels' => $present->values()->all(),
             'values' => $values,
             'colors' => $present->keys()->map(fn ($status) => Project::statusColor($status)[0])->all(),
-            'label' => 'Active Projects',
-            'summary' => 'Active projects: '.number_format(array_sum($values)),
+            'label' => 'Projects',
+            'summary' => $window['label'].' - projects: '.number_format(array_sum($values)),
         ];
     }
 
     /**
-     * The projects the Active Projects Breakdown may draw: everything that is
-     * neither finished, abandoned nor filed away.
+     * The projects the Project Breakdown may draw: everything that has not
+     * been filed away.
      *
-     * The excluded statuses are dropped here, before the counting, so they
-     * cannot reach the chart's total by any route.
+     * Archived work is dropped here, before the counting, so it cannot reach
+     * the chart's total by any route.
      *
      * @return Builder<Project>
      */
-    private function activeBreakdownQuery(): Builder
+    private function breakdownQuery(): Builder
     {
         return Project::query()
             ->where('is_archived', false)
-            ->whereNotIn('status', [
-                Project::STATUS_AWAITING_CLIENT_CONFIRMATION,
-                'completed',
-                'cancelled',
-                'archived',
-            ]);
+            ->where('status', '!=', 'archived');
     }
 
     /**
@@ -397,18 +464,21 @@ class SystemReportService
     }
 
     /**
-     * How many projects of each type were opened in the window. A project can
-     * carry several types, so it is counted once under each of them.
+     * How many projects of each type were opened in the month. A project can
+     * carry several types, so it is counted once under each of them - which is
+     * why these columns can add up to more than the breakdown beside them.
      *
-     * @param  array{start: CarbonImmutable, end: CarbonImmutable}  $period
+     * @param  array{start: CarbonImmutable, end: CarbonImmutable, label: string}  $window
      * @return array<string, mixed>
      */
-    private function projectsByType(array $period): array
+    private function projectsByType(array $window): array
     {
         $rows = DB::table('tbl_project_type_map')
             ->join('tbl_project_types', 'tbl_project_types.type_id', '=', 'tbl_project_type_map.type_id')
             ->join('tbl_projects', 'tbl_projects.project_id', '=', 'tbl_project_type_map.project_id')
-            ->whereBetween('tbl_projects.created_at', [$period['start'], $period['end']])
+            ->where('tbl_projects.is_archived', false)
+            ->where('tbl_projects.status', '!=', 'archived')
+            ->whereBetween('tbl_projects.created_at', [$window['start'], $window['end']])
             ->selectRaw('tbl_project_types.type_name as type, count(distinct tbl_projects.project_id) as total')
             ->groupBy('tbl_project_types.type_name')
             ->orderByDesc('total')
@@ -418,6 +488,7 @@ class SystemReportService
             'labels' => $rows->pluck('type')->all(),
             'values' => $rows->pluck('total')->map(fn ($total) => (int) $total)->all(),
             'label' => 'Projects',
+            'summary' => $window['label'].' - project types used: '.number_format($rows->count()),
         ];
     }
 
@@ -1066,8 +1137,31 @@ class SystemReportService
     }
 
     /**
-     * Which projects each technician is carrying, listed inside one row per
-     * technician rather than spread over a row each.
+     * One row per technician per project: who is on it, whether they still
+     * are, when they stopped being, and which dates were actually theirs.
+     *
+     * It used to be one row per technician with their projects stacked inside
+     * it, which had no room to say anything ABOUT an assignment - and it read
+     * the open memberships only, so a technician taken off a project vanished
+     * from the report entirely. A record of who worked what cannot be written
+     * from the people who are still there.
+     *
+     * Three separate facts, deliberately kept apart:
+     *
+     *   Assignment Status  from the membership span and nothing else. Not the
+     *                      project's status - a completed project can have an
+     *                      active assignment on it and a live project a
+     *                      removed one, and neither says anything about the
+     *                      other.
+     *   Removed Date       the date recorded on the membership when it was
+     *                      closed. Never derived from the last worked day, the
+     *                      completion date or today: somebody removed the day
+     *                      after their last booking was removed on that day,
+     *                      not on the booking.
+     *   Schedule           the dates that technician actually held, resolved a
+     *                      day at a time by TechnicianAssignedDates - never
+     *                      the project's range, which is the job's dates
+     *                      rather than the person's.
      *
      * @param  array{start: CarbonImmutable, end: CarbonImmutable}  $period
      * @param  Collection<int, array{name: string, position: string}>  $directory
@@ -1075,40 +1169,157 @@ class SystemReportService
      */
     private function assignedProjectsSection(array $period, Collection $directory): array
     {
-        $projects = $this->periodProjects($period)->with('clients')->get()->keyBy('project_id');
-        $assignments = $this->assignmentsFor($projects->keys(), $directory->keys());
-
-        $rows = $directory
-            ->map(fn (array $technician, int $id): array => $technician + [
-                // One entry per project, never per schedule or per crew row.
-                'projects' => collect($assignments[$id] ?? [])
-                    ->map(fn (int $projectId): ?string => $projects->has($projectId)
-                        ? $projects[$projectId]->reference_no.' - '.$this->clientName($projects[$projectId])
-                        : null)
-                    ->filter()
-                    ->sort()
-                    ->values()
-                    ->all(),
-            ])
-            ->filter(fn (array $row): bool => $row['projects'] !== [])
-            ->values();
+        $rows = $this->assignedProjectRows($period, $directory);
 
         return [
             'key' => 'assigned',
             'title' => 'Assigned Projects',
             'rows' => $rows,
             'summary' => [
-                ['label' => 'Total Technicians', 'value' => number_format($rows->count())],
-                ['label' => 'Total Assigned Projects', 'value' => number_format(
-                    $rows->sum(fn (array $row): int => count($row['projects']))
-                )],
+                ['label' => 'Total Technicians', 'value' => number_format($rows->pluck('technician_id')->unique()->count())],
+                // Assignments, not projects: a project with three people on it
+                // is three assignments, which is what this table has rows for.
+                ['label' => 'Total Assigned Projects', 'value' => number_format($rows->count())],
+                ['label' => 'Active Assignments', 'value' => number_format($rows->where('is_removed', false)->count())],
+                ['label' => 'Removed Assignments', 'value' => number_format($rows->where('is_removed', true)->count())],
             ],
         ];
     }
 
     /**
-     * Each technician's booked dates in the period, using the same clipping
-     * and duration rules as the Schedule Report.
+     * Every membership the period covers, open and closed alike.
+     *
+     * `teamHistory` rather than the current team is the whole point: a closed
+     * membership is the only record that somebody was ever on the project, and
+     * a report that reads the open ones is a report that rewrites history
+     * every time somebody leaves.
+     *
+     * The Schedule column is built from the same runs the Schedule section
+     * prints, over the same non-cancelled projects, so the two sections cannot
+     * put different dates against one technician. A cancelled project gave its
+     * dates back - see scheduleRowsFor() - so its assignments are still listed
+     * here, with no dates against them rather than dates nobody worked.
+     *
+     * @param  array{start: CarbonImmutable, end: CarbonImmutable}  $period
+     * @param  Collection<int, array{name: string, position: string}>  $directory
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function assignedProjectRows(array $period, Collection $directory): Collection
+    {
+        if ($directory->isEmpty()) {
+            return collect();
+        }
+
+        $projects = $this->periodProjects($period)
+            ->with([
+                'clients',
+                'schedules.scheduleTechnicians',
+                'teamHistory.technician.account',
+            ])
+            ->get();
+
+        if ($projects->isEmpty()) {
+            return collect();
+        }
+
+        $schedules = $this->assignedDateLabels($period, $projects, $directory);
+
+        $rows = collect();
+
+        foreach ($projects as $project) {
+            foreach ($project->teamHistory as $assignment) {
+                $technicianId = (int) $assignment->technician_id;
+
+                if (! $directory->has($technicianId)) {
+                    continue;
+                }
+
+                $rows->push($directory[$technicianId] + [
+                    'technician_id' => $technicianId,
+                    'project_id' => (int) $project->project_id,
+                    'reference_no' => $project->reference_no ?: '—',
+                    'client' => $this->clientName($project),
+                    'is_removed' => $assignment->isRemoved(),
+                    'assignment_status' => $assignment->isRemoved() ? 'Removed' : 'Active',
+                    // formatDate() prints an em dash for null, which is exactly
+                    // what an assignment nobody has ended should show.
+                    'removed_on' => $this->formatDate($assignment->removed_at),
+                    'schedules' => $schedules[$technicianId.'|'.$project->project_id] ?? [],
+                    // The project's own state, kept because the table already
+                    // carried it and because it is the one thing here that is
+                    // NOT the technician's status.
+                    'status_key' => $project->statusKey(),
+                    'status_label' => $project->shortStatusLabel(),
+                ]);
+            }
+        }
+
+        return $rows
+            ->sortBy(fn (array $row): array => [$row['technician'], $row['reference_no']])
+            ->values();
+    }
+
+    /**
+     * The dates each technician actually held, as printable ranges, keyed by
+     * technician and project.
+     *
+     * @param  array{start: CarbonImmutable, end: CarbonImmutable}  $period
+     * @param  Collection<int, Project>  $projects
+     * @param  Collection<int, array{name: string, position: string}>  $directory
+     * @return Collection<string, array<int, string>>
+     */
+    private function assignedDateLabels(array $period, Collection $projects, Collection $directory): Collection
+    {
+        $from = $period['start']->toDateString();
+        $to = $period['end']->toDateString();
+
+        $runs = app(TechnicianAssignedDates::class)->runs(
+            $projects->reject(fn (Project $project): bool => $project->isCancelled())->values(),
+            $directory->keys(),
+            Schedule::businessToday(),
+            // One cell per assignment, so a stretch of work running across
+            // today stays one stretch. The Past/Future cut belongs to the
+            // Schedule section, which prints two tables to put it in.
+            splitAtToday: false
+        );
+
+        return $runs
+            ->filter(fn (array $run): bool => collect($run['dates'])->contains(
+                fn (string $date): bool => $date >= $from && $date <= $to
+            ))
+            ->groupBy(fn (array $run): string => $run['technician_id'].'|'.$run['project_id'])
+            // Chronological, and every run - a technician taken off in August
+            // and put back on in September holds two, and joining them would
+            // claim the weeks between.
+            ->map(fn (Collection $group): array => $group
+                ->sortBy('start')
+                ->pluck('label')
+                ->all());
+    }
+
+    /**
+     * The dates each technician was actually assigned, split into what has
+     * been worked and what is still to come.
+     *
+     * This does NOT list the project's schedule against everybody on the team,
+     * which is what it used to do and what made it wrong. A project range is a
+     * statement about the job; who was on site is a statement about a person
+     * and a day, and the two only agree while nobody joins or leaves mid-job.
+     * So the range is expanded to its dates, each date is asked who was
+     * assigned on it, and only then are the surviving dates grouped back into
+     * ranges to print - see TechnicianAssignedDates, which does all three and
+     * settles the middle question through the same Project::crewOn() the
+     * Schedule page's day panel uses.
+     *
+     * Past and Future are decided per date rather than per range, so a booking
+     * running across today appears in both halves, cut where today falls.
+     * Today itself is Future: it is being worked, not already worked.
+     *
+     * The period rules are the Schedule Report's, unchanged. A run is listed
+     * when it has at least one date inside the window, and it prints whole -
+     * a run of Jul 29 to Aug 3 reads as that in an August report, because that
+     * is what was worked - while its Scheduled Days counts only the dates
+     * inside the window, which for that run is three.
      *
      * @param  array{start: CarbonImmutable, end: CarbonImmutable}  $period
      * @param  Collection<int, array{name: string, position: string}>  $directory
@@ -1116,23 +1327,121 @@ class SystemReportService
      */
     private function technicianScheduleSection(array $period, Collection $directory): array
     {
-        $rows = $this->scheduleRowsFor($period);
-        $assignments = $this->assignmentsFor($rows->pluck('project_id')->unique(), $directory->keys());
+        $rows = $this->technicianScheduleRows($period, $directory);
 
-        $groups = $this->groupByTechnician(
-            $directory,
-            $assignments,
-            fn (array $projectIds): Collection => $rows->whereIn('project_id', $projectIds)->values()
-        );
+        $past = $rows->where('is_past', true)->values();
+        $future = $rows->where('is_past', false)->values();
 
         return [
             'key' => 'technician_schedule',
             'title' => 'Schedule',
-            'groups' => $groups,
-            'summary' => $this->scheduleSummaryLines(
-                $groups->flatMap(fn (array $group): Collection => $group['rows'])
-            ),
+            // Two tables rather than one, each already sorted. The split is
+            // the report: "what did this crew do" and "what are they booked
+            // for" are different questions asked of the same rows.
+            'subsections' => collect([
+                ['key' => 'past', 'title' => 'Past Schedule', 'rows' => $past],
+                ['key' => 'future', 'title' => 'Future Schedule', 'rows' => $future],
+            ]),
+            'summary' => [
+                ['label' => 'Total Technicians', 'value' => number_format($rows->pluck('technician_id')->unique()->count())],
+                ['label' => 'Total Scheduled Projects', 'value' => number_format($rows->pluck('project_id')->unique()->count())],
+                ['label' => 'Past Scheduled Days', 'value' => number_format($past->sum('duration'))],
+                ['label' => 'Future Scheduled Days', 'value' => number_format($future->sum('duration'))],
+                ['label' => 'Total Scheduled Days', 'value' => number_format($rows->sum('duration'))],
+            ],
         ];
+    }
+
+    /**
+     * One row per run of consecutive dates a technician was assigned for.
+     *
+     * The projects are narrowed exactly as the Schedule Report narrows them -
+     * archived and cancelled work left out for the reasons given on
+     * scheduleRowsFor(), and only projects with a booking touching the period.
+     * Every range of those projects is then expanded whole, not clipped to the
+     * window, because a run has to be resolved over its own dates before it
+     * can be honestly cut to a reporting period.
+     *
+     * `teamHistory` is what makes the answer historical: the current team
+     * would drop anybody since removed and hand their days to whoever replaced
+     * them.
+     *
+     * @param  array{start: CarbonImmutable, end: CarbonImmutable}  $period
+     * @param  Collection<int, array{name: string, position: string}>  $directory
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function technicianScheduleRows(array $period, Collection $directory): Collection
+    {
+        if ($directory->isEmpty()) {
+            return collect();
+        }
+
+        $projects = $this->excludeArchived(Project::query())
+            ->where('status', '!=', 'cancelled')
+            ->whereHas('schedules', fn (Builder $schedule) => $this->applyOverlap($schedule, $period))
+            // Everything Project::crewOn() consults is loaded here rather
+            // than left to it, which would load them a project at a time the
+            // first time each one is asked about.
+            ->with([
+                'clients',
+                'schedules.scheduleTechnicians',
+                'teamHistory.technician.account',
+            ])
+            ->get()
+            ->keyBy('project_id');
+
+        if ($projects->isEmpty()) {
+            return collect();
+        }
+
+        $runs = app(TechnicianAssignedDates::class)->runs(
+            $projects->values(),
+            $directory->keys(),
+            Schedule::businessToday()
+        );
+
+        $from = $period['start']->toDateString();
+        $to = $period['end']->toDateString();
+
+        return $runs
+            ->map(function (array $run) use ($projects, $directory, $from, $to): ?array {
+                $project = $projects[$run['project_id']] ?? null;
+                $technician = $directory[$run['technician_id']] ?? null;
+
+                if ($project === null || $technician === null) {
+                    return null;
+                }
+
+                // The period is applied to the individual dates, never to the
+                // printed range: the run says what was worked, the count says
+                // how much of it this report covers.
+                $inPeriod = array_filter(
+                    $run['dates'],
+                    fn (string $date): bool => $date >= $from && $date <= $to
+                );
+
+                if ($inPeriod === []) {
+                    return null;
+                }
+
+                return $technician + [
+                    'technician_id' => $run['technician_id'],
+                    'project_id' => $run['project_id'],
+                    'is_past' => $run['is_past'],
+                    'reference_no' => $project->reference_no ?: '—',
+                    'client' => $this->clientName($project),
+                    'schedule' => $run['label'],
+                    'duration' => count($inPeriod),
+                    'status_key' => $project->statusKey(),
+                    'status_label' => $project->shortStatusLabel(),
+                    'sort' => $technician['technician'].'|'.$run['start'].'|'.$run['end'].'|'.($project->reference_no ?? ''),
+                ];
+            })
+            ->filter()
+            // By person, then chronologically within them: a technician's own
+            // rows read as their diary rather than as a shuffled list.
+            ->sortBy('sort')
+            ->values();
     }
 
     /**
@@ -1412,40 +1721,6 @@ class SystemReportService
     }
 
     /**
-     * Which projects each technician holds, as technician id => project ids.
-     *
-     * One flat query over the join table, so a hundred technicians cost the
-     * same as one.
-     *
-     * @param  Collection<int, mixed>  $projectIds
-     * @param  Collection<int, mixed>  $technicianIds
-     * @return Collection<int, array<int, int>>
-     */
-    private function assignmentsFor(Collection $projectIds, Collection $technicianIds): Collection
-    {
-        if ($projectIds->isEmpty() || $technicianIds->isEmpty()) {
-            return collect();
-        }
-
-        return DB::table('tbl_project_technicians')
-            ->whereIn('project_id', $projectIds->all())
-            ->whereIn('technician_id', $technicianIds->all())
-            // Closed memberships are kept for the record and are not
-            // assignments any more - see ProjectTechnician.
-            ->whereNull('removed_at')
-            ->get(['technician_id', 'project_id'])
-            ->groupBy('technician_id')
-            ->map(fn (Collection $rows): array => $rows
-                ->pluck('project_id')
-                ->map(fn ($id): int => (int) $id)
-                // A project counts once for a technician however many rows
-                // link them.
-                ->unique()
-                ->values()
-                ->all());
-    }
-
-    /**
      * The technicians a report covers, keyed by id, name and position ready to
      * print. One query, whether the report is for everybody or for one person.
      *
@@ -1465,24 +1740,6 @@ class SystemReportService
                     'position' => $technician->account?->roleLabel() ?? 'Technician',
                 ],
             ]);
-    }
-
-    /**
-     * Turn per-technician assignments into printable groups, dropping anybody
-     * the period gave nothing to say about.
-     *
-     * @param  Collection<int, array{name: string, position: string}>  $directory
-     * @param  Collection<int, array<int, int>>  $assignments
-     * @return Collection<int, array<string, mixed>>
-     */
-    private function groupByTechnician(Collection $directory, Collection $assignments, callable $rowsFor): Collection
-    {
-        return $directory
-            ->map(fn (array $technician, int $id): array => $technician + [
-                'rows' => $rowsFor($assignments[$id] ?? []),
-            ])
-            ->filter(fn (array $group): bool => $group['rows']->isNotEmpty())
-            ->values();
     }
 
     /**
@@ -1544,10 +1801,20 @@ class SystemReportService
     }
 
     /**
+     * Whether a section has anything to print, in any of the three shapes one
+     * can take: flat rows, groups keyed by technician, or the Past/Future
+     * subsections the technician schedule is split into.
+     *
      * @param  array<string, mixed>  $section
      */
     private function sectionIsEmpty(array $section): bool
     {
+        if (isset($section['subsections'])) {
+            return collect($section['subsections'])->every(
+                fn (array $subsection): bool => collect($subsection['rows'] ?? [])->isEmpty()
+            );
+        }
+
         return collect($section['rows'] ?? $section['groups'] ?? [])->isEmpty();
     }
 

@@ -273,17 +273,29 @@ class ProjectTeam
      * Hand back the dates this member was holding that have not been worked,
      * and leave the ones that have.
      *
-     * Read as rows and deleted by id rather than by a join, so the decision
-     * about which ranges have ended is made by the same isLocked() the rest of
-     * this class uses - see unfinishedScheduleIds() for why that cannot become
-     * a WHERE clause.
+     * The line is drawn at whether a range has STARTED, not at whether it has
+     * ended. A range still running is half record and half promise: the days
+     * before today were worked and the link is the only thing that says by
+     * whom, so deleting it discards real history - the same history the
+     * cascade delete used to take, for a smaller window. The days from today
+     * on are the promise being withdrawn, and those are released by the
+     * membership close rather than by the link: removed_at bounds which of the
+     * range's days belong to this person, and every reader that asks about a
+     * date - Project::crewOn(), the availability walk - applies it.
+     *
+     * A range that has not started yet is a different case. Nothing on it was
+     * worked, so its link records nothing, and it is deleted outright.
+     *
+     * Read as rows and deleted by id rather than by a join, so the decision is
+     * made by the same lock state the rest of this class uses - see
+     * unfinishedScheduleIds() for why that cannot become a WHERE clause.
      */
     private function releaseUnfinishedLinks(Project $project, ProjectTechnician $assignment): void
     {
         $keep = Schedule::query()
             ->where('project_id', $project->project_id)
             ->get(['schedule_id', 'start_datetime', 'end_datetime', 'scheduling_mode'])
-            ->filter($this->hasEnded(...))
+            ->filter($this->hasStarted(...))
             ->map(fn (Schedule $schedule): int => (int) $schedule->schedule_id)
             ->values()
             ->all();
@@ -473,6 +485,16 @@ class ProjectTeam
     private function hasEnded(Schedule $schedule): bool
     {
         return $schedule->isLocked();
+    }
+
+    /**
+     * Whether any of a range's days have been reached - it has ended, or it is
+     * running. The test for "is there anything on this range worth keeping a
+     * record of?", which is a wider question than whether it has finished.
+     */
+    private function hasStarted(Schedule $schedule): bool
+    {
+        return ! $schedule->isFuture();
     }
 
     /**

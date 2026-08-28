@@ -33,6 +33,23 @@
         );
     };
 
+    /**
+     * Whether a technician is still on a project, as its own badge.
+     *
+     * Deliberately not $badge(): that one speaks the project's status
+     * vocabulary, and running an assignment through it would print a
+     * technician's standing in the colours of a project state - which is the
+     * exact confusion this column exists to end. A membership has two states
+     * and they get their own two colours.
+     */
+    $assignmentBadge = function (bool $removed): string {
+        return sprintf(
+            '<span class="badge" style="background:%s;color:#ffffff;">%s</span>',
+            $removed ? '#64748b' : '#198754',
+            $removed ? 'Removed' : 'Active'
+        );
+    };
+
     /** Several values in one cell, stacked rather than run together. */
     $stack = function (array $values, string $empty = '—'): string {
         if ($values === []) {
@@ -301,7 +318,14 @@
             @php
                 $rows = $section['rows'] ?? collect();
                 $groups = $section['groups'] ?? collect();
-                $sectionEmpty = $rows->isEmpty() && $groups->isEmpty();
+                // The technician schedule arrives split into Past and Future
+                // rather than as one list; it has something to print when
+                // either half does.
+                $subsections = $section['subsections'] ?? collect();
+                $sectionEmpty =
+                    $rows->isEmpty() &&
+                    $groups->isEmpty() &&
+                    $subsections->every(fn($subsection) => $subsection['rows']->isEmpty());
             @endphp
 
             @if ($sectionEmpty)
@@ -402,21 +426,38 @@
                 @endif
 
                 {{-- ---------------- Assigned Projects ---------------- --}}
+                {{-- One row per technician per project. Assignment Status and
+                     Removed Date come from the membership history; Schedule is
+                     the dates that technician actually held, never the
+                     project's range. The project's own status is the last
+                     column and is a different fact from the technician's -
+                     a completed project can carry an active assignment. --}}
                 @if ($section['key'] === 'assigned')
                     <table class="data">
                         <thead>
                             <tr>
-                                <th style="width:24%">Technician</th>
-                                <th style="width:18%">Position</th>
-                                <th>Assigned Projects</th>
+                                <th style="width:16%">Technician</th>
+                                <th style="width:12%">Reference No.</th>
+                                <th style="width:18%">Client</th>
+                                <th style="width:10%">Assignment Status</th>
+                                <th style="width:11%">Removed Date</th>
+                                <th style="width:20%">Schedule</th>
+                                <th>Project Status</th>
                             </tr>
                         </thead>
                         <tbody>
                             @foreach ($rows as $row)
                                 <tr>
-                                    <td>{{ $row['technician'] }}</td>
-                                    <td>{{ $row['position'] }}</td>
-                                    <td>{!! $stack($row['projects'], 'No Assigned Projects') !!}</td>
+                                    <td>
+                                        {{ $row['technician'] }}
+                                        <div class="sub">{{ $row['position'] }}</div>
+                                    </td>
+                                    <td class="nowrap">{{ $row['reference_no'] }}</td>
+                                    <td>{{ $row['client'] }}</td>
+                                    <td>{!! $assignmentBadge($row['is_removed']) !!}</td>
+                                    <td class="nowrap">{{ $row['removed_on'] }}</td>
+                                    <td>{!! $stack($row['schedules'], 'No scheduled dates') !!}</td>
+                                    <td>{!! $badge($row['status_key'], $row['status_label']) !!}</td>
                                 </tr>
                             @endforeach
                         </tbody>
@@ -424,39 +465,53 @@
                 @endif
 
                 {{-- ---------------- Technician schedules ---------------- --}}
+                {{-- Two tables: what has been worked, and what is booked. Each
+                     row is a run of consecutive dates one technician was
+                     actually assigned for, never the project's range handed
+                     out to whoever is on the team - see
+                     TechnicianAssignedDates. Both halves are printed even when
+                     empty, so a report that shows no Past Schedule is saying
+                     there was none rather than leaving the reader to wonder
+                     which half they are looking at. --}}
                 @if ($section['key'] === 'technician_schedule')
-                    @foreach ($groups as $group)
-                        <h3 class="group">
-                            {{ $group['technician'] }}
-                            <span class="position">&mdash; {{ $group['position'] }}</span>
-                        </h3>
-                        <table class="data">
-                            <thead>
-                                <tr>
-                                    <th style="width:14%">Reference No.</th>
-                                    <th style="width:26%">Client</th>
-                                    <th style="width:28%">Schedule</th>
-                                    <th style="width:14%" class="num">Duration</th>
-                                    <th>Status</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach ($group['rows'] as $row)
+                    @foreach ($subsections as $subsection)
+                        <h3 class="group">{{ strtoupper($subsection['title']) }}</h3>
+
+                        @if ($subsection['rows']->isEmpty())
+                            <p class="muted">
+                                No {{ strtolower($subsection['title']) }} for this reporting period.
+                            </p>
+                        @else
+                            <table class="data">
+                                <thead>
                                     <tr>
-                                        <td class="nowrap">{{ $row['reference_no'] }}</td>
-                                        <td>{{ $row['client'] }}</td>
-                                        <td>{!! $stack($row['schedules'], 'No Schedule') !!}</td>
-                                        <td class="num nowrap">
-                                            {{ $row['duration'] }} {{ $row['duration'] === 1 ? 'day' : 'days' }}
-                                            @if ($row['entries'] > 1)
-                                                <div class="sub">{{ $row['entries'] }} bookings</div>
-                                            @endif
-                                        </td>
-                                        <td>{!! $badge($row['status_key'], $row['status_label']) !!}</td>
+                                        <th style="width:18%">Technician</th>
+                                        <th style="width:13%">Reference No.</th>
+                                        <th style="width:22%">Client</th>
+                                        <th style="width:23%">Schedule</th>
+                                        <th style="width:11%" class="num">Scheduled Days</th>
+                                        <th>Status</th>
                                     </tr>
-                                @endforeach
-                            </tbody>
-                        </table>
+                                </thead>
+                                <tbody>
+                                    @foreach ($subsection['rows'] as $row)
+                                        <tr>
+                                            <td>
+                                                {{ $row['technician'] }}
+                                                <div class="sub">{{ $row['position'] }}</div>
+                                            </td>
+                                            <td class="nowrap">{{ $row['reference_no'] }}</td>
+                                            <td>{{ $row['client'] }}</td>
+                                            <td>{{ $row['schedule'] }}</td>
+                                            <td class="num nowrap">
+                                                {{ $row['duration'] }} {{ $row['duration'] === 1 ? 'day' : 'days' }}
+                                            </td>
+                                            <td>{!! $badge($row['status_key'], $row['status_label']) !!}</td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        @endif
                     @endforeach
                 @endif
 

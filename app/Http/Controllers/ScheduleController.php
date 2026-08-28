@@ -255,12 +255,12 @@ class ScheduleController extends Controller
             'label' => $day->format(BusinessTime::DATE),
             'projects' => $projects->map(function (Project $project) use ($dayString): array {
                 // Only the range(s) that actually cover the clicked day.
-                $covering = $project->schedules->filter(function (Schedule $schedule) use ($dayString): bool {
-                    $start = CarbonImmutable::parse($schedule->start_datetime)->toDateString();
-                    $end = CarbonImmutable::parse($schedule->end_datetime ?? $schedule->start_datetime)->toDateString();
-
-                    return $start <= $dayString && $end >= $dayString;
-                })->values();
+                // Asked of the model, which is where crewOn() asks it too - so
+                // the ranges listed here and the crew named beside them cannot
+                // disagree about which bookings hold this date.
+                $covering = $project->schedules
+                    ->filter(fn (Schedule $schedule): bool => $schedule->covers($dayString))
+                    ->values();
 
                 return [
                     'project_id' => $project->project_id,
