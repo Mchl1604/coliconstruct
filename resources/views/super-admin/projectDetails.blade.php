@@ -1296,12 +1296,7 @@
                         </h4>
 
                         <div class="d-flex align-items-center gap-2">
-                            {{-- Outside the @unless below on purpose: reading
-                                 who used to be on a project is not editing it,
-                                 so a completed, cancelled or paused project
-                                 keeps this button when it has lost the other
-                                 one. History is the thing a closed record is
-                                 most often opened for. --}}
+                           
                             <button type="button" class="btn btn-outline-secondary"
                                 data-project-history="team"
                                 title="View assigned team history"
@@ -1310,9 +1305,6 @@
                             </button>
 
                             @unless ($isReadOnly)
-                                {{-- Disabled rather than hidden while the project is
-                                     paused: the control stays where it always is, and
-                                     the reason it cannot be used is on it. --}}
                                 <button class="btn btn-outline-primary" data-bs-toggle="modal"
                                     data-bs-target="#editAssignedTeamModal" @disabled($isOnHold)
                                     title="{{ $isOnHold ? 'This project is on hold. Resume it before changing its assigned technicians.' : 'Edit assigned team' }}">
@@ -2548,13 +2540,6 @@
                                 This project's contact email changes from
                                 <strong>{{ $project->clients->first()?->email_address }}</strong>
                                 to <strong>{{ $assignedRegisteredUser->email }}</strong>.
-                            </p>
-
-                            <p class="mb-0">
-                                <strong>Only the project changes.</strong>
-                                {{ $assignedRegisteredUser->fullName() }}'s account keeps the address it
-                                signs in with - nothing here can change an account's email or its
-                                password, and the client changes their own address from their profile.
                             </p>
                         </div>
 
