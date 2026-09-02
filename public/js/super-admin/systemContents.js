@@ -46,6 +46,8 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         let currentSection = sectionNav?.querySelector('[data-content-section]')?.dataset.contentSection || '';
+        const pendingImages = new Map();
+        const imageRemovals = new Set();
 
         function showError(message) {
             if (!errorBox) {
@@ -66,6 +68,14 @@ document.addEventListener('DOMContentLoaded', function() {
             const badge = field.is_default
                 ? ' <span class="badge bg-light text-secondary fw-normal">default</span>'
                 : '';
+
+            if (field.type === 'service_list') {
+                return repeatableFieldMarkup('service', field);
+            }
+
+            if (field.type === 'owner_list') {
+                return repeatableFieldMarkup('owner', field);
+            }
 
             if (field.type === 'image') {
                 const preview = field.url
@@ -150,6 +160,117 @@ document.addEventListener('DOMContentLoaded', function() {
                 '<input type="text" class="form-control" id="' + id + '" value="' +
                 escapeHtml(field.value) + '" data-content-input="' + escapeHtml(field.key) + '">' +
                 help + '</div>';
+        }
+
+        function repeatableFieldMarkup(kind, field) {
+            const records = Array.isArray(field.value) ? field.value : [];
+            const label = escapeHtml(field.label);
+            const help = field.help
+                ? '<div class="form-text mb-3">' + escapeHtml(field.help) + '</div>'
+                : '';
+            const addLabel = kind === 'service' ? 'Add Service' : 'Add Owner';
+
+            return '<div class="col-12" data-repeatable-list="' + kind + '">' +
+                '<label class="form-label fw-semibold">' + label + '</label>' + help +
+                '<div class="d-grid gap-3" data-repeatable-entries>' +
+                records.map(function(record) { return repeatableRowMarkup(kind, record); }).join('') +
+                '</div>' +
+                '<button type="button" class="btn btn-sm btn-outline-primary mt-3" data-repeatable-add>' +
+                '<i class="bi bi-plus-lg me-1" aria-hidden="true"></i>' + addLabel + '</button>' +
+                '</div>';
+        }
+
+        function repeatableRowMarkup(kind, record) {
+            const id = record.id || newRepeatableId();
+            const imageKey = record.image_key || repeatableImageKey(kind, id);
+            const isService = kind === 'service';
+            const name = isService ? record.title : record.name;
+            const details = isService ? record.description : record.contact;
+            const nameLabel = isService ? 'Service name' : 'Owner name';
+            const detailsLabel = isService ? 'Description' : 'Contact details';
+            const detailsRows = isService ? 3 : 2;
+            const image = record.image
+                ? '<img src="' + escapeHtml(record.image) + '" alt="" class="content-image-preview">'
+                : '<div class="content-image-empty"><i class="bi bi-image" aria-hidden="true"></i>' +
+                '<span>No image</span></div>';
+
+            return '<article class="card border-0 bg-light" data-repeatable-row data-repeatable-id="' +
+                escapeHtml(id) + '" data-repeatable-image-key="' + escapeHtml(imageKey) +
+                '" data-has-image="' + (record.image ? 'true' : 'false') + '">' +
+                '<div class="card-body p-3"><div class="row g-3 align-items-start">' +
+                '<div class="col-md-4"><div class="content-image-field" data-repeatable-image-preview>' + image +
+                '<div class="d-flex flex-wrap gap-2 mt-2">' +
+                '<label class="btn btn-sm btn-outline-primary mb-0">Upload image' +
+                '<input type="file" class="d-none" accept="image/*" data-repeatable-file></label>' +
+                '<button type="button" class="btn btn-sm btn-outline-danger' + (record.image ? '' : ' d-none') +
+                '" data-repeatable-remove-image>Remove image</button></div></div></div>' +
+                '<div class="col-md-8"><div class="d-flex justify-content-between align-items-start gap-2 mb-2">' +
+                '<strong>' + (isService ? 'Service' : 'Owner') + '</strong>' +
+                '<div class="btn-group btn-group-sm" role="group" aria-label="Change display order">' +
+                '<button type="button" class="btn btn-outline-secondary" data-repeatable-move="up" aria-label="Move up">' +
+                '<i class="bi bi-chevron-up" aria-hidden="true"></i></button>' +
+                '<button type="button" class="btn btn-outline-secondary" data-repeatable-move="down" aria-label="Move down">' +
+                '<i class="bi bi-chevron-down" aria-hidden="true"></i></button>' +
+                '<button type="button" class="btn btn-outline-danger" data-repeatable-remove-row>Remove</button>' +
+                '</div></div><div class="mb-3"><label class="form-label small fw-semibold">' + nameLabel +
+                '</label><input type="text" class="form-control" value="' + escapeHtml(name) +
+                '" data-repeatable-name></div><div><label class="form-label small fw-semibold">' + detailsLabel +
+                '</label><textarea class="form-control" rows="' + detailsRows + '" data-repeatable-details>' +
+                escapeHtml(details) + '</textarea></div></div></div></div></article>';
+        }
+
+        function repeatableImageKey(kind, id) {
+            return kind === 'service' ? 'home.service_image.' + id : 'about.owner_image.' + id;
+        }
+
+        function newRepeatableId() {
+            if (window.crypto?.randomUUID) {
+                return window.crypto.randomUUID();
+            }
+
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(character) {
+                const number = Math.floor(Math.random() * 16);
+                const value = character === 'x' ? number : (number & 0x3) | 0x8;
+
+                return value.toString(16);
+            });
+        }
+
+        function renderRepeatablePreview(row, source) {
+            const preview = row.querySelector('[data-repeatable-image-preview]');
+            const removeButton = row.querySelector('[data-repeatable-remove-image]');
+
+            if (!preview) {
+                return;
+            }
+
+            preview.querySelector('.content-image-preview, .content-image-empty')?.remove();
+
+            const image = document.createElement('img');
+            image.src = source;
+            image.alt = '';
+            image.className = 'content-image-preview';
+            preview.insertBefore(image, preview.firstChild);
+            removeButton?.classList.remove('d-none');
+        }
+
+        function showRepeatableImagePlaceholder(row) {
+            const preview = row.querySelector('[data-repeatable-image-preview]');
+            const removeButton = row.querySelector('[data-repeatable-remove-image]');
+
+            if (!preview) {
+                return;
+            }
+
+            preview.querySelector('.content-image-preview, .content-image-empty')?.remove();
+            preview.insertAdjacentHTML('afterbegin', '<div class="content-image-empty">' +
+                '<i class="bi bi-image" aria-hidden="true"></i><span>No image</span></div>');
+            removeButton?.classList.add('d-none');
+        }
+
+        function clearPendingImages() {
+            pendingImages.clear();
+            imageRemovals.clear();
         }
 
         /**
@@ -263,6 +384,146 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         }
 
+        fieldsWrap.addEventListener('click', function(event) {
+            const addButton = event.target.closest('[data-repeatable-add]');
+
+            if (addButton) {
+                const list = addButton.closest('[data-repeatable-list]');
+                const entries = list?.querySelector('[data-repeatable-entries]');
+
+                if (list && entries) {
+                    entries.insertAdjacentHTML('beforeend', repeatableRowMarkup(list.dataset.repeatableList, {}));
+                }
+
+                return;
+            }
+
+            const moveButton = event.target.closest('[data-repeatable-move]');
+
+            if (moveButton) {
+                const row = moveButton.closest('[data-repeatable-row]');
+                const direction = moveButton.dataset.repeatableMove;
+
+                if (row && direction === 'up' && row.previousElementSibling) {
+                    row.parentElement.insertBefore(row, row.previousElementSibling);
+                }
+
+                if (row && direction === 'down' && row.nextElementSibling) {
+                    row.parentElement.insertBefore(row.nextElementSibling, row);
+                }
+
+                return;
+            }
+
+            const removeRowButton = event.target.closest('[data-repeatable-remove-row]');
+
+            if (removeRowButton) {
+                const row = removeRowButton.closest('[data-repeatable-row]');
+
+                if (row) {
+                    const key = row.dataset.repeatableImageKey;
+                    pendingImages.delete(key);
+                    imageRemovals.delete(key);
+                    row.remove();
+                }
+
+                return;
+            }
+
+            const removeImageButton = event.target.closest('[data-repeatable-remove-image]');
+
+            if (removeImageButton) {
+                const row = removeImageButton.closest('[data-repeatable-row]');
+
+                if (!row) {
+                    return;
+                }
+
+                const key = row.dataset.repeatableImageKey;
+                pendingImages.delete(key);
+
+                if (row.dataset.hasImage === 'true') {
+                    imageRemovals.add(key);
+                } else {
+                    imageRemovals.delete(key);
+                }
+
+                showRepeatableImagePlaceholder(row);
+            }
+        });
+
+        fieldsWrap.addEventListener('change', function(event) {
+            const input = event.target.closest('[data-repeatable-file]');
+
+            if (!input?.files?.length) {
+                return;
+            }
+
+            const row = input.closest('[data-repeatable-row]');
+
+            if (!row) {
+                return;
+            }
+
+            const key = row.dataset.repeatableImageKey;
+            const file = input.files[0];
+
+            pendingImages.set(key, file);
+            imageRemovals.delete(key);
+            renderRepeatablePreview(row, URL.createObjectURL(file));
+        });
+
+        function repeatablePayload(kind) {
+            const list = fieldsWrap.querySelector('[data-repeatable-list="' + kind + '"]');
+
+            if (!list) {
+                return null;
+            }
+
+            return Array.from(list.querySelectorAll('[data-repeatable-row]')).map(function(row) {
+                const id = row.dataset.repeatableId;
+                const key = row.dataset.repeatableImageKey;
+                const name = row.querySelector('[data-repeatable-name]')?.value || '';
+                const details = row.querySelector('[data-repeatable-details]')?.value || '';
+                const entry = {
+                    id: id,
+                    remove_image: imageRemovals.has(key),
+                };
+
+                if (kind === 'service') {
+                    entry.title = name;
+                    entry.description = details;
+                } else {
+                    entry.name = name;
+                    entry.contact = details;
+                }
+
+                return entry;
+            });
+        }
+
+        function uploadPendingImages() {
+            const uploads = Array.from(pendingImages.entries()).map(function(entry) {
+                const body = new FormData();
+                body.append('image', entry[1]);
+
+                return fetch(imageUrl(entry[0]), {
+                    method: 'POST',
+                    headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': token },
+                    credentials: 'same-origin',
+                    body: body,
+                }).then(function(response) {
+                    return response.json().then(function(payload) {
+                        if (!response.ok) {
+                            throw new Error(payload.error || payload.message || 'Unable to upload image.');
+                        }
+                    });
+                });
+            });
+
+            return Promise.all(uploads);
+        }
+
         /**
          * Panels that belong to one section but are not fields of it.
          *
@@ -334,6 +595,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     other.classList.toggle('active', other === button);
                 });
 
+                clearPendingImages();
                 load(button.dataset.contentSection);
             });
         }
@@ -343,6 +605,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // "discard my changes" means.
         if (cancelButton) {
             cancelButton.addEventListener('click', function() {
+                clearPendingImages();
                 load(currentSection);
             });
         }
@@ -355,6 +618,9 @@ document.addEventListener('DOMContentLoaded', function() {
             fieldsWrap.querySelectorAll('[data-content-input]').forEach(function(input) {
                 values[input.dataset.contentInput] = input.value;
             });
+
+            const services = repeatablePayload('service');
+            const owners = repeatablePayload('owner');
 
             // The section these fields actually belong to, rather than
             // whichever pill is highlighted: clicking a new section and saving
@@ -378,6 +644,16 @@ document.addEventListener('DOMContentLoaded', function() {
             saveButton.disabled = true;
             saveSpinner?.classList.remove('d-none');
 
+            const body = { _method: 'PUT', values: values };
+
+            if (services !== null) {
+                body.services = services;
+            }
+
+            if (owners !== null) {
+                body.owners = owners;
+            }
+
             fetch(sectionUrl(sectionForFields), {
                     method: 'POST',
                     headers: {
@@ -386,7 +662,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         'X-CSRF-TOKEN': token,
                     },
                     credentials: 'same-origin',
-                    body: JSON.stringify({ _method: 'PUT', values: values }),
+                    body: JSON.stringify(body),
                 })
                 .then(function(response) {
                     return response.json().then(function(payload) {
@@ -398,7 +674,14 @@ document.addEventListener('DOMContentLoaded', function() {
                     });
                 })
                 .then(function(payload) {
-                    render(payload);
+                    return uploadPendingImages().then(function() {
+                        clearPendingImages();
+                        load(sectionForFields);
+
+                        return payload;
+                    });
+                })
+                .then(function() {
                     savedFlag?.classList.remove('d-none');
                 })
                 .catch(function(exception) {

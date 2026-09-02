@@ -126,6 +126,20 @@ class SystemContent extends Model
     public const TYPE_HOUR = 'hour';
 
     /**
+     * Repeatable public content. These values have a richer editor than a
+     * plain text field, but still live in the same system-content table.
+     */
+    public const TYPE_SERVICE_LIST = 'service_list';
+
+    public const TYPE_OWNER_LIST = 'owner_list';
+
+    /**
+     * A supporting value used by a repeatable field. It is stored for the
+     * application, not shown as a separate input in System Settings.
+     */
+    public const TYPE_HIDDEN = 'hidden';
+
+    /**
      * The choices a field of a given type offers, when it offers a fixed list.
      *
      * Kept here rather than in the controller so the catalogue stays the one
@@ -263,10 +277,16 @@ class SystemContent extends Model
         ],
         'home.services' => [
             'label' => 'Services',
-            'type' => self::TYPE_TEXTAREA,
+            'type' => self::TYPE_SERVICE_LIST,
             'section' => self::SECTION_HOME,
-            'help' => 'One service per line, as "Title | Description". They are numbered in this order. Blank lines are ignored.',
+            'help' => 'Add, edit, remove, and order the services shown on the website. Each service can have its own image.',
             'default' => "HVAC Installation | Heating, ventilation and air-conditioning systems sized, mounted, ducted and commissioned for homes and businesses.\nHVAC Cleaning | Scheduled cleaning of units, coils and ductwork that keeps a system efficient and the air in your building clean.\nHVAC Maintenance | Planned servicing and repair that keeps heating, ventilation and cooling running through the year.",
+        ],
+        'home.service_ids' => [
+            'label' => 'Service image links',
+            'type' => self::TYPE_HIDDEN,
+            'section' => self::SECTION_HOME,
+            'hidden' => true,
         ],
         'home.promo_heading' => [
             'label' => 'Call to Action Heading',
@@ -292,7 +312,7 @@ class SystemContent extends Model
         // ----------------------------------------------------------------- About
         //
         // In page order: the grey introduction panel, the journey, the blue
-        // values band, the team, then the closing strip.
+        // values band, the owners, then the closing strip.
         'about.eyebrow' => [
             'label' => 'Introduction Eyebrow',
             'type' => self::TYPE_TEXT,
@@ -360,12 +380,14 @@ class SystemContent extends Model
             'type' => self::TYPE_TEXT,
             'section' => self::SECTION_ABOUT,
             'default' => 'Our team',
+            'hidden' => true,
         ],
         'about.team_heading' => [
             'label' => 'Team Heading',
             'type' => self::TYPE_TEXT,
             'section' => self::SECTION_ABOUT,
             'default' => 'The people behind it',
+            'hidden' => true,
         ],
         'about.team' => [
             'label' => 'Team Members',
@@ -373,11 +395,30 @@ class SystemContent extends Model
             'section' => self::SECTION_ABOUT,
             'help' => 'One person per line, as "Name | Role". Their photographs are the four fields below, in the same order. Leave empty to hide the section.',
             'default' => '',
+            'hidden' => true,
         ],
-        'about.team_photo_1' => ['label' => 'Team Photo 1', 'type' => self::TYPE_IMAGE, 'section' => self::SECTION_ABOUT],
-        'about.team_photo_2' => ['label' => 'Team Photo 2', 'type' => self::TYPE_IMAGE, 'section' => self::SECTION_ABOUT],
-        'about.team_photo_3' => ['label' => 'Team Photo 3', 'type' => self::TYPE_IMAGE, 'section' => self::SECTION_ABOUT],
-        'about.team_photo_4' => ['label' => 'Team Photo 4', 'type' => self::TYPE_IMAGE, 'section' => self::SECTION_ABOUT],
+        'about.team_photo_1' => ['label' => 'Team Photo 1', 'type' => self::TYPE_IMAGE, 'section' => self::SECTION_ABOUT, 'hidden' => true],
+        'about.team_photo_2' => ['label' => 'Team Photo 2', 'type' => self::TYPE_IMAGE, 'section' => self::SECTION_ABOUT, 'hidden' => true],
+        'about.team_photo_3' => ['label' => 'Team Photo 3', 'type' => self::TYPE_IMAGE, 'section' => self::SECTION_ABOUT, 'hidden' => true],
+        'about.team_photo_4' => ['label' => 'Team Photo 4', 'type' => self::TYPE_IMAGE, 'section' => self::SECTION_ABOUT, 'hidden' => true],
+        'about.owners_eyebrow' => [
+            'label' => 'Owners Eyebrow',
+            'type' => self::TYPE_TEXT,
+            'section' => self::SECTION_ABOUT,
+            'default' => 'Our owners',
+        ],
+        'about.owners_heading' => [
+            'label' => 'Owners Heading',
+            'type' => self::TYPE_TEXT,
+            'section' => self::SECTION_ABOUT,
+            'default' => 'The people behind Coliconstruct',
+        ],
+        'about.owners' => [
+            'label' => 'Owners',
+            'type' => self::TYPE_OWNER_LIST,
+            'section' => self::SECTION_ABOUT,
+            'help' => 'Add each owner with their name, contact details, and optional profile image. Owners appear in this order on the About page.',
+        ],
         'about.cta_heading' => [
             'label' => 'Call to Action Heading',
             'type' => self::TYPE_TEXT,
@@ -520,7 +561,7 @@ class SystemContent extends Model
             'type' => self::TYPE_TEXT,
             'section' => self::SECTION_FOOTER,
             'help' => 'Use :year for the current year.',
-            'default' => '© Coliconstruct Engineering Services. Established in 2012.',
+            'default' => 'Coliconstruct Engineering Services. Established in 2012.',
         ],
 
         // ------------------------------------------------------- Project Settings
@@ -733,6 +774,43 @@ class SystemContent extends Model
 
     public static function isImageKey(string $key): bool
     {
-        return in_array(self::DEFINITIONS[$key]['type'] ?? null, self::FILE_TYPES, true);
+        return in_array(self::definitionForKey($key)['type'] ?? null, self::FILE_TYPES, true);
+    }
+
+    /**
+     * Dynamic image keys belong to one repeatable service or owner. Keeping
+     * the id in the key means images remain paired with their row even when
+     * the editor changes the row order.
+     *
+     * @return array<string, mixed>|null
+     */
+    public static function definitionForKey(string $key): ?array
+    {
+        if (isset(self::DEFINITIONS[$key])) {
+            return self::DEFINITIONS[$key];
+        }
+
+        if (preg_match('/^home\\.service_image\\.[0-9a-f-]{36}$/i', $key) === 1) {
+            return [
+                'label' => 'Service Image',
+                'type' => self::TYPE_IMAGE,
+                'section' => self::SECTION_HOME,
+            ];
+        }
+
+        if (preg_match('/^about\\.owner_image\\.[0-9a-f-]{36}$/i', $key) === 1) {
+            return [
+                'label' => 'Owner Image',
+                'type' => self::TYPE_IMAGE,
+                'section' => self::SECTION_ABOUT,
+            ];
+        }
+
+        return null;
+    }
+
+    public static function isSpecialEditorType(string $type): bool
+    {
+        return in_array($type, [self::TYPE_SERVICE_LIST, self::TYPE_OWNER_LIST, self::TYPE_HIDDEN], true);
     }
 }

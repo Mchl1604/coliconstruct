@@ -298,6 +298,24 @@
     box-shadow: 0 16px 34px rgba(15, 42, 68, .14);
 }
 
+.home-service-image {
+    display: block;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    object-fit: cover;
+    border-radius: .75rem;
+    background: #e2e8f0;
+    margin: 0 auto 1.4rem;
+}
+
+.home-service-image-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #9aa7b4;
+    font-size: 2rem;
+}
+
 /* The number straddles the card's top edge, which is what gives the row its
    rhythm; the card's own padding leaves the room for it. */
 .home-service-number {
@@ -437,21 +455,21 @@
     margin-bottom: 0;
 }
 
-.about-team {
+.about-owners {
     background: #f4f6f9;
 }
 
-.about-team-head {
+.about-owners-head {
     margin-bottom: 3rem;
 }
 
-.about-team-heading {
+.about-owners-heading {
     font-size: clamp(1.5rem, 3vw, 2.1rem);
     font-weight: 500;
     color: #3b4551;
 }
 
-.about-team-photo {
+.about-owner-photo {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -463,19 +481,19 @@
     margin-bottom: 1.1rem;
 }
 
-.about-team-photo-empty {
+.about-owner-photo-empty {
     color: #9aa7b4;
     font-size: 3rem;
 }
 
-.about-team-name {
+.about-owner-name {
     font-size: 1.05rem;
     font-weight: 700;
     color: #3b4551;
     margin-bottom: .2rem;
 }
 
-.about-team-role {
+.about-owner-contact {
     color: #6b7683;
     font-size: .88rem;
     margin-bottom: 0;
@@ -1206,10 +1224,16 @@
     text-align: center;
 }
 
-/* The Terms and Conditions link, which sits on the copyright row rather than
-   in a section of its own. Matched to the copyright line beside it: this is
-   small print, not a call to action, and a link that shouted would pull the
-   eye to the quietest part of the page. */
+.public-footer-meta {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: .8rem;
+    text-align: center;
+}
+
+/* The Terms and Conditions link sits below the company line, so both closing
+   items stay easy to read on any screen size. */
 .public-footer-terms {
     font-size: .85rem;
     color: #a8adb4;
