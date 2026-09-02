@@ -76,6 +76,16 @@
                                     {{ str_pad((string) $loop->iteration, 2, '0', STR_PAD_LEFT) }}
                                 </span>
 
+                                @if ($service['image'])
+                                    <img class="home-service-image" src="{{ $service['image'] }}"
+                                        alt="{{ $service['title'] }}" loading="lazy">
+                                @else
+                                    {{-- Keeps an image-free legacy service card balanced and complete. --}}
+                                    <div class="home-service-image home-service-image-empty" aria-hidden="true">
+                                        <i class="bi bi-image"></i>
+                                    </div>
+                                @endif
+
                                 <h3 class="home-service-title">{{ $service['title'] }}</h3>
                                 <p class="home-service-text">{{ $service['description'] }}</p>
                             </article>

@@ -164,6 +164,135 @@ class SystemContentService
     }
 
     /**
+     * The services on the Home page, paired with the optional image stored
+     * against each stable service id. Older installations only have the
+     * pipe-separated list, which remains a valid image-free service list.
+     *
+     * @return Collection<int, array{id: string|null, title: string, description: string, image: string|null}>
+     */
+    public function services(): Collection
+    {
+        $ids = $this->serviceIds();
+
+        return $this->lines('home.services')
+            ->map(function (array $service, int $index) use ($ids): array {
+                $id = $ids[$index] ?? null;
+
+                return [
+                    'id' => $id,
+                    'title' => $service['title'],
+                    'description' => $service['description'],
+                    'image' => $id ? $this->image($this->serviceImageKey($id)) : null,
+                ];
+            });
+    }
+
+    /**
+     * The Services editor needs an id even for entries saved before image
+     * support existed. It writes those ids only when the Super Admin saves,
+     * leaving old content untouched until then.
+     *
+     * @return Collection<int, array{id: string, title: string, description: string, image: string|null, image_key: string}>
+     */
+    public function servicesForEditor(): Collection
+    {
+        return $this->services()
+            ->map(function (array $service): array {
+                $id = $service['id'] ?: (string) Str::uuid();
+
+                return [
+                    'id' => $id,
+                    'title' => $service['title'],
+                    'description' => $service['description'],
+                    'image' => $service['id'] ? $service['image'] : null,
+                    'image_key' => $this->serviceImageKey($id),
+                ];
+            });
+    }
+
+    /**
+     * The owners displayed on the public About page.
+     *
+     * @return Collection<int, array{id: string, name: string, contact: string, image: string|null, image_key: string}>
+     */
+    public function owners(): Collection
+    {
+        return collect($this->jsonList('about.owners'))
+            ->filter(fn (mixed $owner): bool => is_array($owner)
+                && $this->isRepeatableId($owner['id'] ?? null)
+                && filled($owner['name'] ?? null)
+                && filled($owner['contact'] ?? null))
+            ->map(function (array $owner): array {
+                $id = (string) $owner['id'];
+
+                return [
+                    'id' => $id,
+                    'name' => trim((string) $owner['name']),
+                    'contact' => trim((string) $owner['contact']),
+                    'image' => $this->image($this->ownerImageKey($id)),
+                    'image_key' => $this->ownerImageKey($id),
+                ];
+            })
+            ->values();
+    }
+
+    /**
+     * @param  array<int, array{id: string, title: string, description: string, remove_image?: bool}>  $services
+     */
+    public function saveServices(array $services, User $editor): int
+    {
+        $previousIds = $this->serviceIds();
+        $ids = array_map(fn (array $service): string => (string) $service['id'], $services);
+        $lines = collect($services)
+            ->map(fn (array $service): string => trim((string) $service['title']).' | '.trim((string) $service['description']))
+            ->implode("\n");
+
+        DB::transaction(function () use ($lines, $ids, $editor): void {
+            $this->put('home.services', $lines, $editor);
+            $this->put('home.service_ids', json_encode($ids, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '[]', $editor);
+        });
+
+        $this->flush();
+
+        $this->removeImagesForIds(array_diff($previousIds, $ids), fn (string $id): string => $this->serviceImageKey($id), $editor);
+        $this->removeMarkedImages($services, fn (string $id): string => $this->serviceImageKey($id), $editor);
+
+        return count($services);
+    }
+
+    /**
+     * @param  array<int, array{id: string, name: string, contact: string, remove_image?: bool}>  $owners
+     */
+    public function saveOwners(array $owners, User $editor): int
+    {
+        $previousIds = $this->owners()->pluck('id')->all();
+        $ids = array_map(fn (array $owner): string => (string) $owner['id'], $owners);
+        $stored = array_map(fn (array $owner): array => [
+            'id' => (string) $owner['id'],
+            'name' => trim((string) $owner['name']),
+            'contact' => trim((string) $owner['contact']),
+        ], $owners);
+
+        $this->put('about.owners', json_encode($stored, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '[]', $editor);
+        $this->flush();
+
+        $this->removeImagesForIds(array_diff($previousIds, $ids), fn (string $id): string => $this->ownerImageKey($id), $editor);
+        $this->removeMarkedImages($owners, fn (string $id): string => $this->ownerImageKey($id), $editor);
+
+        return count($owners);
+    }
+
+    public function serviceImageKey(string $id): string
+    {
+        return 'home.service_image.'.$id;
+    }
+
+    public function ownerImageKey(string $id): string
+    {
+        return 'about.owner_image.'.$id;
+    }
+
+    /**
      * A numeric setting, as a positive integer.
      *
      * Everything in this table is stored as text, so this is where a setting
@@ -279,6 +408,12 @@ class SystemContentService
                     continue;
                 }
 
+                $type = $definitions[$key]['type'];
+
+                if (SystemContent::isSpecialEditorType($type) && $type !== SystemContent::TYPE_SERVICE_LIST) {
+                    continue;
+                }
+
                 $this->put($key, $value === null ? null : (string) $value, $editor);
                 $saved++;
             }
@@ -368,7 +503,7 @@ class SystemContentService
 
     private function put(string $key, ?string $value, User $editor): void
     {
-        $definition = SystemContent::DEFINITIONS[$key] ?? null;
+        $definition = SystemContent::definitionForKey($key);
 
         if (! $definition) {
             return;
@@ -432,5 +567,62 @@ class SystemContentService
         }
 
         UploadStore::remove($path);
+    }
+
+    /**
+     * @return array<int, mixed>
+     */
+    private function jsonList(string $key): array
+    {
+        $value = $this->all()[$key] ?? null;
+
+        if (! is_string($value) || trim($value) === '') {
+            return [];
+        }
+
+        $decoded = json_decode($value, true);
+
+        return is_array($decoded) ? array_values($decoded) : [];
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function serviceIds(): array
+    {
+        return collect($this->jsonList('home.service_ids'))
+            ->filter(fn (mixed $id): bool => $this->isRepeatableId($id))
+            ->values()
+            ->all();
+    }
+
+    private function isRepeatableId(mixed $id): bool
+    {
+        return is_string($id)
+            && preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i', $id) === 1;
+    }
+
+    /**
+     * @param  array<int, string>  $ids
+     * @param  callable(string): string  $keyFor
+     */
+    private function removeImagesForIds(array $ids, callable $keyFor, User $editor): void
+    {
+        foreach ($ids as $id) {
+            $this->removeImage($keyFor($id), $editor);
+        }
+    }
+
+    /**
+     * @param  array<int, array{id: string, remove_image?: bool}>  $entries
+     * @param  callable(string): string  $keyFor
+     */
+    private function removeMarkedImages(array $entries, callable $keyFor, User $editor): void
+    {
+        foreach ($entries as $entry) {
+            if (($entry['remove_image'] ?? false) === true) {
+                $this->removeImage($keyFor($entry['id']), $editor);
+            }
+        }
     }
 }

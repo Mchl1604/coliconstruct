@@ -131,6 +131,18 @@ class PublicSiteTest extends TestCase
             ->assertSee('Contact Us');
     }
 
+    public function test_the_footer_stacks_the_company_line_above_the_terms_link(): void
+    {
+        $response = $this->get(route('landing.home'))->assertOk();
+
+        $response
+            ->assertSee('public-footer-meta', escape: false)
+            ->assertSeeInOrder([
+                'Coliconstruct Engineering Services. Established in 2012.',
+                'Terms and Conditions',
+            ]);
+    }
+
     /**
      * The header offers a guest one door - Get Started - which opens Login,
      * and the form behind it carries the way through to Register, so somebody
@@ -210,7 +222,7 @@ class PublicSiteTest extends TestCase
 
     /**
      * The redesigned About page: the introduction panel, the journey, the blue
-     * values band, the team and the closing strip.
+     * values band, the owners and the closing strip.
      */
     public function test_the_about_page_renders_every_editable_piece_of_itself(): void
     {
@@ -226,12 +238,16 @@ class PublicSiteTest extends TestCase
             'about.values_eyebrow' => 'Values eyebrow',
             'about.values_heading' => 'Values heading',
             'about.core_values' => "First Value | First meaning\nSecond Value | Second meaning",
-            'about.team_eyebrow' => 'Team eyebrow',
-            'about.team_heading' => 'Team heading',
-            'about.team' => "Fletcher Colico | Owner\nSecond Person | Engineer",
+            'about.owners_eyebrow' => 'Owners eyebrow',
+            'about.owners_heading' => 'Owners heading',
             'about.cta_heading' => 'About strip heading',
             'about.cta_body' => 'About strip text',
             'about.cta_button_label' => 'About strip button',
+        ], $superAdmin);
+
+        $this->content()->saveOwners([
+            ['id' => 'f9d6c225-a2c5-4f56-8b2a-e79d0b8d5671', 'name' => 'Fletcher Colico', 'contact' => 'owner@example.test'],
+            ['id' => '73c4d6ec-38a0-4a96-85a9-8fcad11bc6f4', 'name' => 'Second Person', 'contact' => '0917 000 0000'],
         ], $superAdmin);
 
         $response = $this->get(route('public.about'))->assertOk();
@@ -240,8 +256,8 @@ class PublicSiteTest extends TestCase
             'About eyebrow', 'About heading', 'About description',
             'Journey eyebrow', 'Journey heading', 'Journey text',
             'Values eyebrow', 'Values heading', 'First Value', 'First meaning',
-            'Second Value', 'Team eyebrow', 'Team heading',
-            'Fletcher Colico', 'Owner', 'Second Person', 'Engineer',
+            'Second Value', 'Owners eyebrow', 'Owners heading',
+            'Fletcher Colico', 'owner@example.test', 'Second Person', '0917 000 0000',
             'About strip heading', 'About strip text', 'About strip button',
         ] as $expected) {
             $response->assertSee($expected);
@@ -249,41 +265,40 @@ class PublicSiteTest extends TestCase
     }
 
     /**
-     * The team is a "Name | Role" list paired with four image fields by
-     * position, so nobody has to add a table to name a colleague.
+     * An owner carries their own image, so adding or moving one never changes
+     * which photograph belongs to another.
      */
-    public function test_a_team_member_is_paired_with_the_photograph_in_their_position(): void
+    public function test_an_owner_is_paired_with_their_uploaded_photo(): void
     {
         Storage::fake('uploads');
 
         $superAdmin = $this->account('super_admin', 'owner@example.test');
 
-        $this->content()->saveText('about', [
-            'about.team' => "First Person | Owner\nSecond Person | Engineer",
+        $ownerId = 'a1d49472-f5c1-487a-a2da-8d5458a207eb';
+
+        $this->content()->saveOwners([
+            ['id' => $ownerId, 'name' => 'First Owner', 'contact' => 'owner@example.test'],
         ], $superAdmin);
 
         $this->actingAs($superAdmin)->post(
-            route('super-admin.configuration.contents.images.store', 'about.team_photo_2'),
-            ['image' => UploadedFile::fake()->image('second.png')]
+            route('super-admin.configuration.contents.images.store', 'about.owner_image.'.$ownerId),
+            ['image' => UploadedFile::fake()->image('owner.png')]
         );
 
-        $team = $this->get(route('public.about'))->assertOk()->viewData('team');
+        $owners = $this->get(route('public.about'))->assertOk()->viewData('owners');
 
-        $this->assertSame('First Person', $team[0]['name']);
-        $this->assertNull($team[0]['photo']);
-        $this->assertSame('Second Person', $team[1]['name']);
-        $this->assertNotNull($team[1]['photo']);
+        $this->assertSame('First Owner', $owners[0]['name']);
+        $this->assertNotNull($owners[0]['image']);
     }
 
     /**
-     * The team section is hidden entirely until somebody is listed - a row of
-     * placeholder faces says less than no section at all.
+     * The owners section is hidden entirely until somebody is listed.
      */
-    public function test_the_team_section_is_hidden_until_somebody_is_listed(): void
+    public function test_the_owners_section_is_hidden_until_somebody_is_listed(): void
     {
         $this->get(route('public.about'))
             ->assertOk()
-            ->assertDontSee(SystemContent::DEFINITIONS['about.team_heading']['default']);
+            ->assertDontSee(SystemContent::DEFINITIONS['about.owners_heading']['default']);
     }
 
     /**
@@ -695,6 +710,147 @@ class PublicSiteTest extends TestCase
         $this->assertNull(SystemContent::where('content_key', 'home.invented_field')->first());
     }
 
+    public function test_a_super_admin_can_manage_services_and_their_images(): void
+    {
+        Storage::fake('uploads');
+
+        $superAdmin = $this->account('super_admin', 'owner@example.test');
+        $serviceId = '23c895d2-583a-46d8-b879-f2deba7c8130';
+        $imageKey = 'home.service_image.'.$serviceId;
+
+        $this->actingAs($superAdmin)
+            ->putJson(route('super-admin.configuration.contents.update', 'home'), [
+                'values' => [],
+                'services' => [[
+                    'id' => $serviceId,
+                    'title' => 'Duct Design',
+                    'description' => 'Custom ductwork designed for the building.',
+                ]],
+            ])
+            ->assertOk();
+
+        $this->actingAs($superAdmin)
+            ->post(route('super-admin.configuration.contents.images.store', $imageKey), [
+                'image' => UploadedFile::fake()->image('ducts.png'),
+            ])
+            ->assertOk();
+
+        $path = SystemContent::where('content_key', $imageKey)->value('content_value');
+
+        $this->get(route('landing.home'))
+            ->assertOk()
+            ->assertSee('Duct Design')
+            ->assertSee('Custom ductwork designed for the building.')
+            ->assertSee(route('media.system', ['key' => $imageKey]), escape: false);
+
+        $this->actingAs($superAdmin)
+            ->putJson(route('super-admin.configuration.contents.update', 'home'), [
+                'values' => [],
+                'services' => [[
+                    'id' => $serviceId,
+                    'title' => 'Duct Design',
+                    'description' => 'Updated ductwork details.',
+                    'remove_image' => true,
+                ]],
+            ])
+            ->assertOk();
+
+        Storage::disk('uploads')->assertMissing($path);
+
+        $this->get(route('landing.home'))
+            ->assertOk()
+            ->assertSee('Updated ductwork details.')
+            ->assertDontSee(route('media.system', ['key' => $imageKey]), escape: false);
+
+        $this->actingAs($superAdmin)
+            ->putJson(route('super-admin.configuration.contents.update', 'home'), [
+                'values' => [],
+                'services' => [],
+            ])
+            ->assertOk();
+
+        $this->get(route('landing.home'))->assertDontSee('Duct Design');
+    }
+
+    public function test_owner_management_replaces_the_public_team_without_deleting_legacy_content(): void
+    {
+        Storage::fake('uploads');
+
+        $superAdmin = $this->account('super_admin', 'owner@example.test');
+        $ownerId = '752d298f-f07c-4d98-9293-b7c72daf7f27';
+        $imageKey = 'about.owner_image.'.$ownerId;
+
+        $this->content()->saveText('about', [
+            'about.team' => 'Legacy Person | Legacy role',
+        ], $superAdmin);
+
+        $this->actingAs($superAdmin)
+            ->putJson(route('super-admin.configuration.contents.update', 'about'), [
+                'values' => [],
+                'owners' => [[
+                    'id' => $ownerId,
+                    'name' => 'Fletcher Colico',
+                    'contact' => '0917 123 4567',
+                ]],
+            ])
+            ->assertOk();
+
+        $this->actingAs($superAdmin)
+            ->post(route('super-admin.configuration.contents.images.store', $imageKey), [
+                'image' => UploadedFile::fake()->image('fletcher.png'),
+            ])
+            ->assertOk();
+
+        $this->get(route('public.about'))
+            ->assertOk()
+            ->assertSee('Fletcher Colico')
+            ->assertSee('0917 123 4567')
+            ->assertSee(route('media.system', ['key' => $imageKey]), escape: false)
+            ->assertDontSee('Legacy Person');
+
+        $this->assertSame(
+            'Legacy Person | Legacy role',
+            SystemContent::where('content_key', 'about.team')->value('content_value')
+        );
+
+        $fields = $this->actingAs($superAdmin)
+            ->getJson(route('super-admin.configuration.contents.show', 'about'))
+            ->assertOk()
+            ->json('fields');
+
+        $this->assertContains('about.owners', collect($fields)->pluck('key')->all());
+        $this->assertNotContains('about.team', collect($fields)->pluck('key')->all());
+    }
+
+    public function test_repeatable_service_and_owner_entries_are_validated(): void
+    {
+        $superAdmin = $this->account('super_admin', 'owner@example.test');
+
+        $this->actingAs($superAdmin)
+            ->putJson(route('super-admin.configuration.contents.update', 'home'), [
+                'values' => [],
+                'services' => [[
+                    'id' => '183293dc-f0ae-481f-897a-1cf7f7f4aec5',
+                    'title' => '',
+                    'description' => 'A valid description.',
+                ]],
+            ])
+            ->assertStatus(422)
+            ->assertJsonPath('error', 'Enter a service name.');
+
+        $this->actingAs($superAdmin)
+            ->putJson(route('super-admin.configuration.contents.update', 'about'), [
+                'values' => [],
+                'owners' => [[
+                    'id' => '47edba6d-eef8-4c9d-82fa-722d4f616b32',
+                    'name' => 'Fletcher Colico',
+                    'contact' => '',
+                ]],
+            ])
+            ->assertStatus(422)
+            ->assertJsonPath('error', 'Enter the owner contact details.');
+    }
+
     public function test_saving_records_who_changed_it(): void
     {
         $superAdmin = $this->account('super_admin', 'owner@example.test');
@@ -790,9 +946,8 @@ class PublicSiteTest extends TestCase
                 'about.eyebrow', 'about.heading', 'about.description',
                 'about.journey_eyebrow', 'about.journey_heading', 'about.history',
                 'about.team_image', 'about.values_eyebrow', 'about.values_heading',
-                'about.core_values', 'about.team_eyebrow', 'about.team_heading',
-                'about.team', 'about.team_photo_1', 'about.team_photo_2',
-                'about.team_photo_3', 'about.team_photo_4', 'about.cta_heading',
+                'about.core_values', 'about.owners_eyebrow', 'about.owners_heading',
+                'about.owners', 'about.cta_heading',
                 'about.cta_body', 'about.cta_button_label',
             ],
             'contact' => [

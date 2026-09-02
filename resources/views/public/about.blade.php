@@ -84,33 +84,32 @@
         </section>
     @endif
 
-    {{-- The people behind it. Shown only once somebody has been listed - an
-         empty row of placeholder faces says less than no section at all. --}}
-    @if ($team->isNotEmpty())
-        <section class="public-section about-team">
+    {{-- Owners only appear when they have been published in System Settings. --}}
+    @if ($owners->isNotEmpty())
+        <section class="public-section about-owners">
             <div class="container">
-                <div class="text-center about-team-head">
-                    @if ($content->has('about.team_eyebrow'))
-                        <p class="public-eyebrow mb-1">{{ $content->get('about.team_eyebrow') }}</p>
+                <div class="text-center about-owners-head">
+                    @if ($content->has('about.owners_eyebrow'))
+                        <p class="public-eyebrow mb-1">{{ $content->get('about.owners_eyebrow') }}</p>
                     @endif
 
-                    <h2 class="about-team-heading">{{ $content->get('about.team_heading') }}</h2>
+                    <h2 class="about-owners-heading">{{ $content->get('about.owners_heading') }}</h2>
                 </div>
 
                 <div class="row g-4 justify-content-center">
-                    @foreach ($team as $member)
-                        <div class="col-6 col-md-3 text-center">
-                            @if ($member['photo'])
-                                <img class="about-team-photo" src="{{ $member['photo'] }}"
-                                    alt="{{ $member['name'] }}" loading="lazy">
+                    @foreach ($owners as $owner)
+                        <div class="col-12 col-sm-6 col-lg-3 text-center">
+                            @if ($owner['image'])
+                                <img class="about-owner-photo" src="{{ $owner['image'] }}"
+                                    alt="{{ $owner['name'] }}" loading="lazy">
                             @else
-                                <span class="about-team-photo about-team-photo-empty" aria-hidden="true">
+                                <span class="about-owner-photo about-owner-photo-empty" aria-hidden="true">
                                     <i class="bi bi-person"></i>
                                 </span>
                             @endif
 
-                            <h3 class="about-team-name">{{ $member['name'] }}</h3>
-                            <p class="about-team-role">{{ $member['role'] }}</p>
+                            <h3 class="about-owner-name">{{ $owner['name'] }}</h3>
+                            <p class="about-owner-contact public-prewrap">{{ $owner['contact'] }}</p>
                         </div>
                     @endforeach
                 </div>

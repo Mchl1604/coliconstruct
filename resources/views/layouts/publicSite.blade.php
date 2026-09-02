@@ -239,15 +239,12 @@
 
             <hr class="public-footer-rule">
 
-            {{-- The copyright line and the terms sit on one row: they are the
-                 same kind of thing - the small print the page closes with -
-                 and a second rule between them would read as another section.
-
-                 A button rather than a link, and the same reading dialog the
+            {{-- The company line and terms are stacked so they close the page
+                 as one centred block. A button rather than a link, and the same reading dialog the
                  registration form opens, because there is no Terms and
                  Conditions page to send anybody to. Opening it is reading,
                  never agreeing. --}}
-            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <div class="public-footer-meta">
                 <p class="public-footer-copyright mb-0">{{ $content->copyright() }}</p>
 
                 <button type="button" class="btn btn-link p-0 public-footer-terms"

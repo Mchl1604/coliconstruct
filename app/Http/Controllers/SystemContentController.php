@@ -66,6 +66,8 @@ class SystemContentController extends Controller
 
         [$rules, $messages] = $this->validationFor($section);
 
+        $this->addRepeatableContentRules($rules, $messages, $request, $section);
+
         // Hand-rolled for the same reason as the rest of Configuration: the
         // app only renders exceptions as JSON for api/* paths, so a thrown
         // ValidationException here would answer with an HTML redirect.
@@ -82,6 +84,14 @@ class SystemContentController extends Controller
             (array) $request->input('values', []),
             $request->user()
         );
+
+        if ($section === SystemContent::SECTION_HOME && $request->has('services')) {
+            $saved += $this->content->saveServices((array) $request->input('services'), $request->user());
+        }
+
+        if ($section === SystemContent::SECTION_ABOUT && $request->has('owners')) {
+            $saved += $this->content->saveOwners((array) $request->input('owners'), $request->user());
+        }
 
         $isSettings = SystemContent::isSettingsSection($section);
 
@@ -185,7 +195,7 @@ class SystemContentController extends Controller
 
     private function labelFor(string $key): string
     {
-        return SystemContent::DEFINITIONS[$key]['label'] ?? $key;
+        return SystemContent::definitionForKey($key)['label'] ?? $key;
     }
 
     /**
@@ -278,7 +288,8 @@ class SystemContentController extends Controller
         $messages = [];
 
         foreach (SystemContent::definitionsFor($section) as $key => $definition) {
-            if (in_array($definition['type'], SystemContent::FILE_TYPES, true)) {
+            if (in_array($definition['type'], SystemContent::FILE_TYPES, true)
+                || SystemContent::isSpecialEditorType($definition['type'])) {
                 continue;
             }
 
@@ -307,6 +318,49 @@ class SystemContentController extends Controller
     }
 
     /**
+     * Repeatable records are more structured than the ordinary text fields,
+     * so their rules live beside the editor endpoint rather than asking the
+     * generic field catalogue to describe every nested input.
+     *
+     * @param  array<string, array<int, string>>  $rules
+     * @param  array<string, string>  $messages
+     */
+    private function addRepeatableContentRules(array &$rules, array &$messages, Request $request, string $section): void
+    {
+        if ($section === SystemContent::SECTION_HOME && $request->has('services')) {
+            $rules += [
+                'services' => ['array'],
+                'services.*.id' => ['required', 'uuid', 'distinct'],
+                'services.*.title' => ['required', 'string', 'max:150', 'not_regex:/[|\r\n]/'],
+                'services.*.description' => ['required', 'string', 'max:2000', 'not_regex:/[|\r\n]/'],
+                'services.*.remove_image' => ['nullable', 'boolean'],
+            ];
+
+            $messages += [
+                'services.*.title.required' => 'Enter a service name.',
+                'services.*.description.required' => 'Enter a service description.',
+                'services.*.title.not_regex' => 'A service name cannot contain a vertical bar or a new line.',
+                'services.*.description.not_regex' => 'A service description cannot contain a vertical bar or a new line.',
+            ];
+        }
+
+        if ($section === SystemContent::SECTION_ABOUT && $request->has('owners')) {
+            $rules += [
+                'owners' => ['array'],
+                'owners.*.id' => ['required', 'uuid', 'distinct'],
+                'owners.*.name' => ['required', 'string', 'max:150'],
+                'owners.*.contact' => ['required', 'string', 'max:1000'],
+                'owners.*.remove_image' => ['nullable', 'boolean'],
+            ];
+
+            $messages += [
+                'owners.*.name.required' => 'Enter the owner name.',
+                'owners.*.contact.required' => 'Enter the owner contact details.',
+            ];
+        }
+    }
+
+    /**
      * @return array<int, array<string, mixed>>
      */
     private function fieldsFor(string $section): array
@@ -314,8 +368,16 @@ class SystemContentController extends Controller
         $stored = $this->content->all();
 
         return collect(SystemContent::definitionsFor($section))
+            ->reject(fn (array $definition): bool => (bool) ($definition['hidden'] ?? false))
             ->map(function (array $definition, string $key) use ($stored): array {
                 $isImage = in_array($definition['type'], SystemContent::FILE_TYPES, true);
+                $isSpecial = SystemContent::isSpecialEditorType($definition['type']);
+
+                $value = match ($definition['type']) {
+                    SystemContent::TYPE_SERVICE_LIST => $this->content->servicesForEditor()->all(),
+                    SystemContent::TYPE_OWNER_LIST => $this->content->owners()->all(),
+                    default => $isImage ? null : ($stored[$key] ?? $definition['default'] ?? ''),
+                };
 
                 return [
                     'key' => $key,
@@ -324,9 +386,9 @@ class SystemContentController extends Controller
                     'help' => $definition['help'] ?? null,
                     // The raw stored value for text fields; images report the
                     // URL instead, since the path means nothing to the editor.
-                    'value' => $isImage ? null : ($stored[$key] ?? $definition['default'] ?? ''),
+                    'value' => $value,
                     'url' => $isImage ? $this->content->image($key) : null,
-                    'is_default' => ! $isImage && ! array_key_exists($key, $stored),
+                    'is_default' => ! $isImage && ! $isSpecial && ! array_key_exists($key, $stored),
                     // The field this one has to come before, if any, so the
                     // editor can check the pair without knowing which pair it
                     // is. Null for everything that stands on its own.
