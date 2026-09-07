@@ -79,6 +79,11 @@ class HighSeverityAuditFixesTest extends TestCase
             'quotation' => 1000,
         ]);
 
+        // A live project has been through phase setup - see
+        // TestCase::finalizePhases(). Without it this fixture would be refused
+        // at a gate these tests are not asking about.
+        $this->finalizePhases($project);
+
         Client::create([
             'project_id' => $project->project_id,
             'client_type' => 'Commercial',
@@ -751,6 +756,8 @@ class HighSeverityAuditFixesTest extends TestCase
         $this->post(route('super-admin.task.store', $project->project_id), [
             'task_title' => 'Wire the panel',
             'task_description' => 'Description',
+            // Every task belongs to a phase of its project - see TaskPhaseRules.
+            'phase_id' => $this->defaultPhaseId($project),
             'technician_id' => $outsider->technician_id,
             'start_date' => CarbonImmutable::today()->toDateString(),
             'due_date' => CarbonImmutable::today()->addDay()->toDateString(),
@@ -780,6 +787,7 @@ class HighSeverityAuditFixesTest extends TestCase
         $this->put(route('super-admin.tasks.update', $task->task_id), [
             'task_title' => 'Wire the panel',
             'task_description' => 'Description',
+            'phase_id' => $this->defaultPhaseId($project),
             'technician_id' => $outsider->technician_id,
             'start_date' => CarbonImmutable::today()->toDateString(),
             'due_date' => CarbonImmutable::today()->addDay()->toDateString(),
@@ -799,6 +807,7 @@ class HighSeverityAuditFixesTest extends TestCase
         $this->post(route('super-admin.task.store', $project->project_id), [
             'task_title' => 'Wire the panel',
             'task_description' => 'Description',
+            'phase_id' => $this->defaultPhaseId($project),
             'technician_id' => $member->technician_id,
             'start_date' => CarbonImmutable::today()->toDateString(),
             'due_date' => CarbonImmutable::today()->addDay()->toDateString(),

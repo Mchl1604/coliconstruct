@@ -23,6 +23,8 @@ use App\Services\ImportableTeamSources;
 use App\Services\NotificationService;
 use App\Services\ProjectCompletion;
 use App\Services\ProjectEmails;
+use App\Services\ProjectPhaseProgress;
+use App\Services\ProjectPhaseRules;
 use App\Services\ProjectRegisteredUser;
 use App\Services\ProjectReopen;
 use App\Services\ProjectScheduleRecovery;
@@ -95,6 +97,11 @@ class ProjectController extends Controller
             ->withCount([
                 'tasks',
                 'tasks as open_tasks_count' => fn ($query) => $query->whereIn('status', Task::OPEN_STATUSES),
+                // How far through its phases each project is, for the row's
+                // own "3/4" chip - see Project::phaseProgress(), which reads
+                // these rather than asking per row.
+                'phases',
+                'phases as completed_phases_count' => fn ($query) => $query->whereNotNull('completed_at'),
             ])
             ->where('is_archived', false)
             ->where('status', '!=', 'archived')
@@ -1308,6 +1315,25 @@ class ProjectController extends Controller
         $technicianActiveTaskCounts = app(TechnicianTaskLoad::class)
             ->forProject($project->project_id);
 
+        // Project Phases. One of two states, decided by the stored setup
+        // flag: the setup-required notice with its one action, or the
+        // monitoring panel. Every figure the panel prints comes from
+        // ProjectPhaseProgress, and every control it draws is asked of
+        // ProjectPhaseRules - which the endpoints ask again, so a button that
+        // is drawn always works and one that is not could not have.
+        $phaseRules = app(ProjectPhaseRules::class);
+        $phaseSummary = $project->needsPhaseSetup()
+            ? null
+            : app(ProjectPhaseProgress::class)->summary($project);
+        $canSetUpPhases = $phaseRules->canSetUp($request->user(), $project);
+        $canCompletePhase = $phaseRules->canCompletePhase($request->user(), $project);
+        $canOverridePhaseStructure = $phaseRules->canOverrideStructure($request->user(), $project);
+        $canOverridePhaseCompletion = $phaseRules->canOverridePhaseCompletion($request->user(), $project);
+
+        // The phases a new task may be filed under. Empty while setup is
+        // pending, which is also when the Add Task button is not drawn.
+        $selectablePhases = app(ProjectPhaseProgress::class)->selectablePhases($project);
+
         // Reopening is an administrator's move, and only on a project still
         // waiting for its client - the model settles which, so the button and
         // the endpoint cannot disagree about it.
@@ -1397,7 +1423,13 @@ class ProjectController extends Controller
             'confirmabilityState',
             'confirmabilityHint',
             'canRecordClientConfirmation',
-            'accountEmailDiffers'
+            'accountEmailDiffers',
+            'phaseSummary',
+            'canSetUpPhases',
+            'canCompletePhase',
+            'canOverridePhaseStructure',
+            'canOverridePhaseCompletion',
+            'selectablePhases'
         ));
 
     }

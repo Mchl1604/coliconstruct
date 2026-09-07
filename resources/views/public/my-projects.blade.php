@@ -133,7 +133,7 @@
                             data-search="{{ $card['search_text'] }}">
                             <article class="project-card">
 
-                                <header class="project-card-header {{ $card['header_class'] }}">
+                                <header class="project-card-header" data-status="{{ $card['status_key'] }}">
                                     <span class="project-card-reference">
                                         Reference: {{ $card['reference_no'] ?? 'Not assigned' }}
                                     </span>
@@ -161,22 +161,24 @@
 
                                     <h2 class="project-card-title">{{ $card['name'] }}</h2>
 
+                                    {{-- Which stage the work has reached, named
+                                         and drawn as a bar. The same component
+                                         the project's own page opens with, in
+                                         its compact form - a card in a grid has
+                                         no room for the phase's description.
+
+                                         This is where the booked dates used to
+                                         be printed. They said when somebody was
+                                         coming, which the project's own page
+                                         still gives in full; what a client
+                                         actually asks between visits is how far
+                                         along the job is, and now the card
+                                         answers that instead. --}}
+                                    <x-project-phase-line :project="$card['project']" compact class="mb-3" />
+
                                     @if ($card['service'])
                                         <p class="project-card-meta">
                                             <strong>Service:</strong> {{ $card['service'] }}
-                                        </p>
-                                    @endif
-
-                                    @if ($card['start_date'])
-                                        <p class="project-card-meta">
-                                            <strong>Timeline:</strong>
-                                            {{ \Carbon\CarbonImmutable::parse($card['start_date'])->format(\App\Support\BusinessTime::DATE) }}
-                                            &ndash;
-                                            {{ \Carbon\CarbonImmutable::parse($card['end_date'] ?? $card['start_date'])->format(\App\Support\BusinessTime::DATE) }}
-                                        </p>
-                                    @else
-                                        <p class="project-card-meta text-secondary">
-                                            <strong>Timeline:</strong> Not yet scheduled
                                         </p>
                                     @endif
 

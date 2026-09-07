@@ -144,6 +144,11 @@ class ProjectCompletion
 
         $this->storePhotos($project, $photos);
 
+        // The phases nobody got to tick off. Done here rather than left to the
+        // lead because the project has just gone read-only, which is what made
+        // the last phase impossible to close - see closeOutstandingPhases().
+        $this->closeOutstandingPhases($project);
+
         // Dates booked past the completion date are released: the work is
         // done, so the project must stop reading as booked and its technicians
         // must stop reading as busy.
@@ -151,6 +156,43 @@ class ProjectCompletion
 
         // Everything else (technicians, task history, and the days already
         // worked) is intentionally left untouched for auditing and reporting.
+    }
+
+    /**
+     * Close the phases the project finished without anybody ticking off.
+     *
+     * Completion already demands that every task on the project is closed, so
+     * there is no outstanding work in any of these - what is outstanding is
+     * the click. And the click had become impossible: requesting completion
+     * moves the project to Awaiting Client Confirmation, which is a read-only
+     * status, and ProjectPhaseRules refuses phase actions on a read-only
+     * project. The last phase therefore froze open at the exact moment the
+     * lead finished the job, and every completed project read N-1/N with its
+     * final phase badged "Current Phase" on work that was done.
+     *
+     * Marked rather than merely closed, so the panel can say which of the two
+     * happened. A phase closed this way names nobody as its completer, and
+     * would otherwise read exactly like one the backfill closed.
+     *
+     * A Super Admin completing a project over open tasks closes phases that
+     * still hold them. That is the same judgement they already make with the
+     * phase-level override, and it is recorded the same way: the phase says it
+     * was closed with the project, and the project says what was overridden.
+     */
+    private function closeOutstandingPhases(Project $project): void
+    {
+        $project->phases()
+            ->whereNull('completed_at')
+            ->update([
+                'completed_at' => CarbonImmutable::now(),
+                // Deliberately not $actor: nobody decided this phase was
+                // finished, they decided the project was. The panel says
+                // "Closed when the project was completed" instead of crediting
+                // somebody with a call they did not make.
+                'completed_by' => null,
+                'closed_with_project' => true,
+                'updated_at' => CarbonImmutable::now(),
+            ]);
     }
 
     /**

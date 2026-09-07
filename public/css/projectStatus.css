@@ -1,0 +1,338 @@
+/**
+ * What colour a project's status is, everywhere on this website.
+ *
+ * The values below are Project::STATUS_INK, and they are the schedule
+ * calendar's palette - the one place in this application that had already
+ * thought about it, and the reason Overdue is a deep orange a long way round
+ * the wheel from Cancelled's red. Late work and called-off work are the two
+ * states most costly to confuse.
+ *
+ * Everything that names a project's state now reads from here: the badges in
+ * the Super Admin and Admin portal, the badges in both technician portals, the
+ * client's own project cards on the public website, the filter tabs above each
+ * table, and the calendar events themselves. Before this there were four
+ * palettes and they disagreed - most visibly about Overdue, which the badges
+ * drew in the very red the calendar avoids.
+ *
+ * The status is carried on the element as `data-status`, whose value is
+ * Project::statusKey(). That is what settles precedence - archived beats
+ * paused, paused beats late, late beats the stored status - so no stylesheet
+ * or script has to work it out again.
+ */
+
+:root {
+    --status-unscheduled: #0e7490;
+    --status-pending: #f2c94c;
+    --status-ongoing: #0a58ca;
+    --status-overdue: #e65100;
+    --status-on-hold: #5a6570;
+    --status-awaiting: #3f7d53;
+    --status-completed: #146c43;
+    --status-cancelled: #dc3545;
+    --status-archived: #212529;
+
+    /* Near-black rather than black: it matches the page's own body colour, so
+       a pale badge reads as part of the page rather than as a hole in it. The
+       same value Project::CALENDAR_DARK_INK uses on the calendar. */
+    --status-ink-dark: #1f2937;
+}
+
+/* ------------------------------------------------------------------
+   The badge
+   ------------------------------------------------------------------ */
+
+/* Sits on top of Bootstrap's .badge, which supplies the shape and the type
+   scale. Only the colour is ours. */
+.project-status-badge {
+    background-color: var(--status-fill, var(--status-ongoing));
+    color: var(--status-text, #fff);
+}
+
+.project-status-badge[data-status="unscheduled"] {
+    --status-fill: var(--status-unscheduled);
+}
+
+/* The one colour in the palette white lettering cannot sit on. */
+.project-status-badge[data-status="pending"] {
+    --status-fill: var(--status-pending);
+    --status-text: var(--status-ink-dark);
+}
+
+.project-status-badge[data-status="ongoing"] {
+    --status-fill: var(--status-ongoing);
+}
+
+.project-status-badge[data-status="overdue"] {
+    --status-fill: var(--status-overdue);
+}
+
+.project-status-badge[data-status="on_hold"] {
+    --status-fill: var(--status-on-hold);
+}
+
+/* A lighter green than Completed, and deliberately so: the work is finished,
+   but the project is not closed until the client says so, and the two must not
+   read as the same thing at a glance. */
+.project-status-badge[data-status="awaiting_client_confirmation"] {
+    --status-fill: var(--status-awaiting);
+}
+
+.project-status-badge[data-status="completed"] {
+    --status-fill: var(--status-completed);
+}
+
+.project-status-badge[data-status="cancelled"] {
+    --status-fill: var(--status-cancelled);
+}
+
+.project-status-badge[data-status="archived"] {
+    --status-fill: var(--status-archived);
+}
+
+/* ------------------------------------------------------------------
+   The filter tabs above a projects table
+   ------------------------------------------------------------------ */
+
+/* Each tab's count takes the colour of the status it filters to, so the strip
+   above a table and the rows under it are saying the same thing. Matched on
+   the button's own filter key rather than on a class per tab, because that key
+   is already there and is the same string statusKey() produces.
+
+   `all` is left alone: it is not a status, and colouring it would invent one. */
+/* Unscheduled is an attention tab rather than a status tab - "live work with
+   no dates on it" - but it names a status and sits in the same strip, so it
+   takes the same colour. The other two attention tabs, No Technicians and
+   Inactive Crew, keep their red: they name a problem rather than a state the
+   work is in. */
+.projects-status-tabs [data-status-filter="unscheduled"] .badge {
+    background-color: var(--status-unscheduled) !important;
+    color: #fff !important;
+}
+
+.projects-status-tabs [data-status-filter="pending"] .badge {
+    background-color: var(--status-pending) !important;
+    color: var(--status-ink-dark) !important;
+}
+
+.projects-status-tabs [data-status-filter="ongoing"] .badge {
+    background-color: var(--status-ongoing) !important;
+    color: #fff !important;
+}
+
+.projects-status-tabs [data-status-filter="overdue"] .badge {
+    background-color: var(--status-overdue) !important;
+    color: #fff !important;
+}
+
+.projects-status-tabs [data-status-filter="on_hold"] .badge {
+    background-color: var(--status-on-hold) !important;
+    color: #fff !important;
+}
+
+.projects-status-tabs [data-status-filter="completed"] .badge {
+    background-color: var(--status-completed) !important;
+    color: #fff !important;
+}
+
+.projects-status-tabs [data-status-filter="cancelled"] .badge {
+    background-color: var(--status-cancelled) !important;
+    color: #fff !important;
+}
+
+/* ------------------------------------------------------------------
+   The client's own project cards
+   ------------------------------------------------------------------ */
+
+/* The public website draws a project as a card with a coloured header rather
+   than as a row with a badge, so the palette arrives as a gradient instead of
+   a flat fill. Same hues, same keys: a project the office sees as Overdue is
+   the same orange on the client's card, which it was not before - the client's
+   cards had no Overdue at all and drew late work as ordinary Ongoing blue.
+
+   The second stop of each gradient is the same hue lightened, so the header
+   keeps the depth the original design had. */
+.project-card-header[data-status="unscheduled"] {
+    background: linear-gradient(100deg, var(--status-unscheduled) 0%, #22a2bd 100%);
+}
+
+.project-card-header[data-status="pending"] {
+    background: linear-gradient(100deg, #d9a921 0%, var(--status-pending) 100%);
+    color: var(--status-ink-dark);
+}
+
+.project-card-header[data-status="ongoing"] {
+    background: linear-gradient(100deg, var(--status-ongoing) 0%, #3d84f0 100%);
+}
+
+.project-card-header[data-status="overdue"] {
+    background: linear-gradient(100deg, var(--status-overdue) 0%, #f57c25 100%);
+}
+
+.project-card-header[data-status="on_hold"] {
+    background: linear-gradient(100deg, var(--status-on-hold) 0%, #808b96 100%);
+}
+
+.project-card-header[data-status="awaiting_client_confirmation"] {
+    background: linear-gradient(100deg, var(--status-awaiting) 0%, #6ea67f 100%);
+}
+
+.project-card-header[data-status="completed"] {
+    background: linear-gradient(100deg, var(--status-completed) 0%, #26a465 100%);
+}
+
+.project-card-header[data-status="cancelled"] {
+    background: linear-gradient(100deg, #b91c1c 0%, var(--status-cancelled) 100%);
+}
+
+.project-card-header[data-status="archived"] {
+    background: linear-gradient(100deg, var(--status-archived) 0%, #4b5560 100%);
+}
+
+/* Pending's header is the light yellow, so the pill and the lettering on it
+   have to come down with it. */
+.project-card-header[data-status="pending"] .project-card-status {
+    background: rgba(255, 255, 255, .85);
+    color: var(--status-ink-dark);
+}
+
+/* ------------------------------------------------------------------
+   Phase progress
+   ------------------------------------------------------------------ */
+
+/* "3/4 Phases" beside a project wherever it is listed, in the same green the
+   completed half of the phase bar uses - this is a measure of work finished,
+   and it is the one figure on a projects table that is never a problem.
+
+   Shown to everybody: the office, both technician roles and the client. How
+   far through a job is has never been a fact any of them had to be kept from,
+   and it was previously readable only by opening the project. */
+.project-phase-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #0f6b39;
+    background: #d3f2df;
+    border-radius: 999px;
+    padding: 0.15rem 0.55rem;
+    white-space: nowrap;
+}
+
+/* Nothing finished yet. Still green - it is the same measure - but held back
+   so a table of untouched projects is not a wall of colour. */
+.project-phase-chip.is-empty {
+    color: #4b6b58;
+    background: #eef4f0;
+}
+
+/* Every phase closed. The strongest cut of the same green: this is the row a
+   person scanning for finished work is looking for. */
+.project-phase-chip.is-complete {
+    color: #fff;
+    background: var(--status-completed);
+}
+
+/* The project has no agreed structure yet, so there is no denominator to
+   count against - see the phase setup notice. Amber rather than green,
+   matching the row it sits on. */
+.project-phase-chip.is-unset {
+    color: #8a5a00;
+    background: #fdf1e0;
+}
+
+/* "Phase 3/4: Site Preparation", with a bar underneath - the one-line form,
+   for a reader who is following a project rather than running it. The client's
+   project page and their project cards both draw this instead of the phase
+   panel; see x-project-phase-line.
+
+   The bar carries the figure the words already give, and it is the half a
+   person reads first: how far along is this? The same green the phase chip and
+   the completed half of the panel's bar use, because it is the same fact. */
+.project-phase-line {
+    padding: .85rem 1rem;
+    border: 1px solid #d9ece1;
+    border-left: 4px solid #0f6b39;
+    border-radius: .6rem;
+    background: #f4fbf7;
+}
+
+/* On a card in a grid, where the description is dropped and the space is
+   somebody else's. */
+.project-phase-line.is-compact {
+    padding: .6rem .75rem;
+}
+
+.project-phase-line-title {
+    margin: 0 0 .4rem;
+    font-weight: 700;
+    color: #0f6b39;
+}
+
+.project-phase-line.is-compact .project-phase-line-title {
+    font-size: .92rem;
+    margin-bottom: .35rem;
+}
+
+.project-phase-line-bar {
+    height: .45rem;
+    border-radius: .25rem;
+    background: #d3f2df;
+    overflow: hidden;
+}
+
+.project-phase-line-bar > span {
+    display: block;
+    height: 100%;
+    border-radius: .25rem;
+    background: #0f6b39;
+}
+
+.project-phase-line-detail {
+    margin: .45rem 0 0;
+    font-size: .87rem;
+    color: #4b6b58;
+}
+
+/* ------------------------------------------------------------------
+   A project whose phases have not been set up
+   ------------------------------------------------------------------ */
+
+/* Drawn exactly like the ACTIVE TODAY highlight, and for the same reason: a
+   person scanning a full table should be able to pick these out without a tab
+   to click. It used to be an attention tab of its own, which meant the
+   projects needing it were only visible to somebody who thought to look.
+
+   Amber rather than green, because unlike ACTIVE TODAY this one IS a problem:
+   the project takes no tasks until it is dealt with.
+
+   `!important` because table-striped paints its own background on alternate
+   rows, and a striped row would otherwise show the flag only half the time.
+
+   Declared before the needs-recrew rules in projects.css cannot reach it, so
+   the two are ordered by stylesheet: projects.css loads after this one, and a
+   row that is both takes the recrew tint. That is the right way round - a crew
+   that cannot sign in is the more urgent of the two. */
+.project-row-needs-phase-setup > * {
+    background-color: #fffaf0 !important;
+}
+
+.project-row-needs-phase-setup > *:first-child {
+    box-shadow: inset 4px 0 0 0 #e0a02a;
+}
+
+.project-phase-setup-flag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    margin-top: 0.2rem;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    color: #8a5a00;
+    background: #fdf1e0;
+    border-radius: 999px;
+    padding: 0.1rem 0.5rem;
+    white-space: nowrap;
+    cursor: help;
+}

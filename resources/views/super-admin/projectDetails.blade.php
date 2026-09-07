@@ -18,6 +18,10 @@
              attaches the calendar to <body>, so a rule scoped to a modal would
              never reach it. --}}
         <link rel="stylesheet" href="/css/super-admin/restoreConflicts.css">
+        {{-- The phase panel and, on a project still being set up, the notice
+             that replaces it. Shared with the technician portal's copy of this
+             page and with the setup screen itself. --}}
+        <link rel="stylesheet" href="/css/projectPhases.css">
     @endpush
     @php
         // What the Edit Registered User picker searches. Built here rather
@@ -79,7 +83,19 @@
 
         <!-- Header -->
         <div class="d-flex justify-content-between align-items-center mb-3">
-            <h2 class="fw-bold text-brand-blue">Project Details</h2>
+            {{-- Back is an arrow rather than a labelled button, and it sits on
+                 the left where a person looks for it - beside the heading it
+                 goes back from, not at the end of a row of actions it has
+                 nothing to do with. The label is still there for anybody
+                 reading the page rather than looking at it. --}}
+            <div class="d-flex align-items-center gap-2">
+                <a href="{{ route('super-admin.projects') }}" class="btn btn-outline-secondary project-back"
+                    aria-label="Back to Projects" title="Back to Projects">
+                    <i class="bi bi-arrow-left" aria-hidden="true"></i>
+                </a>
+
+                <h2 class="fw-bold text-brand-blue mb-0">Project Details</h2>
+            </div>
 
             <div class="d-flex flex-wrap gap-2">
                 {{-- Archiving is the Super Admin's, and only where the archive
@@ -110,9 +126,6 @@
                     </button>
                 @endif
 
-                <a href="{{ route('super-admin.projects') }}" class="btn btn-outline-secondary">
-                    Back to Projects
-                </a>
             </div>
         </div>
 
@@ -794,6 +807,43 @@
             </div>
         @endif
 
+        {{-- The page in two halves.
+
+             Project Information is the record: who the work is for, who is on
+             it, which account follows it, and when. Project Progress is how far
+             it has got - the phases,
+             the reports filed against them and the task board. They are read
+             at different times by different people, and stacked in one column
+             the second half was a long scroll past the first.
+
+             The banners above sit outside the tabs on purpose. A hold, an
+             overdue warning or a completion summary is about the whole
+             project, and one hidden behind a tab is one nobody sees. --}}
+        <ul class="nav nav-tabs project-section-tabs mb-4" id="projectSectionTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" type="button" role="tab" data-bs-toggle="tab"
+                    data-bs-target="#project-information" aria-controls="project-information"
+                    aria-selected="true">
+                    <i class="bi bi-info-circle me-1" aria-hidden="true"></i>
+                    Project Information
+                </button>
+            </li>
+
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" type="button" role="tab" data-bs-toggle="tab"
+                    data-bs-target="#project-progress" aria-controls="project-progress"
+                    aria-selected="false">
+                    <i class="bi bi-graph-up-arrow me-1" aria-hidden="true"></i>
+                    Project Progress
+                </button>
+            </li>
+        </ul>
+
+        <div class="tab-content" id="projectSectionPanes">
+
+        <div class="tab-pane fade show active" id="project-information" role="tabpanel"
+            aria-labelledby="projectSectionTabs">
+
         <!-- Project Information -->
         <div class="card shadow-sm mb-4">
             <div class="card-body">
@@ -1460,6 +1510,32 @@
 
         </div>
 
+        </div>{{-- /#project-information --}}
+
+        <div class="tab-pane fade" id="project-progress" role="tabpanel"
+            aria-labelledby="projectSectionTabs">
+
+        {{-- Project Phases. Exactly one of the two states is drawn: the
+             setup-required notice, or the monitoring panel. Which one is
+             decided by the stored phase_setup_status and never by whether the
+             project happens to have phase rows - see Project::needsPhaseSetup().
+
+             Placed above Project Activity deliberately: the phases are the
+             frame the tasks below sit in, and on a project that has not been
+             set up yet this notice is the reason the Add Task button is
+             missing. --}}
+        @if ($project->needsPhaseSetup())
+            <x-phase-setup-required :project="$project" :can-set-up="$canSetUpPhases"
+                setup-route="super-admin.projects.phases.setup" />
+        @else
+            <x-project-phases :project="$project" :summary="$phaseSummary"
+                :can-complete="$canCompletePhase"
+                :can-override-structure="$canOverridePhaseStructure"
+                :can-override-completion="$canOverridePhaseCompletion"
+                complete-route="super-admin.projects.phases.complete"
+                override-route="super-admin.projects.phases.override" />
+        @endif
+
         <!-- Project Activity -->
         <div class="card shadow-sm">
 
@@ -1713,7 +1789,26 @@
                                 Task List
                             </h5>
 
-                            @if ($isOnHold)
+                            @if ($project->needsPhaseSetup())
+                                {{-- A task has to belong to a phase, and this
+                                     project has none agreed yet. The reader is
+                                     sent to the thing that has to happen first
+                                     rather than being offered a dialog that can
+                                     only refuse. --}}
+                                @if ($canSetUpPhases)
+                                    <a href="{{ route('super-admin.projects.phases.setup', $project->project_id) }}"
+                                        class="btn btn-warning">
+                                        <i class="bi bi-sliders me-1"></i>
+                                        Set Up Project Phases
+                                    </a>
+                                @else
+                                    <button class="btn btn-primary" disabled
+                                        title="This project's phases have not been set up yet.">
+                                        <i class="bi bi-plus-lg me-1"></i>
+                                        Add Task
+                                    </button>
+                                @endif
+                            @elseif ($isOnHold)
                                 <button class="btn btn-primary" disabled
                                     title="This project is on hold. Resume it before editing tasks.">
                                     <i class="bi bi-plus-lg me-1"></i>
@@ -1855,6 +1950,10 @@
             </div>
 
         </div>
+
+        </div>{{-- /#project-progress --}}
+
+        </div>{{-- /.tab-content --}}
     </div>
 
     @unless ($isReadOnly)
@@ -2777,6 +2876,10 @@
     <!-- End of Add Technician Report Modal -->
 
     <!-- Add Task Modal -->
+    {{-- Not rendered on a project whose phases are not settled: the Phase
+         select would have nothing to offer, and the button that opens it is a
+         link to the setup screen there instead. --}}
+    @if ($selectablePhases->isNotEmpty())
     <div class="modal fade" id="addTaskModal" tabindex="-1" aria-labelledby="addTaskModalLabel" aria-hidden="true">
 
         <div class="modal-dialog modal-xl">
@@ -2798,6 +2901,25 @@
                     </div>
 
                     <div class="modal-body">
+
+                        {{-- Which stage of the project this work belongs to.
+                             Required since project phases arrived; the options
+                             are this project's own finalized structure and
+                             nothing else. --}}
+                        <div class="mb-3">
+
+                            <label class="form-label fw-semibold" for="newTaskPhase">
+                                Phase
+                            </label>
+
+                            <select class="form-select" id="newTaskPhase" name="phase_id" required>
+                                <option value="" selected disabled>Select a phase&hellip;</option>
+                                @foreach ($selectablePhases as $phase)
+                                    <option value="{{ $phase->phase_id }}">{{ $phase->label() }}</option>
+                                @endforeach
+                            </select>
+
+                        </div>
 
                         <!-- Task Title -->
                         <div class="mb-3">
@@ -2932,6 +3054,7 @@
         </div>
 
     </div>
+    @endif
 
     @php
         $projectTechnicianModels = $project->projectTechnicians->pluck('technician')->filter()->values();
@@ -2941,6 +3064,7 @@
         {{-- Shared with the Tasks page and the technician portal. --}}
         <x-task-details-modal :task="$task" :technicians="$projectTechnicianModels"
             :active-task-counts="$technicianActiveTaskCounts" :schedule-ranges="$scheduleRanges"
+            :phases="$selectablePhases"
             :update-action="$canTakeWork ? route('super-admin.tasks.update', $task->task_id) : null" />
 
         @if ($canTakeWork)
@@ -3038,6 +3162,11 @@
         <script src="/js/accountPicker.js"></script>
         <script src="/js/super-admin/projectDetails.js"></script>
         <script src="/js/super-admin/projectHistory.js"></script>
+        {{-- Lets a #fragment open the tab holding it - the page is two tabs
+             now, and the phases panel, the registered user card and the task
+             board are all inside one of them. Completing a phase redirects
+             back to #project-progress, and this is what opens it. --}}
+        <script src="/js/tabFromHash.js"></script>
         <script>
             window.projectHistoryUrl = @json(route('super-admin.projects.history', ['id' => $project->project_id, 'section' => '__SECTION__']));
             window.assignedTeamData = @json($assignedTeamLookup);

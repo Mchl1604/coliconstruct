@@ -41,6 +41,11 @@ class TaskAssignPickerTest extends TestCase
             'description' => 'Description',
         ]);
 
+        // A live project has been through phase setup - see
+        // TestCase::finalizePhases(). Without it this fixture would be refused
+        // at a gate these tests are not asking about.
+        $this->finalizePhases($this->project);
+
         $schedule = Schedule::create([
             'project_id' => $this->project->project_id,
             'start_datetime' => CarbonImmutable::today()->addDays(1)->toDateString().' 00:00:00',

@@ -49,6 +49,19 @@
                 <div class="d-none" data-task-create-fields>
                     <hr>
 
+                    {{-- Required, and populated from the chosen project's own
+                         finalized phases - a project whose phases are not
+                         settled is refused by the form-data endpoint before
+                         these fields are ever revealed. --}}
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold" for="createTaskPhase">Phase</label>
+                        <select class="form-select" id="createTaskPhase" name="phase_id"
+                            data-task-create-phase required></select>
+                        <div class="form-text">
+                            Which stage of the project this work belongs to.
+                        </div>
+                    </div>
+
                     <div class="mb-3">
                         <label class="form-label fw-semibold" for="createTaskTitle">Task Name</label>
                         <input type="text" class="form-control" id="createTaskTitle" name="task_title"

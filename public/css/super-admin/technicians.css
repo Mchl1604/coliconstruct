@@ -94,9 +94,9 @@
     justify-content: center;
     width: 1.25rem;
     height: 1.25rem;
-    border: 0;
+    border: 1px solid #b91c1c;
     border-radius: 50%;
-    background: #fee2e2;
+    background: transparent;
     color: #b91c1c;
     font-size: 0.7rem;
     line-height: 1;
@@ -104,8 +104,8 @@
 }
 
 .technician-specialty-remove:hover {
-    background: #fecaca;
-    color: #7f1d1d;
+    background: rgba(185, 28, 28, .12);
+    color: #b91c1c;
 }
 
 .technician-specialty-remove:disabled {

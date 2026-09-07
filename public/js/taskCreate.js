@@ -17,6 +17,7 @@ document.addEventListener("DOMContentLoaded", function () {
     const fields = modal.querySelector("[data-task-create-fields]");
     const technicians = modal.querySelector("[data-task-create-technicians]");
     const rangesHint = modal.querySelector("[data-task-create-ranges]");
+    const phaseSelect = modal.querySelector("[data-task-create-phase]");
     const errorEl = modal.querySelector("[data-task-create-error]");
     const submit = modal.querySelector("[data-task-create-submit]");
     const startInput = form.querySelector("[data-task-start]");
@@ -49,6 +50,7 @@ document.addEventListener("DOMContentLoaded", function () {
         form.reset();
         fields.classList.add("d-none");
         technicians.innerHTML = "";
+        phaseSelect.innerHTML = "";
         rangesHint.textContent = "";
         submit.disabled = true;
         form.action = "";
@@ -87,6 +89,30 @@ document.addEventListener("DOMContentLoaded", function () {
             })
             .then(function (data) {
                 const ranges = data.ranges || [];
+                const phases = data.phases || [];
+
+                // Should not happen - the endpoint refuses a project whose
+                // phases are not finalized - but a required select with no
+                // options would silently block the form, so it says so.
+                if (!phases.length) {
+                    setError(
+                        "This project has no phases to file a task under. Set up its project phases first.",
+                    );
+
+                    return;
+                }
+
+                phaseSelect.innerHTML = phases
+                    .map(function (phase) {
+                        return (
+                            '<option value="' +
+                            phase.phase_id +
+                            '">' +
+                            escapeHtml(phase.label) +
+                            "</option>"
+                        );
+                    })
+                    .join("");
 
                 if (window.taskDatePickers) {
                     window.taskDatePickers.applyScheduleRanges(

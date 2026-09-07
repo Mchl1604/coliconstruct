@@ -129,11 +129,22 @@ $('button[data-bs-target="#tasks"]').on('shown.bs.tab', function () {
 
 });
 
-document.getElementById('taskStartDate').addEventListener('change', function () {
+// The Add Task dialog is not on every project: a project whose phases have not
+// been finalized is offered Set Up Project Phases instead, and the dialog is
+// not rendered at all. Without this guard the lookup returns null, the
+// exception stops the rest of this file, and the team editor below it silently
+// dies on exactly those projects.
+const taskStartDate = document.getElementById('taskStartDate');
 
-    document.getElementById('taskDueDate').min = this.value;
+if (taskStartDate) {
 
-});
+    taskStartDate.addEventListener('change', function () {
+
+        document.getElementById('taskDueDate').min = this.value;
+
+    });
+
+}
 
     const form = document.querySelector('[data-team-form]');
 

@@ -43,6 +43,10 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
     <link href="/css/theme.css" rel="stylesheet">
+    {{-- The status palette, shared with both staff portals: a project is the
+         same colour to the client as it is to the office. Loaded before
+         publicSite.css so the page's own rules can still override it. --}}
+    <link href="/css/projectStatus.css" rel="stylesheet">
     <link href="/css/publicSite.css" rel="stylesheet">
     <link href="/css/notifications.css" rel="stylesheet">
     @stack('styles')

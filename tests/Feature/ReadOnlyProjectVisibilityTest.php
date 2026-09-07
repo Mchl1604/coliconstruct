@@ -56,6 +56,11 @@ class ReadOnlyProjectVisibilityTest extends TestCase
             'is_archived' => $archived,
         ]);
 
+        // A live project has been through phase setup - see
+        // TestCase::finalizePhases(). Without it this fixture would be refused
+        // at a gate these tests are not asking about.
+        $this->finalizePhases($project);
+
         ProjectTechnician::create([
             'project_id' => $project->project_id,
             'technician_id' => $this->createTechnician('Tech '.$project->project_id)->technician_id,
@@ -418,12 +423,15 @@ class ReadOnlyProjectVisibilityTest extends TestCase
         $response = $this->get(route('super-admin.tasks.index'));
 
         $response->assertOk();
+
+        // The badge names the status rather than a Bootstrap colour, and
+        // projectStatus.css paints it - see Project::STATUS_INK.
         $response->assertSee('Some Pending Task');
-        $response->assertSee('badge bg-warning', false);
+        $response->assertSee('data-status="pending"', false);
         $response->assertSee('Pending');
 
         $response->assertSee('Some Ongoing Task');
-        $response->assertSee('badge bg-primary', false);
+        $response->assertSee('data-status="ongoing"', false);
         $response->assertSee('Ongoing');
     }
 }

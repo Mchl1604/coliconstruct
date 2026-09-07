@@ -3,6 +3,11 @@
     'tasksByProject',
     'techniciansByProject' => collect(),
     'rangesByProject' => collect(),
+    // project_id => that project's finalized phases, for the Phase select on
+    // each task's edit dialog. Keyed by project for the same reason the
+    // technicians are: this board shows several projects at once and a phase
+    // belongs to exactly one of them.
+    'phasesByProject' => collect(),
     // project_id => (technician_id => open task count). Keyed by project
     // because the same technician can hold different amounts of two projects
     // shown side by side on this page, and "N Active Tasks" in a project's own
@@ -35,6 +40,7 @@
             $projectTasks = $tasksByProject[$project->project_id] ?? collect();
             $projectTechnicians = $techniciansByProject[$project->project_id] ?? collect();
             $projectRanges = $rangesByProject[$project->project_id] ?? collect();
+            $projectPhases = $phasesByProject[$project->project_id] ?? collect();
             $canManage = (bool) ($manageable[$project->project_id] ?? false);
             // This project's slice of the load map, so a technician's count is
             // what they hold HERE rather than across every job they are on.
@@ -189,6 +195,7 @@
             <x-task-details-modal :task="$task"
                 :technicians="$canManage ? $projectTechnicians : collect()"
                 :active-task-counts="$projectTaskCounts" :schedule-ranges="$projectRanges"
+                :phases="$projectPhases"
                 :update-action="$canManage ? route($updateRoute, $task->task_id) : null"
                 :update-method="$updateMethod" />
 

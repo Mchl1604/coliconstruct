@@ -63,7 +63,7 @@
     </div>
 
     <x-task-board :projects="$projects" :tasks-by-project="$tasksByProject"
-        :technicians-by-project="$techniciansByProject" :ranges-by-project="$rangesByProject"
+        :technicians-by-project="$techniciansByProject" :ranges-by-project="$rangesByProject" :phases-by-project="$phasesByProject"
         :active-task-counts-by-project="$technicianActiveTaskCounts" :manageable="$manageable"
         :viewer-technician-id="$technicianId" update-route="technician.tasks.update"
         complete-route="technician.tasks.complete" delete-route="technician.tasks.destroy"

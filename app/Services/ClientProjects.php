@@ -91,6 +91,17 @@ class ClientProjects
                 'schedules',
                 'projectTypes',
                 'projectTechnicians.technician.account',
+                // The phases themselves, not just their counts: each card
+                // names the one the work is on, and loading them here is what
+                // keeps a grid of ten projects from being ten more queries.
+                'phases',
+            ])
+            // How far through its phases each project is, for the "3/4" chip
+            // on the client's own cards - the same figure the office and the
+            // crew read, from the same method. See Project::phaseProgress().
+            ->withCount([
+                'phases',
+                'phases as completed_phases_count' => fn ($query) => $query->whereNotNull('completed_at'),
             ])
             ->whereHas('clients', fn ($query) => $this->applyOwnership($query, $user, $normalised))
             ->where('is_archived', false)

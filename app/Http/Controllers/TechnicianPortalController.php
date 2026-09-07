@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\ActivityLog;
 use App\Models\Project;
+use App\Models\ProjectPhase;
 use App\Models\ProjectTechnician;
 use App\Models\Schedule;
 use App\Models\ScheduleTechnician;
@@ -19,8 +20,11 @@ use App\Services\ActivityLogger;
 use App\Services\NotificationService;
 use App\Services\ProjectCompletion;
 use App\Services\ProjectEmails;
+use App\Services\ProjectPhaseProgress;
+use App\Services\ProjectPhaseRules;
 use App\Services\TaskAssignmentGaps;
 use App\Services\TaskAssignmentRules;
+use App\Services\TaskPhaseRules;
 use App\Services\TaskScheduleRules;
 use App\Services\TechnicianTaskLoad;
 use App\Support\BusinessTime;
@@ -150,6 +154,17 @@ class TechnicianPortalController extends Controller
             // alone: a technician cannot act on somebody else's account and
             // has no tasks to move.
             'flagsInactiveCrew' => $request->user()->isLeadTechnician(),
+
+            // Urgent Actions, for the one role in this portal that can do
+            // something about it. A lead has no dashboard, so the projects
+            // whose phases nobody has settled are named here - see
+            // x-phase-setup-alert. Empty for a plain technician, who cannot
+            // set a structure up and would only be shown work they cannot do.
+            'phaseSetupProjects' => $request->user()->isLeadTechnician()
+                ? $projects->filter(fn (Project $project): bool => $project->needsPhaseSetup()
+                    && ! $project->isReadOnly()
+                    && ! $project->isArchived())->values()
+                : collect(),
         ]);
     }
 
@@ -260,6 +275,18 @@ class TechnicianPortalController extends Controller
             'showsOverdueNotice' => ! $user->isTechnician(),
             'completionBlockers' => $this->projectPolicy->blockerDetailsFor($project),
             'reportTypes' => TechnicianReport::TYPES,
+
+            // Project Phases. The same two states the administrative page
+            // draws, from the same two services - a lead sees the structure
+            // and the progress exactly as the office does. What they do not
+            // get is Override Phase Structure, which the component is simply
+            // not told about here.
+            'phaseSummary' => $project->needsPhaseSetup()
+                ? null
+                : app(ProjectPhaseProgress::class)->summary($project),
+            'canSetUpPhases' => app(ProjectPhaseRules::class)->canSetUp($user, $project),
+            'canCompletePhase' => app(ProjectPhaseRules::class)->canCompletePhase($user, $project),
+            'selectablePhases' => app(ProjectPhaseProgress::class)->selectablePhases($project),
         ]);
     }
 
@@ -294,6 +321,14 @@ class TechnicianPortalController extends Controller
         $rangesByProject = $projects->mapWithKeys(fn (Project $project): array => [
             $project->project_id => collect($this->scheduleRules->ranges($project->project_id)),
         ]);
+
+        // Each project's finalized phases, for the Phase select on every
+        // task's edit dialog. One query for the whole page.
+        $phasesByProject = ProjectPhase::query()
+            ->whereIn('project_id', $projects->pluck('project_id'))
+            ->inOrder()
+            ->get()
+            ->groupBy('project_id');
 
         // Keyed by project too: this page shows several boards at once.
         $technicianActiveTaskCounts = app(TechnicianTaskLoad::class)
@@ -355,13 +390,17 @@ class TechnicianPortalController extends Controller
             'attentionReadOnly' => $attentionReadOnly,
             'techniciansByProject' => $techniciansByProject,
             'rangesByProject' => $rangesByProject,
+            'phasesByProject' => $phasesByProject,
             'technicianActiveTaskCounts' => $technicianActiveTaskCounts,
             'technicianId' => $technician->technician_id,
             'manageable' => $manageable,
             // Only projects that can actually take a new task are offered in
             // the Add Task dialog.
+            // A project whose phases are not finalized is left off as well:
+            // there is nothing to file the work under yet.
             'creatableProjects' => $projects->filter(
                 fn (Project $project): bool => $manageable[$project->project_id]
+                    && $project->phasesAreFinalized()
             )->values(),
         ]);
     }
@@ -565,6 +604,15 @@ class TechnicianPortalController extends Controller
     {
         $this->authorize('manageTasks', $project);
 
+        $phaseRules = app(TaskPhaseRules::class);
+
+        // A project whose phases have not been finalized takes no tasks. The
+        // lead is told to go and set them up rather than being allowed to
+        // create work that belongs to no stage - see TaskPhaseRules.
+        if ($blocked = $phaseRules->blockReason($project)) {
+            return $this->failed($request, $blocked);
+        }
+
         $ranges = $this->scheduleRules->ranges($project->project_id);
 
         if ($ranges === []) {
@@ -574,10 +622,11 @@ class TechnicianPortalController extends Controller
         $validator = Validator::make($request->all(), [
             'task_title' => ['required', 'string', 'max:255'],
             'task_description' => ['required', 'string'],
+            'phase_id' => $phaseRules->rules($project),
             'technician_id' => ['required', 'integer', $this->assignedTechnicianRule($project)],
             'start_date' => ['required', 'date'],
             'due_date' => ['required', 'date', 'after_or_equal:start_date'],
-        ], [
+        ], $phaseRules->messages() + [
             'technician_id.*' => 'Pick a technician who is assigned to this project.',
         ]);
 
@@ -646,10 +695,15 @@ class TechnicianPortalController extends Controller
         $validator = Validator::make($request->all(), [
             'task_title' => ['required', 'string', 'max:255'],
             'task_description' => ['required', 'string'],
+            // Moving work between stages is board work, not a structural
+            // change, so it stays with whoever may edit the task. A completed
+            // phase takes no work, except from a task already on one - which
+            // may stay where it is.
+            'phase_id' => app(TaskPhaseRules::class)->rules($project, $task->phase_id),
             'technician_id' => ['required', 'integer', $this->assignedTechnicianRule($project)],
             'start_date' => ['required', 'date'],
             'due_date' => ['required', 'date', 'after_or_equal:start_date'],
-        ]);
+        ], app(TaskPhaseRules::class)->messages());
 
         $this->scheduleRules->attach($validator, $ranges);
         // Whoever holds the task may keep it: editing its wording or its dates
@@ -796,6 +850,10 @@ class TechnicianPortalController extends Controller
         $this->authorize('manageTasks', $project);
 
         $project->load('projectTechnicians.technician.account');
+
+        if ($blocked = app(TaskPhaseRules::class)->blockReason($project)) {
+            return response()->json(['error' => $blocked], 422);
+        }
 
         $formData = $this->taskFormData_($project);
 
@@ -1028,6 +1086,13 @@ class TechnicianPortalController extends Controller
     {
         return Project::query()
             ->with(['clients', 'schedules', 'projectTechnicians.technician.account'])
+            // How far through its phases each project is, for the "3/4" chip
+            // on the My Projects rows - see Project::phaseProgress(), which
+            // reads these rather than asking per row.
+            ->withCount([
+                'phases',
+                'phases as completed_phases_count' => fn ($query) => $query->whereNotNull('completed_at'),
+            ])
             ->where('is_archived', false)
             ->whereNotIn('status', $hide)
             ->whereHas(
@@ -1187,6 +1252,16 @@ class TechnicianPortalController extends Controller
         return [
             'ranges' => $ranges,
             'ranges_label' => $this->scheduleRules->describe($ranges),
+            // The Phase select, offering this project's finalized structure.
+            // Empty while setup is pending, which taskFormData() turns away
+            // before the dialog ever gets this far.
+            'phases' => app(ProjectPhaseProgress::class)->selectablePhases($project)
+                ->map(fn ($phase): array => [
+                    'phase_id' => $phase->phase_id,
+                    'label' => $phase->label(),
+                ])
+                ->values()
+                ->all(),
             'technicians' => $project->projectTechnicians
                 ->map(fn (ProjectTechnician $assignment): ?array => $assignment->technician ? [
                     'technician_id' => $assignment->technician->technician_id,

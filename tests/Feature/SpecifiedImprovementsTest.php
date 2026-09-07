@@ -71,6 +71,11 @@ class SpecifiedImprovementsTest extends TestCase
             'quotation' => 100000,
         ]);
 
+        // A live project has been through phase setup - see
+        // TestCase::finalizePhases(). Without it this fixture would be refused
+        // at a gate these tests are not asking about.
+        $this->finalizePhases($project);
+
         Client::create([
             'project_id' => $project->project_id,
             'client_type' => 'Commercial',

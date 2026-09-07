@@ -83,6 +83,7 @@
                             <th>Project Type</th>
                             <th>Quotation</th>
                             <th>Status</th>
+                            <th>Phases</th>
 
                             <th class="text-center">Actions</th>
                         </tr>
@@ -102,6 +103,11 @@
                                 // see Project::isActiveToday(), the one rule all
                                 // four portals ask.
                                 $isActiveToday = $project->isActiveToday();
+                                // Nobody has settled this project's phases,
+                                // so it takes no tasks. Flagged on the row
+                                // rather than behind a tab, the way ACTIVE
+                                // TODAY is - see Project::needsPhaseSetup().
+                                $needsPhaseSetup = $project->needsPhaseSetup();
                             @endphp
                             <tr data-tab="{{ $project->tabKey() }}"
                                 data-status="{{ $project->status }}"
@@ -112,9 +118,11 @@
                                      overlapping, so a list rather than a second
                                      status. See Project::attentionTabKeys(). --}}
                                 data-tab-extra="{{ implode(' ', $project->attentionTabKeys()) }}"
-                                class="{{ $isActiveToday ? 'project-row-active-today' : '' }} {{ $needsRecrew ? 'project-row-needs-recrew' : '' }}">
+                                class="{{ $needsPhaseSetup ? 'project-row-needs-phase-setup' : '' }} {{ $isActiveToday ? 'project-row-active-today' : '' }} {{ $needsRecrew ? 'project-row-needs-recrew' : '' }}">
                                 <td>
                                     {{ $project->displayCode() }}
+
+                                    <x-project-phase-setup-flag :project="$project" />
 
                                     <x-project-active-today-flag :project="$project" />
 
@@ -167,6 +175,11 @@
                                             No client to confirm
                                         </span>
                                     @endif
+                                </td>
+                                {{-- How far through its phases the project is,
+                                     read by everybody who can see the row. --}}
+                                <td>
+                                    <x-project-phase-progress :project="$project" />
                                 </td>
                                 <td class="text-center">
                                     @php

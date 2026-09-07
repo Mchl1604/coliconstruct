@@ -55,6 +55,12 @@ class DashboardTest extends TestCase
             'description' => 'Work',
         ], $attributes));
 
+        // These fixtures are about scheduling and crewing backlogs, so they
+        // are projects that have already been through phase setup - otherwise
+        // every one of them would also report itself as needing it. Phase
+        // setup has its own coverage in ProjectPhaseSetupTest.
+        $this->finalizePhases($project);
+
         Client::create([
             'project_id' => $project->project_id,
             'client_type' => 'Residential',

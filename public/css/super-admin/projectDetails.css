@@ -116,14 +116,37 @@
     border-bottom-color: var(--project-blue-deep);
 }
 
+/* The page's own two tabs - Project Details and Project Activity - which sit
+   above the cards rather than inside one. Given more presence than the Reports
+   / Tasks tabs nested within them, so the two levels do not read as one strip
+   that has somehow grown four items. */
+.project-details-page .project-section-tabs .nav-link {
+    font-size: 1.05rem;
+    padding: .6rem 1.1rem;
+}
+
+/* The back arrow beside the heading: a square target rather than a button
+   stretched around a single glyph. */
+.project-details-page .project-back {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.4rem;
+    height: 2.4rem;
+    padding: 0;
+    font-size: 1.1rem;
+}
+
 /* The document buttons under the project overview. */
 .project-details-page .btn-outline-primary {
     --bs-btn-color: var(--project-blue-deep);
     --bs-btn-border-color: var(--project-blue);
-    --bs-btn-hover-bg: var(--project-blue);
+    --bs-btn-hover-color: var(--project-blue-deep);
+    --bs-btn-hover-bg: rgba(45, 141, 225, .12);
     --bs-btn-hover-border-color: var(--project-blue);
-    --bs-btn-active-bg: var(--project-blue-deep);
-    --bs-btn-active-border-color: var(--project-blue-deep);
+    --bs-btn-active-color: var(--project-blue-deep);
+    --bs-btn-active-bg: rgba(45, 141, 225, .22);
+    --bs-btn-active-border-color: var(--project-blue);
 }
 
 .technician-card{

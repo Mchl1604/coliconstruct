@@ -65,6 +65,7 @@ class Task extends Model
 
     protected $fillable = [
         'project_id',
+        'phase_id',
         'technician_id',
         'task_title',
         'task_description',
@@ -93,6 +94,21 @@ class Task extends Model
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class, 'project_id', 'project_id');
+    }
+
+    /**
+     * The stage of the project this task belongs to.
+     *
+     * Required of every task created since project phases arrived, and the
+     * create dialogs refuse to submit without it. Still nullable, because the
+     * tasks that predate phases were placed by a backfill rather than by
+     * anybody choosing - and because a task whose phase somehow went missing
+     * should be visible and fixable rather than deleted. See the migration
+     * that adds the column.
+     */
+    public function phase(): BelongsTo
+    {
+        return $this->belongsTo(ProjectPhase::class, 'phase_id', 'phase_id');
     }
 
     public function technician(): BelongsTo

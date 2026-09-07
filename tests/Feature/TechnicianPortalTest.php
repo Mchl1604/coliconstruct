@@ -83,7 +83,7 @@ class TechnicianPortalTest extends TestCase
 
     private function project(string $name, string $reference, string $status = 'ongoing'): Project
     {
-        return Project::create([
+        $project = Project::create([
             'name' => $name,
             'reference_no' => $reference,
             'status' => $status,
@@ -91,6 +91,13 @@ class TechnicianPortalTest extends TestCase
             'description' => 'Description',
             'quotation' => 100000,
         ]);
+
+        // A live project has been through phase setup - see
+        // TestCase::finalizePhases(). Without it this fixture would be refused
+        // at a gate these tests are not asking about.
+        $this->finalizePhases($project);
+
+        return $project;
     }
 
     private function assign(Project $project, Technician $technician): ProjectTechnician
@@ -147,6 +154,9 @@ class TechnicianPortalTest extends TestCase
         return array_merge([
             'task_title' => 'Install condenser',
             'task_description' => 'Mount and wire the outdoor unit.',
+            // Every task belongs to a phase of its project - see
+            // TaskPhaseRules. The fixture project is set up in setUp().
+            'phase_id' => $this->defaultPhaseId($this->project),
             'technician_id' => $this->mate->technician_id,
             'start_date' => $this->day(11),
             'due_date' => $this->day(13),

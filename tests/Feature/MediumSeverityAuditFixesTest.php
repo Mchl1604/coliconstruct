@@ -50,6 +50,11 @@ class MediumSeverityAuditFixesTest extends TestCase
             'quotation' => 1000,
         ]);
 
+        // A live project has been through phase setup - see
+        // TestCase::finalizePhases(). Without it this fixture would be refused
+        // at a gate these tests are not asking about.
+        $this->finalizePhases($project);
+
         Client::create([
             'project_id' => $project->project_id,
             'client_type' => 'Commercial',
@@ -310,6 +315,8 @@ class MediumSeverityAuditFixesTest extends TestCase
         $payload = [
             'task_title' => 'Wire the panel',
             'task_description' => 'Description',
+            // Every task belongs to a phase of its project - see TaskPhaseRules.
+            'phase_id' => $this->defaultPhaseId($project),
             'technician_id' => $lead->technician_id,
             'start_date' => Schedule::businessToday()->toDateString(),
             'due_date' => Schedule::businessToday()->addDay()->toDateString(),

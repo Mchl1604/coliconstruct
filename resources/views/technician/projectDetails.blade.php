@@ -6,6 +6,9 @@
     <link rel="stylesheet" href="/css/super-admin/projectDetails.css">
     <link rel="stylesheet" href="/css/super-admin/projects.css">
     <link rel="stylesheet" href="/css/taskModal.css">
+    {{-- The phase panel and the setup-required notice, the same stylesheet the
+         administrative copy of this page loads. --}}
+    <link rel="stylesheet" href="/css/projectPhases.css">
 @endpush
 
 @section('content')
@@ -56,7 +59,19 @@
         @endif
 
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-            <h2 class="fw-bold mb-0 text-brand-blue">Project Details</h2>
+            {{-- Back is an arrow rather than a labelled button, and it sits on
+                 the left where a person looks for it - beside the heading it
+                 goes back from, not at the end of a row of actions it has
+                 nothing to do with. The label is still there for anybody
+                 reading the page rather than looking at it. --}}
+            <div class="d-flex align-items-center gap-2">
+                <a href="{{ route('technician.projects') }}" class="btn btn-outline-secondary project-back"
+                    aria-label="Back to My Projects" title="Back to My Projects">
+                    <i class="bi bi-arrow-left" aria-hidden="true"></i>
+                </a>
+
+                <h2 class="fw-bold mb-0 text-brand-blue">Project Details</h2>
+            </div>
 
             <div class="d-flex gap-2">
                 @if ($canCloseProject)
@@ -67,9 +82,6 @@
                     </button>
                 @endif
 
-                <a href="{{ route('technician.projects') }}" class="btn btn-outline-secondary">
-                    Back to My Projects
-                </a>
             </div>
         </div>
 
@@ -99,6 +111,42 @@
                 </div>
             </div>
         @endif
+
+        {{-- The page in two halves.
+
+             Project Information is the record: who the work is for, who is on
+             it and when. Project Progress is how far it has got - the phases,
+             the reports filed against them and the task board. They are read
+             at different times by different people, and stacked in one column
+             the second half was a long scroll past the first.
+
+             The banners above sit outside the tabs on purpose. A hold or an
+             overdue warning is about the whole project, and one hidden behind
+             a tab is one nobody sees. --}}
+        <ul class="nav nav-tabs project-section-tabs mb-4" id="projectSectionTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" type="button" role="tab" data-bs-toggle="tab"
+                    data-bs-target="#project-information" aria-controls="project-information"
+                    aria-selected="true">
+                    <i class="bi bi-info-circle me-1" aria-hidden="true"></i>
+                    Project Information
+                </button>
+            </li>
+
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" type="button" role="tab" data-bs-toggle="tab"
+                    data-bs-target="#project-progress" aria-controls="project-progress"
+                    aria-selected="false">
+                    <i class="bi bi-graph-up-arrow me-1" aria-hidden="true"></i>
+                    Project Progress
+                </button>
+            </li>
+        </ul>
+
+        <div class="tab-content" id="projectSectionPanes">
+
+        <div class="tab-pane fade show active" id="project-information" role="tabpanel"
+            aria-labelledby="projectSectionTabs">
 
         <!-- Project Information -->
         <div class="card shadow-sm mb-4">
@@ -383,6 +431,25 @@
             </div>
         </div>
 
+        </div>{{-- /#project-information --}}
+
+        <div class="tab-pane fade" id="project-progress" role="tabpanel"
+            aria-labelledby="projectSectionTabs">
+
+        {{-- Project Phases, exactly as the administrative page draws them:
+             the setup-required notice, or the monitoring panel, never both.
+             A lead sets a structure up and closes phases out; the Override
+             Phase Structure control is not passed here at all, because it is
+             a Super Admin's alone. --}}
+        @if ($project->needsPhaseSetup())
+            <x-phase-setup-required :project="$project" :can-set-up="$canSetUpPhases"
+                setup-route="technician.projects.phases.setup" />
+        @else
+            <x-project-phases :project="$project" :summary="$phaseSummary"
+                :can-complete="$canCompletePhase"
+                complete-route="technician.projects.phases.complete" />
+        @endif
+
         <!-- Project Activity -->
         <div class="card shadow-sm">
             <div class="card-header bg-white">
@@ -550,7 +617,18 @@
                         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
                             <h5 class="mb-0 fw-bold">Task List</h5>
 
-                            @if ($canManageTasks)
+                            {{-- A task has to belong to a phase. Until this
+                                 project's structure is finalized the lead is
+                                 pointed at the setup screen instead. --}}
+                            @if ($project->needsPhaseSetup())
+                                @if ($canSetUpPhases)
+                                    <a href="{{ route('technician.projects.phases.setup', $project->project_id) }}"
+                                        class="btn btn-warning">
+                                        <i class="bi bi-sliders me-1" aria-hidden="true"></i>
+                                        Set Up Project Phases
+                                    </a>
+                                @endif
+                            @elseif ($canManageTasks)
                                 <button type="button" class="btn btn-primary" data-bs-toggle="modal"
                                     data-bs-target="#addTaskModal">
                                     <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
@@ -657,6 +735,10 @@
                 </div>
             </div>
         </div>
+
+        </div>{{-- /#project-progress --}}
+
+        </div>{{-- /.tab-content --}}
     </div>
 
     {{-- ============================ PER-TASK MODALS ============================ --}}
@@ -665,6 +747,7 @@
         <x-task-details-modal :task="$task"
             :technicians="$canManageTasks ? $technicians : collect()"
             :active-task-counts="$technicianActiveTaskCounts" :schedule-ranges="$scheduleRanges"
+            :phases="$selectablePhases"
             :update-action="$canManageTasks ? route('technician.tasks.update', $task->task_id) : null"
             update-method="POST" />
 
@@ -680,7 +763,10 @@
     @endforeach
 
     {{-- ============================ ASSIGN NEW TASK ============================ --}}
-    @if ($canManageTasks)
+    {{-- Not rendered at all on a project whose phases are not settled: the
+         dialog's Phase select would have nothing to offer, and the button that
+         opens it is a link to the setup screen there instead. --}}
+    @if ($canManageTasks && $selectablePhases->isNotEmpty())
         <div class="modal fade" id="addTaskModal" tabindex="-1" aria-hidden="true">
             <div class="modal-dialog modal-xl modal-dialog-scrollable">
                 <form class="modal-content"
@@ -697,6 +783,20 @@
                     </div>
 
                     <div class="modal-body">
+                        {{-- Which stage of the project this work belongs to.
+                             Required since project phases arrived; the options
+                             are this project's own finalized structure and
+                             nothing else. --}}
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold" for="newTaskPhase">Phase</label>
+                            <select class="form-select" id="newTaskPhase" name="phase_id" required>
+                                <option value="" selected disabled>Select a phase&hellip;</option>
+                                @foreach ($selectablePhases as $phase)
+                                    <option value="{{ $phase->phase_id }}">{{ $phase->label() }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+
                         <div class="mb-3">
                             <label class="form-label fw-semibold" for="newTaskTitle">Task Name</label>
                             <input type="text" class="form-control" id="newTaskTitle" name="task_title"
