@@ -1,0 +1,249 @@
+/**
+ * Project phases: the setup editor, and the monitoring panel that replaces it.
+ *
+ * One stylesheet for both because they are two states of one thing and a
+ * person moves between them - the phase cards on the monitoring panel should
+ * read as the rows they typed, not as a different feature.
+ *
+ * The blue is the same brand blue the project details page uses. Declared
+ * again here rather than borrowed, because the setup screen is its own page
+ * and does not carry .project-details-page.
+ */
+
+.phase-setup-page,
+.project-phases,
+.phase-setup-required {
+    --phase-blue: #2d8de1;
+    --phase-blue-deep: #2370b4;
+    --phase-blue-dark: #1b5688;
+    --phase-blue-soft: #eaf4fd;
+    --phase-blue-tint: #f4f9fe;
+}
+
+.phase-setup-page .text-brand-blue {
+    color: var(--phase-blue-deep);
+}
+
+/* ------------------------------------------------------------------
+   The setup editor
+   ------------------------------------------------------------------ */
+
+.phase-row {
+    display: grid;
+    grid-template-columns: auto 8.5rem 1fr auto;
+    gap: .75rem;
+    align-items: start;
+    padding: .85rem;
+    margin-bottom: .65rem;
+    border: 1px solid #e5e7eb;
+    border-radius: .6rem;
+    background: #fff;
+    transition: border-color .15s ease, box-shadow .15s ease;
+}
+
+.phase-row:hover {
+    border-color: var(--phase-blue);
+}
+
+/* While a row is being dragged, and the row it would land on. */
+.phase-row.is-dragging {
+    opacity: .45;
+}
+
+.phase-row.is-drop-target {
+    border-color: var(--phase-blue-deep);
+    box-shadow: 0 0 0 2px var(--phase-blue-soft);
+}
+
+.phase-row-handle {
+    color: #9aa4b2;
+    cursor: grab;
+    padding-top: .4rem;
+    font-size: 1.1rem;
+}
+
+.phase-row:active .phase-row-handle {
+    cursor: grabbing;
+}
+
+.phase-row-number {
+    display: flex;
+    flex-direction: column;
+    gap: .3rem;
+    padding-top: .2rem;
+}
+
+.phase-row-badge {
+    display: inline-block;
+    padding: .3rem .6rem;
+    border-radius: .4rem;
+    background: var(--phase-blue-soft);
+    color: var(--phase-blue-dark);
+    font-weight: 700;
+    font-size: .82rem;
+    text-align: center;
+}
+
+/* Only drawn on a phase that already holds work, which is only possible on a
+   structure a Super Admin has unlocked. It is the warning attached to the
+   remove button beside it. */
+.phase-row-tasks {
+    font-size: .74rem;
+    color: #a05a00;
+    background: #fdf1e0;
+    border-radius: .3rem;
+    padding: .15rem .4rem;
+    text-align: center;
+}
+
+.phase-row-actions {
+    display: flex;
+    flex-direction: column;
+    gap: .3rem;
+}
+
+@media (max-width: 767.98px) {
+    .phase-row {
+        grid-template-columns: auto 1fr;
+    }
+
+    .phase-row-fields {
+        grid-column: 1 / -1;
+    }
+
+    .phase-row-actions {
+        grid-column: 1 / -1;
+        flex-direction: row;
+        justify-content: flex-end;
+    }
+}
+
+/* ------------------------------------------------------------------
+   State 1: setup required
+   ------------------------------------------------------------------ */
+
+.phase-setup-required {
+    /* Amber, matching Urgent Actions on the dashboard and the task board:
+       this is something to arrange, not a fault. */
+    border-left: 4px solid #e0a02a !important;
+    background: #fffdf7;
+}
+
+.phase-setup-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 2.6rem;
+    height: 2.6rem;
+    border-radius: 50%;
+    background: #fdf1e0;
+    color: #a05a00;
+    font-size: 1.2rem;
+}
+
+/* ------------------------------------------------------------------
+   State 2: monitoring
+   ------------------------------------------------------------------ */
+
+.project-phases-bar {
+    height: .6rem;
+    border-radius: .3rem;
+}
+
+.project-phase-list {
+    display: flex;
+    flex-direction: column;
+    gap: .65rem;
+}
+
+.project-phase-card {
+    padding: .9rem 1rem;
+    border: 1px solid #e5e7eb;
+    border-left: 4px solid #dee2e6;
+    border-radius: .6rem;
+    background: #fff;
+}
+
+/* The one phase the project is actually on. Deliberately the loudest card in
+   the list: it is the answer to "where is this job up to?", which is the
+   question the panel is opened to ask. */
+.project-phase-card.is-current {
+    border-left-color: var(--phase-blue-deep);
+    background: var(--phase-blue-tint);
+}
+
+.project-phase-card.is-complete {
+    border-left-color: #198754;
+}
+
+.project-phase-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: .5rem;
+    margin-bottom: .25rem;
+}
+
+.project-phase-number {
+    font-weight: 700;
+    color: var(--phase-blue-dark);
+    margin-right: .5rem;
+}
+
+.project-phase-title {
+    font-weight: 600;
+}
+
+.project-phase-current {
+    background: var(--phase-blue-deep);
+    color: #fff;
+}
+
+.project-phase-description {
+    color: #6c757d;
+    font-size: .875rem;
+    margin-bottom: .6rem;
+}
+
+.project-phase-tasks {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+}
+
+.project-phase-task-bar {
+    flex: 1 1 auto;
+    height: .4rem;
+    border-radius: .2rem;
+    max-width: 22rem;
+}
+
+.project-phase-task-count {
+    font-size: .8rem;
+    font-weight: 600;
+    color: #495057;
+    white-space: nowrap;
+}
+
+.project-phase-meta {
+    font-size: .8rem;
+    color: #6c757d;
+    margin: .55rem 0 0;
+}
+
+.project-phase-actions {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    flex-wrap: wrap;
+    margin-top: .75rem;
+}
+
+/* Why the Complete Phase button is absent. Printed rather than expressed as a
+   disabled button, so the reader is told what to go and do. */
+.project-phase-blocked {
+    font-size: .82rem;
+    color: #a05a00;
+}

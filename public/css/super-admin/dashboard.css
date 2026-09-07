@@ -59,25 +59,27 @@
     gap: .55rem;
     padding: .8rem 1.5rem;
     border-radius: 999px;
-    background: var(--dash-blue);
-    color: #fff;
+    background: transparent;
+    border: 1px solid var(--dash-blue);
+    color: var(--dash-blue-deep);
     font-size: .95rem;
     font-weight: 600;
     text-decoration: none;
-    box-shadow: 0 6px 18px rgba(45, 141, 225, .28);
     transition: background-color .15s ease, transform .15s ease;
 }
 
 .dash-primary-btn:hover {
-    background: var(--dash-blue-deep);
-    color: #fff;
+    background: var(--dash-blue-soft);
+    border-color: var(--dash-blue);
+    color: var(--dash-blue-deep);
     transform: translateY(-1px);
 }
 
 .dash-ghost-btn {
     padding: .4rem 1rem;
     border-radius: 999px;
-    background: var(--dash-blue-soft);
+    background: transparent;
+    border: 1px solid var(--dash-blue-line);
     color: var(--dash-blue-deep);
     font-size: .82rem;
     font-weight: 600;
@@ -86,8 +88,9 @@
 }
 
 .dash-ghost-btn:hover {
-    background: var(--dash-blue-line);
-    color: #fff;
+    background: var(--dash-blue-soft);
+    border-color: var(--dash-blue);
+    color: var(--dash-blue-deep);
 }
 
 /* ---- The figures ----

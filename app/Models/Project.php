@@ -190,18 +190,16 @@ class Project extends Model
     public const SUPER_ADMIN_COMPLETABLE_STATUSES = ['pending'];
 
     /**
-     * Deep red, reserved for overdue. Bootstrap has no such background
+     * Deep red, reserved for an overdue TASK. Bootstrap has no such background
      * utility, so `badge-overdue` is defined in superAdminNav.css.
      *
-     * It used to be orange, which sat one notch along the wheel from Pending's
-     * amber and became the same brown as it once darkened for use as ink - so
-     * on the calendar, where both are drawn as outlines, late work and work
-     * that has not started yet were told apart only by reading the label. Red
-     * is a different hue rather than a different shade of the same one, and it
-     * is deliberately deeper than Cancelled's #dc3545, and where the two meet
-     * in a table the labels differ. On a calendar they never meet at all:
-     * cancelled bookings are drawn in CALENDAR_INK's plum rather than in any
-     * red, precisely so late work and called-off work cannot be confused.
+     * No longer the colour of an overdue PROJECT. A project's status is drawn
+     * from STATUS_INK now, wherever it appears, and there Overdue is a deep
+     * orange - chosen because it is a different hue from Cancelled's red
+     * rather than a deeper shade of it, and late work and called-off work are
+     * the two states most costly to confuse. This red stayed behind with the
+     * task board, which has a palette of its own and an exported PDF that has
+     * to match it - see App\Support\TaskStatus.
      */
     public const OVERDUE_COLOR = '#c9302c';
 
@@ -226,30 +224,22 @@ class Project extends Model
     ];
 
     /**
-     * Every status as a printed badge: background, then the ink that stays
-     * legible on it.
+     * The phase structure has not been settled yet.
      *
-     * The backgrounds are the colours the application already uses - the
-     * calendar's, the dashboard breakdown's, OVERDUE_COLOR - gathered in one
-     * place so the pie, the badges and the exported PDF cannot drift into
-     * three different colour systems. Only the ink is chosen here, and only
-     * because a fill picked to sit behind white lettering is not always one
-     * white lettering can sit on: amber and cyan need dark ink to stay
-     * readable, which is the same call `bg-info text-dark` makes on screen.
-     *
-     * @var array<string, array{0: string, 1: string}>
+     * Not the same as "has no phases": a project part-way through setup has
+     * rows in tbl_project_phases and is still pending, and a project with no
+     * rows at all could in principle have been finalized. Which of the two a
+     * project is decides whether it may take tasks, whether the monitoring
+     * panel is drawn, and whether it shows up in Urgent Actions - so it is
+     * stored rather than counted. See the migration that adds it.
      */
-    public const STATUS_COLORS = [
-        'unscheduled' => ['#0dcaf0', '#053b45'],
-        self::STATUS_AWAITING_CLIENT_CONFIRMATION => ['#6ea67f', '#0f2e1c'],
-        'pending' => ['#f0ad4e', '#4a2c00'],
-        'ongoing' => ['#0d6efd', '#ffffff'],
-        'on_hold' => ['#6c757d', '#ffffff'],
-        'overdue' => [self::OVERDUE_COLOR, '#ffffff'],
-        'cancelled' => ['#dc3545', '#ffffff'],
-        'completed' => ['#198754', '#ffffff'],
-        'archived' => ['#212529', '#ffffff'],
-    ];
+    public const PHASE_SETUP_PENDING = 'pending';
+
+    /**
+     * The structure is locked. Admin and Lead Technician may no longer add,
+     * remove or reorder; only a Super Admin's explicit override reopens it.
+     */
+    public const PHASE_SETUP_FINALIZED = 'finalized';
 
     protected $fillable = [
         'reference_no',
@@ -285,10 +275,20 @@ class Project extends Model
         'archived_at',
         'archived_by',
         'pre_archive_status',
+        'phase_setup_status',
+        'phase_count',
+        'phase_setup_finalized_at',
+        'phase_setup_finalized_by',
+        'phase_structure_overridden_at',
+        'phase_structure_overridden_by',
+        'phase_structure_override_reason',
     ];
 
     protected $casts = [
         'quotation' => 'decimal:2',
+        'phase_count' => 'integer',
+        'phase_setup_finalized_at' => 'datetime',
+        'phase_structure_overridden_at' => 'datetime',
         'on_hold' => 'boolean',
         'is_archived' => 'boolean',
         'completed_at' => 'datetime',
@@ -449,6 +449,35 @@ class Project extends Model
     public function tasks(): HasMany
     {
         return $this->hasMany(Task::class, 'project_id', 'project_id');
+    }
+
+    /**
+     * The stages this project is monitored through, always in the order they
+     * happen. Nothing reads phases out of sequence, so the ordering is on the
+     * relation rather than repeated at every call site.
+     */
+    public function phases(): HasMany
+    {
+        return $this->hasMany(ProjectPhase::class, 'project_id', 'project_id')
+            ->orderBy('sequence');
+    }
+
+    /**
+     * Who settled this project's phase structure. Null on a project whose
+     * phases the backfill wrote - see the backfill migration, which
+     * deliberately declines to name anybody.
+     */
+    public function phaseSetupFinalizedByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'phase_setup_finalized_by', 'id');
+    }
+
+    /**
+     * The Super Admin who last unlocked a finalized structure.
+     */
+    public function phaseStructureOverriddenByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'phase_structure_overridden_by', 'id');
     }
 
     public function archivedByUser(): BelongsTo
@@ -966,6 +995,131 @@ class Project extends Model
         return $this->status === 'archived' || (bool) $this->is_archived;
     }
 
+    // ------------------------------------------------------------------
+    // Phase setup
+    // ------------------------------------------------------------------
+
+    /**
+     * Whether this project's phase structure is still being decided.
+     *
+     * The one question everything about phases hangs off: it decides which of
+     * the two interfaces the project details page draws, whether the project
+     * accepts new tasks at all, and whether it is reported as needing
+     * attention. Read from the stored flag and never from a row count - see
+     * PHASE_SETUP_PENDING.
+     */
+    public function needsPhaseSetup(): bool
+    {
+        return $this->phase_setup_status !== self::PHASE_SETUP_FINALIZED;
+    }
+
+    public function phasesAreFinalized(): bool
+    {
+        return ! $this->needsPhaseSetup();
+    }
+
+    /**
+     * How far through its phases this project is, as the two numbers a row
+     * prints: "3/4".
+     *
+     * Read from eager-loaded counts where the caller supplied them, because
+     * every projects table asks this of every row and two queries per row on
+     * the busiest page in a portal is a cost worth not paying. The listings
+     * withCount() both figures - see ProjectController::index() and its
+     * counterparts.
+     *
+     * Null while the structure is not finalized: there is no denominator to
+     * count against yet, and printing "0/0" would be a progress figure that
+     * means nothing. The row draws the setup flag instead.
+     *
+     * @return array{completed: int, total: int}|null
+     */
+    public function phaseProgress(): ?array
+    {
+        if ($this->needsPhaseSetup()) {
+            return null;
+        }
+
+        // Three ways to the same two numbers, in order of what the caller has
+        // already paid for: the loaded relation, then the eager counts, then a
+        // query. Same definition throughout - a phase is completed when it
+        // carries a completed_at - so a card, a table row and the monitoring
+        // panel cannot disagree about how far through a project is.
+        if ($this->relationLoaded('phases')) {
+            $total = $this->phases->count();
+            $completed = $this->phases->filter->isCompleted()->count();
+        } else {
+            $total = $this->phases_count !== null
+                ? (int) $this->phases_count
+                : $this->phases()->count();
+
+            $completed = $this->completed_phases_count !== null
+                ? (int) $this->completed_phases_count
+                : $this->phases()->whereNotNull('completed_at')->count();
+        }
+
+        if ($total === 0) {
+            return null;
+        }
+
+        return ['completed' => $completed, 'total' => $total];
+    }
+
+    /**
+     * The phase this project is on: the earliest one not yet closed.
+     *
+     * Null once every phase is finished, which is a project with nothing left
+     * to work through rather than an error. The same rule
+     * ProjectPhaseProgress applies to its own counted collection, stated here
+     * so a caller holding a loaded project does not need the service.
+     */
+    public function currentPhase(): ?ProjectPhase
+    {
+        if ($this->needsPhaseSetup()) {
+            return null;
+        }
+
+        $this->loadMissing('phases');
+
+        return $this->phases->first(fn (ProjectPhase $phase): bool => ! $phase->isCompleted());
+    }
+
+    /**
+     * Whether this project's phase structure has ever been unlocked after
+     * being finalized.
+     *
+     * Kept visible on the monitoring panel afterwards rather than cleared on
+     * re-finalization: somebody reading "3/5 Phases" on a project that started
+     * life with four is entitled to know the denominator moved.
+     */
+    public function phaseStructureWasOverridden(): bool
+    {
+        return $this->phase_structure_overridden_at !== null;
+    }
+
+    /**
+     * Live work whose phases nobody has settled yet.
+     *
+     * Read-only and archived projects are left out on the same terms every
+     * other attention scope leaves them out: a completed project's structure
+     * is nobody's outstanding job, and there is no longer any work to monitor
+     * through it. A held project stays in - a hold pauses the dates, not the
+     * question of what the stages of the job are, and setting them up is
+     * exactly the sort of thing to get done while nobody is on site.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeNeedsPhaseSetup(Builder $query): Builder
+    {
+        return $query
+            ->whereIn('status', self::DERIVED_LIVE_STATUSES)
+            ->where('is_archived', false)
+            ->where(fn (Builder $pending) => $pending
+                ->where('phase_setup_status', '!=', self::PHASE_SETUP_FINALIZED)
+                ->orWhereNull('phase_setup_status'));
+    }
+
     /**
      * The two finished statuses that may still be archived.
      *
@@ -1381,6 +1535,12 @@ class Project extends Model
 
         $keys = [];
 
+        // Phases needing setup are deliberately NOT a tab. They are drawn on
+        // the row itself instead - a tint and an edge, the way ACTIVE TODAY is
+        // - because a tab is only seen by somebody who thinks to click it, and
+        // this is something a person should notice while scanning the table
+        // they are already looking at. See needsPhaseSetup().
+
         if (! $this->on_hold && $this->schedules->isEmpty()) {
             $keys[] = 'unscheduled';
         }
@@ -1486,13 +1646,22 @@ class Project extends Model
     }
 
     /**
-     * The background and ink a status is printed with.
+     * The background and ink a status is printed with, for the places that
+     * have no stylesheet to read: the exported PDF, and the report charts.
+     *
+     * Derived from STATUS_INK rather than from a table of its own. It used to
+     * read STATUS_COLORS, a set of fills chosen to sit behind white lettering,
+     * which meant a project could come out one colour in a report and another
+     * on the screen the report was run from - Overdue most obviously, red on
+     * paper and deep orange on the calendar.
      *
      * @return array{0: string, 1: string}
      */
     public static function statusColor(string $key): array
     {
-        return self::STATUS_COLORS[$key] ?? ['#6c757d', '#ffffff'];
+        $ink = self::inkFor($key);
+
+        return [$ink, self::contrastTextOn($ink)];
     }
 
     /**
@@ -1513,65 +1682,47 @@ class Project extends Model
     }
 
     /**
-     * Bootstrap background class matching statusLabel().
+     * The class every project status badge carries.
+     *
+     * One class for every status rather than a Bootstrap colour per status:
+     * which colour it actually paints is decided by the `data-status`
+     * attribute beside it and by projectStatus.css, which reads the same keys
+     * STATUS_INK does. That is what stopped the badges being a fourth palette
+     * disagreeing with the calendar - see STATUS_INK.
+     *
+     * Kept as a method rather than inlined in the component because the
+     * JSON payloads still hand it to JavaScript, which builds the same markup.
      */
     public function statusBadgeClass(): string
     {
-        if ($this->on_hold) {
-            return 'bg-secondary';
-        }
-
-        if ($this->isOverdue()) {
-            return 'badge-overdue';
-        }
-
-        return match ($this->status) {
-            'unscheduled' => 'bg-info text-dark',
-            'pending' => 'bg-warning',
-            'ongoing' => 'bg-primary',
-            // A lighter green than Completed: the work is done, but the
-            // project is not closed yet, and the two must not look identical
-            // at a glance.
-            self::STATUS_AWAITING_CLIENT_CONFIRMATION => 'bg-success-subtle text-success-emphasis border border-success-subtle',
-            'completed' => 'bg-success',
-            'cancelled' => 'bg-danger',
-            'archived' => 'bg-dark',
-            default => 'bg-secondary',
-        };
+        return 'project-status-badge';
     }
 
     /**
-     * Colour for this project's calendar events.
-     */
-    public function calendarColor(): string
-    {
-        if ($this->isOverdue()) {
-            return self::OVERDUE_COLOR;
-        }
-
-        return match ($this->status) {
-            'pending' => '#f0ad4e',
-            'ongoing' => '#0d6efd',
-            self::STATUS_AWAITING_CLIENT_CONFIRMATION => '#6ea67f',
-            'completed' => '#198754',
-            default => '#0d6efd',
-        };
-    }
-
-    /**
-     * The darker cut of each status colour, for use as ink rather than as a
-     * fill.
+     * What colour a project's status is, everywhere in this application.
      *
-     * A colour chosen to sit BEHIND white lettering is the wrong colour to
-     * write with. The fills above were picked on exactly that basis, and used
-     * unchanged as an outline they come out weak - the amber especially, which
-     * is close to invisible as a hairline on white. These are the same hues
-     * taken down to roughly 5:1 against white, which is what an outlined
-     * booking needs to read at a glance.
+     * These began as the calendar's ink - a colour chosen to sit BEHIND white
+     * lettering is the wrong colour to write with, so the fills in
+     * the old STATUS_COLORS were taken down to roughly 5:1 against white so an
+     * outlined booking would read at a glance. They are now the whole
+     * system's palette, because there is no good reason for a project to be
+     * one colour on the schedule and a different one on a table three clicks
+     * away, and there were four separate palettes saying so:
+     *
+     *   - Bootstrap's utility colours on the staff badges, where Overdue came
+     *     out red - the exact confusion with Cancelled that the deep orange
+     *     below was chosen to avoid;
+     *   - a set of gradients on the client's own project cards, which had no
+     *     Overdue at all;
+     *   - two copies of the Bootstrap mapping in JavaScript;
+     *   - and this, on the calendars.
+     *
+     * Keyed by statusKey(), which is what settles the precedence: archived
+     * beats paused, paused beats late, late beats the stored status.
      *
      * @var array<string, string>
      */
-    public const CALENDAR_INK = [
+    public const STATUS_INK = [
         'on_hold' => '#5a6570',
         // Light yellow. The one colour in this palette that white lettering
         // cannot sit on and that cannot be read as lettering itself, which is
@@ -1591,6 +1742,15 @@ class Project extends Model
         // would fall through to the Ongoing blue below and read as live work.
         // The same red the Cancelled badge uses everywhere else.
         'cancelled' => '#dc3545',
+        // The two a calendar never has to draw, and every table does. A
+        // project with no dates cannot appear on a calendar at all, and an
+        // archived one is kept off it deliberately - so neither had a colour
+        // here until the palette became the whole site's.
+        //
+        // Teal, well clear of Ongoing's blue: "booked but not yet dated" and
+        // "under way" are next to each other in every list.
+        'unscheduled' => '#0e7490',
+        'archived' => '#212529',
     ];
 
     /**
@@ -1603,23 +1763,43 @@ class Project extends Model
 
     /**
      * The colour this project's bookings are drawn WITH, as opposed to filled
-     * with - see CALENDAR_INK.
+     * with - see STATUS_INK.
      */
     public function calendarInkColor(): string
     {
-        // Paused first, for the same reason statusLabel() asks it first: a
-        // held project's stored status is Unscheduled, so without this its
-        // remaining bookings would be drawn in the fallback blue and read as
-        // work in progress.
-        if ($this->on_hold) {
-            return self::CALENDAR_INK['on_hold'];
-        }
+        return $this->statusInkColor();
+    }
 
-        if ($this->isOverdue()) {
-            return self::CALENDAR_INK['overdue'];
-        }
+    /**
+     * This project's colour: the one answer every badge, chip, card header and
+     * calendar event on the site is drawn from.
+     *
+     * The precedence - archived, then paused, then late, then the stored
+     * status - is statusKey()'s, asked once rather than restated here. A held
+     * project's stored status is Unscheduled, so without that ordering its
+     * bookings would take the fallback blue and read as work in progress.
+     */
+    public function statusInkColor(): string
+    {
+        return self::inkFor($this->statusKey());
+    }
 
-        return self::CALENDAR_INK[$this->status] ?? self::CALENDAR_INK['ongoing'];
+    /**
+     * The lettering that reads on this project's colour - white on all of them
+     * but Pending, whose light yellow white disappears into.
+     */
+    public function statusTextColor(): string
+    {
+        return self::contrastTextOn($this->statusInkColor());
+    }
+
+    /**
+     * The colour of a status named rather than held: a legend swatch, a filter
+     * tab's count, a row in a JSON payload.
+     */
+    public static function inkFor(string $statusKey): string
+    {
+        return self::STATUS_INK[$statusKey] ?? self::STATUS_INK['ongoing'];
     }
 
     /**
@@ -1700,7 +1880,7 @@ class Project extends Model
      * on a white page.
      *
      * Returns the colour untouched when it is already dark enough, which is
-     * most of CALENDAR_INK - so this is a floor on legibility rather than a
+     * most of STATUS_INK - so this is a floor on legibility rather than a
      * restyling. Darkening is a straight scale of the channels, which holds
      * the hue: a dark yellow still reads as the yellow in the legend beside
      * it, which matters because the legend dot is drawn in the true ink.
@@ -1806,12 +1986,12 @@ class Project extends Model
     public static function calendarLegend(): array
     {
         return [
-            ['label' => 'Pending', 'colour' => self::CALENDAR_INK['pending']],
-            ['label' => 'Ongoing', 'colour' => self::CALENDAR_INK['ongoing']],
-            ['label' => 'Overdue', 'colour' => self::CALENDAR_INK['overdue']],
-            ['label' => 'Completed', 'colour' => self::CALENDAR_INK['completed']],
-            ['label' => 'On Hold', 'colour' => self::CALENDAR_INK['on_hold']],
-            ['label' => 'Cancelled', 'colour' => self::CALENDAR_INK['cancelled']],
+            ['label' => 'Pending', 'colour' => self::STATUS_INK['pending']],
+            ['label' => 'Ongoing', 'colour' => self::STATUS_INK['ongoing']],
+            ['label' => 'Overdue', 'colour' => self::STATUS_INK['overdue']],
+            ['label' => 'Completed', 'colour' => self::STATUS_INK['completed']],
+            ['label' => 'On Hold', 'colour' => self::STATUS_INK['on_hold']],
+            ['label' => 'Cancelled', 'colour' => self::STATUS_INK['cancelled']],
         ];
     }
 

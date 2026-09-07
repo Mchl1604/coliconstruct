@@ -25,6 +25,9 @@
     {{-- Same DataTables build the Super Admin shell loads, so a table looks
          and behaves identically in either portal. --}}
     <link rel="stylesheet" href="https://cdn.datatables.net/2.3.8/css/dataTables.dataTables.css">
+    {{-- The same status palette the administrative portal uses: a project
+         is the same colour to the crew as it is to the office. --}}
+    <link href="/css/projectStatus.css" rel="stylesheet">
     @stack('styles')
 </head>
 

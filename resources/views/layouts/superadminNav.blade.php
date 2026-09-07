@@ -14,6 +14,10 @@
     <link href="/css/notifications.css" rel="stylesheet">
    <link rel="stylesheet"
 href="https://cdn.datatables.net/2.3.8/css/dataTables.dataTables.css">
+  {{-- What colour a project's status is, everywhere. Loaded by the layout
+       rather than by each page because every page in this portal draws one -
+       tables, calendars, task boards, project details. --}}
+  <link href="/css/projectStatus.css" rel="stylesheet">
   @stack('styles')
 </head>
 

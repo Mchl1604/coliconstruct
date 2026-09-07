@@ -288,7 +288,7 @@ class DashboardMetrics
      * point of the section is that it stops mentioning something the moment it
      * is dealt with.
      *
-     * @return array<int, array{key: string, label: string, detail: ?string, count: int, icon: string, url: string}>
+     * @return array<int, array{key: string, label: string, detail: ?string, action: string, count: int, icon: string, url: string}>
      */
     public function urgentActions(): array
     {
@@ -301,7 +301,40 @@ class DashboardMetrics
         // one.
         $unassignedTasks = Task::query()->needsAssignment()->count();
 
+        // Projects with no agreed phase structure. Listed first because it is
+        // the first thing that has to happen on a new project: until it is
+        // done the project takes no tasks, so booking dates and a crew for it
+        // only gets so far.
+        //
+        // The link goes straight to the setup screen when there is only one -
+        // which is the case this entry exists for, a project created this
+        // morning - and to the projects table's Phase Setup Required tab when
+        // there are several. The same shape the specialty queue uses.
+        $awaitingPhaseSetup = Project::query()->needsPhaseSetup()->orderBy('project_id')->get();
+
         return collect([
+            [
+                'key' => 'phase_setup_required',
+                'count' => $awaitingPhaseSetup->count(),
+                'singular' => 'Project Phase Setup Required',
+                'plural' => 'Projects Need Phase Setup',
+                'detail' => $awaitingPhaseSetup->count() === 1
+                    ? 'This project has not been configured with its project phases.'
+                    : 'These projects have not been configured with their project phases.',
+                // The only entry whose link is not just "go and look": it
+                // names the thing to do, because the destination is a screen
+                // that does one job.
+                'action' => 'Set Up Phases',
+                'icon' => 'bi-diagram-3',
+                // Straight to the setup screen when there is only one, which
+                // is the case this entry exists for - a project created this
+                // morning. With several it opens the projects table, where
+                // each of them is flagged on its own row rather than hidden
+                // behind a tab. See Project::attentionTabKeys().
+                'url' => $awaitingPhaseSetup->count() === 1
+                    ? route('super-admin.projects.phases.setup', $awaitingPhaseSetup->first()->project_id)
+                    : $projects,
+            ],
             [
                 'key' => 'unscheduled_projects',
                 'count' => Project::query()->missingSchedule()->count(),
@@ -403,6 +436,10 @@ class DashboardMetrics
                 'label' => $action['label']
                     ?? $action['count'].' '.($action['count'] === 1 ? $action['singular'] : $action['plural']),
                 'detail' => $action['detail'] ?? null,
+                // What the link is called. 'View' for everything that opens a
+                // list to read; an entry that opens the screen where the thing
+                // is actually done says so instead.
+                'action' => $action['action'] ?? 'View',
                 'count' => $action['count'],
                 'icon' => $action['icon'],
                 'url' => $action['url'],

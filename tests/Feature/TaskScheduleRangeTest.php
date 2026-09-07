@@ -59,6 +59,11 @@ class TaskScheduleRangeTest extends TestCase
             'description' => 'Description',
         ]);
 
+        // A live project has been through phase setup - see
+        // TestCase::finalizePhases(). Without it this fixture would be refused
+        // at a gate these tests are not asking about.
+        $this->finalizePhases($this->project);
+
         $assignment = ProjectTechnician::create([
             'project_id' => $this->project->project_id,
             'technician_id' => $this->technician->technician_id,
@@ -94,6 +99,8 @@ class TaskScheduleRangeTest extends TestCase
         return [
             'task_title' => 'Some Task',
             'task_description' => 'Description',
+            // Every task belongs to a phase of its project - see TaskPhaseRules.
+            'phase_id' => $this->defaultPhaseId($this->project),
             'technician_id' => $this->technician->technician_id,
             'start_date' => $startDate,
             'due_date' => $dueDate,
@@ -226,6 +233,7 @@ class TaskScheduleRangeTest extends TestCase
         return $this->put(route('super-admin.tasks.update', $task->task_id), [
             'task_title' => 'Existing Task',
             'task_description' => 'Description',
+            'phase_id' => $this->defaultPhaseId($this->project),
             'technician_id' => $this->technician->technician_id,
             'start_date' => $startDate,
             'due_date' => $dueDate,

@@ -402,6 +402,7 @@ class UnassignedTaskAlertsTest extends TestCase
         $this->put(route('super-admin.tasks.update', $task->task_id), [
             'task_title' => $task->task_title,
             'task_description' => $task->task_description,
+            'phase_id' => $this->defaultPhaseId($this->project),
             'technician_id' => $this->technician->technician_id,
             'start_date' => $task->start_date,
             'due_date' => $task->due_date,
@@ -482,6 +483,11 @@ class UnassignedTaskAlertsTest extends TestCase
             'address' => 'Address',
             'description' => 'Description',
         ]);
+
+        // A live project has been through phase setup - see
+        // TestCase::finalizePhases(). Without it this fixture would be refused
+        // at a gate these tests are not asking about.
+        $this->finalizePhases($project);
 
         if ($schedule) {
             Schedule::create([

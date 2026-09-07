@@ -2,9 +2,12 @@
 
 namespace Tests;
 
+use App\Models\Project;
+use App\Models\ProjectPhase;
 use App\Models\User;
 use App\Services\SystemContentService;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
+use Illuminate\Support\Collection;
 
 abstract class TestCase extends BaseTestCase
 {
@@ -29,6 +32,51 @@ abstract class TestCase extends BaseTestCase
             'terms_accepted_version' => app(SystemContentService::class)->termsVersion(),
             'terms_accepted_at' => now(),
         ];
+    }
+
+    /**
+     * Give a project the finalized phase structure a live project has.
+     *
+     * Projects are created `pending` phase setup, and a project in that state
+     * deliberately accepts no tasks - so a fixture built for a test about
+     * something else would be refused at a gate the test is not asking about.
+     * In production every project that has work booked against it has been
+     * through setup, so this is what a realistic fixture looks like.
+     *
+     * A test that wants the OTHER case - a project still awaiting setup -
+     * simply does not call this. ProjectPhaseSetupTest is built that way
+     * throughout.
+     *
+     * @return Collection<int, ProjectPhase> The phases, in sequence order.
+     */
+    protected function finalizePhases(Project $project, int $count = 2): Collection
+    {
+        $phases = collect(range(1, $count))->map(fn (int $sequence): ProjectPhase => ProjectPhase::create([
+            'project_id' => $project->project_id,
+            'sequence' => $sequence,
+            'title' => 'Phase '.$sequence,
+            'description' => 'Phase '.$sequence.' of the work.',
+        ]));
+
+        $project->forceFill([
+            'phase_setup_status' => Project::PHASE_SETUP_FINALIZED,
+            'phase_count' => $count,
+            'phase_setup_finalized_at' => now(),
+        ])->save();
+
+        return $phases;
+    }
+
+    /**
+     * The phase a task fixture should be filed under: the first of the
+     * project's, finalizing a structure for it if it has none yet.
+     */
+    protected function defaultPhaseId(Project $project): int
+    {
+        $phase = $project->phases()->orderBy('sequence')->first()
+            ?? $this->finalizePhases($project)->first();
+
+        return (int) $phase->phase_id;
     }
 
     /**

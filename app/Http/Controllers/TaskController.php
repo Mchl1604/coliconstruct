@@ -4,12 +4,15 @@ namespace App\Http\Controllers;
 
 use App\Models\ActivityLog;
 use App\Models\Project;
+use App\Models\ProjectPhase;
 use App\Models\Task;
 use App\Models\TaskImage;
 use App\Services\ActivityLogger;
 use App\Services\NotificationService;
+use App\Services\ProjectPhaseProgress;
 use App\Services\TaskAssignmentGaps;
 use App\Services\TaskAssignmentRules;
+use App\Services\TaskPhaseRules;
 use App\Services\TaskScheduleRules;
 use App\Services\TechnicianTaskLoad;
 use App\Support\UploadStore;
@@ -27,6 +30,8 @@ class TaskController extends Controller
         private readonly TaskAssignmentRules $assignmentRules,
         private readonly ActivityLogger $activityLogger,
         private readonly NotificationService $notifications,
+        private readonly TaskPhaseRules $phaseRules,
+        private readonly ProjectPhaseProgress $phases,
     ) {}
 
     /**
@@ -63,6 +68,15 @@ class TaskController extends Controller
             $project->project_id => collect($this->scheduleRules->ranges($project->project_id)),
         ]);
 
+        // Each project's finalized phases, for the Phase select on every task's
+        // edit dialog. Loaded in one query for the whole page rather than one
+        // per task - see the phasesByProject prop on x-task-board.
+        $phasesByProject = ProjectPhase::query()
+            ->whereIn('project_id', $projects->pluck('project_id'))
+            ->inOrder()
+            ->get()
+            ->groupBy('project_id');
+
         // An administrator runs every board; only a locked project is off
         // limits, and none of those are listed here anyway.
         $manageable = $projects->mapWithKeys(fn (Project $project): array => [
@@ -93,8 +107,14 @@ class TaskController extends Controller
         // the project simply not being there.
         $schedulableProjects = Project::query()
             ->orderBy('name')
-            ->get(['project_id', 'name', 'reference_no', 'status', 'on_hold', 'is_archived'])
-            ->filter(fn (Project $project): bool => ! $project->isReadOnly() && ! $project->isArchived())
+            ->get(['project_id', 'name', 'reference_no', 'status', 'on_hold', 'is_archived', 'phase_setup_status'])
+            // A project whose phases are not finalized is left off as well:
+            // there is nothing to file a task under, and the answer is to go
+            // and set the phases up rather than to open a dialog that can only
+            // refuse.
+            ->filter(fn (Project $project): bool => ! $project->isReadOnly()
+                && ! $project->isArchived()
+                && $project->phasesAreFinalized())
             ->values();
 
         return view('super-admin.tasks', compact(
@@ -105,7 +125,8 @@ class TaskController extends Controller
             'manageable',
             'schedulableProjects',
             'technicianActiveTaskCounts',
-            'attentionSummary'
+            'attentionSummary',
+            'phasesByProject'
         ));
     }
 
@@ -130,6 +151,13 @@ class TaskController extends Controller
             return response()->json([
                 'error' => 'This project is on hold. Resume it before adding tasks.',
             ], 422);
+        }
+
+        // Asked before the schedule, because it is the more fundamental
+        // objection: a project with no agreed phases has nothing to file work
+        // under whatever its dates say.
+        if ($blocked = $this->phaseRules->blockReason($project)) {
+            return response()->json(['error' => $blocked], 422);
         }
 
         $ranges = $this->scheduleRanges($projectId);
@@ -181,6 +209,14 @@ class TaskController extends Controller
 
         return response()->json([
             'technicians' => $technicians,
+            // The Phase select. Required, and offering this project's
+            // finalized structure and nothing else.
+            'phases' => $this->phases->selectablePhases($project)
+                ->map(fn ($phase): array => [
+                    'phase_id' => $phase->phase_id,
+                    'label' => $phase->label(),
+                ])
+                ->values(),
             // Kept as a coarse outer bound; `ranges` is what actually decides
             // which days are selectable, gaps included.
             'schedule_start' => Carbon::parse($scheduleStart)->format('Y-m-d'),
@@ -205,6 +241,10 @@ class TaskController extends Controller
                 ->with('error', 'This project is on hold. Resume it before adding tasks.');
         }
 
+        if ($blocked = $this->phaseRules->blockReason($project)) {
+            return redirect()->back()->with('error', $blocked);
+        }
+
         $ranges = $this->scheduleRanges($projectId);
 
         if ($ranges === []) {
@@ -216,10 +256,11 @@ class TaskController extends Controller
         $validator = Validator::make($request->all(), [
             'task_title' => 'required|string|max:255',
             'task_description' => 'required|string',
+            'phase_id' => $this->phaseRules->rules($project),
             'technician_id' => ['required', 'integer', $this->assignedTechnicianRule($project)],
             'start_date' => ['required', 'date'],
             'due_date' => ['required', 'date', 'after_or_equal:start_date'],
-        ], [
+        ], $this->phaseRules->messages() + [
             'technician_id.exists' => 'Pick a technician who is assigned to this project.',
         ]);
 
@@ -253,6 +294,7 @@ class TaskController extends Controller
 
             $task = Task::create([
                 'project_id' => $projectId,
+                'phase_id' => $validated['phase_id'],
                 'technician_id' => $validated['technician_id'],
                 'task_title' => $validated['task_title'],
                 'task_description' => $validated['task_description'],
@@ -316,10 +358,17 @@ class TaskController extends Controller
         $validator = Validator::make($request->all(), [
             'task_title' => 'required|string|max:255',
             'task_description' => 'required|string',
+            // Moving a task between phases is ordinary board work and stays
+            // open to whoever may edit the task: it changes which stage the
+            // work is counted under, not how many stages there are. A
+            // completed phase takes no work, with one exception - a task
+            // already sitting on one may stay where it is, so its wording and
+            // dates can still be corrected.
+            'phase_id' => $this->phaseRules->rules($project, $task->phase_id),
             'technician_id' => ['required', 'integer', $this->assignedTechnicianRule($project)],
             'start_date' => ['required', 'date'],
             'due_date' => ['required', 'date', 'after_or_equal:start_date'],
-        ], [
+        ], $this->phaseRules->messages() + [
             'technician_id.exists' => 'Pick a technician who is assigned to this project.',
         ]);
 

@@ -65,26 +65,34 @@ document.addEventListener("DOMContentLoaded", function () {
         element.classList.toggle("d-none", !message);
     }
 
-    function statusBadgeClass(status, statusLabel) {
-        // The server decides the label, including "Overdue", which wins over
-        // the underlying status.
-        if (statusLabel === "On Hold") {
-            return "bg-secondary";
-        }
-
-        if (statusLabel === "Overdue") {
-            return "badge-overdue";
-        }
+    /**
+     * The markup for a project's status badge, colour and all.
+     *
+     * This used to be a copy of Project::statusBadgeClass()'s Bootstrap
+     * mapping - one of two in this codebase, both of which drifted from the
+     * palette the calendar on this very page draws with. There is nothing to
+     * copy now: the badge names its status and projectStatus.css supplies the
+     * colour, from the same keys the server uses.
+     *
+     * The key still has to be derived here, because these payloads carry the
+     * stored status and the server's label rather than statusKey() itself, and
+     * the label is what settles "On Hold" and "Overdue" - both of which win
+     * over the status underneath them.
+     */
+    function statusBadge(status, statusLabel) {
+        const key =
+            statusLabel === "On Hold"
+                ? "on_hold"
+                : statusLabel === "Overdue"
+                  ? "overdue"
+                  : status;
 
         return (
-            {
-                unscheduled: "bg-info text-dark",
-                pending: "bg-warning",
-                ongoing: "bg-primary",
-                completed: "bg-success",
-                cancelled: "bg-danger",
-                archived: "bg-dark",
-            }[status] || "bg-secondary"
+            '<span class="badge project-status-badge" data-status="' +
+            escapeHtml(key) +
+            '">' +
+            escapeHtml(statusLabel) +
+            "</span>"
         );
     }
 
@@ -921,11 +929,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     project.technician_task_count +
                     "</td>" +
                     "<td>" +
-                    '<span class="badge ' +
-                    statusBadgeClass(project.status, project.status_label) +
-                    '">' +
-                    escapeHtml(project.status_label) +
-                    "</span>" +
+                    statusBadge(project.status, project.status_label) +
                     "</td>" +
                     "</tr>"
                 );
@@ -1526,12 +1530,7 @@ document.addEventListener("DOMContentLoaded", function () {
                       .join("  •  ")
                 : "No schedule set";
 
-            statusEl.innerHTML =
-                '<span class="badge ' +
-                statusBadgeClass(project.status, project.status_label) +
-                '">' +
-                escapeHtml(project.status_label) +
-                "</span>";
+            statusEl.innerHTML = statusBadge(project.status, project.status_label);
 
             const technicians = project.technicians || [];
             const lead = technicians.find(function (item) {

@@ -18,18 +18,12 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     /**
-     * The tab button that owns a pane, or null when the hash names something
-     * that is not a tab (an ordinary anchor, or nothing on this page).
-     *
-     * Matched by reading each toggle's target rather than by building a
-     * selector around the hash: a fragment is not a CSS identifier, and one
-     * spliced into a selector is a way to be wrong about a page's own markup.
+     * The tab button that owns a pane, matched by reading each toggle's target
+     * rather than by building a selector around the hash: a fragment is not a
+     * CSS identifier, and one spliced into a selector is a way to be wrong
+     * about a page's own markup.
      */
-    function tabFor(hash) {
-        if (!hash || hash === "#") {
-            return null;
-        }
-
+    function toggleForPane(paneId) {
         const toggles = document.querySelectorAll('[data-bs-toggle="tab"]');
 
         for (const toggle of toggles) {
@@ -37,7 +31,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 toggle.getAttribute("data-bs-target") ||
                 toggle.getAttribute("href");
 
-            if (target === hash) {
+            if (target === "#" + paneId) {
                 return toggle;
             }
         }
@@ -45,18 +39,92 @@ document.addEventListener("DOMContentLoaded", function () {
         return null;
     }
 
-    function show(tab) {
-        window.bootstrap.Tab.getOrCreateInstance(tab).show();
+    /**
+     * What has to be opened for the hash to be visible, outermost first.
+     *
+     * A hash names one of three things, and all three end up here:
+     *
+     *   - a tab pane, which is opened;
+     *   - an element INSIDE a tab pane - the phases panel, the registered user
+     *     card - in which case the pane holding it is opened and the element
+     *     is scrolled to;
+     *   - something on the page that is not in a tab at all, which is left to
+     *     the browser.
+     *
+     * Nested tabs are why this returns a list. The project details page has a
+     * Tasks tab inside a Project Activity tab, and opening the inner one while
+     * the outer is closed shows nobody anything.
+     */
+    function tabsFor(hash) {
+        if (!hash || hash === "#") {
+            return [];
+        }
 
-        // The tab strip, not the pane: opening a tab and landing halfway down
-        // its content reads as a broken jump rather than a switch.
-        tab.scrollIntoView({ block: "center", behavior: "smooth" });
+        const element = document.getElementById(hash.slice(1));
+
+        if (!element) {
+            return [];
+        }
+
+        const chain = [];
+
+        // Start at the element itself when it IS a pane, so a hash naming a
+        // pane opens that pane as well as any pane around it.
+        let pane = element.classList.contains("tab-pane")
+            ? element
+            : element.closest(".tab-pane");
+
+        while (pane) {
+            const toggle = toggleForPane(pane.id);
+
+            if (toggle) {
+                chain.unshift(toggle);
+            }
+
+            pane = pane.parentElement
+                ? pane.parentElement.closest(".tab-pane")
+                : null;
+        }
+
+        return chain;
     }
 
-    const atLoad = tabFor(window.location.hash);
+    function tabFor(hash) {
+        const chain = tabsFor(hash);
 
-    if (atLoad) {
-        show(atLoad);
+        return chain.length ? chain[chain.length - 1] : null;
+    }
+
+    function show(hash) {
+        const chain = tabsFor(hash);
+
+        if (!chain.length) {
+            return;
+        }
+
+        // Outermost first: Bootstrap will not show a pane whose own container
+        // is hidden.
+        chain.forEach(function (tab) {
+            window.bootstrap.Tab.getOrCreateInstance(tab).show();
+        });
+
+        const element = document.getElementById(hash.slice(1));
+        const innermost = chain[chain.length - 1];
+
+        // A hash naming a pane scrolls to the tab strip: opening a tab and
+        // landing halfway down its content reads as a broken jump rather than
+        // a switch. A hash naming something inside a pane scrolls to that,
+        // because it is what the reader was sent to look at.
+        const destination =
+            element && !element.classList.contains("tab-pane")
+                ? element
+                : innermost;
+
+        destination.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+
+    if (tabFor(window.location.hash)) {
+        show(window.location.hash);
     }
 
     document.addEventListener("click", function (event) {
@@ -74,9 +142,7 @@ document.addEventListener("DOMContentLoaded", function () {
             return;
         }
 
-        const tab = tabFor(target.hash);
-
-        if (!tab) {
+        if (!tabFor(target.hash)) {
             return;
         }
 
@@ -93,7 +159,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 modal.addEventListener(
                     "hidden.bs.modal",
                     function () {
-                        show(tab);
+                        show(target.hash);
                     },
                     { once: true },
                 );
@@ -106,6 +172,6 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         window.history.replaceState(null, "", target.hash);
-        show(tab);
+        show(target.hash);
     });
 });

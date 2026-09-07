@@ -75,6 +75,11 @@ class ReportsPageTest extends TestCase
             'is_archived' => $archived,
         ]);
 
+        // A live project has been through phase setup - see
+        // TestCase::finalizePhases(). Without it this fixture would be refused
+        // at a gate these tests are not asking about.
+        $this->finalizePhases($project);
+
         Client::create([
             'project_id' => $project->project_id,
             'client_type' => 'Commercial',
@@ -1360,7 +1365,12 @@ class ReportsPageTest extends TestCase
             $project->projectTypes()->attach(ProjectType::create(['type_name' => $name])->type_id);
         }
 
-        $rows = $this->exportReport('project')['sections'][0]['rows'];
+        // The period is named rather than defaulted. exportReport() falls back
+        // to the month it is run in, and this project's bookings are in
+        // August, so for eleven months of the year the report was empty and
+        // the test failed on a fixture it had nothing to say about. The
+        // sibling test below already passed its period for the same reason.
+        $rows = $this->exportReport('project', [], $this->monthOf($this->dateThisYear('08-01')))['sections'][0]['rows'];
 
         $this->assertCount(1, $rows);
         $this->assertCount(2, $rows[0]['project_types']);

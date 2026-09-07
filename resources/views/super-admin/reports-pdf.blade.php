@@ -2,7 +2,7 @@
     /**
      * A status printed the way the application shows it on screen: the same
      * fill, and ink chosen to stay readable on it. Both come from
-     * Project::STATUS_COLORS so there is one colour system, not two.
+     * Project::STATUS_INK so there is one colour system, not two.
      */
     $badge = function (?string $key, ?string $label): string {
         [$background, $ink] = \App\Models\Project::statusColor((string) $key);

@@ -65,3 +65,118 @@
     font-size: 0.82rem;
     color: #64748b;
 }
+
+
+/* ---- Buttons: outlined, never filled ----
+   Bootstrap 5.3 builds every button out of `--bs-btn-*` custom properties, so
+   the whole site's button style is a matter of restating those once here
+   rather than editing markup page by page. Loaded after Bootstrap in every
+   layout, so these win.
+
+   The rule for each variant: the colour it used to be filled with becomes its
+   border and its text, the fill becomes nothing, and hovering washes that same
+   colour in behind the text at low opacity. A translucent tint rather than an
+   opaque one so a button reads the same on a white card, a pale panel or the
+   blue hero. Only `.btn-link` is left alone - it is a link wearing a button's
+   class, and it never had a fill to lose. */
+
+.btn-primary,
+.btn-outline-primary,
+.btn-secondary,
+.btn-outline-secondary,
+.btn-success,
+.btn-outline-success,
+.btn-danger,
+.btn-outline-danger,
+.btn-warning,
+.btn-outline-warning,
+.btn-info,
+.btn-outline-info,
+.btn-light,
+.btn-outline-light,
+.btn-dark,
+.btn-outline-dark {
+    --bs-btn-color: var(--ui-btn-ink);
+    --bs-btn-bg: transparent;
+    --bs-btn-border-color: var(--ui-btn-line);
+
+    --bs-btn-hover-color: var(--ui-btn-ink);
+    --bs-btn-hover-bg: rgba(var(--ui-btn-rgb), .12);
+    --bs-btn-hover-border-color: var(--ui-btn-line);
+
+    --bs-btn-active-color: var(--ui-btn-ink);
+    --bs-btn-active-bg: rgba(var(--ui-btn-rgb), .22);
+    --bs-btn-active-border-color: var(--ui-btn-line);
+    --bs-btn-active-shadow: none;
+
+    --bs-btn-focus-shadow-rgb: var(--ui-btn-rgb);
+
+    /* One greyed-out look for every variant. A disabled danger button that
+       kept its red would still read as "press me"; the point of the state is
+       that it stops looking like any of them. */
+    --bs-btn-disabled-color: #8a94a6;
+    --bs-btn-disabled-bg: transparent;
+    --bs-btn-disabled-border-color: #ced4da;
+}
+
+.btn-primary,
+.btn-outline-primary {
+    --ui-btn-ink: #0d6efd;
+    --ui-btn-line: #0d6efd;
+    --ui-btn-rgb: 13, 110, 253;
+}
+
+.btn-secondary,
+.btn-outline-secondary {
+    --ui-btn-ink: #6c757d;
+    --ui-btn-line: #6c757d;
+    --ui-btn-rgb: 108, 117, 125;
+}
+
+.btn-success,
+.btn-outline-success {
+    --ui-btn-ink: #198754;
+    --ui-btn-line: #198754;
+    --ui-btn-rgb: 25, 135, 84;
+}
+
+.btn-danger,
+.btn-outline-danger {
+    --ui-btn-ink: #dc3545;
+    --ui-btn-line: #dc3545;
+    --ui-btn-rgb: 220, 53, 69;
+}
+
+/* Warning and info kept their hue for the border, but their fill colour was
+   only ever legible under white text. As a label on white it needs the darker
+   end of the same hue to stay readable. */
+.btn-warning,
+.btn-outline-warning {
+    --ui-btn-ink: #997404;
+    --ui-btn-line: #ffc107;
+    --ui-btn-rgb: 255, 193, 7;
+}
+
+.btn-info,
+.btn-outline-info {
+    --ui-btn-ink: #087990;
+    --ui-btn-line: #0dcaf0;
+    --ui-btn-rgb: 13, 202, 240;
+}
+
+/* The light button was near-white already: its own colour as a border would
+   be invisible on the white it sits on, so the border steps one shade down
+   and the wash keeps the pale grey the button used to be filled with. */
+.btn-light,
+.btn-outline-light {
+    --ui-btn-ink: #212529;
+    --ui-btn-line: #ced4da;
+    --ui-btn-rgb: 173, 181, 189;
+}
+
+.btn-dark,
+.btn-outline-dark {
+    --ui-btn-ink: #212529;
+    --ui-btn-line: #212529;
+    --ui-btn-rgb: 33, 37, 41;
+}

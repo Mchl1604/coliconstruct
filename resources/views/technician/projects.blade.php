@@ -4,6 +4,8 @@
 
 @push('styles')
     <link href="/css/super-admin/projects.css" rel="stylesheet">
+    {{-- The phase setup alert below the heading. --}}
+    <link href="/css/projectPhases.css" rel="stylesheet">
 @endpush
 
 @section('content')
@@ -15,6 +17,10 @@
 
         <span class="badge bg-secondary">{{ $projects->count() }} assigned</span>
     </div>
+
+    {{-- A lead has no dashboard, so what needs arranging is said here. Empty
+         for a plain technician, who cannot set a phase structure up. --}}
+    <x-phase-setup-alert :projects="$phaseSetupProjects" />
 
     <div class="card shadow-sm border-0 rounded-2">
         <div class="card-body p-2">
@@ -48,6 +54,7 @@
                             <th>Client Type</th>
                             <th>Project Type</th>
                             <th>Status</th>
+                            <th>Phases</th>
                             <th class="text-center">Action</th>
                         </tr>
                     </thead>
@@ -70,15 +77,22 @@
                                 // an administrator looking at the same project
                                 // see the same flag.
                                 $isActiveToday = $project->isActiveToday();
+                                // Nobody has settled this project's phases,
+                                // so it takes no tasks. Flagged on the row
+                                // rather than behind a tab, the way ACTIVE
+                                // TODAY is - see Project::needsPhaseSetup().
+                                $needsPhaseSetup = $project->needsPhaseSetup();
                             @endphp
                             <tr data-tab="{{ $project->tabKey() }}"
                                 data-status="{{ $project->status }}"
                                 data-overdue="{{ $project->isOverdue() ? '1' : '0' }}"
                                 data-on-hold="{{ $project->on_hold ? '1' : '0' }}"
                                 data-active-today="{{ $isActiveToday ? '1' : '0' }}"
-                                class="{{ $isActiveToday ? 'project-row-active-today' : '' }} {{ $needsRecrew ? 'project-row-needs-recrew' : '' }}">
+                                class="{{ $needsPhaseSetup ? 'project-row-needs-phase-setup' : '' }} {{ $isActiveToday ? 'project-row-active-today' : '' }} {{ $needsRecrew ? 'project-row-needs-recrew' : '' }}">
                                 <td>
                                     {{ $project->reference_no }}
+
+                                    <x-project-phase-setup-flag :project="$project" />
 
                                     <x-project-active-today-flag :project="$project" />
 
@@ -106,6 +120,7 @@
                                     @endforelse
                                 </td>
                                 <td><x-project-status-badge :project="$project" /></td>
+                                <td><x-project-phase-progress :project="$project" /></td>
                                 <td class="text-center">
                                     <div class="projects-action-buttons">
                                         <a class="btn btn-sm btn-primary py-1 px-2"

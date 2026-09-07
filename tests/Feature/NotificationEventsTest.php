@@ -65,13 +65,20 @@ class NotificationEventsTest extends TestCase
 
     private function project(string $status = 'ongoing'): Project
     {
-        return Project::create([
+        $project = Project::create([
             'name' => 'Warehouse CCTV Installation',
             'reference_no' => 'PRJ-'.uniqid(),
             'status' => $status,
             'address' => 'Address',
             'description' => 'Description',
         ]);
+
+        // A live project has been through phase setup - see
+        // TestCase::finalizePhases(). Without it this fixture would be refused
+        // at a gate these tests are not asking about.
+        $this->finalizePhases($project);
+
+        return $project;
     }
 
     private function assign(Project $project, Technician $technician): ProjectTechnician
@@ -384,6 +391,8 @@ class NotificationEventsTest extends TestCase
         $this->post(route('super-admin.task.store', $project->project_id), [
             'task_title' => 'Install CCTV Cameras',
             'task_description' => 'Mount and wire the cameras.',
+            // Every task belongs to a phase of its project - see TaskPhaseRules.
+            'phase_id' => $this->defaultPhaseId($project),
             'technician_id' => $worker->technician_id,
             'start_date' => $day10,
             'due_date' => $day10,
@@ -416,6 +425,8 @@ class NotificationEventsTest extends TestCase
         $this->post(route('super-admin.task.store', $project->project_id), [
             'task_title' => 'Install CCTV Cameras',
             'task_description' => 'Mount and wire the cameras.',
+            // Every task belongs to a phase of its project - see TaskPhaseRules.
+            'phase_id' => $this->defaultPhaseId($project),
             'technician_id' => $worker->technician_id,
             'start_date' => $day10,
             'due_date' => $day10,
@@ -456,6 +467,7 @@ class NotificationEventsTest extends TestCase
         $this->put(route('super-admin.tasks.update', $task->task_id), [
             'task_title' => 'Install CCTV Cameras',
             'task_description' => 'Mount and wire the cameras.',
+            'phase_id' => $this->defaultPhaseId($project),
             'technician_id' => $to->technician_id,
             'start_date' => $day10,
             'due_date' => $day10,

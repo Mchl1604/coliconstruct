@@ -10,6 +10,7 @@ use App\Http\Controllers\InquiryController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ProjectController;
+use App\Http\Controllers\ProjectPhaseController;
 use App\Http\Controllers\ProjectTypeController;
 use App\Http\Controllers\PublicSiteController;
 use App\Http\Controllers\ReportController;
@@ -253,6 +254,36 @@ Route::prefix('super-admin')
         Route::get('/projects/importable-teams', [ProjectController::class, 'importableTeams'])
             ->name('projects.importable-teams');
         Route::get('/projects/{id}', [ProjectController::class, 'show'])->name('projects.show');
+
+        // ---------------------------------------------------------------
+        // Project phases
+        // ---------------------------------------------------------------
+        //
+        // Declared after /projects/{id} because they do not compete with it -
+        // the phases segment makes each path longer and more specific.
+        //
+        // Admin reaches all of these except the override. Setting a structure
+        // up is ordinary administrative work; unlocking one that has been
+        // agreed and worked against is not, and the middleware here is the
+        // outer fence around that - ProjectPhaseRules refuses it again inside
+        // the controller, so the door and the rule cannot disagree.
+        Route::get('/projects/{project}/phases/setup', [ProjectPhaseController::class, 'setup'])
+            ->whereNumber('project')
+            ->name('projects.phases.setup');
+        Route::post('/projects/{project}/phases/save', [ProjectPhaseController::class, 'save'])
+            ->whereNumber('project')
+            ->name('projects.phases.save');
+        Route::post('/projects/{project}/phases/finalize', [ProjectPhaseController::class, 'finalize'])
+            ->whereNumber('project')
+            ->name('projects.phases.finalize');
+        Route::post('/projects/{project}/phases/override', [ProjectPhaseController::class, 'override'])
+            ->whereNumber('project')
+            ->middleware('role:super_admin')
+            ->name('projects.phases.override');
+        Route::post('/projects/{project}/phases/{phase}/complete', [ProjectPhaseController::class, 'complete'])
+            ->whereNumber('project')
+            ->whereNumber('phase')
+            ->name('projects.phases.complete');
         // What has changed about a project's team, or about its dates. Read by
         // the two history buttons on the project details page; `section` says
         // which of the two is asking.
@@ -564,6 +595,20 @@ Route::prefix('technician')
                 ->name('tasks.update');
             Route::delete('/tasks/{task}', [TechnicianPortalController::class, 'destroyTask'])
                 ->name('tasks.destroy');
+
+            // Project phases. A lead sets the structure up and closes phases
+            // out; they cannot unlock a finalized one, which is why there is
+            // no override route here for them to find. Every action is
+            // additionally narrowed to a project they are actually on - see
+            // ProjectPhaseRules, which asks ProjectPolicy::viewAssigned().
+            Route::get('/projects/{project}/phases/setup', [ProjectPhaseController::class, 'setup'])
+                ->name('projects.phases.setup');
+            Route::post('/projects/{project}/phases/save', [ProjectPhaseController::class, 'save'])
+                ->name('projects.phases.save');
+            Route::post('/projects/{project}/phases/finalize', [ProjectPhaseController::class, 'finalize'])
+                ->name('projects.phases.finalize');
+            Route::post('/projects/{project}/phases/{phase}/complete', [ProjectPhaseController::class, 'complete'])
+                ->name('projects.phases.complete');
         });
     });
 

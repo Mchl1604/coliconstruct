@@ -5,6 +5,10 @@
     'technicians' => collect(),
     'activeTaskCounts' => collect(),
     'scheduleRanges' => collect(),
+    // The phases this task may be moved to: the project's open ones. Empty on
+    // a page that does not offer editing, where the phase is shown as a fact
+    // rather than a choice.
+    'phases' => collect(),
     // The route the edit form posts to. Null means view only, which is also
     // what a completed task gets however it is opened.
     'updateAction' => null,
@@ -15,6 +19,14 @@
     $isCompleted = $task->isCompleted();
     $isEditable = $updateAction !== null && ! $isCompleted;
 
+    // A completed phase takes no new work, so it is not on the list - but a
+    // task already sitting on one keeps it, or saving an edit to this task's
+    // wording would silently move the work to a different stage. The same
+    // allowance the technician picker makes for a task's current owner, and
+    // the same one TaskPhaseRules makes on the way back in.
+    $selectablePhases = $phases->contains(fn($phase) => $phase->phase_id == $task->phase_id)
+        ? $phases
+        : $phases->concat(array_filter([$task->phase]))->sortBy('sequence')->values();
 @endphp
 
 {{--
@@ -49,6 +61,28 @@
             </div>
 
             <div class="modal-body">
+
+                {{-- Which stage of the project this work belongs to. Moving a
+                     task between phases changes what the phase progress bars
+                     count, which is ordinary board work - it does not touch
+                     the structure itself, so it is not locked. --}}
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Phase</label>
+
+                    @if ($isEditable && $selectablePhases->isNotEmpty())
+                        <select class="form-select" name="phase_id" required>
+                            @foreach ($selectablePhases as $phase)
+                                <option value="{{ $phase->phase_id }}"
+                                    @selected($task->phase_id == $phase->phase_id)>
+                                    {{ $phase->label() }}{{ $phase->isCompleted() ? ' (completed)' : '' }}
+                                </option>
+                            @endforeach
+                        </select>
+                    @else
+                        <input type="text" class="form-control"
+                            value="{{ $task->phase?->label() ?? 'No phase' }}" readonly>
+                    @endif
+                </div>
 
                 <div class="mb-3">
                     <label class="form-label fw-semibold">Task Name</label>

@@ -119,9 +119,12 @@
                                 @endif
                             </span>
 
+                            {{-- 'View' on everything that opens a list; an
+                                 entry whose link opens the screen where the
+                                 work is actually done names that instead. --}}
                             <a class="dash-urgent-view" href="{{ $action['url'] }}"
                                 data-urgent-action="{{ $action['key'] }}">
-                                View
+                                {{ $action['action'] }}
                             </a>
                         </li>
                     @empty

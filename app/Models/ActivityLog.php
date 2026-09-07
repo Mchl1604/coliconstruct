@@ -246,6 +246,28 @@ class ActivityLog extends Model
     public const PROJECT_RESCHEDULED = 'Project Rescheduled';
 
     /**
+     * The phase structure, which is settled once and then locked.
+     *
+     * Four entries rather than one, because the four things they record answer
+     * four different questions. 'Which projects had their agreed structure
+     * changed after work started, and on whose authority?' is the one the
+     * whole feature exists to keep answerable, and it needs the override to be
+     * a thing a filter can find rather than a sentence somebody has to read.
+     */
+    public const PROJECT_PHASES_FINALIZED = 'Project Phases Finalized';
+
+    public const PROJECT_PHASE_STRUCTURE_OVERRIDDEN = 'Project Phase Structure Overridden';
+
+    public const PROJECT_PHASE_COMPLETED = 'Project Phase Completed';
+
+    /**
+     * A phase closed with tasks still open on it, on a Super Admin's say-so.
+     * Kept apart from the entry above for the reason
+     * PROJECT_COMPLETION_OVERRIDDEN is kept apart from PROJECT_COMPLETED.
+     */
+    public const PROJECT_PHASE_COMPLETION_OVERRIDDEN = 'Project Phase Completion Overridden';
+
+    /**
      * The welcome sent to the client address a project was booked under, so
      * they can follow the work on the public website.
      */
@@ -435,6 +457,10 @@ class ActivityLog extends Model
         self::PROJECT_PUT_ON_HOLD => self::MODULE_PROJECTS,
         self::PROJECT_RESUMED => self::MODULE_PROJECTS,
         self::PROJECT_RESCHEDULED => self::MODULE_PROJECTS,
+        self::PROJECT_PHASES_FINALIZED => self::MODULE_PROJECTS,
+        self::PROJECT_PHASE_STRUCTURE_OVERRIDDEN => self::MODULE_PROJECTS,
+        self::PROJECT_PHASE_COMPLETED => self::MODULE_PROJECTS,
+        self::PROJECT_PHASE_COMPLETION_OVERRIDDEN => self::MODULE_PROJECTS,
         self::INVITATION_EMAIL_SENT => self::MODULE_PROJECTS,
         self::REGISTERED_USER_ASSIGNED => self::MODULE_PROJECTS,
         self::REGISTERED_USER_ASSIGNMENT_CHANGED => self::MODULE_PROJECTS,

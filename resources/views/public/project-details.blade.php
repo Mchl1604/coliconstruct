@@ -146,7 +146,8 @@
                         </div>
 
                         <div>
-                            <span class="badge rounded-pill fs-6 px-4 py-3 {{ $card['status_badge_class'] }}">
+                            <span class="badge rounded-pill fs-6 px-4 py-3 {{ $card['status_badge_class'] }}"
+                                data-status="{{ $card['status_key'] }}">
                                 {{ $card['status_label'] }}
                             </span>
                         </div>
@@ -369,6 +370,13 @@
                 </div>
 
                 <div class="card-body">
+
+                    {{-- Where the work has got to, in one line, before the
+                         reports that describe it. Not the phase panel the two
+                         staff portals draw: a client is not running the
+                         project, and what they want on opening their own job
+                         is how far along it is. See x-project-phase-line. --}}
+                    <x-project-phase-line :project="$project" class="mb-4" />
 
                     {{-- Technician reports: the tracker, so it comes first and is
                          given the page's strongest treatment. --}}

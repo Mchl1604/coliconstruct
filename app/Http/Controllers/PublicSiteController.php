@@ -287,7 +287,12 @@ class PublicSiteController extends Controller
             'status_label' => $project->statusLabel(),
             'short_status_label' => $project->shortStatusLabel(),
             'status_badge_class' => $project->statusBadgeClass(),
-            'header_class' => $this->headerClass($project),
+            // What colours the card, and it is the same key the office's
+            // tables and the schedule calendar are coloured by - see
+            // Project::STATUS_INK. The client used to get a palette of its
+            // own, which had no Overdue in it at all: late work reached them
+            // drawn as ordinary work in progress.
+            'status_key' => $project->statusKey(),
             // What the client has to do about this project, if anything. The
             // card shows a prompt and the details page shows the buttons, and
             // both read these rather than re-deriving the state.
@@ -312,6 +317,11 @@ class PublicSiteController extends Controller
                 ->filter()
                 ->values(),
             'progress' => $this->clientProjects->progressFor($project),
+            // The project itself, so the card can draw the phase chip from the
+            // same component the staff tables use rather than a second copy of
+            // the wording. Everything else here is flattened on purpose; this
+            // one is not, because a component is the thing being reused.
+            'project' => $project,
             'updated_at' => $project->updated_at,
             'url' => route('public.projects.show', $project->project_id),
         ];
@@ -362,20 +372,4 @@ class PublicSiteController extends Controller
      * The card's coloured header, matching the status colours used across the
      * rest of the system.
      */
-    private function headerClass(Project $project): string
-    {
-        if ($project->on_hold) {
-            return 'project-card-header-hold';
-        }
-
-        return match ($project->status) {
-            'unscheduled' => 'project-card-header-pending',
-            'pending' => 'project-card-header-scheduled',
-            'ongoing' => 'project-card-header-progress',
-            Project::STATUS_AWAITING_CLIENT_CONFIRMATION => 'project-card-header-awaiting',
-            'completed' => 'project-card-header-complete',
-            'cancelled' => 'project-card-header-cancelled',
-            default => 'project-card-header-pending',
-        };
-    }
 }

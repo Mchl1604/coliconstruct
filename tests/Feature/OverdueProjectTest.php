@@ -128,8 +128,21 @@ class OverdueProjectTest extends TestCase
 
         $this->assertTrue($project->fresh()->isOverdue());
         $this->assertSame('Overdue', $project->fresh()->statusLabel());
-        $this->assertSame('badge-overdue', $project->fresh()->statusBadgeClass());
-        $this->assertSame(Project::OVERDUE_COLOR, $project->fresh()->calendarColor());
+        // The badge no longer names a colour. It names the status - see
+        // Project::statusKey() - and projectStatus.css paints it from the same
+        // palette the schedule calendar draws with, which is what stopped
+        // Overdue being red on a table and deep orange on the calendar.
+        $this->assertSame('project-status-badge', $project->fresh()->statusBadgeClass());
+        $this->assertSame('overdue', $project->fresh()->statusKey());
+        $this->assertSame(Project::STATUS_INK['overdue'], $project->fresh()->statusInkColor());
+        // calendarColor() used to be asserted here. It was the last copy of
+        // the old fill palette, had no caller in the application - only this
+        // line - and has gone; what the calendars actually draw with is the
+        // ink, which is now the same value every badge on the site uses.
+        $this->assertSame(
+            $project->fresh()->statusInkColor(),
+            $project->fresh()->calendarInkColor()
+        );
     }
 
     /**
@@ -317,7 +330,7 @@ class OverdueProjectTest extends TestCase
 
         $heldEvent = $events->firstWhere('extendedProps.projectName', 'Paused Project');
 
-        $this->assertSame(Project::CALENDAR_INK['on_hold'], $heldEvent['borderColor']);
+        $this->assertSame(Project::STATUS_INK['on_hold'], $heldEvent['borderColor']);
         $this->assertSame('On Hold', $heldEvent['extendedProps']['statusLabel']);
         // Clicking it opens the read-only panel: the schedule is fixed until
         // somebody resumes the project.
@@ -328,9 +341,9 @@ class OverdueProjectTest extends TestCase
         // the lettering is white on it.
         $lateEvent = $events->firstWhere('extendedProps.projectName', 'Late Project');
         // The ink cut, not the fill: OVERDUE_COLOR is the badge background and
-        // is too pale to write with - see Project::CALENDAR_INK.
-        $this->assertSame(Project::CALENDAR_INK['overdue'], $lateEvent['borderColor']);
-        $this->assertSame(Project::CALENDAR_INK['overdue'], $lateEvent['backgroundColor']);
+        // is too pale to write with - see Project::STATUS_INK.
+        $this->assertSame(Project::STATUS_INK['overdue'], $lateEvent['borderColor']);
+        $this->assertSame(Project::STATUS_INK['overdue'], $lateEvent['backgroundColor']);
         $this->assertSame('#ffffff', $lateEvent['textColor']);
         $this->assertSame('Overdue', $lateEvent['extendedProps']['statusLabel']);
     }
@@ -368,8 +381,8 @@ class OverdueProjectTest extends TestCase
         $this->assertSame(['Late Project', 'Paused Project'], $names);
         // Filled for a whole-day booking, the same as every other calendar.
         $lateEvent = $events->firstWhere('extendedProps.projectName', 'Late Project');
-        $this->assertSame(Project::CALENDAR_INK['overdue'], $lateEvent['borderColor']);
-        $this->assertSame(Project::CALENDAR_INK['overdue'], $lateEvent['backgroundColor']);
+        $this->assertSame(Project::STATUS_INK['overdue'], $lateEvent['borderColor']);
+        $this->assertSame(Project::STATUS_INK['overdue'], $lateEvent['backgroundColor']);
         $this->assertSame('#ffffff', $lateEvent['textColor']);
         $this->assertSame('Overdue', $lateEvent['extendedProps']['statusLabel']);
 

@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Project;
+use App\Models\ProjectPhase;
 use App\Models\Schedule;
 use App\Models\User;
 use Carbon\CarbonImmutable;
@@ -40,6 +41,13 @@ use RuntimeException;
  */
 class ProjectReopen
 {
+    /**
+     * What the phase a reopen adds is called. Named here rather than typed
+     * into the insert, because it is the one phase title this application
+     * chooses for itself.
+     */
+    public const REOPEN_PHASE_TITLE = 'Reopened Work';
+
     public function __construct(
         private readonly ProjectTeam $projectTeam,
         private readonly TechnicianAvailabilityService $availability,
@@ -107,6 +115,8 @@ class ProjectReopen
             'completion_reminder_sent_at' => null,
         ]);
 
+        $this->addReopenPhase($project);
+
         $project->unsetRelation('schedules');
 
         // Work resuming the day after the recorded work ended is one stretch
@@ -116,6 +126,54 @@ class ProjectReopen
         $this->consolidation->consolidate($project);
 
         return $this->bookingCovering($project, $entry['start']) ?? $schedule->refresh();
+    }
+
+    /**
+     * Give the reopened project a phase to put the new work under.
+     *
+     * Completion closed whatever phases were still open on the way out (see
+     * ProjectCompletion::closeOutstandingPhases), so a reopened project
+     * arrives with every phase finished - and a project with no open phase
+     * takes no tasks at all: TaskPhaseRules refuses it. Without this the lead
+     * would be handed a project reopened specifically so they could work on
+     * it, and no way to record any of that work.
+     *
+     * A new phase rather than reopening the old ones, because that is what
+     * actually happened. Those stages were finished; this is a fault found
+     * afterwards, or a change the client asked for, and it is work of its own.
+     * Reopening Phase 4 would rewrite a true record and leave the extra work
+     * indistinguishable from the original job - "4/5 Phases" says a finished
+     * project has more to do, which is exactly the situation.
+     *
+     * This is the one thing that changes a locked structure without a Super
+     * Admin, and deliberately so: it is not somebody editing the phases, it is
+     * the system making room for work an administrator has just authorised.
+     * The reopen entry in the activity log is the record of it.
+     */
+    private function addReopenPhase(Project $project): void
+    {
+        if ($project->needsPhaseSetup()) {
+            return;
+        }
+
+        $sequence = (int) $project->phases()->max('sequence') + 1;
+
+        ProjectPhase::create([
+            'project_id' => $project->project_id,
+            'sequence' => $sequence,
+            'title' => self::REOPEN_PHASE_TITLE,
+            // Deliberately generic. The administrator's own reason is on the
+            // project, and this description is read by the client on their own
+            // project page - an internal note is not the thing to put there.
+            'description' => 'Additional work required after the project was reopened.',
+        ]);
+
+        // The denominator every progress figure on this project is read
+        // against. Left at the old count it would report "4/4 Phases" on a
+        // project with five, which is the drift the lock exists to prevent.
+        $project->forceFill(['phase_count' => $sequence])->save();
+
+        $project->unsetRelation('phases');
     }
 
     /**

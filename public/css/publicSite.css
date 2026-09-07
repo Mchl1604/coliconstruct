@@ -50,35 +50,39 @@
 
 /* ---- Buttons ---- */
 
-/* The yellow call to action, for use against blue. */
+/* The yellow call to action, for use against blue. An outline rather than a
+   slab: its own yellow draws the edge and the label, and hovering washes that
+   yellow in behind the text instead of filling it. */
 .btn-brand-yellow {
-    background: var(--brand-yellow);
+    background: transparent;
     border: 1px solid var(--brand-yellow);
-    color: var(--brand-ink);
+    color: var(--brand-yellow);
     font-weight: 700;
 }
 
 .btn-brand-yellow:hover,
 .btn-brand-yellow:focus {
-    background: var(--brand-yellow-deep);
-    border-color: var(--brand-yellow-deep);
-    color: var(--brand-ink);
+    background: rgba(249, 238, 60, .18);
+    border-color: var(--brand-yellow);
+    color: var(--brand-yellow);
 }
 
 .btn-brand-blue {
-    background: var(--brand-blue);
+    background: transparent;
     border: 1px solid var(--brand-blue);
-    color: #fff;
+    color: var(--brand-blue-deep);
     font-weight: 600;
 }
 
 .btn-brand-blue:hover,
 .btn-brand-blue:focus {
-    background: var(--brand-blue-deep);
-    border-color: var(--brand-blue-deep);
-    color: #fff;
+    background: rgba(45, 141, 225, .12);
+    border-color: var(--brand-blue);
+    color: var(--brand-blue-deep);
 }
 
+/* Kept as its own class because the markup names it, but with the filled blue
+   one now outlined too the two read alike - there is only the one blue button. */
 .btn-outline-brand-blue {
     background: transparent;
     border: 1px solid var(--brand-blue);
@@ -88,8 +92,9 @@
 
 .btn-outline-brand-blue:hover,
 .btn-outline-brand-blue:focus {
-    background: var(--brand-blue);
-    color: #fff;
+    background: rgba(45, 141, 225, .12);
+    border-color: var(--brand-blue);
+    color: var(--brand-blue-deep);
 }
 
 /* Fully rounded, which is the shape every call to action wears in the
@@ -98,8 +103,9 @@
     border-radius: 999px;
 }
 
-/* The hero's quiet button: white outline on blue, filling white on hover so
-   it never competes with the yellow one beside it. */
+/* The hero's quiet button: white outline on blue, washing white in behind the
+   label on hover rather than filling with it, so it neither competes with the
+   yellow one beside it nor turns solid. */
 .btn-hero-ghost {
     background: transparent;
     border: 1px solid rgba(255, 255, 255, .85);
@@ -109,9 +115,9 @@
 
 .btn-hero-ghost:hover,
 .btn-hero-ghost:focus {
-    background: #fff;
+    background: rgba(255, 255, 255, .18);
     border-color: #fff;
-    color: var(--brand-blue-deep);
+    color: #fff;
 }
 
 /* ---- Header ---- */
@@ -810,38 +816,14 @@
     white-space: nowrap;
 }
 
-/* The status colours of the wireframe: grey pending, teal scheduled, blue in
-   progress, green complete, red cancelled. */
-.project-card-header-pending {
-    background: linear-gradient(100deg, #475569 0%, #64748b 100%);
-}
+/* The card header's colours used to be declared here, as a palette of this
+   page's own - grey pending, teal scheduled, blue in progress, green complete,
+   red cancelled, and no Overdue at all, so a late project reached the client
+   drawn as ordinary work in progress.
 
-/* Awaiting the client's confirmation: the same green family as complete, held
-   a shade back so the two are told apart at a glance. The work is finished;
-   the project is not closed yet. */
-.project-card-header-awaiting {
-    background: linear-gradient(100deg, #3f7d53 0%, #6ea67f 100%);
-}
-
-.project-card-header-scheduled {
-    background: linear-gradient(100deg, #0891b2 0%, #06b6d4 100%);
-}
-
-.project-card-header-progress {
-    background: linear-gradient(100deg, var(--brand-blue-deep) 0%, var(--brand-blue) 100%);
-}
-
-.project-card-header-complete {
-    background: linear-gradient(100deg, #15803d 0%, #22c55e 100%);
-}
-
-.project-card-header-cancelled {
-    background: linear-gradient(100deg, #b91c1c 0%, #ef4444 100%);
-}
-
-.project-card-header-hold {
-    background: linear-gradient(100deg, #92400e 0%, #d97706 100%);
-}
+   They now come from projectStatus.css, keyed by the same data-status the
+   office's badges and the schedule calendar are keyed by, so a project is one
+   colour to everybody who can see it. See Project::STATUS_INK. */
 
 .project-card-body {
     padding: 1.1rem;

@@ -67,6 +67,11 @@ class InactiveTechnicianOnProjectTest extends TestCase
             'quotation' => 100000,
         ]);
 
+        // A live project has been through phase setup - see
+        // TestCase::finalizePhases(). Without it this fixture would be refused
+        // at a gate these tests are not asking about.
+        $this->finalizePhases($this->project);
+
         $this->assign($this->lead);
         $this->assign($this->mate);
         $this->schedule(1, 6);
@@ -175,6 +180,9 @@ class InactiveTechnicianOnProjectTest extends TestCase
         return array_merge([
             'task_title' => 'Install condenser',
             'task_description' => 'Mount and wire the outdoor unit.',
+            // Every task belongs to a phase of its project - see
+            // TaskPhaseRules. The fixture project is set up in setUp().
+            'phase_id' => $this->defaultPhaseId($this->project),
             'technician_id' => $this->mate->technician_id,
             'start_date' => $this->day(2),
             'due_date' => $this->day(4),
