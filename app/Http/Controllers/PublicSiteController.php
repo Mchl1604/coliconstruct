@@ -284,14 +284,20 @@ class PublicSiteController extends Controller
             'location' => $project->address,
             'description' => $project->description,
             'status' => $project->status,
-            'status_label' => $project->statusLabel(),
-            'short_status_label' => $project->shortStatusLabel(),
+            // The client's wording, not the office's. These are the same
+            // string for every state but one: a project that has run out of
+            // booked dates reads as "Needs Rescheduling" to the staff who can
+            // book them and "Awaiting New Schedule" to the client who cannot -
+            // see Project::clientStatusLabel().
+            'status_label' => $project->clientStatusLabel(),
+            'short_status_label' => $project->clientStatusLabel(),
             'status_badge_class' => $project->statusBadgeClass(),
             // What colours the card, and it is the same key the office's
             // tables and the schedule calendar are coloured by - see
             // Project::STATUS_INK. The client used to get a palette of its
-            // own, which had no Overdue in it at all: late work reached them
-            // drawn as ordinary work in progress.
+            // own, which had no colour for a project out of dates at all: work
+            // with an empty calendar reached them drawn as ordinary work in
+            // progress.
             'status_key' => $project->statusKey(),
             // What the client has to do about this project, if anything. The
             // card shows a prompt and the details page shows the buttons, and
@@ -330,8 +336,10 @@ class PublicSiteController extends Controller
     /**
      * Which tab of the My Projects filter bar a project belongs under.
      *
-     * Overdue is a tab of its own, so an overdue project is not also counted
-     * as Ongoing - the same rule the Super Admin projects table applies.
+     * A project out of booked dates gets a tab of its own, so it is not also
+     * counted as Ongoing - the same rule the Super Admin projects table
+     * applies. The tab is keyed 'overdue' for the same reason the model still
+     * is; only the wording changed.
      * "Not yet scheduled" work is booked but undated, which reads as Pending
      * to the client who booked it. Work awaiting their confirmation is
      * finished work, so it files under Completed rather than adding a tab -

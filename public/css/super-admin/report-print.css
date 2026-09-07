@@ -1,0 +1,503 @@
+/* ==========================================================================
+   Generated reports: the on-screen preview, and what the printer gets.
+
+   Two jobs in one sheet, because they are the same document seen twice. On
+   screen the report sits on a white page the shape of the paper it is headed
+   for; under @media print everything else on the Reports page is taken away
+   and that page is printed on its own.
+
+   Deliberately plain. Statuses are words, tables are ruled in grey, and the
+   only colour is the ink - a report is photocopied, faxed and filed in black
+   and white, and anything that only means something in colour stops meaning
+   it on the second photocopy.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   Preview shell
+   -------------------------------------------------------------------------- */
+
+/* The desk the paper sits on. Grey so the sheet reads as a sheet. */
+.report-preview-stage {
+    background: #eef1f5;
+    padding: 1.25rem;
+    overflow: auto;
+}
+
+/* The paper. A4 landscape, because that is the paper the PDF is set on and
+   these tables are wide. Sized in millimetres so what is on screen is the
+   width that will come out of the printer. */
+.report-doc {
+    width: 297mm;
+    min-height: 210mm;
+    margin: 0 auto;
+    padding: 12mm 12mm 10mm;
+    box-sizing: border-box;
+    background: #ffffff;
+    box-shadow: 0 2px 12px rgba(15, 23, 42, 0.18);
+    color: #1f2937;
+    font-family: "Segoe UI", Arial, Helvetica, sans-serif;
+    font-size: 10px;
+    line-height: 1.45;
+}
+
+/* Narrow screens: the sheet keeps its width and the desk scrolls sideways.
+   A report squeezed to fit a phone is a report nobody can read, and the paper
+   it is going to is the width it is whatever it is being reviewed on. */
+@media (max-width: 1360px) {
+    .report-preview-stage {
+        padding: 0.75rem;
+    }
+
+    .report-doc {
+        margin: 0;
+    }
+}
+
+/* --------------------------------------------------------------------------
+   Letterhead
+   -------------------------------------------------------------------------- */
+
+.report-doc-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16mm;
+    padding-bottom: 6px;
+    border-bottom: 1.5px solid #334155;
+}
+
+.report-doc-brand {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.report-doc-logo {
+    height: 42px;
+    width: auto;
+}
+
+.report-doc-company {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+    color: #0f172a;
+}
+
+.report-doc-company-meta {
+    font-size: 9px;
+    color: #475569;
+}
+
+.report-doc-identity {
+    text-align: right;
+    min-width: 90mm;
+}
+
+.report-doc-title {
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    color: #0f172a;
+    margin: 0 0 4px;
+}
+
+/* Label above value, right aligned under the title: a caption block, not a
+   web definition list. */
+.report-doc-meta {
+    margin: 0;
+    font-size: 9px;
+}
+
+.report-doc-meta > div {
+    margin-bottom: 1px;
+}
+
+.report-doc-meta dt {
+    display: inline;
+    font-weight: 600;
+    color: #475569;
+}
+
+.report-doc-meta dt::after {
+    content: ":";
+}
+
+.report-doc-meta dd {
+    display: inline;
+    margin: 0 0 0 4px;
+    color: #1f2937;
+}
+
+/* --------------------------------------------------------------------------
+   Sections
+   -------------------------------------------------------------------------- */
+
+.report-doc-body {
+    padding-top: 4px;
+}
+
+.report-doc h2.section {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #0f172a;
+    border-bottom: 1px solid #94a3b8;
+    padding-bottom: 3px;
+    margin: 16px 0 8px;
+}
+
+/* A group heading belongs to the table under it and never ends a page. */
+.report-doc h3.group {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: #1f2937;
+    background: #f1f5f9;
+    border-left: 3px solid #64748b;
+    padding: 4px 8px;
+    margin: 12px 0 0;
+    break-after: avoid;
+    page-break-after: avoid;
+}
+
+.report-doc h3.group .position {
+    font-weight: 400;
+    text-transform: none;
+    color: #475569;
+}
+
+/* --------------------------------------------------------------------------
+   Tables
+   -------------------------------------------------------------------------- */
+
+.report-doc table.data {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    margin: 0;
+    border: 1px solid #334155;
+}
+
+.report-doc table.data th {
+    background: #f1f5f9;
+    color: #0f172a;
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    text-align: left;
+    padding: 5px 6px;
+    border: 1px solid #334155;
+}
+
+.report-doc table.data td {
+    font-size: 9px;
+    padding: 4px 6px;
+    border: 1px solid #cbd5e1;
+    vertical-align: top;
+    /* Long client names wrap; reference numbers are never cut. */
+    overflow-wrap: break-word;
+    word-wrap: break-word;
+}
+
+.report-doc .nowrap {
+    white-space: nowrap;
+}
+
+.report-doc .num {
+    text-align: right;
+}
+
+/* One stacked value per line, with room between them. */
+.report-doc .stacked {
+    padding: 1px 0;
+}
+
+/* How many bookings a duration was summed from, under the figure. */
+.report-doc .sub {
+    font-size: 8px;
+    color: #475569;
+    font-weight: 400;
+}
+
+.report-doc .muted {
+    color: #64748b;
+    font-style: italic;
+}
+
+.report-doc .empty-notice {
+    border: 1px solid #94a3b8;
+    background: #f8fafc;
+    color: #334155;
+    padding: 14px;
+    text-align: center;
+    font-size: 10px;
+    margin: 10px 0;
+}
+
+/* --------------------------------------------------------------------------
+   Section summary
+   -------------------------------------------------------------------------- */
+
+/* The summary belongs to the table above it, so it is attached to it rather
+   than floated off onto a page of its own. */
+.report-doc .summary {
+    border: 1px solid #334155;
+    border-top: none;
+    background: #f8fafc;
+    padding: 6px 9px;
+    margin: 0 0 4px;
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
+
+.report-doc .summary-title {
+    font-size: 8.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: #475569;
+    margin-bottom: 3px;
+}
+
+.report-doc .summary table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.report-doc .summary td {
+    font-size: 9px;
+    padding: 1px 10px 1px 0;
+    width: 25%;
+    border: none;
+}
+
+.report-doc .summary .value {
+    font-weight: 700;
+    color: #0f172a;
+}
+
+/* --------------------------------------------------------------------------
+   Sign-off
+   -------------------------------------------------------------------------- */
+
+.report-doc .signature-block {
+    margin-top: 14mm;
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
+
+.report-doc .signature-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.report-doc .signature-cell {
+    width: 70mm;
+    vertical-align: bottom;
+    border: none;
+    padding: 0;
+}
+
+.report-doc .signature-spacer {
+    border: none;
+    padding: 0;
+}
+
+.report-doc .signature-label {
+    font-size: 9.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: #334155;
+}
+
+/* Room to actually sign in - the rule is well clear of the printed name. */
+.report-doc .signature-space {
+    height: 16mm;
+}
+
+.report-doc .signature-line {
+    border-bottom: 1px solid #334155;
+}
+
+.report-doc .signature-name {
+    font-size: 10.5px;
+    font-weight: 700;
+    color: #0f172a;
+    padding-top: 3px;
+}
+
+.report-doc .signature-role {
+    font-size: 8.5px;
+    color: #475569;
+}
+
+/* --------------------------------------------------------------------------
+   Standing footnote
+   -------------------------------------------------------------------------- */
+
+.report-doc-foot {
+    display: flex;
+    justify-content: space-between;
+    gap: 10mm;
+    margin-top: 10mm;
+    padding-top: 4px;
+    border-top: 1px solid #cbd5e1;
+    font-size: 8.5px;
+    color: #475569;
+}
+
+/* --------------------------------------------------------------------------
+   Preview modal chrome
+   -------------------------------------------------------------------------- */
+
+/* Title on one line, actions on the next when there is no room for both.
+   Print and PDF stay reachable at every width - they are the point of the
+   screen, not decoration on it. */
+#reportPreviewModal .modal-header {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.report-preview-actions .btn {
+    white-space: nowrap;
+}
+
+@media (max-width: 575.98px) {
+    .report-preview-actions {
+        width: 100%;
+    }
+
+    .report-preview-actions .btn {
+        flex: 1 1 auto;
+    }
+}
+
+/* --------------------------------------------------------------------------
+   Print
+   --------------------------------------------------------------------------
+
+   Only the preview goes to the printer. The modal is moved to be a direct
+   child of <body> when the page loads, so everything else - sidebar, topbar,
+   tabs, filters, buttons, toasts - is one rule away from being taken off the
+   paper. The body class is what arms it: printing the Reports page with no
+   report open still prints the page.
+   -------------------------------------------------------------------------- */
+
+@media print {
+    body.report-printing > *:not(#reportPreviewModal) {
+        display: none !important;
+    }
+
+    body.report-printing {
+        background: #ffffff !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+
+    /* Bootstrap's own backdrop and scroll lock have nothing to say on paper. */
+    body.report-printing .modal-backdrop {
+        display: none !important;
+    }
+
+    /* Unwrap the modal: on paper it is not a dialog, it is the document. */
+    body.report-printing #reportPreviewModal,
+    body.report-printing #reportPreviewModal .modal-dialog,
+    body.report-printing #reportPreviewModal .modal-content,
+    body.report-printing #reportPreviewModal .modal-body,
+    body.report-printing #reportPreviewModal .report-preview-stage {
+        display: block !important;
+        position: static !important;
+        width: auto !important;
+        max-width: none !important;
+        height: auto !important;
+        max-height: none !important;
+        min-height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: none !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        background: #ffffff !important;
+        overflow: visible !important;
+        transform: none !important;
+    }
+
+    /* The dialog's own header and footer are page furniture, not the report. */
+    body.report-printing #reportPreviewModal .modal-header,
+    body.report-printing #reportPreviewModal .modal-footer,
+    body.report-printing #reportPreviewModal .report-preview-actions,
+    body.report-printing #reportPreviewModal .btn {
+        display: none !important;
+    }
+
+    /* A4 landscape with office margins. The sheet drops its own padding and
+       shadow here: the printer supplies the margin now. */
+    @page {
+        size: A4 landscape;
+        margin: 12mm 10mm;
+    }
+
+    .report-doc {
+        width: auto !important;
+        min-height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        box-shadow: none !important;
+        font-size: 9px;
+    }
+
+    /* Fills and rules have to survive the browser's colour-saving default,
+       or the tables lose their header shading and read as floating text. */
+    .report-doc,
+    .report-doc * {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+
+    /* A table that runs on repeats its own header, so the second page of a
+       long list is still readable as a table. */
+    .report-doc table.data thead {
+        display: table-header-group;
+    }
+
+    .report-doc table.data tfoot {
+        display: table-footer-group;
+    }
+
+    /* A row is never sawn in half across the fold. */
+    .report-doc table.data tr {
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+
+    /* A heading never ends a page with its table on the next one. */
+    .report-doc h2.section,
+    .report-doc h3.group {
+        break-after: avoid;
+        page-break-after: avoid;
+    }
+
+    .report-doc h2.section {
+        break-before: auto;
+        page-break-before: auto;
+    }
+
+    /* Keep the sign-off whole, but let it follow the last table naturally
+       rather than being forced onto a sheet of its own. */
+    .report-doc .signature-block {
+        break-inside: avoid;
+        page-break-inside: avoid;
+        margin-top: 12mm;
+    }
+
+    .report-doc-foot {
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+}

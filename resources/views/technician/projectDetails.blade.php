@@ -101,11 +101,12 @@
                     </div>
 
                     <div class="flex-grow-1">
-                        <h5 class="alert-heading mb-1">This project is overdue</h5>
+                        <h5 class="alert-heading mb-1">This project needs rescheduling</h5>
                         <p class="mb-0">
-                            Last scheduled day was
-                            <strong>{{ $project->scheduleEndsOn()->format(\App\Support\BusinessTime::DATE) }}</strong>.
-                            Close it off, or ask an administrator to extend the schedule.
+                            Its last booked day was
+                            <strong>{{ $project->scheduleEndsOn()->format(\App\Support\BusinessTime::DATE) }}</strong>
+                            and nothing is booked ahead of it.
+                            Close it off, or ask an administrator to add a new schedule.
                         </p>
                     </div>
                 </div>

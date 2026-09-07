@@ -479,8 +479,11 @@ class TechnicianTaskVisibilityTest extends TestCase
             ->get(route('technician.projects.show', $overdue));
 
         $response->assertOk();
-        $response->assertSee('This project is overdue');
-        $response->assertSee('Last scheduled day was');
+        $response->assertSee('This project needs rescheduling');
+        $response->assertSee('Its last booked day was');
+        // The wording, not the markup: the banner's CSS class is still
+        // `overdue-banner`, which nobody reads.
+        $response->assertDontSee('This project is overdue');
     }
 
     /**

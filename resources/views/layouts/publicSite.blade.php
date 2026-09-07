@@ -114,10 +114,7 @@
                                 data-bs-toggle="dropdown" aria-expanded="false"
                                 aria-label="Signed in as {{ $viewer->fullName() }} - open the account menu">
                                 <x-user-avatar :user="$viewer" size="sm" />
-                                <span class="public-profile-identity">
-                                    <span class="public-profile-name">{{ $viewer->fullName() }}</span>
-                                    <span class="public-profile-email d-none d-lg-block">{{ $viewer->email }}</span>
-                                </span>
+                                <span class="public-profile-name">{{ $viewer->fullName() }}</span>
                                 <i class="bi bi-caret-down-fill" aria-hidden="true"></i>
                             </button>
 

@@ -77,7 +77,7 @@
                         'all' => 'All',
                         'pending' => 'Pending',
                         'ongoing' => 'Ongoing',
-                        'overdue' => 'Overdue',
+                        'overdue' => \App\Models\Project::CLIENT_LABEL_NEEDS_RESCHEDULING,
                         'completed' => 'Completed',
                         'cancelled' => 'Cancelled',
                     ];

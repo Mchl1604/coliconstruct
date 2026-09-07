@@ -42,15 +42,22 @@
     <div class="card shadow-sm border-0 rounded-2">
         <div class="card-body p-2">
 
-            {{-- Every tab carries its count, in the pattern Overdue and On
-                 Hold already used. The figures come from Project::tabCounts(),
-                 which groups by the very method each row is labelled with, so
-                 a badge can never promise more rows than its tab shows.
+            {{-- Every tab carries its count, in the pattern Needs
+                 Rescheduling and On Hold already used. The figures come from
+                 Project::tabCounts(), which groups by the very method each row
+                 is labelled with, so a badge can never promise more rows than
+                 its tab shows.
 
                  A hold is a state the badge already prints, so the table has to
                  be able to list it. Held work files itself under Pending
                  otherwise - its stored status is Unscheduled - which is a tab it
                  does not belong in and a count it quietly inflates.
+
+                 There is no Unscheduled tab. Work that was never booked and
+                 work that has run out of days are the same job to whoever is
+                 reading this table, so both sit under Needs Rescheduling -
+                 while each row keeps its own badge, so an unscheduled project
+                 still reads Unscheduled. See Project::needsScheduling().
 
                  The last few tabs are the attention ones, drawn only while they
                  hold something: they answer what needs doing rather than what

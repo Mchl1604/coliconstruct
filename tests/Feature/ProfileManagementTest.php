@@ -113,10 +113,11 @@ class ProfileManagementTest extends TestCase
     }
 
     /**
-     * One control, carrying the client's picture, their name and their email,
-     * that opens the account menu.
+     * One control, carrying the client's picture and their name, that opens
+     * the account menu. Their email address is not repeated in the header:
+     * they know their own address, and it only crowds the row.
      */
-    public function test_a_client_header_carries_their_picture_name_and_email(): void
+    public function test_a_client_header_carries_their_picture_and_name(): void
     {
         $client = $this->account('client', 'client@example.test');
 
@@ -125,7 +126,8 @@ class ProfileManagementTest extends TestCase
             ->assertOk()
             ->assertSee('public-profile-link', escape: false)
             ->assertSee(route('profile.edit'), escape: false)
-            ->assertSee('client@example.test')
+            ->assertSee('Juan Dela Cruz')
+            ->assertDontSee('client@example.test')
             // Nothing uploaded yet, so the default avatar stands in.
             ->assertSee('default-avatar.svg');
     }

@@ -1282,11 +1282,8 @@
 }
 
 /* ---- The signed-in client's header link ----
-   Name over email, and the whole thing opens Profile. No avatar: profile
-   pictures belong to the people who run the work, not to customers. */
-
-/* Who is signed in, and the caret that opens their menu, as one control:
-   the name and email stack on the left, the caret sits beside them. */
+   Who is signed in, and the caret that opens their menu, as one control:
+   the picture leads, the name sits beside it, the caret closes the row. */
 .public-profile-link {
     display: inline-flex;
     flex-direction: row;
@@ -1296,21 +1293,9 @@
     text-align: left;
 }
 
-.public-profile-identity {
-    display: inline-flex;
-    flex-direction: column;
-    align-items: flex-start;
-    min-width: 0;
-}
-
 .public-profile-name {
     font-weight: 600;
-}
-
-.public-profile-email {
-    font-size: .72rem;
-    font-weight: 400;
-    opacity: .75;
+    min-width: 0;
     max-width: 14rem;
     overflow: hidden;
     text-overflow: ellipsis;

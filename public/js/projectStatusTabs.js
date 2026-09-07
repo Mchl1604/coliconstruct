@@ -1,6 +1,6 @@
 /**
- * The All / Pending / Ongoing / Overdue / On Hold / Completed / Cancelled tabs
- * above a projects table.
+ * The All / Pending / Ongoing / Needs Rescheduling / On Hold / Completed /
+ * Cancelled tabs above a projects table.
  *
  * Opt in from the markup: put `data-project-status-tabs="<tableId>"` on the tab
  * list, `data-status-filter="<status>"` on each button, and `data-tab` on every
@@ -8,21 +8,21 @@
  *
  * A tab is not always one stored status, which is why the row carries the
  * answer rather than this file working it out. Paused work files under On Hold
- * and nowhere else, overdue work is taken out of Pending and Ongoing so a late
- * project is not counted twice, unscheduled work reads as Pending, and work
- * awaiting client confirmation reads as Completed. All of that is decided once,
- * on the model, so the counts beside the tabs and the rows the tabs reveal can
- * never disagree.
+ * and nowhere else; work with no dates ahead of it - whether it ran out of them
+ * or never had any - is taken out of Pending and Ongoing so it is not counted
+ * twice; and work awaiting client confirmation reads as Completed. All of that
+ * is decided once, on the model, so the counts beside the tabs and the rows the
+ * tabs reveal can never disagree.
  *
- * `data-status` / `data-overdue` are still honoured for any table that has not
- * been given `data-tab`.
+ * `data-status` / `data-overdue` / `data-unscheduled` are still honoured for
+ * any table that has not been given `data-tab`.
  *
  * A row may also carry `data-tab-extra` - a space separated list of the
  * attention tabs it falls under, from Project::attentionTabKeys(). Those tabs
  * ask what needs doing rather than what state something is in, so unlike the
- * status tabs they overlap: one project can appear under Unscheduled and No
- * Technicians both. The dashboard's Urgent Actions link straight at them with
- * `?status=`, which is what opens the list already filtered.
+ * status tabs they overlap: one project can appear under No Technicians and
+ * Inactive Crew both. The dashboard's Urgent Actions link straight at them
+ * with `?status=`, which is what opens the list already filtered.
  *
  * The chosen tab is remembered per table for the rest of the browsing session,
  * so opening a project from Ongoing and coming back lands on Ongoing rather
@@ -77,7 +77,12 @@ document.addEventListener("DOMContentLoaded", function () {
             return "on_hold";
         }
 
-        if (rowNode.getAttribute("data-overdue") === "1") {
+        // The Needs Rescheduling tab, which holds both kinds of project
+        // with no dates ahead of it - see Project::needsScheduling().
+        if (
+            rowNode.getAttribute("data-overdue") === "1" ||
+            rowNode.getAttribute("data-unscheduled") === "1"
+        ) {
             return "overdue";
         }
 

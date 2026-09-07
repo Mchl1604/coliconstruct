@@ -117,7 +117,7 @@ class DashboardMetrics
             $this->card('active_today', 'Active Today', $counts['active_today'], route('super-admin.schedules.index'), 'today'),
             $this->card('ongoing', 'Ongoing', $counts['ongoing'], $projects, 'ongoing'),
             $this->card('pending', 'Pending', $counts['pending'], $projects, 'pending'),
-            $this->card('overdue', 'Overdue', $counts['overdue'], $projects, 'overdue'),
+            $this->card('overdue', Project::LABEL_NEEDS_RESCHEDULING, $counts['overdue'], $projects, 'overdue'),
             $this->card('completed', 'Completed', $counts['completed'], $projects, 'completed'),
         ];
 
@@ -336,19 +336,21 @@ class DashboardMetrics
                     : $projects,
             ],
             [
-                'key' => 'unscheduled_projects',
-                'count' => Project::query()->missingSchedule()->count(),
-                'singular' => 'Unscheduled Project',
-                'plural' => 'Unscheduled Projects',
+                // One entry, because it is one job. Work that was never booked
+                // and work that has run out of booked days both need somebody
+                // to open the schedule and give them dates, and they now share
+                // a tab - see Project::needsScheduling(). Two cards pointing at
+                // the same list would only ask which of them to click.
+                //
+                // The two counts cannot overlap: missingSchedule() is work with
+                // no schedule rows at all and overdue() is work whose latest
+                // one has passed, so nothing is counted twice.
+                'key' => 'projects_needing_schedule',
+                'count' => Project::query()->missingSchedule()->count()
+                    + Project::query()->overdue()->count(),
+                'singular' => 'Project Needs Rescheduling',
+                'plural' => 'Projects Need Rescheduling',
                 'icon' => 'bi-calendar-x',
-                'url' => $projects.'?status=unscheduled',
-            ],
-            [
-                'key' => 'overdue_projects',
-                'count' => Project::query()->overdue()->count(),
-                'singular' => 'Overdue Project',
-                'plural' => 'Overdue Projects',
-                'icon' => 'bi-clock-history',
                 'url' => $projects.'?status=overdue',
             ],
             [

@@ -77,7 +77,7 @@ class ReportController extends Controller
     public function index()
     {
         // `schedules` is eager loaded because statusLabel() consults every
-        // range to decide whether a project reads as Overdue.
+        // range to decide whether a project reads as Needs Rescheduling.
         $filterProjects = Project::query()
             ->with('schedules')
             ->orderBy('name')
@@ -361,6 +361,40 @@ class ReportController extends Controller
     // ------------------------------------------------------------------
 
     /**
+     * The report itself, as a page of HTML.
+     *
+     * This is what Generate Report now produces. The figures are the PDF's -
+     * same validation, same service call, same document markup - so what is
+     * reviewed on screen is what the printer and the PDF put on paper. The
+     * browser's own print dialog takes it from here; asking the server for a
+     * PDF is a separate choice, not a step on the way to printing.
+     */
+    public function preview(Request $request, SystemReportService $reports)
+    {
+        $document = $this->buildDocument($request, $reports);
+
+        if (! is_array($document)) {
+            return $document;
+        }
+
+        $this->activityLogger->record(
+            ActivityLog::REPORT_GENERATED,
+            null,
+            sprintf(
+                'Generated the %s for %s.',
+                self::EXPORT_TYPES[$document['reportType']],
+                $document['period']['label'] ?? 'the selected period'
+            )
+        );
+
+        return response()->json([
+            'title' => $document['reportTitle'],
+            'period_label' => $document['period']['label'] ?? '',
+            'html' => view('super-admin.report-document', $document)->render(),
+        ]);
+    }
+
+    /**
      * Build the PDF.
      *
      * The report is assembled entirely on the server: the browser sends the
@@ -370,37 +404,17 @@ class ReportController extends Controller
      */
     public function export(Request $request, SystemReportService $reports)
     {
-        $validator = $this->exportValidator($request);
+        $document = $this->buildDocument($request, $reports);
 
-        if ($validator->fails()) {
-            return response()->json(['error' => $validator->errors()->first()], 422);
+        if (! is_array($document)) {
+            return $document;
         }
 
-        $input = $validator->validated();
-        $reportType = $input['report_type'];
+        $reportType = $document['reportType'];
+        $period = $document['period'];
 
-        if ($message = $this->irrelevantFilterMessage($reportType, $input)) {
-            return response()->json(['error' => $message], 422);
-        }
-
-        $period = $reports->resolveExportPeriod(
-            $input['period'],
-            isset($input['month']) ? (int) $input['month'] : null,
-            (int) $input['year']
-        );
-
-        $report = $reports->exportReport($reportType, $period, $input);
-
-        $pdf = Pdf::loadView('super-admin.reports-pdf', [
-            'report' => $report,
-            'reportTitle' => $report['title'],
-            'period' => $period,
-            'appliedFilters' => $this->appliedFilters($reportType, $input),
-            'generatedBy' => auth()->user()->name ?? 'Super Admin',
-            'generatedAt' => CarbonImmutable::now(),
-            'logoData' => CompanyBranding::logoDataUri(),
-            'company' => CompanyBranding::letterhead(),
-        ])->setPaper('a4', 'landscape');
+        $pdf = Pdf::loadView('super-admin.reports-pdf', $document)
+            ->setPaper('a4', 'landscape');
 
         $fileName = sprintf(
             '%s-%s.pdf',
@@ -424,6 +438,56 @@ class ReportController extends Controller
     // ------------------------------------------------------------------
     // Export internals
     // ------------------------------------------------------------------
+
+    /**
+     * Validate a report request and assemble everything a report document
+     * needs, whichever of the two ways it is about to be rendered.
+     *
+     * One method because the preview and the PDF must not be able to disagree:
+     * a filter refused for one is refused for the other, and the figures are
+     * fetched once from the same service call. Returns the view data, or the
+     * 422 response the request has earned.
+     *
+     * @return array<string, mixed>|\Illuminate\Http\JsonResponse
+     */
+    private function buildDocument(Request $request, SystemReportService $reports)
+    {
+        $validator = $this->exportValidator($request);
+
+        if ($validator->fails()) {
+            return response()->json(['error' => $validator->errors()->first()], 422);
+        }
+
+        $input = $validator->validated();
+        $reportType = $input['report_type'];
+
+        if ($message = $this->irrelevantFilterMessage($reportType, $input)) {
+            return response()->json(['error' => $message], 422);
+        }
+
+        $period = $reports->resolveExportPeriod(
+            $input['period'],
+            isset($input['month']) ? (int) $input['month'] : null,
+            (int) $input['year']
+        );
+
+        $report = $reports->exportReport($reportType, $period, $input);
+
+        return [
+            'report' => $report,
+            'reportType' => $reportType,
+            'reportTitle' => $report['title'],
+            'period' => $period,
+            'appliedFilters' => $this->appliedFilters($reportType, $input),
+            // Whoever is signing it. The name is read from the session rather
+            // than sent by the page, so the sign-off cannot be addressed to
+            // somebody who did not run the report.
+            'generatedBy' => auth()->user()->name ?? 'Super Admin',
+            'generatedAt' => CarbonImmutable::now(),
+            'logoData' => CompanyBranding::logoDataUri(),
+            'company' => CompanyBranding::letterhead(),
+        ];
+    }
 
     /**
      * The years the export dialog and the dashboard's month controls offer,

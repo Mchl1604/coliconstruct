@@ -384,7 +384,7 @@ class ProjectHoldResumeRecoveryTest extends TestCase
         $this->putJson(route('super-admin.projects.resume', $onlyHistory->project_id))->assertOk();
 
         $this->assertTrue($onlyHistory->fresh()->isOverdue());
-        $this->assertSame('Overdue', $onlyHistory->fresh()->statusLabel());
+        $this->assertSame('Needs Rescheduling', $onlyHistory->fresh()->statusLabel());
         $this->assertFalse($this->isBusy([$ben], 0, 10), 'Days already worked are not a booking.');
     }
 

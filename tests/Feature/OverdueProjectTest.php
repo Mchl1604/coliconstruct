@@ -15,9 +15,13 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 /**
- * A project is overdue when its LAST scheduled day has passed but the project
- * is still open. Derived, never stored - extending the schedule or completing
- * the project clears it with nothing to migrate.
+ * A project has run out of booked dates when its LAST scheduled day has passed
+ * but the project is still open. Derived, never stored - extending the
+ * schedule or completing the project clears it with nothing to migrate.
+ *
+ * It reads as "Needs Rescheduling" to the office and "Awaiting New Schedule"
+ * to the client. The internal key is still `overdue`, which is why this file
+ * and the method it tests keep the old name.
  */
 class OverdueProjectTest extends TestCase
 {
@@ -121,13 +125,127 @@ class OverdueProjectTest extends TestCase
         return CarbonImmutable::today()->addDays($offset)->toDateString();
     }
 
+    /**
+     * The office is told what to do about it; the client is told they are
+     * being waited on. Same state, two sentences, and neither page is allowed
+     * to borrow the other's - a client cannot book their own dates, so
+     * "Needs Rescheduling" on their card would hand them a job that is not
+     * theirs.
+     */
+    public function test_the_office_and_the_client_are_told_it_differently(): void
+    {
+        $project = $this->project('Out Of Dates');
+        $this->schedule($project, $this->day(-10), $this->day(-5));
+
+        $project = $project->fresh();
+
+        $this->assertSame('Needs Rescheduling', $project->statusLabel());
+        $this->assertSame('Awaiting New Schedule', $project->clientStatusLabel());
+
+        // Neither says Overdue any more: nothing in this model stores a
+        // promised finish date, so nothing here can be late against one.
+        $this->assertStringNotContainsString('Overdue', $project->statusLabel());
+        $this->assertStringNotContainsString('Overdue', $project->clientStatusLabel());
+    }
+
+    /**
+     * Every other state reads the same to both. The client's label diverges
+     * for one state only, so a paused or finished project must not quietly
+     * acquire a second vocabulary.
+     */
+    public function test_every_other_state_reads_the_same_to_both(): void
+    {
+        $onTrack = $this->project('On Track');
+        $this->schedule($onTrack, $this->day(-2), $this->day(5));
+
+        $held = $this->project('Paused');
+        $this->schedule($held, $this->day(-10), $this->day(-5));
+        $held->forceFill(['on_hold' => true])->save();
+
+        foreach ([$onTrack, $held] as $project) {
+            $project = $project->fresh();
+
+            $this->assertSame(
+                $project->statusLabel(),
+                $project->clientStatusLabel(),
+                $project->name.' reads differently to the client for no reason.'
+            );
+        }
+
+        $this->assertSame('On Hold', $held->fresh()->clientStatusLabel());
+    }
+
+    /**
+     * Work that was never booked and work that has run out of days are the
+     * same job to whoever reads the projects table, so they share one tab -
+     * and the never-booked one keeps its own badge while it sits there.
+     */
+    public function test_unscheduled_work_files_under_needs_rescheduling_but_keeps_its_status(): void
+    {
+        $neverBooked = $this->project('Never Booked', 'unscheduled')->fresh();
+
+        $this->assertTrue($neverBooked->needsScheduling());
+        // It is not overdue: it has no schedule to have run out of.
+        $this->assertFalse($neverBooked->isOverdue());
+
+        // The tab it is found under...
+        $this->assertSame('overdue', $neverBooked->tabKey());
+
+        // ...and the status it still reads as, which is a different question.
+        $this->assertSame('unscheduled', $neverBooked->statusKey());
+        $this->assertSame('Unscheduled', $neverBooked->statusLabel());
+
+        // The Unscheduled attention tab is gone, so nothing files under it.
+        $this->assertArrayNotHasKey('unscheduled', Project::ATTENTION_TABS);
+        $this->assertNotContains('unscheduled', $neverBooked->attentionTabKeys());
+    }
+
+    /**
+     * Both kinds land in the one tab, and its count says so.
+     */
+    public function test_the_needs_rescheduling_tab_counts_both_kinds(): void
+    {
+        $this->project('Never Booked', 'unscheduled');
+
+        $ranOut = $this->project('Ran Out');
+        $this->schedule($ranOut, $this->day(-10), $this->day(-5));
+
+        $onTrack = $this->project('On Track');
+        $this->schedule($onTrack, $this->day(-2), $this->day(5));
+
+        $response = $this->get(route('super-admin.projects'));
+
+        $response->assertOk();
+
+        $tabs = collect($response->viewData('statusTabs'))->keyBy('key');
+
+        $this->assertSame(2, $tabs['overdue']['count']);
+        $this->assertSame(Project::LABEL_NEEDS_RESCHEDULING, $tabs['overdue']['label']);
+        // Not double-counted anywhere else.
+        $this->assertSame(1, $tabs['ongoing']['count']);
+        $this->assertSame(0, $tabs['pending']['count']);
+        $this->assertFalse($tabs->has('unscheduled'));
+    }
+
+    /**
+     * A hold is a decision somebody already took, so held work is not asking
+     * to be booked however empty its calendar is.
+     */
+    public function test_held_work_does_not_ask_to_be_rescheduled(): void
+    {
+        $held = $this->project('Paused', 'unscheduled', onHold: true)->fresh();
+
+        $this->assertFalse($held->needsScheduling());
+        $this->assertSame('on_hold', $held->tabKey());
+    }
+
     public function test_a_project_whose_last_range_has_passed_is_overdue(): void
     {
         $project = $this->project('Late Project');
         $this->schedule($project, $this->day(-10), $this->day(-5));
 
         $this->assertTrue($project->fresh()->isOverdue());
-        $this->assertSame('Overdue', $project->fresh()->statusLabel());
+        $this->assertSame('Needs Rescheduling', $project->fresh()->statusLabel());
         // The badge no longer names a colour. It names the status - see
         // Project::statusKey() - and projectStatus.css paints it from the same
         // palette the schedule calendar draws with, which is what stopped
@@ -246,7 +364,7 @@ class OverdueProjectTest extends TestCase
 
         $response->assertOk();
         $response->assertSee('data-status-filter="overdue"', false);
-        $response->assertSee('Overdue');
+        $response->assertSee('Needs Rescheduling');
 
         // Every tab carries its count now, not just this one.
         $tabs = collect($response->viewData('statusTabs'))->keyBy('key');
@@ -268,7 +386,8 @@ class OverdueProjectTest extends TestCase
         $response = $this->get(route('super-admin.projects.show', $late->project_id));
 
         $response->assertOk();
-        $response->assertSee('This project is overdue');
+        $response->assertSee('This project needs rescheduling');
+        $response->assertDontSee('This project is overdue');
         $response->assertSee('Add New Schedule');
         $response->assertSee('Mark as Complete');
         $response->assertSee('completeProjectModal', false);
@@ -345,7 +464,7 @@ class OverdueProjectTest extends TestCase
         $this->assertSame(Project::STATUS_INK['overdue'], $lateEvent['borderColor']);
         $this->assertSame(Project::STATUS_INK['overdue'], $lateEvent['backgroundColor']);
         $this->assertSame('#ffffff', $lateEvent['textColor']);
-        $this->assertSame('Overdue', $lateEvent['extendedProps']['statusLabel']);
+        $this->assertSame('Needs Rescheduling', $lateEvent['extendedProps']['statusLabel']);
     }
 
     /**
@@ -384,7 +503,7 @@ class OverdueProjectTest extends TestCase
         $this->assertSame(Project::STATUS_INK['overdue'], $lateEvent['borderColor']);
         $this->assertSame(Project::STATUS_INK['overdue'], $lateEvent['backgroundColor']);
         $this->assertSame('#ffffff', $lateEvent['textColor']);
-        $this->assertSame('Overdue', $lateEvent['extendedProps']['statusLabel']);
+        $this->assertSame('Needs Rescheduling', $lateEvent['extendedProps']['statusLabel']);
 
         // Cancelled work is dropped from the assignments table and its count
         // too; an on-hold project is still an open assignment, so it stays.

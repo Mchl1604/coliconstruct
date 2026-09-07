@@ -63,7 +63,7 @@
                         <a class="dash-task tone-{{ $cardTones[$index % count($cardTones)] }}"
                             href="{{ $item['url'] }}">
                             <span class="dash-task-chip">
-                                {{ $item['is_overdue'] ? 'Overdue' : $item['status_label'] }}
+                                {{ $item['is_overdue'] ? \App\Models\Project::LABEL_NEEDS_RESCHEDULING : $item['status_label'] }}
                             </span>
 
                             <span class="dash-task-title">{{ Str::limit($item['title'], 34) }}</span>
@@ -108,7 +108,7 @@
                             </span>
 
                             {{-- Most entries say everything in the label
-                                 ("3 Overdue Projects"). One whose number needs
+                                 ("3 Projects Need Rescheduling"). One whose number needs
                                  a qualifier explains it underneath instead of
                                  cramming it into the heading. --}}
                             <span class="dash-urgent-label">

@@ -95,7 +95,7 @@ class PortalImprovementsTest extends TestCase
             ->assertOk()
             ->assertSee('data-project-filter', escape: false)
             ->assertSee('data-project-search', escape: false)
-            ->assertSee('Overdue')
+            ->assertSee('Awaiting New Schedule')
             ->assertDontSee('project-card-progress', escape: false)
             ->assertDontSee('% complete');
     }

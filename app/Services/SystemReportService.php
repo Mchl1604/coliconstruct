@@ -72,7 +72,7 @@ class SystemReportService
         'pending' => 'Pending',
         'ongoing' => 'Ongoing',
         'on_hold' => 'On Hold',
-        'overdue' => 'Overdue',
+        'overdue' => Project::LABEL_NEEDS_RESCHEDULING,
         'cancelled' => 'Cancelled',
         'completed' => 'Completed',
     ];
@@ -153,7 +153,7 @@ class SystemReportService
         'on_hold' => 'On Hold',
         'pending' => 'Pending',
         'ongoing' => 'Ongoing',
-        'overdue' => 'Overdue',
+        'overdue' => Project::LABEL_NEEDS_RESCHEDULING,
         'completed' => 'Completed',
     ];
 
@@ -412,7 +412,7 @@ class SystemReportService
             'pending' => 'Pending',
             'ongoing' => 'Ongoing',
             'on_hold' => 'On Hold',
-            'overdue' => 'Overdue',
+            'overdue' => Project::LABEL_NEEDS_RESCHEDULING,
             'completed' => 'Completed',
             'cancelled' => 'Cancelled',
         ];

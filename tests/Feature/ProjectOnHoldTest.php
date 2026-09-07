@@ -700,7 +700,7 @@ class ProjectOnHoldTest extends TestCase
             ->assertSessionHasNoErrors();
 
         $this->assertTrue($allPast->fresh()->isOverdue());
-        $this->assertSame('Overdue', $allPast->fresh()->statusLabel());
+        $this->assertSame('Needs Rescheduling', $allPast->fresh()->statusLabel());
 
         // The remaining dates reach today, so the project really is under way.
         $cara = $this->technician('Cara Lim');

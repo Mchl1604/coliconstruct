@@ -147,12 +147,37 @@ class Project extends Model
     public const DERIVED_LIVE_STATUSES = ['unscheduled', 'pending', 'ongoing'];
 
     /**
-     * Statuses a project can be in and still go overdue. A finished or
-     * abandoned project can't be late, and a paused one is late on purpose.
+     * Statuses a project can be in and still run out of dates. A finished or
+     * abandoned project has no calendar left to empty, and a paused one is
+     * out of dates on purpose.
      *
      * @var array<int, string>
      */
     public const OVERDUE_CANDIDATE_STATUSES = ['pending', 'ongoing'];
+
+    /**
+     * How isOverdue() reads to the people who can act on it.
+     *
+     * Named here rather than written out in the six places that print it, so
+     * the tables, the tabs, the dashboard card, the calendar legend and the
+     * reports cannot end up calling one state two things.
+     *
+     * It used to say "Overdue", which claimed the work had missed a deadline.
+     * It never meant that: nothing in this model stores a promised finish
+     * date. It means the booked dates have run out while the job is still
+     * open - see isOverdue().
+     */
+    public const LABEL_NEEDS_RESCHEDULING = 'Needs Rescheduling';
+
+    /**
+     * The same state, as the client who booked the work reads it.
+     *
+     * Deliberately a different sentence. "Needs Rescheduling" is an instruction
+     * to the office, and putting it on a client's card would hand them a job
+     * that is not theirs - they cannot book their own dates. This says who is
+     * waiting on whom without asking them for anything.
+     */
+    public const CLIENT_LABEL_NEEDS_RESCHEDULING = 'Awaiting New Schedule';
 
     /**
      * The only status a project can be closed out from.
@@ -1209,12 +1234,53 @@ class Project extends Model
     }
 
     /**
-     * Overdue means the project should have finished by now: its last
-     * scheduled day has passed but it is still open.
+     * The project has run out of booked dates: every day it was scheduled for
+     * is in the past, and it is still open. It reads as "Needs Rescheduling".
      *
-     * Derived, never stored - a project stops being overdue the moment its
-     * schedule is extended or it is completed, with nothing to migrate.
+     * Deliberately NOT a statement that the work is late. There is no contract
+     * deadline anywhere in this model to be late against - only the dates the
+     * office has booked - so this says the calendar is empty ahead of a live
+     * project, and nothing about whether a promise has been missed. The fix is
+     * either more dates or a completion; both clear it.
+     *
+     * Derived, never stored - a project stops needing rescheduling the moment
+     * its schedule is extended or it is completed, with nothing to migrate.
      */
+    /**
+     * The project has no dates ahead of it and somebody needs to put some on.
+     *
+     * Two ways to arrive here, and the table stopped caring which: the job was
+     * booked and has run out of days (isOverdue()), or it was never booked at
+     * all. Both are the same job for whoever reads the list - open the
+     * schedule and give it dates - so both file under the one Needs
+     * Rescheduling tab.
+     *
+     * What this is NOT is the status. An unscheduled project still reads
+     * "Unscheduled" on its badge and still stores `unscheduled`, because that
+     * is what it is; this only decides which tab it is found under. tabKey()
+     * and statusKey() have always been allowed to disagree - see tabKey().
+     */
+    public function needsScheduling(): bool
+    {
+        if ($this->isOverdue()) {
+            return true;
+        }
+
+        // isOverdue() already refuses these, but it is asked about a project
+        // that HAS dates. Never-booked work has to be filtered on its own.
+        if ($this->isReadOnly() || $this->isArchived() || $this->on_hold) {
+            return false;
+        }
+
+        if (! in_array($this->status, self::DERIVED_LIVE_STATUSES, true)) {
+            return false;
+        }
+
+        $this->loadMissing('schedules');
+
+        return $this->schedules->isEmpty();
+    }
+
     public function isOverdue(): bool
     {
         if ($this->isReadOnly() || $this->isArchived() || $this->on_hold) {
@@ -1341,7 +1407,7 @@ class Project extends Model
         }
 
         if ($this->isOverdue()) {
-            return 'Overdue';
+            return self::LABEL_NEEDS_RESCHEDULING;
         }
 
         return self::statusLabelFor($this->status);
@@ -1402,15 +1468,15 @@ class Project extends Model
      *
      * Not the same thing as statusKey(): a tab is a question somebody is
      * asking of the list, and several stored statuses can answer the same one.
-     * Unscheduled work reads as Pending, and work awaiting the client's
-     * confirmation reads as Completed, because that is where a person looks
-     * for it.
+     * Booked-but-undated work files under Needs Rescheduling whatever its
+     * badge says, and work awaiting the client's confirmation reads as
+     * Completed, because that is where a person looks for it.
      *
-     * The precedence is the one the badges already use - paused beats late,
-     * late beats the stored status - so a project appears under exactly one
-     * tab and no count double-counts it. Stated here so the tab counts, the
-     * rows' own data attributes and the browser-side filter cannot disagree;
-     * they were three separate copies of this before.
+     * The precedence is the one the badges already use - paused beats needing
+     * dates, needing dates beats the stored status - so a project appears
+     * under exactly one tab and no count double-counts it. Stated here so the
+     * tab counts, the rows' own data attributes and the browser-side filter
+     * cannot disagree; they were three separate copies of this before.
      */
     public function tabKey(): string
     {
@@ -1418,7 +1484,11 @@ class Project extends Model
             return 'on_hold';
         }
 
-        if ($this->isOverdue()) {
+        // Wider than isOverdue(): work that was never booked lands here too,
+        // which is why the Unscheduled attention tab no longer exists. The
+        // stored status is untouched - an unscheduled project is filed under
+        // Needs Rescheduling and still badged Unscheduled.
+        if ($this->needsScheduling()) {
             return 'overdue';
         }
 
@@ -1447,7 +1517,6 @@ class Project extends Model
      * @var array<string, array{label: string, badge: string}>
      */
     public const ATTENTION_TABS = [
-        'unscheduled' => ['label' => 'Unscheduled', 'badge' => 'bg-info text-dark'],
         'no_technicians' => ['label' => 'No Technicians', 'badge' => 'bg-danger'],
         'inactive_crew' => ['label' => 'Inactive Crew', 'badge' => 'bg-danger'],
     ];
@@ -1541,9 +1610,12 @@ class Project extends Model
         // this is something a person should notice while scanning the table
         // they are already looking at. See needsPhaseSetup().
 
-        if (! $this->on_hold && $this->schedules->isEmpty()) {
-            $keys[] = 'unscheduled';
-        }
+        // Work with no dates on it is not an attention tab either, any more.
+        // It used to have one called Unscheduled, beside a status tab that
+        // said the same word about a different set of projects - so the table
+        // offered two Unscheduleds that disagreed. Both questions are "this
+        // job needs dates putting on it", so both now file under Needs
+        // Rescheduling. See needsScheduling().
 
         if ($this->projectTechnicians->isEmpty()) {
             $keys[] = 'no_technicians';
@@ -1596,7 +1668,7 @@ class Project extends Model
         'all' => ['label' => 'All', 'badge' => 'bg-primary'],
         'pending' => ['label' => 'Pending', 'badge' => 'bg-warning text-dark'],
         'ongoing' => ['label' => 'Ongoing', 'badge' => 'bg-primary'],
-        'overdue' => ['label' => 'Overdue', 'badge' => 'badge-overdue'],
+        'overdue' => ['label' => self::LABEL_NEEDS_RESCHEDULING, 'badge' => 'badge-overdue'],
         'on_hold' => ['label' => 'On Hold', 'badge' => 'bg-secondary'],
         'completed' => ['label' => 'Completed', 'badge' => 'bg-success'],
         'cancelled' => ['label' => 'Cancelled', 'badge' => 'bg-danger'],
@@ -1679,6 +1751,29 @@ class Project extends Model
     public function shortStatusLabel(): string
     {
         return $this->statusLabel();
+    }
+
+    /**
+     * How the state reads on the client's own pages.
+     *
+     * The same state as statusLabel() everywhere it makes no difference, and
+     * a different sentence in the one place it does: a project that has run
+     * out of dates is the office's job to rebook, so the client is told they
+     * are waiting rather than handed the instruction. See
+     * CLIENT_LABEL_NEEDS_RESCHEDULING.
+     *
+     * Its own method rather than a branch inside statusLabel(): the staff
+     * tables, the calendars and the reports all want the office's wording, and
+     * a label that changed meaning depending on who was signed in would be
+     * impossible to reason about from the call site.
+     */
+    public function clientStatusLabel(): string
+    {
+        // No on-hold check: isOverdue() already refuses a paused project, so
+        // a held job reads as On Hold here exactly as it does everywhere else.
+        return $this->isOverdue()
+            ? self::CLIENT_LABEL_NEEDS_RESCHEDULING
+            : $this->statusLabel();
     }
 
     /**
@@ -1988,7 +2083,7 @@ class Project extends Model
         return [
             ['label' => 'Pending', 'colour' => self::STATUS_INK['pending']],
             ['label' => 'Ongoing', 'colour' => self::STATUS_INK['ongoing']],
-            ['label' => 'Overdue', 'colour' => self::STATUS_INK['overdue']],
+            ['label' => self::LABEL_NEEDS_RESCHEDULING, 'colour' => self::STATUS_INK['overdue']],
             ['label' => 'Completed', 'colour' => self::STATUS_INK['completed']],
             ['label' => 'On Hold', 'colour' => self::STATUS_INK['on_hold']],
             ['label' => 'Cancelled', 'colour' => self::STATUS_INK['cancelled']],

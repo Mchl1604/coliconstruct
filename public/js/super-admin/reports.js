@@ -1396,11 +1396,14 @@ document.addEventListener("DOMContentLoaded", function () {
         applyReportType();
         applyPeriod();
 
-        submitBtn.addEventListener("click", function () {
-            setAlert(errorEl, "");
-            submitBtn.disabled = true;
-            spinner.classList.remove("d-none");
-
+        /**
+         * The filters, as the request carries them.
+         *
+         * Built once and reused by both endpoints, so the PDF is a rendering
+         * of the report on screen rather than a second report that happens to
+         * have been asked for in the same way.
+         */
+        function exportPayload() {
             const type = typeSelect.value;
             const payload = new FormData();
 
@@ -1428,55 +1431,215 @@ document.addEventListener("DOMContentLoaded", function () {
                 }
             }
 
-            fetch(routes.export, {
+            return payload;
+        }
+
+        /** The error a failed report request came back with. */
+        function reportError(response, fallback) {
+            return response
+                .json()
+                .catch(function () {
+                    return {};
+                })
+                .then(function (body) {
+                    throw new Error(body.error || fallback);
+                });
+        }
+
+        // ---------------------------------------------------------------
+        // Preview, Print and PDF
+        // ---------------------------------------------------------------
+
+        const previewModalEl = document.querySelector(
+            "[data-report-preview-modal]",
+        );
+
+        const previewTitle = previewModalEl?.querySelector(
+            "[data-report-preview-title]",
+        );
+        const previewSubtitle = previewModalEl?.querySelector(
+            "[data-report-preview-subtitle]",
+        );
+        const previewBody = previewModalEl?.querySelector(
+            "[data-report-preview-body]",
+        );
+        const previewError = previewModalEl?.querySelector(
+            "[data-report-preview-error]",
+        );
+        const printBtn = previewModalEl?.querySelector("[data-report-print]");
+        const pdfBtn = previewModalEl?.querySelector("[data-report-pdf]");
+        const pdfSpinner = previewModalEl?.querySelector(
+            "[data-report-pdf-spinner]",
+        );
+
+        // The filters the report on screen was built from, kept so the PDF
+        // button asks for that report and not for whatever the dialog has
+        // been changed to since.
+        let previewPayload = null;
+
+        /**
+         * Show a freshly generated report.
+         *
+         * The markup is the server's - dropped in whole rather than assembled
+         * here - so the preview, the print output and the PDF are three views
+         * of one document.
+         */
+        function showPreview(data, payload) {
+            if (!previewModalEl) {
+                return;
+            }
+
+            previewPayload = payload;
+            previewBody.innerHTML = data.html || "";
+            previewTitle.textContent = data.title || "Report Preview";
+            previewSubtitle.textContent = data.period_label || "";
+            setAlert(previewError, "");
+            previewModalEl
+                .querySelector(".report-preview-stage")
+                .scrollTo({ top: 0 });
+
+            if (!window.bootstrap) {
+                return;
+            }
+
+            const preview =
+                window.bootstrap.Modal.getOrCreateInstance(previewModalEl);
+
+            // The filter dialog goes away first and the report takes its
+            // place. Waiting for it to finish closing rather than swapping the
+            // two at once is what keeps Bootstrap from leaving a backdrop
+            // behind over a page nothing can then be clicked on.
+            if (!exportModalEl.classList.contains("show")) {
+                preview.show();
+
+                return;
+            }
+
+            exportModalEl.addEventListener(
+                "hidden.bs.modal",
+                function () {
+                    preview.show();
+                },
+                { once: true },
+            );
+
+            window.bootstrap.Modal.getOrCreateInstance(exportModalEl).hide();
+        }
+
+        if (previewModalEl) {
+            // Out of the portal shell and onto <body>, so the print sheet can
+            // hide everything else on the page with a single rule. Done here
+            // rather than in the markup so the dialog still sits beside the
+            // page it belongs to in the Blade file.
+            document.body.appendChild(previewModalEl);
+
+            // The print sheet is armed for as long as a report is on screen,
+            // rather than only while the button is being pressed: somebody who
+            // reaches for Ctrl+P over an open preview means the same thing the
+            // button means, and gets the same page. With no preview open the
+            // class is absent, so printing the Reports page still prints the
+            // Reports page.
+            previewModalEl.addEventListener("shown.bs.modal", function () {
+                document.body.classList.add("report-printing");
+            });
+
+            previewModalEl.addEventListener("hidden.bs.modal", function () {
+                document.body.classList.remove("report-printing");
+            });
+
+            // Straight to the browser's own dialog, where the printer is
+            // chosen. Nothing is generated, downloaded or opened on the way.
+            printBtn.addEventListener("click", function () {
+                window.print();
+            });
+
+            // The same report as a file. A separate action from Print: this
+            // one asks the server to build the PDF, and downloads it.
+            pdfBtn.addEventListener("click", function () {
+                if (!previewPayload) {
+                    return;
+                }
+
+                setAlert(previewError, "");
+                pdfBtn.disabled = true;
+                pdfSpinner.classList.remove("d-none");
+
+                fetch(routes.export, {
+                    method: "POST",
+                    headers: { "X-Requested-With": "XMLHttpRequest" },
+                    body: previewPayload,
+                })
+                    .then(function (response) {
+                        if (!response.ok) {
+                            return reportError(
+                                response,
+                                "Unable to build the PDF.",
+                            );
+                        }
+
+                        const disposition =
+                            response.headers.get("content-disposition") || "";
+                        const match = disposition.match(/filename="?([^"]+)"?/);
+
+                        return response.blob().then(function (blob) {
+                            return {
+                                blob: blob,
+                                name: match ? match[1] : "system-report.pdf",
+                            };
+                        });
+                    })
+                    .then(function (file) {
+                        const url = URL.createObjectURL(file.blob);
+                        const link = document.createElement("a");
+
+                        link.href = url;
+                        link.download = file.name;
+                        document.body.appendChild(link);
+                        link.click();
+                        link.remove();
+                        URL.revokeObjectURL(url);
+
+                        pdfSpinner.classList.add("d-none");
+                        pdfBtn.disabled = false;
+                    })
+                    .catch(function (error) {
+                        pdfSpinner.classList.add("d-none");
+                        pdfBtn.disabled = false;
+                        setAlert(previewError, error.message);
+                    });
+            });
+        }
+
+        // Generate Report builds the document and shows it. Nothing is
+        // downloaded, and nothing is generated as a file: Print and PDF are
+        // both offered from the preview once there is a report to act on.
+        submitBtn.addEventListener("click", function () {
+            setAlert(errorEl, "");
+            submitBtn.disabled = true;
+            spinner.classList.remove("d-none");
+
+            const payload = exportPayload();
+
+            fetch(routes.preview, {
                 method: "POST",
                 headers: { "X-Requested-With": "XMLHttpRequest" },
                 body: payload,
             })
                 .then(function (response) {
                     if (!response.ok) {
-                        return response
-                            .json()
-                            .catch(function () {
-                                return {};
-                            })
-                            .then(function (body) {
-                                throw new Error(
-                                    body.error || "Unable to generate report.",
-                                );
-                            });
+                        return reportError(
+                            response,
+                            "Unable to generate report.",
+                        );
                     }
 
-                    const disposition =
-                        response.headers.get("content-disposition") || "";
-                    const match = disposition.match(/filename="?([^"]+)"?/);
-
-                    return response.blob().then(function (blob) {
-                        return {
-                            blob: blob,
-                            name: match ? match[1] : "system-report.pdf",
-                        };
-                    });
+                    return response.json();
                 })
-                .then(function (file) {
-                    const url = URL.createObjectURL(file.blob);
-                    const link = document.createElement("a");
-
-                    link.href = url;
-                    link.download = file.name;
-                    document.body.appendChild(link);
-                    link.click();
-                    link.remove();
-                    URL.revokeObjectURL(url);
-
+                .then(function (data) {
                     spinner.classList.add("d-none");
                     submitBtn.disabled = false;
 
-                    if (window.bootstrap) {
-                        window.bootstrap.Modal.getOrCreateInstance(
-                            exportModalEl,
-                        ).hide();
-                    }
+                    showPreview(data, payload);
                 })
                 .catch(function (error) {
                     spinner.classList.add("d-none");

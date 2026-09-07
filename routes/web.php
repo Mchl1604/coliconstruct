@@ -422,6 +422,10 @@ Route::prefix('super-admin')
         Route::get('/reports/reportable-projects', [ReportController::class, 'reportableProjects'])->name('reports.reportable');
         Route::get('/reports/system', [ReportController::class, 'systemReports'])->name('reports.system');
         Route::get('/reports/system/chart', [ReportController::class, 'systemChart'])->name('reports.system.chart');
+        // Generate Report renders the document; Export downloads the same
+        // document as a PDF. Two doors onto one build so that printing never
+        // has to go through a file the user did not ask for.
+        Route::post('/reports/preview', [ReportController::class, 'preview'])->name('reports.preview');
         Route::post('/reports/export', [ReportController::class, 'export'])->name('reports.export');
 
         // ROUTE FOR SUPER ADMIN TECHNICIANS PAGE

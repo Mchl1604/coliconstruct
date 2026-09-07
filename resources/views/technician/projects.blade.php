@@ -26,11 +26,11 @@
         <div class="card-body p-2">
 
             {{-- Same tabs the Super Admin projects table carries, counts and
-                 all. Overdue is derived rather than stored, so it gets its own
-                 tab and is taken out of Pending and Ongoing; a hold is a state
-                 the badge already prints, so it gets one too - held work files
-                 itself under Pending otherwise, which is a tab it does not
-                 belong in and a count it quietly inflates. --}}
+                 all. Needing dates is derived rather than stored, so it gets
+                 its own tab and is taken out of Pending and Ongoing; a hold is
+                 a state the badge already prints, so it gets one too - held
+                 work files itself under Pending otherwise, which is a tab it
+                 does not belong in and a count it quietly inflates. --}}
             <ul class="nav nav-tabs projects-status-tabs mb-3 px-1"
                 data-project-status-tabs="portalProjectsTable">
                 @foreach ($statusTabs as $tab)

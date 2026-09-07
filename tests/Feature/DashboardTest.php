@@ -275,17 +275,19 @@ class DashboardTest extends TestCase
                     ->viewData('urgentActions')
             )->keyBy('key');
 
-            $this->assertSame('1 Unscheduled Project', $actions['unscheduled_projects']['label']);
+            // One entry for both: the never-booked project and the one whose
+            // days have run out are the same job, and they share a tab.
             $this->assertSame(
-                route('super-admin.projects').'?status=unscheduled',
-                $actions['unscheduled_projects']['url']
+                '2 Projects Need Rescheduling',
+                $actions['projects_needing_schedule']['label']
             );
-
-            $this->assertSame('1 Overdue Project', $actions['overdue_projects']['label']);
             $this->assertSame(
                 route('super-admin.projects').'?status=overdue',
-                $actions['overdue_projects']['url']
+                $actions['projects_needing_schedule']['url']
             );
+
+            $this->assertFalse($actions->has('unscheduled_projects'));
+            $this->assertFalse($actions->has('overdue_projects'));
 
             // All three carry no crew, the unscheduled one included.
             $this->assertSame(
@@ -317,7 +319,10 @@ class DashboardTest extends TestCase
                 ->viewData('urgentActions')
         )->keyBy('key');
 
-        $this->assertSame('2 Unscheduled Projects', $actions['unscheduled_projects']['label']);
+        $this->assertSame(
+            '2 Projects Need Rescheduling',
+            $actions['projects_needing_schedule']['label']
+        );
     }
 
     /**
@@ -329,7 +334,7 @@ class DashboardTest extends TestCase
         $owner = $this->account('super_admin', 'owner@example.test');
         $project = $this->project('unscheduled');
 
-        $this->assertTrue($this->hasUrgentAction($owner, 'unscheduled_projects'));
+        $this->assertTrue($this->hasUrgentAction($owner, 'projects_needing_schedule'));
 
         Schedule::create([
             'project_id' => $project->project_id,
@@ -338,7 +343,7 @@ class DashboardTest extends TestCase
             'status' => 'scheduled',
         ]);
 
-        $this->assertFalse($this->hasUrgentAction($owner, 'unscheduled_projects'));
+        $this->assertFalse($this->hasUrgentAction($owner, 'projects_needing_schedule'));
     }
 
     /**
@@ -353,7 +358,7 @@ class DashboardTest extends TestCase
 
         $owner = $this->account('super_admin', 'owner@example.test');
 
-        $this->assertFalse($this->hasUrgentAction($owner, 'unscheduled_projects'));
+        $this->assertFalse($this->hasUrgentAction($owner, 'projects_needing_schedule'));
 
         // Still counted as crewless, though: a hold pauses the dates, not the
         // question of who is going to do the job.
@@ -466,7 +471,9 @@ class DashboardTest extends TestCase
             $this->actingAs($owner)->get(route('super-admin.projects'))->viewData('statusTabs')
         )->pluck('key');
 
-        foreach (['unscheduled', 'overdue', 'no_technicians'] as $key) {
+        // Unscheduled is no longer a tab of its own - work with no dates on
+        // it files under Needs Rescheduling, which is where the entry links.
+        foreach (['overdue', 'no_technicians'] as $key) {
             $this->assertContains($key, $tabs);
         }
 
@@ -475,7 +482,7 @@ class DashboardTest extends TestCase
         $this->actingAs($owner)
             ->get(route('super-admin.projects'))
             ->assertOk()
-            ->assertSee('data-tab-extra="unscheduled no_technicians"', false);
+            ->assertSee('data-tab-extra="no_technicians"', false);
     }
 
     /**

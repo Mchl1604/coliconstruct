@@ -25,8 +25,8 @@ use Carbon\CarbonImmutable;
  * Overdue is not written here because it is not stored anywhere: a project
  * whose dates have all passed is Ongoing with nothing left to reach, and
  * Project::isOverdue() derives the label from exactly that. So "all remaining
- * dates are in the past" lands on Ongoing here and reads as Overdue on every
- * screen, which is the same fact told once.
+ * dates are in the past" lands on Ongoing here and reads as Needs
+ * Rescheduling on every screen, which is the same fact told once.
  *
  * What this deliberately never touches:
  *

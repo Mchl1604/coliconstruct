@@ -1,79 +1,32 @@
-@php
-    /**
-     * A status printed the way the application shows it on screen: the same
-     * fill, and ink chosen to stay readable on it. Both come from
-     * Project::STATUS_INK so there is one colour system, not two.
-     */
-    $badge = function (?string $key, ?string $label): string {
-        [$background, $ink] = \App\Models\Project::statusColor((string) $key);
-
-        return sprintf(
-            '<span class="badge" style="background:%s;color:%s;">%s</span>',
-            $background,
-            $ink,
-            e($label ?: '—')
-        );
-    };
-
-    /**
-     * The same, for a task rather than a project. Task states are their own
-     * set - Unassigned and Finished Late exist here and nowhere else, and
-     * Pending is grey on a task where it is amber on a project - so they carry
-     * their own colours rather than being looked up in the project map and
-     * silently coming back grey.
-     */
-    $taskBadge = function (?string $key, ?string $label): string {
-        [$background, $ink] = \App\Support\TaskStatus::colorFor((string) $key);
-
-        return sprintf(
-            '<span class="badge" style="background:%s;color:%s;">%s</span>',
-            $background,
-            $ink,
-            e($label ?: '—')
-        );
-    };
-
-    /**
-     * Whether a technician is still on a project, as its own badge.
-     *
-     * Deliberately not $badge(): that one speaks the project's status
-     * vocabulary, and running an assignment through it would print a
-     * technician's standing in the colours of a project state - which is the
-     * exact confusion this column exists to end. A membership has two states
-     * and they get their own two colours.
-     */
-    $assignmentBadge = function (bool $removed): string {
-        return sprintf(
-            '<span class="badge" style="background:%s;color:#ffffff;">%s</span>',
-            $removed ? '#64748b' : '#198754',
-            $removed ? 'Removed' : 'Active'
-        );
-    };
-
-    /** Several values in one cell, stacked rather than run together. */
-    $stack = function (array $values, string $empty = '—'): string {
-        if ($values === []) {
-            return '<span class="muted">' . e($empty) . '</span>';
-        }
-
-        return implode('', array_map(fn($value) => '<div class="stacked">' . e($value) . '</div>', $values));
-    };
-@endphp
-    <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 
 <head>
     <meta charset="utf-8">
     <title>{{ $reportTitle }}</title>
+    {{--
+        The PDF half of the report. The markup for the sections and the
+        sign-off is shared with the on-screen preview - see
+        partials/report-sections.blade.php - so the two say the same thing in
+        the same order. Only the styling is written twice, because dompdf and
+        a browser do not read the same CSS: no flexbox, no CSS variables, and
+        the repeated header and footer are fixed boxes rather than @page
+        margin content.
+
+        Formal on purpose: ruled tables, one ink, and statuses spelled out.
+        There are no status colours here any more - the report is filed and
+        photocopied, and a colour that carries meaning stops carrying it the
+        first time somebody prints it in black and white.
+    --}}
     <style>
         @page {
-            margin: 118px 28px 60px 28px;
+            margin: 118px 28px 64px 28px;
         }
 
         body {
             font-family: DejaVu Sans, sans-serif;
             font-size: 9px;
-            color: #1e293b;
+            color: #1f2937;
             margin: 0;
         }
 
@@ -88,14 +41,14 @@
 
         footer {
             position: fixed;
-            bottom: -44px;
+            bottom: -48px;
             left: 0;
             right: 0;
             height: 30px;
-            border-top: 1px solid #e5e7eb;
+            border-top: 1px solid #cbd5e1;
             padding-top: 5px;
             font-size: 8px;
-            color: #64748b;
+            color: #475569;
         }
 
         /* dompdf resolves counter(page) without needing PHP enabled. */
@@ -105,7 +58,7 @@
 
         .brand-row {
             width: 100%;
-            border-bottom: 2px solid #2563eb;
+            border-bottom: 1.5px solid #334155;
             padding-bottom: 6px;
         }
 
@@ -121,13 +74,14 @@
 
         .company-meta {
             font-size: 8px;
-            color: #64748b;
+            color: #475569;
         }
 
         .report-title {
             font-size: 14px;
             font-weight: bold;
-            color: #2563eb;
+            text-transform: uppercase;
+            color: #0f172a;
             text-align: right;
         }
 
@@ -139,23 +93,29 @@
 
         h2.section {
             font-size: 11px;
+            font-weight: bold;
+            text-transform: uppercase;
             color: #0f172a;
-            border-bottom: 1px solid #cbd5e1;
+            border-bottom: 1px solid #94a3b8;
             padding-bottom: 3px;
             margin: 14px 0 7px;
         }
 
         h3.group {
             font-size: 9.5px;
-            color: #1d4ed8;
-            background: #eff6ff;
+            font-weight: bold;
+            text-transform: uppercase;
+            color: #1f2937;
+            background: #f1f5f9;
+            border-left: 3px solid #64748b;
             padding: 4px 7px;
             margin: 10px 0 0;
         }
 
         h3.group .position {
-            color: #64748b;
+            color: #475569;
             font-weight: normal;
+            text-transform: none;
         }
 
         table {
@@ -163,25 +123,29 @@
             border-collapse: collapse;
         }
 
+        /* Ruled on all four sides: a formal table is a grid, not a list with
+           faint separators. */
+        table.data {
+            border: 1px solid #334155;
+        }
+
         table.data th {
-            background: #1e293b;
-            color: #ffffff;
+            background: #f1f5f9;
+            color: #0f172a;
             font-size: 8px;
+            font-weight: bold;
             text-align: left;
             padding: 5px 6px;
+            border: 1px solid #334155;
         }
 
         table.data td {
             font-size: 8.5px;
             padding: 4px 6px;
-            border-bottom: 1px solid #eef2f7;
+            border: 1px solid #cbd5e1;
             vertical-align: top;
             /* Long client names wrap; reference numbers are never cut. */
             word-wrap: break-word;
-        }
-
-        table.data tr:nth-child(even) td {
-            background: #f8fafc;
         }
 
         .nowrap {
@@ -200,23 +164,15 @@
         /* How many bookings a duration was summed from, under the figure. */
         .sub {
             font-size: 7.5px;
-            color: #64748b;
+            color: #475569;
             font-weight: normal;
-        }
-
-        .badge {
-            display: inline-block;
-            padding: 2px 6px;
-            border-radius: 7px;
-            font-size: 7.5px;
-            font-weight: bold;
         }
 
         /* The summary belongs to the table above it, so it is attached to it
            rather than floated off onto a page of its own. */
         .summary {
-            border: 1px solid #cbd5e1;
-            border-top: 2px solid #2563eb;
+            border: 1px solid #334155;
+            border-top: none;
             background: #f8fafc;
             padding: 6px 9px;
             margin-top: 0;
@@ -227,7 +183,7 @@
             font-size: 8px;
             font-weight: bold;
             text-transform: uppercase;
-            color: #64748b;
+            color: #475569;
             margin-bottom: 3px;
         }
 
@@ -243,18 +199,64 @@
         }
 
         .muted {
-            color: #94a3b8;
+            color: #64748b;
             font-style: italic;
         }
 
         .empty-notice {
-            border: 1px dashed #cbd5e1;
+            border: 1px solid #94a3b8;
             background: #f8fafc;
-            color: #64748b;
+            color: #334155;
             padding: 14px;
             text-align: center;
             font-size: 9.5px;
             margin: 10px 0;
+        }
+
+        /* ---------------- Sign-off ---------------- */
+
+        .signature-block {
+            margin-top: 34px;
+            page-break-inside: avoid;
+        }
+
+        .signature-table {
+            width: 100%;
+        }
+
+        .signature-cell {
+            width: 200px;
+            vertical-align: bottom;
+        }
+
+        .signature-label {
+            font-size: 9px;
+            font-weight: bold;
+            text-transform: uppercase;
+            color: #334155;
+        }
+
+        /* Room to actually sign in - the rule is well clear of the printed
+           name below it. */
+        .signature-space {
+            height: 46px;
+        }
+
+        .signature-line {
+            border-bottom: 1px solid #334155;
+            font-size: 1px;
+        }
+
+        .signature-name {
+            font-size: 10px;
+            font-weight: bold;
+            color: #0f172a;
+            padding-top: 3px;
+        }
+
+        .signature-role {
+            font-size: 8px;
+            color: #475569;
         }
     </style>
 </head>
@@ -305,266 +307,9 @@
     </footer>
 
     <main>
+        @include('super-admin.partials.report-sections', ['report' => $report])
 
-        @if ($report['is_empty'])
-            <div class="empty-notice">
-                No records found for the selected reporting period and filters.
-            </div>
-        @endif
-
-        @foreach ($report['sections'] as $section)
-            <h2 class="section">{{ $section['title'] }}</h2>
-
-            @php
-                $rows = $section['rows'] ?? collect();
-                $groups = $section['groups'] ?? collect();
-                // The technician schedule arrives split into Past and Future
-                // rather than as one list; it has something to print when
-                // either half does.
-                $subsections = $section['subsections'] ?? collect();
-                $sectionEmpty =
-                    $rows->isEmpty() &&
-                    $groups->isEmpty() &&
-                    $subsections->every(fn($subsection) => $subsection['rows']->isEmpty());
-            @endphp
-
-            @if ($sectionEmpty)
-                <p class="muted">No records for this section.</p>
-            @else
-
-                {{-- ---------------- Project Report ---------------- --}}
-                @if ($section['key'] === 'projects')
-                    <table class="data">
-                        <thead>
-                            <tr>
-                                <th style="width:11%">Reference No.</th>
-                                {{-- When the job arrived, beside the reference
-                                     it arrived under. Same format as every
-                                     other date in this report. --}}
-                                <th style="width:10%">Created</th>
-                                <th style="width:18%">Client</th>
-                                <th style="width:9%">Client Type</th>
-                                <th style="width:18%">Project Type</th>
-                                <th style="width:12%">Status</th>
-                                <th>Schedules</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach ($rows as $row)
-                                <tr>
-                                    <td class="nowrap">{{ $row['reference_no'] }}</td>
-                                    <td class="nowrap">{{ $row['created_on'] }}</td>
-                                    <td>{{ $row['client'] }}</td>
-                                    <td>{{ $row['client_type'] }}</td>
-                                    <td>{!! $stack($row['project_types'], 'No Project Type') !!}</td>
-                                    <td>{!! $badge($row['status_key'], $row['status_label']) !!}</td>
-                                    <td>{!! $stack($row['schedules'], 'No Schedule') !!}</td>
-                                </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
-                @endif
-
-                {{-- ------------- New Projects Report ------------- --}}
-                @if ($section['key'] === 'new_projects')
-                    <table class="data">
-                        <thead>
-                            <tr>
-                                <th style="width:12%">Reference No.</th>
-                                <th style="width:11%">Opened</th>
-                                <th style="width:20%">Client</th>
-                                <th style="width:10%">Client Type</th>
-                                <th style="width:20%">Project Type</th>
-                                <th>Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach ($rows as $row)
-                                <tr>
-                                    <td class="nowrap">{{ $row['reference_no'] }}</td>
-                                    <td class="nowrap">{{ $row['opened_on'] }}</td>
-                                    <td>{{ $row['client'] }}</td>
-                                    <td>{{ $row['client_type'] }}</td>
-                                    <td>{!! $stack($row['project_types'], 'No Project Type') !!}</td>
-                                    <td>{!! $badge($row['status_key'], $row['status_label']) !!}</td>
-                                </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
-                @endif
-
-                {{-- ---------------- Schedule Report ---------------- --}}
-                @if ($section['key'] === 'schedules')
-                    <table class="data">
-                        <thead>
-                            <tr>
-                                <th style="width:14%">Reference No.</th>
-                                <th style="width:26%">Client</th>
-                                <th style="width:28%">Schedule</th>
-                                <th style="width:14%" class="num">Duration</th>
-                                <th>Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach ($rows as $row)
-                                <tr>
-                                    <td class="nowrap">{{ $row['reference_no'] }}</td>
-                                    <td>{{ $row['client'] }}</td>
-                                    {{-- Every range that touches the period, in date order. --}}
-                                    <td>{!! $stack($row['schedules'], 'No Schedule') !!}</td>
-                                    <td class="num nowrap">
-                                        {{ $row['duration'] }} {{ $row['duration'] === 1 ? 'day' : 'days' }}
-                                        @if ($row['entries'] > 1)
-                                            <div class="sub">{{ $row['entries'] }} bookings</div>
-                                        @endif
-                                    </td>
-                                    <td>{!! $badge($row['status_key'], $row['status_label']) !!}</td>
-                                </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
-                @endif
-
-                {{-- ---------------- Assigned Projects ---------------- --}}
-                {{-- One row per technician per project. Assignment Status and
-                     Removed Date come from the membership history; Schedule is
-                     the dates that technician actually held, never the
-                     project's range. The project's own status is the last
-                     column and is a different fact from the technician's -
-                     a completed project can carry an active assignment. --}}
-                @if ($section['key'] === 'assigned')
-                    <table class="data">
-                        <thead>
-                            <tr>
-                                <th style="width:16%">Technician</th>
-                                <th style="width:12%">Reference No.</th>
-                                <th style="width:18%">Client</th>
-                                <th style="width:10%">Assignment Status</th>
-                                <th style="width:11%">Removed Date</th>
-                                <th style="width:20%">Schedule</th>
-                                <th>Project Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach ($rows as $row)
-                                <tr>
-                                    <td>
-                                        {{ $row['technician'] }}
-                                        <div class="sub">{{ $row['position'] }}</div>
-                                    </td>
-                                    <td class="nowrap">{{ $row['reference_no'] }}</td>
-                                    <td>{{ $row['client'] }}</td>
-                                    <td>{!! $assignmentBadge($row['is_removed']) !!}</td>
-                                    <td class="nowrap">{{ $row['removed_on'] }}</td>
-                                    <td>{!! $stack($row['schedules'], 'No scheduled dates') !!}</td>
-                                    <td>{!! $badge($row['status_key'], $row['status_label']) !!}</td>
-                                </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
-                @endif
-
-                {{-- ---------------- Technician schedules ---------------- --}}
-                {{-- Two tables: what has been worked, and what is booked. Each
-                     row is a run of consecutive dates one technician was
-                     actually assigned for, never the project's range handed
-                     out to whoever is on the team - see
-                     TechnicianAssignedDates. Both halves are printed even when
-                     empty, so a report that shows no Past Schedule is saying
-                     there was none rather than leaving the reader to wonder
-                     which half they are looking at. --}}
-                @if ($section['key'] === 'technician_schedule')
-                    @foreach ($subsections as $subsection)
-                        <h3 class="group">{{ strtoupper($subsection['title']) }}</h3>
-
-                        @if ($subsection['rows']->isEmpty())
-                            <p class="muted">
-                                No {{ strtolower($subsection['title']) }} for this reporting period.
-                            </p>
-                        @else
-                            <table class="data">
-                                <thead>
-                                    <tr>
-                                        <th style="width:18%">Technician</th>
-                                        <th style="width:13%">Reference No.</th>
-                                        <th style="width:22%">Client</th>
-                                        <th style="width:23%">Schedule</th>
-                                        <th style="width:11%" class="num">Scheduled Days</th>
-                                        <th>Status</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @foreach ($subsection['rows'] as $row)
-                                        <tr>
-                                            <td>
-                                                {{ $row['technician'] }}
-                                                <div class="sub">{{ $row['position'] }}</div>
-                                            </td>
-                                            <td class="nowrap">{{ $row['reference_no'] }}</td>
-                                            <td>{{ $row['client'] }}</td>
-                                            <td>{{ $row['schedule'] }}</td>
-                                            <td class="num nowrap">
-                                                {{ $row['duration'] }} {{ $row['duration'] === 1 ? 'day' : 'days' }}
-                                            </td>
-                                            <td>{!! $badge($row['status_key'], $row['status_label']) !!}</td>
-                                        </tr>
-                                    @endforeach
-                                </tbody>
-                            </table>
-                        @endif
-                    @endforeach
-                @endif
-
-                {{-- ---------------- Technician tasks ---------------- --}}
-                @if ($section['key'] === 'technician_tasks')
-                    @foreach ($groups as $group)
-                        <h3 class="group">
-                            {{ $group['technician'] }}
-                            <span class="position">&mdash; {{ $group['position'] }}</span>
-                        </h3>
-                        <table class="data">
-                            <thead>
-                                <tr>
-                                    <th style="width:12%">Reference No.</th>
-                                    <th style="width:20%">Client</th>
-                                    <th style="width:26%">Task</th>
-                                    <th style="width:12%">Start Date</th>
-                                    <th style="width:12%">Due Date</th>
-                                    <th>Status</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach ($group['rows'] as $row)
-                                    <tr>
-                                        <td class="nowrap">{{ $row['reference_no'] }}</td>
-                                        <td>{{ $row['client'] }}</td>
-                                        <td>{{ $row['task'] }}</td>
-                                        <td class="nowrap">{{ $row['start_date'] }}</td>
-                                        <td class="nowrap">{{ $row['due_date'] }}</td>
-                                        <td>{!! $taskBadge($row['status_key'], $row['status_label']) !!}</td>
-                                    </tr>
-                                @endforeach
-                            </tbody>
-                        </table>
-                    @endforeach
-                @endif
-            @endif
-
-            {{-- The section's own summary, directly under its own table. --}}
-            <div class="summary">
-                <div class="summary-title">{{ $section['title'] }} Summary</div>
-                <table>
-                    @foreach (collect($section['summary'])->chunk(4) as $line)
-                        <tr>
-                            @foreach ($line as $item)
-                                <td>{{ $item['label'] }}: <span class="value">{{ $item['value'] }}</span></td>
-                            @endforeach
-                        </tr>
-                    @endforeach
-                </table>
-            </div>
-        @endforeach
-
+        @include('super-admin.partials.report-signature', ['generatedBy' => $generatedBy])
     </main>
 </body>
 

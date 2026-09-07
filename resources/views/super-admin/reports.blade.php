@@ -4,6 +4,9 @@
     <link href="/css/super-admin/projects.css" rel="stylesheet">
     <link href="/css/super-admin/technicians.css" rel="stylesheet">
     <link href="/css/super-admin/reports.css" rel="stylesheet">
+    {{-- The generated report's own sheet, on screen and on paper. Loaded last
+         so its @media print rules have the final word over the portal's. --}}
+    <link href="/css/super-admin/report-print.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 @endpush
 
@@ -177,8 +180,8 @@
 
                 <button type="button" class="btn btn-success" data-bs-toggle="modal"
                     data-bs-target="#exportReportModal">
-                    <i class="bi bi-file-earmark-arrow-down me-1" aria-hidden="true"></i>
-                    Export Report
+                    <i class="bi bi-file-earmark-text me-1" aria-hidden="true"></i>
+                    Generate Report
                 </button>
             </div>
 
@@ -270,7 +273,7 @@
                             [
                                 'id' => 'leadTechnicianProjects',
                                 'title' => 'Active Project Distribution by Lead Technician',
-                                'subtitle' => 'Unscheduled, Pending, Ongoing, On Hold and Overdue work, counted once each',
+                                'subtitle' => 'Unscheduled, Pending, Ongoing, On Hold and Needs Rescheduling work, counted once each',
                                 'type' => 'pie',
                                 'col' => 'col-12 col-xl-7',
                                 'categorical' => true,
@@ -627,8 +630,8 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title">
-                        <i class="bi bi-file-earmark-arrow-down me-2" aria-hidden="true"></i>
-                        Export Report
+                        <i class="bi bi-file-earmark-text me-2" aria-hidden="true"></i>
+                        Generate Report
                     </h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
@@ -715,10 +718,13 @@
                         </select>
                     </div>
 
-                    {{-- No format control: PDF is the only thing this button
-                         has ever produced, and a select with one option asks a
-                         question that has no second answer. --}}
-                    <div class="form-text mb-0">Exports as PDF. Archived projects are excluded from every report.</div>
+                    {{-- No format control here: the report is shown before it
+                         is committed to anything, and Print or PDF is chosen
+                         from the preview once there is something to look at. --}}
+                    <div class="form-text mb-0">
+                        Opens a print-ready preview you can print or save as PDF.
+                        Archived projects are excluded from every report.
+                    </div>
 
                     <div class="alert alert-danger mt-3 mb-0 d-none" role="alert" data-export-error></div>
                 </div>
@@ -728,9 +734,62 @@
                     <button type="button" class="btn btn-success" data-export-submit>
                         <span class="spinner-border spinner-border-sm me-1 d-none" role="status" aria-hidden="true"
                             data-export-spinner></span>
-                        Generate PDF
+                        Generate Report
                     </button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    {{-- ==================== REPORT PREVIEW ==================== --}}
+    {{-- The generated report, on screen, as the paper it is headed for.
+
+         reports.js moves this element to be a direct child of <body> as soon
+         as the page loads. That is what lets the print sheet take everything
+         else away with one rule: with the dialog nested inside the portal
+         shell there is no way to hide the shell and keep the dialog.
+
+         The document itself is rendered by the server and dropped into
+         [data-report-preview-body] - the browser never assembles a report out
+         of what happens to be drawn on the page. --}}
+    <div class="modal fade" id="reportPreviewModal" tabindex="-1" aria-hidden="true"
+        aria-labelledby="reportPreviewTitle" data-report-preview-modal>
+        <div class="modal-dialog modal-fullscreen">
+            <div class="modal-content">
+
+                <div class="modal-header">
+                    <div>
+                        <h5 class="modal-title" id="reportPreviewTitle" data-report-preview-title>Report Preview</h5>
+                        <span class="text-secondary small" data-report-preview-subtitle></span>
+                    </div>
+
+                    <div class="d-flex align-items-center gap-2 report-preview-actions">
+                        {{-- Print goes straight to the browser's own dialog,
+                             where the printer is chosen. Nothing is generated,
+                             downloaded or opened on the way. --}}
+                        <button type="button" class="btn btn-primary" data-report-print>
+                            <i class="bi bi-printer me-1" aria-hidden="true"></i>
+                            Print
+                        </button>
+
+                        {{-- The same report as a file, built by the server -
+                             a separate choice, not a step towards printing. --}}
+                        <button type="button" class="btn btn-outline-secondary" data-report-pdf>
+                            <span class="spinner-border spinner-border-sm me-1 d-none" role="status" aria-hidden="true"
+                                data-report-pdf-spinner></span>
+                            <i class="bi bi-file-earmark-pdf me-1" aria-hidden="true"></i>
+                            PDF
+                        </button>
+
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    </div>
+                </div>
+
+                <div class="modal-body p-0 report-preview-stage">
+                    <div class="alert alert-danger m-3 d-none" role="alert" data-report-preview-error></div>
+                    <div data-report-preview-body></div>
+                </div>
+
             </div>
         </div>
     </div>
@@ -779,6 +838,7 @@
                 technicianReports: @json(route('super-admin.reports.technician')),
                 systemReports: @json(route('super-admin.reports.system')),
                 systemChart: @json(route('super-admin.reports.system.chart')),
+                preview: @json(route('super-admin.reports.preview')),
                 export: @json(route('super-admin.reports.export')),
                 reportBase: @json(url('super-admin/reports/technician-reports')),
                 projectBase: @json(url('super-admin/projects')),

@@ -601,7 +601,7 @@
                                                 {{ $project->name }}
                                                 <span
                                                     class="schedule-need-tag {{ $isOverdue ? 'is-overdue' : 'is-unscheduled' }}">
-                                                    {{ $isOverdue ? 'Overdue' : 'Unscheduled' }}
+                                                    {{ $isOverdue ? \App\Models\Project::LABEL_NEEDS_RESCHEDULING : 'Unscheduled' }}
                                                 </span>
                                             </div>
                                             <div class="schedule-date-card-meta">

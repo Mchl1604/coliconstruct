@@ -254,8 +254,8 @@
 
                             {{-- Read from the model so this key and the bookings
                                  it explains cannot drift apart - written out by
-                                 hand it kept Overdue's old orange after the
-                                 colour changed. --}}
+                                 hand it kept the Needs Rescheduling entry's
+                                 old orange after the colour changed. --}}
                             <div class="schedule-legend mb-3">
                                 @foreach (\App\Models\Project::calendarLegend() as $entry)
                                     <span class="schedule-legend-item">

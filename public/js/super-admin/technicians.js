@@ -76,14 +76,19 @@ document.addEventListener("DOMContentLoaded", function () {
      *
      * The key still has to be derived here, because these payloads carry the
      * stored status and the server's label rather than statusKey() itself, and
-     * the label is what settles "On Hold" and "Overdue" - both of which win
-     * over the status underneath them.
+     * the label is what settles "On Hold" and "Needs Rescheduling" - both of
+     * which win over the status underneath them.
+     *
+     * These two strings have to match Project::LABEL_NEEDS_RESCHEDULING and
+     * the On Hold label exactly. Get one wrong and the badge silently falls
+     * back to the stored status's colour rather than failing where it can be
+     * seen.
      */
     function statusBadge(status, statusLabel) {
         const key =
             statusLabel === "On Hold"
                 ? "on_hold"
-                : statusLabel === "Overdue"
+                : statusLabel === "Needs Rescheduling"
                   ? "overdue"
                   : status;
 

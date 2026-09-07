@@ -769,8 +769,10 @@
             </div>
         @endif
 
-        {{-- Overdue: the last scheduled day has passed but the project is
-             still open. Offer the only two ways out - extend the schedule, or
+        {{-- Out of booked dates: the last scheduled day has passed but the
+             project is still open. Not a statement that the work is late -
+             nothing here stores a promised finish date - so it says what is
+             true and offers the only two ways out: put more dates on it, or
              close it off properly. --}}
         @if ($project->isOverdue())
             <div class="alert alert-warning border-0 shadow-sm mb-4 overdue-banner" role="alert">
@@ -780,11 +782,12 @@
                     </div>
 
                     <div class="flex-grow-1">
-                        <h5 class="alert-heading mb-1">This project is overdue</h5>
+                        <h5 class="alert-heading mb-1">This project needs rescheduling</h5>
                         <p class="mb-2">
-                            Last scheduled day was
-                            <strong>{{ $project->scheduleEndsOn()->format(\App\Support\BusinessTime::DATE) }}</strong>.
-                            Extend the schedule or mark it complete.
+                            Its last booked day was
+                            <strong>{{ $project->scheduleEndsOn()->format(\App\Support\BusinessTime::DATE) }}</strong>
+                            and nothing is booked ahead of it.
+                            Add a new schedule or mark it complete.
                         </p>
 
                         <div class="d-flex flex-wrap gap-2">
