@@ -314,6 +314,61 @@ class TechnicianManagementTest extends TestCase
     }
 
     /**
+     * The panel names the stage the project is on and the stage each of this
+     * technician's tasks belongs to. Both travel in this payload, and both are
+     * worded by Project::phasePosition() so the office and the technician's own
+     * schedule cannot describe the same project differently.
+     */
+    public function test_the_assignment_payload_carries_the_current_phase_and_each_tasks_phase(): void
+    {
+        $ana = $this->technician('Ana Mendoza');
+        $project = $this->project('Chiller Replacement', [$ana]);
+        $phases = $this->finalizePhases($project);
+        $this->schedule($project, $this->day(5), $this->day(9));
+
+        Task::create([
+            'project_id' => $project->project_id,
+            'technician_id' => $ana->technician_id,
+            'phase_id' => $phases->last()->phase_id,
+            'task_title' => 'Flush the loop',
+            'task_description' => 'Flush and refill the chilled water loop.',
+            'start_date' => $this->day(5),
+            'due_date' => $this->day(6),
+            'status' => 'pending',
+        ]);
+
+        $response = $this->getJson(route('super-admin.technicians.assignment', [
+            $ana->technician_id,
+            $project->project_id,
+        ]));
+
+        $response->assertOk();
+        $response->assertJsonPath('project.phase_position.headline', 'Phase 1/2: Phase 1');
+        $response->assertJsonPath('project.phase_position.total', 2);
+        $response->assertJsonPath('project.tasks.0.phase.sequence', 2);
+        $response->assertJsonPath('project.tasks.0.phase.title', 'Phase 2');
+    }
+
+    /**
+     * A project whose phases nobody has settled has no position to print, and
+     * the panel is told so rather than handed an invented one.
+     */
+    public function test_the_assignment_payload_omits_a_phase_position_before_setup(): void
+    {
+        $ana = $this->technician('Ana Mendoza');
+        $project = $this->project('Unplanned Fitout', [$ana]);
+        $this->schedule($project, $this->day(5), $this->day(9));
+
+        $response = $this->getJson(route('super-admin.technicians.assignment', [
+            $ana->technician_id,
+            $project->project_id,
+        ]));
+
+        $response->assertOk();
+        $response->assertJsonPath('project.phase_position', null);
+    }
+
+    /**
      * Cancelled work is out of the table entirely. Completed work stays on the
      * table as history but is not part of the figure beside the calendar -
      * that figure is what the technician is carrying now.

@@ -560,6 +560,11 @@ class TechnicianPortalController extends Controller
             'tasks.technician.account',
             'tasks.images',
             'tasks.completedBy',
+            // The task's own phase, and the project's whole set - the panel
+            // prints both the stage each task belongs to and the stage the
+            // project is on, and neither should cost a query per row.
+            'tasks.phase',
+            'phases',
         ]);
 
         $reports = TechnicianReport::query()
@@ -672,7 +677,7 @@ class TechnicianPortalController extends Controller
 
         return $this->succeeded($request, 'Task created.', fn (): array => [
             'task' => $this->taskPayload(
-                $task->load(['technician.account', 'images', 'completedBy']),
+                $task->load(['technician.account', 'images', 'completedBy', 'phase']),
                 $this->technician($request)
             ),
         ], 201);
@@ -734,7 +739,7 @@ class TechnicianPortalController extends Controller
 
         return $this->succeeded($request, 'Task updated.', fn (): array => [
             'task' => $this->taskPayload(
-                $task->fresh(['technician.account', 'images', 'completedBy']),
+                $task->fresh(['technician.account', 'images', 'completedBy', 'phase']),
                 $this->technician($request)
             ),
         ]);
@@ -797,7 +802,7 @@ class TechnicianPortalController extends Controller
 
         return $this->succeeded($request, 'Task completed.', fn (): array => [
             'task' => $this->taskPayload(
-                $task->fresh(['technician.account', 'images', 'completedBy']),
+                $task->fresh(['technician.account', 'images', 'completedBy', 'phase']),
                 $this->technician($request)
             ),
         ]);
@@ -1315,6 +1320,12 @@ class TechnicianPortalController extends Controller
             'status' => $project->status,
             'status_label' => $project->statusLabel(),
             'status_badge_class' => $project->statusBadgeClass(),
+            // Which stage of the job this is, worded exactly as the client's
+            // phase line and the administrative panel word it - see
+            // Project::phasePosition(). Null while nobody has settled the
+            // structure, which the panel prints as "Not set up yet" rather
+            // than inventing a position.
+            'phase_position' => $project->phasePosition(),
             'start_date' => $start ? CarbonImmutable::parse($start)->format(BusinessTime::DATE) : null,
             'end_date' => $end ? CarbonImmutable::parse($end)->format(BusinessTime::DATE) : null,
             'ranges' => $schedules->map(fn (Schedule $schedule): array => [
@@ -1322,6 +1333,11 @@ class TechnicianPortalController extends Controller
                 // are expected on site rather than a date twice over.
                 'label' => $schedule->describe(),
                 'is_partial_day' => $schedule->isPartialDay(),
+                // Whether this booking is already behind them, so the panel
+                // can grey it out and leave the colour for the days they are
+                // still expected on site. The line is Schedule::lockState()'s,
+                // not a second opinion about when a range has ended.
+                'is_past' => $schedule->isLocked(),
             ])->values()->all(),
             'technicians' => $project->projectTechnicians
                 ->map(fn (ProjectTechnician $assignment): ?array => $assignment->technician ? [
@@ -1367,6 +1383,15 @@ class TechnicianPortalController extends Controller
             'completed_at_label' => $task->completed_at
                 ? BusinessTime::format($task->completed_at)
                 : null,
+            // Where this task sits in the project, so a technician reading
+            // one off their schedule knows which stage they are being asked
+            // to work on. Same two fields x-task-phase-cell prints on the
+            // boards.
+            'phase' => $task->phase ? [
+                'sequence' => $task->phase->sequence,
+                'title' => $task->phase->title,
+                'label' => $task->phase->label(),
+            ] : null,
             'closed_on_behalf' => $task->wasClosedOnBehalf(),
             'completed_by' => $task->completedBy?->fullName(),
             'images' => $task->relationLoaded('images')

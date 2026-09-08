@@ -124,9 +124,29 @@
                             <span data-panel-address></span>
                         </div>
 
+                        {{-- One booking per line. Run together on a single
+                             line they read as one long date, and a project
+                             booked over three separate stretches is exactly
+                             where a technician most needs to see them
+                             apart. --}}
                         <div class="panel-meta">
                             <i class="bi bi-calendar3" aria-hidden="true"></i>
-                            <span data-panel-schedule></span>
+                            <div class="panel-schedule-list" data-panel-schedule></div>
+                        </div>
+
+                        {{-- The stage the project is on right now, given a
+                             band of its own rather than a fourth grey meta
+                             line. Which phase is running is the thing a
+                             technician opens this panel to find out, and a
+                             line that looks like the address does not say so.
+                             The wording is the client's phase line's - see
+                             Project::phasePosition(). --}}
+                        <div class="panel-phase" data-panel-phase-wrap>
+                            <i class="bi bi-diagram-3" aria-hidden="true"></i>
+                            <div class="panel-phase-body">
+                                <span class="panel-phase-eyebrow">Current Phase</span>
+                                <span class="panel-phase-headline" data-panel-phase></span>
+                            </div>
                         </div>
 
                         <div class="mt-2" data-panel-status></div>

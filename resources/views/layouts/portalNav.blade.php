@@ -79,16 +79,6 @@
                     @endforeach
                 </div>
             </nav>
-
-            <div class="admin-sidebar-footer">
-                <form method="POST" action="{{ route('auth.logout') }}">
-                    @csrf
-                    <button type="submit" class="admin-sidebar-link admin-sidebar-logout">
-                        <i class="bi bi-box-arrow-right" aria-hidden="true"></i>
-                        <span>Logout</span>
-                    </button>
-                </form>
-            </div>
         </aside>
 
         <div class="admin-backdrop" data-sidebar-backdrop></div>
@@ -102,17 +92,11 @@
 
                 <x-notification-bell />
 
-                {{-- The whole block is the link to Profile: a picture and a
-                     name is what people aim at, not a menu item inside it. --}}
-                <a class="admin-user-menu admin-user-link" href="{{ route('profile.edit') }}"
-                    aria-label="Signed in as {{ $user?->fullName() }} - open your profile">
-                    <x-user-avatar :user="$user" size="md" alt="" />
-
-                    <span>
-                        <span class="admin-user-name">{{ $user?->fullName() }}</span>
-                        <span class="admin-user-role">{{ $user?->roleLabel() }}</span>
-                    </span>
-                </a>
+                {{-- Who is signed in, and Profile and Logout behind it.
+                     The same menu the administrative shell carries - see
+                     x-account-menu, which is also where Logout moved to from
+                     the foot of the sidebar. --}}
+                <x-account-menu :user="$user" />
             </header>
 
             <main class="admin-page">

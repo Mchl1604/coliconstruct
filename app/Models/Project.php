@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\HasOneThrough;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 
 class Project extends Model
 {
@@ -1107,6 +1108,73 @@ class Project extends Model
         $this->loadMissing('phases');
 
         return $this->phases->first(fn (ProjectPhase $phase): bool => ! $phase->isCompleted());
+    }
+
+    /**
+     * Where this project has got to, as one readable position: the figures,
+     * the phase being worked on, and the sentence that names both.
+     *
+     * "Phase 3/4: Site Preparation" is a fact three different surfaces print -
+     * the client's phase line, the technician's schedule panel and the
+     * administrative one - and they must not word it differently or count it
+     * differently. Both numbers come from phaseProgress() and the phase itself
+     * from currentPhase(), so this only assembles what those two already
+     * decided.
+     *
+     * Null while the structure is not finalized: there is no position to be at
+     * in a sequence nobody has agreed on yet.
+     *
+     * @return array{
+     *     completed: int,
+     *     total: int,
+     *     position: int|null,
+     *     sequence: int|null,
+     *     title: string|null,
+     *     label: string|null,
+     *     description: string|null,
+     *     headline: string,
+     *     percent: int,
+     *     is_complete: bool
+     * }|null
+     */
+    public function phasePosition(): ?array
+    {
+        $progress = $this->phaseProgress();
+
+        if ($progress === null) {
+            return null;
+        }
+
+        $current = $this->currentPhase();
+
+        return [
+            'completed' => $progress['completed'],
+            'total' => $progress['total'],
+            // Where the project is standing, which is one past what it has
+            // finished. Null once there is nothing left to stand on.
+            'position' => $current === null ? null : $progress['completed'] + 1,
+            'sequence' => $current?->sequence,
+            'title' => $current?->title,
+            'label' => $current?->label(),
+            'description' => $current?->description,
+            // Once every phase is closed there is no current one to name, and
+            // "Phase 4/4" would suggest work is still happening on the last of
+            // them - hence the two wordings.
+            'headline' => $current === null
+                ? sprintf(
+                    'All %d %s complete',
+                    $progress['total'],
+                    Str::plural('phase', $progress['total'])
+                )
+                : sprintf(
+                    'Phase %d/%d: %s',
+                    $progress['completed'] + 1,
+                    $progress['total'],
+                    $current->title
+                ),
+            'percent' => (int) round($progress['completed'] / $progress['total'] * 100),
+            'is_complete' => $current === null,
+        ];
     }
 
     /**

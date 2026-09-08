@@ -11,34 +11,11 @@
     // project. See ClientProjects::forOwner(), which eager loads it.
     $project->loadMissing('phases');
 
-    $progress = $project->phaseProgress();
-    $current = $project->currentPhase();
-
-    // Built here rather than assembled from several Blade expressions: broken
-    // across lines in the template it renders with newlines inside it, and
-    // "Phase 3/4: Site Preparation" is one thing to read, not three.
-    //
-    // Once every phase is closed there is no current one left to name, and
-    // "Phase 4/4" would suggest work is still happening on the last of them -
-    // hence the two wordings.
-    $headline = $progress === null
-        ? null
-        : ($current === null
-            ? sprintf(
-                'All %d %s complete',
-                $progress['total'],
-                \Illuminate\Support\Str::plural('phase', $progress['total'])
-            )
-            : sprintf(
-                'Phase %d/%d: %s',
-                $progress['completed'] + 1,
-                $progress['total'],
-                $current->title
-            ));
-
-    $percent = $progress === null
-        ? 0
-        : (int) round($progress['completed'] / $progress['total'] * 100);
+    // "Phase 3/4: Site Preparation", the bar's width and the phase's own
+    // description, all from the one place - see Project::phasePosition(),
+    // which the two schedule panels read as well so none of the three can
+    // word the same position differently.
+    $position = $project->phasePosition();
 @endphp
 
 {{--
@@ -54,19 +31,19 @@
     is what the staff panel counts from too - so the client and the office can
     never be told different things about the same project.
 --}}
-@if ($headline !== null)
+@if ($position !== null)
     <div {{ $attributes->merge(['class' => 'project-phase-line' . ($compact ? ' is-compact' : '')]) }}>
-        <p class="project-phase-line-title">{{ $headline }}</p>
+        <p class="project-phase-line-title">{{ $position['headline'] }}</p>
 
         <div class="project-phase-line-bar" role="progressbar"
-            aria-label="Phases completed" aria-valuenow="{{ $progress['completed'] }}"
-            aria-valuemin="0" aria-valuemax="{{ $progress['total'] }}">
-            <span style="width: {{ $percent }}%"></span>
+            aria-label="Phases completed" aria-valuenow="{{ $position['completed'] }}"
+            aria-valuemin="0" aria-valuemax="{{ $position['total'] }}">
+            <span style="width: {{ $position['percent'] }}%"></span>
         </div>
 
         @unless ($compact)
             <p class="project-phase-line-detail">
-                {{ $current?->description ?? 'Every stage of this project has been finished.' }}
+                {{ $position['description'] ?? 'Every stage of this project has been finished.' }}
             </p>
         @endunless
     </div>

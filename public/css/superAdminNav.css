@@ -116,22 +116,6 @@
 
         /* Logout is a form button, so it needs the anchor's look without a
            button's default chrome. */
-        .admin-sidebar-logout {
-            width: 100%;
-            border: 0;
-            background: transparent;
-            padding: 0;
-            text-align: left;
-            cursor: pointer;
-            font: inherit;
-        }
-
-        .admin-sidebar-footer {
-            margin-top: auto;
-            border-top: 1px solid var(--admin-sidebar-border);
-            padding: 14px 16px;
-        }
-
         .admin-content {
             min-height: 100vh;
             padding-left: var(--admin-sidebar-width);
@@ -180,21 +164,67 @@
             text-align: left;
         }
 
-        /* The whole block is the link to Profile - there is no menu beside it. */
-        .admin-user-link {
-            text-decoration: none;
+        /* The whole block is one button: who is signed in, and the menu that
+           acts on it. A picture and a name beside a separate Logout read as
+           two unrelated controls when they are both about the same account. */
+        .admin-user-button {
+            cursor: pointer;
             transition: border-color .15s ease, background-color .15s ease;
         }
 
-        .admin-user-link:hover,
-        .admin-user-link:focus-visible {
+        .admin-user-button:hover,
+        .admin-user-button:focus-visible,
+        .admin-user-button[aria-expanded="true"] {
             border-color: var(--admin-active);
             background: #f8fafc;
             color: #111827;
         }
 
-        /* On a phone the topbar is tight: the name and role go, and the
-           picture alone stands for the profile link. */
+        /* Says there is something behind the name. Pushed to the far end so it
+           sits against the button's edge rather than against the role. */
+        .admin-user-caret {
+            margin-left: auto;
+            color: #5d6b80;
+            font-size: 12px;
+            transition: transform .15s ease;
+        }
+
+        .admin-user-button[aria-expanded="true"] .admin-user-caret {
+            transform: rotate(180deg);
+        }
+
+        /* Clear of the topbar's shadow, and wide enough that Logout does not
+           sit narrower than the control it dropped out of. */
+        .admin-user-dropdown {
+            min-width: 190px;
+            margin-top: 6px;
+            border: 1px solid #e1e5ea;
+            box-shadow: 0 8px 24px rgba(17, 24, 39, 0.12);
+        }
+
+        .admin-user-dropdown .dropdown-item {
+            display: flex;
+            align-items: center;
+            gap: 0.55rem;
+        }
+
+        /* Logout is a form button inside the menu - signing out changes state,
+           so it cannot be a link. It still has to fill the row like every
+           other item. */
+        .admin-user-dropdown form {
+            margin: 0;
+        }
+
+        .admin-user-dropdown form .dropdown-item {
+            width: 100%;
+            border: 0;
+            background: transparent;
+            font: inherit;
+            cursor: pointer;
+        }
+
+        /* On a phone the topbar is tight: the name, role and caret go, and the
+           picture alone opens the menu. */
         @media (max-width: 575.98px) {
             .admin-user-menu {
                 min-width: 0;
@@ -202,7 +232,8 @@
                 border-color: transparent;
             }
 
-            .admin-user-menu > span {
+            .admin-user-menu > span,
+            .admin-user-caret {
                 display: none;
             }
         }

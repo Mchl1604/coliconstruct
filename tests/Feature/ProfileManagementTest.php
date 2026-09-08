@@ -15,6 +15,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 /**
@@ -64,7 +65,7 @@ class ProfileManagementTest extends TestCase
     // The header
     // ------------------------------------------------------------------
 
-    public function test_an_internal_header_shows_a_clickable_profile_with_picture_name_and_role(): void
+    public function test_an_internal_header_shows_the_signed_in_person_with_picture_name_and_role(): void
     {
         $lead = $this->account('lead_technician', 'lead@example.test');
         $this->technicianFor($lead);
@@ -72,7 +73,7 @@ class ProfileManagementTest extends TestCase
         $this->actingAs($lead)
             ->get(route('technician.projects'))
             ->assertOk()
-            ->assertSee('admin-user-link', escape: false)
+            ->assertSee('admin-user-button', escape: false)
             ->assertSee(route('profile.edit'), escape: false)
             ->assertSee(asset('img/default-avatar.svg'), escape: false)
             ->assertSee('Juan Dela Cruz')
@@ -80,19 +81,50 @@ class ProfileManagementTest extends TestCase
     }
 
     /**
-     * The administrative header is the profile link and nothing else - no
-     * caret, no account menu. Settings and Logout live in the sidebar.
+     * Both staff shells carry the same account menu, and it is the only way
+     * out of the application: Logout moved off the foot of the sidebar, which
+     * is a list of places to go rather than an action, and went behind the
+     * control that says whose session this is.
+     *
+     * @param  string  $role  the account's role
+     * @param  string  $route  a page in the shell that role is served by
      */
-    public function test_the_administrative_header_has_no_account_dropdown(): void
-    {
-        $owner = $this->account('super_admin', 'owner@example.test');
+    #[DataProvider('staffShells')]
+    public function test_a_staff_header_carries_profile_and_logout_behind_the_account_menu(
+        string $role,
+        string $route
+    ): void {
+        $account = $this->account($role, $role.'@example.test');
 
-        $this->actingAs($owner)
-            ->get(route('super-admin.configuration.index'))
-            ->assertOk()
-            ->assertSee('admin-user-link', escape: false)
-            ->assertDontSee('admin-user-caret', escape: false)
-            ->assertDontSee('data-user-menu-toggle', escape: false);
+        if (str_contains($role, 'technician')) {
+            $this->technicianFor($account);
+        }
+
+        $response = $this->actingAs($account)->get(route($route))->assertOk();
+
+        // The menu, and both things behind it.
+        $response->assertSee('admin-user-button', escape: false);
+        $response->assertSee('admin-user-caret', escape: false);
+        $response->assertSee('admin-user-dropdown', escape: false);
+        $response->assertSee(route('profile.edit'), escape: false);
+        $response->assertSee(route('auth.logout'), escape: false);
+
+        // And nothing left at the foot of the sidebar.
+        $response->assertDontSee('admin-sidebar-logout', escape: false);
+        $response->assertDontSee('admin-sidebar-footer', escape: false);
+    }
+
+    /**
+     * @return array<string, array{string, string}>
+     */
+    public static function staffShells(): array
+    {
+        return [
+            'super admin' => ['super_admin', 'super-admin.configuration.index'],
+            'admin' => ['admin', 'super-admin.dashboard'],
+            'lead technician' => ['lead_technician', 'technician.projects'],
+            'technician' => ['technician', 'technician.projects'],
+        ];
     }
 
     /**

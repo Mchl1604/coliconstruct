@@ -1349,6 +1349,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const addressWrap = panel.querySelector("[data-panel-address-wrap]");
         const addressEl = panel.querySelector("[data-panel-address]");
         const scheduleEl = panel.querySelector("[data-panel-schedule]");
+        const phaseEl = panel.querySelector("[data-panel-phase]");
         const statusEl = panel.querySelector("[data-panel-status]");
 
         const leadEl = panel.querySelector("[data-panel-lead]");
@@ -1404,6 +1405,39 @@ document.addEventListener("DOMContentLoaded", function () {
             return task.status_badge_class || "bg-secondary";
         }
 
+        /**
+         * Which stage of the project a task belongs to.
+         *
+         * Drawn in x-task-phase-cell's markup rather than a shape of its own,
+         * so a phase on this panel looks like the phase on the task boards -
+         * the number first, because that is what says whether this is early
+         * work or late work, with the name under it.
+         */
+        function taskPhase(task) {
+            const phase = task.phase;
+
+            return (
+                '<div class="panel-task-phase">' +
+                '<span class="task-phase' +
+                (phase ? "" : " is-unset") +
+                '" title="' +
+                escapeHtml(
+                    phase
+                        ? phase.label
+                        : "This task is not filed under a project phase.",
+                ) +
+                '">' +
+                '<span class="task-phase-number">' +
+                (phase ? escapeHtml(String(phase.sequence)) : "—") +
+                "</span>" +
+                '<span class="task-phase-title">' +
+                escapeHtml(phase ? phase.title : "No phase") +
+                "</span>" +
+                "</span>" +
+                "</div>"
+            );
+        }
+
         function renderTasks(tasks) {
             taskListEl.innerHTML = (tasks || [])
                 .map(function (task) {
@@ -1415,6 +1449,7 @@ document.addEventListener("DOMContentLoaded", function () {
                         '<div class="panel-task-title">' +
                         escapeHtml(task.title) +
                         "</div>" +
+                        taskPhase(task) +
                         (task.description
                             ? '<div class="panel-task-description">' +
                               escapeHtml(task.description) +
@@ -1525,15 +1560,49 @@ document.addEventListener("DOMContentLoaded", function () {
             addressEl.textContent = project.address || "";
             addressWrap.classList.toggle("d-none", !project.address);
 
-            // Always the project's full schedule, never the clicked day.
+            // Always the project's full schedule, never the clicked day -
+            // and one booking to a line. Strung together with bullets they
+            // read as one continuous stretch on site, which is the one thing
+            // several separate bookings must never be mistaken for.
             const ranges = project.ranges || [];
-            scheduleEl.textContent = ranges.length
+            scheduleEl.innerHTML = ranges.length
                 ? ranges
                       .map(function (range) {
-                          return range.label;
+                          // Blue for a booking still to be worked, grey for
+                          // one already behind them. Where that line falls is
+                          // Schedule::lockState()'s answer, not a second one.
+                          return (
+                              '<div class="panel-schedule-item' +
+                              (range.is_past ? " is-past" : "") +
+                              '">' +
+                              escapeHtml(range.label) +
+                              "</div>"
+                          );
                       })
-                      .join("  •  ")
-                : "No schedule set";
+                      .join("")
+                : '<div class="panel-schedule-item is-past">No schedule set</div>';
+
+            // "Phase 2/4: Installation". The server writes the sentence, so
+            // this panel cannot word the position differently from the
+            // project page or the technician's own schedule. A project whose
+            // structure nobody has settled has no position to be at, and the
+            // band greys out rather than colouring in a stage that does not
+            // exist yet.
+            const phase = project.phase_position;
+
+            phaseEl.textContent = phase
+                ? phase.headline
+                : "Phases not set up yet";
+
+            const phaseWrap = panel.querySelector("[data-panel-phase-wrap]");
+
+            if (phaseWrap) {
+                phaseWrap.classList.toggle("is-unset", !phase);
+                phaseWrap.classList.toggle(
+                    "is-complete",
+                    Boolean(phase && phase.is_complete),
+                );
+            }
 
             statusEl.innerHTML = statusBadge(project.status, project.status_label);
 

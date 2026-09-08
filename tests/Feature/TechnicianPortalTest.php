@@ -424,6 +424,76 @@ class TechnicianPortalTest extends TestCase
     }
 
     /**
+     * My Schedule prints which stage of the job the clicked project is on, and
+     * which stage each of the reader's tasks belongs to. Both come out of this
+     * payload, so both are asserted here rather than left to the panel.
+     */
+    public function test_the_project_payload_carries_the_current_phase_and_each_tasks_phase(): void
+    {
+        $phases = $this->project->phases()->inOrder()->get();
+
+        $task = $this->task($this->lead, 'Lead task');
+        $task->update(['phase_id' => $phases->last()->phase_id]);
+
+        $this->actingAs($this->leadAccount);
+
+        $response = $this->getJson(
+            route('technician.projects.details', $this->project).'?mine_only=1'
+        );
+
+        $response->assertOk();
+        // Nothing finished yet, so the project stands on the first of two.
+        $response->assertJsonPath('project.phase_position.headline', 'Phase 1/2: Phase 1');
+        $response->assertJsonPath('project.phase_position.completed', 0);
+        $response->assertJsonPath('project.phase_position.total', 2);
+        $response->assertJsonPath('tasks.0.phase.sequence', 2);
+        $response->assertJsonPath('tasks.0.phase.title', 'Phase 2');
+    }
+
+    /**
+     * The panel paints a booking still to be worked differently from one
+     * already behind the reader, so each range has to say which it is. The
+     * line is Schedule::lockState()'s, and today counts as still to come.
+     */
+    public function test_each_range_says_whether_it_has_already_been_worked(): void
+    {
+        $this->schedule($this->project, -20, -10);
+
+        $this->actingAs($this->leadAccount);
+
+        $response = $this->getJson(route('technician.projects.details', $this->project));
+
+        $response->assertOk();
+
+        $ranges = collect($response->json('project.ranges'));
+
+        // setUp() books days 10-20 ahead; the range added above has ended.
+        $this->assertCount(2, $ranges);
+        $this->assertSame(1, $ranges->where('is_past', true)->count());
+        $this->assertSame(1, $ranges->where('is_past', false)->count());
+    }
+
+    /**
+     * A project whose phases nobody has settled has no position to be at, and
+     * the panel says so rather than being handed an invented one.
+     */
+    public function test_the_project_payload_omits_a_phase_position_before_setup(): void
+    {
+        $this->project->phases()->delete();
+        $this->project->forceFill([
+            'phase_setup_status' => Project::PHASE_SETUP_PENDING,
+            'phase_count' => null,
+        ])->save();
+
+        $this->actingAs($this->leadAccount);
+
+        $response = $this->getJson(route('technician.projects.details', $this->project));
+
+        $response->assertOk();
+        $response->assertJsonPath('project.phase_position', null);
+    }
+
+    /**
      * The schedule panel renders straight from this payload, so the completion
      * photos have to travel with it - the notes alone left the panel showing a
      * description with no picture.

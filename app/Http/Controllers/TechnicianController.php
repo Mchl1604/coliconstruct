@@ -284,7 +284,7 @@ class TechnicianController extends Controller
     private function assignedProjects(Technician $technician): Collection
     {
         $projects = Project::query()
-            ->with(['clients', 'schedules', 'projectTechnicians.technician.account'])
+            ->with(['clients', 'schedules', 'projectTechnicians.technician.account', 'phases'])
             ->where('is_archived', false)
             ->where('status', '!=', 'cancelled')
             ->whereHas('projectTechnicians', function ($query) use ($technician): void {
@@ -334,6 +334,10 @@ class TechnicianController extends Controller
                 ->orderBy('start_date')
                 ->orderBy('task_id'),
             'tasks.technician.account',
+            // Each task's phase, and the project's whole set for the position
+            // printed above them - one query each rather than one per row.
+            'tasks.phase',
+            'phases',
         ]);
 
         $assignment = $project->projectTechnicians
@@ -504,7 +508,7 @@ class TechnicianController extends Controller
         }
 
         $candidates = Project::query()
-            ->with(['clients', 'schedules', 'projectTechnicians.technician.account'])
+            ->with(['clients', 'schedules', 'projectTechnicians.technician.account', 'phases'])
             ->whereIn('status', self::STAFFABLE_STATUSES)
             ->where('is_archived', false)
             ->where(function ($query): void {
@@ -1161,6 +1165,12 @@ class TechnicianController extends Controller
             'status' => $project->status,
             'status_label' => $this->statusLabel($project),
             'url' => route('super-admin.projects.show', $project->project_id),
+            // Which stage the project is on, in the same words the client's
+            // phase line and the technician's own schedule panel use - see
+            // Project::phasePosition(). Null until the structure is
+            // finalized, and the panel says so rather than showing a
+            // position nobody has agreed.
+            'phase_position' => $project->phasePosition(),
             'start_date' => $start ? CarbonImmutable::parse($start)->toDateString() : null,
             'end_date' => $end ? CarbonImmutable::parse($end)->toDateString() : null,
             // The project's overall span. With a single schedule that IS the
@@ -1183,6 +1193,10 @@ class TechnicianController extends Controller
                 'label' => $schedule->describe(),
                 'short_label' => $schedule->describe(),
                 'is_partial_day' => $schedule->isPartialDay(),
+                // Whether the booking has already been worked, so the panel
+                // greys it and keeps the colour for what is still to come.
+                // Schedule::lockState() draws that line everywhere else.
+                'is_past' => $schedule->isLocked(),
             ])->values()->all(),
             'tasks' => $project->relationLoaded('tasks')
                 ? $project->tasks->map(fn (Task $task): array => [
@@ -1194,6 +1208,13 @@ class TechnicianController extends Controller
                     // closed a fortnight late as "Completed". See TaskStatus.
                     ...$task->statusPayload(),
                     'technician' => $task->technician?->name,
+                    // The stage of the project this task belongs to, the
+                    // same pair x-task-phase-cell prints on the boards.
+                    'phase' => $task->phase ? [
+                        'sequence' => $task->phase->sequence,
+                        'title' => $task->phase->title,
+                        'label' => $task->phase->label(),
+                    ] : null,
                     'range_label' => $task->start_date && $task->due_date
                         ? CarbonImmutable::parse($task->start_date)->format(BusinessTime::DATE)
                             .' - '

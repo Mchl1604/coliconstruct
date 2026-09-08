@@ -320,10 +320,30 @@
                                     <span data-panel-address></span>
                                 </div>
 
-                                {{-- The project's whole schedule, never the clicked day. --}}
+                                {{-- The project's whole schedule, never the
+                                     clicked day - and one booking to a line.
+                                     Run together they read as a single long
+                                     stretch on site, which is exactly what
+                                     several separate bookings are not. --}}
                                 <div class="panel-meta" data-panel-schedule-wrap>
                                     <i class="bi bi-calendar3" aria-hidden="true"></i>
-                                    <span data-panel-schedule></span>
+                                    <div class="panel-schedule-list" data-panel-schedule></div>
+                                </div>
+
+                                {{-- The stage the project is on, in a band of
+                                     its own rather than a fourth grey meta
+                                     line: where the job has got to is the
+                                     thing this panel is read for, and it
+                                     should not look like the address. Same
+                                     sentence the technician's own schedule
+                                     panel and the client's phase line print -
+                                     see Project::phasePosition(). --}}
+                                <div class="panel-phase" data-panel-phase-wrap>
+                                    <i class="bi bi-diagram-3" aria-hidden="true"></i>
+                                    <div class="panel-phase-body">
+                                        <span class="panel-phase-eyebrow">Current Phase</span>
+                                        <span class="panel-phase-headline" data-panel-phase></span>
+                                    </div>
                                 </div>
 
                                 <div class="mt-2" data-panel-status></div>

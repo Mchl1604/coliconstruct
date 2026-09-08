@@ -24,8 +24,6 @@ href="https://cdn.datatables.net/2.3.8/css/dataTables.dataTables.css">
 <body>
     @php
         $user = auth()->user();
-        $displayName = $user?->fullName() ?? 'Guest';
-        $displayRole = $user?->roleLabel() ?? '';
         $adminNavItems = [
             [
     'label' => 'Dashboard',
@@ -101,18 +99,6 @@ href="https://cdn.datatables.net/2.3.8/css/dataTables.dataTables.css">
                     @endforeach
                 </div>
             </nav>
-
-            <div class="admin-sidebar-footer">
-                {{-- Signing out changes state, so it is a POST rather than a
-                     link anything can follow. --}}
-                <form method="POST" action="{{ route('auth.logout') }}">
-                    @csrf
-                    <button type="submit" class="admin-sidebar-link admin-sidebar-logout">
-                        <i class="bi bi-box-arrow-right" aria-hidden="true"></i>
-                        <span>Logout</span>
-                    </button>
-                </form>
-            </div>
         </aside>
 
         <div class="admin-backdrop" data-sidebar-backdrop></div>
@@ -125,20 +111,12 @@ href="https://cdn.datatables.net/2.3.8/css/dataTables.dataTables.css">
 
                 <x-notification-bell />
 
-                {{-- The whole block is the link to Profile, and that is all it
-                     is. There is no account menu beside it: Settings is
-                     Configuration in the sidebar, and Logout is at the foot of
-                     it, so the caret only stood between people and their own
-                     page. --}}
-                <a class="admin-user-menu admin-user-link" href="{{ route('profile.edit') }}"
-                    aria-label="Signed in as {{ $displayName }} - open your profile">
-                    <x-user-avatar :user="$user" size="md" alt="" />
-
-                    <span>
-                        <span class="admin-user-name">{{ $displayName }}</span>
-                        <span class="admin-user-role">{{ $displayRole }}</span>
-                    </span>
-                </a>
+                {{-- Who is signed in, and Profile and Logout behind it.
+                     Settings is still Configuration in the sidebar; what the
+                     caret is for now is signing out, which moved here from the
+                     foot of the sidebar - see x-account-menu, shared with the
+                     technician shell. --}}
+                <x-account-menu :user="$user" />
             </header>
 
             <main class="admin-page">

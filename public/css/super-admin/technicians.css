@@ -200,6 +200,156 @@
     flex-shrink: 0;
 }
 
+/* The meta icons, each in its own colour.
+
+   Not decoration: the panel is a stack of short grey lines that all look
+   alike, and the icon is the only thing distinguishing one from the next. A
+   reader looking for the address finds the pin before they finish reading a
+   single label. Keyed off the Bootstrap icon class so the markup stays as it
+   was - the icon already says which fact it belongs to.
+
+   Each colour is the one that fact is already drawn in elsewhere: the pin is
+   the red a map pin is everywhere, the calendar is the blue the schedule
+   panels use, and the phase icon is the phase blue from projectStatus.css. */
+.panel-meta .bi-hash {
+    color: #6366f1;
+}
+
+.panel-meta .bi-person {
+    color: #0ea5e9;
+}
+
+.panel-meta .bi-geo-alt {
+    color: #ef4444;
+}
+
+.panel-meta .bi-calendar3 {
+    color: #2563eb;
+}
+
+/* The section headings under the divider, coloured the same way and for the
+   same reason. */
+.panel-section-heading .bi-people-fill {
+    color: #0ea5e9;
+}
+
+.panel-section-heading .bi-list-task {
+    color: #7c3aed;
+}
+
+.panel-section-heading .bi-person-badge {
+    color: #d97706;
+}
+
+/* ---- The current phase ---- */
+
+/* Which stage of the job the project is on.
+
+   A band rather than a fourth meta line. It used to sit in the grey stack
+   with the address and the client, where the one fact somebody opens this
+   panel to find - where the work has got to - looked exactly like the
+   postcode. Drawn in the phase blue projectStatus.css uses, so a phase looks
+   like a phase here, on the task boards and on the client's own view. */
+.panel-phase {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    margin-top: 0.55rem;
+    padding: 0.5rem 0.65rem;
+    border-left: 3px solid #2563eb;
+    border-radius: 0.4rem;
+    background: #eff6ff;
+}
+
+.panel-phase .bi {
+    margin-top: 0.15rem;
+    flex-shrink: 0;
+    color: #2563eb;
+}
+
+.panel-phase-body {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.panel-phase-eyebrow {
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #60a5fa;
+}
+
+.panel-phase-headline {
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: #17527f;
+    line-height: 1.3;
+}
+
+/* Every stage finished. Green, which is the colour this system reserves for
+   work that is done - see the phase chip on the projects tables. */
+.panel-phase.is-complete {
+    border-left-color: #15803d;
+    background: #f0fdf4;
+}
+
+.panel-phase.is-complete .bi,
+.panel-phase.is-complete .panel-phase-headline {
+    color: #15803d;
+}
+
+.panel-phase.is-complete .panel-phase-eyebrow {
+    color: #4ade80;
+}
+
+/* No agreed structure, so there is no position to point at. Grey rather than
+   amber: on this panel it is a fact about the project, not a job the reader
+   is being handed. */
+.panel-phase.is-unset {
+    border-left-color: #cbd5e1;
+    background: #f8fafc;
+}
+
+.panel-phase.is-unset .bi,
+.panel-phase.is-unset .panel-phase-headline {
+    color: #93a0ac;
+}
+
+.panel-phase.is-unset .panel-phase-eyebrow {
+    color: #cbd5e1;
+}
+
+/* The project's bookings on the details panel, one to a line.
+
+   They used to be joined with a separator onto a single line, where three
+   short stretches on site read as one enormous date range. Stacked, the
+   calendar icon still belongs to the whole list - which is why the list is
+   the flex child and not each line. */
+.panel-schedule-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    min-width: 0;
+}
+
+/* Blue for a booking still to be worked - today's included - and grey for one
+   already behind them. A technician scanning four ranges wants to know which
+   of them they still have to turn up for, and that is the whole distinction.
+   Which side of the line a range falls on is Schedule::lockState()'s answer,
+   sent as `is_past`; this only paints it. */
+.panel-schedule-item {
+    line-height: 1.35;
+    font-weight: 600;
+    color: #2563eb;
+}
+
+.panel-schedule-item.is-past {
+    font-weight: 400;
+    color: #94a3b8;
+}
+
 .panel-divider {
     margin: 1rem 0;
     border-color: #e5e7eb;
@@ -265,6 +415,15 @@
     font-weight: 700;
     color: #0f172a;
     margin-top: 0.1rem;
+}
+
+/* The phase chip on a task card. The chip itself is .task-phase from
+   projectStatus.css, which both these pages already load - so a task's phase
+   is drawn identically here and on the boards. This only gives it its own
+   line under the title, where the panel is too narrow to sit it beside
+   anything. */
+.panel-task-phase {
+    margin-top: 0.25rem;
 }
 
 .panel-task-description {

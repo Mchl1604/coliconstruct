@@ -81,22 +81,68 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
+    /**
+     * The project's bookings, one to a line.
+     *
+     * Joined onto a single line they ran together into what looked like one
+     * enormous date range - "Aug 22 - Aug 23, 2026; Aug 26 - Aug 31, 2026" is
+     * two separate stretches on site, and a technician reading their own
+     * schedule is the person least able to afford confusing the two.
+     */
+    function renderRanges(ranges) {
+        const listEl = panelEl.querySelector("[data-panel-schedule]");
+
+        if (!listEl) {
+            return;
+        }
+
+        listEl.innerHTML = ranges.length
+            ? ranges
+                  .map(function (range) {
+                      // Blue for work still owed, grey for work already done.
+                      // Whether a booking has ended is the server's call - see
+                      // Schedule::lockState() - so this only paints it.
+                      return (
+                          '<div class="panel-schedule-item' +
+                          (range.is_past ? " is-past" : "") +
+                          '">' +
+                          portal.escapeHtml(range.label) +
+                          "</div>"
+                      );
+                  })
+                  .join("")
+            : '<div class="panel-schedule-item is-past">No schedule set</div>';
+    }
+
     function renderProject(project) {
         setText("[data-panel-ref]", project.reference_no);
         setText("[data-panel-name]", project.name);
         setText("[data-panel-id]", project.project_id);
         setText("[data-panel-client]", project.client);
         setText("[data-panel-address]", project.address);
+        renderRanges(project.ranges || []);
+
+        // "Phase 2/4: Installation" - the server wrote the sentence, so this
+        // panel cannot word the position differently from the project page or
+        // the client's own view of the same job. A project with no agreed
+        // structure has no position to be at, and the band says so in grey
+        // rather than colouring in a stage nobody has settled.
+        const phase = project.phase_position;
+
         setText(
-            "[data-panel-schedule]",
-            project.ranges.length
-                ? project.ranges
-                      .map(function (range) {
-                          return range.label;
-                      })
-                      .join("; ")
-                : "No schedule set",
+            "[data-panel-phase]",
+            phase ? phase.headline : "Phases not set up yet",
         );
+
+        const phaseWrap = panelEl.querySelector("[data-panel-phase-wrap]");
+
+        if (phaseWrap) {
+            phaseWrap.classList.toggle("is-unset", !phase);
+            phaseWrap.classList.toggle(
+                "is-complete",
+                Boolean(phase && phase.is_complete),
+            );
+        }
 
         panelEl.querySelector("[data-panel-status]").innerHTML =
             '<span class="badge ' +
@@ -135,6 +181,39 @@ document.addEventListener("DOMContentLoaded", function () {
                       })
                       .join("")
                 : '<span class="text-muted small">No supporting technicians</span>';
+    }
+
+    /**
+     * Which stage of the project a task belongs to.
+     *
+     * Drawn in x-task-phase-cell's markup rather than a shape of its own, so
+     * a phase on this panel looks like the phase on the task boards - the
+     * number first, because that is what says whether this is early work or
+     * late work, with the name under it.
+     */
+    function taskPhase(task) {
+        const phase = task.phase;
+
+        return (
+            '<div class="panel-task-phase">' +
+            '<span class="task-phase' +
+            (phase ? "" : " is-unset") +
+            '" title="' +
+            portal.escapeHtml(
+                phase
+                    ? phase.label
+                    : "This task is not filed under a project phase.",
+            ) +
+            '">' +
+            '<span class="task-phase-number">' +
+            (phase ? portal.escapeHtml(String(phase.sequence)) : "—") +
+            "</span>" +
+            '<span class="task-phase-title">' +
+            portal.escapeHtml(phase ? phase.title : "No phase") +
+            "</span>" +
+            "</span>" +
+            "</div>"
+        );
     }
 
     function renderTasks(tasks) {
@@ -202,6 +281,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     '<div class="panel-task-title">' +
                     portal.escapeHtml(task.title) +
                     "</div>" +
+                    taskPhase(task) +
                     '<div class="panel-task-description">' +
                     portal.escapeHtml(task.description) +
                     "</div>" +
