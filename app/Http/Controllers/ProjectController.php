@@ -165,14 +165,6 @@ class ProjectController extends Controller
             ->orderBy('technician_id')
             ->get();
 
-        $selectedProjectTypes = $this->defaultSelectedProjectTypes($projectTypes);
-        $suggestedTechnicians = $this->suggestTechnicians($technicians, $selectedProjectTypes);
-        $otherTechnicians = $technicians
-            ->reject(function (Technician $technician) use ($suggestedTechnicians): bool {
-                return $suggestedTechnicians->contains('technician_id', $technician->technician_id);
-            })
-            ->values();
-
         $technicianSchedules = $this->buildTechnicianSchedules();
         // Stated by the model so the dropdowns and the server agree on which
         // hours exist without the list being written out twice. The bounds go
@@ -184,8 +176,6 @@ class ProjectController extends Controller
         return view('super-admin.createProject', compact(
             'projectTypes',
             'technicians',
-            'suggestedTechnicians',
-            'otherTechnicians',
             'technicianSchedules',
             'workingHours',
             'partialDayHours'
@@ -514,39 +504,6 @@ class ProjectController extends Controller
         return config('app.debug')
             ? $message.' ('.$exception->getMessage().')'
             : $message;
-    }
-
-    private function defaultSelectedProjectTypes(Collection $projectTypes): array
-    {
-        if ($projectTypes->isEmpty()) {
-            return ['Aircon Installation'];
-        }
-
-        return [$projectTypes->first()->type_name];
-    }
-
-    private function suggestTechnicians(Collection $technicians, array $selectedProjectTypes): Collection
-    {
-        if ($selectedProjectTypes === []) {
-            return collect();
-        }
-
-        return $technicians
-            ->map(function (Technician $technician) use ($selectedProjectTypes): Technician {
-                $matchCount = $technician->skills
-                    ->pluck('skill_name')
-                    ->intersect($selectedProjectTypes)
-                    ->count();
-
-                $technician->setAttribute('match_count', $matchCount);
-
-                return $technician;
-            })
-            ->filter(function (Technician $technician): bool {
-                return (int) $technician->getAttribute('match_count') > 0;
-            })
-            ->sortByDesc('match_count')
-            ->values();
     }
 
     /**

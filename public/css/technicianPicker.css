@@ -1,0 +1,103 @@
+/* ------------------------------------------------------------------
+   The technician picker: confirming a pick, and getting back out
+   ------------------------------------------------------------------
+
+   Shared by every menu that chooses people onto a project - the create
+   wizard's Lead Technician and Technicians fields, and the assigned-team
+   editor on a project page. Those three keep their own stylesheets for what
+   genuinely differs between them (the editor's cards carry a picture, the
+   wizard's do not); what is here is the part that must not differ, because it
+   is the part that answers "did that work?".
+
+   Two things were missing and both were the same complaint. Picking somebody
+   changed nothing you could see inside the menu - the wizard leaned on
+   Bootstrap's .dropdown-item.active, whose white-on-blue was overridden by the
+   name and specialty colours below it, and the team editor simply deleted the
+   person from the list, which reads as losing them rather than choosing them.
+   And there was no way out of the menu except pressing the field again, which
+   nobody thinks to do while a list is open in front of them. */
+
+/* A card: the person on the left, the tick on the right. Both pickers lay out
+   this way now, so a chosen technician looks the same wherever they are
+   chosen. */
+.technician-option {
+    align-items: flex-start;
+    gap: 0.6rem;
+    white-space: normal;
+}
+
+/* Holds its space whether or not it is showing, so a row does not shift
+   sideways the moment it is picked. */
+.technician-option-check {
+    margin-left: auto;
+    flex: 0 0 auto;
+    align-self: center;
+    color: #2563eb;
+    font-size: 1rem;
+    line-height: 1;
+    visibility: hidden;
+}
+
+.technician-option.is-selected .technician-option-check {
+    visibility: visible;
+}
+
+/* Chosen. A tint and a blue name rather than Bootstrap's solid blue row: the
+   specialties and the role underneath are themselves colour-coded, and a
+   filled row either hides them or fights them. */
+.technician-option.is-selected {
+    background: #eff6ff;
+}
+
+.technician-option.is-selected .technician-option-name {
+    color: #1d4ed8;
+}
+
+.technician-option.is-selected:hover,
+.technician-option.is-selected:focus {
+    background: #dbeafe;
+}
+
+/* Replaces "Available" on somebody already on the team - a person who is on
+   the project is not a person you are still being offered. */
+.technician-option-selected-note {
+    font-size: 0.76rem;
+    font-weight: 600;
+    color: #1d4ed8;
+}
+
+/* Nothing to tick on a row nobody can pick. */
+.technician-option.is-disabled .technician-option-check {
+    display: none;
+}
+
+/* ---- The way out ----
+
+   Sticks to the bottom of the menu while the list scrolls behind it, so Done
+   is in reach from anywhere in a long list rather than only at the end of
+   one. It also carries the count, which is the other half of the same
+   question: the tick says this person is in, and this says how many are. */
+.technician-dropdown-footer {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-top: 0.25rem;
+    border-top: 1px solid #e5e7eb;
+    background: #ffffff;
+    padding: 0.5rem 0.75rem;
+}
+
+.technician-dropdown-count {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #64748b;
+}
+
+.technician-dropdown-count.is-empty {
+    font-weight: 400;
+    color: #94a3b8;
+}

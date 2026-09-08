@@ -8,6 +8,10 @@
         <link rel="stylesheet" href="/css/taskModal.css">
         {{-- The Import Team dialog, shared with the project wizard. --}}
         <link rel="stylesheet" href="/css/importTeam.css">
+        {{-- How a chosen technician reads, and the Done row at the foot of the
+             menu - shared with the project wizard, whose two pickers ask the
+             same question this one does. --}}
+        <link rel="stylesheet" href="/css/technicianPicker.css">
         {{-- The type-to-search picker on the Edit Registered User dialog, the
              same control and the same stylesheet as Export Activity Logs. --}}
         <link rel="stylesheet" href="/css/actorSearch.css">

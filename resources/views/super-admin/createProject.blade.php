@@ -5,6 +5,10 @@
     <link href="/css/super-admin/createProjectProgress.css" rel="stylesheet">
     {{-- The Import Team dialog, shared with the assigned-team editor. --}}
     <link rel="stylesheet" href="/css/importTeam.css">
+    {{-- How a chosen technician reads, and the Done row at the foot of the
+         menu - shared with the assigned-team editor for the same reason the
+         dialog above is. --}}
+    <link rel="stylesheet" href="/css/technicianPicker.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 @endpush
 
@@ -362,39 +366,16 @@
                                         Select technicians
                                     </button>
 
+                                    {{-- Written by renderTechnicianDropdown() the
+                                         moment the page loads, the same way the
+                                         Lead Technician menu above is. Listing
+                                         the technicians here as well would be a
+                                         second copy of the same list, and the
+                                         copy that is never the one people
+                                         see. --}}
                                     <ul class="dropdown-menu technician-dropdown-menu w-100" data-technician-dropdown-menu>
-                                        <li class="dropdown-header text-uppercase small text-secondary">Suggested
-                                            Technicians</li>
-
-                                        @forelse ($suggestedTechnicians->where('role', 'technician') as $technician)
-                                            <li>
-                                                <button type="button" class="dropdown-item"
-                                                    data-technician-option="{{ $technician->technician_id }}"
-                                                    data-technician-name="{{ $technician->name }}">
-                                                    {{ $technician->name }}
-                                                </button>
-                                            </li>
-                                        @empty
-                                            <li><span class="dropdown-item-text text-secondary">No suggested
-                                                    technicians yet.</span></li>
-                                        @endforelse
-
-                                        <li class="dropdown-divider"></li>
-                                        <li class="dropdown-header text-uppercase small text-secondary">Other
-                                            Technicians</li>
-
-                                        @forelse ($otherTechnicians->where('role', 'technician') as $technician)
-                                            <li>
-                                                <button type="button" class="dropdown-item"
-                                                    data-technician-option="{{ $technician->technician_id }}"
-                                                    data-technician-name="{{ $technician->name }}">
-                                                    {{ $technician->name }}
-                                                </button>
-                                            </li>
-                                        @empty
-                                            <li><span class="dropdown-item-text text-secondary">No other
-                                                    technicians available.</span></li>
-                                        @endforelse
+                                        <li><span class="dropdown-item-text text-secondary">Loading
+                                                technicians...</span></li>
                                     </ul>
                                 </div>
 

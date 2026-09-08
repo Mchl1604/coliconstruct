@@ -208,29 +208,38 @@ if (taskStartDate) {
             escapeHtml(technician.avatar_url) + '" alt="" loading="lazy">';
     }
 
-    function optionMarkup(technician) {
+    function optionMarkup(technician, isSelected) {
         const skills = (technician.skills || []).join(', ');
 
-        return '<li><button type="button" class="dropdown-item technician-option" ' +
-            'data-technician-option="' + technician.id + '">' +
+        return '<li><button type="button" class="dropdown-item technician-option' +
+            (isSelected ? ' is-selected' : '') + '" ' +
+            'data-technician-option="' + technician.id + '" ' +
+            'aria-pressed="' + (isSelected ? 'true' : 'false') + '">' +
             avatarMarkup(technician) +
             '<span class="technician-option-body">' +
             '<span class="technician-option-name">' + escapeHtml(technician.name) + '</span>' +
             '<span class="technician-option-role">' +
             escapeHtml(technician.role_label || 'Technician') + '</span>' +
             (skills ? '<span class="technician-option-skills">' + escapeHtml(skills) + '</span>' : '') +
-            '<span class="technician-option-available">Available</span>' +
+            // Once somebody is on the team, saying "Available" of them is
+            // answering a question nobody is asking any more.
+            (isSelected
+                ? '<span class="technician-option-selected-note">On this project</span>'
+                : '<span class="technician-option-available">Available</span>') +
             '</span>' +
+            '<i class="bi bi-check-lg technician-option-check" aria-hidden="true"></i>' +
             '</button></li>';
     }
 
-    function groupMarkup(label, technicians) {
+    function groupMarkup(label, technicians, selectedIds) {
         if (!technicians.length) {
             return '';
         }
 
         return '<li><h6 class="dropdown-header">' + escapeHtml(label) + '</h6></li>' +
-            technicians.map(optionMarkup).join('');
+            technicians.map(function(technician) {
+                return optionMarkup(technician, selectedIds.includes(String(technician.id)));
+            }).join('');
     }
 
     // Shown so the scheduler can see who is out and why, but rendered as plain
@@ -263,6 +272,31 @@ if (taskStartDate) {
             '</li>';
     }
 
+    /**
+     * The row at the foot of the menu: how many people are on the team so far,
+     * and Done.
+     *
+     * With the menu open there was nothing in it that looked like a way out -
+     * the only one was pressing the field again, above the list, which is not
+     * where anybody looks. The count is the other half of the tick: a tick
+     * answers for one row, this answers for the whole list at once.
+     */
+    function footerMarkup(count) {
+        return '<li class="technician-dropdown-footer">' +
+            '<span class="technician-dropdown-count' + (count ? '' : ' is-empty') + '">' +
+            (count ? count + ' selected' : 'None selected') + '</span>' +
+            '<button type="button" class="btn btn-sm btn-primary" data-technician-done>Done</button>' +
+            '</li>';
+    }
+
+    function closePicker() {
+        if (!window.bootstrap || !window.bootstrap.Dropdown) {
+            return;
+        }
+
+        window.bootstrap.Dropdown.getOrCreateInstance(dropdownButton).hide();
+    }
+
     function renderDropdown() {
         const selectedIds = selectedTechnicianIds();
         const leadId = leadTechSelect.value;
@@ -273,9 +307,13 @@ if (taskStartDate) {
             return technician.role !== 'lead_technician';
         });
 
+        // Somebody already on the team stays in this list, ticked, rather
+        // than disappearing out of it. Vanishing was the only feedback a pick
+        // gave, and losing a name off a list does not read as choosing it -
+        // it reads as a mistake. Staying put also means the way to take
+        // somebody off is where the way to put them on was.
         const pickable = candidates.filter(function(technician) {
             return technician.available
-                && !selectedIds.includes(String(technician.id))
                 && String(technician.id) !== String(leadId);
         });
 
@@ -291,18 +329,31 @@ if (taskStartDate) {
             return !technician.available;
         });
 
-        const groups = groupMarkup('Suggested — matches this project', suggested) +
-            groupMarkup(suggested.length ? 'Other available' : 'Available', others);
+        const groups = groupMarkup('Suggested — matches this project', suggested, selectedIds) +
+            groupMarkup(suggested.length ? 'Other available' : 'Available', others, selectedIds);
 
         dropdownMenu.innerHTML = (groups ||
             '<li><span class="dropdown-item-text text-secondary">No technicians available.</span></li>') +
-            blockedMarkup(blocked);
+            blockedMarkup(blocked) +
+            footerMarkup(selectedIds.length);
 
         dropdownMenu.querySelectorAll('[data-technician-option]').forEach(function(button) {
             button.addEventListener('click', function() {
-                addTechnician(button.dataset.technicianOption);
+                const technicianId = button.dataset.technicianOption;
+
+                if (selectedTechnicianIds().includes(String(technicianId))) {
+                    removeTechnician(String(technicianId));
+                } else {
+                    addTechnician(technicianId);
+                }
             });
         });
+
+        const done = dropdownMenu.querySelector('[data-technician-done]');
+
+        if (done) {
+            done.addEventListener('click', closePicker);
+        }
 
         const blockedToggle = dropdownMenu.querySelector('[data-technician-blocked-toggle]');
 

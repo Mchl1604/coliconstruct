@@ -997,6 +997,38 @@ document.addEventListener('DOMContentLoaded', function() {
      * The chosen id lives in the hidden input, which is what the form
      * submits - see the markup in createProject.blade.php.
      */
+    /**
+     * Close an open picker menu from inside it.
+     *
+     * Answers the other half of the complaint: with the list in front of you
+     * there is nothing that looks like a way out, and pressing the field again
+     * is not a thing people think to do. The Done row at the foot of every
+     * menu calls this.
+     */
+    function closePicker(toggleButton) {
+        if (!toggleButton || !window.bootstrap || !window.bootstrap.Dropdown) {
+            return;
+        }
+
+        window.bootstrap.Dropdown.getOrCreateInstance(toggleButton).hide();
+    }
+
+    /**
+     * The row at the foot of a picker menu: what has been chosen so far, and
+     * Done.
+     *
+     * The count is there because the tick on a row only answers for that row -
+     * with the list scrolled, "3 selected" is the only thing that answers for
+     * the whole of it.
+     */
+    function pickerFooterMarkup(summary, attribute) {
+        return '<li class="technician-dropdown-footer">' +
+            '<span class="technician-dropdown-count' + (summary.isEmpty ? ' is-empty' : '') + '">' +
+            escapeHtml(summary.label) + '</span>' +
+            '<button type="button" class="btn btn-sm btn-primary" ' + attribute + '>Done</button>' +
+            '</li>';
+    }
+
     function renderLeadTechnicianDropdown() {
         if (!leadTechMenu) {
             return;
@@ -1032,13 +1064,20 @@ document.addEventListener('DOMContentLoaded', function() {
                 const isSelected = String(lead.id) === currentValue;
                 const skills = lead.matched.join(', ');
 
+                // is-selected rather than Bootstrap's .active: the name and
+                // the specialties under it carry their own colours, which
+                // survived .active's white text and left a chosen lead
+                // unreadable rather than obviously chosen.
                 return '<li><button type="button" class="dropdown-item technician-option' +
-                    (isSelected ? ' active' : '') + '" ' +
+                    (isSelected ? ' is-selected' : '') + '" ' +
                     'data-lead-option="' + lead.id + '" ' +
                     'data-lead-name="' + escapeHtml(lead.name) + '" ' +
                     'aria-pressed="' + (isSelected ? 'true' : 'false') + '">' +
+                    '<span class="technician-option-body">' +
                     '<span class="technician-option-name">' + escapeHtml(lead.name) + '</span>' +
                     (skills ? '<span class="technician-option-skills">' + escapeHtml(skills) + '</span>' : '') +
+                    '</span>' +
+                    '<i class="bi bi-check-lg technician-option-check" aria-hidden="true"></i>' +
                     '</button></li>';
             }).join('');
         };
@@ -1051,8 +1090,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
             const rows = items.map(function(lead) {
                 return '<div class="technician-option is-disabled" aria-disabled="true">' +
+                    '<span class="technician-option-body">' +
                     '<span class="technician-option-name">' + escapeHtml(lead.name) + '</span>' +
                     '<span class="technician-option-reason">' + escapeHtml(lead.reason) + '</span>' +
+                    '</span>' +
                     '</div>';
             }).join('');
 
@@ -1092,6 +1133,10 @@ document.addEventListener('DOMContentLoaded', function() {
             ? renderButtons(others)
             : '<li><span class="dropdown-item-text text-secondary">No other lead technicians available.</span></li>';
 
+        const chosen = leads.find(function(lead) {
+            return String(lead.id) === currentValue;
+        });
+
         leadTechMenu.innerHTML = [
             '<li class="dropdown-header text-uppercase small text-secondary">Suggested Lead Technicians</li>',
             suggestedHtml,
@@ -1099,17 +1144,39 @@ document.addEventListener('DOMContentLoaded', function() {
             '<li class="dropdown-header text-uppercase small text-secondary">Other Lead Technicians</li>',
             otherHtml,
             renderBlocked(blocked),
+            pickerFooterMarkup({
+                label: chosen ? chosen.name : 'No lead chosen',
+                isEmpty: !chosen,
+            }, 'data-lead-done'),
         ].join('');
 
         leadTechMenu.querySelectorAll('[data-lead-option]').forEach(function(button) {
             button.addEventListener('click', function() {
                 const leadId = button.dataset.leadOption || '';
+                const isClearing = String(leadId) === currentValue;
 
                 // Pressing the chosen lead again clears the field, the way
                 // pressing a chosen technician removes them.
-                setLeadTechnician(String(leadId) === currentValue ? '' : leadId);
+                setLeadTechnician(isClearing ? '' : leadId);
+
+                // A project has one lead, so choosing one finishes the job -
+                // the menu closes behind it rather than sitting open over the
+                // dates you are about to fill in. Clearing leaves it up,
+                // because clearing is not a choice, it is the start of making
+                // a different one.
+                if (!isClearing) {
+                    closePicker(leadTechButton);
+                }
             });
         });
+
+        const leadDone = leadTechMenu.querySelector('[data-lead-done]');
+
+        if (leadDone) {
+            leadDone.addEventListener('click', function() {
+                closePicker(leadTechButton);
+            });
+        }
 
         const blockedToggle = leadTechMenu.querySelector('[data-lead-blocked-toggle]');
 
@@ -1180,13 +1247,20 @@ document.addEventListener('DOMContentLoaded', function() {
                 const isSelected = selectedIds.includes(String(technician.id));
                 const skills = technician.matched.join(', ');
 
+                // A tick, and is-selected rather than Bootstrap's .active -
+                // whose white text the name and specialty colours below
+                // overrode, so a chosen technician looked much like an
+                // unchosen one.
                 return '<li><button type="button" class="dropdown-item technician-option' +
-                    (isSelected ? ' active' : '') + '" ' +
+                    (isSelected ? ' is-selected' : '') + '" ' +
                     'data-technician-option="' + technician.id + '" ' +
                     'data-technician-name="' + escapeHtml(technician.name) + '" ' +
                     'aria-pressed="' + (isSelected ? 'true' : 'false') + '">' +
+                    '<span class="technician-option-body">' +
                     '<span class="technician-option-name">' + escapeHtml(technician.name) + '</span>' +
                     (skills ? '<span class="technician-option-skills">' + escapeHtml(skills) + '</span>' : '') +
+                    '</span>' +
+                    '<i class="bi bi-check-lg technician-option-check" aria-hidden="true"></i>' +
                     '</button></li>';
             }).join('');
         };
@@ -1199,8 +1273,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
             const rows = technicians.map(function(technician) {
                 return '<div class="technician-option is-disabled" aria-disabled="true">' +
+                    '<span class="technician-option-body">' +
                     '<span class="technician-option-name">' + escapeHtml(technician.name) + '</span>' +
                     '<span class="technician-option-reason">' + escapeHtml(technician.reason) + '</span>' +
+                    '</span>' +
                     '</div>';
             }).join('');
 
@@ -1231,6 +1307,12 @@ document.addEventListener('DOMContentLoaded', function() {
             '<li class="dropdown-header text-uppercase small text-secondary">Other Technicians</li>',
             otherHtml,
             renderBlocked(sections.blocked),
+            pickerFooterMarkup({
+                label: selectedIds.length
+                    ? selectedIds.length + ' selected'
+                    : 'None selected',
+                isEmpty: selectedIds.length === 0,
+            }, 'data-technician-done'),
         ].join('');
 
         technicianDropdownMenu.querySelectorAll('[data-technician-option]').forEach(function(button) {
@@ -1253,6 +1335,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 renderTechnicianDropdown();
             });
         }
+
+        const done = technicianDropdownMenu.querySelector('[data-technician-done]');
+
+        if (done) {
+            done.addEventListener('click', function() {
+                closePicker(technicianDropdownButton);
+            });
+        }
     }
 
     function syncTechnicianMenuState() {
@@ -1266,7 +1356,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const value = button.dataset.technicianOption || button.textContent.trim();
             const isSelected = selected.includes(value);
 
-            button.classList.toggle('active', isSelected);
+            button.classList.toggle('is-selected', isSelected);
             button.setAttribute('aria-pressed', String(isSelected));
         });
     }
