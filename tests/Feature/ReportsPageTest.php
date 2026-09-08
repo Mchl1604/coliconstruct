@@ -1979,6 +1979,40 @@ class ReportsPageTest extends TestCase
     }
 
     /**
+     * The printed task table names the phase each task sits on, the same way
+     * the boards on screen do.
+     *
+     * A report is read away from the system, so a task line that does not say
+     * which stage it belongs to cannot be placed at all - the reader has no
+     * project page to open. Asserted on the rendered preview rather than on
+     * the row array, because the column being absent from the table is the
+     * failure worth catching.
+     */
+    public function test_the_printed_task_table_names_the_phase(): void
+    {
+        $ana = $this->technician('Ana Mendoza');
+        $project = $this->project('Live Job', 'ongoing', [$ana]);
+        $phase = $project->phases()->orderBy('sequence')->first();
+
+        $this->task($project, $ana, 'Pull the wiring', $this->dateThisYear('08-04'));
+
+        $section = $this->technicianSection('tasks', 'technician_tasks');
+
+        $this->assertSame(1, $section['groups'][0]['rows'][0]['phase_number']);
+        $this->assertSame($phase->title, $section['groups'][0]['rows'][0]['phase_title']);
+
+        $html = view('super-admin.partials.report-sections', [
+            'report' => [
+                'is_empty' => false,
+                'sections' => [$section],
+            ],
+        ])->render();
+
+        $this->assertStringContainsString('>Phase</th>', $html);
+        $this->assertStringContainsString('<div class="stacked muted">'.$phase->title.'</div>', $html);
+    }
+
+    /**
      * "All" carries the three sections, each with its own table and its own
      * summary - and no utilization anywhere.
      */
@@ -2114,6 +2148,9 @@ class ReportsPageTest extends TestCase
     ): Task {
         return Task::create([
             'project_id' => $project->project_id,
+            // Filed under a stage, the way every task created since project
+            // phases arrived is - the report prints which one.
+            'phase_id' => $this->defaultPhaseId($project),
             'technician_id' => $technician->technician_id,
             'task_title' => $title,
             'task_description' => 'Description',

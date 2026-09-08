@@ -241,11 +241,15 @@
                 <table class="data">
                     <thead>
                         <tr>
-                            <th style="width:12%">Reference No.</th>
-                            <th style="width:20%">Client</th>
-                            <th style="width:26%">Task</th>
-                            <th style="width:12%">Start Date</th>
-                            <th style="width:12%">Due Date</th>
+                            <th style="width:11%">Reference No.</th>
+                            <th style="width:18%">Client</th>
+                            <th style="width:23%">Task</th>
+                            {{-- Which stage of the project the work sits in.
+                                 The number is what the column is for; the
+                                 title under it says what that stage is. --}}
+                            <th style="width:12%">Phase</th>
+                            <th style="width:11%">Start Date</th>
+                            <th style="width:11%">Due Date</th>
                             <th>Status</th>
                         </tr>
                     </thead>
@@ -255,6 +259,14 @@
                                 <td class="nowrap">{{ $row['reference_no'] }}</td>
                                 <td>{{ $row['client'] }}</td>
                                 <td>{{ $row['task'] }}</td>
+                                <td>
+                                    @if ($row['phase_number'])
+                                        {{ $row['phase_number'] }}
+                                        <div class="stacked muted">{{ $row['phase_title'] }}</div>
+                                    @else
+                                        <span class="muted">&mdash;</span>
+                                    @endif
+                                </td>
                                 <td class="nowrap">{{ $row['start_date'] }}</td>
                                 <td class="nowrap">{{ $row['due_date'] }}</td>
                                 <td>{{ $row['status_label'] ?: '—' }}</td>

@@ -1465,7 +1465,7 @@ class SystemReportService
                         ->whereNull('due_date')
                         ->whereBetween('start_date', [$period['start']->toDateString(), $period['end']->toDateString()]));
             })
-            ->with(['project.clients'])
+            ->with(['project.clients', 'phase'])
             ->orderByRaw('due_date is null, due_date')
             ->get();
 
@@ -1478,6 +1478,13 @@ class SystemReportService
                         'reference_no' => $task->project?->reference_no ?: '—',
                         'client' => $task->project ? $this->clientName($task->project) : '—',
                         'task' => $task->task_title,
+                        // Which stage of the project the work sits in. Split
+                        // into the number and the title rather than printed as
+                        // one string, because the column is read for the
+                        // number and the title is the line under it - the same
+                        // shape the task tables on screen use.
+                        'phase_number' => $task->phase?->sequence,
+                        'phase_title' => $task->phase?->title,
                         'start_date' => $this->formatDate($task->start_date),
                         'due_date' => $this->formatDate($task->due_date),
                         // Both from the one derivation, so the report agrees

@@ -336,3 +336,66 @@
     white-space: nowrap;
     cursor: help;
 }
+
+/* ------------------------------------------------------------------
+   The Phase column on a task table
+   ------------------------------------------------------------------ */
+
+/* "2 Installation" in a task row, wherever tasks are tabulated: both task
+   boards and both project pages. See x-task-phase-cell.
+
+   Blue rather than the green the phase chip uses, because it is not the same
+   fact. "3/4 Phases" is a measure of work finished and green says so; this
+   only says where a task sits, and a green pill on every row would read as
+   progress that has not happened. The blue is the one the phase panel and the
+   setup editor are drawn in, so a phase looks like a phase everywhere. */
+.task-phase {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    /* The title is a label, not the row's subject: it gives way before the
+       task name and the technician do. */
+    max-width: 11rem;
+}
+
+/* The number, which is what the column is read for. Round so it scans as a
+   position in a sequence rather than as a count. */
+.task-phase-number {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.55rem;
+    height: 1.55rem;
+    padding: 0 0.35rem;
+    border-radius: 999px;
+    background: #d6e9fa;
+    color: #17527f;
+    font-size: 0.8rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+/* Truncated rather than wrapped: a long phase title would otherwise set the
+   height of every row on the board. The full "Phase 2 - Installation" is on
+   the cell's tooltip. */
+.task-phase-title {
+    font-size: 0.78rem;
+    color: #55636f;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* A task that is not filed under a phase. Grey, because there is nothing to
+   point at - not amber, which would read as something the reader of a task
+   board is expected to fix from here. */
+.task-phase.is-unset .task-phase-number {
+    background: #f1f3f5;
+    color: #93a0ac;
+}
+
+.task-phase.is-unset .task-phase-title {
+    font-style: italic;
+    color: #93a0ac;
+}

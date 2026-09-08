@@ -857,6 +857,62 @@ class ProjectPhaseSetupTest extends TestCase
         $this->assertSame((int) $phases[1]->phase_id, (int) $task->fresh()->phase_id);
     }
 
+    /**
+     * Every task table in the system says which phase the task is on.
+     *
+     * A task board is read to decide what to do next, and "next" depends on
+     * which stage the project is at - a Phase 4 task on a project still in
+     * Phase 1 is not work anybody should be picking up. Before this the answer
+     * was only in the task's own dialog, one task at a time.
+     *
+     * All four tables are asserted together because they are four copies of
+     * one board: the two Tasks pages draw x-task-board, and the two project
+     * pages have their own table each. A column added to one of them and
+     * forgotten on the others is the failure this guards.
+     */
+    public function test_every_task_table_shows_the_phase_the_task_is_on(): void
+    {
+        $this->finalize();
+        $phases = $this->project->phases()->get();
+        $this->task($phases[1]);
+
+        $pages = [
+            [$this->superAdmin, route('super-admin.projects.show', $this->project->project_id)],
+            [$this->superAdmin, route('super-admin.tasks.index')],
+            [$this->leadAccount, route('technician.projects.show', $this->project->project_id)],
+            [$this->leadAccount, route('technician.tasks')],
+        ];
+
+        foreach ($pages as [$account, $url]) {
+            $this->actingAs($account)
+                ->get($url)
+                ->assertOk()
+                ->assertSee('<th>Phase</th>', false)
+                // The number is what the column is for, and the title is the
+                // line under it - see x-task-phase-cell.
+                ->assertSee('<span class="task-phase-number">2</span>', false)
+                ->assertSee('<span class="task-phase-title">'.$phases[1]->title.'</span>', false);
+        }
+    }
+
+    /**
+     * A task with no phase gets the column too, saying so. Tasks that predate
+     * project phases were placed by a backfill and one could still be sitting
+     * unfiled; an empty cell would read as a rendering fault.
+     */
+    public function test_a_task_with_no_phase_is_shown_as_unfiled_rather_than_blank(): void
+    {
+        $this->finalize();
+        $task = $this->task($this->project->phases()->get()->first());
+        $task->forceFill(['phase_id' => null])->save();
+
+        $this->actingAs($this->superAdmin)
+            ->get(route('super-admin.projects.show', $this->project->project_id))
+            ->assertOk()
+            ->assertSee('task-phase is-unset', false)
+            ->assertSee('No phase');
+    }
+
     public function test_a_project_whose_every_phase_is_complete_takes_no_new_tasks(): void
     {
         $this->finalize();

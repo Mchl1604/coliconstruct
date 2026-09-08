@@ -1287,7 +1287,7 @@ class ProjectController extends Controller
             ->active()
             ->where('project_id', $id);
 
-        $tasks = Task::with(['technician', 'images', 'completedBy'])
+        $tasks = Task::with(['technician', 'images', 'completedBy', 'phase'])
             ->where('project_id', $id)
             ->latest()
             ->get();

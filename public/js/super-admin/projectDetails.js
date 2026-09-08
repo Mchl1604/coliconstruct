@@ -118,9 +118,14 @@ $('button[data-bs-target="#tasks"]').on('shown.bs.tab', function () {
         pageLength: 5,
         lengthMenu: [5, 10, 25, 50],
         info: false,
-        // Sorting a column of buttons means nothing, and the header offering
-        // it invites a click that does nothing.
-        columnDefs: [{ targets: -1, orderable: false }],
+        columnDefs: [
+            // Phase carries a `data-order` sequence, which DataTables reads as
+            // numeric and then right-aligns on its own.
+            { targets: 1, className: "text-start" },
+            // Sorting a column of buttons means nothing, and the header
+            // offering it invites a click that does nothing.
+            { targets: -1, orderable: false },
+        ],
         language: {
             search: "",
             searchPlaceholder: "Search tasks..."

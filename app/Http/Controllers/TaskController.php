@@ -52,7 +52,7 @@ class TaskController extends Controller
             ->get();
 
         $tasksByProject = Task::query()
-            ->with(['technician', 'images', 'completedBy'])
+            ->with(['technician', 'images', 'completedBy', 'phase'])
             ->whereIn('project_id', $projects->pluck('project_id'))
             ->orderByRaw("case when status = 'ongoing' then 0 when status = 'pending' then 1 when status = 'unassigned' then 2 else 3 end")
             ->orderByRaw('due_date is null')

@@ -70,6 +70,7 @@
                         <thead class="table-info">
                             <tr>
                                 <th>Task Name</th>
+                                <th>Phase</th>
                                 <th>Assigned Technician</th>
                                 <th>Start Date</th>
                                 <th>Due Date</th>
@@ -102,6 +103,14 @@
                                         <small class="text-muted">
                                             {{ \Illuminate\Support\Str::limit($task->task_description, 60) }}
                                         </small>
+                                    </td>
+                                    {{-- Which stage of the project this task
+                                         belongs to. The `data-order` is the
+                                         sequence, so the column sorts by phase
+                                         number rather than alphabetically by
+                                         phase title. --}}
+                                    <td data-order="{{ $task->phase?->sequence ?? 0 }}">
+                                        <x-task-phase-cell :task="$task" />
                                     </td>
                                     <td>
                                         {{-- The assignee's own picture beside

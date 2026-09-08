@@ -206,7 +206,7 @@ class TechnicianPortalController extends Controller
         // page to be hidden - see Task::scopeVisibleTo.
         $tasks = Task::query()
             ->visibleTo($request->user())
-            ->with(['technician.account', 'images', 'completedBy'])
+            ->with(['technician.account', 'images', 'completedBy', 'phase'])
             ->where('project_id', $project->project_id)
             ->orderByRaw("case when status = 'ongoing' then 0 when status = 'pending' then 1 when status = 'unassigned' then 2 else 3 end")
             ->orderByRaw('due_date is null')
@@ -304,7 +304,7 @@ class TechnicianPortalController extends Controller
 
         $tasks = Task::query()
             ->visibleTo($request->user())
-            ->with(['technician.account', 'images', 'completedBy'])
+            ->with(['technician.account', 'images', 'completedBy', 'phase'])
             ->whereIn('project_id', $projects->pluck('project_id'))
             ->orderByRaw("case when status = 'ongoing' then 0 when status = 'pending' then 1 when status = 'unassigned' then 2 else 3 end")
             ->orderByRaw('due_date is null')

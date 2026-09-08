@@ -65,14 +65,15 @@ document.addEventListener("DOMContentLoaded", function () {
                           lengthMenu: [10, 25, 50, 100],
                           info: false,
                           // Due Date.
-                          order: [[3, "asc"]],
+                          order: [[4, "asc"]],
                           columnDefs: [
-                              // Start Date and Due Date carry a `data-order`
-                              // timestamp, which DataTables reads as numeric
-                              // and then right-aligns on its own. Only those
-                              // two need saying; every other column is left by
-                              // default.
-                              { targets: [2, 3], className: "text-start" },
+                              // Phase, Start Date and Due Date all carry a
+                              // `data-order` number - the phase sequence and
+                              // two timestamps - which DataTables reads as
+                              // numeric and then right-aligns on its own. Only
+                              // those three need saying; every other column is
+                              // left by default.
+                              { targets: [1, 3, 4], className: "text-start" },
                               { targets: -1, orderable: false },
                           ],
                           language: {
