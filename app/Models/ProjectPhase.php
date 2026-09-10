@@ -97,6 +97,7 @@ class ProjectPhase extends Model
 
     protected $fillable = [
         'project_id',
+        'stage_id',
         'sequence',
         'title',
         'description',
@@ -121,6 +122,30 @@ class ProjectPhase extends Model
     public function tasks(): HasMany
     {
         return $this->hasMany(Task::class, 'phase_id', 'phase_id');
+    }
+
+    /**
+     * Tasks typed against this phase while the project is still being set up.
+     *
+     * Empty on every finalized project: finalization turns them into real tasks
+     * and deletes them in the same transaction.
+     */
+    public function draftTasks(): HasMany
+    {
+        return $this->hasMany(ProjectPhaseDraftTask::class, 'phase_id', 'phase_id');
+    }
+
+    /**
+     * The vocabulary stage this phase was suggested from, when it was
+     * suggested from one at all.
+     *
+     * Provenance for the reports module. Nothing about how this phase behaves
+     * or reads comes from here - the title and description on the row are what
+     * everybody sees, and somebody edited them.
+     */
+    public function stage(): BelongsTo
+    {
+        return $this->belongsTo(PhaseStage::class, 'stage_id', 'stage_id');
     }
 
     /**

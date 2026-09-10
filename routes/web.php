@@ -8,6 +8,7 @@ use App\Http\Controllers\ConfigurationController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\InquiryController;
 use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\PhaseTemplateController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ProjectPhaseController;
@@ -276,6 +277,12 @@ Route::prefix('super-admin')
         Route::post('/projects/{project}/phases/finalize', [ProjectPhaseController::class, 'finalize'])
             ->whereNumber('project')
             ->name('projects.phases.finalize');
+        // Throw the saved draft away and start again from the project's
+        // templates. For the case where a type was added to the project after
+        // its setup was begun - see ProjectPhaseController::reload.
+        Route::post('/projects/{project}/phases/reload', [ProjectPhaseController::class, 'reload'])
+            ->whereNumber('project')
+            ->name('projects.phases.reload');
         Route::post('/projects/{project}/phases/override', [ProjectPhaseController::class, 'override'])
             ->whereNumber('project')
             ->middleware('role:super_admin')
@@ -524,6 +531,30 @@ Route::prefix('super-admin')
                 Route::delete('/{projectType}', [ProjectTypeController::class, 'destroy'])->name('destroy');
             });
 
+            // Phase Templates: the default phases each kind of job goes
+            // through, and the work each one starts with.
+            //
+            // Two levels of route because the feature has two levels. The
+            // stages are shared vocabulary - one Installation, one agreed
+            // order - so that a project which is two types at once gets one
+            // Installation phase rather than two. The tasks hang off a type,
+            // because that is the half that actually differs between them.
+            Route::prefix('phase-templates')->name('phase-templates.')->group(function () {
+                Route::get('/', [PhaseTemplateController::class, 'index'])->name('index');
+
+                Route::prefix('stages')->name('stages.')->group(function () {
+                    Route::post('/', [PhaseTemplateController::class, 'storeStage'])->name('store');
+                    // Before the {phaseStage} routes, so "reorder" is not read
+                    // as the id of a stage.
+                    Route::post('/reorder', [PhaseTemplateController::class, 'reorderStages'])->name('reorder');
+                    Route::put('/{phaseStage}', [PhaseTemplateController::class, 'updateStage'])->name('update');
+                    Route::delete('/{phaseStage}', [PhaseTemplateController::class, 'destroyStage'])->name('destroy');
+                });
+
+                Route::get('/types/{projectType}', [PhaseTemplateController::class, 'showTemplate'])->name('types.show');
+                Route::put('/types/{projectType}', [PhaseTemplateController::class, 'updateTemplate'])->name('types.update');
+            });
+
             // Creation.
             Route::post('/users/employees', [ConfigurationController::class, 'storeEmployee'])->name('users.employees.store');
             Route::post('/users/clients', [ConfigurationController::class, 'storeClient'])->name('users.clients.store');
@@ -611,6 +642,8 @@ Route::prefix('technician')
                 ->name('projects.phases.save');
             Route::post('/projects/{project}/phases/finalize', [ProjectPhaseController::class, 'finalize'])
                 ->name('projects.phases.finalize');
+            Route::post('/projects/{project}/phases/reload', [ProjectPhaseController::class, 'reload'])
+                ->name('projects.phases.reload');
             Route::post('/projects/{project}/phases/{phase}/complete', [ProjectPhaseController::class, 'complete'])
                 ->name('projects.phases.complete');
         });

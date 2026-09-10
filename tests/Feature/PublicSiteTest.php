@@ -77,6 +77,35 @@ class PublicSiteTest extends TestCase
         return $project;
     }
 
+    /**
+     * The header's navigation list on its own - the footer carries its own
+     * links, and those are Super Admin content rather than this navigation.
+     */
+    private function headerNav(string $html): string
+    {
+        $start = strpos($html, '<ul class="navbar-nav');
+        $this->assertNotFalse($start, 'The public header carries no navigation list.');
+
+        $end = strpos($html, '</ul>', $start);
+        $this->assertNotFalse($end, 'The public header navigation list is unterminated.');
+
+        return substr($html, $start, $end - $start);
+    }
+
+    /**
+     * The footer's navigation column on its own.
+     */
+    private function footerLinks(string $html): string
+    {
+        $start = strpos($html, '<ul class="public-footer-links">');
+        $this->assertNotFalse($start, 'The public footer carries no navigation column.');
+
+        $end = strpos($html, '</ul>', $start);
+        $this->assertNotFalse($end, 'The public footer navigation column is unterminated.');
+
+        return substr($html, $start, $end - $start);
+    }
+
     private function content(): SystemContentService
     {
         return app(SystemContentService::class);
@@ -120,15 +149,54 @@ class PublicSiteTest extends TestCase
             ->assertDontSee(SystemContent::DEFINITIONS['home.hero_heading']['default']);
     }
 
-    public function test_the_navigation_carries_the_four_items(): void
+    /**
+     * A guest is offered the three pages that mean something to them. My
+     * Projects is not one of them - the page behind it has nothing on it for
+     * somebody who is not signed in - so the header leaves it out until they
+     * are. The footer's quick links are content the Super Admin owns and are
+     * not touched by this, which is why the assertions read the header
+     * markup rather than the whole page.
+     */
+    public function test_the_navigation_hides_my_projects_from_a_guest(): void
     {
-        $response = $this->get(route('landing.home'));
+        $nav = $this->headerNav($this->get(route('landing.home'))->assertOk()->getContent());
 
-        $response->assertOk()
-            ->assertSee('Home')
-            ->assertSee('My Projects')
-            ->assertSee('About')
-            ->assertSee('Contact Us');
+        $this->assertStringContainsString('Home', $nav);
+        $this->assertStringContainsString('About', $nav);
+        $this->assertStringContainsString('Contact Us', $nav);
+        $this->assertStringNotContainsString('My Projects', $nav);
+        $this->assertStringNotContainsString(route('public.projects'), $nav);
+    }
+
+    public function test_the_navigation_carries_the_four_items_once_signed_in(): void
+    {
+        $client = $this->account('client', 'client@example.test');
+
+        $nav = $this->headerNav(
+            $this->actingAs($client)->get(route('landing.home'))->assertOk()->getContent()
+        );
+
+        $this->assertStringContainsString('Home', $nav);
+        $this->assertStringContainsString('My Projects', $nav);
+        $this->assertStringContainsString('About', $nav);
+        $this->assertStringContainsString('Contact Us', $nav);
+        $this->assertStringContainsString(route('public.projects'), $nav);
+    }
+
+    /**
+     * Staff signing in on the public site keep the item too: it is the account
+     * that decides, not the role, and the page itself points them at their
+     * portal.
+     */
+    public function test_the_navigation_carries_my_projects_for_signed_in_staff(): void
+    {
+        $admin = $this->account('admin', 'admin@example.test');
+
+        $nav = $this->headerNav(
+            $this->actingAs($admin)->get(route('landing.home'))->assertOk()->getContent()
+        );
+
+        $this->assertStringContainsString('My Projects', $nav);
     }
 
     public function test_the_footer_stacks_the_company_line_above_the_terms_link(): void
@@ -181,24 +249,21 @@ class PublicSiteTest extends TestCase
             'home.hero_badge' => 'Badge words',
             'home.hero_heading' => 'Heading words',
             'home.hero_description' => 'Description words',
-            'home.hero_primary_label' => 'Primary words',
-            'home.hero_secondary_label' => 'Secondary words',
             'home.services_eyebrow' => 'Eyebrow words',
             'home.services_heading' => 'Services words',
             'home.services_intro' => 'Intro words',
             'home.services' => "First Service | First description\nSecond Service | Second description",
             'home.promo_heading' => 'Strip heading',
             'home.promo_body' => 'Strip text',
-            'home.promo_button_label' => 'Strip button',
         ], $superAdmin);
 
         $response = $this->get(route('landing.home'))->assertOk();
 
         foreach ([
-            'Badge words', 'Heading words', 'Description words', 'Primary words',
-            'Secondary words', 'Eyebrow words', 'Services words', 'Intro words',
+            'Badge words', 'Heading words', 'Description words',
+            'Eyebrow words', 'Services words', 'Intro words',
             'First Service', 'First description', 'Second Service',
-            'Strip heading', 'Strip text', 'Strip button',
+            'Strip heading', 'Strip text',
         ] as $expected) {
             $response->assertSee($expected);
         }
@@ -213,11 +278,64 @@ class PublicSiteTest extends TestCase
      */
     public function test_the_hero_buttons_lead_to_my_projects_and_about(): void
     {
-        $html = $this->get(route('landing.home'))->assertOk()->getContent();
+        $client = $this->account('client', 'client@example.test');
+
+        $html = $this->actingAs($client)->get(route('landing.home'))->assertOk()->getContent();
 
         $this->assertStringContainsString(route('public.projects'), $html);
         $this->assertStringContainsString(route('public.about'), $html);
         $this->assertStringContainsString(route('public.contact'), $html);
+    }
+
+    /**
+     * A guest is offered no route to My Projects anywhere on the homepage -
+     * not the header item, not the yellow hero button, not the footer's
+     * navigation column. The page behind it has nothing on it for them, and
+     * the header's Get Started is the door they are meant to take. The About
+     * and Contact doors are untouched.
+     */
+    public function test_a_guest_is_offered_no_route_to_my_projects_on_the_homepage(): void
+    {
+        $html = $this->get(route('landing.home'))->assertOk()->getContent();
+
+        $this->assertStringNotContainsString(route('public.projects'), $html);
+        $this->assertStringNotContainsString('My Projects', $html);
+
+        $this->assertStringContainsString(route('auth.login'), $html);
+        $this->assertStringContainsString(route('public.about'), $html);
+        $this->assertStringContainsString(route('public.contact'), $html);
+    }
+
+    /**
+     * The footer's links are the Super Admin's own text, so the rule is on
+     * where a line points rather than what it is called: a renamed link to
+     * the same page is hidden from a guest too, and every other line stays.
+     */
+    public function test_the_footer_hides_a_my_projects_link_however_it_is_labelled(): void
+    {
+        $superAdmin = $this->account('super_admin', 'owner@example.test');
+
+        $this->content()->saveText('footer', [
+            'footer.quick_links' => "Home | /
+My Own Work | /my-projects
+About | /about",
+        ], $superAdmin);
+
+        $guestFooter = $this->footerLinks($this->get(route('landing.home'))->assertOk()->getContent());
+
+        $this->assertStringNotContainsString('My Own Work', $guestFooter);
+        $this->assertStringNotContainsString('/my-projects', $guestFooter);
+        $this->assertStringContainsString('Home', $guestFooter);
+        $this->assertStringContainsString('About', $guestFooter);
+
+        $client = $this->account('client', 'client@example.test');
+
+        $signedInFooter = $this->footerLinks(
+            $this->actingAs($client)->get(route('landing.home'))->assertOk()->getContent()
+        );
+
+        $this->assertStringContainsString('My Own Work', $signedInFooter);
+        $this->assertStringContainsString('/my-projects', $signedInFooter);
     }
 
     /**
@@ -242,7 +360,6 @@ class PublicSiteTest extends TestCase
             'about.owners_heading' => 'Owners heading',
             'about.cta_heading' => 'About strip heading',
             'about.cta_body' => 'About strip text',
-            'about.cta_button_label' => 'About strip button',
         ], $superAdmin);
 
         $this->content()->saveOwners([
@@ -258,7 +375,7 @@ class PublicSiteTest extends TestCase
             'Values eyebrow', 'Values heading', 'First Value', 'First meaning',
             'Second Value', 'Owners eyebrow', 'Owners heading',
             'Fletcher Colico', 'owner@example.test', 'Second Person', '0917 000 0000',
-            'About strip heading', 'About strip text', 'About strip button',
+            'About strip heading', 'About strip text',
         ] as $expected) {
             $response->assertSee($expected);
         }
@@ -315,7 +432,6 @@ class PublicSiteTest extends TestCase
             'contact.description' => 'Contact description',
             'contact.form_heading' => 'Form heading',
             'contact.form_intro' => 'Form intro',
-            'contact.form_button_label' => 'Form button',
             'contact.form_note' => 'Form note',
             'contact.info_heading' => 'Info heading',
             'contact.info_intro' => 'Info intro',
@@ -328,7 +444,7 @@ class PublicSiteTest extends TestCase
 
         foreach ([
             'Contact heading', 'Contact description', 'Form heading', 'Form intro',
-            'Form button', 'Form note', 'Info heading', 'Info intro',
+            'Form note', 'Info heading', 'Info intro',
             'Mobile number', '(+63) 900 000 0000', 'Email', 'hello@example.test',
             'Main office', 'An address',
         ] as $expected) {
@@ -937,22 +1053,20 @@ class PublicSiteTest extends TestCase
         foreach ([
             'home' => [
                 'home.hero_badge', 'home.hero_heading', 'home.hero_description',
-                'home.hero_primary_label', 'home.hero_secondary_label', 'home.hero_image',
+                'home.hero_image',
                 'home.services_eyebrow', 'home.services_heading', 'home.services_intro',
                 'home.services', 'home.promo_heading', 'home.promo_body',
-                'home.promo_button_label',
             ],
             'about' => [
                 'about.eyebrow', 'about.heading', 'about.description',
                 'about.journey_eyebrow', 'about.journey_heading', 'about.history',
                 'about.team_image', 'about.values_eyebrow', 'about.values_heading',
                 'about.core_values', 'about.owners_eyebrow', 'about.owners_heading',
-                'about.owners', 'about.cta_heading',
-                'about.cta_body', 'about.cta_button_label',
+                'about.owners', 'about.cta_heading', 'about.cta_body',
             ],
             'contact' => [
                 'contact.heading', 'contact.description', 'contact.form_heading',
-                'contact.form_intro', 'contact.form_button_label', 'contact.form_note',
+                'contact.form_intro', 'contact.form_note',
                 'contact.info_heading', 'contact.info_intro', 'contact.phone',
                 'contact.email', 'contact.address', 'contact.map_embed',
                 'contact.facebook', 'contact.telegram', 'contact.whatsapp',
@@ -974,6 +1088,68 @@ class PublicSiteTest extends TestCase
                 $this->assertContains($key, $keys, $key.' is not offered by the editor.');
             }
         }
+    }
+
+    /**
+     * Configuration owns the site's words and imagery, not its controls.
+     *
+     * The button labels it used to offer are written in the views now, where
+     * they cannot drift from the thing they operate, so the editor must not
+     * offer them - and a save aimed at one has to be ignored rather than
+     * quietly stored against a field nothing reads.
+     */
+    public function test_the_editor_does_not_offer_the_button_labels(): void
+    {
+        $superAdmin = $this->account('super_admin', 'owner@example.test');
+
+        $buttons = [
+            'home' => [
+                'home.hero_primary_label', 'home.hero_secondary_label',
+                'home.promo_button_label',
+            ],
+            'about' => ['about.cta_button_label'],
+            'contact' => ['contact.form_button_label'],
+        ];
+
+        foreach ($buttons as $section => $keys) {
+            $offered = collect(
+                $this->actingAs($superAdmin)
+                    ->getJson(route('super-admin.configuration.contents.show', $section))
+                    ->assertOk()
+                    ->json('fields')
+            )->pluck('key')->all();
+
+            foreach ($keys as $key) {
+                $this->assertNotContains($key, $offered, $key.' is still offered by the editor.');
+                $this->assertArrayNotHasKey($key, SystemContent::DEFINITIONS);
+            }
+
+            $this->content()->saveText($section, array_fill_keys($keys, 'Renamed'), $superAdmin);
+        }
+
+        $this->assertSame(
+            0,
+            SystemContent::whereIn('content_key', array_merge(...array_values($buttons)))->count()
+        );
+    }
+
+    /**
+     * The buttons themselves are untouched: they keep their wording and they
+     * still go where they went.
+     */
+    public function test_the_buttons_keep_their_wording(): void
+    {
+        $client = $this->account('client', 'client@example.test');
+
+        $this->actingAs($client)
+            ->get(route('landing.home'))
+            ->assertOk()
+            ->assertSee('View Projects')
+            ->assertSee('Learn More');
+
+        $this->get(route('public.contact'))
+            ->assertOk()
+            ->assertSee('Send message');
     }
 
     public function test_an_unknown_section_is_not_found(): void

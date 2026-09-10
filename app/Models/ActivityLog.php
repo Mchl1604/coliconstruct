@@ -388,6 +388,20 @@ class ActivityLog extends Model
 
     public const PROJECT_TYPE_DELETED = 'Project Type Removed';
 
+    public const PHASE_STAGE_CREATED = 'Phase Stage Added';
+
+    public const PHASE_STAGE_UPDATED = 'Phase Stage Updated';
+
+    public const PHASE_STAGE_DELETED = 'Phase Stage Removed';
+
+    public const PHASE_STAGES_REORDERED = 'Phase Stages Reordered';
+
+    /**
+     * A project type's default phases and tasks were rewritten. What the NEXT
+     * project of that type is offered changes; no existing project moves.
+     */
+    public const PHASE_TEMPLATE_UPDATED = 'Phase Template Updated';
+
     public const BACKUP_CREATED = 'Backup Created';
 
     public const RESTORE_PERFORMED = 'Restore Performed';
@@ -495,6 +509,11 @@ class ActivityLog extends Model
         self::PROJECT_TYPE_CREATED => self::MODULE_CONFIGURATION,
         self::PROJECT_TYPE_UPDATED => self::MODULE_CONFIGURATION,
         self::PROJECT_TYPE_DELETED => self::MODULE_CONFIGURATION,
+        self::PHASE_STAGE_CREATED => self::MODULE_CONFIGURATION,
+        self::PHASE_STAGE_UPDATED => self::MODULE_CONFIGURATION,
+        self::PHASE_STAGE_DELETED => self::MODULE_CONFIGURATION,
+        self::PHASE_STAGES_REORDERED => self::MODULE_CONFIGURATION,
+        self::PHASE_TEMPLATE_UPDATED => self::MODULE_CONFIGURATION,
         self::BACKUP_CREATED => self::MODULE_CONFIGURATION,
         self::RESTORE_PERFORMED => self::MODULE_CONFIGURATION,
     ];

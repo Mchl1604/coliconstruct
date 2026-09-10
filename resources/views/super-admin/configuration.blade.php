@@ -720,6 +720,147 @@
                                     <div class="alert alert-danger mt-3 mb-0 d-none" role="alert" data-project-type-error></div>
                                     <div class="alert alert-success mt-3 mb-0 d-none" role="alert" data-project-type-success></div>
                             </div>
+
+                            {{-- Default Phases & Tasks.
+                                 =====================================
+
+                                 Two editors, because a project can be more
+                                 than one type at once and that is the whole
+                                 problem this solves.
+
+                                 The STAGES below are shared vocabulary: one
+                                 "Installation", in one agreed order, that every
+                                 project type refers to. That is what lets a
+                                 project which is both Aircon and Electrical get
+                                 ONE Installation phase carrying both trades'
+                                 work, instead of two phases with the same name
+                                 in whichever order they happened to be read.
+
+                                 The TASKS are per project type, because that is
+                                 the half that genuinely differs - what Aircon
+                                 does during Installation is not what Electrical
+                                 does.
+
+                                 Neither of them reaches a project that has
+                                 already been set up. A template is copied onto a
+                                 project once, on its phase setup screen, and is
+                                 fully editable there. --}}
+                            <hr class="my-4">
+
+                            <div class="phase-template-panel" id="phaseTemplatesPane">
+
+                                <div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3">
+                                    <div>
+                                        <h5 class="fw-bold mb-1">
+                                            <i class="bi bi-list-check me-1" aria-hidden="true"></i>
+                                            Default Phases &amp; Tasks
+                                        </h5>
+                                        <p class="text-secondary small mb-0">
+                                            What each kind of job starts with. Projects already set up are
+                                            never changed by an edit here.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div class="text-secondary small py-3 px-1" data-phase-template-loading>
+                                    <span class="spinner-border spinner-border-sm me-2" role="status"
+                                        aria-hidden="true"></span>
+                                    Loading default phases&hellip;
+                                </div>
+
+                                <div class="alert alert-danger mb-3 d-none" role="alert" data-phase-template-error></div>
+                                <div class="alert alert-success mb-3 d-none" role="alert" data-phase-template-success></div>
+
+                                <div class="row g-4 d-none" data-phase-template-body>
+
+                                    {{-- The vocabulary. --}}
+                                    <div class="col-lg-5">
+                                        <div class="phase-stage-card">
+                                            <h6 class="fw-bold mb-1">Phase Stages</h6>
+                                            <p class="text-secondary small">
+                                                The stages a job can go through, in the order they happen.
+                                                Shared by every project type &mdash; two types using the
+                                                same stage produce one phase, not two.
+                                            </p>
+
+                                            <form class="row g-2 align-items-end mb-3" data-stage-add-form novalidate>
+                                                <div class="col-12">
+                                                    <label class="form-label small fw-semibold mb-1" for="stageName">
+                                                        Stage name
+                                                    </label>
+                                                    <input type="text" class="form-control form-control-sm"
+                                                        id="stageName" maxlength="150"
+                                                        placeholder="e.g. Rough-In / Wiring" data-stage-name required>
+                                                </div>
+                                                <div class="col-12">
+                                                    <label class="form-label small fw-semibold mb-1"
+                                                        for="stageDescription">
+                                                        Description
+                                                    </label>
+                                                    <textarea class="form-control form-control-sm" id="stageDescription"
+                                                        rows="2" maxlength="500"
+                                                        placeholder="What happens during this stage"
+                                                        data-stage-description required></textarea>
+                                                </div>
+                                                <div class="col-12">
+                                                    <button type="submit" class="btn btn-primary btn-sm px-3"
+                                                        data-stage-add>
+                                                        <span class="spinner-border spinner-border-sm me-1 d-none"
+                                                            role="status" aria-hidden="true"
+                                                            data-stage-add-spinner></span>
+                                                        <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
+                                                        Add Stage
+                                                    </button>
+                                                </div>
+                                            </form>
+
+                                            <ul class="phase-stage-list" data-stage-list></ul>
+
+                                            <div class="schedule-empty-state mt-2 d-none" data-stage-empty>
+                                                No stages yet. Add the first one above.
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {{-- One type's template. --}}
+                                    <div class="col-lg-7">
+                                        <div class="phase-stage-card">
+                                            <div class="d-flex flex-wrap gap-2 align-items-end mb-3">
+                                                <div class="flex-grow-1">
+                                                    <label class="form-label small fw-semibold mb-1"
+                                                        for="phaseTemplateType">
+                                                        Default phases for
+                                                    </label>
+                                                    <select class="form-select form-select-sm" id="phaseTemplateType"
+                                                        data-phase-template-type></select>
+                                                </div>
+
+                                                <button type="button" class="btn btn-primary btn-sm px-3"
+                                                    data-phase-template-save disabled>
+                                                    <span class="spinner-border spinner-border-sm me-1 d-none"
+                                                        role="status" aria-hidden="true"
+                                                        data-phase-template-save-spinner></span>
+                                                    Save
+                                                </button>
+                                            </div>
+
+                                            <p class="text-secondary small">
+                                                Tick the stages this kind of job goes through, then list the
+                                                work it starts with in each. A project that is more than one
+                                                type gets every ticked stage, with all of their tasks merged
+                                                under it.
+                                            </p>
+
+                                            <div data-phase-template-stages></div>
+
+                                            <div class="schedule-empty-state mt-2 d-none" data-phase-template-empty>
+                                                Add a phase stage on the left before writing a template.
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1591,6 +1732,8 @@
                 @if ($isSuperAdmin)
                     archivedAccounts: @json(route('super-admin.configuration.users.archived')),
                     projectTypes: @json(route('super-admin.configuration.project-types.index')),
+                    phaseTemplates: @json(route('super-admin.configuration.phase-templates.index')),
+                    phaseTemplateBase: @json(url('super-admin/configuration/phase-templates')),
                     archivedInquiries: @json(route('super-admin.configuration.inquiries.archived')),
                 @endif
             };
@@ -1624,6 +1767,7 @@
         @if (auth()->user()?->isSuperAdmin())
             <script src="/js/super-admin/systemContents.js"></script>
             <script src="/js/super-admin/projectTypes.js"></script>
+            <script src="/js/super-admin/phaseTemplates.js"></script>
             <script src="/js/super-admin/systemSettingsNav.js"></script>
         @endif
     @endpush

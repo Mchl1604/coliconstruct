@@ -15,6 +15,19 @@
     $footerLogo = $content->image('branding.footer_logo') ?? $logo;
     $favicon = $content->image('branding.favicon');
     $quickLinks = $content->lines('footer.quick_links');
+    // The footer's links are the Super Admin's to write, so this reads where a
+    // line points rather than what it is called: whichever one leads to My
+    // Projects comes out for a guest, the same way the header item does. A
+    // renamed link is still caught; a link to anywhere else is left alone.
+    if (! $viewer) {
+        $myProjects = rtrim((string) parse_url(route('public.projects'), PHP_URL_PATH), '/');
+
+        $quickLinks = $quickLinks->reject(function (array $link) use ($myProjects): bool {
+            $path = rtrim((string) parse_url((string) $link['description'], PHP_URL_PATH), '/');
+
+            return $path !== '' && $path === $myProjects;
+        });
+    }
     // A client who has not agreed to the current Terms and Conditions is held
     // out of their portal by EnsureTermsAreAccepted; this is what tells them
     // so, and offers the two ways out. Clients only - see
@@ -78,12 +91,17 @@
             <div class="collapse navbar-collapse" id="publicNav">
                 <ul class="navbar-nav mx-lg-auto mb-2 mb-lg-0">
                     @php
-                        $navItems = [
+                        // My Projects is only a page for somebody signed in -
+                        // a guest reaching it is told to sign in and shown
+                        // nothing else - so the header does not offer it to
+                        // them at all. $viewer is auth()->user(); the page
+                        // itself keeps its own guard.
+                        $navItems = array_values(array_filter([
                             ['label' => 'Home', 'route' => 'landing.home'],
-                            ['label' => 'My Projects', 'route' => 'public.projects'],
+                            $viewer ? ['label' => 'My Projects', 'route' => 'public.projects'] : null,
                             ['label' => 'About', 'route' => 'public.about'],
                             ['label' => 'Contact Us', 'route' => 'public.contact'],
-                        ];
+                        ]));
                     @endphp
 
                     @foreach ($navItems as $item)

@@ -8,10 +8,17 @@
 
 @section('content')
     @php
-        // The rows the editor starts with: what has already been saved, or the
-        // suggested structure on a project nobody has typed anything for yet.
-        // Old input wins over both, so a refused save comes back with the
-        // person's own work rather than with the defaults.
+        // The rows the editor starts with, in order of authority: the person's
+        // own refused submission, then what they saved earlier, then the
+        // structure their project's types imply. Old input wins over both of
+        // the others, so a refused save comes back with their own work rather
+        // than with the defaults on top of it.
+        //
+        // `tasks` is the draft task list under each phase, and `task_count` is
+        // how many REAL tasks are already filed there - two different things
+        // that must not be conflated. task_count is only ever non-zero after a
+        // Super Admin override, and it is what decides whether removing a phase
+        // has to ask where its work goes.
         $initialRows =
             old('phases') ??
             ($phases->isNotEmpty()
@@ -19,16 +26,29 @@
                     ->map(
                         fn($phase) => [
                             'phase_id' => $phase->phase_id,
+                            'stage_id' => $phase->stage_id,
                             'title' => $phase->title,
                             'description' => $phase->description,
-                            'tasks' => (int) $phase->tasks_count,
+                            'sources' => [],
+                            'task_count' => (int) $phase->tasks_count,
+                            'tasks' => $phase->draftTasks
+                                ->map(
+                                    fn($task) => [
+                                        'title' => $task->title,
+                                        'description' => $task->description,
+                                        'technician_id' => $task->technician_id,
+                                        'start_date' => $task->start_date,
+                                        'due_date' => $task->due_date,
+                                        'sources' => [],
+                                    ],
+                                )
+                                ->values()
+                                ->all(),
                         ],
                     )
                     ->values()
                     ->all()
-                : collect($suggested)
-                    ->map(fn($phase) => ['phase_id' => null, 'title' => $phase['title'], 'description' => $phase['description'], 'tasks' => 0])
-                    ->all());
+                : $suggested);
 
         // Only ever non-empty on a project a Super Admin has unlocked: a
         // project that has never been finalized cannot have taken a task.
@@ -88,6 +108,55 @@
             </div>
         @endif
 
+        {{-- Where these rows came from. Worth a sentence rather than left to be
+             inferred, because a project that is two types gets a structure
+             neither type has on its own, and the person editing it should know
+             that before they start deleting things they do not recognise. --}}
+        @if ($fromTemplates)
+            <div class="alert alert-primary d-flex gap-2 align-items-start" role="status">
+                <i class="bi bi-diagram-3-fill fs-5" aria-hidden="true"></i>
+                <div>
+                    <h6 class="alert-heading mb-1">Started from this project's default phases</h6>
+                    <p class="mb-{{ $typesWithoutTemplate || $droppedStages ? '1' : '0' }} small">
+                        Built from
+                        {{ $project->projectTypes->pluck('type_name')->join(', ', ' and ') }}.
+                        Where those overlap they have been merged into one phase carrying both lists of
+                        work. Everything below is a starting point &mdash; edit, reorder or delete
+                        whatever does not apply to this job.
+                    </p>
+
+                    @if ($typesWithoutTemplate)
+                        <p class="mb-{{ $droppedStages ? '1' : '0' }} small">
+                            <strong>{{ collect($typesWithoutTemplate)->join(', ', ' and ') }}</strong>
+                            {{ count($typesWithoutTemplate) === 1 ? 'has' : 'have' }} no default phases set
+                            up yet, so {{ count($typesWithoutTemplate) === 1 ? 'it has' : 'they have' }}
+                            not contributed anything here.
+                        </p>
+                    @endif
+
+                    @if ($droppedStages)
+                        <p class="mb-0 small text-danger">
+                            {{ collect($droppedStages)->join(', ', ' and ') }} did not fit within the
+                            {{ $maxPhases }}-phase limit and {{ count($droppedStages) === 1 ? 'was' : 'were' }}
+                            left out.
+                        </p>
+                    @endif
+                </div>
+            </div>
+        @elseif ($phases->isEmpty())
+            <div class="alert alert-secondary d-flex gap-2 align-items-start" role="status">
+                <i class="bi bi-info-circle-fill fs-5" aria-hidden="true"></i>
+                <div>
+                    <h6 class="alert-heading mb-1">No default phases for this project's types yet</h6>
+                    <p class="mb-0 small">
+                        These are the stages most jobs have, offered as a starting point. A Super Admin
+                        can set proper defaults per project type under
+                        Configuration &rarr; System Settings &rarr; Project Settings.
+                    </p>
+                </div>
+            </div>
+        @endif
+
         @if ($phasesHoldingTasks->isNotEmpty())
             <div class="alert alert-info d-flex gap-2 align-items-start" role="status">
                 <i class="bi bi-list-check fs-5" aria-hidden="true"></i>
@@ -113,6 +182,9 @@
         <form method="POST" action="{{ $finalizeUrl }}" data-phase-setup-form
             data-save-url="{{ $saveUrl }}" data-finalize-url="{{ $finalizeUrl }}"
             data-min-phases="{{ $minPhases }}" data-max-phases="{{ $maxPhases }}"
+            data-max-tasks="{{ $maxTasksPerPhase }}"
+            data-schedule-hint="{{ $scheduleHint }}"
+            data-technicians='@json($technicians)'
             data-reassign-targets='@json($reassignTargets)'>
             @csrf
 
@@ -124,8 +196,24 @@
                             <h5 class="fw-bold mb-1">Phase Structure</h5>
                             <p class="text-secondary small mb-0">
                                 Each phase needs a title and a short description. Drag the handle, or use
-                                the arrows, to reorder them &mdash; the numbers follow.
+                                the arrows, to reorder them &mdash; the numbers follow. Add the work under
+                                each phase; a technician and dates are optional and can be filled in later
+                                on the task board.
                             </p>
+
+                            @if ($scheduleHint)
+                                <p class="text-secondary small mb-0 mt-1">
+                                    <i class="bi bi-calendar-range me-1" aria-hidden="true"></i>
+                                    Task dates have to start and finish on days this project is booked:
+                                    <strong>{{ $scheduleHint }}</strong>.
+                                </p>
+                            @else
+                                <p class="text-danger small mb-0 mt-1">
+                                    <i class="bi bi-exclamation-triangle me-1" aria-hidden="true"></i>
+                                    This project has no schedule yet, so tasks added here cannot be given
+                                    dates.
+                                </p>
+                            @endif
                         </div>
 
                         <span class="badge bg-secondary" data-phase-count-badge></span>
@@ -134,6 +222,36 @@
                     @error('phases')
                         <div class="alert alert-danger small py-2">{{ $message }}</div>
                     @enderror
+
+                    {{-- Everything the server refused, listed where the person
+                         can see it.
+
+                         The editor checks what it can before submitting, but
+                         two of the task rules are not knowable in the browser:
+                         whether a technician is still on this project's team,
+                         and whether the dates still fall inside a booked range.
+                         Both can change in another tab while this screen is
+                         open. Without this block such a refusal would bounce
+                         the page back looking untouched, which reads as the
+                         button being broken. --}}
+                    @php
+                        $taskErrors = collect($errors->getMessages())
+                            ->filter(fn($messages, $key) => str_starts_with($key, 'phases.'))
+                            ->flatten()
+                            ->unique()
+                            ->values();
+                    @endphp
+
+                    @if ($taskErrors->isNotEmpty())
+                        <div class="alert alert-danger small py-2">
+                            <p class="fw-semibold mb-1">This structure was not saved:</p>
+                            <ul class="mb-0 ps-3">
+                                @foreach ($taskErrors as $message)
+                                    <li>{{ $message }}</li>
+                                @endforeach
+                            </ul>
+                        </div>
+                    @endif
 
                     <div data-phase-rows></div>
 
@@ -147,6 +265,19 @@
             </div>
 
             <div class="d-flex justify-content-end gap-2 flex-wrap">
+                {{-- Only where there is a saved draft to throw away, and only
+                     while no real work has been filed against it. The case it
+                     is for: a project type was added to this project after its
+                     setup was started, so the merged suggestion is now out of
+                     date and there is otherwise no way back to it. --}}
+                @if ($phases->isNotEmpty() && $phasesHoldingTasks->isEmpty())
+                    <button type="button" class="btn btn-outline-danger me-auto" data-bs-toggle="modal"
+                        data-bs-target="#reloadPhasesModal">
+                        <i class="bi bi-arrow-counterclockwise me-1" aria-hidden="true"></i>
+                        Start Again From Defaults
+                    </button>
+                @endif
+
                 <button type="button" class="btn btn-outline-secondary" data-phase-save>
                     <i class="bi bi-save me-1" aria-hidden="true"></i>
                     Save Without Locking
@@ -229,6 +360,44 @@
                         <button type="button" class="btn btn-warning" data-reassign-confirm>
                             Move Tasks and Remove Phase
                         </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {{-- Discards the saved draft and recomputes the suggestion from this
+             project's types. Its own form, because it cannot be nested inside
+             the structure form it is about to throw away. --}}
+        <div class="modal fade" id="reloadPhasesModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header bg-danger text-white">
+                        <h5 class="modal-title">
+                            <i class="bi bi-arrow-counterclockwise me-2" aria-hidden="true"></i>
+                            Start Again From Defaults
+                        </h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
+                            aria-label="Close"></button>
+                    </div>
+
+                    <div class="modal-body">
+                        <p class="mb-0">
+                            This deletes the phases and tasks saved so far and rebuilds them from the
+                            default phases for
+                            {{ $project->projectTypes->pluck('type_name')->join(', ', ' and ') }}.
+                            Nothing else about the project changes.
+                        </p>
+                    </div>
+
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Go Back</button>
+
+                        <form method="POST" action="{{ $reloadUrl }}" class="d-inline">
+                            @csrf
+                            <button type="submit" class="btn btn-danger">
+                                Discard and Start Again
+                            </button>
+                        </form>
                     </div>
                 </div>
             </div>

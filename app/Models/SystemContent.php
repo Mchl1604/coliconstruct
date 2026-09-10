@@ -170,6 +170,13 @@ class SystemContent extends Model
      * written, so a fresh installation renders a complete page rather than a
      * skeleton full of gaps.
      *
+     * Configuration owns the site's words and imagery, not its controls. A
+     * button's wording is part of what the page does rather than what it says
+     * - "View Projects", "Send message" - and it is written in the view it
+     * belongs to, where it cannot drift from the thing it operates. The one
+     * exception is copy that sits beside a button rather than on it, such as
+     * contact.form_note, which stays editable.
+     *
      * @var array<string, array{label: string, type: string, section: string, help?: string, default?: string}>
      */
     public const DEFINITIONS = [
@@ -235,20 +242,6 @@ class SystemContent extends Model
             'section' => self::SECTION_HOME,
             'default' => 'Heating, ventilation and air-conditioning for homes and businesses - designed, installed, cleaned and maintained by technicians you can track from booking to handover.',
         ],
-        'home.hero_primary_label' => [
-            'label' => 'Hero Button (Yellow)',
-            'type' => self::TYPE_TEXT,
-            'section' => self::SECTION_HOME,
-            'help' => 'Opens My Projects.',
-            'default' => 'View Projects',
-        ],
-        'home.hero_secondary_label' => [
-            'label' => 'Hero Button (Outlined)',
-            'type' => self::TYPE_TEXT,
-            'section' => self::SECTION_HOME,
-            'help' => 'Opens the About page.',
-            'default' => 'Learn More',
-        ],
         'home.hero_image' => [
             'label' => 'Hero Image',
             'type' => self::TYPE_IMAGE,
@@ -300,13 +293,6 @@ class SystemContent extends Model
             'type' => self::TYPE_TEXTAREA,
             'section' => self::SECTION_HOME,
             'default' => 'Reach out and let us talk about your project.',
-        ],
-        'home.promo_button_label' => [
-            'label' => 'Call to Action Button',
-            'type' => self::TYPE_TEXT,
-            'section' => self::SECTION_HOME,
-            'help' => 'Opens the Contact page.',
-            'default' => 'Contact Us',
         ],
 
         // ----------------------------------------------------------------- About
@@ -432,13 +418,6 @@ class SystemContent extends Model
             'section' => self::SECTION_ABOUT,
             'default' => 'We would love to hear about your project.',
         ],
-        'about.cta_button_label' => [
-            'label' => 'Call to Action Button',
-            'type' => self::TYPE_TEXT,
-            'section' => self::SECTION_ABOUT,
-            'help' => 'Opens the Contact page.',
-            'default' => 'Contact Us',
-        ],
 
         // --------------------------------------------------------------- Contact
         'contact.heading' => [
@@ -464,12 +443,6 @@ class SystemContent extends Model
             'type' => self::TYPE_TEXTAREA,
             'section' => self::SECTION_CONTACT,
             'default' => 'Tell us what you need and we will come back to you with an assessment schedule.',
-        ],
-        'contact.form_button_label' => [
-            'label' => 'Message Form Button',
-            'type' => self::TYPE_TEXT,
-            'section' => self::SECTION_CONTACT,
-            'default' => 'Send message',
         ],
         'contact.form_note' => [
             'label' => 'Message Form Note',
@@ -541,7 +514,7 @@ class SystemContent extends Model
             'label' => 'Navigation Links',
             'type' => self::TYPE_TEXTAREA,
             'section' => self::SECTION_FOOTER,
-            'help' => 'One link per line, as "Label | /path".',
+            'help' => 'One link per line, as "Label | /path". A link to /my-projects is hidden from visitors who are not signed in.',
             'default' => "Home | /\nMy Projects | /my-projects\nAbout | /about\nContact Us | /contact",
         ],
         'footer.contact_heading' => [

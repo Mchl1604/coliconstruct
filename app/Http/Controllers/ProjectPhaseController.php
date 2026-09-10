@@ -4,12 +4,18 @@ namespace App\Http\Controllers;
 
 use App\Models\Project;
 use App\Models\ProjectPhase;
+use App\Models\ProjectPhaseDraftTask;
+use App\Models\Technician;
 use App\Models\User;
+use App\Services\PhaseSetupTaskRules;
+use App\Services\PhaseTemplateMerger;
 use App\Services\ProjectPhaseProgress;
 use App\Services\ProjectPhaseRules;
 use App\Services\ProjectPhaseSetup;
+use App\Services\TaskScheduleRules;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
@@ -31,6 +37,9 @@ class ProjectPhaseController extends Controller
         private readonly ProjectPhaseRules $rules,
         private readonly ProjectPhaseSetup $setup,
         private readonly ProjectPhaseProgress $progress,
+        private readonly PhaseTemplateMerger $templates,
+        private readonly PhaseSetupTaskRules $taskRules,
+        private readonly TaskScheduleRules $scheduleRules,
     ) {}
 
     /**
@@ -54,27 +63,89 @@ class ProjectPhaseController extends Controller
 
         $this->authorizeSetup($request, $project);
 
-        $phases = $project->phases()->withCount('tasks')->inOrder()->get();
+        $phases = $project->phases()
+            ->withCount('tasks')
+            ->with(['draftTasks' => fn ($query) => $query->inOrder()])
+            ->inOrder()
+            ->get();
+
+        // Where the rows on the screen come from, in order of authority: the
+        // person's own refused submission, then whatever they saved earlier,
+        // then the structure their project's types imply. Only the last of
+        // those is a suggestion, and none of them is stored until Save or
+        // Finalize is pressed.
+        $template = $phases->isEmpty()
+            ? $this->templates->for($project)
+            : ['phases' => [], 'from_templates' => false, 'types_without_template' => [], 'dropped_stages' => []];
+
+        $ranges = $this->scheduleRules->ranges($project->project_id);
 
         return view('projects.phaseSetup', [
             'layout' => $this->layoutFor($user),
             'project' => $project,
             'phases' => $phases,
-            // A fresh project is offered the four stages most of this
-            // company's jobs actually have, as editable rows. Nothing is
-            // stored until the person saves or finalizes - see
-            // ProjectPhase::SUGGESTED_PHASES.
-            'suggested' => $phases->isEmpty() ? ProjectPhase::SUGGESTED_PHASES : [],
+            // The merged structure of this project's types - one phase per
+            // stage any of them uses, carrying every one of their default
+            // tasks. Falls back to ProjectPhase::SUGGESTED_PHASES when no type
+            // has a template. See PhaseTemplateMerger.
+            'suggested' => $template['phases'],
+            'fromTemplates' => $template['from_templates'],
+            'typesWithoutTemplate' => $template['types_without_template'],
+            'droppedStages' => $template['dropped_stages'],
             // Only ever non-empty after a Super Admin override: tasks cannot
             // exist on a project that has never been finalized. These are the
             // phases whose removal has to be resolved rather than refused.
             'phasesHoldingTasks' => $this->setup->phasesHoldingTasks($project),
+            // Who a task may be handed to here, and when it may be scheduled
+            // for. Both are optional on this screen - the point is to write the
+            // work down, not to staff it - but a filled-in field is held to the
+            // same rules the task board holds it to.
+            'technicians' => $this->assignableTechnicians($project),
+            'scheduleRanges' => $ranges,
+            'scheduleHint' => $ranges === []
+                ? ''
+                : $this->scheduleRules->describe($ranges),
+            'maxTasksPerPhase' => $this->taskRules->maxTasksPerPhase(),
             'projectUrl' => $this->projectUrl($request, $project),
             'saveUrl' => $this->actionUrl($request, $project, 'save'),
             'finalizeUrl' => $this->actionUrl($request, $project, 'finalize'),
+            'reloadUrl' => $this->actionUrl($request, $project, 'reload'),
             'minPhases' => ProjectPhase::MIN_PHASES,
             'maxPhases' => ProjectPhase::MAX_PHASES,
         ]);
+    }
+
+    /**
+     * Throw away a saved draft and start again from the project's templates.
+     *
+     * The escape hatch for the case the merge cannot handle on its own:
+     * somebody starts setting a project up, then a second project type is added
+     * to it. The suggestion is only ever computed for a project with no saved
+     * phases - anything else would overwrite typed work on every page load - so
+     * without this there would be no way back to it short of deleting the
+     * phases by hand.
+     *
+     * Destructive, and confirmed on the screen before it is reached: it deletes
+     * the saved phases and their draft tasks. Refused outright once real tasks
+     * exist, which is the case after a Super Admin override - that work is not
+     * this screen's to throw away.
+     */
+    public function reload(Request $request, Project $project): RedirectResponse
+    {
+        $this->authorizeSetup($request, $project);
+
+        if ($this->setup->phasesHoldingTasks($project)->isNotEmpty()) {
+            return back()->with(
+                'error',
+                'This project already has tasks on it, so its phases cannot be reset. Edit the rows instead.'
+            );
+        }
+
+        $project->phases()->delete();
+
+        return redirect()
+            ->to($this->actionUrl($request, $project, 'setup'))
+            ->with('success', 'Started again from this project\'s default phases.');
     }
 
     /**
@@ -90,7 +161,7 @@ class ProjectPhaseController extends Controller
         $this->authorizeSetup($request, $project);
 
         try {
-            $this->setup->save($project, ...$this->submittedStructure($request));
+            $this->setup->save($project, ...$this->submittedStructure($request, $project));
         } catch (RuntimeException $exception) {
             return back()->withInput()->with('error', $exception->getMessage());
         }
@@ -108,7 +179,7 @@ class ProjectPhaseController extends Controller
         $this->authorizeSetup($request, $project);
 
         try {
-            $this->setup->finalize($project, $request->user(), ...$this->submittedStructure($request));
+            $this->setup->finalize($project, $request->user(), ...$this->submittedStructure($request, $project));
         } catch (RuntimeException $exception) {
             return back()->withInput()->with('error', $exception->getMessage());
         }
@@ -190,13 +261,29 @@ class ProjectPhaseController extends Controller
      *
      * @throws ValidationException
      */
-    private function submittedStructure(Request $request): array
+    private function submittedStructure(Request $request, Project $project): array
     {
         $validator = Validator::make($request->all(), [
             'phases' => ['required', 'array', 'min:'.ProjectPhase::MIN_PHASES, 'max:'.ProjectPhase::MAX_PHASES],
             'phases.*.phase_id' => ['nullable', 'integer'],
+            // Provenance, and a value the browser sends back rather than one
+            // it invents - checked all the same, because a tampered form must
+            // not be able to point a phase at a stage that does not exist.
+            'phases.*.stage_id' => ['nullable', 'integer', 'exists:tbl_phase_stages,stage_id'],
             'phases.*.title' => ['required', 'string', 'max:150'],
             'phases.*.description' => ['required', 'string', 'max:500'],
+            // A phase with no tasks is perfectly ordinary - somebody may mean
+            // to add the work later - so an absent list means no tasks rather
+            // than a malformed submission. Demanding it be present would also
+            // make every existing caller of this endpoint wrong for no gain:
+            // there is nothing this screen does differently on "no tasks" and
+            // "the browser did not mention tasks".
+            'phases.*.tasks' => ['nullable', 'array'],
+            'phases.*.tasks.*.title' => ['nullable', 'string', 'max:255'],
+            'phases.*.tasks.*.description' => ['nullable', 'string'],
+            'phases.*.tasks.*.technician_id' => ['nullable', 'integer'],
+            'phases.*.tasks.*.start_date' => ['nullable', 'date'],
+            'phases.*.tasks.*.due_date' => ['nullable', 'date'],
             // Keyed by the phase being removed, holding the phase its tasks
             // move to. Absent on every ordinary save.
             'reassign' => ['nullable', 'array'],
@@ -208,6 +295,22 @@ class ProjectPhaseController extends Controller
             'phases.*.description.required' => 'Every phase needs a short description.',
         ]);
 
+        // Everything a task has to satisfy beyond its shape - who it may be
+        // given to, and when it may be scheduled for. Stated in one service
+        // rather than here, so this screen holds a filled-in field to exactly
+        // the rules the task board would. See PhaseSetupTaskRules.
+        $validator->after(function (\Illuminate\Validation\Validator $validator) use ($project): void {
+            if ($validator->errors()->isNotEmpty()) {
+                return;
+            }
+
+            $rows = $validator->getData()['phases'] ?? [];
+
+            foreach ($this->taskRules->errors($project, $rows) as $key => $message) {
+                $validator->errors()->add($key, $message);
+            }
+        });
+
         $validated = $validator->validate();
 
         $rows = collect($validated['phases'])
@@ -215,8 +318,19 @@ class ProjectPhaseController extends Controller
                 'phase_id' => isset($row['phase_id']) && $row['phase_id'] !== null
                     ? (int) $row['phase_id']
                     : null,
+                'stage_id' => isset($row['stage_id']) && $row['stage_id'] !== null
+                    ? (int) $row['stage_id']
+                    : null,
                 'title' => (string) $row['title'],
                 'description' => (string) $row['description'],
+                'tasks' => collect($row['tasks'] ?? [])
+                    ->map(fn (array $task): array => $this->taskRules->normalise($task))
+                    // A row with nothing typed in it is somebody who pressed
+                    // Add Task and changed their mind, not an error to refuse
+                    // the whole structure over.
+                    ->reject(fn (array $task): bool => $task['title'] === '' && $task['description'] === '')
+                    ->values()
+                    ->all(),
             ])
             ->values()
             ->all();
@@ -227,6 +341,35 @@ class ProjectPhaseController extends Controller
             ->all();
 
         return [$rows, $reassignments];
+    }
+
+    /**
+     * The technicians a task on this screen may be handed to: the project's
+     * team, minus anybody whose account can no longer receive work.
+     *
+     * @return Collection<int, array{technician_id: int, name: string}>
+     */
+    private function assignableTechnicians(Project $project): Collection
+    {
+        return Technician::query()
+            ->with('account')
+            ->whereIn('technician_id', function ($query) use ($project): void {
+                $query->select('technician_id')
+                    ->from('tbl_project_technicians')
+                    ->where('project_id', $project->project_id)
+                    // A technician taken off the team keeps their row, because
+                    // it carries the dates they worked - so the membership has
+                    // to be an open one.
+                    ->whereNull('removed_at');
+            })
+            ->get()
+            ->filter(fn (Technician $technician): bool => $technician->isAssignable())
+            ->map(fn (Technician $technician): array => [
+                'technician_id' => $technician->technician_id,
+                'name' => $technician->name,
+            ])
+            ->sortBy('name')
+            ->values();
     }
 
     private function authorizeSetup(Request $request, Project $project): void

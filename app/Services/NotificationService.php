@@ -1178,6 +1178,95 @@ class NotificationService
     }
 
     /**
+     * The tasks a project was finalized with, announced once each.
+     *
+     * Phase setup creates a whole structure's worth of work in one press, and
+     * putting that through taskAssigned() would send a technician six separate
+     * "New Task Assignment" messages in the same second - which is not six
+     * times as useful as one, it is one message they read and five they learn
+     * to swipe away.
+     *
+     * So each owner is told once, with a count and the project to open, and the
+     * lead is told once about the whole structure. The tasks nobody was given
+     * are part of the lead's count on purpose: unassigned work is the thing
+     * most worth walking back to the board for.
+     *
+     * @param  Collection<int, Task>|EloquentCollection<int, Task>  $tasks
+     */
+    public function tasksCreatedInPhaseSetup(Project $project, iterable $tasks): void
+    {
+        // An Eloquent collection specifically, so the owners can be resolved in
+        // one query rather than one per task: the caller hands these over
+        // straight from a map(), which produces a plain support collection with
+        // no loadMissing() on it.
+        $tasks = EloquentCollection::make(collect($tasks)->all());
+
+        if ($tasks->isEmpty()) {
+            return;
+        }
+
+        $tasks->loadMissing('technician.account');
+
+        $assigned = $tasks->filter(fn (Task $task): bool => $task->technician_id !== null);
+
+        $owners = [];
+
+        foreach ($assigned as $task) {
+            $owner = $task->technician?->account;
+
+            if ($owner === null) {
+                continue;
+            }
+
+            $owners[$owner->id] ??= ['user' => $owner, 'count' => 0];
+            $owners[$owner->id]['count']++;
+        }
+
+        foreach ($owners as $entry) {
+            $count = $entry['count'];
+
+            $this->deliver(
+                $this->excludingActor([$entry['user']]),
+                'New Task Assignments',
+                sprintf(
+                    'You have been assigned %d %s on %s.',
+                    $count,
+                    $count === 1 ? 'task' : 'tasks',
+                    $this->projectLabel($project)
+                ),
+                Notification::MODULE_TASKS,
+                $project,
+                $this->projectLink($project)
+            );
+        }
+
+        $lead = $this->projectLead($project);
+
+        if ($lead === null || isset($owners[$lead->id])) {
+            return;
+        }
+
+        $unassigned = $tasks->count() - $assigned->count();
+
+        $this->deliver(
+            $this->excludingActor([$lead]),
+            'Tasks Created On Your Project',
+            sprintf(
+                '%d %s created on %s from its phase setup%s.',
+                $tasks->count(),
+                $tasks->count() === 1 ? 'task was' : 'tasks were',
+                $this->projectLabel($project),
+                $unassigned > 0
+                    ? sprintf(', %d of them still unassigned', $unassigned)
+                    : ''
+            ),
+            Notification::MODULE_TASKS,
+            $project,
+            $this->projectLink($project)
+        );
+    }
+
+    /**
      * @param  User|null  $previousOwner  Who had it before, when anyone did.
      */
     public function taskReassigned(Task $task, ?User $previousOwner): void

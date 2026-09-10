@@ -124,7 +124,7 @@
 
                     <div class="col-12">
                         <button type="submit" class="btn btn-brand-blue px-4">
-                            {{ $content->get('contact.form_button_label') }}
+                            Send message
                         </button>
 
                         {{-- Editable from Configuration, and shown only when

@@ -126,7 +126,7 @@
                 </div>
 
                 <a class="btn btn-brand-blue btn-pill px-4" href="{{ route('public.contact') }}">
-                    {{ $content->get('about.cta_button_label') }}
+                    Contact Us
                 </a>
             </div>
         </div>

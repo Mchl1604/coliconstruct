@@ -5,6 +5,8 @@ namespace App\Services;
 use App\Models\ActivityLog;
 use App\Models\Project;
 use App\Models\ProjectPhase;
+use App\Models\ProjectPhaseDraftTask;
+use App\Models\Task;
 use App\Models\User;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -40,7 +42,10 @@ class ProjectPhaseSetup
      */
     private const SEQUENCE_PARKING = 1000;
 
-    public function __construct(private readonly ActivityLogger $activityLogger) {}
+    public function __construct(
+        private readonly ActivityLogger $activityLogger,
+        private readonly NotificationService $notifications,
+    ) {}
 
     /**
      * Write a submitted structure onto a project whose phases are unlocked.
@@ -103,6 +108,11 @@ class ProjectPhaseSetup
         DB::transaction(function () use ($project, $rows, $removed, $reassignments): void {
             // Tasks move BEFORE their phase goes, so there is no window in
             // which a task points at a row that is on its way out.
+            //
+            // Only real tasks. A removed phase's DRAFT tasks go with it, by
+            // cascade - a draft is a note about work that has not been agreed,
+            // not a record of any, and the person deleting the phase has its
+            // draft tasks on the screen in front of them as they do it.
             foreach ($removed as $phase) {
                 if (isset($reassignments[$phase->phase_id])) {
                     $phase->tasks()->update(['phase_id' => $reassignments[$phase->phase_id]]);
@@ -117,10 +127,19 @@ class ProjectPhaseSetup
                 'sequence' => DB::raw('sequence + '.self::SEQUENCE_PARKING),
             ]);
 
-            // Pass two: the real numbering, in submitted order.
+            // Pass two: the real numbering, in submitted order. The phase each
+            // submitted row ended up as is kept, because the draft tasks
+            // underneath it are about to be written against it and a row that
+            // was new a moment ago has no id the submission could have carried.
+            $phaseIds = [];
+
             foreach ($rows as $index => $row) {
                 $attributes = [
                     'sequence' => $index + 1,
+                    // Provenance only - which stage of the vocabulary this row
+                    // was suggested from, or null for one somebody typed. See
+                    // the column's migration.
+                    'stage_id' => $row['stage_id'] ?? null,
                     'title' => trim($row['title']),
                     'description' => trim($row['description']),
                 ];
@@ -130,12 +149,57 @@ class ProjectPhaseSetup
                         ->where('phase_id', $row['phase_id'])
                         ->update($attributes);
 
+                    $phaseIds[$index] = (int) $row['phase_id'];
+
                     continue;
                 }
 
-                ProjectPhase::create($attributes + ['project_id' => $project->project_id]);
+                $phaseIds[$index] = ProjectPhase::create(
+                    $attributes + ['project_id' => $project->project_id]
+                )->phase_id;
             }
+
+            $this->writeDraftTasks($rows, $phaseIds);
         });
+    }
+
+    /**
+     * Replace the draft tasks under a project's phases with what was just
+     * submitted.
+     *
+     * Rewritten wholesale rather than diffed, for the same reason a project
+     * type's template is: a draft row carries no history and nothing points at
+     * it, so there is no identity worth preserving across a save - and a diff
+     * would be a second way for what is stored to disagree with what was sent.
+     *
+     * @param  array<int, array<string, mixed>>  $rows
+     * @param  array<int, int>  $phaseIds  submitted row index => phase_id
+     */
+    private function writeDraftTasks(array $rows, array $phaseIds): void
+    {
+        if ($phaseIds === []) {
+            return;
+        }
+
+        ProjectPhaseDraftTask::query()
+            ->whereIn('phase_id', array_values($phaseIds))
+            ->delete();
+
+        foreach ($rows as $index => $row) {
+            $tasks = array_values($row['tasks'] ?? []);
+
+            foreach ($tasks as $order => $task) {
+                ProjectPhaseDraftTask::create([
+                    'phase_id' => $phaseIds[$index],
+                    'sequence' => $order + 1,
+                    'title' => trim((string) $task['title']),
+                    'description' => trim((string) $task['description']),
+                    'technician_id' => $task['technician_id'] ?? null,
+                    'start_date' => $task['start_date'] ?? null,
+                    'due_date' => $task['due_date'] ?? null,
+                ]);
+            }
+        }
     }
 
     /**
@@ -155,6 +219,13 @@ class ProjectPhaseSetup
         $previousCount = $project->phase_count;
 
         $this->save($project, $rows, $reassignments);
+
+        // The drafts become real work here and nowhere else. Doing it after
+        // save() rather than inside it is what makes Save Without Locking safe
+        // to press at five o'clock: the same rows are written either way, and
+        // only this path turns them into tasks the board lists and technicians
+        // are told about.
+        $seeded = $this->convertDraftTasks($project);
 
         $count = $project->phases()->count();
 
@@ -187,6 +258,75 @@ class ProjectPhaseSetup
                 ),
             $project
         );
+
+        if ($seeded->isNotEmpty()) {
+            $this->activityLogger->record(
+                ActivityLog::TASK_CREATED,
+                null,
+                sprintf(
+                    'Created %d %s on %s from its phase setup.',
+                    $seeded->count(),
+                    $seeded->count() === 1 ? 'task' : 'tasks',
+                    $project->reference_no
+                ),
+                $project
+            );
+
+            $this->notifications->tasksCreatedInPhaseSetup($project, $seeded);
+        }
+    }
+
+    /**
+     * Turn a finalized project's draft tasks into real ones.
+     *
+     * The drafts are deleted as they are converted, which is also the guard
+     * against a second helping: a Super Admin who unlocks a finalized structure
+     * and finalizes it again finds no drafts under the phases that already
+     * seeded theirs, so nothing is duplicated. Only tasks typed during the
+     * unlock - on a phase they have just added, say - are new enough to still
+     * be drafts, and those are exactly the ones that should be created.
+     *
+     * @return Collection<int, Task>
+     */
+    private function convertDraftTasks(Project $project): Collection
+    {
+        $phaseIds = $project->phases()->pluck('phase_id');
+
+        if ($phaseIds->isEmpty()) {
+            return collect();
+        }
+
+        return DB::transaction(function () use ($project, $phaseIds): Collection {
+            $drafts = ProjectPhaseDraftTask::query()
+                ->whereIn('phase_id', $phaseIds)
+                ->orderBy('phase_id')
+                ->inOrder()
+                ->get();
+
+            if ($drafts->isEmpty()) {
+                return collect();
+            }
+
+            $tasks = $drafts->map(fn (ProjectPhaseDraftTask $draft): Task => Task::create([
+                'project_id' => $project->project_id,
+                'phase_id' => $draft->phase_id,
+                'technician_id' => $draft->technician_id,
+                'task_title' => $draft->title,
+                'task_description' => $draft->description,
+                'start_date' => $draft->start_date,
+                'due_date' => $draft->due_date,
+                // A task nobody has been given is 'unassigned', which is a
+                // state this system has always had and already draws - the
+                // Missing Technician & Date chips are how somebody finds it
+                // again on the board. One that was given an owner during setup
+                // starts where any other new task starts.
+                'status' => $draft->technician_id === null ? 'unassigned' : 'pending',
+            ]));
+
+            ProjectPhaseDraftTask::query()->whereIn('phase_id', $phaseIds)->delete();
+
+            return $tasks;
+        });
     }
 
     /**

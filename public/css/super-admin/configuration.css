@@ -576,3 +576,120 @@
     background: #eaf4fd;
     border-color: #cfe3f6;
 }
+
+/* ------------------------------------------------------------------
+   System Settings -> Project Settings -> Default Phases & Tasks
+
+   Two panels: the shared stage vocabulary, and one project type's
+   template. Styled as a matched pair because they are read together -
+   a stage on the left is a tick box on the right.
+   ------------------------------------------------------------------ */
+
+.phase-template-panel {
+    border: 1px solid #cfe3f6;
+    border-top: 4px solid #2370b4;
+    border-radius: .5rem;
+    padding: 1.25rem;
+    background: #fff;
+}
+
+.phase-stage-card {
+    height: 100%;
+    padding: 1rem;
+    border: 1px solid #e3ecf5;
+    border-radius: .6rem;
+    background: #f9fbfe;
+}
+
+.phase-stage-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.phase-stage-item {
+    display: flex;
+    align-items: flex-start;
+    gap: .6rem;
+    padding: .65rem;
+    margin-bottom: .5rem;
+    border: 1px solid #e3ecf5;
+    border-radius: .5rem;
+    background: #fff;
+}
+
+/* While a stage is being renamed it takes the whole width - the arrows and the
+   action buttons would only be in the way of the two fields. */
+.phase-stage-item.is-editing {
+    display: block;
+}
+
+.phase-stage-order {
+    display: flex;
+    flex-direction: column;
+    gap: .2rem;
+}
+
+.phase-stage-body {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* What depends on this stage, which is what its remove button is refused
+   against. */
+.phase-stage-usage {
+    margin-top: .25rem;
+    font-size: .72rem;
+    color: #8a94a3;
+}
+
+.phase-stage-actions {
+    display: flex;
+    gap: .25rem;
+}
+
+.phase-template-stage {
+    padding: .7rem;
+    margin-bottom: .5rem;
+    border: 1px solid #e3ecf5;
+    border-radius: .5rem;
+    background: #fff;
+}
+
+/* A ticked stage is one this type's projects will actually get, so it is worth
+   being able to pick out of a long list at a glance. */
+.phase-template-stage.is-selected {
+    border-color: #cfe3f6;
+    background: #f4f9fe;
+}
+
+.phase-template-tick {
+    display: flex;
+    align-items: flex-start;
+    gap: .55rem;
+    margin-bottom: 0;
+    cursor: pointer;
+}
+
+.phase-template-tasks {
+    margin: .6rem 0 0 1.75rem;
+    padding-left: .75rem;
+    border-left: 2px solid #dce7f3;
+}
+
+.phase-template-task {
+    display: flex;
+    align-items: flex-start;
+    gap: .5rem;
+    padding: .5rem;
+    margin-bottom: .4rem;
+    border: 1px solid #eef1f5;
+    border-radius: .45rem;
+    background: #fff;
+}
+
+@media (max-width: 575.98px) {
+    .phase-template-tasks {
+        margin-left: 0;
+    }
+}

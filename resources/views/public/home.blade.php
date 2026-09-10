@@ -25,13 +25,21 @@
             <div class="home-hero-actions">
                 {{-- The yellow one leads to the client's own work, which is
                      what this website is really for; the quiet one leads to
-                     the company's story. --}}
-                <a class="btn btn-brand-yellow btn-pill px-4" href="{{ route('public.projects') }}">
-                    {{ $content->get('home.hero_primary_label') }}
-                </a>
+                     the company's story.
+
+                     The yellow one is only offered to somebody signed in, for
+                     the same reason the header's My Projects item is: there is
+                     nothing behind it for a guest but an invitation to sign
+                     in, and the header already offers them that door. A guest
+                     is left with the quiet one. --}}
+                @auth
+                    <a class="btn btn-brand-yellow btn-pill px-4" href="{{ route('public.projects') }}">
+                        View Projects
+                    </a>
+                @endauth
 
                 <a class="btn btn-hero-ghost btn-pill px-4" href="{{ route('public.about') }}">
-                    {{ $content->get('home.hero_secondary_label') }}
+                    Learn More
                 </a>
             </div>
 
@@ -107,7 +115,7 @@
                 </div>
 
                 <a class="btn btn-brand-blue btn-pill px-4" href="{{ route('public.contact') }}">
-                    {{ $content->get('home.promo_button_label') }}
+                    Contact Us
                 </a>
             </div>
         </div>

@@ -28,17 +28,23 @@
    The setup editor
    ------------------------------------------------------------------ */
 
+/* A phase and the work under it. The row itself is a plain block now that it
+   holds two bands - the phase's own fields, and its task list - and the grid
+   that used to be here has moved down onto the first of them. */
 .phase-row {
-    display: grid;
-    grid-template-columns: auto 8.5rem 1fr auto;
-    gap: .75rem;
-    align-items: start;
     padding: .85rem;
     margin-bottom: .65rem;
     border: 1px solid #e5e7eb;
     border-radius: .6rem;
     background: #fff;
     transition: border-color .15s ease, box-shadow .15s ease;
+}
+
+.phase-row-head {
+    display: grid;
+    grid-template-columns: auto 8.5rem 1fr auto;
+    gap: .75rem;
+    align-items: start;
 }
 
 .phase-row:hover {
@@ -84,13 +90,12 @@
     text-align: center;
 }
 
-/* Only drawn on a phase that already holds work, which is only possible on a
-   structure a Super Admin has unlocked. It is the warning attached to the
-   remove button beside it. */
+/* How much work is written under this phase. A count of the draft tasks drawn
+   below it, not of any work already filed - that is .phase-task-existing. */
 .phase-row-tasks {
     font-size: .74rem;
-    color: #a05a00;
-    background: #fdf1e0;
+    color: var(--phase-blue-dark);
+    background: var(--phase-blue-soft);
     border-radius: .3rem;
     padding: .15rem .4rem;
     text-align: center;
@@ -102,8 +107,111 @@
     gap: .3rem;
 }
 
+/* A title and, beside it, which project types asked for it. */
+.phase-row-headline,
+.phase-task-headline {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    flex-wrap: wrap;
+}
+
+.phase-row-headline > .form-control,
+.phase-task-headline > .form-control {
+    flex: 1 1 14rem;
+}
+
+/* Provenance. On a project that is more than one type these are the only thing
+   on screen saying which type wanted a given phase or task, which is what makes
+   a merged structure something a person can edit with confidence rather than
+   guess at. */
+.phase-source-chips {
+    display: inline-flex;
+    gap: .25rem;
+    flex-wrap: wrap;
+}
+
+.phase-source-chip {
+    font-size: .68rem;
+    font-weight: 600;
+    letter-spacing: .01em;
+    padding: .15rem .45rem;
+    border-radius: 1rem;
+    background: #eef2f7;
+    color: #5a6472;
+    white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------
+   The work under a phase
+   ------------------------------------------------------------------ */
+
+.phase-tasks {
+    margin: .75rem 0 0 1.6rem;
+    padding-left: .9rem;
+    border-left: 2px solid #eef1f5;
+}
+
+.phase-task-list:empty {
+    display: none;
+}
+
+.phase-task-row {
+    display: flex;
+    align-items: flex-start;
+    gap: .5rem;
+    padding: .6rem;
+    margin-bottom: .5rem;
+    border: 1px solid #eef1f5;
+    border-radius: .5rem;
+    background: #fbfcfe;
+}
+
+.phase-task-fields {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* Technician, start, end. Wraps rather than scrolls: three narrow selects
+   squeezed onto a phone are less use than three stacked ones. */
+.phase-task-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem;
+}
+
+.phase-task-field {
+    display: flex;
+    flex-direction: column;
+    gap: .15rem;
+    flex: 1 1 9rem;
+    margin-bottom: 0;
+}
+
+.phase-task-field-label {
+    font-size: .7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    color: #8a94a3;
+}
+
+.phase-task-remove {
+    flex: 0 0 auto;
+    line-height: 1;
+}
+
+/* Real work already filed against this phase, which this screen does not edit.
+   Only ever drawn on a structure a Super Admin has unlocked. */
+.phase-task-existing {
+    color: #a05a00;
+    background: #fdf1e0;
+    border-radius: .35rem;
+    padding: .35rem .55rem;
+}
+
 @media (max-width: 767.98px) {
-    .phase-row {
+    .phase-row-head {
         grid-template-columns: auto 1fr;
     }
 
@@ -115,6 +223,10 @@
         grid-column: 1 / -1;
         flex-direction: row;
         justify-content: flex-end;
+    }
+
+    .phase-tasks {
+        margin-left: 0;
     }
 }
 
