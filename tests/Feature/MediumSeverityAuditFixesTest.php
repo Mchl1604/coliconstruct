@@ -215,7 +215,7 @@ class MediumSeverityAuditFixesTest extends TestCase
         $this->put(route('super-admin.projects.update', $project->project_id), [
             'first_name' => 'A', 'last_name' => 'B', 'address' => 'X',
             'contact_number' => '09123456789', 'email_address' => 'a@b.test',
-            'quotation' => 10, 'project_description' => 'Y',
+            'quotation' => 10, 'quotation_change' => 'amount', 'project_description' => 'Y',
             'project_types' => [$type->type_id],
         ]);
 

@@ -80,6 +80,15 @@
         // project is stored as Ongoing. Closing it off is exactly what the
         // banner below asks for.
         $canComplete = $project->isCompletableBy(auth()->user());
+
+        // Every file change, by document type. Each type's history button and
+        // dialog are drawn only once that type has something in its history.
+        $documentHistoryByType = $project->documentHistory->groupBy('document_type');
+
+        // The quotation's dialog carries its amount changes as well as its
+        // file changes, so either one is enough to draw it.
+        $quotationHistoryCount = $project->quotationHistory->count()
+            + $documentHistoryByType->get('quotation', collect())->count();
     @endphp
     {{-- `project-details-page` is what applies the brand blue from the
          client's own project page; the layout below is unchanged. --}}
@@ -132,6 +141,25 @@
 
             </div>
         </div>
+
+        {{-- A save the server refused. The Edit Project Details dialog posts
+             a full page, and without this a refused one - a file of the wrong
+             type, a quotation change nobody confirmed - came back to a page
+             that looked exactly as if it had worked. --}}
+        @if ($errors->any())
+            <div class="alert alert-danger alert-dismissible" role="alert">
+                <div class="fw-semibold mb-1">
+                    <i class="bi bi-exclamation-octagon me-1" aria-hidden="true"></i>
+                    Your changes were not saved.
+                </div>
+                <ul class="mb-0 ps-3">
+                    @foreach ($errors->all() as $message)
+                        <li>{{ $message }}</li>
+                    @endforeach
+                </ul>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        @endif
 
         <!-- ARCHIVE PROJECT MODAL -->
         @if ($canArchive)
@@ -1148,6 +1176,26 @@
                                 @if ($files->isNotEmpty())
                                     <span class="badge project-document-count">{{ $files->count() }}</span>
                                 @endif
+
+                                {{-- Every file of this type ever uploaded,
+                                     replaced or removed. The quotation's opens
+                                     the Quotation History, which carries its
+                                     amount changes as well. --}}
+                                @php
+                                    $hasTypeHistory = $type === 'quotation'
+                                        ? $quotationHistoryCount > 0
+                                        : $documentHistoryByType->has($type);
+                                @endphp
+                                @if ($hasTypeHistory)
+                                    <button type="button"
+                                        class="btn btn-sm btn-outline-secondary project-history-icon ms-auto"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#{{ $type === 'quotation' ? 'quotationHistoryModal' : $type.'HistoryModal' }}"
+                                        title="View {{ strtolower($label) }} history"
+                                        aria-label="View {{ strtolower($label) }} history">
+                                        <i class="bi bi-clock-history" aria-hidden="true"></i>
+                                    </button>
+                                @endif
                             </div>
 
                             @forelse ($files as $document)
@@ -1176,8 +1224,8 @@
                 </div>
 
                 <div class="alert alert-danger mt-3 mb-0 d-none" role="alert" data-document-error></div>
-                <div class="mt-3">
-                    <span class="fw-bold me-2">
+                <div class="mt-3 d-flex flex-wrap align-items-center gap-2">
+                    <span class="fw-bold">
                         Quotation:
                     </span>
                     {{-- Green, as the quotation column reads on the projects
@@ -1186,6 +1234,17 @@
                     <span class="text-success fw-semibold">
                         ₱ {{ number_format($project->quotation, 2) }}
                     </span>
+
+                    {{-- Only once there is something to show: an amount that
+                         has changed, or a quotation file change. The icon
+                         alone, as the team and schedule history buttons are. --}}
+                    @if ($quotationHistoryCount > 0)
+                        <button type="button" class="btn btn-sm btn-outline-secondary project-history-icon"
+                            data-bs-toggle="modal" data-bs-target="#quotationHistoryModal"
+                            title="View quotation history" aria-label="View quotation history">
+                            <i class="bi bi-clock-history" aria-hidden="true"></i>
+                        </button>
+                    @endif
                 </div>
                 <div class="mt-3">
                     <span class="fw-bold me-2">
@@ -2079,10 +2138,17 @@
 
                 <form class="d-flex flex-column flex-grow-1 overflow-hidden"
                     action="{{ route('super-admin.projects.update', $project->project_id) }}" method="POST"
-                    enctype="multipart/form-data">
+                    enctype="multipart/form-data" data-edit-project-form>
                     @csrf
                     @method('PUT')
-                    <div class="modal-body flex-grow-1 overflow-auto edit-project-body">
+
+                    {{-- What the person answered when asked about the other
+                         half of the quotation. Filled in by quotationSync.js;
+                         the server refuses a quotation change that does not
+                         match it - see QuotationChange. --}}
+                    <input type="hidden" name="quotation_change" value="none" data-quotation-change>
+
+                    <div class="modal-body flex-grow-1 overflow-auto edit-project-body" data-edit-project-body>
 
                         <!-- Client Information -->
                         <section class="edit-section">
@@ -2239,18 +2305,23 @@
                                  one carries the raw number and the name, so
                                  `numeric` validation is handed what it has
                                  always been handed. --}}
-                            <div class="input-group" data-money-field>
+                            <div class="input-group" data-money-field data-quotation-amount>
 
                                 <span class="input-group-text">
                                     ₱
                                 </span>
 
                                 <input type="text" class="form-control" inputmode="decimal"
-                                    autocomplete="off" value="{{ $project->quotation }}" data-money-input>
+                                    autocomplete="off" value="{{ $project->quotation }}" required
+                                    aria-label="Quotation amount" data-money-input>
 
                                 <input type="hidden" name="quotation" value="{{ $project->quotation }}"
                                     data-money-value>
 
+                            </div>
+
+                            <div class="form-text">
+                                Changing the amount asks whether the quotation file should be replaced as well.
                             </div>
 
                         </div>
@@ -2279,7 +2350,9 @@
                             <i class="bi bi-info-circle" aria-hidden="true"></i>
                             <span>
                                 {{ \App\Models\Document::ALLOWED_LABEL }}, up to
-                                {{ \App\Models\Document::MAX_LABEL }} each. Uploads are added to existing files.
+                                {{ \App\Models\Document::MAX_LABEL }} each. Assessment and contract uploads are
+                                added to the files already on record; a quotation upload replaces the current
+                                quotation, which is kept in its history.
                             </span>
                         </p>
 
@@ -2316,7 +2389,18 @@
                                         <input type="file" class="form-control form-control-sm"
                                             name="{{ $upload['field'] }}[]"
                                             accept="{{ \App\Models\Document::ACCEPT_ATTRIBUTE }}" multiple
-                                            data-upload-input>
+                                            data-upload-input
+                                            @if ($type === 'quotation') data-quotation-file-input @endif>
+
+                                        {{-- The one card whose upload does not
+                                             add. Said on the card itself, where
+                                             the file is being chosen. --}}
+                                        @if ($type === 'quotation' && $held)
+                                            <span class="edit-document-replaces">
+                                                <i class="bi bi-arrow-repeat" aria-hidden="true"></i>
+                                                Replaces the {{ $held === 1 ? 'file' : $held.' files' }} on record
+                                            </span>
+                                        @endif
 
                                         {{-- Filled in by projectDetails.js once
                                              files are chosen, so what is about to
@@ -2331,7 +2415,7 @@
 
                     </div>
 
-                    <div class="modal-footer edit-project-footer">
+                    <div class="modal-footer edit-project-footer" data-edit-project-footer>
 
                         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
                             Cancel
@@ -2342,6 +2426,136 @@
                             Save Changes
                         </button>
 
+                    </div>
+
+                    {{-- The quotation check.
+
+                         Shown in place of the form, inside this same dialog,
+                         when Save is pressed with only one half of the
+                         quotation changed: the amount without the file, or the
+                         file without the amount. It asks about the other half
+                         and saves nothing until it is answered - Cancel goes
+                         back to the form with nothing saved. See
+                         quotationSync.js, which fills in the wording for
+                         whichever half changed. --}}
+                    @php
+                        $currentQuotationFiles = $documentsByType->get('quotation', collect())
+                            ->pluck('document_name')
+                            ->values();
+                    @endphp
+                    <div class="modal-body flex-grow-1 overflow-auto edit-project-body d-none" tabindex="-1"
+                        data-quotation-sync
+                        data-original-amount="{{ $project->quotation === null ? '' : \App\Services\QuotationChange::normalize($project->quotation) }}"
+                        data-current-files='@json($currentQuotationFiles)'>
+
+                        <section class="edit-section quotation-sync">
+                            <div class="quotation-sync-head">
+                                <span class="quotation-sync-icon" aria-hidden="true">
+                                    <i class="bi bi-exclamation-triangle"></i>
+                                </span>
+                                <div>
+                                    <h6 class="quotation-sync-title" id="quotationSyncTitle" data-quotation-sync-title></h6>
+                                    <p class="quotation-sync-question mb-0" data-quotation-sync-question></p>
+                                </div>
+                            </div>
+
+                            {{-- Where the two halves stand, so a mismatch is
+                                 visible rather than described. --}}
+                            <dl class="quotation-sync-facts">
+                                <div>
+                                    <dt>Quotation amount</dt>
+                                    <dd data-quotation-sync-amount-fact></dd>
+                                </div>
+                                <div>
+                                    <dt>Quotation file</dt>
+                                    <dd data-quotation-sync-file-fact></dd>
+                                </div>
+                            </dl>
+
+                            {{-- "Yes, replace quotation file": the file. No
+                                 name of its own - what is picked here is handed
+                                 to the form's quotation field on save, so the
+                                 server receives it exactly as if it had been
+                                 chosen there. --}}
+                            <div class="quotation-sync-extra d-none" data-quotation-sync-upload>
+                                <label class="form-label fw-semibold" for="quotationSyncFile">
+                                    Replacement quotation file
+                                </label>
+                                <input type="file" class="form-control" id="quotationSyncFile"
+                                    accept="{{ \App\Models\Document::ACCEPT_ATTRIBUTE }}" multiple
+                                    data-quotation-sync-file>
+                                <div class="form-text">
+                                    {{ \App\Models\Document::ALLOWED_LABEL }}, up to
+                                    {{ \App\Models\Document::MAX_LABEL }} each. The current quotation file is kept
+                                    in the quotation history.
+                                </div>
+                                <ul class="edit-document-picked mt-2 d-none" data-quotation-sync-picked></ul>
+                            </div>
+
+                            {{-- "Yes, update quotation amount": the amount,
+                                 started at the current one so it can simply be
+                                 confirmed. Unnamed for the same reason. --}}
+                            <div class="quotation-sync-extra d-none" data-quotation-sync-amount>
+                                <label class="form-label fw-semibold" for="quotationSyncAmount">
+                                    Quotation amount
+                                </label>
+                                <div class="input-group" data-money-field>
+                                    <span class="input-group-text">₱</span>
+                                    <input type="text" class="form-control" id="quotationSyncAmount"
+                                        inputmode="decimal" autocomplete="off" data-money-input>
+                                    <input type="hidden" data-money-value>
+                                </div>
+                                <div class="form-text">
+                                    Enter the amount on the new quotation file, or confirm the current one.
+                                </div>
+                                <div class="invalid-feedback d-block d-none" data-quotation-sync-amount-error>
+                                    Enter a quotation amount of zero or more.
+                                </div>
+                            </div>
+
+                            <p class="quotation-sync-note mb-0" data-quotation-sync-note>
+                                <i class="bi bi-info-circle" aria-hidden="true"></i>
+                                Cancel goes back to the form. Nothing is saved until you choose.
+                            </p>
+                        </section>
+                    </div>
+
+                    <div class="modal-footer edit-project-footer quotation-sync-footer d-none"
+                        data-quotation-sync-footer>
+
+                        {{-- The question itself: three answers. Keeping what
+                             is on record is grey, leaving things as they are;
+                             changing it too is blue, the same blue as the save
+                             that follows. Cancel stands apart on the left. --}}
+                        <div class="quotation-sync-actions" data-quotation-sync-choices>
+                            <button type="button" class="btn btn-outline-secondary" data-quotation-sync-cancel>
+                                Cancel
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary quotation-sync-keep"
+                                data-quotation-sync-no>
+                                <i class="bi bi-check2-circle me-1" aria-hidden="true"></i>
+                                <span data-quotation-sync-no-label></span>
+                            </button>
+                            <button type="button" class="btn btn-outline-primary quotation-sync-change"
+                                data-quotation-sync-yes>
+                                <i class="bi bi-arrow-repeat me-1" aria-hidden="true"></i>
+                                <span data-quotation-sync-yes-label></span>
+                            </button>
+                        </div>
+
+                        {{-- After Yes: the other half is being filled in. --}}
+                        <div class="quotation-sync-actions d-none" data-quotation-sync-confirm>
+                            <button type="button" class="btn btn-outline-secondary" data-quotation-sync-back>
+                                <i class="bi bi-arrow-left me-1" aria-hidden="true"></i>
+                                Back
+                            </button>
+                            <button type="button" class="btn btn-outline-primary quotation-sync-change px-4"
+                                data-quotation-sync-save>
+                                <span class="spinner-border spinner-border-sm me-1 d-none" aria-hidden="true"
+                                    data-quotation-sync-spinner></span>
+                                <span data-quotation-sync-save-label></span>
+                            </button>
+                        </div>
                     </div>
 
                 </form>
@@ -3177,6 +3391,20 @@
          comes off the project or why the server refused. --}}
     <x-confirm-dialog />
 
+    @if ($quotationHistoryCount > 0)
+        <x-quotation-history-modal :project="$project"
+            :file-events="$documentHistoryByType->get('quotation', collect())" />
+    @endif
+
+    {{-- The other document types' histories. The quotation's lives in the
+         dialog above, beside its amount changes. --}}
+    @foreach (['assessment', 'contract'] as $historyType)
+        @if ($documentHistoryByType->has($historyType))
+            <x-document-history-modal :project="$project" :type="$historyType"
+                :events="$documentHistoryByType->get($historyType)" />
+        @endif
+    @endforeach
+
     @push('scripts')
         <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
         <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
@@ -3191,6 +3419,9 @@
         <script src="/js/imagePreview.js"></script>
         {{-- Thousands separators on the quotation, shared with the create wizard. --}}
         <script src="/js/moneyInput.js"></script>
+        {{-- Asks about the other half of the quotation when only the amount or
+             only the file changed. After moneyInput.js, whose fields it reads. --}}
+        <script src="/js/super-admin/quotationSync.js"></script>
         <script src="/js/importTeam.js"></script>
         {{-- Every account the picker may offer, already narrowed by
              ProjectRegisteredUser::candidates(). Deactivated accounts are

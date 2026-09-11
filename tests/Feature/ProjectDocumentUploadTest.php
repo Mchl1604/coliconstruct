@@ -15,9 +15,10 @@ use Tests\TestCase;
 /**
  * Project documents: several files per type, PDFs and images only.
  *
- * An assessment or a quotation can run to more than one page, so each type
+ * An assessment or a contract can run to more than one page, so each type
  * holds a list rather than a single file - and uploading adds to that list
- * instead of quietly replacing what was there.
+ * instead of quietly replacing what was there. The quotation is the exception:
+ * an upload replaces it, after asking about the amount - see QuotationSyncTest.
  */
 class ProjectDocumentUploadTest extends TestCase
 {
@@ -124,18 +125,18 @@ class ProjectDocumentUploadTest extends TestCase
         $this->put(
             route('super-admin.projects.update', $project->project_id),
             $this->editPayload($project, [
-                'quotationDocument' => [UploadedFile::fake()->create('first.pdf', 12, 'application/pdf')],
+                'assessmentDocument' => [UploadedFile::fake()->create('first.pdf', 12, 'application/pdf')],
             ])
         )->assertSessionHasNoErrors();
 
         $this->put(
             route('super-admin.projects.update', $project->project_id),
             $this->editPayload($project, [
-                'quotationDocument' => [UploadedFile::fake()->create('second.pdf', 12, 'application/pdf')],
+                'assessmentDocument' => [UploadedFile::fake()->create('second.pdf', 12, 'application/pdf')],
             ])
         )->assertSessionHasNoErrors();
 
-        $names = $project->documents()->where('document_type', 'quotation')->pluck('document_name')->all();
+        $names = $project->documents()->where('document_type', 'assessment')->pluck('document_name')->all();
 
         $this->assertCount(2, $names);
         $this->assertContains('first.pdf', $names);

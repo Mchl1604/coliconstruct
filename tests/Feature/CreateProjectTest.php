@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Document;
+use App\Models\DocumentHistory;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
 use App\Models\ProjectType;
@@ -274,6 +275,44 @@ class CreateProjectTest extends TestCase
         $this->assertDatabaseMissing('tbl_documents', [
             'document_type' => 'contract',
         ]);
+    }
+
+    /**
+     * The files that arrive with the wizard are the first entries in the
+     * project's document history, so every file on record has an entry for
+     * how it got there.
+     */
+    public function test_the_wizard_records_every_file_it_uploads_in_the_document_history(): void
+    {
+        ProjectType::create(['type_name' => 'Aircon Installation']);
+
+        $leadTechnician = $this->createWizardTechnician('lead_technician', 'Lead Technician');
+        $technician = $this->createWizardTechnician('technician', 'Juan Technician');
+
+        $this->post(
+            route('super-admin.projects.create.store'),
+            $this->baseProjectPayload($leadTechnician, $technician, includeContract: true)
+        )->assertRedirect(route('super-admin.projects'));
+
+        $project = Project::firstOrFail();
+
+        $this->assertEqualsCanonicalizing(
+            [
+                ['assessment', 'assessment.pdf', DocumentHistory::EVENT_UPLOADED],
+                ['quotation', 'quotation.jpg', DocumentHistory::EVENT_UPLOADED],
+                ['contract', 'contract.pdf', DocumentHistory::EVENT_UPLOADED],
+            ],
+            DocumentHistory::query()
+                ->where('project_id', $project->project_id)
+                ->get()
+                ->map(fn (DocumentHistory $entry): array => [$entry->document_type, $entry->document_name, $entry->event])
+                ->all()
+        );
+
+        $this->assertSame(
+            [auth()->id()],
+            DocumentHistory::query()->distinct()->pluck('actor_id')->map(fn ($id) => (int) $id)->all()
+        );
     }
 
     public function test_it_rejects_overlapping_schedules_for_selected_technicians(): void

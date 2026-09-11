@@ -90,15 +90,32 @@ class Document extends Model
         'document_name',
         'document_path',
         'uploaded_at',
+        'superseded_at',
+        'superseded_by',
     ];
 
     protected $casts = [
         'uploaded_at' => 'datetime',
+        'superseded_at' => 'datetime',
     ];
 
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class, 'project_id', 'project_id');
+    }
+
+    /**
+     * Who replaced this file, when it has been replaced. Only a quotation is
+     * ever replaced - see QuotationChange.
+     */
+    public function supersededByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'superseded_by');
+    }
+
+    public function isSuperseded(): bool
+    {
+        return $this->superseded_at !== null;
     }
 
     /**

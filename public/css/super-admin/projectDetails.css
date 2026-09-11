@@ -530,6 +530,222 @@
     border-top: 1px solid #e5e7eb;
 }
 
+/* The quotation card's upload replaces rather than adds, and says so in amber
+   where the other two cards say nothing. */
+.edit-document-replaces {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #8a5a00;
+}
+
+/* ---- The quotation check ----
+   Shown in place of the edit form when only one half of the quotation changed.
+   Amber rather than red: nothing has gone wrong, the two halves might simply
+   disagree, and the person is being asked rather than warned. */
+
+.quotation-sync {
+    border-top-color: #e0a800;
+    max-width: 44rem;
+    margin: 0 auto;
+}
+
+.quotation-sync-head {
+    display: flex;
+    gap: 0.85rem;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+}
+
+.quotation-sync-icon {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.4rem;
+    height: 2.4rem;
+    border-radius: 50%;
+    background: #fff4d6;
+    color: #b07800;
+    font-size: 1.15rem;
+}
+
+.quotation-sync-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #0f172a;
+    margin: 0.15rem 0 0.3rem;
+}
+
+.quotation-sync-question {
+    color: #334155;
+}
+
+.quotation-sync-facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+    gap: 0.6rem;
+    margin: 0 0 1rem;
+}
+
+.quotation-sync-facts > div {
+    border: 1px solid #e5e7eb;
+    border-radius: 0.5rem;
+    background: #f8fafc;
+    padding: 0.55rem 0.75rem;
+    min-width: 0;
+}
+
+.quotation-sync-facts dt {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #64748b;
+    margin-bottom: 0.15rem;
+}
+
+.quotation-sync-facts dd {
+    margin: 0;
+    font-weight: 600;
+    color: #0f172a;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+}
+
+.quotation-sync-extra {
+    margin-bottom: 1rem;
+}
+
+.quotation-sync-note {
+    display: flex;
+    gap: 0.45rem;
+    font-size: 0.8rem;
+    color: #64748b;
+}
+
+.quotation-sync-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    width: 100%;
+}
+
+/* The two answers in two colours, each washed faintly in its own hue so they
+   read apart at a glance while staying the outlined buttons the rest of the
+   site uses: grey keeps what is on record, blue changes it too. */
+.quotation-sync-actions .quotation-sync-keep {
+    --bs-btn-bg: rgba(108, 117, 125, .07);
+    font-weight: 600;
+}
+
+.quotation-sync-actions .quotation-sync-change {
+    --bs-btn-bg: rgba(45, 141, 225, .08);
+    font-weight: 600;
+}
+
+/* Cancel sits apart from the two answers, on the left, so it is never taken
+   for one of them. */
+.quotation-sync-actions > [data-quotation-sync-cancel],
+.quotation-sync-actions > [data-quotation-sync-back] {
+    margin-right: auto;
+}
+
+/* ---- Quotation History dialog ---- */
+
+.quotation-history-current {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    margin-bottom: 1rem;
+}
+
+.quotation-history-table th {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #64748b;
+}
+
+/* ---- File history ----
+   The icon-only button that opens a document type's history, and the table
+   inside it. */
+
+.project-history-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.9rem;
+    height: 1.9rem;
+    padding: 0;
+    line-height: 1;
+}
+
+.document-history-table th {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #64748b;
+}
+
+.document-history-file {
+    max-width: 16rem;
+}
+
+/* A removed file was deleted: its name is kept, struck through and grey, so
+   it cannot be taken for a link. */
+.document-history-gone {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
+    max-width: 100%;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #94a3b8;
+    text-decoration: line-through;
+}
+
+.document-history-gone span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Gained, moved aside, taken away - the same three meanings the team and
+   schedule history colour by. */
+.document-history-badge {
+    display: inline-block;
+    padding: 0.15rem 0.55rem;
+    border-radius: 999px;
+    border: 1px solid;
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+.document-history-badge.is-uploaded {
+    color: #146c43;
+    border-color: #a3cfbb;
+    background: #e8f5ee;
+}
+
+.document-history-badge.is-replaced {
+    color: #8a5a00;
+    border-color: #f2d58a;
+    background: #fff7e0;
+}
+
+.document-history-badge.is-removed {
+    color: #b02a37;
+    border-color: #f1aeb5;
+    background: #fdecee;
+}
+
 /* ---- Change history dialog ----
  *
  * Opened by the icon-only buttons on the Assigned Team and Project Schedule

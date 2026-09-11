@@ -6,6 +6,7 @@ use App\Http\Requests\StoreProjectRequest;
 use App\Models\ActivityLog;
 use App\Models\Client;
 use App\Models\Document;
+use App\Models\DocumentHistory;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
 use App\Models\ProjectType;
@@ -19,6 +20,7 @@ use App\Rules\NotAnEmployeeEmail;
 use App\Services\ActivityLogger;
 use App\Services\ClientProjects;
 use App\Services\CompletionConfirmability;
+use App\Services\DocumentHistoryLog;
 use App\Services\ImportableTeamSources;
 use App\Services\NotificationService;
 use App\Services\ProjectCompletion;
@@ -32,6 +34,7 @@ use App\Services\ProjectStatusRules;
 use App\Services\ProjectTeam;
 use App\Services\ProjectTeamCandidates;
 use App\Services\ProjectTeamRules;
+use App\Services\QuotationChange;
 use App\Services\ScheduleConsolidation;
 use App\Services\ScheduleHoldCutoff;
 use App\Services\ScheduleModeRules;
@@ -85,7 +88,9 @@ class ProjectController extends Controller
         private readonly ProjectTeam $projectTeam,
         private readonly ScheduleHoldCutoff $holdCutoff,
         private readonly ProjectRegisteredUser $registeredUsers,
-        private readonly CompletionConfirmability $confirmability
+        private readonly CompletionConfirmability $confirmability,
+        private readonly QuotationChange $quotations,
+        private readonly DocumentHistoryLog $documentHistory
     ) {}
 
     public function index(Request $request)
@@ -618,35 +623,60 @@ class ProjectController extends Controller
     }
 
     /**
+     * The files that actually arrived for one upload field.
+     *
+     * A form written before these fields took several files still sends one,
+     * and an empty picker sends nothing usable; both come out of here as a
+     * plain list.
+     *
+     * @param  array<int, UploadedFile|null>|UploadedFile|null  $uploadedFiles
+     * @return Collection<int, UploadedFile>
+     */
+    private function uploadedFiles(array|UploadedFile|null $uploadedFiles): Collection
+    {
+        return collect(is_array($uploadedFiles) ? $uploadedFiles : [$uploadedFiles])
+            ->filter(fn ($file): bool => $file instanceof UploadedFile)
+            ->values();
+    }
+
+    /**
      * File every upload of one document type against the project.
      *
-     * Files are added, never swapped: a quotation can run to several pages,
-     * and a project keeps every one of them until somebody removes it by hand.
+     * Files are added: an assessment can run to several pages, and a project
+     * keeps every one of them until somebody removes it by hand. A quotation
+     * upload replaces the one on record, but that is the caller's decision -
+     * see update() and QuotationChange - and this only ever adds.
      *
      * @param  array<int, UploadedFile>|UploadedFile|null  $uploadedFiles
+     * @param  array<int, string>  $written  collects every path put on the
+     *                                       disk, so a caller whose transaction
+     *                                       rolls back can take the bytes back
+     *                                       off it too
      * @return int how many were stored, so a caller can tell the client only
      *             about a document that actually landed
      */
-    private function storeDocuments(array|UploadedFile|null $uploadedFiles, int $projectId, string $folder): int
-    {
-        // A form written before these fields took several files still sends
-        // one, and is still stored the same way.
-        $files = collect(is_array($uploadedFiles) ? $uploadedFiles : [$uploadedFiles])
-            ->filter(fn ($file): bool => $file instanceof UploadedFile);
+    private function storeDocuments(
+        array|UploadedFile|null $uploadedFiles,
+        int $projectId,
+        string $folder,
+        array &$written = []
+    ): int {
+        $files = $this->uploadedFiles($uploadedFiles);
 
         if ($files->isEmpty()) {
             return 0;
         }
 
-        $files->each(function (UploadedFile $uploadedFile) use ($projectId, $folder): void {
+        $files->each(function (UploadedFile $uploadedFile) use ($projectId, $folder, &$written): void {
             // On the private uploads disk, which is object storage in a
             // deployment and a directory outside public/ everywhere else.
             // Never under public/: a contract is not a static asset, and the
             // route that serves it checks who is asking - see
             // UploadedFileController.
             $path = UploadStore::put($uploadedFile, 'documents');
+            $written[] = $path;
 
-            Document::create([
+            $document = Document::create([
                 'project_id' => $projectId,
                 'document_type' => $folder,
                 // The name it arrived under, so the list reads as the person
@@ -659,6 +689,10 @@ class ProjectController extends Controller
                 'document_path' => $path,
                 'uploaded_at' => now(),
             ]);
+
+            // Every caller is inside a transaction, so the entry goes or
+            // stays with the file it describes.
+            $this->documentHistory->record($document, DocumentHistory::EVENT_UPLOADED, auth()->user());
         });
 
         return $files->count();
@@ -1186,6 +1220,11 @@ class ProjectController extends Controller
             // the project is connected to without a query of its own.
             'clients.account',
             'documents',
+            // The history dialogs: every quotation amount change, and every
+            // file uploaded, replaced or removed - with the file itself where
+            // it still exists, so an entry can open it.
+            'quotationHistory',
+            'documentHistory.document',
             'schedule',
             'schedules',
             'projectTypes',
@@ -1514,6 +1553,10 @@ class ProjectController extends Controller
             'quotationDocument.*' => Document::fileRules(),
             'contractDocument' => ['nullable', 'array', 'max:'.Document::MAX_FILES],
             'contractDocument.*' => Document::fileRules(),
+
+            // What the person answered when the edit dialog asked about the
+            // other half of the quotation - see QuotationChange.
+            'quotation_change' => ['nullable', 'string', 'in:'.implode(',', QuotationChange::CONFIRMATIONS)],
         ], [
             ...PersonName::middleInitialMessages('middle_initial'),
             'assessmentDocument.max' => 'Upload at most '.Document::MAX_FILES.' assessment files at a time.',
@@ -1527,21 +1570,83 @@ class ProjectController extends Controller
             'contractDocument.*.max' => Document::maxMessage('contract'),
         ]);
 
+        // A quotation upload replaces the quotation on record, and changing
+        // the amount or the file on its own is only allowed when the person
+        // said which half to keep. Asked before anything is written, so a
+        // refusal saves nothing at all.
+        $quotationFiles = $this->uploadedFiles($request->file('quotationDocument'));
+        $replacesQuotationFile = $quotationFiles->isNotEmpty();
+
+        $this->quotations->assertConfirmed(
+            $project,
+            $validated['quotation'],
+            $replacesQuotationFile,
+            $validated['quotation_change'] ?? null
+        );
+
         // Collected inside the transaction and read after it commits, so the
         // client is only told about a document that actually landed.
         $uploadedDocuments = [];
 
+        // Every file put on the disk by this save. The rows go with a rollback
+        // and the bytes do not, so a failed save takes these back off.
+        $writtenUploads = [];
+
+        // What happened to the quotation, filled in by the transaction and
+        // read only once it has committed.
+        $quotation = [
+            'previous' => $project->quotation,
+            'amount_changed' => false,
+            'replaced_files' => [],
+        ];
+
         try {
 
-            DB::transaction(function () use ($validated, $request, $id, &$uploadedDocuments) {
+            DB::transaction(function () use (
+                $validated,
+                $request,
+                $id,
+                $quotationFiles,
+                $replacesQuotationFile,
+                &$uploadedDocuments,
+                &$writtenUploads,
+                &$quotation
+            ) {
 
-                $project = Project::findOrFail($id);
+                // Locked, so the amount read as "previous" is the one this
+                // save is actually replacing.
+                $project = Project::query()->lockForUpdate()->findOrFail($id);
+                $actor = $request->user();
+
+                $previousAmount = $project->quotation;
+                $amountChanged = ! QuotationChange::sameAmount($previousAmount, $validated['quotation']);
 
                 $project->update([
                     'quotation' => $validated['quotation'],
                     'address' => $validated['address'],
                     'description' => $validated['project_description'],
                 ]);
+
+                // Written beside the amount it describes, inside the same
+                // transaction: if anything later in this save fails - a file
+                // that will not store, a client row that is missing - the
+                // history row is rolled back with the amount, and no record
+                // claims a change that never happened.
+                if ($amountChanged) {
+                    $this->quotations->recordAmountChange(
+                        $project,
+                        $previousAmount,
+                        $validated['quotation'],
+                        $replacesQuotationFile,
+                        $actor
+                    );
+                }
+
+                $quotation = [
+                    'previous' => $previousAmount,
+                    'amount_changed' => $amountChanged,
+                    'replaced_files' => [],
+                ];
 
                 $client = Client::query()
                     ->where('project_id', $project->project_id)
@@ -1564,28 +1669,46 @@ class ProjectController extends Controller
 
                 $project->projectTypes()->sync($validated['project_types']);
 
-                // Anything uploaded is added to what the project already
-                // holds. Files are only ever taken away one at a time, by the
-                // remove button beside each of them.
-                if ($this->storeDocuments($request->file('assessmentDocument'), $project->project_id, 'assessment')) {
+                // An assessment or a contract upload is added to what the
+                // project already holds. Those files are only ever taken away
+                // one at a time, by the remove button beside each of them.
+                if ($this->storeDocuments($request->file('assessmentDocument'), $project->project_id, 'assessment', $writtenUploads)) {
                     $uploadedDocuments[] = 'assessment';
                 }
 
-                if ($this->storeDocuments($request->file('quotationDocument'), $project->project_id, 'quotation')) {
-                    $uploadedDocuments[] = 'quotation';
+                // A quotation upload replaces the quotation on record. The
+                // files it replaces are kept - superseded, not deleted - and
+                // read from the quotation history from here on.
+                if ($replacesQuotationFile) {
+                    $quotation['replaced_files'] = $this->quotations
+                        ->supersedeCurrentFiles($project, $actor)
+                        ->pluck('document_name')
+                        ->all();
+
+                    if ($this->storeDocuments($quotationFiles->all(), $project->project_id, 'quotation', $writtenUploads)) {
+                        $uploadedDocuments[] = 'quotation';
+                    }
                 }
 
                 if ($client->client_type === 'Commercial') {
-                    if ($this->storeDocuments($request->file('contractDocument'), $project->project_id, 'contract')) {
+                    if ($this->storeDocuments($request->file('contractDocument'), $project->project_id, 'contract', $writtenUploads)) {
                         $uploadedDocuments[] = 'contract';
                     }
                 }
             });
 
+            $quotationSentence = $this->quotations->describe(
+                $quotation['previous'],
+                $validated['quotation'],
+                $quotation['amount_changed'],
+                $replacesQuotationFile,
+                $quotation['replaced_files']
+            );
+
             $this->activityLogger->record(
                 ActivityLog::PROJECT_UPDATED,
                 null,
-                sprintf("Updated the details of project '%s'.", $project->reference_no),
+                trim(sprintf("Updated the details of project '%s'. %s", $project->reference_no, $quotationSentence)),
                 $project
             );
 
@@ -1599,8 +1722,25 @@ class ProjectController extends Controller
 
             return redirect()
                 ->route('super-admin.projects.show', $id)
-                ->with('success', 'Project updated successfully.');
+                ->with('success', $this->quotations->flashMessage(
+                    $quotation['previous'],
+                    $validated['quotation'],
+                    $quotation['amount_changed'],
+                    $replacesQuotationFile
+                ));
         } catch (Throwable $e) {
+
+            // The rollback took the rows back out; these are the bytes they
+            // pointed at, which no row now names.
+            foreach ($writtenUploads as $path) {
+                try {
+                    UploadStore::remove($path);
+                } catch (Throwable $cleanupFailure) {
+                    // An orphan is swept up later by uploads:prune-orphans;
+                    // the save's own failure is the one worth reporting here.
+                    report($cleanupFailure);
+                }
+            }
 
             return redirect()
                 ->route('super-admin.projects.show', $id)
@@ -1633,7 +1773,13 @@ class ProjectController extends Controller
         $type = $document->document_type;
         $path = $document->document_path;
 
-        $document->delete();
+        // The entry keeps the file's name and type after the row is gone, so
+        // the document history can still say what was removed and by whom.
+        DB::transaction(function () use ($document, $request): void {
+            $this->documentHistory->record($document, DocumentHistory::EVENT_REMOVED, $request->user());
+
+            $document->delete();
+        });
 
         // The row is what the pages read, so it goes first; a file left on
         // the disk by a failed delete is invisible rather than broken.

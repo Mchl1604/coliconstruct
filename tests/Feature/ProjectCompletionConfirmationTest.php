@@ -147,6 +147,9 @@ class ProjectCompletionConfirmationTest extends TestCase
             'contact_number' => '09123456789',
             'email_address' => self::CLIENT_EMAIL,
             'quotation' => 2000,
+            // A new amount, confirmed as keeping the existing quotation file -
+            // what the edit dialog sends once it has asked. See QuotationChange.
+            'quotation_change' => 'amount',
             'project_description' => 'Updated description',
             'project_types' => [$type->type_id],
         ];

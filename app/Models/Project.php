@@ -333,9 +333,53 @@ class Project extends Model
         return $this->hasMany(Client::class, 'project_id', 'project_id');
     }
 
+    /**
+     * The documents the project holds now.
+     *
+     * A quotation file that has been replaced is not one of them. It is kept -
+     * see supersededQuotations() - but every screen that lists a project's
+     * documents, the client's and the crew's included, is answering "what is
+     * on file", and a replaced quotation next to its replacement is exactly
+     * the mismatch replacing it was meant to end.
+     */
     public function documents(): HasMany
     {
-        return $this->hasMany(Document::class, 'project_id', 'project_id');
+        return $this->hasMany(Document::class, 'project_id', 'project_id')
+            ->whereNull('superseded_at');
+    }
+
+    /**
+     * The quotation files this project has replaced, most recently replaced
+     * first. Read by the quotation history and nothing else.
+     */
+    public function supersededQuotations(): HasMany
+    {
+        return $this->hasMany(Document::class, 'project_id', 'project_id')
+            ->where('document_type', 'quotation')
+            ->whereNotNull('superseded_at')
+            ->orderByDesc('superseded_at')
+            ->orderByDesc('document_id');
+    }
+
+    /**
+     * Every file this project has had uploaded, replaced or removed, of every
+     * document type, newest first.
+     */
+    public function documentHistory(): HasMany
+    {
+        return $this->hasMany(DocumentHistory::class, 'project_id', 'project_id')
+            ->orderByDesc('created_at')
+            ->orderByDesc('document_history_id');
+    }
+
+    /**
+     * Every change made to the quotation amount, newest first.
+     */
+    public function quotationHistory(): HasMany
+    {
+        return $this->hasMany(QuotationHistory::class, 'project_id', 'project_id')
+            ->orderByDesc('created_at')
+            ->orderByDesc('quotation_history_id');
     }
 
     public function schedule(): HasOne

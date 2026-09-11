@@ -45,7 +45,14 @@ class UploadStore
         $extension = strtolower($file->getClientOriginalExtension() ?: $file->guessExtension() ?: 'bin');
         $name = Str::uuid()->toString().'.'.$extension;
 
-        self::disk()->putFileAs($folder, $file, $name);
+        // A disk that is not configured to throw reports a failed write by
+        // returning false. Returning the path anyway would hand the caller a
+        // row pointing at nothing, inside a transaction that then commits it -
+        // so a write that did not happen fails here, and the save around it
+        // rolls back.
+        if (self::disk()->putFileAs($folder, $file, $name) === false) {
+            throw new \RuntimeException('The file could not be stored. Nothing was saved.');
+        }
 
         return $folder.'/'.$name;
     }
