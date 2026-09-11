@@ -62,6 +62,22 @@ class ProjectController extends Controller
      */
     private const REOPEN_PICKER_HORIZON_MONTHS = 24;
 
+    /**
+     * How many entries a page of the Activity Logs section on Project
+     * Information holds. Ten, the same as every other paginated table in the
+     * system - see ConfigurationController::PER_PAGE.
+     */
+    private const PROJECT_ACTIVITY_PER_PAGE = 10;
+
+    /**
+     * The query parameter that section pages on.
+     *
+     * Named rather than the default `page` because this page already answers
+     * to other query parameters, and a plain `page` would be the wrong name
+     * the moment anything else on it paginates.
+     */
+    private const PROJECT_ACTIVITY_PAGE_NAME = 'activity_page';
+
     public function __construct(
         private readonly ActivityLogger $activityLogger,
         private readonly NotificationService $notifications,
@@ -1355,6 +1371,38 @@ class ProjectController extends Controller
         // loaded. Never the current report: that one is read off the project.
         $previousCompletionReports = $project->completionReports;
 
+        // This project's own audit trail, for the section at the foot of
+        // Project Information.
+        //
+        // Read from tbl_activity_logs through the same two scopes the Activity
+        // Logs page is drawn through, so nothing here is a second logging
+        // system and nothing is recorded twice: forProject() decides which
+        // entries belong to this job, visibleTo() decides which of them this
+        // reader may see - an Admin does not get to read another
+        // administrator's trail here any more than they do there - and
+        // latestFirst() puts them in the newest-first order that page uses.
+        //
+        // Paginated rather than capped: a long-running project carries more
+        // entries than anybody wants in one page, and an audit trail that
+        // silently stops at fifty is one somebody has to go somewhere else to
+        // finish reading.
+        //
+        // withQueryString() keeps whatever else the page was asked for - the
+        // report type filter, say - so paging the trail does not quietly undo
+        // it, and fragment() returns the reader to the section rather than to
+        // the top of the page.
+        $activityLogs = ActivityLog::query()
+            ->forProject($project->project_id)
+            ->visibleTo($request->user())
+            ->latestFirst()
+            ->paginate(
+                self::PROJECT_ACTIVITY_PER_PAGE,
+                ['*'],
+                self::PROJECT_ACTIVITY_PAGE_NAME
+            )
+            ->withQueryString()
+            ->fragment('project-activity-log');
+
         return view('super-admin.projectDetails', compact(
             'project',
             'projectTypes',
@@ -1386,7 +1434,8 @@ class ProjectController extends Controller
             'canCompletePhase',
             'canOverridePhaseStructure',
             'canOverridePhaseCompletion',
-            'selectablePhases'
+            'selectablePhases',
+            'activityLogs'
         ));
 
     }

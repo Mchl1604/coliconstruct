@@ -733,3 +733,35 @@
     color: #94a3b8;
     font-size: 0.85rem;
 }
+
+
+/* ---- Activity Logs, at the foot of Project Information ---- */
+
+/* The trail is read by scrolling, and the headings stay put while it is -
+   the same treatment .config-log-table gives the full Activity Logs page. */
+.project-activity-log-table {
+    max-height: 32rem;
+    overflow-y: auto;
+}
+
+.project-activity-log-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+}
+
+/* Details can run long; let them wrap rather than stretch the table. */
+.project-activity-log-details {
+    min-width: 18rem;
+    max-width: 32rem;
+    white-space: normal;
+}
+
+/* Lead Technician has no Bootstrap background of its own, and the badge class
+   comes from ActivityLog::ROLE_BADGE_CLASSES - the same one Configuration
+   draws. Repeated here because this page does not load configuration.css, and
+   the colour has to mean the same thing on both. */
+.badge-role-lead {
+    background-color: #7c3aed;
+    color: #fff;
+}

@@ -1592,6 +1592,13 @@ document.addEventListener("DOMContentLoaded", function () {
 
     let confirmHandler = null;
 
+    /**
+     * What to do once the action has gone through. User Management wants its
+     * tables refreshed; the other panels on this page want their own thing, so
+     * they say so and the default stays what it always was.
+     */
+    let confirmSuccess = null;
+
     function askConfirmation(settings) {
         confirmTitle.textContent = settings.title;
         confirmBody.textContent = settings.body;
@@ -1599,10 +1606,26 @@ document.addEventListener("DOMContentLoaded", function () {
         // Only the classes change; the spinner and label stay as they are.
         confirmSubmit.className = "btn " + (settings.variant || "btn-primary");
         confirmHandler = settings.onConfirm;
+        confirmSuccess = settings.onSuccess || null;
 
         setAlert(confirmError, "");
         bootstrapModal(confirmModalEl)?.show();
     }
+
+    /**
+     * The same dialog, for the other panels on this page.
+     *
+     * Shared rather than copied because a page with two confirmation dialogs on
+     * it has two of everything that can drift - the wording of the Cancel
+     * button, where a failure is reported, whether the dialog closes on one.
+     * Project Types and Default Phases both ask destructive questions, and they
+     * should look like the questions User Management asks.
+     *
+     * Settings are as above, plus `onSuccess`. `onConfirm` returns a promise of
+     * { ok, body } - a refusal keeps the dialog open with the reason inside it,
+     * which is the whole reason this is not window.confirm().
+     */
+    window.configurationConfirm = askConfirmation;
 
     confirmSubmit.addEventListener("click", function () {
         if (!confirmHandler) {
@@ -1625,7 +1648,8 @@ document.addEventListener("DOMContentLoaded", function () {
             }
 
             bootstrapModal(confirmModalEl)?.hide();
-            refreshTables();
+
+            (confirmSuccess || refreshTables)(result.body);
 
             if (result.body.password && result.body.account) {
                 showCredentials(
@@ -1642,6 +1666,7 @@ document.addEventListener("DOMContentLoaded", function () {
     // otherwise strip the spinner it contains.
     confirmModalEl.addEventListener("hidden.bs.modal", function () {
         confirmHandler = null;
+        confirmSuccess = null;
     });
 
     // ---------------------------------------------------------------

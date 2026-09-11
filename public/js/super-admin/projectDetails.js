@@ -453,23 +453,47 @@ if (taskStartDate) {
      * field on the form, and nothing else on the page says that picking a name
      * in it removes somebody. So the replacement is named before it happens.
      */
-    function confirmLeadReplacement() {
+    /**
+     * Whether this save is replacing the lead, rather than leaving them alone.
+     */
+    function replacesLead() {
         const previousLeadId = initialState.leadTechId;
 
-        if (!previousLeadId || String(previousLeadId) === String(leadTechSelect.value)) {
-            return true;
-        }
+        return Boolean(previousLeadId)
+            && String(previousLeadId) !== String(leadTechSelect.value);
+    }
 
-        const outgoing = technicianLookup.get(String(previousLeadId));
+    /**
+     * Ask, in the page's own dialog.
+     *
+     * Was a window.confirm(), which put the consequence - somebody comes off
+     * the project and their work is unassigned - into the same grey paragraph
+     * as the question, in a box that looks like the browser complaining. It is
+     * the most consequential thing this form does and it should read like it.
+     */
+    function confirmLeadReplacement() {
+        const outgoing = technicianLookup.get(String(initialState.leadTechId));
         const incoming = technicianLookup.get(String(leadTechSelect.value));
 
-        return window.confirm(
-            'Replace ' + (outgoing ? outgoing.name : 'the current lead technician') +
-            ' with ' + (incoming ? incoming.name : 'the selected technician') + ' as lead?' +
-            '\n\n' + (outgoing ? outgoing.name : 'The current lead') +
-            ' comes off the project and their open tasks become Unassigned.'
-        );
+        return window.confirmDialog({
+            title: 'Replace the lead technician?',
+            body:
+                (outgoing ? outgoing.name : 'The current lead technician') +
+                ' will be replaced by ' +
+                (incoming ? incoming.name : 'the selected technician') + '.',
+            detail:
+                (outgoing ? outgoing.name : 'The current lead') +
+                ' comes off the project, and their open tasks become Unassigned.',
+            label: 'Replace Lead',
+        });
     }
+
+    /**
+     * The dialog answers later than a submit handler can wait, so the submit is
+     * always stopped and re-fired once the question has been answered. The flag
+     * is what stops the second pass asking again.
+     */
+    let leadReplacementConfirmed = false;
 
     form.addEventListener('submit', function(event) {
         if (!leadTechSelect.value) {
@@ -481,9 +505,23 @@ if (taskStartDate) {
             return;
         }
 
-        if (!confirmLeadReplacement()) {
-            event.preventDefault();
+        if (leadReplacementConfirmed || !replacesLead()) {
+            return;
         }
+
+        event.preventDefault();
+
+        confirmLeadReplacement().then(function(confirmed) {
+            if (!confirmed) {
+                return;
+            }
+
+            leadReplacementConfirmed = true;
+            // requestSubmit() rather than submit(), so the form runs its own
+            // validation and this handler sees the second pass - submit()
+            // would skip both.
+            form.requestSubmit();
+        });
     });
 
     /**
@@ -643,35 +681,42 @@ if (taskStartDate) {
 
             const label = button.dataset.documentLabel || 'this file';
 
-            if (!window.confirm('Remove "' + label + '" from this project?')) {
-                return;
-            }
-
             button.disabled = true;
             showError('');
 
-            fetch(button.dataset.documentRemove, {
-                method: 'DELETE',
-                headers: {
-                    Accept: 'application/json',
-                    'X-CSRF-TOKEN': token,
-                    'X-Requested-With': 'XMLHttpRequest',
+            // The dialog is handed the request as well as the question, so a
+            // refusal is rendered inside it - beside the file being removed -
+            // rather than in the alert at the top of a panel the reader may
+            // have scrolled past.
+            window.confirmDialog({
+                title: 'Remove this file?',
+                body: '"' + label + '" will be removed from this project.',
+                detail: 'The file is deleted. This cannot be undone.',
+                label: 'Remove File',
+                onConfirm: function () {
+                    return fetch(button.dataset.documentRemove, {
+                        method: 'DELETE',
+                        headers: {
+                            Accept: 'application/json',
+                            'X-CSRF-TOKEN': token,
+                            'X-Requested-With': 'XMLHttpRequest',
+                        },
+                    }).then(function (response) {
+                        return response
+                            .json()
+                            .catch(function () {
+                                return {};
+                            })
+                            .then(function (body) {
+                                return { ok: response.ok, body: body };
+                            });
+                    });
                 },
             })
-                .then(function (response) {
-                    return response
-                        .json()
-                        .catch(function () {
-                            return {};
-                        })
-                        .then(function (body) {
-                            return { ok: response.ok, body: body };
-                        });
-                })
                 .then(function (result) {
-                    if (!result.ok) {
+                    // They backed out. The row stays exactly as it was.
+                    if (result === false) {
                         button.disabled = false;
-                        showError(result.body.error || 'Unable to remove that file.');
 
                         return;
                     }

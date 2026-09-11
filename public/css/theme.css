@@ -180,3 +180,21 @@
     --ui-btn-line: #212529;
     --ui-btn-rgb: 33, 37, 41;
 }
+
+/* ------------------------------------------------------------------
+   The shared confirmation dialog (x-confirm-dialog).
+
+   One rule, for the block that carries the consequence rather than the
+   question. It is set apart because in a browser confirm() the two ran
+   together in one grey paragraph, and the consequence - who comes off a
+   project, what stops being editable - is the half worth reading twice.
+   ------------------------------------------------------------------ */
+
+.app-confirm-detail {
+    padding: .65rem .8rem;
+    border-radius: .45rem;
+    border-left: 3px solid #e0a800;
+    background: #fff8e6;
+    color: #7a5510;
+    font-size: .86rem;
+}

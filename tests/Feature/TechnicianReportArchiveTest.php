@@ -531,12 +531,16 @@ class TechnicianReportArchiveTest extends TestCase
 
         $this->assertSame([], $titles);
 
-        // Nor on the project's own report list, whichever page filed them away.
+        // Nor on the project's own report list, whichever page filed them
+        // away. Asked by the card's marker rather than by the title: the
+        // Activity Logs section at the foot of Project Information names each
+        // report in the entry recording that it was archived, which is the
+        // point of that entry.
         $this->actingAs($this->superAdmin)
             ->get(route('super-admin.projects.show', $this->project->project_id))
             ->assertOk()
-            ->assertDontSee('Archived from details')
-            ->assertDontSee('Archived from reports');
+            ->assertDontSee('data-report-card="'.$fromDetails->id.'"', false)
+            ->assertDontSee('data-report-card="'.$fromReports->id.'"', false);
     }
 
     public function test_a_restored_report_returns_to_both_active_lists(): void

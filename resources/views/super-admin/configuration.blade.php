@@ -749,16 +749,62 @@
 
                             <div class="phase-template-panel" id="phaseTemplatesPane">
 
-                                <div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3">
+                                <div class="phase-template-header">
                                     <div>
-                                        <h5 class="fw-bold mb-1">
-                                            <i class="bi bi-list-check me-1" aria-hidden="true"></i>
+                                        <h5 class="phase-template-title mb-1">
+                                            <i class="bi bi-list-check" aria-hidden="true"></i>
                                             Default Phases &amp; Tasks
                                         </h5>
                                         <p class="text-secondary small mb-0">
-                                            What each kind of job starts with. Projects already set up are
-                                            never changed by an edit here.
+                                            What each kind of job starts with when a new project is set up.
                                         </p>
+                                    </div>
+
+                                    <span class="phase-template-safe-badge">
+                                        <i class="bi bi-shield-check" aria-hidden="true"></i>
+                                        Projects already set up are never changed
+                                    </span>
+                                </div>
+
+                                {{-- The one idea nobody guesses from the controls:
+                                     stages are shared so that a project which is
+                                     two types at once gets ONE phase per stage
+                                     carrying both types' work. Shown as a worked
+                                     example, because the sentence alone has never
+                                     been enough. --}}
+                                <div class="phase-template-explainer">
+                                    <div class="phase-explainer-copy">
+                                        <h6 class="mb-1">
+                                            <i class="bi bi-info-circle-fill me-1" aria-hidden="true"></i>
+                                            Why there are two lists
+                                        </h6>
+                                        <p class="mb-0 small">
+                                            A project can be more than one type at once. <strong>Stages</strong>
+                                            are shared, so two types that both have a Site Preparation produce
+                                            <em>one</em> phase &mdash; carrying both of their tasks.
+                                            <strong>Tasks</strong> belong to a type, because that is the part
+                                            that actually differs.
+                                        </p>
+                                    </div>
+
+                                    <div class="phase-explainer-demo" aria-hidden="true">
+                                        <div class="phase-demo-side">
+                                            <span class="phase-demo-chip phase-demo-chip-a">Aircon</span>
+                                            <span class="phase-demo-line">Site Preparation</span>
+                                            <span class="phase-demo-task">Mark unit positions</span>
+                                        </div>
+                                        <div class="phase-demo-plus">+</div>
+                                        <div class="phase-demo-side">
+                                            <span class="phase-demo-chip phase-demo-chip-b">Ducting</span>
+                                            <span class="phase-demo-line">Site Preparation</span>
+                                            <span class="phase-demo-task">Survey duct routes</span>
+                                        </div>
+                                        <div class="phase-demo-arrow"><i class="bi bi-arrow-right"></i></div>
+                                        <div class="phase-demo-side phase-demo-result">
+                                            <span class="phase-demo-line">Phase 1 &mdash; Site Preparation</span>
+                                            <span class="phase-demo-task">Mark unit positions</span>
+                                            <span class="phase-demo-task">Survey duct routes</span>
+                                        </div>
                                     </div>
                                 </div>
 
@@ -771,71 +817,112 @@
                                 <div class="alert alert-danger mb-3 d-none" role="alert" data-phase-template-error></div>
                                 <div class="alert alert-success mb-3 d-none" role="alert" data-phase-template-success></div>
 
-                                <div class="row g-4 d-none" data-phase-template-body>
+                                <div class="phase-template-grid d-none" data-phase-template-body>
 
-                                    {{-- The vocabulary. --}}
-                                    <div class="col-lg-5">
-                                        <div class="phase-stage-card">
-                                            <h6 class="fw-bold mb-1">Phase Stages</h6>
-                                            <p class="text-secondary small">
-                                                The stages a job can go through, in the order they happen.
-                                                Shared by every project type &mdash; two types using the
-                                                same stage produce one phase, not two.
-                                            </p>
-
-                                            <form class="row g-2 align-items-end mb-3" data-stage-add-form novalidate>
-                                                <div class="col-12">
-                                                    <label class="form-label small fw-semibold mb-1" for="stageName">
-                                                        Stage name
-                                                    </label>
-                                                    <input type="text" class="form-control form-control-sm"
-                                                        id="stageName" maxlength="150"
-                                                        placeholder="e.g. Rough-In / Wiring" data-stage-name required>
-                                                </div>
-                                                <div class="col-12">
-                                                    <label class="form-label small fw-semibold mb-1"
-                                                        for="stageDescription">
-                                                        Description
-                                                    </label>
-                                                    <textarea class="form-control form-control-sm" id="stageDescription"
-                                                        rows="2" maxlength="500"
-                                                        placeholder="What happens during this stage"
-                                                        data-stage-description required></textarea>
-                                                </div>
-                                                <div class="col-12">
-                                                    <button type="submit" class="btn btn-primary btn-sm px-3"
-                                                        data-stage-add>
-                                                        <span class="spinner-border spinner-border-sm me-1 d-none"
-                                                            role="status" aria-hidden="true"
-                                                            data-stage-add-spinner></span>
-                                                        <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
-                                                        Add Stage
-                                                    </button>
-                                                </div>
-                                            </form>
-
-                                            <ul class="phase-stage-list" data-stage-list></ul>
-
-                                            <div class="schedule-empty-state mt-2 d-none" data-stage-empty>
-                                                No stages yet. Add the first one above.
+                                    {{-- Step 1: the shared vocabulary. --}}
+                                    <section class="phase-template-col phase-template-col-stages">
+                                        <div class="phase-step-head">
+                                            <span class="phase-step-number">1</span>
+                                            <div>
+                                                <h6 class="mb-0">Phase Stages</h6>
+                                                <p class="phase-step-sub mb-0">
+                                                    Shared by every project type, in the order jobs run.
+                                                </p>
                                             </div>
                                         </div>
-                                    </div>
 
-                                    {{-- One type's template. --}}
-                                    <div class="col-lg-7">
-                                        <div class="phase-stage-card">
-                                            <div class="d-flex flex-wrap gap-2 align-items-end mb-3">
-                                                <div class="flex-grow-1">
-                                                    <label class="form-label small fw-semibold mb-1"
-                                                        for="phaseTemplateType">
-                                                        Default phases for
-                                                    </label>
-                                                    <select class="form-select form-select-sm" id="phaseTemplateType"
-                                                        data-phase-template-type></select>
-                                                </div>
+                                        <p class="phase-step-note">
+                                            <i class="bi bi-lightning-charge-fill" aria-hidden="true"></i>
+                                            Changes here save straight away.
+                                        </p>
 
-                                                <button type="button" class="btn btn-primary btn-sm px-3"
+                                        <button type="button" class="phase-add-toggle" data-stage-add-toggle
+                                            aria-expanded="false">
+                                            <i class="bi bi-plus-lg" aria-hidden="true"></i>
+                                            Add a stage
+                                        </button>
+
+                                        <form class="phase-add-form d-none" data-stage-add-form novalidate>
+                                            <label class="form-label small fw-semibold mb-1" for="stageName">
+                                                Stage name
+                                            </label>
+                                            <input type="text" class="form-control form-control-sm mb-2"
+                                                id="stageName" maxlength="150"
+                                                placeholder="e.g. Rough-In / Wiring" data-stage-name required>
+
+                                            <label class="form-label small fw-semibold mb-1" for="stageDescription">
+                                                Description
+                                            </label>
+                                            <textarea class="form-control form-control-sm mb-2" id="stageDescription"
+                                                rows="2" maxlength="500"
+                                                placeholder="What happens during this stage"
+                                                data-stage-description required></textarea>
+
+                                            <div class="d-flex gap-2">
+                                                <button type="submit" class="btn btn-primary btn-sm px-3"
+                                                    data-stage-add>
+                                                    <span class="spinner-border spinner-border-sm me-1 d-none"
+                                                        role="status" aria-hidden="true"
+                                                        data-stage-add-spinner></span>
+                                                    Add Stage
+                                                </button>
+                                                <button type="button" class="btn btn-outline-secondary btn-sm px-3"
+                                                    data-stage-add-cancel>
+                                                    Cancel
+                                                </button>
+                                            </div>
+                                        </form>
+
+                                        <ol class="phase-stage-list" data-stage-list></ol>
+
+                                        <div class="phase-empty-state d-none" data-stage-empty>
+                                            <i class="bi bi-layers" aria-hidden="true"></i>
+                                            <p class="mb-0">No stages yet. Add the first one above.</p>
+                                        </div>
+                                    </section>
+
+                                    {{-- Step 2: one type's template. --}}
+                                    <section class="phase-template-col phase-template-col-types">
+                                        <div class="phase-step-head">
+                                            <span class="phase-step-number">2</span>
+                                            <div>
+                                                <h6 class="mb-0">Default work per project type</h6>
+                                                <p class="phase-step-sub mb-0">
+                                                    Pick a type, tick the stages its work goes through, then list
+                                                    what it starts with.
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        {{-- A row of cards rather than a dropdown: which type is being
+                                             edited is the thing most worth never having to check, and the
+                                             ones nobody has written yet are visible without opening
+                                             anything. --}}
+                                        <div class="phase-type-picker" role="tablist"
+                                            aria-label="Project type" data-phase-template-types></div>
+
+                                        <div data-phase-template-stages></div>
+
+                                        <div class="phase-empty-state d-none" data-phase-template-empty>
+                                            <i class="bi bi-layers" aria-hidden="true"></i>
+                                            <p class="mb-0">Add a phase stage in step 1 before writing a template.</p>
+                                        </div>
+
+                                        {{-- Unlike step 1, nothing here is written until this bar is used.
+                                             It stays put at the bottom of the panel so a long stage list
+                                             cannot scroll the Save button out of reach. --}}
+                                        <div class="phase-save-bar" data-phase-template-savebar>
+                                            <span class="phase-save-state" data-phase-template-state>
+                                                <i class="bi bi-check2-circle" aria-hidden="true"></i>
+                                                All changes saved
+                                            </span>
+
+                                            <div class="d-flex gap-2">
+                                                <button type="button" class="btn btn-outline-secondary btn-sm px-3"
+                                                    data-phase-template-discard disabled>
+                                                    Discard
+                                                </button>
+                                                <button type="button" class="btn btn-primary btn-sm px-4"
                                                     data-phase-template-save disabled>
                                                     <span class="spinner-border spinner-border-sm me-1 d-none"
                                                         role="status" aria-hidden="true"
@@ -843,21 +930,8 @@
                                                     Save
                                                 </button>
                                             </div>
-
-                                            <p class="text-secondary small">
-                                                Tick the stages this kind of job goes through, then list the
-                                                work it starts with in each. A project that is more than one
-                                                type gets every ticked stage, with all of their tasks merged
-                                                under it.
-                                            </p>
-
-                                            <div data-phase-template-stages></div>
-
-                                            <div class="schedule-empty-state mt-2 d-none" data-phase-template-empty>
-                                                Add a phase stage on the left before writing a template.
-                                            </div>
                                         </div>
-                                    </div>
+                                    </section>
 
                                 </div>
                             </div>

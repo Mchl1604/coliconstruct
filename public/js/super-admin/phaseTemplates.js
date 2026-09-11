@@ -1,25 +1,26 @@
 /**
  * Configuration -> System Settings -> Project Settings -> Default Phases & Tasks.
  *
- * Two editors side by side, because the feature has two levels and they answer
- * different questions.
+ * Two steps, laid out as two steps, because the feature has two levels and the
+ * first version of this screen showed them as two equal columns - which left
+ * "Site Preparation" on screen twice with nothing saying how the two were
+ * related.
  *
- * The stage list on the left is shared vocabulary. Every project type refers to
- * the same "Installation", and the order they are listed in here is the order
- * every project's phases come out in - which is what makes a project that is
- * two types at once produce one coherent structure rather than two lists
- * stapled together.
+ *   Step 1, the stage vocabulary, is shared by every project type. It is what
+ *   makes a project that is two types at once come out with ONE Site
+ *   Preparation phase rather than two, and it is the only place the order of
+ *   phases is decided. Writes here go to the server immediately.
  *
- * The panel on the right is one type's template: which of those stages its work
- * goes through, and what it starts with in each. That is the half that differs
- * between types, and the half that gets merged under a shared heading when a
- * project has more than one.
+ *   Step 2 is one type's template: which of those stages its work goes
+ *   through, and what it starts with in each. This is the half that differs
+ *   between types and gets merged under a shared heading. Nothing here is
+ *   written until Save, so the working copy is held in `template` and the bar
+ *   at the bottom says whether it matches what is stored.
  *
- * Every write goes to the server and comes back with the whole catalogue, so
- * what is on screen is what was saved rather than what this file guessed. The
- * one exception is the template editor's own working copy, which is held here
- * while it is being edited and sent in a single save - a tick and a typed task
- * are one decision, and half of it landing would be worse than neither.
+ * Every write answers with the whole catalogue, so what is on screen is what
+ * was saved rather than what this file guessed. Destructive questions go
+ * through the page's own confirmation dialog rather than window.confirm(),
+ * which cannot show the server's reason for a refusal.
  */
 document.addEventListener("DOMContentLoaded", function () {
     const pane = document.getElementById("phaseTemplatesPane");
@@ -39,6 +40,8 @@ document.addEventListener("DOMContentLoaded", function () {
     const errorBox = pane.querySelector("[data-phase-template-error]");
     const successBox = pane.querySelector("[data-phase-template-success]");
 
+    const addToggle = pane.querySelector("[data-stage-add-toggle]");
+    const addCancel = pane.querySelector("[data-stage-add-cancel]");
     const stageForm = pane.querySelector("[data-stage-add-form]");
     const stageName = pane.querySelector("[data-stage-name]");
     const stageDescription = pane.querySelector("[data-stage-description]");
@@ -47,11 +50,14 @@ document.addEventListener("DOMContentLoaded", function () {
     const stageList = pane.querySelector("[data-stage-list]");
     const stageEmpty = pane.querySelector("[data-stage-empty]");
 
-    const typeSelect = pane.querySelector("[data-phase-template-type]");
+    const typePicker = pane.querySelector("[data-phase-template-types]");
     const stagesHolder = pane.querySelector("[data-phase-template-stages]");
     const templateEmpty = pane.querySelector("[data-phase-template-empty]");
+    const saveBar = pane.querySelector("[data-phase-template-savebar]");
+    const saveState = pane.querySelector("[data-phase-template-state]");
     const saveButton = pane.querySelector("[data-phase-template-save]");
     const saveSpinner = pane.querySelector("[data-phase-template-save-spinner]");
+    const discardButton = pane.querySelector("[data-phase-template-discard]");
 
     const token =
         document.querySelector('meta[name="csrf-token"]')?.content || "";
@@ -60,11 +66,11 @@ document.addEventListener("DOMContentLoaded", function () {
     let types = [];
     let maxTasks = 50;
 
-    /** The template being edited, held here until Save. */
+    /** The template being edited, and what it looked like when it was loaded. */
     let template = [];
-    let currentTypeId = null;
+    let saved = "";
 
-    /** The stage whose name is being edited, so only one input is ever open. */
+    let currentTypeId = null;
     let editingStageId = null;
 
     function escapeHtml(value) {
@@ -74,12 +80,17 @@ document.addEventListener("DOMContentLoaded", function () {
         return span.innerHTML;
     }
 
+    function plural(count, word) {
+        return count + " " + word + (count === 1 ? "" : "s");
+    }
+
     function showError(message) {
         errorBox.textContent = message || "";
         errorBox.classList.toggle("d-none", !message);
 
         if (message) {
             showSuccess("");
+            errorBox.scrollIntoView({ block: "nearest", behavior: "smooth" });
         }
     }
 
@@ -99,15 +110,27 @@ document.addEventListener("DOMContentLoaded", function () {
             },
             body: payload === undefined ? undefined : JSON.stringify(payload),
         }).then(function (response) {
-            return response.json().then(function (data) {
-                if (!response.ok) {
-                    throw new Error(
-                        data.error || "Something went wrong. Try again.",
-                    );
-                }
+            return response
+                .json()
+                .catch(function () {
+                    return {};
+                })
+                .then(function (payload) {
+                    return { ok: response.ok, body: payload };
+                });
+        });
+    }
 
-                return data;
-            });
+    /** The same call, for the paths that would rather throw than branch. */
+    function must(url, method, payload) {
+        return request(url, method, payload).then(function (result) {
+            if (!result.ok) {
+                throw new Error(
+                    result.body.error || "Something went wrong. Try again.",
+                );
+            }
+
+            return result.body;
         });
     }
 
@@ -117,11 +140,45 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     // ------------------------------------------------------------------
-    // The vocabulary
+    // Step 1: the shared vocabulary
     // ------------------------------------------------------------------
+
+    function toggleAddForm(open) {
+        stageForm.classList.toggle("d-none", !open);
+        addToggle.classList.toggle("d-none", open);
+        addToggle.setAttribute("aria-expanded", open ? "true" : "false");
+
+        if (open) {
+            stageName.focus();
+        } else {
+            stageName.value = "";
+            stageDescription.value = "";
+        }
+    }
+
+    addToggle.addEventListener("click", function () {
+        toggleAddForm(true);
+    });
+
+    addCancel.addEventListener("click", function () {
+        toggleAddForm(false);
+    });
 
     function renderStages() {
         stageEmpty.classList.toggle("d-none", stages.length > 0);
+
+        // Which stages the type on the right is using, so the two steps read as
+        // one screen: a stage in play is marked as such in the list it comes
+        // from, not only in the panel beside it.
+        const inUse = new Set(
+            template
+                .filter(function (stage) {
+                    return stage.selected;
+                })
+                .map(function (stage) {
+                    return stage.stage_id;
+                }),
+        );
 
         stageList.innerHTML = stages
             .map(function (stage, index) {
@@ -130,64 +187,76 @@ document.addEventListener("DOMContentLoaded", function () {
                         '<li class="phase-stage-item is-editing" data-stage-id="' +
                         stage.stage_id +
                         '">' +
+                        '<label class="form-label small fw-semibold mb-1">Stage name</label>' +
                         '<input type="text" class="form-control form-control-sm mb-2" maxlength="150"' +
                         ' value="' +
                         escapeHtml(stage.name) +
                         '" data-stage-edit-name>' +
+                        '<label class="form-label small fw-semibold mb-1">Description</label>' +
                         '<textarea class="form-control form-control-sm mb-2" rows="2" maxlength="500"' +
                         " data-stage-edit-description>" +
                         escapeHtml(stage.default_description) +
                         "</textarea>" +
                         '<div class="d-flex gap-2">' +
-                        '<button type="button" class="btn btn-sm btn-primary" data-stage-save>Save</button>' +
-                        '<button type="button" class="btn btn-sm btn-outline-secondary" data-stage-cancel>Cancel</button>' +
+                        '<button type="button" class="btn btn-sm btn-primary px-3" data-stage-save>Save</button>' +
+                        '<button type="button" class="btn btn-sm btn-outline-secondary px-3" data-stage-cancel>Cancel</button>' +
                         "</div>" +
                         "</li>"
                     );
                 }
 
+                const used = inUse.has(stage.stage_id);
+
                 return (
-                    '<li class="phase-stage-item" data-stage-id="' +
+                    '<li class="phase-stage-item' +
+                    (used ? " is-in-use" : "") +
+                    '" data-stage-id="' +
                     stage.stage_id +
                     '">' +
-                    '<div class="phase-stage-order">' +
-                    '<button type="button" class="btn btn-sm btn-outline-secondary"' +
-                    ' data-stage-move="up" aria-label="Move ' +
-                    escapeHtml(stage.name) +
-                    ' earlier"' +
-                    (index === 0 ? " disabled" : "") +
-                    '><i class="bi bi-arrow-up"></i></button>' +
-                    '<button type="button" class="btn btn-sm btn-outline-secondary"' +
-                    ' data-stage-move="down" aria-label="Move ' +
-                    escapeHtml(stage.name) +
-                    ' later"' +
-                    (index === stages.length - 1 ? " disabled" : "") +
-                    '><i class="bi bi-arrow-down"></i></button>' +
-                    "</div>" +
+                    '<span class="phase-stage-index" aria-hidden="true">' +
+                    (index + 1) +
+                    "</span>" +
                     '<div class="phase-stage-body">' +
-                    '<div class="fw-semibold">' +
+                    '<div class="phase-stage-name">' +
                     escapeHtml(stage.name) +
+                    (used
+                        ? '<span class="phase-stage-inuse-tag">in this type</span>'
+                        : "") +
                     "</div>" +
-                    '<div class="text-secondary small">' +
+                    '<div class="phase-stage-desc">' +
                     escapeHtml(stage.default_description) +
                     "</div>" +
                     '<div class="phase-stage-usage">' +
-                    "Used by " +
-                    stage.type_count +
-                    " project type" +
-                    (stage.type_count === 1 ? "" : "s") +
-                    " &middot; " +
-                    stage.task_count +
-                    " default task" +
-                    (stage.task_count === 1 ? "" : "s") +
+                    '<span class="phase-usage-pill phase-usage-types">' +
+                    '<i class="bi bi-diagram-3"></i>' +
+                    plural(stage.type_count, "type") +
+                    "</span>" +
+                    '<span class="phase-usage-pill phase-usage-tasks">' +
+                    '<i class="bi bi-check2-square"></i>' +
+                    plural(stage.task_count, "task") +
+                    "</span>" +
                     "</div>" +
                     "</div>" +
                     '<div class="phase-stage-actions">' +
-                    '<button type="button" class="btn btn-sm btn-outline-primary" data-stage-edit' +
+                    '<div class="phase-stage-order">' +
+                    '<button type="button" class="phase-icon-btn" data-stage-move="up"' +
+                    ' aria-label="Move ' +
+                    escapeHtml(stage.name) +
+                    ' earlier"' +
+                    (index === 0 ? " disabled" : "") +
+                    '><i class="bi bi-chevron-up"></i></button>' +
+                    '<button type="button" class="phase-icon-btn" data-stage-move="down"' +
+                    ' aria-label="Move ' +
+                    escapeHtml(stage.name) +
+                    ' later"' +
+                    (index === stages.length - 1 ? " disabled" : "") +
+                    '><i class="bi bi-chevron-down"></i></button>' +
+                    "</div>" +
+                    '<button type="button" class="phase-icon-btn phase-icon-edit" data-stage-edit' +
                     ' aria-label="Edit ' +
                     escapeHtml(stage.name) +
                     '"><i class="bi bi-pencil"></i></button>' +
-                    '<button type="button" class="btn btn-sm btn-outline-danger" data-stage-remove' +
+                    '<button type="button" class="phase-icon-btn phase-icon-delete" data-stage-remove' +
                     ' aria-label="Remove ' +
                     escapeHtml(stage.name) +
                     '"><i class="bi bi-trash"></i></button>' +
@@ -212,17 +281,18 @@ document.addEventListener("DOMContentLoaded", function () {
 
         busy(stageAddButton, stageAddSpinner, true);
 
-        request(routes.phaseTemplateBase + "/stages", "POST", {
+        must(routes.phaseTemplateBase + "/stages", "POST", {
             name: name,
             default_description: description,
         })
             .then(function (data) {
-                stageName.value = "";
-                stageDescription.value = "";
+                toggleAddForm(false);
                 absorb(data);
+                showError("");
                 showSuccess(data.message);
+
                 // The new stage is a tick box the open template can now use.
-                reloadTemplate();
+                return reloadTemplate();
             })
             .catch(function (error) {
                 showError(error.message);
@@ -256,7 +326,9 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         if (event.target.closest("[data-stage-save]")) {
-            const name = item.querySelector("[data-stage-edit-name]").value.trim();
+            const name = item
+                .querySelector("[data-stage-edit-name]")
+                .value.trim();
             const description = item
                 .querySelector("[data-stage-edit-description]")
                 .value.trim();
@@ -267,15 +339,17 @@ document.addEventListener("DOMContentLoaded", function () {
                 return;
             }
 
-            request(routes.phaseTemplateBase + "/stages/" + stageId, "PUT", {
+            must(routes.phaseTemplateBase + "/stages/" + stageId, "PUT", {
                 name: name,
                 default_description: description,
             })
                 .then(function (data) {
                     editingStageId = null;
                     absorb(data);
+                    showError("");
                     showSuccess(data.message);
-                    reloadTemplate();
+
+                    return reloadTemplate();
                 })
                 .catch(function (error) {
                     showError(error.message);
@@ -289,28 +363,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 return candidate.stage_id === stageId;
             });
 
-            if (
-                !window.confirm(
-                    "Remove the stage “" +
-                        stage.name +
-                        "”? Projects already set up keep their phases.",
-                )
-            ) {
-                return;
-            }
-
-            request(
-                routes.phaseTemplateBase + "/stages/" + stageId,
-                "DELETE",
-            )
-                .then(function (data) {
-                    absorb(data);
-                    showSuccess(data.message);
-                    reloadTemplate();
-                })
-                .catch(function (error) {
-                    showError(error.message);
-                });
+            askRemoveStage(stage);
 
             return;
         }
@@ -318,63 +371,194 @@ document.addEventListener("DOMContentLoaded", function () {
         const move = event.target.closest("[data-stage-move]");
 
         if (move) {
-            const index = stages.findIndex(function (candidate) {
-                return candidate.stage_id === stageId;
-            });
-
-            const target = move.dataset.stageMove === "up" ? index - 1 : index + 1;
-
-            if (target < 0 || target >= stages.length) {
-                return;
-            }
-
-            const reordered = stages.slice();
-            const moved = reordered.splice(index, 1)[0];
-            reordered.splice(target, 0, moved);
-
-            // Drawn immediately so the arrow feels like it did something, then
-            // corrected by whatever the server says came back.
-            stages = reordered;
-            renderStages();
-
-            request(routes.phaseTemplateBase + "/stages/reorder", "POST", {
-                stage_ids: reordered.map(function (stage) {
-                    return stage.stage_id;
-                }),
-            })
-                .then(function (data) {
-                    absorb(data);
-                    showSuccess(data.message);
-                    reloadTemplate();
-                })
-                .catch(function (error) {
-                    showError(error.message);
-                    load();
-                });
+            reorderStage(stageId, move.dataset.stageMove);
         }
     });
 
+    /**
+     * The page's dialog rather than window.confirm(), because this endpoint
+     * refuses a stage that a project type is still using - and that refusal is
+     * the most useful thing the dialog can say. It comes back into the dialog,
+     * naming the types, while the person is still looking at it.
+     */
+    function askRemoveStage(stage) {
+        if (!stage) {
+            return;
+        }
+
+        const url = routes.phaseTemplateBase + "/stages/" + stage.stage_id;
+
+        window.configurationConfirm({
+            title: 'Remove the stage "' + stage.name + '"?',
+            body:
+                stage.type_count > 0
+                    ? "It is used by " +
+                      plural(stage.type_count, "project type") +
+                      ". Untick it there first - removing it would take " +
+                      plural(stage.task_count, "default task") +
+                      " with it."
+                    : "New projects will no longer be offered this phase. " +
+                      "Projects already set up keep the phases they have.",
+            label: "Remove Stage",
+            variant: "btn-danger",
+            onConfirm: function () {
+                return request(url, "DELETE");
+            },
+            onSuccess: function (data) {
+                absorb(data);
+                showError("");
+                showSuccess(data.message);
+                reloadTemplate();
+            },
+        });
+    }
+
+    function reorderStage(stageId, direction) {
+        const index = stages.findIndex(function (candidate) {
+            return candidate.stage_id === stageId;
+        });
+
+        const target = direction === "up" ? index - 1 : index + 1;
+
+        if (target < 0 || target >= stages.length) {
+            return;
+        }
+
+        const reordered = stages.slice();
+        const moved = reordered.splice(index, 1)[0];
+        reordered.splice(target, 0, moved);
+
+        // Drawn immediately so the arrow feels like it did something, then
+        // corrected by whatever the server says came back.
+        stages = reordered;
+        renderStages();
+
+        must(routes.phaseTemplateBase + "/stages/reorder", "POST", {
+            stage_ids: reordered.map(function (stage) {
+                return stage.stage_id;
+            }),
+        })
+            .then(function (data) {
+                absorb(data);
+                showError("");
+                showSuccess(data.message);
+
+                return reloadTemplate();
+            })
+            .catch(function (error) {
+                showError(error.message);
+                load();
+            });
+    }
+
     // ------------------------------------------------------------------
-    // One type's template
+    // Step 2: one type's template
     // ------------------------------------------------------------------
 
+    function renderTypes() {
+        typePicker.innerHTML = types
+            .map(function (type) {
+                const active = String(type.type_id) === String(currentTypeId);
+                const empty = type.stage_count === 0;
+
+                return (
+                    '<button type="button" role="tab" class="phase-type-card' +
+                    (active ? " is-active" : "") +
+                    (empty ? " is-empty" : "") +
+                    '" aria-selected="' +
+                    (active ? "true" : "false") +
+                    '" data-phase-type="' +
+                    type.type_id +
+                    '">' +
+                    '<span class="phase-type-name">' +
+                    escapeHtml(type.type_name) +
+                    "</span>" +
+                    '<span class="phase-type-meta">' +
+                    (empty
+                        ? '<span class="phase-type-tag phase-type-tag-empty">Not set up</span>'
+                        : '<span class="phase-type-tag">' +
+                          plural(type.stage_count, "stage") +
+                          "</span>" +
+                          '<span class="phase-type-tag">' +
+                          plural(type.task_count, "task") +
+                          "</span>") +
+                    "</span>" +
+                    "</button>"
+                );
+            })
+            .join("");
+    }
+
+    typePicker.addEventListener("click", function (event) {
+        const card = event.target.closest("[data-phase-type]");
+
+        if (!card || String(card.dataset.phaseType) === String(currentTypeId)) {
+            return;
+        }
+
+        const move = function () {
+            currentTypeId = card.dataset.phaseType;
+            renderTypes();
+            reloadTemplate();
+        };
+
+        // Switching type replaces the working copy, so unsaved work would go
+        // without anybody being asked.
+        if (!isDirty()) {
+            move();
+
+            return;
+        }
+
+        window.configurationConfirm({
+            title: "Discard unsaved changes?",
+            body:
+                "The default phases for " +
+                currentTypeName() +
+                " have been changed and not saved. Switching to another type " +
+                "will lose those changes.",
+            label: "Discard and Switch",
+            variant: "btn-danger",
+            onConfirm: function () {
+                return Promise.resolve({ ok: true, body: {} });
+            },
+            onSuccess: move,
+        });
+    });
+
+    function currentTypeName() {
+        const type = types.find(function (candidate) {
+            return String(candidate.type_id) === String(currentTypeId);
+        });
+
+        return type ? type.type_name : "this project type";
+    }
+
     function renderTemplate() {
-        templateEmpty.classList.toggle("d-none", template.length > 0);
-        saveButton.disabled = template.length === 0;
+        const hasStages = template.length > 0;
+
+        templateEmpty.classList.toggle("d-none", hasStages);
+        stagesHolder.classList.toggle("d-none", !hasStages);
+        saveBar.classList.toggle("d-none", !hasStages);
 
         stagesHolder.innerHTML = template
             .map(function (stage, index) {
+                const count = stage.tasks.length;
+
                 const tasks = stage.selected
                     ? '<div class="phase-template-tasks">' +
-                      stage.tasks
-                          .map(function (task, taskIndex) {
-                              return taskMarkup(task, index, taskIndex);
-                          })
-                          .join("") +
-                      '<button type="button" class="btn btn-sm btn-outline-primary mt-1"' +
-                      ' data-template-task-add' +
-                      (stage.tasks.length >= maxTasks ? " disabled" : "") +
-                      '><i class="bi bi-plus-lg me-1"></i>Add Default Task</button>' +
+                      (count
+                          ? stage.tasks
+                                .map(function (task, taskIndex) {
+                                    return taskMarkup(task, index, taskIndex);
+                                })
+                                .join("")
+                          : '<p class="phase-template-notasks mb-2">' +
+                            "No default tasks yet. Projects will get this phase with no work in it." +
+                            "</p>") +
+                      '<button type="button" class="phase-add-task" data-template-task-add' +
+                      (count >= maxTasks ? " disabled" : "") +
+                      '><i class="bi bi-plus-lg"></i>Add a default task</button>' +
                       "</div>"
                     : "";
 
@@ -388,11 +572,16 @@ document.addEventListener("DOMContentLoaded", function () {
                     '<input type="checkbox" class="form-check-input"' +
                     (stage.selected ? " checked" : "") +
                     " data-template-stage-tick>" +
-                    "<span>" +
-                    '<span class="fw-semibold">' +
+                    '<span class="phase-template-tick-body">' +
+                    '<span class="phase-template-stage-name">' +
                     escapeHtml(stage.name) +
+                    (stage.selected
+                        ? '<span class="phase-template-count">' +
+                          plural(count, "task") +
+                          "</span>"
+                        : '<span class="phase-template-count phase-template-count-off">Not used</span>') +
                     "</span>" +
-                    '<span class="text-secondary small d-block">' +
+                    '<span class="phase-template-stage-desc">' +
                     escapeHtml(stage.default_description) +
                     "</span>" +
                     "</span>" +
@@ -402,6 +591,10 @@ document.addEventListener("DOMContentLoaded", function () {
                 );
             })
             .join("");
+
+        renderDirty();
+        // A ticked stage is marked in step 1's list too.
+        renderStages();
     }
 
     function taskMarkup(task, stageIndex, taskIndex) {
@@ -412,7 +605,10 @@ document.addEventListener("DOMContentLoaded", function () {
             '<div class="phase-template-task" data-template-task="' +
             taskIndex +
             '">' +
-            '<div class="flex-grow-1">' +
+            '<span class="phase-task-index" aria-hidden="true">' +
+            (taskIndex + 1) +
+            "</span>" +
+            '<div class="flex-grow-1 min-width-0">' +
             '<input type="text" class="form-control form-control-sm" maxlength="255"' +
             ' placeholder="Task title" aria-label="' +
             label +
@@ -426,7 +622,7 @@ document.addEventListener("DOMContentLoaded", function () {
             escapeHtml(task.description) +
             "</textarea>" +
             "</div>" +
-            '<button type="button" class="btn btn-sm btn-outline-danger"' +
+            '<button type="button" class="phase-icon-btn phase-icon-delete"' +
             ' data-template-task-remove aria-label="Remove ' +
             label +
             '"><i class="bi bi-x-lg"></i></button>' +
@@ -472,6 +668,51 @@ document.addEventListener("DOMContentLoaded", function () {
             });
     }
 
+    // ------------------------------------------------------------------
+    // Saved / unsaved
+    //
+    // Compared against a snapshot taken at load rather than tracked with a
+    // flag: typing a word and deleting it again leaves the template exactly as
+    // it was, and a screen that still claims unsaved changes after that trains
+    // people to ignore the warning.
+    // ------------------------------------------------------------------
+
+    function snapshot() {
+        return JSON.stringify(
+            template.map(function (stage) {
+                return {
+                    stage_id: stage.stage_id,
+                    selected: stage.selected,
+                    // Only the ticked stages' work counts: tasks left under an
+                    // unticked stage are not sent, so they are not a change.
+                    tasks: stage.selected
+                        ? stage.tasks.map(function (task) {
+                              return [task.title.trim(), task.description.trim()];
+                          })
+                        : [],
+                };
+            }),
+        );
+    }
+
+    function isDirty() {
+        syncTemplate();
+
+        return snapshot() !== saved;
+    }
+
+    function renderDirty() {
+        const dirty = snapshot() !== saved;
+
+        saveButton.disabled = !dirty;
+        discardButton.disabled = !dirty;
+        saveBar.classList.toggle("is-dirty", dirty);
+
+        saveState.innerHTML = dirty
+            ? '<i class="bi bi-pencil-fill"></i>Unsaved changes'
+            : '<i class="bi bi-check2-circle"></i>All changes saved';
+    }
+
     stagesHolder.addEventListener("change", function (event) {
         const tick = event.target.closest("[data-template-stage-tick]");
 
@@ -490,9 +731,20 @@ document.addEventListener("DOMContentLoaded", function () {
 
         // Unticking keeps the tasks in the working copy rather than discarding
         // them, so a mis-click is one click to undo. They are only actually
-        // lost if Save is pressed while the stage is unticked, which is what
-        // sending only the ticked stages means.
+        // lost if Save is pressed while the stage is unticked.
         renderTemplate();
+    });
+
+    // Typing is what most changes are, so the bar has to notice it.
+    stagesHolder.addEventListener("input", function (event) {
+        if (
+            event.target.matches(
+                "[data-template-task-title], [data-template-task-description]",
+            )
+        ) {
+            syncTemplate();
+            renderDirty();
+        }
     });
 
     stagesHolder.addEventListener("click", function (event) {
@@ -551,9 +803,28 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     });
 
-    typeSelect.addEventListener("change", function () {
-        currentTypeId = typeSelect.value || null;
-        reloadTemplate();
+    discardButton.addEventListener("click", function () {
+        if (!isDirty()) {
+            return;
+        }
+
+        window.configurationConfirm({
+            title: "Discard unsaved changes?",
+            body:
+                "The default phases for " +
+                currentTypeName() +
+                " will go back to what was last saved.",
+            label: "Discard Changes",
+            variant: "btn-danger",
+            onConfirm: function () {
+                return Promise.resolve({ ok: true, body: {} });
+            },
+            onSuccess: function () {
+                reloadTemplate();
+                showSuccess("");
+                showError("");
+            },
+        });
     });
 
     saveButton.addEventListener("click", function () {
@@ -574,9 +845,8 @@ document.addEventListener("DOMContentLoaded", function () {
             const stage = selected[index];
 
             for (let t = 0; t < stage.tasks.length; t += 1) {
-                const task = stage.tasks[t];
-                const title = task.title.trim();
-                const description = task.description.trim();
+                const title = stage.tasks[t].title.trim();
+                const description = stage.tasks[t].description.trim();
 
                 if (!title && !description) {
                     continue;
@@ -596,38 +866,35 @@ document.addEventListener("DOMContentLoaded", function () {
 
         busy(saveButton, saveSpinner, true);
 
-        request(
-            routes.phaseTemplateBase + "/types/" + currentTypeId,
-            "PUT",
-            {
-                stages: selected.map(function (stage) {
-                    return {
-                        stage_id: stage.stage_id,
-                        tasks: stage.tasks
-                            .filter(function (task) {
-                                return (
-                                    task.title.trim() || task.description.trim()
-                                );
-                            })
-                            .map(function (task) {
-                                return {
-                                    title: task.title.trim(),
-                                    description: task.description.trim(),
-                                };
-                            }),
-                    };
-                }),
-            },
-        )
+        must(routes.phaseTemplateBase + "/types/" + currentTypeId, "PUT", {
+            stages: selected.map(function (stage) {
+                return {
+                    stage_id: stage.stage_id,
+                    tasks: stage.tasks
+                        .filter(function (task) {
+                            return task.title.trim() || task.description.trim();
+                        })
+                        .map(function (task) {
+                            return {
+                                title: task.title.trim(),
+                                description: task.description.trim(),
+                            };
+                        }),
+                };
+            }),
+        })
             .then(function (data) {
                 template = normaliseTemplate(data.stages);
+                saved = snapshot();
                 types = data.types || types;
+
                 renderTypes();
                 renderTemplate();
                 showError("");
                 showSuccess(data.message);
-                // The counts beside each stage have moved.
-                return request(routes.phaseTemplates, "GET");
+
+                // The counts beside each stage in step 1 have moved.
+                return must(routes.phaseTemplates, "GET");
             })
             .then(function (data) {
                 stages = data.stages || stages;
@@ -661,17 +928,16 @@ document.addEventListener("DOMContentLoaded", function () {
     function reloadTemplate() {
         if (!currentTypeId) {
             template = [];
+            saved = snapshot();
             renderTemplate();
 
-            return;
+            return Promise.resolve();
         }
 
-        return request(
-            routes.phaseTemplateBase + "/types/" + currentTypeId,
-            "GET",
-        )
+        return must(routes.phaseTemplateBase + "/types/" + currentTypeId, "GET")
             .then(function (data) {
                 template = normaliseTemplate(data.stages);
+                saved = snapshot();
                 maxTasks = data.max_tasks_per_stage || maxTasks;
                 renderTemplate();
             })
@@ -680,29 +946,7 @@ document.addEventListener("DOMContentLoaded", function () {
             });
     }
 
-    function renderTypes() {
-        const previous = currentTypeId;
-
-        typeSelect.innerHTML = types
-            .map(function (type) {
-                return (
-                    '<option value="' +
-                    type.type_id +
-                    '">' +
-                    escapeHtml(type.type_name) +
-                    " — " +
-                    type.stage_count +
-                    " stage" +
-                    (type.stage_count === 1 ? "" : "s") +
-                    ", " +
-                    type.task_count +
-                    " task" +
-                    (type.task_count === 1 ? "" : "s") +
-                    "</option>"
-                );
-            })
-            .join("");
-
+    function pickType() {
         if (!types.length) {
             currentTypeId = null;
 
@@ -710,11 +954,19 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         const stillThere = types.some(function (type) {
-            return String(type.type_id) === String(previous);
+            return String(type.type_id) === String(currentTypeId);
         });
 
-        currentTypeId = stillThere ? previous : String(types[0].type_id);
-        typeSelect.value = currentTypeId;
+        if (!stillThere) {
+            // The first type nobody has written a template for, so the screen
+            // opens on the work that still needs doing rather than on whatever
+            // sorts first.
+            const unset = types.find(function (type) {
+                return type.stage_count === 0;
+            });
+
+            currentTypeId = String((unset || types[0]).type_id);
+        }
     }
 
     /**
@@ -725,17 +977,52 @@ document.addEventListener("DOMContentLoaded", function () {
         stages = data.stages || stages;
         types = data.types || types;
 
+        pickType();
         renderStages();
         renderTypes();
     }
 
+    /**
+     * The Project Types table above this panel changed.
+     *
+     * Only the lists are refreshed, and the template being edited is left
+     * alone unless the type it belongs to has just been removed - renaming a
+     * type somewhere else on the page is no reason to throw away work typed
+     * here.
+     */
+    document.addEventListener("project-types:changed", function () {
+        must(routes.phaseTemplates, "GET")
+            .then(function (data) {
+                stages = data.stages || stages;
+                types = data.types || [];
+
+                const survived = types.some(function (type) {
+                    return String(type.type_id) === String(currentTypeId);
+                });
+
+                pickType();
+                renderStages();
+                renderTypes();
+
+                if (!survived) {
+                    return reloadTemplate();
+                }
+            })
+            .catch(function () {
+                // The panel is still showing what it last read, which is not
+                // wrong - only possibly a moment out of date. The table above
+                // will have reported whatever actually failed.
+            });
+    });
+
     function load() {
-        request(routes.phaseTemplates, "GET")
+        must(routes.phaseTemplates, "GET")
             .then(function (data) {
                 stages = data.stages || [];
                 types = data.types || [];
                 maxTasks = data.max_tasks_per_stage || maxTasks;
 
+                pickType();
                 renderStages();
                 renderTypes();
 

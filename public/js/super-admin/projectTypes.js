@@ -169,6 +169,12 @@ document.addEventListener('DOMContentLoaded', function() {
         editingId = null;
         render(result.body.types || []);
 
+        // Default Phases & Tasks, further down the same tab, lists every one of
+        // these as something to write a template for. Without this, adding a
+        // type here leaves it missing from that list until the page is
+        // reloaded - which reads as the new type not having been saved.
+        document.dispatchEvent(new CustomEvent('project-types:changed'));
+
         return true;
     }
 
@@ -268,25 +274,31 @@ document.addEventListener('DOMContentLoaded', function() {
 
         if (remove && !remove.disabled) {
             const label = remove.dataset.projectTypeLabel;
+            const url = routes.projectTypes + '/' + remove.dataset.projectTypeDelete;
 
             // Removing a type takes the matching specialty with it, which is
             // worth saying out loud before it happens.
-            if (!window.confirm(
-                'Remove "' + label + '"?\n\nIt will no longer be offered as a project type ' +
-                'or as a technician specialty.'
-            )) {
-                return;
-            }
-
-            remove.disabled = true;
-            showSuccess('');
-
-            request(
-                routes.projectTypes + '/' + remove.dataset.projectTypeDelete,
-                'DELETE'
-            ).then(function(result) {
-                remove.disabled = false;
-                handle(result);
+            //
+            // The page's own dialog rather than window.confirm(): a refusal -
+            // and this endpoint refuses a type that is still in use - comes
+            // back INTO the dialog, where the person is still looking, instead
+            // of into an alert further down the page they have scrolled past.
+            window.configurationConfirm({
+                title: 'Remove "' + label + '"?',
+                body:
+                    'It will no longer be offered as a project type or as a ' +
+                    'technician specialty. Projects and technicians that already ' +
+                    'carry it are unaffected.',
+                label: 'Remove Project Type',
+                variant: 'btn-danger',
+                // request() already answers in the { ok, body } shape the
+                // dialog expects, so a refusal renders itself inside it.
+                onConfirm: function() {
+                    return request(url, 'DELETE');
+                },
+                onSuccess: function(body) {
+                    handle({ ok: true, body: body });
+                },
             });
         }
     });

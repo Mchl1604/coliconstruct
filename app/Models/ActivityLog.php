@@ -519,6 +519,29 @@ class ActivityLog extends Model
     ];
 
     /**
+     * What record_type holds for an entry recorded against a project itself.
+     * ActivityLogger stores class_basename() of whatever it was handed, so
+     * this is the class name rather than the table.
+     */
+    public const RECORD_PROJECT = 'Project';
+
+    /**
+     * The records that belong to a project rather than standing on their own,
+     * and how to ask their table which project that is.
+     *
+     * Read by scopeForProject() to follow an entry filed against a task, a
+     * report or a phase back to the job it was done on. A new kind of record
+     * that hangs off a project is one line here and nothing else.
+     *
+     * @var array<string, array{table: string, key: string}>
+     */
+    public const PROJECT_RECORD_SOURCES = [
+        'Task' => ['table' => 'tbl_tasks', 'key' => 'task_id'],
+        'TechnicianReport' => ['table' => 'tbl_technician_reports', 'key' => 'id'],
+        'ProjectPhase' => ['table' => 'tbl_project_phases', 'key' => 'phase_id'],
+    ];
+
+    /**
      * Bootstrap background for each role's badge, so the colour means the same
      * thing on this page as everywhere else.
      *
@@ -589,6 +612,46 @@ class ActivityLog extends Model
     public function scopeLatestFirst(Builder $query): Builder
     {
         return $query->orderByDesc('created_at')->orderByDesc('activity_log_id');
+    }
+
+    /**
+     * Everything recorded about one project.
+     *
+     * An entry points at whatever the action was about through record_type and
+     * record_id - see ActivityLogger::attributes(). Most of a project's trail
+     * points straight at the project, but the work done ON it is filed against
+     * the task, report or phase it happened to, and a reader looking at one
+     * project wants those too.
+     *
+     * So the pointer is followed one step: a child record counts when it
+     * belongs to this project, asked of the child's own table rather than
+     * inferred from the sentence. That is what keeps another project's
+     * entries out - an id is only ever matched inside the type it was
+     * recorded under, so task 7 can never be read as project 7.
+     *
+     * The types are listed in PROJECT_RECORD_SOURCES. Anything else - a user
+     * account, an inquiry, a configuration change - belongs to no project and
+     * is never drawn in.
+     */
+    public function scopeForProject(Builder $query, int $projectId): Builder
+    {
+        return $query->where(function (Builder $outer) use ($projectId): void {
+            $outer->where(function (Builder $direct) use ($projectId): void {
+                $direct->where('record_type', self::RECORD_PROJECT)
+                    ->where('record_id', $projectId);
+            });
+
+            foreach (self::PROJECT_RECORD_SOURCES as $type => $source) {
+                $outer->orWhere(function (Builder $child) use ($type, $source, $projectId): void {
+                    $child->where('record_type', $type)
+                        ->whereIn('record_id', function ($sub) use ($source, $projectId): void {
+                            $sub->select($source['key'])
+                                ->from($source['table'])
+                                ->where('project_id', $projectId);
+                        });
+                });
+            }
+        });
     }
 
     /**

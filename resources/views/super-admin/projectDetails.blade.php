@@ -441,7 +441,12 @@
              true, so Project::showsReopenedNotice() drops it and the history
              moves into the completion report's own header. --}}
         @if ($project->showsReopenedNotice())
-            <div class="alert alert-info border-0 shadow-sm mb-4" role="alert">
+            {{-- `data-reopened-notice` is what says the NOTICE is here, as
+                 opposed to the words "Project Reopened", which also appear in
+                 the Activity Logs section below whenever a reopening was
+                 recorded - correctly, and whether or not this banner is
+                 drawn. --}}
+            <div class="alert alert-info border-0 shadow-sm mb-4" role="alert" data-reopened-notice>
                 <div class="d-flex flex-wrap align-items-start gap-3">
                     <div class="flex-grow-1">
                         {{-- The icon sits in the heading rather than in a
@@ -1517,6 +1522,12 @@
 
         </div>
 
+        {{-- Activity Logs, last on the tab: the details above are what the
+             project IS, and this is what has happened to it. Narrowed to this
+             project and to what the reader may see by the controller, through
+             the same scopes the Activity Logs page uses. --}}
+        <x-project-activity-log :logs="$activityLogs" />
+
         </div>{{-- /#project-information --}}
 
         <div class="tab-pane fade" id="project-progress" role="tabpanel"
@@ -1631,7 +1642,12 @@
 
                         <!-- Report Card -->
                         @forelse($reports as $report)
-                            <div
+                            {{-- `data-report-card` is what says the report is
+                                 on this list. Its title alone is not: an
+                                 archived report's title is still named by the
+                                 Activity Logs entry recording that it was
+                                 archived. --}}
+                            <div data-report-card="{{ $report->id }}"
                                 class="card mb-3
     {{ $report->report_type == 'progress' ? 'border-primary bg-primary-subtle' : 'border-danger bg-danger-subtle' }}">
 
@@ -3156,9 +3172,16 @@
         <x-schedule-conflict-modal />
     @endif
 
+    {{-- Asks before replacing a lead technician, and before removing a
+         document. Both were browser confirm() dialogs, which could not say who
+         comes off the project or why the server refused. --}}
+    <x-confirm-dialog />
+
     @push('scripts')
         <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
         <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+        {{-- Before every script that asks a question with it. --}}
+        <script src="/js/confirmDialog.js"></script>
         {{-- Same range-aware task date pickers the Tasks page uses. --}}
         <script src="/js/super-admin/taskDatePickers.js"></script>
         {{-- Greys out the days the Reopen dialog cannot book. --}}

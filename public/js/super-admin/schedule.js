@@ -2168,23 +2168,42 @@ document.addEventListener("DOMContentLoaded", function () {
                 function send(alreadyConfirmed) {
                     const overrides = pendingOverrides();
 
-                    if (!alreadyConfirmed && overrides.length) {
-                        const confirmed = window.confirm(
-                            "These ranges have already ended:\n\n" +
-                                overrides.join("\n") +
-                                "\n\nChanging them alters the record of completed work " +
-                                "and is logged against your account. Continue?",
-                        );
+                    if (alreadyConfirmed || !overrides.length) {
+                        submitNow();
 
-                        if (!confirmed) {
-                            return;
-                        }
-
-                        if (overrideInput) {
-                            overrideInput.value = "1";
-                        }
+                        return;
                     }
 
+                    // Was a window.confirm(), which ran the list of dates, the
+                    // consequence and the question together in one plain
+                    // paragraph. The dates being overwritten are the part
+                    // worth reading, so they get their own block.
+                    window
+                        .confirmDialog({
+                            title: "Change dates that have already been worked?",
+                            body:
+                                "These ranges have already ended: " +
+                                overrides.join("; ") +
+                                ".",
+                            detail:
+                                "Changing them alters the record of completed work, " +
+                                "and is logged against your account.",
+                            label: "Change the Record",
+                        })
+                        .then(function (confirmed) {
+                            if (!confirmed) {
+                                return;
+                            }
+
+                            if (overrideInput) {
+                                overrideInput.value = "1";
+                            }
+
+                            submitNow();
+                        });
+                }
+
+                function submitNow() {
                     form.dataset.historicalCleared = "1";
                     form.submit();
                 }

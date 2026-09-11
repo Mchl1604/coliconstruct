@@ -535,9 +535,13 @@ class ProjectCompletionHistoryTest extends TestCase
 
         $this->assertFalse($project->showsReopenedNotice());
 
+        // The NOTICE is gone, which is what this is about. The words are
+        // asked for by their marker rather than by their text: the Activity
+        // Logs section at the foot of the tab still records that a reopening
+        // happened, and it is right that it does.
         $this->get(route('super-admin.projects.show', $project->project_id))
             ->assertOk()
-            ->assertDontSee('Project Reopened')
+            ->assertDontSee('data-reopened-notice', false)
             ->assertSee('The fault has been put right.');
     }
 

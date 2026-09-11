@@ -577,29 +577,255 @@
     border-color: #cfe3f6;
 }
 
-/* ------------------------------------------------------------------
+/* ==================================================================
    System Settings -> Project Settings -> Default Phases & Tasks
 
-   Two panels: the shared stage vocabulary, and one project type's
-   template. Styled as a matched pair because they are read together -
-   a stage on the left is a tick box on the right.
-   ------------------------------------------------------------------ */
+   Two steps, drawn as two steps. The first version of this panel put
+   the stage vocabulary and a project type's template side by side as
+   equals, which left the same stage name on screen twice with nothing
+   saying how the two were related. Everything below exists to make
+   that relationship visible: numbered steps, a tinted reference
+   column against a white working column, and a stage that is in play
+   marked in both places at once.
+   ================================================================== */
 
 .phase-template-panel {
-    border: 1px solid #cfe3f6;
-    border-top: 4px solid #2370b4;
-    border-radius: .5rem;
-    padding: 1.25rem;
+    --phase-accent: #2370b4;
+    --phase-accent-dark: #17548a;
+    --phase-accent-soft: #eaf3fb;
+    --phase-accent-line: #cfe3f6;
+    --phase-ink: #33415c;
+    --phase-muted: #7c8798;
+
+    border: 1px solid var(--phase-accent-line);
+    border-top: 4px solid var(--phase-accent);
+    border-radius: .65rem;
+    padding: 1.35rem;
     background: #fff;
 }
 
-.phase-stage-card {
-    height: 100%;
-    padding: 1rem;
-    border: 1px solid #e3ecf5;
-    border-radius: .6rem;
-    background: #f9fbfe;
+.phase-template-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: .75rem;
+    margin-bottom: 1rem;
 }
+
+.phase-template-title {
+    color: var(--phase-accent);
+    font-weight: 700;
+}
+
+.phase-template-title i {
+    margin-right: .35rem;
+}
+
+/* The reassurance that makes the rest of the panel safe to touch: nothing
+   here can reach a project that is already running. */
+.phase-template-safe-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    padding: .4rem .7rem;
+    border-radius: 2rem;
+    background: #e8f6ee;
+    color: #1d7a45;
+    border: 1px solid #bfe6cf;
+    font-size: .76rem;
+    font-weight: 600;
+}
+
+/* ---------- The explainer ---------- */
+
+.phase-template-explainer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1.25rem;
+    padding: 1rem 1.15rem;
+    margin-bottom: 1.25rem;
+    border-radius: .6rem;
+    background: linear-gradient(135deg, #f4f9fe 0%, #eef5fc 100%);
+    border: 1px solid var(--phase-accent-line);
+}
+
+.phase-explainer-copy {
+    flex: 1 1 22rem;
+    min-width: 0;
+}
+
+.phase-explainer-copy h6 {
+    color: var(--phase-accent-dark);
+    font-weight: 700;
+}
+
+.phase-explainer-copy p {
+    color: var(--phase-ink);
+}
+
+/* A worked example of the merge, because the sentence describing it has never
+   been enough on its own. Decorative - aria-hidden in the markup. */
+.phase-explainer-demo {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    flex: 0 1 auto;
+    font-size: .68rem;
+}
+
+.phase-demo-side {
+    display: flex;
+    flex-direction: column;
+    gap: .2rem;
+    padding: .5rem .6rem;
+    border-radius: .45rem;
+    background: #fff;
+    border: 1px solid #dbe6f2;
+    min-width: 8.5rem;
+}
+
+.phase-demo-chip {
+    align-self: flex-start;
+    padding: .1rem .4rem;
+    border-radius: 1rem;
+    font-weight: 700;
+    font-size: .62rem;
+    color: #fff;
+}
+
+.phase-demo-chip-a { background: #2370b4; }
+.phase-demo-chip-b { background: #6f42c1; }
+
+.phase-demo-line {
+    font-weight: 700;
+    color: var(--phase-ink);
+}
+
+.phase-demo-task {
+    color: var(--phase-muted);
+}
+
+.phase-demo-plus,
+.phase-demo-arrow {
+    color: var(--phase-accent);
+    font-weight: 700;
+}
+
+.phase-demo-result {
+    border-color: var(--phase-accent);
+    background: var(--phase-accent-soft);
+    box-shadow: 0 0 0 3px rgba(35, 112, 180, .08);
+}
+
+/* ---------- The two steps ---------- */
+
+.phase-template-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 22rem) minmax(0, 1fr);
+    gap: 1.25rem;
+    align-items: start;
+}
+
+.phase-template-col {
+    border-radius: .6rem;
+    padding: 1rem;
+}
+
+/* Tinted: a reference list, subordinate to the panel beside it. */
+.phase-template-col-stages {
+    background: #f7fafd;
+    border: 1px solid #e3ecf5;
+}
+
+/* White: this is where the work happens. */
+.phase-template-col-types {
+    background: #fff;
+    border: 1px solid var(--phase-accent-line);
+    box-shadow: 0 1px 3px rgba(20, 50, 80, .05);
+}
+
+.phase-step-head {
+    display: flex;
+    align-items: flex-start;
+    gap: .6rem;
+    margin-bottom: .6rem;
+}
+
+.phase-step-number {
+    flex: 0 0 auto;
+    width: 1.6rem;
+    height: 1.6rem;
+    border-radius: 50%;
+    background: var(--phase-accent);
+    color: #fff;
+    font-weight: 700;
+    font-size: .85rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.phase-step-head h6 {
+    font-weight: 700;
+    color: var(--phase-ink);
+}
+
+.phase-step-sub {
+    font-size: .78rem;
+    color: var(--phase-muted);
+}
+
+/* Step 1 writes immediately and step 2 does not. Saying so is the difference
+   between a Save button that looks missing and one that looks deliberate. */
+.phase-step-note {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    margin-bottom: .75rem;
+    padding: .3rem .6rem;
+    border-radius: 1rem;
+    background: #fff5e2;
+    color: #96601a;
+    border: 1px solid #f4dfb9;
+    font-size: .72rem;
+    font-weight: 600;
+}
+
+/* ---------- Adding a stage ---------- */
+
+.phase-add-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: .4rem;
+    width: 100%;
+    padding: .5rem;
+    margin-bottom: .75rem;
+    border: 1px dashed #b9cfe4;
+    border-radius: .5rem;
+    background: #fff;
+    color: var(--phase-accent);
+    font-size: .82rem;
+    font-weight: 600;
+    transition: background .15s ease, border-color .15s ease;
+}
+
+.phase-add-toggle:hover {
+    background: var(--phase-accent-soft);
+    border-color: var(--phase-accent);
+}
+
+.phase-add-form {
+    padding: .85rem;
+    margin-bottom: .85rem;
+    border: 1px solid var(--phase-accent-line);
+    border-radius: .5rem;
+    background: #fff;
+}
+
+/* ---------- The stage list ---------- */
 
 .phase-stage-list {
     list-style: none;
@@ -614,20 +840,50 @@
     padding: .65rem;
     margin-bottom: .5rem;
     border: 1px solid #e3ecf5;
+    border-left: 3px solid #d7e3ef;
     border-radius: .5rem;
+    background: #fff;
+    transition: border-color .15s ease, box-shadow .15s ease;
+}
+
+.phase-stage-item:hover {
+    border-color: var(--phase-accent-line);
+    border-left-color: var(--phase-accent);
+}
+
+/* The stage is ticked for the type open in step 2. Marking it here is what
+   ties the two columns together - without it the same name appears twice on
+   the screen with nothing connecting them. */
+.phase-stage-item.is-in-use {
+    border-left-color: var(--phase-accent);
+    background: var(--phase-accent-soft);
+}
+
+.phase-stage-item.is-editing {
+    display: block;
+    border-left-color: var(--phase-accent);
     background: #fff;
 }
 
-/* While a stage is being renamed it takes the whole width - the arrows and the
-   action buttons would only be in the way of the two fields. */
-.phase-stage-item.is-editing {
-    display: block;
+/* Its place in the running order, which is the order every project's phases
+   come out in. Worth a number rather than being left to the row position. */
+.phase-stage-index {
+    flex: 0 0 auto;
+    width: 1.4rem;
+    height: 1.4rem;
+    border-radius: .35rem;
+    background: #e7eef6;
+    color: var(--phase-accent-dark);
+    font-size: .72rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
-.phase-stage-order {
-    display: flex;
-    flex-direction: column;
-    gap: .2rem;
+.phase-stage-item.is-in-use .phase-stage-index {
+    background: var(--phase-accent);
+    color: #fff;
 }
 
 .phase-stage-body {
@@ -635,60 +891,411 @@
     min-width: 0;
 }
 
-/* What depends on this stage, which is what its remove button is refused
-   against. */
+.phase-stage-name {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    flex-wrap: wrap;
+    font-weight: 600;
+    font-size: .86rem;
+    color: var(--phase-ink);
+}
+
+.phase-stage-inuse-tag {
+    padding: .05rem .35rem;
+    border-radius: 1rem;
+    background: var(--phase-accent);
+    color: #fff;
+    font-size: .6rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+}
+
+.phase-stage-desc {
+    font-size: .76rem;
+    color: var(--phase-muted);
+    margin-top: .1rem;
+}
+
 .phase-stage-usage {
-    margin-top: .25rem;
-    font-size: .72rem;
-    color: #8a94a3;
+    display: flex;
+    gap: .3rem;
+    margin-top: .35rem;
+    flex-wrap: wrap;
+}
+
+.phase-usage-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: .25rem;
+    padding: .1rem .4rem;
+    border-radius: 1rem;
+    font-size: .67rem;
+    font-weight: 600;
+}
+
+.phase-usage-types {
+    background: #eef2f7;
+    color: #5a6472;
+}
+
+.phase-usage-tasks {
+    background: #edf7f0;
+    color: #2c7a4b;
 }
 
 .phase-stage-actions {
     display: flex;
+    align-items: center;
+    gap: .2rem;
+}
+
+.phase-stage-order {
+    display: flex;
+    flex-direction: column;
+}
+
+.phase-icon-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.6rem;
+    height: 1.6rem;
+    padding: 0;
+    border: 0;
+    border-radius: .3rem;
+    background: transparent;
+    color: var(--phase-muted);
+    font-size: .8rem;
+    transition: background .12s ease, color .12s ease;
+}
+
+.phase-icon-btn:hover:not(:disabled) {
+    background: #e7eef6;
+    color: var(--phase-accent-dark);
+}
+
+.phase-icon-btn:disabled {
+    opacity: .3;
+}
+
+.phase-icon-edit:hover:not(:disabled) {
+    background: var(--phase-accent-soft);
+    color: var(--phase-accent);
+}
+
+.phase-icon-delete:hover:not(:disabled) {
+    background: #fdeaea;
+    color: #c0392b;
+}
+
+/* ---------- Step 2: picking a type ---------- */
+
+.phase-type-picker {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem;
+    padding-bottom: .9rem;
+    margin-bottom: .9rem;
+    border-bottom: 1px solid #eef1f5;
+}
+
+/* Cards rather than a dropdown: which type is being edited is the thing most
+   worth never having to check, and the ones nobody has written yet are visible
+   without opening anything. */
+.phase-type-card {
+    display: flex;
+    flex-direction: column;
+    gap: .25rem;
+    padding: .5rem .75rem;
+    border: 1px solid #dfe6ee;
+    border-radius: .5rem;
+    background: #fff;
+    text-align: left;
+    transition: all .15s ease;
+}
+
+.phase-type-card:hover {
+    border-color: var(--phase-accent);
+    background: var(--phase-accent-soft);
+}
+
+.phase-type-card.is-active {
+    border-color: var(--phase-accent);
+    background: var(--phase-accent);
+    box-shadow: 0 2px 6px rgba(35, 112, 180, .25);
+}
+
+.phase-type-name {
+    font-size: .84rem;
+    font-weight: 700;
+    color: var(--phase-ink);
+}
+
+.phase-type-card.is-active .phase-type-name {
+    color: #fff;
+}
+
+.phase-type-meta {
+    display: flex;
     gap: .25rem;
 }
 
-.phase-template-stage {
-    padding: .7rem;
-    margin-bottom: .5rem;
-    border: 1px solid #e3ecf5;
-    border-radius: .5rem;
-    background: #fff;
+.phase-type-tag {
+    padding: .05rem .35rem;
+    border-radius: 1rem;
+    background: #eef2f7;
+    color: #5a6472;
+    font-size: .64rem;
+    font-weight: 600;
 }
 
-/* A ticked stage is one this type's projects will actually get, so it is worth
-   being able to pick out of a long list at a glance. */
+.phase-type-card.is-active .phase-type-tag {
+    background: rgba(255, 255, 255, .22);
+    color: #fff;
+}
+
+/* A type nobody has written a template for. It is not an error - the project
+   simply falls back to the built-in suggestion - but it is the work left to
+   do, so it should be findable at a glance. */
+.phase-type-tag-empty {
+    background: #fff3cd;
+    color: #96601a;
+}
+
+.phase-type-card.is-active .phase-type-tag-empty {
+    background: rgba(255, 255, 255, .25);
+    color: #fff;
+}
+
+/* ---------- Step 2: the stages and their work ---------- */
+
+.phase-template-stage {
+    padding: .75rem;
+    margin-bottom: .5rem;
+    border: 1px solid #e8ecf1;
+    border-left: 3px solid #e8ecf1;
+    border-radius: .5rem;
+    background: #fcfdfe;
+    transition: all .15s ease;
+}
+
 .phase-template-stage.is-selected {
-    border-color: #cfe3f6;
-    background: #f4f9fe;
+    border-color: var(--phase-accent-line);
+    border-left-color: var(--phase-accent);
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(20, 50, 80, .06);
 }
 
 .phase-template-tick {
     display: flex;
     align-items: flex-start;
-    gap: .55rem;
+    gap: .6rem;
     margin-bottom: 0;
     cursor: pointer;
 }
 
+.phase-template-tick .form-check-input {
+    margin-top: .15rem;
+    flex: 0 0 auto;
+}
+
+.phase-template-tick-body {
+    min-width: 0;
+}
+
+.phase-template-stage-name {
+    display: flex;
+    align-items: center;
+    gap: .45rem;
+    flex-wrap: wrap;
+    font-weight: 700;
+    font-size: .88rem;
+    color: var(--phase-ink);
+}
+
+.phase-template-count {
+    padding: .05rem .4rem;
+    border-radius: 1rem;
+    background: #edf7f0;
+    color: #2c7a4b;
+    font-size: .65rem;
+    font-weight: 700;
+}
+
+.phase-template-count-off {
+    background: #f1f3f6;
+    color: #96a0ae;
+}
+
+.phase-template-stage-desc {
+    display: block;
+    font-size: .77rem;
+    color: var(--phase-muted);
+    margin-top: .1rem;
+}
+
 .phase-template-tasks {
-    margin: .6rem 0 0 1.75rem;
-    padding-left: .75rem;
-    border-left: 2px solid #dce7f3;
+    margin: .7rem 0 0 1.9rem;
+    padding-left: .85rem;
+    border-left: 2px dashed #dce7f3;
+}
+
+.phase-template-notasks {
+    font-size: .76rem;
+    color: var(--phase-muted);
+    font-style: italic;
 }
 
 .phase-template-task {
     display: flex;
     align-items: flex-start;
     gap: .5rem;
-    padding: .5rem;
+    padding: .55rem;
     margin-bottom: .4rem;
     border: 1px solid #eef1f5;
     border-radius: .45rem;
     background: #fff;
 }
 
+.phase-task-index {
+    flex: 0 0 auto;
+    width: 1.35rem;
+    height: 1.35rem;
+    border-radius: .3rem;
+    background: #f1f5f9;
+    color: var(--phase-muted);
+    font-size: .68rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: .15rem;
+}
+
+.min-width-0 {
+    min-width: 0;
+}
+
+.phase-add-task {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    padding: .3rem .65rem;
+    border: 1px dashed #b9cfe4;
+    border-radius: .4rem;
+    background: #fff;
+    color: var(--phase-accent);
+    font-size: .76rem;
+    font-weight: 600;
+    transition: background .15s ease, border-color .15s ease;
+}
+
+.phase-add-task:hover:not(:disabled) {
+    background: var(--phase-accent-soft);
+    border-color: var(--phase-accent);
+}
+
+.phase-add-task:disabled {
+    opacity: .45;
+}
+
+/* ---------- The save bar ---------- */
+
+/* Sticky, so a long stage list cannot scroll the Save button out of reach -
+   and because it is the only thing on this half of the panel that writes
+   anything, its absence would read as the screen having saved already. */
+.phase-save-bar {
+    position: sticky;
+    bottom: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
+    margin: .9rem -1rem -1rem;
+    padding: .75rem 1rem;
+    border-top: 1px solid #eef1f5;
+    border-radius: 0 0 .6rem .6rem;
+    background: #fbfcfe;
+    transition: background .2s ease, border-color .2s ease;
+}
+
+.phase-save-bar.is-dirty {
+    background: #fff8e8;
+    border-top-color: #f0dcb4;
+}
+
+.phase-save-state {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    font-size: .78rem;
+    font-weight: 600;
+    color: #2c7a4b;
+}
+
+.phase-save-bar.is-dirty .phase-save-state {
+    color: #96601a;
+}
+
+/* ---------- Empty states ---------- */
+
+.phase-empty-state {
+    padding: 1.5rem 1rem;
+    text-align: center;
+    color: var(--phase-muted);
+    border: 1px dashed #dbe3ec;
+    border-radius: .5rem;
+    background: #fff;
+    font-size: .82rem;
+}
+
+.phase-empty-state i {
+    display: block;
+    font-size: 1.5rem;
+    margin-bottom: .35rem;
+    opacity: .5;
+}
+
+/* ---------- Narrow screens ---------- */
+
+@media (max-width: 991.98px) {
+    .phase-template-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    /* Step 1 is a reference list; on one column the work belongs on top. */
+    .phase-template-col-stages {
+        order: 2;
+    }
+
+    .phase-template-col-types {
+        order: 1;
+    }
+
+    .phase-save-bar {
+        position: static;
+        margin: .9rem 0 0;
+        border-radius: .5rem;
+        border: 1px solid #eef1f5;
+    }
+
+    /* The worked example is decorative and has a floor of about 460px it
+       cannot go below without the three panels colliding. It goes as soon as
+       the layout stops being two columns - the paragraph beside it says the
+       same thing in words. */
+    .phase-explainer-demo {
+        display: none;
+    }
+}
+
 @media (max-width: 575.98px) {
+    .phase-template-panel {
+        padding: 1rem;
+    }
+
     .phase-template-tasks {
         margin-left: 0;
     }

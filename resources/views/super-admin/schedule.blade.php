@@ -913,7 +913,13 @@
             :may-override-lock="$mayOverrideLock" />
     </template>
 
+    {{-- Asks before a correction is written over dates that have already been
+         worked. --}}
+    <x-confirm-dialog />
+
     @push('scripts')
+        {{-- Before every script that asks a question with it. --}}
+        <script src="/js/confirmDialog.js"></script>
         <script>
             {{-- The one place the partial-day window is decided, handed to the
                  page rather than repeated in it. See Schedule. --}}
