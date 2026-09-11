@@ -1290,10 +1290,20 @@ document.addEventListener("DOMContentLoaded", function () {
         applyRoleVisibility();
     }
 
+    /**
+     * Set the temporary password and let its requirements checklist know -
+     * assigning `value` from script does not fire the input event it
+     * listens for.
+     */
+    function setTemporaryPassword(value) {
+        passwordDisplay.value = value;
+        passwordDisplay.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+
     function loadGeneratedPassword() {
         return requestJson(routes.generatePassword).then(function (result) {
             if (result.ok && result.body.password) {
-                passwordDisplay.value = result.body.password;
+                setTemporaryPassword(result.body.password);
             }
         });
     }
@@ -1314,7 +1324,7 @@ document.addEventListener("DOMContentLoaded", function () {
         specialtiesSection.classList.add("d-none");
         restoreRoleSelect();
 
-        passwordDisplay.value = "";
+        setTemporaryPassword("");
         userSubmit.disabled = true;
         userModalTitle.textContent = "Add New User";
         userSubmitLabel.textContent = "Create Account";

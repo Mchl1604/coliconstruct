@@ -8,6 +8,7 @@ use App\Models\ProjectTechnician;
 use App\Models\Skill;
 use App\Models\Technician;
 use App\Models\User;
+use App\Support\PasswordPolicy;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
@@ -916,7 +917,7 @@ class ConfigurationUserManagementTest extends TestCase
         $this->assertTrue(Hash::check('the-old-password', $employee->refresh()->password));
     }
 
-    public function test_generated_passwords_are_alphanumeric_strong_and_never_repeat(): void
+    public function test_generated_passwords_meet_the_policy_and_never_repeat(): void
     {
         $passwords = collect(range(1, 12))->map(function (): string {
             $response = $this->getJson(route('super-admin.configuration.users.password'));
@@ -932,8 +933,11 @@ class ConfigurationUserManagementTest extends TestCase
             $this->assertMatchesRegularExpression('/[a-z]/', $password);
             $this->assertMatchesRegularExpression('/[A-Z]/', $password);
             $this->assertMatchesRegularExpression('/[0-9]/', $password);
-            // Letters and digits only - these are typed in by hand.
-            $this->assertMatchesRegularExpression('/^[a-zA-Z0-9]+$/', $password);
+            $this->assertMatchesRegularExpression('/[!@#$%&*?]/', $password);
+            $this->assertTrue(PasswordPolicy::isSatisfiedBy($password));
+            // Nothing outside the typeable, unambiguous set - these are typed
+            // in by hand.
+            $this->assertMatchesRegularExpression('/^[a-zA-Z0-9!@#$%&*?]+$/', $password);
         }
     }
 
@@ -945,12 +949,12 @@ class ConfigurationUserManagementTest extends TestCase
     {
         $this->postJson(
             route('super-admin.configuration.users.employees.store'),
-            $this->employeePayload(['password' => 'chosen-by-hand-123'])
+            $this->employeePayload(['password' => 'Chosen-by-hand-123'])
         )->assertCreated();
 
         $user = User::where('email', 'ana.mendoza@example.test')->firstOrFail();
 
-        $this->assertTrue(Hash::check('chosen-by-hand-123', $user->password));
+        $this->assertTrue(Hash::check('Chosen-by-hand-123', $user->password));
         // A typed password is still temporary; it has to be replaced at first
         // sign-in like any other.
         $this->assertTrue($user->must_change_password);
@@ -965,12 +969,12 @@ class ConfigurationUserManagementTest extends TestCase
 
         $this->postJson(
             route('super-admin.configuration.users.clients.store'),
-            $this->clientPayload(['password' => 'client-chosen-1'])
+            $this->clientPayload(['password' => 'Client-chosen-1'])
         )->assertCreated();
 
         $client = User::where('email', 'jose.garcia@example.test')->firstOrFail();
 
-        $this->assertTrue(Hash::check('client-chosen-1', $client->password));
+        $this->assertTrue(Hash::check('Client-chosen-1', $client->password));
     }
 
     public function test_an_omitted_password_falls_back_to_a_generated_one(): void
@@ -985,7 +989,8 @@ class ConfigurationUserManagementTest extends TestCase
         $user = User::where('email', 'ana.mendoza@example.test')->firstOrFail();
 
         $this->assertTrue(Hash::check($response->json('password'), $user->password));
-        $this->assertMatchesRegularExpression('/^[a-zA-Z0-9]{14}$/', $response->json('password'));
+        $this->assertMatchesRegularExpression('/^[a-zA-Z0-9!@#$%&*?]{14}$/', $response->json('password'));
+        $this->assertTrue(PasswordPolicy::isSatisfiedBy($response->json('password')));
     }
 
     // ------------------------------------------------------------------

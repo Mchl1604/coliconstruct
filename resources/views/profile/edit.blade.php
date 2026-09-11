@@ -478,7 +478,9 @@
                                     <div class="input-group" data-password-field>
                                         <input type="password"
                                             class="form-control border-end-0 @error('password', 'password') is-invalid @enderror"
-                                            id="newPassword" name="password" minlength="8" maxlength="72"
+                                            id="newPassword" name="password"
+                                            minlength="{{ \App\Support\PasswordPolicy::MIN_LENGTH }}"
+                                            maxlength="{{ \App\Support\PasswordPolicy::MAX_LENGTH }}"
                                             autocomplete="new-password" data-password-new required>
                                         <button class="btn btn-outline-secondary border-start-0" type="button"
                                             data-password-toggle aria-label="Show password" aria-pressed="false"
@@ -486,7 +488,7 @@
                                             <i class="bi bi-eye" aria-hidden="true"></i>
                                         </button>
                                     </div>
-                                    <div class="form-text" data-password-match>At least 8 characters.</div>
+                                    <div class="form-text" data-password-match></div>
                                     @error('password', 'password')
                                         <div class="text-danger small mt-1">{{ $message }}</div>
                                     @enderror
@@ -498,15 +500,20 @@
                                     </label>
                                     <div class="input-group" data-password-field>
                                         <input type="password" class="form-control border-end-0"
-                                            id="confirmPassword" name="password_confirmation" minlength="8"
-                                            maxlength="72" autocomplete="new-password" data-password-confirm
-                                            required>
+                                            id="confirmPassword" name="password_confirmation"
+                                            minlength="{{ \App\Support\PasswordPolicy::MIN_LENGTH }}"
+                                            maxlength="{{ \App\Support\PasswordPolicy::MAX_LENGTH }}"
+                                            autocomplete="new-password" data-password-confirm required>
                                         <button class="btn btn-outline-secondary border-start-0" type="button"
                                             data-password-toggle aria-label="Show password" aria-pressed="false"
                                             tabindex="-1">
                                             <i class="bi bi-eye" aria-hidden="true"></i>
                                         </button>
                                     </div>
+                                </div>
+
+                                <div class="col-12">
+                                    <x-password-requirements for="newPassword" />
                                 </div>
                             </div>
 

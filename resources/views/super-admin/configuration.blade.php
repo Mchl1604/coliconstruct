@@ -1283,7 +1283,8 @@
                                     </label>
                                     <div class="input-group">
                                         <input type="text" id="userTempPassword" class="form-control config-password"
-                                            name="password" minlength="8" maxlength="72" autocomplete="off"
+                                            name="password" minlength="{{ \App\Support\PasswordPolicy::MIN_LENGTH }}"
+                                            maxlength="{{ \App\Support\PasswordPolicy::MAX_LENGTH }}" autocomplete="off"
                                             data-password-display>
                                         <button type="button" class="btn btn-outline-secondary" data-password-copy
                                             title="Copy password">
@@ -1295,13 +1296,17 @@
                                         </button>
                                     </div>
                                     <div class="form-text">
-                                        At least 8 characters. A new password is required at first sign-in.
+                                        A new password is required at first sign-in.
                                         @if ($mailEnabled)
                                             A copy is emailed to them automatically.
                                         @else
                                             Email delivery is not configured, so hand this over directly.
                                         @endif
                                     </div>
+
+                                    {{-- A password typed over the generated one is held
+                                         to the same policy as every other. --}}
+                                    <x-password-requirements for="userTempPassword" class="mt-2" />
                                 </div>
                             </div>
 
@@ -1814,6 +1819,10 @@
     @push('scripts')
         {{-- Keeps the contact number field to digits only. --}}
         <script src="/js/registerForm.js"></script>
+        {{-- The temporary password's requirements checklist, and the guard
+             that stops the dialog submitting one that fails it. Ahead of
+             configuration.js so its guard sees the submit first. --}}
+        <script src="/js/passwordField.js"></script>
         <script>
             // Arriving on #clients from the dashboard's quick action. The table
             // is filled by a request, so the browser's own jump happens before

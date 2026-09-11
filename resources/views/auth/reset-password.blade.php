@@ -26,15 +26,17 @@
         </div>
 
         <x-password-input name="password" label="New Password" autocomplete="new-password"
-            minlength="8" role="new" autofocus />
+            :minlength="\App\Support\PasswordPolicy::MIN_LENGTH" role="new" autofocus />
 
         <x-password-input name="password_confirmation" label="Confirm New Password"
-            autocomplete="new-password" minlength="8" role="confirm" />
+            autocomplete="new-password" :minlength="\App\Support\PasswordPolicy::MIN_LENGTH" role="confirm" />
 
         {{-- Turns green the moment the two agree, red while they do not. --}}
-        <div class="text-start mb-4">
-            <span class="form-text text-muted" data-password-match>At least 8 characters.</span>
+        <div class="text-start">
+            <span class="form-text text-muted" data-password-match></span>
         </div>
+
+        <x-password-requirements for="password" class="mb-4" />
 
         <div class="d-grid mb-3">
             <button type="submit" class="btn btn-primary btn-lg">Reset Password</button>

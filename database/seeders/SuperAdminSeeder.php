@@ -4,8 +4,10 @@ namespace Database\Seeders;
 
 use App\Models\User;
 use App\Services\UserAccountService;
+use App\Support\PasswordPolicy;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
+use RuntimeException;
 
 /**
  * The system's own super administrator.
@@ -42,10 +44,23 @@ class SuperAdminSeeder extends Seeder
             return;
         }
 
+        $password = (string) env('SUPER_ADMIN_PASSWORD');
+
+        // The most powerful account in the system is held to the same
+        // password policy as every other. Refused outright rather than seeded
+        // weak: nothing would ever ask the owner to replace it.
+        $problem = PasswordPolicy::failureMessage($password);
+
+        if ($problem !== null) {
+            throw new RuntimeException(
+                'SUPER_ADMIN_PASSWORD does not meet the password policy. '.$problem
+            );
+        }
+
         $user = User::create($attributes + [
             'user_code' => $accounts->nextUserCode('EMP'),
             'email' => 'michaelcapanayan@gmail.com',
-            'password' => Hash::make(env('SUPER_ADMIN_PASSWORD')),
+            'password' => Hash::make($password),
             // The owner chose this password deliberately, so it is not
             // treated as a temporary one that has to be replaced.
             'must_change_password' => false,

@@ -306,8 +306,8 @@ class AuditDecisionsTest extends TestCase
             'contact_number' => '09123456789',
             'birthdate' => '1990-01-01',
             'email' => 'newcomer@example.test',
-            'password' => 'a-good-password',
-            'password_confirmation' => 'a-good-password',
+            'password' => 'A-good-password1',
+            'password_confirmation' => 'A-good-password1',
             'terms' => '1',
         ]);
 

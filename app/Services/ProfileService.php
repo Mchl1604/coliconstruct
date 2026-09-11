@@ -10,6 +10,7 @@ use App\Models\OtpVerification;
 use App\Models\SpecialtyRequest;
 use App\Models\Technician;
 use App\Models\User;
+use App\Support\PasswordPolicy;
 use App\Support\UploadStore;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -350,6 +351,8 @@ class ProfileService
      */
     public function updatePassword(User $user, string $password): User
     {
+        PasswordPolicy::ensureSatisfiedBy($password);
+
         $user->password = $password;
         // Choosing a password of their own satisfies any outstanding demand
         // that they choose one.

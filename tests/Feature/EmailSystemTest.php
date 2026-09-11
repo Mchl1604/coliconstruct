@@ -104,8 +104,8 @@ class EmailSystemTest extends TestCase
             'email' => 'rejected@example.test',
             'contact_number' => '09175551234',
             'birthdate' => '1990-05-04',
-            'password' => 'my-own-password',
-            'password_confirmation' => 'my-own-password',
+            'password' => 'My-own-password1',
+            'password_confirmation' => 'My-own-password1',
             'terms' => '1',
         ])->assertSessionHas('error');
 

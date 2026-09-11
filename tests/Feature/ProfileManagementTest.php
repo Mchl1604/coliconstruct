@@ -533,8 +533,8 @@ class ProfileManagementTest extends TestCase
         $this->actingAs($admin)
             ->put(route('profile.password'), [
                 'current_password' => 'wrong-password',
-                'password' => 'a-brand-new-one',
-                'password_confirmation' => 'a-brand-new-one',
+                'password' => 'A-brand-new-one1',
+                'password_confirmation' => 'A-brand-new-one1',
             ])
             ->assertSessionHasErrors('current_password', null, 'password');
 
@@ -543,16 +543,16 @@ class ProfileManagementTest extends TestCase
         $this->actingAs($admin)
             ->put(route('profile.password'), [
                 'current_password' => 'password',
-                'password' => 'a-brand-new-one',
-                'password_confirmation' => 'a-brand-new-one',
+                'password' => 'A-brand-new-one1',
+                'password_confirmation' => 'A-brand-new-one1',
             ])
             ->assertSessionHas('success', 'Password updated.');
 
-        $this->assertTrue(Hash::check('a-brand-new-one', $admin->refresh()->password));
+        $this->assertTrue(Hash::check('A-brand-new-one1', $admin->refresh()->password));
         $this->assertDatabaseHas('tbl_activity_logs', ['action' => ActivityLog::PASSWORD_CHANGED]);
 
         // The value itself never reaches the trail.
-        $this->assertDatabaseMissing('tbl_activity_logs', ['description' => 'a-brand-new-one']);
+        $this->assertDatabaseMissing('tbl_activity_logs', ['description' => 'A-brand-new-one1']);
     }
 
     // ------------------------------------------------------------------

@@ -9,6 +9,7 @@ use App\Models\PendingRegistration;
 use App\Models\Project;
 use App\Models\Technician;
 use App\Models\User;
+use App\Support\PasswordPolicy;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -50,7 +51,7 @@ class UserAccountService
     {
         // The administrator may type a password of their own; without one, a
         // generated value is used instead.
-        $password = $data['password'] ?? $this->generateTemporaryPassword();
+        $password = $this->temporaryPasswordFrom($data);
 
         $user = DB::transaction(function () use ($data, $skillIds, $password): User {
             $user = User::create([
@@ -94,7 +95,7 @@ class UserAccountService
      */
     public function createClient(array $data): array
     {
-        $password = $data['password'] ?? $this->generateTemporaryPassword();
+        $password = $this->temporaryPasswordFrom($data);
 
         $user = DB::transaction(function () use ($data, $password): User {
             [$first, $middle, $last] = $this->splitFullName($data['full_name']);
@@ -152,6 +153,9 @@ class UserAccountService
      */
     public function startRegistration(array $data): PendingRegistration
     {
+        // Checked before it is hashed, because afterwards it cannot be.
+        PasswordPolicy::ensureSatisfiedBy((string) $data['password']);
+
         $email = mb_strtolower(trim((string) $data['email']));
 
         return DB::transaction(function () use ($data, $email): PendingRegistration {
@@ -224,6 +228,13 @@ class UserAccountService
      */
     public function registerClient(array $data): User
     {
+        // Normally already a hash, checked against the policy by
+        // startRegistration() before it was made. A plain value handed in
+        // directly is held to the policy here instead.
+        if (! Hash::isHashed((string) $data['password'])) {
+            PasswordPolicy::ensureSatisfiedBy((string) $data['password']);
+        }
+
         $user = DB::transaction(function () use ($data): User {
             [$first, $middle, $last] = $this->splitFullName($data['full_name']);
 
@@ -534,14 +545,14 @@ class UserAccountService
     // ------------------------------------------------------------------
 
     /**
-     * A generated password: letters and digits only, with a lower case, an
-     * upper case and a digit all guaranteed, then shuffled so the guaranteed
+     * A generated password with a lower case letter, an upper case letter, a
+     * digit and a symbol all guaranteed, then shuffled so the guaranteed
      * characters aren't always in the same place.
      *
-     * Symbols are left out deliberately - these are read off a screen and
-     * typed by hand, and the length is what carries the strength: 14
-     * alphanumerics is roughly 83 bits of entropy, far past anything a
-     * password policy asks for.
+     * It meets PasswordPolicy like any other: a temporary password is still a
+     * password somebody signs in with, so it gets no exemption. The symbols
+     * are drawn from a short set that reads unambiguously off a screen and
+     * sits on every keyboard, because these are typed in by hand.
      *
      * Built on random_int(), which is cryptographically secure.
      */
@@ -551,12 +562,14 @@ class UserAccountService
         $lower = 'abcdefghijkmnopqrstuvwxyz';
         $upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
         $digits = '23456789';
-        $all = $lower.$upper.$digits;
+        $symbols = '!@#$%&*?';
+        $all = $lower.$upper.$digits.$symbols;
 
         $characters = [
             $lower[random_int(0, strlen($lower) - 1)],
             $upper[random_int(0, strlen($upper) - 1)],
             $digits[random_int(0, strlen($digits) - 1)],
+            $symbols[random_int(0, strlen($symbols) - 1)],
         ];
 
         for ($index = count($characters); $index < self::TEMPORARY_PASSWORD_LENGTH; $index++) {
@@ -570,6 +583,25 @@ class UserAccountService
         }
 
         return implode('', $characters);
+    }
+
+    /**
+     * The password a new account opens with: the one the administrator typed,
+     * held to the policy, or a generated one when they left it blank.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private function temporaryPasswordFrom(array $data): string
+    {
+        $typed = $data['password'] ?? null;
+
+        if ($typed === null || $typed === '') {
+            return $this->generateTemporaryPassword();
+        }
+
+        PasswordPolicy::ensureSatisfiedBy((string) $typed);
+
+        return (string) $typed;
     }
 
     /**

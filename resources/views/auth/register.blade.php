@@ -65,22 +65,26 @@
             </div>
 
             {{-- The password pair keeps its own column each, so the live match
-                 indication below sits under both of them. --}}
+                 indication and the requirements below sit under both of them. --}}
             <div class="col-md-6">
                 <x-password-input name="password" label="Password" placeholder="••••••••"
-                    autocomplete="new-password" minlength="8" role="new" wrapper="text-start mb-0" />
+                    autocomplete="new-password" :minlength="\App\Support\PasswordPolicy::MIN_LENGTH" role="new"
+                    wrapper="text-start mb-0" />
             </div>
 
             <div class="col-md-6">
                 <x-password-input name="password_confirmation" label="Confirm Password" placeholder="••••••••"
-                    autocomplete="new-password" minlength="8" role="confirm" wrapper="text-start mb-0" />
+                    autocomplete="new-password" :minlength="\App\Support\PasswordPolicy::MIN_LENGTH" role="confirm"
+                    wrapper="text-start mb-0" />
             </div>
         </div>
 
         {{-- Turns green the moment the two agree, red while they do not. --}}
-        <div class="text-start mb-3">
-            <span class="form-text text-muted" data-password-match>At least 8 characters.</span>
+        <div class="text-start">
+            <span class="form-text text-muted" data-password-match></span>
         </div>
+
+        <x-password-requirements for="password" class="mb-3" />
 
         {{-- Agreeing is a precondition of registering. The words are a button
              rather than a link so opening them cannot navigate away from a

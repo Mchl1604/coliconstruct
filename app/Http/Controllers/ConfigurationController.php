@@ -15,6 +15,7 @@ use App\Services\UserAccountService;
 use App\Support\AccountAge;
 use App\Support\BusinessTime;
 use App\Support\CompanyBranding;
+use App\Support\PasswordPolicy;
 use App\Support\PersonName;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Contracts\Validation\Validator as ValidatorContract;
@@ -881,13 +882,15 @@ class ConfigurationController extends Controller
 
     /**
      * Only a new account takes a password, and only when the administrator
-     * chose to type one instead of using the generated value.
+     * chose to type one instead of using the generated value. One typed by
+     * hand is held to the same policy as any other - that it is temporary is
+     * no reason for it to be weak.
      *
      * @return array<string, array<int, mixed>>
      */
     private function passwordRule(?User $user): array
     {
-        return $user ? [] : ['password' => ['nullable', 'string', 'min:8', 'max:72']];
+        return $user ? [] : ['password' => PasswordPolicy::rules(required: false, confirmed: false)];
     }
 
     /**
@@ -903,8 +906,7 @@ class ConfigurationController extends Controller
             'contact_number' => ['required', 'string', 'max:'.User::CONTACT_NUMBER_LENGTH, self::CONTACT_NUMBER_RULE],
             'birthdate' => AccountAge::rules(),
             'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users', 'email')],
-            'password' => ['nullable', 'string', 'min:8', 'max:72'],
-        ];
+        ] + $this->passwordRule(null);
     }
 
     /**
@@ -940,9 +942,8 @@ class ConfigurationController extends Controller
             'email.unique' => 'Another account already uses that email address.',
             'contact_number.regex' => User::CONTACT_NUMBER_MESSAGE,
             'contact_number.max' => User::CONTACT_NUMBER_MESSAGE,
-            'password.min' => 'The password must be at least 8 characters.',
             'skill_ids.*.exists' => 'One of the selected specialties no longer exists.',
-        ] + PersonName::middleInitialMessages() + AccountAge::messages();
+        ] + PersonName::middleInitialMessages() + AccountAge::messages() + PasswordPolicy::messages();
     }
 
     // ------------------------------------------------------------------

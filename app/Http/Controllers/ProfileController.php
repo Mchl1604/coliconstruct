@@ -7,6 +7,7 @@ use App\Models\Skill;
 use App\Models\User;
 use App\Services\OtpService;
 use App\Services\ProfileService;
+use App\Support\PasswordPolicy;
 use App\Support\PersonName;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -29,13 +30,6 @@ use Throwable;
  */
 class ProfileController extends Controller
 {
-    /**
-     * The same rule the rest of the system holds passwords to.
-     *
-     * @var array<int, string>
-     */
-    private const PASSWORD_RULES = ['required', 'string', 'min:8', 'max:72', 'confirmed'];
-
     public function __construct(private readonly ProfileService $profile) {}
 
     public function edit(Request $request)
@@ -228,11 +222,11 @@ class ProfileController extends Controller
 
         $validated = $request->validateWithBag('password', [
             'current_password' => ['required', 'string'],
-            'password' => self::PASSWORD_RULES,
+            // The same policy every other way of setting a password is held to.
+            'password' => PasswordPolicy::rules(),
         ], [
             'password.confirmed' => 'The two new passwords do not match.',
-            'password.min' => 'The new password must be at least 8 characters.',
-        ]);
+        ] + PasswordPolicy::messages());
 
         // Checked here rather than with the `current_password` rule so the
         // message names the field a person actually sees.

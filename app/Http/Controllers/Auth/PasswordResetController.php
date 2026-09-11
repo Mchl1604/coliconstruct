@@ -10,6 +10,7 @@ use App\Services\ActivityLogger;
 use App\Services\EmailService;
 use App\Services\OtpService;
 use App\Services\SessionGuard;
+use App\Support\PasswordPolicy;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -208,12 +209,10 @@ class PasswordResetController extends Controller
                 ->with('error', 'That reset has expired. Ask for a new code.');
         }
 
-        $request->validate([
-            'password' => ['required', 'string', 'min:8', 'max:72', 'confirmed'],
-        ], [
-            'password.confirmed' => 'The two passwords do not match.',
-            'password.min' => 'The new password must be at least 8 characters.',
-        ]);
+        $request->validate(
+            ['password' => PasswordPolicy::rules()],
+            PasswordPolicy::messages()
+        );
 
         $account = User::where('email', $address)->first();
 

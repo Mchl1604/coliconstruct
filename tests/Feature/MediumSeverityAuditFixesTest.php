@@ -142,8 +142,8 @@ class MediumSeverityAuditFixesTest extends TestCase
         ]);
 
         $this->post(route('auth.password.store'), [
-            'password' => 'a-brand-new-password',
-            'password_confirmation' => 'a-brand-new-password',
+            'password' => 'A-brand-new-password1',
+            'password_confirmation' => 'A-brand-new-password1',
         ])->assertRedirect(route('auth.login'));
 
         $this->assertSame(0, DB::table('sessions')->where('user_id', $user->id)->count());
@@ -187,8 +187,8 @@ class MediumSeverityAuditFixesTest extends TestCase
         $this->actingAs($user)
             ->put(route('profile.password'), [
                 'current_password' => 'the-old-password',
-                'password' => 'the-new-password',
-                'password_confirmation' => 'the-new-password',
+                'password' => 'The-new-password1',
+                'password_confirmation' => 'The-new-password1',
             ]);
 
         $this->assertDatabaseMissing('sessions', ['id' => 'somewhere-else']);

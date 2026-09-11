@@ -232,7 +232,7 @@ class TermsAcceptanceTest extends TestCase
             'contact_number' => '09171234567',
             'birthdate' => '1990-01-01',
             'email' => 'new.client@example.test',
-            'password' => 'a-good-password',
+            'password' => 'A-good-password1',
         ]);
 
         $this->assertSame(

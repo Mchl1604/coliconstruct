@@ -173,12 +173,12 @@ class PasswordResetTest extends TestCase
         $this->get(route('auth.password.reset'))->assertOk();
 
         $this->post(route('auth.password.store'), [
-            'password' => 'a-brand-new-password',
-            'password_confirmation' => 'a-brand-new-password',
+            'password' => 'A-brand-new-password1',
+            'password_confirmation' => 'A-brand-new-password1',
         ])->assertRedirect(route('auth.login'));
 
         $user->refresh();
-        $this->assertTrue(Hash::check('a-brand-new-password', $user->password));
+        $this->assertTrue(Hash::check('A-brand-new-password1', $user->password));
         $this->assertFalse(Hash::check('correct-password', $user->password));
         $this->assertFalse((bool) $user->must_change_password);
 
@@ -237,8 +237,8 @@ class PasswordResetTest extends TestCase
         $user = $this->account();
 
         $this->post(route('auth.password.store'), [
-            'password' => 'a-brand-new-password',
-            'password_confirmation' => 'a-brand-new-password',
+            'password' => 'A-brand-new-password1',
+            'password_confirmation' => 'A-brand-new-password1',
         ])->assertRedirect(route('auth.password.request'));
 
         $this->assertTrue(Hash::check('correct-password', $user->refresh()->password));
@@ -255,7 +255,7 @@ class PasswordResetTest extends TestCase
         $this->post(route('auth.password.verify.store'), ['code' => $this->issuedCode()]);
 
         $this->post(route('auth.password.store'), [
-            'password' => 'a-brand-new-password',
+            'password' => 'A-brand-new-password1',
             'password_confirmation' => 'something-else-entirely',
         ])->assertSessionHasErrors('password');
 
@@ -339,13 +339,13 @@ class PasswordResetTest extends TestCase
         $this->assertSame(1, User::query()->withUnusablePassword()->count());
 
         $this->artisan('users:repair-passwords', [
-            '--password' => 'issued-by-the-command',
+            '--password' => 'Issued-by-the-command1',
             '--keep-password' => true,
         ])->assertExitCode(RepairUnusablePasswords::SUCCESS);
 
         $broken->refresh();
         $this->assertTrue($broken->hasUsablePassword());
-        $this->assertTrue(Hash::check('issued-by-the-command', $broken->password));
+        $this->assertTrue(Hash::check('Issued-by-the-command1', $broken->password));
         $this->assertSame(0, User::query()->withUnusablePassword()->count());
 
         // A healthy account is left exactly as it was.
@@ -354,7 +354,7 @@ class PasswordResetTest extends TestCase
         // And the repaired account can now actually sign in.
         $this->post(route('auth.login.attempt'), [
             'email' => $broken->email,
-            'password' => 'issued-by-the-command',
+            'password' => 'Issued-by-the-command1',
         ])->assertRedirect();
     }
 

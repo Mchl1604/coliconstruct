@@ -216,8 +216,8 @@ class AuthenticationTest extends TestCase
             'email' => 'jose@example.test',
             'contact_number' => '09175551234',
             'birthdate' => '1990-05-04',
-            'password' => 'my-own-password',
-            'password_confirmation' => 'my-own-password',
+            'password' => 'My-own-password1',
+            'password_confirmation' => 'My-own-password1',
             'terms' => '1',
         ]);
 
@@ -236,8 +236,8 @@ class AuthenticationTest extends TestCase
         $this->assertSame('09175551234', $pending->contact_number);
         $this->assertSame('1990-05-04', $pending->birthdate->toDateString());
         // Hashed here too: the row is worth no more than the account would be.
-        $this->assertNotSame('my-own-password', $pending->password);
-        $this->assertTrue(Hash::check('my-own-password', $pending->password));
+        $this->assertNotSame('My-own-password1', $pending->password);
+        $this->assertTrue(Hash::check('My-own-password1', $pending->password));
 
         Mail::assertSent(OtpCodeMail::class, fn (OtpCodeMail $mail): bool => $mail->hasTo('jose@example.test')
             && $mail->purpose === OtpVerification::PURPOSE_REGISTRATION);
@@ -265,8 +265,8 @@ class AuthenticationTest extends TestCase
             'email' => 'jose@example.test',
             'contact_number' => '09175551234',
             'birthdate' => '1990-05-04',
-            'password' => 'first-password',
-            'password_confirmation' => 'first-password',
+            'password' => 'First-password1',
+            'password_confirmation' => 'First-password1',
             'terms' => '1',
         ]);
 
@@ -277,8 +277,8 @@ class AuthenticationTest extends TestCase
             'email' => 'jose@example.test',
             'contact_number' => '09175559999',
             'birthdate' => '1990-05-04',
-            'password' => 'second-password',
-            'password_confirmation' => 'second-password',
+            'password' => 'Second-password2',
+            'password_confirmation' => 'Second-password2',
             'terms' => '1',
         ])->assertRedirect(route('auth.verify'));
 
@@ -288,7 +288,7 @@ class AuthenticationTest extends TestCase
 
         $this->assertSame('Jose Garcia', $pending->full_name);
         $this->assertSame('09175559999', $pending->contact_number);
-        $this->assertTrue(Hash::check('second-password', $pending->password));
+        $this->assertTrue(Hash::check('Second-password2', $pending->password));
     }
 
     /**
@@ -304,8 +304,8 @@ class AuthenticationTest extends TestCase
             'email' => 'jose@example.test',
             'contact_number' => '09175551234',
             'birthdate' => '1990-05-04',
-            'password' => 'my-own-password',
-            'password_confirmation' => 'my-own-password',
+            'password' => 'My-own-password1',
+            'password_confirmation' => 'My-own-password1',
             'terms' => '1',
         ]);
 
@@ -328,8 +328,8 @@ class AuthenticationTest extends TestCase
             'email' => 'jose@example.test',
             'contact_number' => '09175551234',
             'birthdate' => '1990-05-04',
-            'password' => 'my-own-password',
-            'password_confirmation' => 'my-own-password',
+            'password' => 'My-own-password1',
+            'password_confirmation' => 'My-own-password1',
             'terms' => '1',
         ]);
 
@@ -345,7 +345,7 @@ class AuthenticationTest extends TestCase
         $this->assertStringStartsWith('CLI-', (string) $user->user_code);
         // Their own password, so there is nothing to force them to replace.
         $this->assertFalse($user->must_change_password);
-        $this->assertTrue(Hash::check('my-own-password', $user->password));
+        $this->assertTrue(Hash::check('My-own-password1', $user->password));
 
         $this->assertTrue($user->hasVerifiedEmail());
         $this->assertTrue($user->canLogin());
@@ -372,8 +372,8 @@ class AuthenticationTest extends TestCase
             'email' => 'jose@example.test',
             'contact_number' => '09175551234',
             'birthdate' => '1990-05-04',
-            'password' => 'my-own-password',
-            'password_confirmation' => 'my-own-password',
+            'password' => 'My-own-password1',
+            'password_confirmation' => 'My-own-password1',
             'terms' => '1',
         ]);
 
@@ -408,8 +408,8 @@ class AuthenticationTest extends TestCase
             'email' => 'jose@example.test',
             'contact_number' => '09175551234',
             'birthdate' => '1990-05-04',
-            'password' => 'my-own-password',
-            'password_confirmation' => 'my-own-password',
+            'password' => 'My-own-password1',
+            'password_confirmation' => 'My-own-password1',
             'terms' => '1',
         ]);
 
@@ -514,8 +514,8 @@ class AuthenticationTest extends TestCase
             'email' => 'sneaky@example.test',
             'contact_number' => '09175551234',
             'birthdate' => '1990-05-04',
-            'password' => 'my-own-password',
-            'password_confirmation' => 'my-own-password',
+            'password' => 'My-own-password1',
+            'password_confirmation' => 'My-own-password1',
             'terms' => '1',
             'role' => 'super_admin',
             'status' => 'active',
@@ -540,8 +540,8 @@ class AuthenticationTest extends TestCase
             'email' => 'taken@example.test',
             'contact_number' => '09175551234',
             'birthdate' => '1990-05-04',
-            'password' => 'my-own-password',
-            'password_confirmation' => 'my-own-password',
+            'password' => 'My-own-password1',
+            'password_confirmation' => 'My-own-password1',
             'terms' => '1',
         ])->assertSessionHasErrors('email');
     }
@@ -559,8 +559,8 @@ class AuthenticationTest extends TestCase
             'email' => 'young@example.test',
             'contact_number' => '09175551234',
             'birthdate' => $underage,
-            'password' => 'my-own-password',
-            'password_confirmation' => 'my-own-password',
+            'password' => 'My-own-password1',
+            'password_confirmation' => 'My-own-password1',
             'terms' => '1',
         ])->assertSessionHasErrors('birthdate');
 
@@ -587,8 +587,8 @@ class AuthenticationTest extends TestCase
             'email' => 'eighteen@example.test',
             'contact_number' => '09175551234',
             'birthdate' => $birthdate,
-            'password' => 'my-own-password',
-            'password_confirmation' => 'my-own-password',
+            'password' => 'My-own-password1',
+            'password_confirmation' => 'My-own-password1',
             'terms' => '1',
         ])->assertRedirect(route('auth.verify'));
 
@@ -606,7 +606,7 @@ class AuthenticationTest extends TestCase
             'email' => 'jose@example.test',
             'contact_number' => '09175551234',
             'birthdate' => '1990-05-04',
-            'password' => 'my-own-password',
+            'password' => 'My-own-password1',
             'password_confirmation' => 'something-else',
             'terms' => '1',
         ])->assertSessionHasErrors('password');
@@ -633,14 +633,14 @@ class AuthenticationTest extends TestCase
 
         $this->post(route('auth.password.update'), [
             'current_password' => 'correct-password',
-            'password' => 'a-brand-new-password',
-            'password_confirmation' => 'a-brand-new-password',
+            'password' => 'A-brand-new-password1',
+            'password_confirmation' => 'A-brand-new-password1',
         ])->assertRedirect(route('super-admin.dashboard'));
 
         $user->refresh();
 
         $this->assertFalse($user->must_change_password);
-        $this->assertTrue(Hash::check('a-brand-new-password', $user->password));
+        $this->assertTrue(Hash::check('A-brand-new-password1', $user->password));
 
         // And the portal opens normally from here on.
         $this->get(route('super-admin.dashboard'))->assertOk();
@@ -663,8 +663,8 @@ class AuthenticationTest extends TestCase
 
         $this->post(route('auth.password.update'), [
             'current_password' => 'not-it',
-            'password' => 'a-brand-new-password',
-            'password_confirmation' => 'a-brand-new-password',
+            'password' => 'A-brand-new-password1',
+            'password_confirmation' => 'A-brand-new-password1',
         ])->assertSessionHasErrors('current_password');
     }
 

@@ -30,7 +30,7 @@
         <input type="password" id="{{ $id }}" name="{{ $name }}"
             class="form-control border-end-0 @error($name) is-invalid @enderror"
             autocomplete="{{ $autocomplete }}"
-            @if ($minlength) minlength="{{ $minlength }}" maxlength="72" @endif
+            @if ($minlength) minlength="{{ $minlength }}" maxlength="{{ \App\Support\PasswordPolicy::MAX_LENGTH }}" @endif
             @if ($role === 'new') data-password-new @elseif ($role === 'confirm') data-password-confirm @endif
             @if ($autofocus) autofocus @endif
             {{ $attributes->merge(['required' => true]) }}>

@@ -12,6 +12,7 @@ use App\Services\OtpService;
 use App\Services\SessionGuard;
 use App\Services\UserAccountService;
 use App\Support\AccountAge;
+use App\Support\PasswordPolicy;
 use App\Support\PortalHome;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -236,7 +237,7 @@ class AuthController extends Controller
             // Nobody under 18 gets an account, whichever form opens it.
             'birthdate' => AccountAge::rules(),
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
-            'password' => ['required', 'string', 'min:8', 'max:72', 'confirmed'],
+            'password' => PasswordPolicy::rules(),
             // Checked on the server as well as in the browser: a checkbox is
             // the easiest field in a form to leave out of a request.
             'terms' => ['accepted'],
@@ -244,9 +245,8 @@ class AuthController extends Controller
             'email.unique' => 'An account already exists for that email address.',
             'contact_number.regex' => User::CONTACT_NUMBER_MESSAGE,
             'contact_number.max' => User::CONTACT_NUMBER_MESSAGE,
-            'password.confirmed' => 'The two passwords do not match.',
             'terms.accepted' => 'Accept the Terms and Conditions to continue.',
-        ] + AccountAge::messages());
+        ] + AccountAge::messages() + PasswordPolicy::messages());
 
         // Never handed to the account service: agreeing is a precondition of
         // registering, not a column on the account.
@@ -333,11 +333,10 @@ class AuthController extends Controller
     {
         $validated = $request->validate([
             'current_password' => ['required', 'string'],
-            'password' => ['required', 'string', 'min:8', 'max:72', 'confirmed'],
+            'password' => PasswordPolicy::rules(),
         ], [
             'password.confirmed' => 'The two new passwords do not match.',
-            'password.min' => 'The new password must be at least 8 characters.',
-        ]);
+        ] + PasswordPolicy::messages());
 
         $user = $request->user();
 

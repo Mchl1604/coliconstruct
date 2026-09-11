@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\User;
 use App\Services\UserAccountService;
+use App\Support\PasswordPolicy;
 use Illuminate\Console\Command;
 
 /**
@@ -47,6 +48,16 @@ class RepairUnusablePasswords extends Command
         }
 
         $shared = $this->option('password');
+
+        // A password typed on the command line is still a password somebody
+        // signs in with, so it is held to the same policy as any other.
+        // Checked before anything is written, so a refusal changes nothing.
+        if ($shared && ($problem = PasswordPolicy::failureMessage($shared)) !== null) {
+            $this->error($problem);
+
+            return self::FAILURE;
+        }
+
         $forceChange = ! $this->option('keep-password');
         $issued = [];
 
