@@ -101,10 +101,11 @@ class ProjectPhaseController extends Controller
             // work down, not to staff it - but a filled-in field is held to the
             // same rules the task board holds it to.
             'technicians' => $this->assignableTechnicians($project),
+            // Every booked range, not just the outer bounds: the pickers offer
+            // only the days the project is actually scheduled on, so a gap
+            // between two visits is greyed out rather than offered and then
+            // refused. The server enforces the same rule on the way in.
             'scheduleRanges' => $ranges,
-            'scheduleHint' => $ranges === []
-                ? ''
-                : $this->scheduleRules->describe($ranges),
             'maxTasksPerPhase' => $this->taskRules->maxTasksPerPhase(),
             'projectUrl' => $this->projectUrl($request, $project),
             'saveUrl' => $this->actionUrl($request, $project, 'save'),

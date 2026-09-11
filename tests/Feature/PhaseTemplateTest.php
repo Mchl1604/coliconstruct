@@ -369,7 +369,16 @@ class PhaseTemplateTest extends TestCase
             ->assertOk()
             ->assertSee('Site Preparation')
             ->assertSee('Sheet the floor')
-            ->assertSee("Started from this project's default phases", false);
+            // The rows speak for themselves now - no banner explaining where
+            // they came from, and no line spelling out the booked dates. The
+            // pickers are handed the booked ranges instead, and offer only
+            // those days.
+            ->assertDontSee("Started from this project's default phases", false)
+            ->assertDontSee('Task dates have to start and finish')
+            ->assertSee(
+                "data-schedule-ranges='".json_encode([['start' => $this->day(10), 'end' => $this->day(20)]])."'",
+                false
+            );
 
         // A suggestion is a suggestion: nothing has been stored.
         $this->assertSame(0, $this->project->phases()->count());

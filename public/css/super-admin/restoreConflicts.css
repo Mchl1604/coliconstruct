@@ -242,36 +242,6 @@
     gap: 0.5rem;
 }
 
-/* Letting go of one end of the range, so the other can move. Drawn the way
-   the schedules page draws the same button. */
-.flatpickr-calendar .conflict-picker-clear {
-    display: block;
-    width: 100%;
-    padding: 0.5rem 0.75rem;
-    border: 0;
-    border-top: 1px solid #e6e6e6;
-    /* Squares off the two bottom corners the calendar itself rounds, so the
-       button ends where the panel does. */
-    border-radius: 0 0 5px 5px;
-    background: transparent;
-    color: #64748b;
-    font-size: 0.8rem;
-    font-weight: 600;
-    cursor: pointer;
-}
-
-.flatpickr-calendar .conflict-picker-clear:hover,
-.flatpickr-calendar .conflict-picker-clear:focus-visible {
-    background: #f1f5f9;
-    color: #334155;
-}
-
-/* An open calendar that has not been given room for the footer would clip it -
-   flatpickr sizes the panel from the day grid alone. */
-.flatpickr-calendar.open {
-    height: auto;
-}
-
 .conflict-modal-footer {
     border-top: 1px solid #e9ecef;
 }

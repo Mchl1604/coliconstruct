@@ -3406,8 +3406,6 @@
     @endforeach
 
     @push('scripts')
-        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
-        <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
         {{-- Before every script that asks a question with it. --}}
         <script src="/js/confirmDialog.js"></script>
         {{-- Same range-aware task date pickers the Tasks page uses. --}}

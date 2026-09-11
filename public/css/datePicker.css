@@ -1,0 +1,242 @@
+/**
+ * The house style for every date picker in the application.
+ *
+ * Loaded once by each layout, after flatpickr's own stylesheet, so it wins
+ * over the library's defaults without !important. Pages no longer style the
+ * calendar themselves - see datePicker.js for why there is only one.
+ *
+ * Scoped to .app-picker, which the shared plugin puts on every calendar, so a
+ * flatpickr somebody builds outside that plugin still gets the stock look
+ * rather than half of this one.
+ */
+
+.app-picker {
+    --picker-accent: #2370b4;
+    --picker-accent-dark: #1b5688;
+    --picker-accent-soft: #eaf3fb;
+    --picker-ink: #1e293b;
+    --picker-muted: #94a3b8;
+
+    width: auto;
+    padding: .4rem .4rem 0;
+    border: 1px solid #e2e8f0;
+    border-radius: .75rem;
+    box-shadow: 0 12px 32px rgba(15, 23, 42, .16);
+    font-family: inherit;
+}
+
+/* The pointer at the field. Hidden: with the panel's own shadow and border it
+   read as a smudge rather than an arrow. */
+.app-picker::before,
+.app-picker::after {
+    display: none;
+}
+
+/* An open calendar has to grow to fit the footer; flatpickr sizes the panel
+   from the day grid alone. */
+.app-picker.open {
+    height: auto;
+}
+
+/* ---------- Month and year ---------- */
+
+.app-picker .flatpickr-months {
+    align-items: center;
+    padding: .15rem 0 .35rem;
+}
+
+.app-picker .flatpickr-months .flatpickr-month {
+    height: 2.4rem;
+    color: var(--picker-ink);
+}
+
+.app-picker .flatpickr-current-month {
+    padding-top: .45rem;
+    font-size: 1rem;
+    font-weight: 700;
+}
+
+.app-picker .flatpickr-current-month .flatpickr-monthDropdown-months,
+.app-picker .flatpickr-current-month input.cur-year {
+    font-weight: 700;
+    border-radius: .35rem;
+}
+
+.app-picker .flatpickr-current-month .flatpickr-monthDropdown-months:hover,
+.app-picker .flatpickr-current-month input.cur-year:hover {
+    background: var(--picker-accent-soft);
+}
+
+.app-picker .flatpickr-months .flatpickr-prev-month,
+.app-picker .flatpickr-months .flatpickr-next-month {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    top: .55rem;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    border-radius: .5rem;
+    color: #475569;
+    font-size: .95rem;
+    transition: background .12s ease, color .12s ease;
+}
+
+.app-picker .flatpickr-months .flatpickr-prev-month {
+    left: .35rem;
+}
+
+.app-picker .flatpickr-months .flatpickr-next-month {
+    right: .35rem;
+}
+
+.app-picker .flatpickr-months .flatpickr-prev-month:hover,
+.app-picker .flatpickr-months .flatpickr-next-month:hover {
+    background: var(--picker-accent-soft);
+    color: var(--picker-accent);
+}
+
+.app-picker .flatpickr-months .flatpickr-disabled {
+    opacity: .3;
+}
+
+/* ---------- Weekdays and days ---------- */
+
+.app-picker span.flatpickr-weekday {
+    color: #64748b;
+    font-size: .72rem;
+    font-weight: 700;
+    letter-spacing: .03em;
+    text-transform: uppercase;
+}
+
+.app-picker .flatpickr-day {
+    border-radius: .5rem;
+    color: var(--picker-ink);
+    font-weight: 500;
+}
+
+.app-picker .flatpickr-day:hover,
+.app-picker .flatpickr-day:focus {
+    border-color: var(--picker-accent-soft);
+    background: var(--picker-accent-soft);
+    color: var(--picker-accent-dark);
+}
+
+.app-picker .flatpickr-day.today {
+    border-color: var(--picker-accent);
+    font-weight: 700;
+}
+
+.app-picker .flatpickr-day.today:hover,
+.app-picker .flatpickr-day.today:focus {
+    border-color: var(--picker-accent);
+    background: var(--picker-accent-soft);
+    color: var(--picker-accent-dark);
+}
+
+.app-picker .flatpickr-day.selected,
+.app-picker .flatpickr-day.selected:hover,
+.app-picker .flatpickr-day.selected:focus,
+.app-picker .flatpickr-day.startRange,
+.app-picker .flatpickr-day.endRange {
+    border-color: var(--picker-accent);
+    background: var(--picker-accent);
+    color: #fff;
+    font-weight: 700;
+}
+
+.app-picker .flatpickr-day.inRange {
+    border-color: var(--picker-accent-soft);
+    background: var(--picker-accent-soft);
+    box-shadow: -5px 0 0 var(--picker-accent-soft), 5px 0 0 var(--picker-accent-soft);
+}
+
+/* A day of the month either side. Before the disabled rule below, so a blocked
+   day looks blocked whichever month it belongs to. */
+.app-picker .flatpickr-day.prevMonthDay,
+.app-picker .flatpickr-day.nextMonthDay {
+    color: var(--picker-muted);
+}
+
+/* Days that cannot be chosen - outside a project's schedule, before today,
+   in a gap between two bookings. Faded and struck through, so "not allowed"
+   reads differently from "a day of another month". */
+.app-picker .flatpickr-day.flatpickr-disabled,
+.app-picker .flatpickr-day.flatpickr-disabled:hover {
+    color: #cbd5e1;
+    background: transparent;
+    border-color: transparent;
+    text-decoration: line-through;
+    text-decoration-color: rgba(203, 213, 225, .8);
+    cursor: not-allowed;
+}
+
+/* ---------- The footer, and Clear ---------- */
+
+.app-picker-footer {
+    display: flex;
+    justify-content: flex-end;
+    margin: .35rem -.4rem 0;
+    padding: .45rem .6rem;
+    border-top: 1px solid #eef1f5;
+    border-radius: 0 0 .75rem .75rem;
+    background: #f8fafc;
+}
+
+.app-picker-clear {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    padding: .25rem .7rem;
+    border: 1px solid #e2e8f0;
+    border-radius: .45rem;
+    background: #fff;
+    color: #475569;
+    font-size: .8rem;
+    font-weight: 600;
+    line-height: 1.4;
+    transition: all .12s ease;
+}
+
+.app-picker-clear:hover:not(:disabled),
+.app-picker-clear:focus-visible {
+    border-color: #fecaca;
+    background: #fff5f5;
+    color: #dc2626;
+}
+
+.app-picker-clear:disabled {
+    opacity: .45;
+    cursor: default;
+}
+
+/* ---------- The field itself ---------- */
+
+/* The visible half of the pair. A calendar icon on the right says it opens a
+   calendar before anybody clicks it, and the pointer cursor agrees. */
+.app-date-input {
+    padding-right: 2.1rem;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%2364748b'%3e%3cpath d='M3.5 0a.5.5 0 0 1 .5.5V1h8V.5a.5.5 0 0 1 1 0V1h1a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h1V.5a.5.5 0 0 1 .5-.5zM1 4v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V4H1z'/%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right .7rem center;
+    background-size: .9rem;
+    cursor: pointer;
+}
+
+/* flatpickr sets readonly on the alt input to stop typing, which Bootstrap
+   greys out as if the field were disabled. It is not - it opens a calendar. */
+.app-date-input.form-control[readonly]:not(:disabled):not(.is-readonly) {
+    background-color: #fff;
+}
+
+.app-date-input:disabled,
+.app-date-input.is-readonly {
+    background-color: #e9ecef;
+    cursor: not-allowed;
+    opacity: 1;
+}
+
+.app-date-input.is-invalid {
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%23dc3545'%3e%3cpath d='M3.5 0a.5.5 0 0 1 .5.5V1h8V.5a.5.5 0 0 1 1 0V1h1a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h1V.5a.5.5 0 0 1 .5-.5zM1 4v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V4H1z'/%3e%3c/svg%3e");
+}

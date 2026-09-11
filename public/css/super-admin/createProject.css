@@ -535,40 +535,6 @@
         flex: 1 1 auto;
     }
 }
-/* ---- Reset, inside the calendar ----
-   Per field and appended to the flatpickr panel rather than sitting beside the
-   input or down in a form footer: the calendar is where the date was chosen,
-   so it is where somebody looks to unchoose it. */
-
-.flatpickr-reset-row {
-    display: flex;
-    justify-content: flex-end;
-    padding: 0.4rem 0.6rem;
-    border-top: 1px solid #e9ecef;
-    background: #fbfcfe;
-}
-
-.flatpickr-reset-button {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    border: 1px solid #d6e2f5;
-    background: #fff;
-    color: #2563eb;
-    border-radius: 8px;
-    padding: 0.2rem 0.6rem;
-    font-size: 0.78rem;
-    font-weight: 600;
-    line-height: 1.4;
-    transition: 0.15s ease;
-}
-
-.flatpickr-reset-button:hover,
-.flatpickr-reset-button:focus-visible {
-    background: #eef4ff;
-    border-color: #2563eb;
-}
-
 /* The visible half of an altInput pair. flatpickr does not grey it out when
    the real field is disabled, so it is told to here - see
    setDateFieldDisabled(). */

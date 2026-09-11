@@ -87,9 +87,30 @@
 
         const window = scheduleWindow(ranges);
 
+        // This function owns whether the two fields can be used at all: a
+        // project with booked days can be dated, one without cannot.
         if (!window) {
+            // Nothing is booked, so there is no day a task could start or end
+            // on. Drawn as the same picker as every other date field, switched
+            // off and saying why - not left as a bare text box that accepts
+            // anything and is only refused once it reaches the server.
+            [startInput, dueInput].forEach(function (input) {
+                input.value = '';
+                input.disabled = true;
+                input.title = 'This project has no schedule yet, so tasks cannot be dated.';
+
+                if (global.appDatePicker) {
+                    global.appDatePicker.upgrade(input);
+                }
+            });
+
             return;
         }
+
+        [startInput, dueInput].forEach(function (input) {
+            input.disabled = false;
+            input.removeAttribute('title');
+        });
 
         const enable = enabledRanges(ranges);
 
@@ -129,7 +150,20 @@
             const startInput = row.querySelector('[data-task-start]');
             const dueInput = row.querySelector('[data-task-due]');
 
-            if (!startInput || !dueInput || startInput.hasAttribute('readonly')) {
+            if (!startInput || !dueInput) {
+                return;
+            }
+
+            // A task that can no longer be edited still shows its dates the
+            // way every other date field does - "Sep 27, 2026", not the raw
+            // 2026-09-27 the field holds - through the shared picker, which
+            // will not open on a readonly field.
+            if (startInput.hasAttribute('readonly')) {
+                if (global.appDatePicker) {
+                    global.appDatePicker.upgrade(startInput);
+                    global.appDatePicker.upgrade(dueInput);
+                }
+
                 return;
             }
 

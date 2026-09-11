@@ -936,9 +936,14 @@ class RecoveryPartialDayTest extends TestCase
     }
 
     /**
-     * The Reopen dialog's date pickers carry a Reset of their own, appended
-     * inside each calendar - which is where somebody is looking when they find
-     * they cannot pick the date they want.
+     * The Reopen dialog's date pickers offer a Clear inside each calendar -
+     * which is where somebody is looking when they find they cannot pick the
+     * date they want.
+     *
+     * The button is no longer the dialog's own. Every date picker in the
+     * application gets it from the shared picker (datePicker.js), registered as
+     * a flatpickr default, so this checks that the page loads that picker and
+     * that the dialog has not gone back to adding a second one of its own.
      */
     public function test_the_reopen_dialog_offers_a_reset_inside_its_date_pickers(): void
     {
@@ -954,12 +959,22 @@ class RecoveryPartialDayTest extends TestCase
         $this->get(route('super-admin.projects.show', $project->project_id))
             ->assertOk()
             ->assertSee('/js/super-admin/reopenProject.js', false)
-            // The footer that styles it, which flatpickr appends to <body> and
-            // so cannot be reached by a rule scoped to the dialog.
-            ->assertSee('/css/super-admin/restoreConflicts.css', false);
+            // The shared picker, and the style its calendar and Clear button
+            // are drawn in. flatpickr appends calendars to <body>, so the style
+            // has to be global rather than scoped to the dialog.
+            ->assertSee('/js/datePicker.js', false)
+            ->assertSee('/css/datePicker.css', false);
 
-        $this->assertStringContainsString(
-            'conflict-picker-clear',
+        $shared = (string) file_get_contents(public_path('js/datePicker.js'));
+
+        // Every picker gets the Clear, because it is a default plugin rather
+        // than something each page has to remember to add.
+        $this->assertStringContainsString('app-picker-clear', $shared);
+        $this->assertStringContainsString('plugins: [housePlugin]', $shared);
+
+        // One Clear per calendar: the dialog must not add its own on top.
+        $this->assertStringNotContainsString(
+            'picker-clear',
             (string) file_get_contents(public_path('js/super-admin/reopenProject.js'))
         );
     }

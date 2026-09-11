@@ -656,44 +656,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    /**
-     * A Reset inside the calendar panel itself.
-     *
-     * Per field, and appended to the panel rather than added as a button
-     * beside the input or down in a footer: the calendar is where the date was
-     * chosen, so it is where the person looks to unchoose it. Clearing runs
-     * the same path a change does, because an emptied date changes who is
-     * available just as much as a filled one does.
-     */
-    function addCalendarReset(picker, label) {
-        if (!picker || !picker.calendarContainer) {
-            return;
-        }
-
-        const footer = document.createElement('div');
-        footer.className = 'flatpickr-reset-row';
-
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'flatpickr-reset-button';
-        button.innerHTML = '<i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i> Reset';
-        button.setAttribute('aria-label', 'Clear the ' + label);
-
-        button.addEventListener('click', function() {
-            picker.clear();
-            picker.close();
-
-            refreshDatePickers();
-            validateScheduleInputs();
-            renderTechnicianDropdown();
-            renderLeadTechnicianDropdown();
-            updateSummary();
-        });
-
-        footer.appendChild(button);
-        picker.calendarContainer.appendChild(footer);
-    }
-
     function initializeDatePickers() {
         if (!window.flatpickr) {
             return;
@@ -714,7 +676,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 // real input holding the Y-m-d the server validates, so the
                 // friendlier reading costs the payload nothing.
                 altInput: true,
-                altFormat: 'F j, Y',
                 altInputClass: 'form-control flatpickr-alt-input',
                 allowInput: true,
                 minDate: 'today',
@@ -733,7 +694,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 // real input holding the Y-m-d the server validates, so the
                 // friendlier reading costs the payload nothing.
                 altInput: true,
-                altFormat: 'F j, Y',
                 altInputClass: 'form-control flatpickr-alt-input',
                 allowInput: true,
                 minDate: 'today',
@@ -748,7 +708,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 // real input holding the Y-m-d the server validates, so the
                 // friendlier reading costs the payload nothing.
                 altInput: true,
-                altFormat: 'F j, Y',
                 altInputClass: 'form-control flatpickr-alt-input',
                 allowInput: true,
                 minDate: 'today',
@@ -767,9 +726,6 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         }
 
-        addCalendarReset(startPicker, 'start date');
-        addCalendarReset(endPicker, 'end date');
-        addCalendarReset(projectDatePicker, 'project date');
 
         refreshDatePickers();
     }

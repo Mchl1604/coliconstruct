@@ -19,6 +19,11 @@
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+    {{-- The one date picker, everywhere: flatpickr, pinned, with the house
+         style after it. Pages do not load their own copy - a second copy would
+         replace window.flatpickr and lose the defaults datePicker.js sets. --}}
+    <link href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css" rel="stylesheet">
+    <link href="/css/datePicker.css" rel="stylesheet">
     <link href="/css/theme.css" rel="stylesheet">
     <link href="/css/superAdminNav.css" rel="stylesheet">
     <link href="/css/notifications.css" rel="stylesheet">
@@ -112,6 +117,10 @@
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <script src="https://cdn.datatables.net/2.3.8/js/dataTables.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    {{-- Before the page's own scripts, so every picker they build inherits
+         the shared defaults and the Clear button. --}}
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js"></script>
+    <script src="/js/datePicker.js"></script>
     <script src="/js/technician/portal.js"></script>
     <script>
         window.notificationRoutes = @json([

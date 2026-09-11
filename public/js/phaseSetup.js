@@ -43,7 +43,26 @@ document.addEventListener("DOMContentLoaded", function () {
     const maxTasks = parseInt(form.dataset.maxTasks || "50", 10);
 
     const technicians = readJson(form.dataset.technicians, []);
-    const hasSchedule = Boolean((form.dataset.scheduleHint || "").trim());
+
+    // Every range the project is booked for. Only those days can be picked:
+    // taskDatePickers greys out everything else, gaps between visits included,
+    // and keeps each task's end from falling before its start. That is the
+    // guidance the old "dates have to fall between..." label gave, enforced in
+    // the calendar instead of described above it. The server holds a task to
+    // the same rule on the way in.
+    const scheduleRanges = readJson(form.dataset.scheduleRanges, []);
+    const hasSchedule = scheduleRanges.length > 0;
+
+    /**
+     * How many colours the phases cycle through. Each phase takes the colour of
+     * its position, the same way it takes the number of its position - "the
+     * green one" and "Phase 2" are the same answer, and both follow a reorder.
+     */
+    const PHASE_COLOURS = 8;
+
+    function colourClass(index) {
+        return "phase-colour-" + ((index % PHASE_COLOURS) + 1);
+    }
 
     const reassignModalEl = document.getElementById("reassignPhaseTasksModal");
     const reassignTarget = reassignModalEl.querySelector(
@@ -92,6 +111,9 @@ document.addEventListener("DOMContentLoaded", function () {
                     // Real tasks already filed here. Not the drafts below.
                     task_count: parseInt(row.task_count || 0, 10),
                     tasks: Object.values(row.tasks || {}).map(readTask),
+                    // Screen state only - never submitted. A long structure is
+                    // easier to reorder with its task lists folded away.
+                    collapsed: false,
                 };
             },
         );
@@ -190,30 +212,47 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function taskMarkup(task, phaseIndex, taskIndex) {
         const label = "Phase " + (phaseIndex + 1) + " task " + (taskIndex + 1);
+        // Plain text inputs, turned into pickers once they are on the page -
+        // see bindDatePickers(). data-date-picker is the fallback: a field this
+        // screen does not bind (no schedule) still becomes the shared picker, so
+        // it looks like every other date field while it sits disabled.
+        const dateAttrs =
+            " data-date-picker" +
+            (hasSchedule
+                ? ""
+                : ' disabled title="This project has no schedule yet, so tasks cannot be given dates."');
 
         return (
-            '<div class="phase-task-row" data-task-row="' +
+            '<div class="phase-task" data-task-row="' +
             taskIndex +
             '">' +
-            '<div class="phase-task-fields">' +
-            '<div class="phase-task-headline">' +
-            '<input type="text" class="form-control form-control-sm" maxlength="255"' +
-            ' placeholder="Task title" aria-label="' +
+            '<div class="phase-task-top">' +
+            // "Task 2" rather than a bare number: in a list of nearly identical
+            // boxes, the label is what tells one task from the next.
+            '<span class="phase-task-label">Task ' +
+            (taskIndex + 1) +
+            "</span>" +
+            chips(task.sources) +
+            '<button type="button" class="phase-task-remove" data-task-remove' +
+            ' aria-label="Remove ' +
+            label +
+            '" title="Remove task"><i class="bi bi-x-lg"></i></button>' +
+            "</div>" +
+            '<input type="text" class="form-control phase-task-title" maxlength="255"' +
+            ' placeholder="What needs doing?" aria-label="' +
             label +
             ' title" data-task-title value="' +
             escapeHtml(task.title) +
             '">' +
-            chips(task.sources) +
-            "</div>" +
             '<textarea class="form-control form-control-sm mt-2" rows="2"' +
-            ' placeholder="What this task involves" aria-label="' +
+            ' placeholder="Details for whoever does it" aria-label="' +
             label +
             ' description" data-task-description>' +
             escapeHtml(task.description) +
             "</textarea>" +
-            '<div class="phase-task-meta mt-2">' +
-            '<label class="phase-task-field">' +
-            '<span class="phase-task-field-label">Technician</span>' +
+            '<div class="phase-task-meta">' +
+            '<label class="phase-task-field phase-task-field-wide">' +
+            '<span class="phase-task-field-label"><i class="bi bi-person"></i>Technician</span>' +
             '<select class="form-select form-select-sm" aria-label="' +
             label +
             ' technician" data-task-technician>' +
@@ -221,31 +260,26 @@ document.addEventListener("DOMContentLoaded", function () {
             "</select>" +
             "</label>" +
             '<label class="phase-task-field">' +
-            '<span class="phase-task-field-label">Start date</span>' +
-            '<input type="date" class="form-control form-control-sm" aria-label="' +
+            '<span class="phase-task-field-label"><i class="bi bi-calendar-event"></i>Start</span>' +
+            '<input type="text" class="form-control form-control-sm" aria-label="' +
             label +
             ' start date" data-task-start value="' +
             escapeHtml(task.start_date) +
             '"' +
-            (hasSchedule ? "" : " disabled") +
+            dateAttrs +
             ">" +
             "</label>" +
             '<label class="phase-task-field">' +
-            '<span class="phase-task-field-label">End date</span>' +
-            '<input type="date" class="form-control form-control-sm" aria-label="' +
+            '<span class="phase-task-field-label"><i class="bi bi-calendar-check"></i>End</span>' +
+            '<input type="text" class="form-control form-control-sm" aria-label="' +
             label +
             ' end date" data-task-due value="' +
             escapeHtml(task.due_date) +
             '"' +
-            (hasSchedule ? "" : " disabled") +
+            dateAttrs +
             ">" +
             "</label>" +
             "</div>" +
-            "</div>" +
-            '<button type="button" class="btn btn-sm btn-outline-danger phase-task-remove"' +
-            ' data-task-remove aria-label="Remove ' +
-            label +
-            '"><i class="bi bi-x-lg"></i></button>' +
             "</div>"
         );
     }
@@ -261,110 +295,173 @@ document.addEventListener("DOMContentLoaded", function () {
         // edit. Said plainly so a person does not go looking for it among the
         // rows below.
         const existing = row.task_count
-            ? '<p class="phase-task-existing small mb-2">' +
+            ? '<p class="phase-task-existing">' +
               '<i class="bi bi-list-check me-1"></i>' +
-              row.task_count +
-              " task" +
-              (row.task_count === 1 ? "" : "s") +
+              plural(row.task_count, "task") +
               " already on this phase, managed on the task board." +
               "</p>"
             : "";
 
+        const empty =
+            !row.tasks.length && !row.task_count
+                ? '<p class="phase-tasks-empty">No tasks yet.</p>'
+                : "";
+
         return (
-            '<div class="phase-tasks">' +
+            '<div class="phase-tasks"' +
+            (row.collapsed ? " hidden" : "") +
+            ">" +
             existing +
-            '<div class="phase-task-list">' +
+            empty +
             drafts +
-            "</div>" +
-            '<button type="button" class="btn btn-sm btn-outline-primary mt-2"' +
-            ' data-task-add' +
+            '<button type="button" class="phase-add-task" data-task-add' +
             (row.tasks.length >= maxTasks ? " disabled" : "") +
-            '><i class="bi bi-plus-lg me-1"></i>Add Task</button>' +
+            '><i class="bi bi-plus-lg"></i>Add task to Phase ' +
+            (index + 1) +
+            "</button>" +
             "</div>"
         );
+    }
+
+    function plural(count, word) {
+        return count + " " + word + (count === 1 ? "" : "s");
     }
 
     function render() {
         container.innerHTML = rows
             .map(function (row, index) {
                 const number = index + 1;
+                const count = row.tasks.length;
 
                 return (
-                    '<div class="phase-row" data-phase-row="' +
+                    '<section class="phase-card ' +
+                    colourClass(index) +
+                    (row.collapsed ? " is-collapsed" : "") +
+                    '" data-phase-row="' +
                     index +
+                    '" aria-label="Phase ' +
+                    number +
                     '">' +
-                    '<div class="phase-row-head">' +
-                    '<div class="phase-row-handle" draggable="true" aria-hidden="true">' +
+                    '<header class="phase-card-head">' +
+                    '<span class="phase-card-handle" draggable="true" title="Drag to reorder" aria-hidden="true">' +
                     '<i class="bi bi-grip-vertical"></i>' +
-                    "</div>" +
-                    '<div class="phase-row-number">' +
-                    '<span class="phase-row-badge">Phase ' +
+                    "</span>" +
+                    '<span class="phase-card-number" aria-hidden="true">' +
                     number +
                     "</span>" +
-                    (row.tasks.length
-                        ? '<span class="phase-row-tasks">' +
-                          row.tasks.length +
-                          " task" +
-                          (row.tasks.length === 1 ? "" : "s") +
-                          "</span>"
-                        : "") +
+                    '<div class="phase-card-heading">' +
+                    '<span class="phase-card-kicker">Phase ' +
+                    number +
+                    "</span>" +
+                    '<span class="phase-card-count">' +
+                    plural(count, "task") +
+                    "</span>" +
+                    chips(row.sources) +
                     "</div>" +
-                    '<div class="phase-row-fields">' +
-                    '<div class="phase-row-headline">' +
-                    '<input type="text" class="form-control" maxlength="150"' +
+                    '<div class="phase-card-actions">' +
+                    '<button type="button" class="phase-icon" data-phase-move="up"' +
+                    ' aria-label="Move phase ' +
+                    number +
+                    ' up" title="Move up"' +
+                    (index === 0 ? " disabled" : "") +
+                    '><i class="bi bi-arrow-up"></i></button>' +
+                    '<button type="button" class="phase-icon" data-phase-move="down"' +
+                    ' aria-label="Move phase ' +
+                    number +
+                    ' down" title="Move down"' +
+                    (index === rows.length - 1 ? " disabled" : "") +
+                    '><i class="bi bi-arrow-down"></i></button>' +
+                    '<button type="button" class="phase-icon phase-icon-danger" data-phase-remove' +
+                    ' aria-label="Remove phase ' +
+                    number +
+                    '" title="Remove phase"' +
+                    (rows.length <= minPhases ? " disabled" : "") +
+                    '><i class="bi bi-trash"></i></button>' +
+                    '<button type="button" class="phase-icon" data-phase-collapse' +
+                    ' aria-expanded="' +
+                    (row.collapsed ? "false" : "true") +
+                    '" aria-label="' +
+                    (row.collapsed ? "Show" : "Hide") +
+                    " phase " +
+                    number +
+                    ' tasks" title="' +
+                    (row.collapsed ? "Show tasks" : "Hide tasks") +
+                    '"><i class="bi bi-chevron-' +
+                    (row.collapsed ? "down" : "up") +
+                    '"></i></button>' +
+                    "</div>" +
+                    "</header>" +
+                    '<div class="phase-card-fields">' +
+                    '<input type="text" class="form-control phase-card-title" maxlength="150"' +
                     ' placeholder="Phase title, e.g. Site Preparation"' +
                     ' aria-label="Phase ' +
                     number +
                     ' title" data-phase-title value="' +
                     escapeHtml(row.title) +
                     '">' +
-                    chips(row.sources) +
-                    "</div>" +
-                    '<textarea class="form-control mt-2" rows="2" maxlength="500"' +
-                    ' placeholder="Short description of what happens in this phase"' +
+                    // One line, because one sentence is what it is for: the
+                    // monitoring card prints it on a single line under the title.
+                    '<input type="text" class="form-control form-control-sm mt-2" maxlength="500"' +
+                    ' placeholder="One sentence on what happens in this phase"' +
                     ' aria-label="Phase ' +
                     number +
-                    ' description" data-phase-description>' +
+                    ' description" data-phase-description value="' +
                     escapeHtml(row.description) +
-                    "</textarea>" +
-                    "</div>" +
-                    '<div class="phase-row-actions">' +
-                    '<button type="button" class="btn btn-sm btn-outline-secondary"' +
-                    ' data-phase-move="up" aria-label="Move phase ' +
-                    number +
-                    ' up"' +
-                    (index === 0 ? " disabled" : "") +
-                    '><i class="bi bi-arrow-up"></i></button>' +
-                    '<button type="button" class="btn btn-sm btn-outline-secondary"' +
-                    ' data-phase-move="down" aria-label="Move phase ' +
-                    number +
-                    ' down"' +
-                    (index === rows.length - 1 ? " disabled" : "") +
-                    '><i class="bi bi-arrow-down"></i></button>' +
-                    '<button type="button" class="btn btn-sm btn-outline-danger"' +
-                    ' data-phase-remove aria-label="Remove phase ' +
-                    number +
-                    '"' +
-                    (rows.length <= minPhases ? " disabled" : "") +
-                    '><i class="bi bi-trash"></i></button>' +
-                    "</div>" +
+                    '">' +
                     "</div>" +
                     tasksMarkup(row, index) +
-                    "</div>"
+                    "</section>"
                 );
             })
             .join("");
 
-        countBadge.textContent =
-            rows.length +
-            " phase" +
-            (rows.length === 1 ? "" : "s") +
-            ", " +
-            taskTotal() +
-            " task" +
-            (taskTotal() === 1 ? "" : "s");
+        const total = taskTotal();
+        const unassigned = rows.reduce(function (sum, row) {
+            return (
+                sum +
+                row.tasks.filter(function (task) {
+                    return !isBlank(task) && !task.technician_id;
+                }).length
+            );
+        }, 0);
+
+        countBadge.innerHTML =
+            '<span class="phase-summary-pill"><i class="bi bi-diagram-3"></i>' +
+            plural(rows.length, "phase") +
+            "</span>" +
+            '<span class="phase-summary-pill"><i class="bi bi-check2-square"></i>' +
+            plural(total, "task") +
+            "</span>" +
+            (unassigned
+                ? '<span class="phase-summary-pill phase-summary-warn"><i class="bi bi-person-dash"></i>' +
+                  unassigned +
+                  " unassigned</span>"
+                : "");
 
         addButton.disabled = rows.length >= maxPhases;
+
+        bindDatePickers();
+    }
+
+    /**
+     * Turn every task's start and end into the booked-days-only pickers.
+     *
+     * Run after every render, because a render replaces the rows wholesale.
+     * The pickers the previous render made go with the fields they belonged
+     * to - datePicker.js releases a calendar when its field leaves the page.
+     */
+    function bindDatePickers() {
+        if (!hasSchedule || !window.taskDatePickers) {
+            return;
+        }
+
+        container.querySelectorAll("[data-task-row]").forEach(function (taskEl) {
+            window.taskDatePickers.applyScheduleRanges(
+                taskEl.querySelector("[data-task-start]"),
+                taskEl.querySelector("[data-task-due]"),
+                scheduleRanges,
+            );
+        });
     }
 
     function taskTotal() {
@@ -434,6 +531,7 @@ document.addEventListener("DOMContentLoaded", function () {
             sources: [],
             task_count: 0,
             tasks: [],
+            collapsed: false,
         });
         setError("");
         render();
@@ -455,6 +553,16 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         const index = parseInt(rowEl.dataset.phaseRow, 10);
+
+        // Folding a phase away hides its tasks, never discards them - they are
+        // still in the array and still submitted.
+        if (event.target.closest("[data-phase-collapse]")) {
+            syncFromInputs();
+            rows[index].collapsed = !rows[index].collapsed;
+            render();
+
+            return;
+        }
 
         // A phase somebody added themselves takes tasks exactly as a suggested
         // one does - there is no second kind of phase here.
@@ -615,20 +723,43 @@ document.addEventListener("DOMContentLoaded", function () {
      * checks the same things again on the way in. This one exists to answer
      * without a round trip, not to be the rule.
      */
+    /**
+     * The first thing wrong with the structure as typed, and where it is - or
+     * null.
+     *
+     * Returns the place as well as the message because a phase can be folded
+     * away: an error inside a collapsed phase would otherwise be a sentence
+     * about something nobody can see. The caller opens the phase and puts the
+     * cursor in the field.
+     *
+     * The task rules here are the browser's copy of PhaseSetupTaskRules, which
+     * checks the same things again on the way in. This one exists to answer
+     * without a round trip, not to be the rule.
+     */
     function validationError() {
         if (rows.length < minPhases) {
-            return "Add at least " + minPhases + " phase before continuing.";
+            return {
+                message: "Add at least " + minPhases + " phase before continuing.",
+            };
         }
 
         for (let index = 0; index < rows.length; index += 1) {
             const row = rows[index];
 
             if (!row.title.trim()) {
-                return "Phase " + (index + 1) + " needs a title.";
+                return {
+                    message: "Phase " + (index + 1) + " needs a title.",
+                    phase: index,
+                    field: "[data-phase-title]",
+                };
             }
 
             if (!row.description.trim()) {
-                return "Phase " + (index + 1) + " needs a short description.";
+                return {
+                    message: "Phase " + (index + 1) + " needs a one-sentence description.",
+                    phase: index,
+                    field: "[data-phase-description]",
+                };
             }
 
             for (let taskIndex = 0; taskIndex < row.tasks.length; taskIndex++) {
@@ -644,7 +775,15 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function taskError(task, phaseIndex, taskIndex) {
-        const where = "Phase " + (phaseIndex + 1) + ", task " + (taskIndex + 1);
+        const where = "Phase " + (phaseIndex + 1) + ", Task " + (taskIndex + 1);
+        const at = function (message, field) {
+            return {
+                message: message,
+                phase: phaseIndex,
+                task: taskIndex,
+                field: field,
+            };
+        };
 
         // Left entirely blank: somebody pressed Add Task and thought better of
         // it. Dropped on submit rather than complained about.
@@ -653,27 +792,81 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         if (!task.title.trim()) {
-            return where + " needs a title.";
+            return at(where + " needs a title.", "[data-task-title]");
         }
 
         if (!task.description.trim()) {
-            return where + " needs a description.";
+            return at(where + " needs a description.", "[data-task-description]");
         }
 
         const hasStart = Boolean(task.start_date);
         const hasDue = Boolean(task.due_date);
 
         if (hasStart !== hasDue) {
-            return (
-                where + " needs both a start date and an end date, or neither."
+            return at(
+                where + " needs both a start date and an end date, or neither.",
+                hasStart ? "[data-task-due]" : "[data-task-start]",
             );
         }
 
         if (hasStart && task.due_date < task.start_date) {
-            return where + " cannot end before it starts.";
+            return at(where + " cannot end before it starts.", "[data-task-due]");
         }
 
         return null;
+    }
+
+    /**
+     * Say what is wrong, and take the person to it: open the phase if it was
+     * folded away, then focus and mark the field.
+     */
+    function reportProblem(problem) {
+        setError(problem.message);
+
+        if (problem.phase === undefined) {
+            errorEl.scrollIntoView({ block: "center", behavior: "smooth" });
+
+            return;
+        }
+
+        if (rows[problem.phase].collapsed) {
+            rows[problem.phase].collapsed = false;
+            render();
+        }
+
+        let scope = container.querySelector(
+            '[data-phase-row="' + problem.phase + '"]',
+        );
+
+        if (scope && problem.task !== undefined) {
+            scope = scope.querySelector('[data-task-row="' + problem.task + '"]');
+        }
+
+        const field = scope ? scope.querySelector(problem.field) : null;
+
+        if (!field) {
+            return;
+        }
+
+        // A date field is two inputs: the hidden one holding the value, and
+        // the picker's visible one. The mark goes on the real field (the
+        // picker copies its classes across); the cursor and the scroll go to
+        // the one the person can actually see.
+        const visible = (field._flatpickr && field._flatpickr.altInput) || field;
+
+        field.classList.add("is-invalid");
+        visible.scrollIntoView({ block: "center", behavior: "smooth" });
+        visible.focus({ preventScroll: true });
+
+        // Cleared the moment they start fixing it - typing, or picking a date.
+        const clear = function () {
+            field.classList.remove("is-invalid");
+            field.removeEventListener("input", clear);
+            field.removeEventListener("change", clear);
+        };
+
+        field.addEventListener("input", clear);
+        field.addEventListener("change", clear);
     }
 
     function isBlank(task) {
@@ -696,7 +889,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const problem = validationError();
 
         if (problem) {
-            setError(problem);
+            reportProblem(problem);
 
             return false;
         }
@@ -762,13 +955,32 @@ document.addEventListener("DOMContentLoaded", function () {
     });
 
     finalizeButton.addEventListener("click", function () {
-        // The dialog is already open when this fires, so a refusal has to
-        // close it - otherwise the reason sits behind the backdrop.
-        if (!submitTo(form.dataset.finalizeUrl)) {
-            bootstrap.Modal.getOrCreateInstance(
-                document.getElementById("finalizePhasesModal"),
-            ).hide();
+        syncFromInputs();
+
+        const problem = validationError();
+
+        if (!problem) {
+            submitTo(form.dataset.finalizeUrl);
+
+            return;
         }
+
+        // The dialog is open when this fires, so a refusal has to close it -
+        // otherwise the reason sits behind the backdrop. And it is reported
+        // only once the dialog has finished closing: Bootstrap hands focus back
+        // to the button that opened it, which would take it straight off the
+        // field the person is being sent to fix.
+        const modalEl = document.getElementById("finalizePhasesModal");
+
+        modalEl.addEventListener(
+            "hidden.bs.modal",
+            function () {
+                reportProblem(problem);
+            },
+            { once: true },
+        );
+
+        bootstrap.Modal.getOrCreateInstance(modalEl).hide();
     });
 
     // What is about to be locked, listed in the confirmation dialog: the
@@ -816,15 +1028,19 @@ document.addEventListener("DOMContentLoaded", function () {
                       (tasks === 1 ? "" : "s") +
                       " created"
                     : "") +
-                ":</strong><ol class='mb-0 mt-1 ps-3'>" +
+                ":</strong><ol class='phase-summary-list'>" +
                 rows
-                    .map(function (row) {
+                    .map(function (row, index) {
                         const count = row.tasks.filter(function (task) {
                             return !isBlank(task);
                         }).length;
 
                         return (
-                            "<li>" +
+                            "<li class='" +
+                            colourClass(index) +
+                            "'><span class='phase-summary-dot'>" +
+                            (index + 1) +
+                            "</span>" +
                             escapeHtml(row.title || "Untitled phase") +
                             (count
                                 ? " <span class='text-secondary'>&mdash; " +
@@ -860,7 +1076,7 @@ document.addEventListener("DOMContentLoaded", function () {
     let draggingIndex = null;
 
     container.addEventListener("dragstart", function (event) {
-        const handle = event.target.closest(".phase-row-handle");
+        const handle = event.target.closest(".phase-card-handle");
 
         if (!handle) {
             // Anything else inside a row - selecting text in a title, dragging

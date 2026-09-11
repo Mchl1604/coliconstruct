@@ -6,7 +6,6 @@
          pickers inside it. Shared with the archive's Restore, which is the
          same dialog - see scheduleRecovery.js. --}}
     <link href="/css/super-admin/restoreConflicts.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 @endpush
 
 @section('content')
@@ -538,7 +537,6 @@
     <x-schedule-conflict-modal />
 
     @push('scripts')
-        <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
         <script src="/js/super-admin/scheduleRecovery.js"></script>
     @endpush
 

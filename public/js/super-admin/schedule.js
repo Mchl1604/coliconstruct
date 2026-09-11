@@ -535,39 +535,6 @@ document.addEventListener("DOMContentLoaded", function () {
         return eachDate(from, to).some(isBlocked);
     }
 
-    /**
-     * A Clear button inside the calendar itself.
-     *
-     * Emptying a date field matters more here than it looks. Each calendar is
-     * bounded by whatever the other field holds - the start may not pass the
-     * end, and neither may drag the range over a day somebody is booked on -
-     * so a booking hemmed in at both ends can only be moved somewhere else by
-     * letting go of one of its dates first. Clearing is that release.
-     *
-     * It goes on the calendar rather than in the modal because the calendar is
-     * what somebody is looking at when they find they cannot pick the date
-     * they want, and because it belongs to one field: a control in the modal
-     * would have to say which of the two it meant.
-     *
-     * Clearing fires the picker's own change handler, which is what rebounds
-     * the other calendar - so nothing else has to be told about it.
-     */
-    function attachClearButton(instance) {
-        const button = document.createElement("button");
-
-        // Explicitly not a submit button: it lives inside a form.
-        button.type = "button";
-        button.className = "schedule-picker-clear";
-        button.textContent = "Clear";
-
-        button.addEventListener("click", function () {
-            instance.clear();
-            instance.close();
-        });
-
-        instance.calendarContainer.appendChild(button);
-    }
-
     function destroyPicker(input) {
         if (input && input._flatpickr) {
             input._flatpickr.destroy();
@@ -915,9 +882,6 @@ document.addEventListener("DOMContentLoaded", function () {
                 ...FRIENDLY_DATE,
                 minDate: earliestEnd,
                 disable: [endBlocked],
-                onReady: function (selectedDates, dateString, instance) {
-                    attachClearButton(instance);
-                },
                 onOpen: function (selectedDates, dateString, instance) {
                     // Rows may have been edited since this calendar was built,
                     // so the answers are thrown away and the days redrawn
@@ -953,9 +917,6 @@ document.addEventListener("DOMContentLoaded", function () {
                     // Empty means the row has no end yet and nothing to cap.
                     maxDate: endInput.value || null,
                     disable: [startBlocked],
-                    onReady: function (selectedDates, dateString, instance) {
-                        attachClearButton(instance);
-                    },
                     onOpen: function (selectedDates, dateString, instance) {
                         blockedDayCache.clear();
                         instance.redraw();
@@ -3356,9 +3317,6 @@ document.addEventListener("DOMContentLoaded", function () {
                 ...FRIENDLY_DATE,
                 minDate: "today",
                 disable: [endBlocked],
-                onReady: function (selectedDates, dateString, instance) {
-                    attachClearButton(instance);
-                },
                 onOpen: function (selectedDates, dateString, instance) {
                     instance.redraw();
                 },
@@ -3379,9 +3337,6 @@ document.addEventListener("DOMContentLoaded", function () {
                 minDate: "today",
                 maxDate: endInput.value || null,
                 disable: [startBlocked],
-                onReady: function (selectedDates, dateString, instance) {
-                    attachClearButton(instance);
-                },
                 onOpen: function (selectedDates, dateString, instance) {
                     instance.redraw();
                 },

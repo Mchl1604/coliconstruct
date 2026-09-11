@@ -1029,8 +1029,6 @@
     @endif
 
     @push('scripts')
-        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
-        <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
         {{-- The same range-aware task date pickers the Super Admin task forms use. --}}
         <script src="/js/super-admin/taskDatePickers.js"></script>
         <script src="/js/imagePreview.js"></script>

@@ -69,8 +69,6 @@
         :store-url="route('super-admin.task.store', ['id' => '__ID__'])" />
 
     @push('scripts')
-        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
-        <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
         <script src="/js/super-admin/taskDatePickers.js"></script>
         <script src="/js/imagePreview.js"></script>
         <script src="/js/taskBoard.js"></script>

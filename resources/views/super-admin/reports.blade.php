@@ -7,7 +7,6 @@
     {{-- The generated report's own sheet, on screen and on paper. Loaded last
          so its @media print rules have the final word over the portal's. --}}
     <link href="/css/super-admin/report-print.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 @endpush
 
 @section('content')
@@ -846,7 +845,6 @@
             };
         </script>
         <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
         <script src="/js/super-admin/reports.js"></script>
     @endpush
 @endsection

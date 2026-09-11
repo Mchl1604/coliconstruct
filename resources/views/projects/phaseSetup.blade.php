@@ -73,18 +73,15 @@
             </a>
         </div>
 
-        {{-- Says plainly which of the two states this project is in, and why
-             the monitoring interface is not on the screen. --}}
-        <div class="alert alert-warning d-flex gap-2 align-items-start" role="status">
-            <i class="bi bi-exclamation-triangle-fill fs-5" aria-hidden="true"></i>
-            <div>
-                <h5 class="alert-heading mb-1">Phase Setup Required</h5>
-                <p class="mb-0 small">
-                    This project has not been configured with its project phases, so it is not being
-                    monitored yet and cannot take tasks. Define the complete phase structure below,
-                    then finalize it.
-                </p>
-            </div>
+        {{-- Says plainly which of the two states this project is in. One line:
+             the page title already says what this screen is for, so this only
+             has to say why nothing is being monitored yet. --}}
+        <div class="phase-setup-notice" role="status">
+            <i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i>
+            <span>
+                <strong>Phase Setup Required.</strong>
+                This project is not monitored and cannot take tasks until its phases are finalized.
+            </span>
         </div>
 
         @if ($project->phaseStructureWasOverridden() && $project->phase_structure_override_reason)
@@ -103,55 +100,6 @@
                     </p>
                     <p class="mb-0 small fst-italic">
                         &ldquo;{{ $project->phase_structure_override_reason }}&rdquo;
-                    </p>
-                </div>
-            </div>
-        @endif
-
-        {{-- Where these rows came from. Worth a sentence rather than left to be
-             inferred, because a project that is two types gets a structure
-             neither type has on its own, and the person editing it should know
-             that before they start deleting things they do not recognise. --}}
-        @if ($fromTemplates)
-            <div class="alert alert-primary d-flex gap-2 align-items-start" role="status">
-                <i class="bi bi-diagram-3-fill fs-5" aria-hidden="true"></i>
-                <div>
-                    <h6 class="alert-heading mb-1">Started from this project's default phases</h6>
-                    <p class="mb-{{ $typesWithoutTemplate || $droppedStages ? '1' : '0' }} small">
-                        Built from
-                        {{ $project->projectTypes->pluck('type_name')->join(', ', ' and ') }}.
-                        Where those overlap they have been merged into one phase carrying both lists of
-                        work. Everything below is a starting point &mdash; edit, reorder or delete
-                        whatever does not apply to this job.
-                    </p>
-
-                    @if ($typesWithoutTemplate)
-                        <p class="mb-{{ $droppedStages ? '1' : '0' }} small">
-                            <strong>{{ collect($typesWithoutTemplate)->join(', ', ' and ') }}</strong>
-                            {{ count($typesWithoutTemplate) === 1 ? 'has' : 'have' }} no default phases set
-                            up yet, so {{ count($typesWithoutTemplate) === 1 ? 'it has' : 'they have' }}
-                            not contributed anything here.
-                        </p>
-                    @endif
-
-                    @if ($droppedStages)
-                        <p class="mb-0 small text-danger">
-                            {{ collect($droppedStages)->join(', ', ' and ') }} did not fit within the
-                            {{ $maxPhases }}-phase limit and {{ count($droppedStages) === 1 ? 'was' : 'were' }}
-                            left out.
-                        </p>
-                    @endif
-                </div>
-            </div>
-        @elseif ($phases->isEmpty())
-            <div class="alert alert-secondary d-flex gap-2 align-items-start" role="status">
-                <i class="bi bi-info-circle-fill fs-5" aria-hidden="true"></i>
-                <div>
-                    <h6 class="alert-heading mb-1">No default phases for this project's types yet</h6>
-                    <p class="mb-0 small">
-                        These are the stages most jobs have, offered as a starting point. A Super Admin
-                        can set proper defaults per project type under
-                        Configuration &rarr; System Settings &rarr; Project Settings.
                     </p>
                 </div>
             </div>
@@ -183,111 +131,94 @@
             data-save-url="{{ $saveUrl }}" data-finalize-url="{{ $finalizeUrl }}"
             data-min-phases="{{ $minPhases }}" data-max-phases="{{ $maxPhases }}"
             data-max-tasks="{{ $maxTasksPerPhase }}"
-            data-schedule-hint="{{ $scheduleHint }}"
+            data-schedule-ranges='@json($scheduleRanges)'
             data-technicians='@json($technicians)'
             data-reassign-targets='@json($reassignTargets)'>
             @csrf
 
-            <div class="card shadow-sm border-0 rounded-2 mb-3">
-                <div class="card-body p-3 p-md-4">
-
-                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-                        <div>
-                            <h5 class="fw-bold mb-1">Phase Structure</h5>
-                            <p class="text-secondary small mb-0">
-                                Each phase needs a title and a short description. Drag the handle, or use
-                                the arrows, to reorder them &mdash; the numbers follow. Add the work under
-                                each phase; a technician and dates are optional and can be filled in later
-                                on the task board.
-                            </p>
-
-                            @if ($scheduleHint)
-                                <p class="text-secondary small mb-0 mt-1">
-                                    <i class="bi bi-calendar-range me-1" aria-hidden="true"></i>
-                                    Task dates have to start and finish on days this project is booked:
-                                    <strong>{{ $scheduleHint }}</strong>.
-                                </p>
-                            @else
-                                <p class="text-danger small mb-0 mt-1">
-                                    <i class="bi bi-exclamation-triangle me-1" aria-hidden="true"></i>
-                                    This project has no schedule yet, so tasks added here cannot be given
-                                    dates.
-                                </p>
-                            @endif
-                        </div>
-
-                        <span class="badge bg-secondary" data-phase-count-badge></span>
-                    </div>
-
-                    @error('phases')
-                        <div class="alert alert-danger small py-2">{{ $message }}</div>
-                    @enderror
-
-                    {{-- Everything the server refused, listed where the person
-                         can see it.
-
-                         The editor checks what it can before submitting, but
-                         two of the task rules are not knowable in the browser:
-                         whether a technician is still on this project's team,
-                         and whether the dates still fall inside a booked range.
-                         Both can change in another tab while this screen is
-                         open. Without this block such a refusal would bounce
-                         the page back looking untouched, which reads as the
-                         button being broken. --}}
-                    @php
-                        $taskErrors = collect($errors->getMessages())
-                            ->filter(fn($messages, $key) => str_starts_with($key, 'phases.'))
-                            ->flatten()
-                            ->unique()
-                            ->values();
-                    @endphp
-
-                    @if ($taskErrors->isNotEmpty())
-                        <div class="alert alert-danger small py-2">
-                            <p class="fw-semibold mb-1">This structure was not saved:</p>
-                            <ul class="mb-0 ps-3">
-                                @foreach ($taskErrors as $message)
-                                    <li>{{ $message }}</li>
-                                @endforeach
-                            </ul>
-                        </div>
-                    @endif
-
-                    <div data-phase-rows></div>
-
-                    <button type="button" class="btn btn-outline-primary mt-3" data-phase-add>
-                        <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
-                        Add Phase
-                    </button>
-
-                    <p class="text-danger small mt-2 mb-0 d-none" data-phase-error></p>
+            <div class="phase-structure-card">
+                <div class="phase-structure-head">
+                    <h5 class="fw-bold mb-1">Phase Structure</h5>
+                    <p class="text-secondary small mb-0">
+                        Give each phase a title and one-sentence description, then list the work it
+                        needs &mdash; a technician and dates are optional.
+                    </p>
                 </div>
-            </div>
 
-            <div class="d-flex justify-content-end gap-2 flex-wrap">
-                {{-- Only where there is a saved draft to throw away, and only
-                     while no real work has been filed against it. The case it
-                     is for: a project type was added to this project after its
-                     setup was started, so the merged suggestion is now out of
-                     date and there is otherwise no way back to it. --}}
-                @if ($phases->isNotEmpty() && $phasesHoldingTasks->isEmpty())
-                    <button type="button" class="btn btn-outline-danger me-auto" data-bs-toggle="modal"
-                        data-bs-target="#reloadPhasesModal">
-                        <i class="bi bi-arrow-counterclockwise me-1" aria-hidden="true"></i>
-                        Start Again From Defaults
-                    </button>
+                @error('phases')
+                    <div class="alert alert-danger small py-2">{{ $message }}</div>
+                @enderror
+
+                {{-- Everything the server refused, listed where the person
+                     can see it.
+
+                     The editor checks what it can before submitting, but
+                     two of the task rules are not knowable in the browser:
+                     whether a technician is still on this project's team,
+                     and whether the dates still fall inside a booked range.
+                     Both can change in another tab while this screen is
+                     open. Without this block such a refusal would bounce
+                     the page back looking untouched, which reads as the
+                     button being broken. --}}
+                @php
+                    $taskErrors = collect($errors->getMessages())
+                        ->filter(fn($messages, $key) => str_starts_with($key, 'phases.'))
+                        ->flatten()
+                        ->unique()
+                        ->values();
+                @endphp
+
+                @if ($taskErrors->isNotEmpty())
+                    <div class="alert alert-danger small py-2">
+                        <p class="fw-semibold mb-1">This structure was not saved:</p>
+                        <ul class="mb-0 ps-3">
+                            @foreach ($taskErrors as $message)
+                                <li>{{ $message }}</li>
+                            @endforeach
+                        </ul>
+                    </div>
                 @endif
 
-                <button type="button" class="btn btn-outline-secondary" data-phase-save>
-                    <i class="bi bi-save me-1" aria-hidden="true"></i>
-                    Save Without Locking
+                <div data-phase-rows></div>
+
+                <button type="button" class="phase-add-phase" data-phase-add>
+                    <i class="bi bi-plus-circle" aria-hidden="true"></i>
+                    Add Phase
                 </button>
 
-                <button type="button" class="btn btn-success" data-bs-toggle="modal"
-                    data-bs-target="#finalizePhasesModal">
-                    <i class="bi bi-lock-fill me-1" aria-hidden="true"></i>
-                    Finalize Phases
-                </button>
+                <p class="phase-error d-none" role="alert" data-phase-error></p>
+            </div>
+
+            {{-- Stays on screen however long the structure gets, so the buttons that
+                 actually write anything are never a scroll away. --}}
+            <div class="phase-setup-actions">
+                <span class="phase-setup-summary" data-phase-count-badge></span>
+
+                <div class="phase-setup-buttons">
+                    {{-- Only where there is a saved draft to throw away, and only
+                         while no real work has been filed against it. The case it
+                         is for: a project type was added to this project after its
+                         setup was started, so the merged suggestion is now out of
+                         date and there is otherwise no way back to it. --}}
+                    @if ($phases->isNotEmpty() && $phasesHoldingTasks->isEmpty())
+                        <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal"
+                            data-bs-target="#reloadPhasesModal">
+                            <i class="bi bi-arrow-counterclockwise me-1" aria-hidden="true"></i>
+                            <span class="d-none d-sm-inline">Start Again From </span>Defaults
+                        </button>
+                    @endif
+
+                    <button type="button" class="btn btn-outline-secondary" data-phase-save>
+                        <i class="bi bi-save me-1" aria-hidden="true"></i>
+                        Save<span class="d-none d-sm-inline"> Without Locking</span>
+                    </button>
+
+                    <button type="button" class="btn btn-success" data-bs-toggle="modal"
+                        data-bs-target="#finalizePhasesModal">
+                        <i class="bi bi-lock-fill me-1" aria-hidden="true"></i>
+                        Finalize<span class="d-none d-sm-inline"> Phases</span>
+                    </button>
+                </div>
             </div>
 
             {{-- The one irreversible action on this screen, for everybody but a
@@ -408,6 +339,9 @@
     </div>
 
     @push('scripts')
+        {{-- The same booked-days-only pickers the task board uses, so a task
+             dated here is held to exactly the rule it will be held to there. --}}
+        <script src="/js/super-admin/taskDatePickers.js"></script>
         <script src="/js/phaseSetup.js"></script>
     @endpush
 @endsection

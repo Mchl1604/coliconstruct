@@ -668,9 +668,6 @@
                 disable: [function (date) {
                     return blocked(date, startInput.value);
                 }],
-                onReady: function (selected, dateString, instance) {
-                    attachClearButton(instance);
-                },
                 onChange: function () {
                     if (startPicker) {
                         startPicker.set('maxDate', endInput.value || null);
@@ -688,9 +685,6 @@
                     disable: [function (date) {
                         return blocked(date, endInput.value);
                     }],
-                    onReady: function (selected, dateString, instance) {
-                        attachClearButton(instance);
-                    },
                     onChange: function (selected, dateString) {
                         // An end left behind the new start is not an end. Given
                         // up rather than argued with, so the next click picks
@@ -721,32 +715,8 @@
 
                     return Boolean(dateString && partialDay[dateString]);
                 }],
-                onReady: function (selected, dateString, instance) {
-                    attachClearButton(instance);
-                },
             });
         }
-    }
-
-    /**
-     * The escape hatch every date picker on the schedules page has, for the
-     * same reason: each end of a range is judged against whatever the other
-     * end holds, so a range pinned between its own end and a busy day can only
-     * be moved once one of the two is let go.
-     */
-    function attachClearButton(instance) {
-        const button = document.createElement('button');
-
-        button.type = 'button';
-        button.className = 'conflict-picker-clear';
-        button.textContent = 'Clear';
-
-        button.addEventListener('click', function () {
-            instance.clear();
-            instance.close();
-        });
-
-        instance.calendarContainer.appendChild(button);
     }
 
     // ------------------------------------------------------------------

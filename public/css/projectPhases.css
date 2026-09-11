@@ -25,208 +25,560 @@
 }
 
 /* ------------------------------------------------------------------
+   Phase colours
+
+   Each phase takes a colour from its position, the way it takes its
+   number: "the green one" and "Phase 2" are the same answer, and both
+   follow a reorder. Tasks carry their phase's colour, so a task a long
+   way down the page still says which phase it belongs to.
+
+   Declared as a palette of variables rather than per-element rules, so
+   the setup cards and the finalize summary use exactly the same colours.
+   Every --pc has at least 4.5:1 contrast against white for the numbers
+   printed on it.
+   ------------------------------------------------------------------ */
+
+.phase-colour-1 { --pc: #2370b4; --pc-soft: #eef5fc; --pc-line: #cfe2f5; --pc-ink: #1b5688; }
+.phase-colour-2 { --pc: #0d8078; --pc-soft: #ecf8f6; --pc-line: #bfe7e1; --pc-ink: #0b6b63; }
+.phase-colour-3 { --pc: #7c3aed; --pc-soft: #f4effe; --pc-line: #ddd0fb; --pc-ink: #5b21b6; }
+.phase-colour-4 { --pc: #b45309; --pc-soft: #fdf5e8; --pc-line: #f5dcb3; --pc-ink: #92400e; }
+.phase-colour-5 { --pc: #c0246a; --pc-soft: #fdf0f6; --pc-line: #f6c9de; --pc-ink: #9d174d; }
+.phase-colour-6 { --pc: #15803d; --pc-soft: #edf8f1; --pc-line: #c3e8cf; --pc-ink: #166534; }
+.phase-colour-7 { --pc: #4f46e5; --pc-soft: #efeffd; --pc-line: #d2d0f8; --pc-ink: #3730a3; }
+.phase-colour-8 { --pc: #0e7490; --pc-soft: #ebf7fa; --pc-line: #bde5ef; --pc-ink: #155e75; }
+
+/* ------------------------------------------------------------------
    The setup editor
    ------------------------------------------------------------------ */
 
-/* A phase and the work under it. The row itself is a plain block now that it
-   holds two bands - the phase's own fields, and its task list - and the grid
-   that used to be here has moved down onto the first of them. */
-.phase-row {
-    padding: .85rem;
-    margin-bottom: .65rem;
-    border: 1px solid #e5e7eb;
+/* One line in place of the old alert: the page title already says what
+   this screen is for, so the notice only has to say why nothing is being
+   monitored yet. */
+.phase-setup-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: .6rem;
+    padding: .65rem .9rem;
+    margin-bottom: 1rem;
+    border: 1px solid #f3dca4;
     border-radius: .6rem;
+    background: #fff8e6;
+    color: #7a5510;
+    font-size: .875rem;
+}
+
+.phase-setup-notice i {
+    color: #d49a14;
+    margin-top: .1rem;
+}
+
+.phase-structure-card {
+    padding: 1.25rem;
+    margin-bottom: 1rem;
+    border-radius: .75rem;
     background: #fff;
-    transition: border-color .15s ease, box-shadow .15s ease;
+    box-shadow: 0 .125rem .25rem rgba(15, 23, 42, .075);
 }
 
-.phase-row-head {
-    display: grid;
-    grid-template-columns: auto 8.5rem 1fr auto;
-    gap: .75rem;
-    align-items: start;
+.phase-structure-head {
+    margin-bottom: 1.1rem;
 }
 
-.phase-row:hover {
-    border-color: var(--phase-blue);
+/* ---------- A phase ---------- */
+
+.phase-card {
+    margin-bottom: 1rem;
+    border: 1px solid var(--pc-line);
+    border-left: 5px solid var(--pc);
+    border-radius: .75rem;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
+    overflow: hidden;
+    transition: box-shadow .15s ease, opacity .15s ease;
 }
 
-/* While a row is being dragged, and the row it would land on. */
-.phase-row.is-dragging {
+.phase-card:hover {
+    box-shadow: 0 4px 14px rgba(15, 23, 42, .07);
+}
+
+/* While a phase is being dragged, and the one it would land on. */
+.phase-card.is-dragging {
     opacity: .45;
 }
 
-.phase-row.is-drop-target {
-    border-color: var(--phase-blue-deep);
-    box-shadow: 0 0 0 2px var(--phase-blue-soft);
+.phase-card.is-drop-target {
+    box-shadow: 0 0 0 3px var(--pc-line), 0 4px 14px rgba(15, 23, 42, .1);
 }
 
-.phase-row-handle {
-    color: #9aa4b2;
+.phase-card-head {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    padding: .6rem .75rem;
+    background: var(--pc-soft);
+    border-bottom: 1px solid var(--pc-line);
+}
+
+.phase-card-handle {
+    color: var(--pc);
+    opacity: .55;
     cursor: grab;
-    padding-top: .4rem;
     font-size: 1.1rem;
+    line-height: 1;
 }
 
-.phase-row:active .phase-row-handle {
+.phase-card-handle:hover {
+    opacity: 1;
+}
+
+.phase-card:active .phase-card-handle {
     cursor: grabbing;
 }
 
-.phase-row-number {
-    display: flex;
-    flex-direction: column;
-    gap: .3rem;
-    padding-top: .2rem;
+.phase-card-number {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
+    background: var(--pc);
+    color: #fff;
+    font-weight: 800;
+    font-size: .95rem;
+    box-shadow: 0 2px 6px rgba(15, 23, 42, .15);
 }
 
-.phase-row-badge {
-    display: inline-block;
-    padding: .3rem .6rem;
-    border-radius: .4rem;
-    background: var(--phase-blue-soft);
-    color: var(--phase-blue-dark);
-    font-weight: 700;
-    font-size: .82rem;
-    text-align: center;
-}
-
-/* How much work is written under this phase. A count of the draft tasks drawn
-   below it, not of any work already filed - that is .phase-task-existing. */
-.phase-row-tasks {
-    font-size: .74rem;
-    color: var(--phase-blue-dark);
-    background: var(--phase-blue-soft);
-    border-radius: .3rem;
-    padding: .15rem .4rem;
-    text-align: center;
-}
-
-.phase-row-actions {
-    display: flex;
-    flex-direction: column;
-    gap: .3rem;
-}
-
-/* A title and, beside it, which project types asked for it. */
-.phase-row-headline,
-.phase-task-headline {
+.phase-card-heading {
     display: flex;
     align-items: center;
-    gap: .5rem;
     flex-wrap: wrap;
-}
-
-.phase-row-headline > .form-control,
-.phase-task-headline > .form-control {
-    flex: 1 1 14rem;
-}
-
-/* Provenance. On a project that is more than one type these are the only thing
-   on screen saying which type wanted a given phase or task, which is what makes
-   a merged structure something a person can edit with confidence rather than
-   guess at. */
-.phase-source-chips {
-    display: inline-flex;
-    gap: .25rem;
-    flex-wrap: wrap;
-}
-
-.phase-source-chip {
-    font-size: .68rem;
-    font-weight: 600;
-    letter-spacing: .01em;
-    padding: .15rem .45rem;
-    border-radius: 1rem;
-    background: #eef2f7;
-    color: #5a6472;
-    white-space: nowrap;
-}
-
-/* ------------------------------------------------------------------
-   The work under a phase
-   ------------------------------------------------------------------ */
-
-.phase-tasks {
-    margin: .75rem 0 0 1.6rem;
-    padding-left: .9rem;
-    border-left: 2px solid #eef1f5;
-}
-
-.phase-task-list:empty {
-    display: none;
-}
-
-.phase-task-row {
-    display: flex;
-    align-items: flex-start;
-    gap: .5rem;
-    padding: .6rem;
-    margin-bottom: .5rem;
-    border: 1px solid #eef1f5;
-    border-radius: .5rem;
-    background: #fbfcfe;
-}
-
-.phase-task-fields {
+    gap: .45rem;
     flex: 1 1 auto;
     min-width: 0;
 }
 
-/* Technician, start, end. Wraps rather than scrolls: three narrow selects
-   squeezed onto a phone are less use than three stacked ones. */
-.phase-task-meta {
+.phase-card-kicker {
+    color: var(--pc-ink);
+    font-size: .74rem;
+    font-weight: 800;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+}
+
+.phase-card-count {
+    padding: .1rem .5rem;
+    border: 1px solid var(--pc-line);
+    border-radius: 1rem;
+    background: #fff;
+    color: var(--pc-ink);
+    font-size: .72rem;
+    font-weight: 700;
+}
+
+.phase-card-actions {
     display: flex;
+    gap: .2rem;
+    flex: 0 0 auto;
+}
+
+.phase-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: .45rem;
+    background: transparent;
+    color: #64748b;
+    transition: all .12s ease;
+}
+
+.phase-icon:hover:not(:disabled) {
+    border-color: var(--pc-line);
+    background: #fff;
+    color: var(--pc-ink);
+}
+
+.phase-icon:disabled {
+    opacity: .3;
+}
+
+.phase-icon-danger:hover:not(:disabled) {
+    border-color: #fecaca;
+    background: #fff5f5;
+    color: #dc2626;
+}
+
+.phase-card-fields {
+    padding: .9rem .9rem 0;
+}
+
+.phase-card.is-collapsed .phase-card-fields {
+    padding-bottom: .9rem;
+}
+
+.phase-card-title {
+    font-weight: 600;
+}
+
+/* Focus in the phase's own colour, so the field being typed in is plainly
+   inside the phase it belongs to. */
+.phase-card .form-control:focus,
+.phase-card .form-select:focus {
+    border-color: var(--pc);
+    box-shadow: 0 0 0 .2rem var(--pc-line);
+}
+
+.phase-card .form-control.is-invalid,
+.phase-card .form-control.is-invalid:focus {
+    border-color: #dc3545;
+    box-shadow: 0 0 0 .2rem rgba(220, 53, 69, .2);
+}
+
+/* Which project types wanted this phase or task. Only drawn on a suggestion
+   straight from the templates. */
+.phase-source-chips {
+    display: inline-flex;
     flex-wrap: wrap;
-    gap: .5rem;
+    gap: .25rem;
+}
+
+.phase-source-chip {
+    padding: .1rem .45rem;
+    border-radius: 1rem;
+    background: rgba(255, 255, 255, .8);
+    border: 1px solid #e2e8f0;
+    color: #5a6472;
+    font-size: .66rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+/* ---------- The work under a phase ---------- */
+
+.phase-tasks {
+    display: grid;
+    gap: .65rem;
+    padding: .9rem;
+}
+
+.phase-task {
+    padding: .7rem .8rem .8rem;
+    border: 1px solid #e8edf3;
+    border-left: 3px solid var(--pc);
+    border-radius: .6rem;
+    background: #fcfdfe;
+}
+
+.phase-task-top {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .45rem;
+    margin-bottom: .5rem;
+}
+
+/* "Task 2", so one task is told from the next in a list of near-identical
+   boxes. In the phase's colour, which is also what says whose task it is. */
+.phase-task-label {
+    padding: .18rem .6rem;
+    border: 1px solid var(--pc-line);
+    border-radius: 1rem;
+    background: var(--pc-soft);
+    color: var(--pc-ink);
+    font-size: .72rem;
+    font-weight: 800;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+}
+
+.phase-task-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.8rem;
+    height: 1.8rem;
+    margin-left: auto;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: .4rem;
+    background: transparent;
+    color: #94a3b8;
+    transition: all .12s ease;
+}
+
+.phase-task-remove:hover {
+    border-color: #fecaca;
+    background: #fff5f5;
+    color: #dc2626;
+}
+
+.phase-task-title {
+    font-weight: 500;
+}
+
+/* Technician, start, end. The technician gets the wider column because a
+   name is longer than a date. */
+.phase-task-meta {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
+    gap: .6rem;
+    margin-top: .65rem;
 }
 
 .phase-task-field {
     display: flex;
     flex-direction: column;
-    gap: .15rem;
-    flex: 1 1 9rem;
+    gap: .2rem;
+    min-width: 0;
     margin-bottom: 0;
 }
 
 .phase-task-field-label {
-    font-size: .7rem;
-    font-weight: 600;
-    text-transform: uppercase;
+    display: inline-flex;
+    align-items: center;
+    gap: .3rem;
+    color: #64748b;
+    font-size: .68rem;
+    font-weight: 700;
     letter-spacing: .03em;
-    color: #8a94a3;
+    text-transform: uppercase;
 }
 
-.phase-task-remove {
-    flex: 0 0 auto;
-    line-height: 1;
+.phase-add-task {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: .4rem;
+    width: 100%;
+    padding: .55rem;
+    border: 1px dashed var(--pc-line);
+    border-radius: .6rem;
+    background: #fff;
+    color: var(--pc-ink);
+    font-size: .84rem;
+    font-weight: 700;
+    transition: all .15s ease;
 }
 
-/* Real work already filed against this phase, which this screen does not edit.
-   Only ever drawn on a structure a Super Admin has unlocked. */
+.phase-add-task:hover:not(:disabled) {
+    border-color: var(--pc);
+    background: var(--pc-soft);
+}
+
+.phase-add-task:disabled {
+    opacity: .45;
+}
+
+.phase-tasks-empty {
+    margin: 0;
+    color: #94a3b8;
+    font-size: .82rem;
+    font-style: italic;
+    text-align: center;
+}
+
+/* Real work already filed against this phase, which this screen does not
+   edit. Only ever drawn on a structure a Super Admin has unlocked. */
 .phase-task-existing {
-    color: #a05a00;
+    margin: 0;
+    padding: .45rem .65rem;
+    border-radius: .45rem;
     background: #fdf1e0;
-    border-radius: .35rem;
-    padding: .35rem .55rem;
+    color: #a05a00;
+    font-size: .82rem;
 }
+
+/* ---------- Adding a phase ---------- */
+
+.phase-add-phase {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: .5rem;
+    width: 100%;
+    padding: .85rem;
+    border: 2px dashed #cbd5e1;
+    border-radius: .75rem;
+    background: #f8fafc;
+    color: #2370b4;
+    font-weight: 700;
+    transition: all .15s ease;
+}
+
+.phase-add-phase:hover:not(:disabled) {
+    border-color: #2370b4;
+    background: #eef5fc;
+}
+
+.phase-add-phase:disabled {
+    opacity: .45;
+}
+
+.phase-error {
+    margin: .75rem 0 0;
+    color: #dc2626;
+    font-size: .875rem;
+    font-weight: 600;
+}
+
+/* ---------- The action bar ---------- */
+
+/* Sticky, so the buttons that actually write anything are never a scroll
+   away however long the structure gets. */
+.phase-setup-actions {
+    position: sticky;
+    bottom: .75rem;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .75rem;
+    padding: .7rem .9rem;
+    border: 1px solid #e2e8f0;
+    border-radius: .75rem;
+    background: rgba(255, 255, 255, .96);
+    backdrop-filter: blur(6px);
+    box-shadow: 0 -2px 18px rgba(15, 23, 42, .1);
+}
+
+.phase-setup-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .35rem;
+}
+
+.phase-summary-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: .3rem;
+    padding: .22rem .6rem;
+    border-radius: 1rem;
+    background: #f1f5f9;
+    color: #334155;
+    font-size: .78rem;
+    font-weight: 600;
+}
+
+.phase-summary-warn {
+    background: #fff3cd;
+    color: #8a5a00;
+}
+
+.phase-setup-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem;
+    margin-left: auto;
+}
+
+/* ---------- The finalize summary ---------- */
+
+.phase-summary-list {
+    display: grid;
+    gap: .35rem;
+    margin: .5rem 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.phase-summary-list li {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+}
+
+.phase-summary-dot {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 1.4rem;
+    height: 1.4rem;
+    border-radius: 50%;
+    background: var(--pc);
+    color: #fff;
+    font-size: .7rem;
+    font-weight: 800;
+}
+
+/* ---------- Narrow screens ---------- */
 
 @media (max-width: 767.98px) {
-    .phase-row-head {
-        grid-template-columns: auto 1fr;
+    .phase-structure-card {
+        padding: .9rem;
     }
 
-    .phase-row-fields {
-        grid-column: 1 / -1;
+    .phase-task-meta {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     }
 
-    .phase-row-actions {
+    .phase-task-field-wide {
         grid-column: 1 / -1;
-        flex-direction: row;
+    }
+}
+
+@media (max-width: 575.98px) {
+    /* Dragging does not work by touch, and the arrows do the same job. */
+    .phase-card-handle {
+        display: none;
+    }
+
+    .phase-card-head {
+        flex-wrap: wrap;
+        row-gap: .35rem;
+    }
+
+    /* A zero basis, so the heading shares the first line with the number
+       and wraps its own pills inside itself, instead of pushing the whole
+       heading onto a line of its own and leaving the number stranded. */
+    .phase-card-heading {
+        flex-basis: 0;
+    }
+
+    .phase-card-actions {
+        width: 100%;
         justify-content: flex-end;
     }
 
+    .phase-card-fields,
     .phase-tasks {
-        margin-left: 0;
+        padding-left: .7rem;
+        padding-right: .7rem;
+    }
+
+    /* Tighter on a phone, where the bar is sharing a short screen with the
+       fields it is there to save. */
+    .phase-setup-actions {
+        bottom: .5rem;
+        gap: .45rem;
+        padding: .5rem .6rem;
+    }
+
+    .phase-summary-pill {
+        padding: .12rem .5rem;
+        font-size: .72rem;
+    }
+
+    .phase-setup-buttons {
+        width: 100%;
+        gap: .4rem;
+    }
+
+    .phase-setup-buttons .btn {
+        flex: 1 1 auto;
+        padding: .35rem .6rem;
+        font-size: .875rem;
+    }
+}
+
+@media (max-width: 399.98px) {
+    .phase-task-meta {
+        grid-template-columns: minmax(0, 1fr);
     }
 }
 

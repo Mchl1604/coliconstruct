@@ -9,7 +9,6 @@
          menu - shared with the assigned-team editor for the same reason the
          dialog above is. --}}
     <link rel="stylesheet" href="/css/technicianPicker.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 @endpush
 
 @section('content')
@@ -597,7 +596,6 @@
     <x-import-team-modal />
 
     @push('scripts')
-        <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
         <script>
             window.projectWizardData = @json($technicianWizardData);
             {{-- The one place the partial-day window is decided, handed to the
