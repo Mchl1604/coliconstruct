@@ -19,10 +19,11 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * Configuration -> System Settings -> System Contents. SETTINGS_SECTIONS is
  * everything that changes how the system behaves rather than how it reads -
  * the confirmation window, the enquiry cooldown, the Terms and Conditions -
- * edited in the card beneath it. Both are the same table, the same service and
- * the same editor; only the list of pills differs, because "rewrite the About
- * page" and "complete projects after five days instead of seven" are not the
- * same kind of decision and should not sit in one undifferentiated list.
+ * edited under System Settings -> General Settings. Both are the same table,
+ * the same service and the same editor; only the list of types differs,
+ * because "rewrite the About page" and "complete projects after five days
+ * instead of seven" are not the same kind of decision and should not sit in
+ * one undifferentiated list.
  */
 class SystemContent extends Model
 {
@@ -714,9 +715,9 @@ class SystemContent extends Model
     }
 
     /**
-     * Every section the editor knows, whichever card draws it.
+     * Every section the editor knows, whichever category draws it.
      *
-     * The two lists are kept apart for the pills and joined here for
+     * The two lists are kept apart for the sidebar and joined here for
      * everything else - the controller's "is this a real section?" guard, the
      * label it logs, the label it hands back. Splitting that check as well
      * would mean two ways to answer one question.

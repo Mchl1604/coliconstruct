@@ -5,11 +5,16 @@
  * the form is built from whatever the catalogue says is editable. Adding a
  * field on the server therefore adds it here with no change to this file.
  *
- * Two cards use this - System Contents, which edits the public website, and
- * System Settings, which edits how the system behaves - so the whole thing is
- * a function over one pane rather than a script bound to one element id. The
- * two are the same editor against the same endpoints; only the list of
- * sections differs, and each pane carries its own.
+ * Two categories use this - System Contents, which edits the public website,
+ * and General Settings, which edits how the system behaves - so the whole
+ * thing is a function over one pane rather than a script bound to one element
+ * id. The two are the same editor against the same endpoints; only the list of
+ * sections differs, and each pane names its own list of types in the System
+ * Settings sidebar (data-content-nav).
+ *
+ * One section is on screen at a time. Choosing another type replaces the
+ * fields, so a switch with unsaved changes asks first; the Save bar says at
+ * all times whether there is anything to save.
  */
 document.addEventListener('DOMContentLoaded', function() {
     const routes = window.configurationRoutes || {};
@@ -31,23 +36,47 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function initEditor(pane) {
-        const sectionNav = pane.querySelector('[data-content-sections]');
+        // The list of types lives in the System Settings sidebar, outside the
+        // pane, so the pane names it rather than containing it.
+        const sectionNav = pane.dataset.contentNav
+            ? document.getElementById(pane.dataset.contentNav)
+            : pane.querySelector('[data-content-sections]');
         const fieldsWrap = pane.querySelector('[data-content-fields]');
         const form = pane.querySelector('[data-content-form]');
         const loading = pane.querySelector('[data-content-loading]');
         const errorBox = pane.querySelector('[data-content-error]');
-        const savedFlag = pane.querySelector('[data-content-saved]');
+        const saveBar = pane.querySelector('[data-content-savebar]');
+        const saveState = pane.querySelector('[data-content-state]');
         const saveButton = pane.querySelector('[data-content-save]');
         const saveSpinner = pane.querySelector('[data-content-save-spinner]');
+        const saveIcon = pane.querySelector('[data-content-save-icon]');
+        const saveLabel = pane.querySelector('[data-content-save-label]');
         const cancelButton = pane.querySelector('[data-content-cancel]');
+        const panel = pane.querySelector('.content-section-panel');
 
         if (!fieldsWrap || !form) {
             return null;
         }
 
-        let currentSection = sectionNav?.querySelector('[data-content-section]')?.dataset.contentSection || '';
+        let currentSection = (sectionNav?.querySelector('[data-content-section].active') ||
+            sectionNav?.querySelector('[data-content-section]'))?.dataset.contentSection || '';
         const pendingImages = new Map();
         const imageRemovals = new Set();
+
+        // What the fields held when they were last drawn from the server, so
+        // "is there anything to save" is a comparison rather than a guess. Null
+        // until a section has been drawn at all.
+        let baseline = null;
+        // 'loading' while a section is being fetched, 'saving' while one is
+        // being written, null otherwise.
+        let busy = null;
+        // Set by a save that went through, cleared by the next edit - it is
+        // what lets the bar say "saved" rather than merely "nothing to save".
+        let justSaved = false;
+        // Only the newest request may draw. Switching twice in quick succession
+        // otherwise lets the slower answer land last, showing one section's
+        // fields under another's name.
+        let loadToken = 0;
 
         function showError(message) {
             if (!errorBox) {
@@ -351,7 +380,9 @@ document.addEventListener('DOMContentLoaded', function() {
                                 });
                             })
                             .then(function() {
-                                load(currentSection);
+                                // The image is saved the moment it is chosen;
+                                // anything typed but not yet saved stays typed.
+                                load(currentSection, true);
                             })
                             .catch(function(exception) {
                                 showError(exception.message);
@@ -374,7 +405,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                 body: JSON.stringify({ _method: 'DELETE' }),
                             })
                             .then(function() {
-                                load(currentSection);
+                                load(currentSection, true);
                             })
                             .catch(function() {
                                 showError('Unable to remove image.');
@@ -525,18 +556,228 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         /**
-         * Panels that belong to one section but are not fields of it.
-         *
-         * Project Types is the only one: it is a table with its own endpoints,
-         * not a value in the catalogue, but it IS a project setting and belongs
-         * under that pill rather than in a card of its own. Declaring the
-         * section it belongs to in the markup keeps the rule in one place.
+         * Panels in the markup that stand for a type of their own rather than
+         * being fields of a catalogue section - Project Types and Default
+         * Phases & Tasks. Each has its own endpoints and its own saving; this
+         * only shows the one whose entry is chosen, and hides the rest.
          */
         function showExtrasFor(section) {
             pane.querySelectorAll('[data-content-extra]').forEach(function(extra) {
                 extra.hidden = extra.dataset.contentExtra !== section;
             });
         }
+
+        function typeButtons() {
+            return sectionNav ? Array.from(sectionNav.querySelectorAll('[data-content-section]')) : [];
+        }
+
+        function buttonFor(section) {
+            return typeButtons().find(function(button) {
+                return button.dataset.contentSection === section;
+            }) || null;
+        }
+
+        function labelFor(section) {
+            return buttonFor(section)?.textContent.trim() || 'this section';
+        }
+
+        // An entry drawn from the markup rather than fetched from the
+        // catalogue - see showPanel().
+        function isPanelType(section) {
+            return buttonFor(section)?.dataset.contentKind === 'panel';
+        }
+
+        /**
+         * Lights the chosen type in the sidebar. Called when a section starts
+         * loading rather than when it is clicked, so a switch that is called
+         * off at the "discard changes?" question never moves the highlight.
+         */
+        function markChosen(section) {
+            typeButtons().forEach(function(button) {
+                const chosen = button.dataset.contentSection === section;
+
+                button.classList.toggle('active', chosen);
+
+                if (chosen) {
+                    button.setAttribute('aria-current', 'true');
+                } else {
+                    button.removeAttribute('aria-current');
+                }
+            });
+        }
+
+        // ------------------------------------------------------------------
+        // Unsaved changes
+        // ------------------------------------------------------------------
+
+        /**
+         * Everything Save would send, as one string. Compared with the
+         * baseline taken when the section was drawn, it answers "has anything
+         * changed" for every kind of field at once - typed text, a chosen
+         * hour, a service added, moved or removed, an image picked or taken
+         * away - without each of them having to report it.
+         */
+        function snapshot() {
+            const values = {};
+
+            fieldsWrap.querySelectorAll('[data-content-input]').forEach(function(input) {
+                values[input.dataset.contentInput] = input.value;
+            });
+
+            return JSON.stringify({
+                values: values,
+                services: repeatablePayload('service'),
+                owners: repeatablePayload('owner'),
+                images: Array.from(pendingImages.keys()).sort(),
+            });
+        }
+
+        function isDirty() {
+            return baseline !== null && snapshot() !== baseline;
+        }
+
+        function setState(icon, text, modifier) {
+            if (!saveState) {
+                return;
+            }
+
+            const glyph = document.createElement('i');
+            glyph.className = 'bi ' + icon;
+            glyph.setAttribute('aria-hidden', 'true');
+
+            saveState.replaceChildren(glyph, document.createTextNode(text));
+            saveState.className = 'settings-save-state' + (modifier ? ' ' + modifier : '');
+        }
+
+        /**
+         * The Save bar, drawn from the state rather than poked at from each
+         * place the state changes: busy, dirty and just-saved together decide
+         * every part of it.
+         */
+        function renderState() {
+            const saving = busy === 'saving';
+            const working = busy !== null;
+            const dirty = isDirty();
+
+            saveButton.disabled = working || !dirty;
+            saveButton.classList.toggle('is-saving', saving);
+            saveButton.setAttribute('aria-busy', saving ? 'true' : 'false');
+            saveSpinner?.classList.toggle('d-none', !saving);
+            saveIcon?.classList.toggle('d-none', saving);
+
+            if (saveLabel) {
+                saveLabel.textContent = saving ? 'Saving…' : 'Save Changes';
+            }
+
+            if (cancelButton) {
+                cancelButton.disabled = working || !dirty;
+            }
+
+            // Held still while a save is in flight: the save redraws the
+            // section it wrote, and a switch made meanwhile would be drawn over.
+            typeButtons().forEach(function(button) {
+                button.disabled = saving;
+            });
+
+            saveBar?.classList.toggle('is-dirty', dirty && !working);
+            panel?.classList.toggle('is-loading', busy === 'loading');
+
+            if (saving) {
+                setState('bi-arrow-repeat', 'Saving your changes…', 'is-busy');
+            } else if (busy === 'loading') {
+                setState('bi-hourglass-split', 'Loading…', 'is-busy');
+            } else if (dirty) {
+                setState('bi-pencil-fill', 'Unsaved changes', 'is-dirty');
+            } else if (justSaved) {
+                setState('bi-check2-circle', 'All changes saved', 'is-saved');
+            } else {
+                setState('bi-check2', 'No unsaved changes', '');
+            }
+        }
+
+        /**
+         * Asks before throwing away unsaved work, in the page's own dialog so
+         * it reads like every other question this page asks.
+         */
+        function confirmDiscard(consequence, label, proceed) {
+            const title = 'Discard unsaved changes?';
+            const body = 'Your changes to ' + labelFor(currentSection) + ' have not been saved. ' + consequence;
+
+            if (typeof window.configurationConfirm !== 'function') {
+                if (window.confirm(title + '\n\n' + body)) {
+                    proceed();
+                }
+
+                return;
+            }
+
+            window.configurationConfirm({
+                title: title,
+                body: body,
+                label: label,
+                variant: 'btn-danger',
+                onConfirm: function() {
+                    return Promise.resolve({ ok: true, body: {} });
+                },
+                onSuccess: proceed,
+            });
+        }
+
+        /**
+         * What was typed, so it can be put back after a re-read. An image is
+         * saved the moment it is chosen, and the re-read that shows it must
+         * not take the rest of the unsaved work with it. The service and owner
+         * lists are kept whole - rows, order, chosen pictures and all - and
+         * put back in place of the freshly drawn ones.
+         */
+        function captureEdits() {
+            const values = {};
+            const lists = {};
+
+            fieldsWrap.querySelectorAll('[data-content-input]').forEach(function(input) {
+                values[input.dataset.contentInput] = input.value;
+            });
+
+            fieldsWrap.querySelectorAll('[data-repeatable-list]').forEach(function(list) {
+                lists[list.dataset.repeatableList] = list.querySelector('[data-repeatable-entries]');
+            });
+
+            return { values: values, lists: lists };
+        }
+
+        function restoreEdits(kept) {
+            fieldsWrap.querySelectorAll('[data-content-input]').forEach(function(input) {
+                if (Object.prototype.hasOwnProperty.call(kept.values, input.dataset.contentInput)) {
+                    input.value = kept.values[input.dataset.contentInput];
+                }
+            });
+
+            fieldsWrap.querySelectorAll('[data-repeatable-list]').forEach(function(list) {
+                const entries = kept.lists[list.dataset.repeatableList];
+                const fresh = list.querySelector('[data-repeatable-entries]');
+
+                if (entries && fresh) {
+                    fresh.replaceWith(entries);
+                }
+            });
+        }
+
+        // Typing, choosing, and the list buttons all change what Save would
+        // send; the bar has to notice each of them. Registered after the list
+        // handlers above, so it reads the fields after they have changed.
+        ['input', 'change', 'click'].forEach(function(type) {
+            fieldsWrap.addEventListener(type, function() {
+                if (type !== 'click') {
+                    justSaved = false;
+                }
+
+                renderState();
+            });
+        });
+
+        // ------------------------------------------------------------------
+        // Drawing a section
+        // ------------------------------------------------------------------
 
         function render(payload) {
             fieldsWrap.innerHTML = (payload.fields || []).map(fieldMarkup).join('');
@@ -546,20 +787,46 @@ document.addEventListener('DOMContentLoaded', function() {
             const title = pane.querySelector('[data-content-section-title]');
 
             if (title) {
-                title.textContent = payload.label || '';
+                const icon = document.createElement('i');
+                icon.className = 'bi ' + (buttonFor(payload.section || currentSection)?.dataset.icon || 'bi-sliders');
+                icon.setAttribute('aria-hidden', 'true');
+
+                title.replaceChildren(icon, document.createTextNode(payload.label || ''));
             }
         }
 
-        function load(section) {
+        /**
+         * Fetches a section and draws it. `keepEdits` carries unsaved work
+         * across the re-read - see captureEdits(). Resolves once drawn, and
+         * rejects if it could not be.
+         */
+        function load(section, keepEdits) {
+            const kept = keepEdits && isDirty() ? captureEdits() : null;
+            const mine = ++loadToken;
+
             currentSection = section;
+            markChosen(section);
+
+            // The System Contents card takes each type's accent colour.
+            if ('contentAccents' in pane.dataset) {
+                pane.dataset.settingsAccent = section;
+            }
+
+            // Back from a panel entry, if that is where this came from.
+            if (panel) {
+                panel.hidden = false;
+            }
+
+            showExtrasFor(section);
             showError('');
-            savedFlag?.classList.add('d-none');
+            busy = 'loading';
+            renderState();
 
             if (loading) {
                 loading.classList.remove('d-none');
             }
 
-            fetch(sectionUrl(section), {
+            return fetch(sectionUrl(section), {
                     headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
                     credentials: 'same-origin',
                 })
@@ -570,17 +837,87 @@ document.addEventListener('DOMContentLoaded', function() {
 
                     return response.json();
                 })
-                .then(render)
+                .then(function(payload) {
+                    if (mine !== loadToken) {
+                        return;
+                    }
+
+                    render(payload);
+                    baseline = snapshot();
+
+                    if (kept) {
+                        restoreEdits(kept);
+                    }
+                })
                 .catch(function(exception) {
+                    if (mine !== loadToken) {
+                        return;
+                    }
+
                     fieldsWrap.innerHTML = '';
                     showExtrasFor(null);
+                    baseline = snapshot();
                     showError(exception.message);
+
+                    throw exception;
                 })
                 .finally(function() {
+                    if (mine !== loadToken) {
+                        return;
+                    }
+
+                    busy = null;
+                    renderState();
+
                     if (loading) {
                         loading.classList.add('d-none');
                     }
                 });
+        }
+
+        /**
+         * Puts a panel entry on screen - Project Types, Default Phases & Tasks
+         * - in place of the catalogue form. Nothing is fetched here: each panel
+         * loads and saves itself (projectTypes.js, phaseTemplates.js), and
+         * work left in one stays put while another entry is open, since hiding
+         * it takes nothing away.
+         *
+         * The form is emptied rather than merely hidden, so fields that were
+         * discarded on the way here cannot count as unsaved changes later.
+         */
+        function showPanel(section) {
+            ++loadToken;
+            currentSection = section;
+            markChosen(section);
+            clearPendingImages();
+            fieldsWrap.innerHTML = '';
+            baseline = snapshot();
+            busy = null;
+            showError('');
+
+            if (loading) {
+                loading.classList.add('d-none');
+            }
+
+            if (panel) {
+                panel.hidden = true;
+            }
+
+            showExtrasFor(section);
+            renderState();
+        }
+
+        function switchTo(section) {
+            justSaved = false;
+
+            if (isPanelType(section)) {
+                showPanel(section);
+
+                return;
+            }
+
+            clearPendingImages();
+            load(section).catch(function() {});
         }
 
         if (sectionNav) {
@@ -591,27 +928,54 @@ document.addEventListener('DOMContentLoaded', function() {
                     return;
                 }
 
-                sectionNav.querySelectorAll('[data-content-section]').forEach(function(other) {
-                    other.classList.toggle('active', other === button);
-                });
+                const requested = button.dataset.contentSection;
 
-                clearPendingImages();
-                load(button.dataset.contentSection);
+                if (requested === currentSection) {
+                    return;
+                }
+
+                if (!isDirty()) {
+                    switchTo(requested);
+
+                    return;
+                }
+
+                confirmDiscard(
+                    'Switching to ' + labelFor(requested) + ' will lose them.',
+                    'Discard and Switch',
+                    function() {
+                        switchTo(requested);
+                    }
+                );
             });
         }
 
-        // Cancel is a re-read, not an undo stack: the saved values are the only
-        // thing that was ever true, so fetching them back is exactly what
+        // Discarding is a re-read, not an undo stack: the saved values are the
+        // only thing that was ever true, so fetching them back is exactly what
         // "discard my changes" means.
         if (cancelButton) {
             cancelButton.addEventListener('click', function() {
-                clearPendingImages();
-                load(currentSection);
+                if (!isDirty()) {
+                    return;
+                }
+
+                confirmDiscard(
+                    'They will go back to what was last saved.',
+                    'Discard Changes',
+                    function() {
+                        clearPendingImages();
+                        load(currentSection).catch(function() {});
+                    }
+                );
             });
         }
 
         form.addEventListener('submit', function(event) {
             event.preventDefault();
+
+            if (busy !== null || !isDirty()) {
+                return;
+            }
 
             const values = {};
 
@@ -623,9 +987,10 @@ document.addEventListener('DOMContentLoaded', function() {
             const owners = repeatablePayload('owner');
 
             // The section these fields actually belong to, rather than
-            // whichever pill is highlighted: clicking a new section and saving
-            // before its fields arrive would otherwise post one section's
-            // values to another, and the save would quietly do nothing.
+            // whichever type the sidebar has lit: choosing a new section and
+            // saving before its fields arrive would otherwise post one
+            // section's values to another, and the save would quietly do
+            // nothing.
             const firstKey = Object.keys(values)[0];
             const sectionForFields = firstKey
                 ? firstKey.slice(0, firstKey.lastIndexOf('.'))
@@ -640,9 +1005,9 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
             showError('');
-            savedFlag?.classList.add('d-none');
-            saveButton.disabled = true;
-            saveSpinner?.classList.remove('d-none');
+            justSaved = false;
+            busy = 'saving';
+            renderState();
 
             const body = { _method: 'PUT', values: values };
 
@@ -673,27 +1038,33 @@ document.addEventListener('DOMContentLoaded', function() {
                         return payload;
                     });
                 })
-                .then(function(payload) {
-                    return uploadPendingImages().then(function() {
-                        clearPendingImages();
-                        load(sectionForFields);
-
-                        return payload;
-                    });
+                .then(function() {
+                    return uploadPendingImages();
                 })
                 .then(function() {
-                    savedFlag?.classList.remove('d-none');
+                    clearPendingImages();
+                    busy = null;
+
+                    return load(sectionForFields).then(function() {
+                        justSaved = true;
+                        renderState();
+                    });
                 })
                 .catch(function(exception) {
+                    busy = null;
                     showError(exception.message);
-                })
-                .finally(function() {
-                    saveButton.disabled = false;
-                    saveSpinner?.classList.add('d-none');
+                    renderState();
                 });
         });
 
-        return { load: function() { load(currentSection); } };
+        renderState();
+
+        return {
+            load: function() {
+                switchTo(currentSection);
+            },
+            isDirty: isDirty,
+        };
     }
 
     const editors = Array.from(document.querySelectorAll('[data-content-editor]'))
@@ -717,5 +1088,15 @@ document.addEventListener('DOMContentLoaded', function() {
         editors.forEach(function(editor) {
             editor.load();
         });
+    });
+
+    // Switching the sidebar or the Configuration tabs only hides a pane, so
+    // unsaved work survives those. Leaving the page does not, and the browser's
+    // own prompt is the only one that can stop it.
+    window.addEventListener('beforeunload', function(event) {
+        if (editors.some(function(editor) { return editor.isDirty(); })) {
+            event.preventDefault();
+            event.returnValue = '';
+        }
     });
 });

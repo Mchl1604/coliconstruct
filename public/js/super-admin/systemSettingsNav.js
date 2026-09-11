@@ -1,15 +1,15 @@
 /**
- * Configuration -> System Settings: the jump links above the sections.
+ * Configuration -> System Settings: the sidebar.
  *
- * Clicking one brings its section into view and flashes it, so the eye knows
- * where it landed; the pill for whatever is on screen stays lit, so the nav
- * always says where you are. Sections are found from the links themselves, so
- * adding a card to the tab means adding one anchor and nothing here.
+ * Each category is a button with its setting types folded away beneath it.
+ * Choosing a category shows its pane and slides its types open, folding the
+ * other category's away, so the sidebar only ever lists the types of the
+ * category on screen. Choosing the open category again folds or unfolds its
+ * list without leaving it.
  *
- * Nothing here assumes the window is what scrolls: scrollIntoView moves
- * whichever ancestor actually scrolls, the landing offset is CSS
- * (scroll-margin-top), and the pill is chosen from rectangles rather than from
- * a scroll position.
+ * Which type is chosen is not this file's business: each editor owns its own
+ * list and redraws its own fields (systemContents.js). This file only decides
+ * which category is open.
  */
 document.addEventListener('DOMContentLoaded', function() {
     const nav = document.querySelector('[data-settings-nav]');
@@ -18,111 +18,132 @@ document.addEventListener('DOMContentLoaded', function() {
         return;
     }
 
-    const links = Array.from(nav.querySelectorAll('[data-settings-link]'));
+    const categories = Array.from(nav.querySelectorAll('[data-settings-category]'));
 
-    const sections = links
-        .map(function(link) {
-            return {
-                link: link,
-                section: document.querySelector(link.getAttribute('href')),
-            };
-        })
-        .filter(function(pair) {
-            return pair.section;
-        });
+    // Below this width the sidebar sits above the content rather than beside
+    // it, so a chosen type is out of sight until the page is scrolled to it.
+    // Kept in step with the breakpoint in configuration.css.
+    const stacked = window.matchMedia('(max-width: 991.98px)');
 
-    if (!sections.length) {
-        return;
+    function menuFor(button) {
+        return document.getElementById(button.getAttribute('aria-controls'));
     }
 
-    function markCurrent(current) {
-        sections.forEach(function(pair) {
-            pair.link.classList.toggle('is-current', pair.section === current);
-        });
+    function paneFor(button) {
+        return document.getElementById(button.dataset.settingsCategory);
     }
 
     /**
-     * The section that owns the screen: the last one whose top has passed
-     * under the sticky nav. Falling back to the first keeps a pill lit while
-     * the tab is scrolled to the very top.
+     * Folds or unfolds a category's list. Bootstrap's Collapse does the
+     * sliding, and honours prefers-reduced-motion; without it the list simply
+     * appears.
      */
-    function currentSection() {
-        const line = nav.getBoundingClientRect().bottom + 24;
-        let current = sections[0].section;
+    function setOpen(button, open) {
+        const menu = menuFor(button);
 
-        sections.forEach(function(pair) {
-            if (pair.section.getBoundingClientRect().top <= line) {
-                current = pair.section;
-            }
-        });
+        button.setAttribute('aria-expanded', open ? 'true' : 'false');
 
-        return current;
-    }
-
-    function refresh() {
-        // Only worth answering while the tab is open; the pane is display:none
-        // the rest of the time and every rectangle reads zero.
-        if (nav.offsetParent !== null) {
-            markCurrent(currentSection());
-        }
-    }
-
-    sections.forEach(function(pair) {
-        pair.link.addEventListener('click', function(event) {
-            event.preventDefault();
-
-            // scrollIntoView moves whatever actually scrolls; how far below the
-            // sticky nav it lands is the section's own scroll-margin-top.
-            pair.section.scrollIntoView({ behavior: 'smooth', block: 'start' });
-
-            markCurrent(pair.section);
-
-            // Restarted each time: re-adding a running animation class does
-            // nothing until the class has actually been off the element.
-            pair.section.classList.remove('settings-section-landed');
-            void pair.section.offsetWidth;
-            pair.section.classList.add('settings-section-landed');
-        });
-    });
-
-    let ticking = false;
-
-    function onScroll() {
-        if (ticking) {
+        if (!menu) {
             return;
         }
 
-        ticking = true;
+        if (window.bootstrap?.Collapse) {
+            const collapse = window.bootstrap.Collapse.getOrCreateInstance(menu, { toggle: false });
 
-        window.requestAnimationFrame(function() {
-            refresh();
-            ticking = false;
-        });
+            if (open) {
+                collapse.show();
+            } else {
+                collapse.hide();
+            }
+
+            return;
+        }
+
+        menu.classList.toggle('show', open);
     }
 
-    // Capture phase, so a scroll inside any container is heard too - scroll
-    // events do not bubble.
-    document.addEventListener('scroll', onScroll, { capture: true, passive: true });
-    window.addEventListener('resize', onScroll, { passive: true });
+    function showCategory(chosen) {
+        categories.forEach(function(button) {
+            const isChosen = button === chosen;
+            const pane = paneFor(button);
 
-    // A second opinion that needs no scroll event at all, for anything that
-    // moves the sections without one (a card growing as its list loads).
-    if (window.IntersectionObserver) {
-        const observer = new window.IntersectionObserver(refresh, {
-            threshold: [0, 0.25, 0.5, 1],
+            button.classList.toggle('active', isChosen);
+
+            if (isChosen) {
+                button.setAttribute('aria-current', 'true');
+            } else {
+                button.removeAttribute('aria-current');
+            }
+
+            setOpen(button, isChosen);
+
+            if (!pane) {
+                return;
+            }
+
+            if (isChosen) {
+                pane.classList.add('active');
+                // Read a size first, so the fade has a start to run from - the
+                // same reflow Bootstrap's own tabs force. Not a timer or an
+                // animation frame: either can be held back while the page is
+                // not being drawn, leaving the pane invisible.
+                void pane.offsetWidth;
+                pane.classList.add('show');
+            } else {
+                pane.classList.remove('active', 'show');
+            }
         });
 
-        sections.forEach(function(pair) {
-            observer.observe(pair.section);
+        reveal(paneFor(chosen), false);
+    }
+
+    /**
+     * Brings a pane's top into view. The categories are not the same length,
+     * so a switch made far down a long one can leave the window scrolled past
+     * the end of a short one. `always` is for the stacked layout, where the
+     * pane sits below the sidebar and is out of sight even when nothing has
+     * been scrolled.
+     */
+    function reveal(pane, always) {
+        if (!pane) {
+            return;
+        }
+
+        const topbar = document.querySelector('.admin-topbar');
+        const clear = topbar ? topbar.getBoundingClientRect().bottom : 0;
+
+        if (always || pane.getBoundingClientRect().top < clear) {
+            pane.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    }
+
+    categories.forEach(function(button) {
+        button.addEventListener('click', function() {
+            if (button.classList.contains('active')) {
+                setOpen(button, button.getAttribute('aria-expanded') !== 'true');
+
+                return;
+            }
+
+            showCategory(button);
         });
-    }
+    });
 
-    // The tab starts hidden, so the first honest answer comes when it opens.
-    const tabButton = document.getElementById('systemSettingsTab');
+    // A type chosen from a list. Its editor has already taken the click; what
+    // is left here is making sure its category is the one on screen, and that
+    // the fields it is about to draw are where the eye can find them.
+    nav.addEventListener('click', function(event) {
+        const type = event.target.closest('[data-content-section]');
+        const category = type?.closest('.settings-sidebar-group')?.querySelector('[data-settings-category]');
 
-    if (tabButton) {
-        tabButton.addEventListener('shown.bs.tab', refresh);
-    }
+        if (!category) {
+            return;
+        }
 
-    markCurrent(sections[0].section);
+        if (!category.classList.contains('active')) {
+            showCategory(category);
+        }
+
+        reveal(paneFor(category), stacked.matches);
+    });
 });

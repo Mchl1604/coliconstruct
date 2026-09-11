@@ -348,141 +348,560 @@
     font-size: 1.4rem;
 }
 
-/* ---- System Contents: section navigation ---- */
+/* ==================================================================
+   System Settings: the sidebar and the save bar
 
-/*
- * The pills carry the blue so the section being edited is obvious, and the
- * panel below repeats it - the fields on screen always belong to exactly one
- * part of the website, and it should never be a guess which.
- */
-.content-section-nav .nav-link {
-    border: 1px solid #cfe3f6;
-    background: #f4f9fe;
-    color: #2370b4;
-    font-weight: 600;
-    padding: .45rem 1rem;
+   Categories down the left, each unfolding the list of setting types it
+   holds, and one type's fields on screen at a time. Everything below is
+   layout and colour; which category is open is systemSettingsNav.js and
+   which type is showing is systemContents.js.
+   ================================================================== */
+
+.settings-layout {
+    display: grid;
+    grid-template-columns: 16rem minmax(0, 1fr);
+    gap: 1.25rem;
+    align-items: start;
 }
 
-.content-section-nav .nav-link:hover {
-    background: #e3f0fc;
-    border-color: #2d8de1;
-    color: #1b5688;
-}
+/* ---- Sidebar ---- */
 
-.content-section-nav .nav-link.active {
-    background: #2370b4;
-    border-color: #2370b4;
-    color: #fff;
-}
-
-.content-section-panel {
-    border: 1px solid #cfe3f6;
-    border-top: 4px solid #2370b4;
-    border-radius: .6rem;
-    background: #fbfdff;
-    padding: 1.25rem;
-}
-
-.content-section-panel-title {
-    font-size: .78rem;
-    font-weight: 700;
-    letter-spacing: .06em;
-    text-transform: uppercase;
-    color: #2370b4;
-    padding-bottom: .6rem;
-    margin-bottom: 1rem;
-    border-bottom: 1px solid #dceafa;
-}
-
-.content-section-panel-title:empty {
-    display: none;
-}
-
-/* ---- System Settings: section navigation ----
-   Two long sections and more to come, so the tab carries its own jump links.
-   Sticky, so they stay reachable however far down the page you are, and in
-   the same blue the sections themselves wear. */
-
-.settings-section-nav {
+/* Sticky under the top bar, so the categories stay in reach however far down
+   a long type has been scrolled. */
+.settings-sidebar {
     position: sticky;
-    top: 0;
-    z-index: 3;
+    top: calc(var(--admin-topbar-height, 56px) + 1rem);
+    padding: .75rem;
+    border: 1px solid #e3ebf4;
+    border-radius: .75rem;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, .05);
+}
+
+.settings-sidebar-heading {
     display: flex;
     align-items: center;
-    flex-wrap: wrap;
-    gap: .5rem;
-    margin-bottom: 1rem;
-    padding: .6rem .75rem;
-    border: 1px solid #cfe3f6;
-    border-radius: .6rem;
-    /* Opaque: the cards scroll underneath it. */
-    background: #f4f9fe;
-}
-
-/* How far below the sticky nav a jumped-to section lands. Stated here rather
-   than as an offset in JavaScript, so scrollIntoView can do the arithmetic
-   whatever ends up being the thing that scrolls. */
-#systemContentsPane,
-#projectTypesPane {
-    scroll-margin-top: 5rem;
-}
-
-.settings-section-nav-label {
+    gap: .4rem;
+    padding: .2rem .5rem .7rem;
+    margin-bottom: .5rem;
+    border-bottom: 1px solid #eef2f6;
     font-size: .72rem;
     font-weight: 700;
     letter-spacing: .06em;
     text-transform: uppercase;
-    color: #6b8fb5;
-    margin-right: .15rem;
+    color: #64748b;
 }
 
-.settings-section-link {
-    display: inline-flex;
+.settings-sidebar-nav {
+    display: flex;
+    flex-direction: column;
+    gap: .3rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.settings-sidebar-link {
+    position: relative;
+    display: flex;
     align-items: center;
-    gap: .35rem;
-    padding: .35rem .85rem;
-    border: 1px solid #cfe3f6;
-    border-radius: 999px;
-    background: #fff;
-    color: #2370b4;
-    font-size: .82rem;
-    font-weight: 600;
-    text-decoration: none;
+    gap: .7rem;
+    width: 100%;
+    padding: .65rem .7rem;
+    border: 1px solid transparent;
+    border-radius: .6rem;
+    background: transparent;
+    color: #334155;
+    text-align: left;
     transition:
         background-color .12s ease,
         border-color .12s ease,
         color .12s ease;
 }
 
-.settings-section-link:hover {
-    background: #e3f0fc;
-    border-color: #2d8de1;
+.settings-sidebar-link:hover {
+    background: #f4f9fe;
     color: #1b5688;
 }
 
-.settings-section-link.is-current {
+.settings-sidebar-link:focus-visible {
+    outline: 0;
+    box-shadow: 0 0 0 .2rem rgba(35, 112, 180, .3);
+}
+
+/* The open category: tinted, outlined, and a bar down its left edge - three
+   signals, so it reads as selected at a glance and without relying on colour
+   alone. */
+.settings-sidebar-link.active {
+    background: #eaf3fb;
+    border-color: #cfe3f6;
+    color: #17548a;
+}
+
+.settings-sidebar-link.active::before {
+    content: "";
+    position: absolute;
+    left: -.75rem;
+    top: .55rem;
+    bottom: .55rem;
+    width: 4px;
+    border-radius: 0 4px 4px 0;
     background: #2370b4;
-    border-color: #2370b4;
+}
+
+.settings-sidebar-icon {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: .55rem;
+    background: #f1f5f9;
+    color: #64748b;
+    font-size: 1.05rem;
+    transition: background-color .12s ease, color .12s ease;
+}
+
+.settings-sidebar-link.active .settings-sidebar-icon {
+    background: #2370b4;
     color: #fff;
 }
 
-/* The card a jump link just landed on, so the eye knows where it arrived. */
-@keyframes settings-section-flash {
-    from {
-        box-shadow: 0 0 0 .25rem rgba(35, 112, 180, .25);
-    }
+.settings-sidebar-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
 
+.settings-sidebar-label {
+    font-size: .9rem;
+    font-weight: 600;
+    line-height: 1.25;
+}
+
+.settings-sidebar-hint {
+    font-size: .74rem;
+    color: #8492a6;
+    line-height: 1.3;
+}
+
+.settings-sidebar-link.active .settings-sidebar-hint {
+    color: #4f7fae;
+}
+
+/* Points down at the list it unfolds, and turns over as it opens. */
+.settings-sidebar-chevron {
+    margin-left: auto;
+    flex: 0 0 auto;
+    font-size: .8rem;
+    color: #94a3b8;
+    transition: transform .25s ease, color .12s ease;
+}
+
+.settings-sidebar-link[aria-expanded="true"] .settings-sidebar-chevron {
+    transform: rotate(180deg);
+    color: #2370b4;
+}
+
+/* ---- A category's types ----
+   Hung off the category by a thin rule, so they read as its contents rather
+   than as more categories. */
+
+.settings-subnav {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: .15rem;
+    margin: .35rem 0 .45rem;
+    padding: 0 0 0 1.35rem;
+    list-style: none;
+}
+
+.settings-subnav::before {
+    content: "";
+    position: absolute;
+    left: 1.8rem;
+    top: .3rem;
+    bottom: .3rem;
+    width: 1px;
+    background: #e3ebf4;
+}
+
+.settings-subnav-link {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    width: 100%;
+    min-height: 2.5rem;
+    padding: .45rem .65rem .45rem 1.1rem;
+    border: 0;
+    border-radius: .5rem;
+    background: transparent;
+    color: #475569;
+    font-size: .86rem;
+    text-align: left;
+    transition:
+        background-color .12s ease,
+        color .12s ease,
+        box-shadow .12s ease;
+}
+
+/* The type's own colour - its accent on System Contents, the settings blue on
+   General Settings - so the list already says which colour the panel will
+   wear. */
+.settings-subnav-link i {
+    flex: 0 0 auto;
+    width: 1rem;
+    text-align: center;
+    color: var(--section-accent, #2370b4);
+}
+
+.settings-subnav-link:hover:not(:disabled) {
+    background: var(--section-accent-soft, #f4f9fe);
+    color: #0f172a;
+}
+
+.settings-subnav-link:focus-visible {
+    outline: 0;
+    box-shadow: 0 0 0 .2rem rgba(35, 112, 180, .3);
+}
+
+/* The type on screen: tinted, bold, and a bar in its own colour. */
+.settings-subnav-link.active {
+    background: var(--section-accent-soft, #eaf3fb);
+    color: var(--section-accent, #17548a);
+    font-weight: 700;
+    box-shadow: inset 3px 0 0 var(--section-accent, #2370b4);
+}
+
+/* Held while a save is in flight - see systemContents.js. */
+.settings-subnav-link:disabled {
+    opacity: .55;
+    cursor: progress;
+}
+
+/* ---- Main column ---- */
+
+/* A container, so what is inside can respond to the width it actually has
+   rather than to the window - the sidebar takes a share of the window the
+   panels below never used to have to give up. */
+.settings-main {
+    min-width: 0;
+    container-type: inline-size;
+    container-name: settings-main;
+}
+
+/* Where a category lands when the page is scrolled to it
+   (systemSettingsNav.js): clear of the sticky top bar. */
+.settings-main > .tab-pane {
+    scroll-margin-top: calc(var(--admin-topbar-height, 56px) + 1rem);
+}
+
+.settings-panel-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: .75rem;
+    margin-bottom: 1.1rem;
+}
+
+/* ---- The section panel ----
+   The fields on screen always belong to exactly one type, and the panel
+   says which - in the type's accent where it has one, the settings blue
+   where it does not. */
+
+.content-section-panel {
+    border: 1px solid var(--section-accent-line, #cfe3f6);
+    border-top: 4px solid var(--section-accent, #2370b4);
+    border-radius: .6rem;
+    background: var(--section-accent-soft, #fbfdff);
+    padding: 1.25rem;
+    transition: opacity .15s ease, background-color .15s ease, border-color .15s ease;
+}
+
+/* A type being fetched: what is on screen is on its way out, so it stops
+   looking like something to type into. */
+.content-section-panel.is-loading {
+    opacity: .55;
+    pointer-events: none;
+}
+
+.content-section-panel-title {
+    display: flex;
+    align-items: center;
+    gap: .55rem;
+    font-size: .8rem;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--section-accent, #2370b4);
+    padding-bottom: .7rem;
+    margin-bottom: 1.1rem;
+    border-bottom: 1px solid var(--section-accent-line, #dceafa);
+}
+
+.content-section-panel-title i {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.9rem;
+    height: 1.9rem;
+    border-radius: .45rem;
+    background: var(--section-accent, #2370b4);
+    color: #fff;
+    font-size: .95rem;
+}
+
+.content-section-panel-title:empty {
+    display: none;
+}
+
+/* ---- System Contents: one accent per content type ----
+   Only to tell the parts of the website apart - none of these means
+   anything about state, and none is a red, green or amber that could be
+   read as one. Every accent keeps at least 4.5:1 against white, since it
+   is also the colour of the headings drawn in it. A type added to the
+   catalogue later wears the default blue until it is given one here.
+
+   The same attribute sits on each type in the sidebar and on the System
+   Contents card, so the list and the panel it opens always agree. */
+
+[data-content-accents] {
+    --section-accent: #2370b4;
+    --section-accent-soft: #f5f9fd;
+    --section-accent-line: #cfe3f6;
+}
+
+[data-settings-accent="branding"] {
+    --section-accent: #6246b8;
+    --section-accent-soft: #f7f5fd;
+    --section-accent-line: #ddd5f4;
+}
+
+[data-settings-accent="home"] {
+    --section-accent: #2370b4;
+    --section-accent-soft: #f5f9fd;
+    --section-accent-line: #cfe3f6;
+}
+
+[data-settings-accent="about"] {
+    --section-accent: #0d7480;
+    --section-accent-soft: #f2fafa;
+    --section-accent-line: #c5e6e9;
+}
+
+[data-settings-accent="contact"] {
+    --section-accent: #9b3f7a;
+    --section-accent-soft: #fcf5f9;
+    --section-accent-line: #eed4e4;
+}
+
+[data-settings-accent="footer"] {
+    --section-accent: #475a70;
+    --section-accent-soft: #f6f8fa;
+    --section-accent-line: #d9e0e8;
+}
+
+/* The service and owner cards inside a tinted panel were light grey on a
+   tint; white lifts them off it whatever the accent. */
+[data-content-accents] .content-section-panel [data-repeatable-row].bg-light {
+    background: #fff !important;
+    border: 1px solid var(--section-accent-line) !important;
+}
+
+/* ---- The save bar ----
+   Sticky to the bottom of the screen while its form is on it, so Save is
+   never a scroll away. It stops at the end of the form, so it cannot be
+   mistaken for the save of the panels below it. */
+
+.settings-save-bar {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+    margin: 1.5rem -1.25rem -1.25rem;
+    padding: .85rem 1.25rem;
+    border-top: 1px solid var(--section-accent-line, #cfe3f6);
+    border-radius: 0 0 .6rem .6rem;
+    background: #fff;
+    box-shadow: 0 -6px 16px rgba(15, 23, 42, .06);
+    transition: background-color .2s ease, border-color .2s ease;
+}
+
+.settings-save-bar.is-dirty {
+    background: #fffaf0;
+    border-top-color: #f0dcb4;
+}
+
+.settings-save-state {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    font-size: .84rem;
+    font-weight: 600;
+    color: #64748b;
+}
+
+.settings-save-state.is-dirty {
+    color: #96601a;
+}
+
+.settings-save-state.is-saved {
+    color: #1d7a45;
+}
+
+.settings-save-state.is-busy i {
+    animation: settings-spin 1s linear infinite;
+}
+
+@keyframes settings-spin {
     to {
-        box-shadow: 0 0 0 .25rem rgba(35, 112, 180, 0);
+        transform: rotate(360deg);
     }
 }
 
-.settings-section-landed {
-    animation: settings-section-flash .9s ease-out;
+.settings-save-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem;
+    margin-left: auto;
+}
+
+/* The one filled button on the panel. Everywhere else the site's buttons are
+   outlined (theme.css); this is the exception on purpose, because Save is the
+   action the whole panel exists for and it must never be hunted for. */
+.settings-save-btn {
+    --ui-btn-rgb: 35, 112, 180;
+    --bs-btn-color: #fff;
+    --bs-btn-bg: #2370b4;
+    --bs-btn-border-color: #2370b4;
+    --bs-btn-hover-color: #fff;
+    --bs-btn-hover-bg: #1b5688;
+    --bs-btn-hover-border-color: #1b5688;
+    --bs-btn-active-color: #fff;
+    --bs-btn-active-bg: #17496f;
+    --bs-btn-active-border-color: #17496f;
+    --bs-btn-disabled-color: #8a94a6;
+    --bs-btn-disabled-bg: #eef2f6;
+    --bs-btn-disabled-border-color: #d5dce5;
+    --bs-btn-disabled-opacity: 1;
+
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: .45rem;
+    min-width: 11rem;
+    min-height: 2.75rem;
+    padding: .55rem 1.5rem;
+    font-weight: 700;
+    box-shadow: 0 2px 6px rgba(35, 112, 180, .28);
+    transition:
+        background-color .15s ease,
+        border-color .15s ease,
+        box-shadow .15s ease,
+        transform .15s ease;
+}
+
+.settings-save-btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 5px 14px rgba(35, 112, 180, .35);
+}
+
+.settings-save-btn:disabled {
+    box-shadow: none;
+    cursor: not-allowed;
+}
+
+/* Saving is not the same as having nothing to save: it keeps its colour and
+   shows the spinner, rather than greying out like an idle button. */
+.settings-save-btn.is-saving:disabled {
+    --bs-btn-disabled-color: #fff;
+    --bs-btn-disabled-bg: #2370b4;
+    --bs-btn-disabled-border-color: #2370b4;
+    cursor: progress;
+    opacity: .9;
+}
+
+/* ---- Tablet and phone ----
+   The sidebar moves above the content and stays the same accordion: tap a
+   category, its types slide open, tap a type and the page brings its
+   fields into view (systemSettingsNav.js). */
+
+@media (max-width: 991.98px) {
+    .settings-layout {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 1rem;
+    }
+
+    .settings-sidebar {
+        position: static;
+        padding: .5rem;
+    }
+
+    .settings-sidebar-heading {
+        display: none;
+    }
+
+    .settings-sidebar-link.active::before {
+        left: -.5rem;
+    }
+}
+
+@media (max-width: 575.98px) {
+    .settings-sidebar-link {
+        gap: .55rem;
+        padding: .55rem;
+    }
+
+    .settings-sidebar-icon {
+        width: 2rem;
+        height: 2rem;
+        font-size: .95rem;
+    }
+
+    .settings-sidebar-hint {
+        display: none;
+    }
+
+    .settings-subnav {
+        padding-left: 1rem;
+    }
+
+    .settings-subnav::before {
+        left: 1.5rem;
+    }
+
+    .content-section-panel {
+        padding: 1rem;
+    }
+
+    .settings-save-bar {
+        margin: 1.25rem -1rem -1rem;
+        padding: .75rem 1rem;
+    }
+
+    .settings-save-actions {
+        width: 100%;
+    }
+
+    .settings-save-actions .btn {
+        flex: 1 1 auto;
+    }
+
+    .settings-save-btn {
+        min-width: 0;
+    }
 }
 
 /* ---- Project Types ----
-   A panel inside the General card now, under the Project Settings pill: the
+   Its own entry under General Settings, beside Project Settings: the
    catalogue of work the company does is a project setting. It keeps the blue
    System Contents wears on its own panel, so the settings tab reads as one
    thing rather than several. */
@@ -578,7 +997,7 @@
 }
 
 /* ==================================================================
-   System Settings -> Project Settings -> Default Phases & Tasks
+   System Settings -> General Settings -> Default Phases & Tasks
 
    Two steps, drawn as two steps. The first version of this panel put
    the stage vocabulary and a project type's template side by side as
@@ -1298,5 +1717,32 @@
 
     .phase-template-tasks {
         margin-left: 0;
+    }
+}
+
+/* ---------- Beside the System Settings sidebar ----------
+
+   The two steps sit side by side only while there is room for both. With
+   the settings sidebar taking its share, that runs out well before the
+   window is narrow, so this follows the width the panel is actually given
+   (.settings-main is the container) rather than the window's. Last in the
+   file on purpose: a container query adds no weight, so it has to come
+   after the rules it overrides. */
+
+@container settings-main (max-width: 860px) {
+    .phase-template-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .phase-template-col-stages {
+        order: 2;
+    }
+
+    .phase-template-col-types {
+        order: 1;
+    }
+
+    .phase-explainer-demo {
+        display: none;
     }
 }

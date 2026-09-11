@@ -478,187 +478,181 @@
 
         {{-- ==================== TAB 3: SYSTEM SETTINGS ==================== --}}
         {{-- Super Admin only. An Admin's Configuration is User Management and
-             Activity Logs, so the whole pane goes rather than being emptied. --}}
+             Activity Logs, so the whole pane goes rather than being emptied.
+
+             A sidebar of categories. Choosing one opens the list of setting
+             types it holds right beneath it, and choosing a type puts that
+             type's fields - and only those - on screen. Both lists are the
+             catalogue's own - SystemContent::SETTINGS_SECTIONS and
+             SystemContent::SECTIONS - so a section added there appears here
+             with nothing in this file to change. --}}
         @if ($isSuperAdmin)
+        @php
+            // Presentation only: an icon for each section the catalogue has
+            // today. A section it gains later still draws, on its category's
+            // icon.
+            $sectionIcons = [
+                \App\Models\SystemContent::SECTION_PROJECT_SETTINGS => 'bi-kanban',
+                \App\Models\SystemContent::SECTION_INQUIRY_SETTINGS => 'bi-envelope-paper',
+                \App\Models\SystemContent::SECTION_LEGAL => 'bi-file-earmark-text',
+                \App\Models\SystemContent::SECTION_BRANDING => 'bi-palette',
+                \App\Models\SystemContent::SECTION_HOME => 'bi-house-door',
+                \App\Models\SystemContent::SECTION_ABOUT => 'bi-info-circle',
+                \App\Models\SystemContent::SECTION_CONTACT => 'bi-telephone',
+                \App\Models\SystemContent::SECTION_FOOTER => 'bi-layout-text-window-reverse',
+                'project_types' => 'bi-diagram-3',
+                'phase_templates' => 'bi-list-check',
+            ];
+
+            // Every entry in a category's list. Most are catalogue sections,
+            // whose fields the editor fetches and builds. Project Types and
+            // Default Phases & Tasks are project settings too, but tables with
+            // endpoints of their own - `panel` entries, shown from the markup
+            // below rather than fetched - and they follow Project Settings,
+            // the setting they belong beside.
+            $generalTypes = [];
+
+            foreach ($settingsSections as $key => $label) {
+                $generalTypes[$key] = ['label' => $label, 'panel' => false];
+
+                if ($key === \App\Models\SystemContent::SECTION_PROJECT_SETTINGS) {
+                    $generalTypes['project_types'] = ['label' => 'Project Types', 'panel' => true];
+                    $generalTypes['phase_templates'] = ['label' => 'Default Phases & Tasks', 'panel' => true];
+                }
+            }
+
+            $contentTypes = array_map(
+                fn (string $label) => ['label' => $label, 'panel' => false],
+                $contentSections
+            );
+
+            // General Settings first, then System Contents. `accents` is
+            // whether each type wears a colour of its own - the website's
+            // parts do, to tell them apart; the operational settings keep the
+            // settings blue.
+            $settingsCategories = [
+                [
+                    'id' => 'generalSettings',
+                    'label' => 'General Settings',
+                    'hint' => 'How the system behaves',
+                    'icon' => 'bi-sliders',
+                    'types' => $generalTypes,
+                    'accents' => false,
+                ],
+                [
+                    'id' => 'systemContents',
+                    'label' => 'System Contents',
+                    'hint' => 'What the public website shows',
+                    'icon' => 'bi-globe',
+                    'types' => $contentTypes,
+                    'accents' => true,
+                ],
+            ];
+        @endphp
         <div class="tab-pane fade" id="systemSettingsPane" role="tabpanel" aria-labelledby="systemSettingsTab">
+            <div class="settings-layout">
 
-            {{-- Jump links, so a long tab does not have to be scrolled to be
-                 navigated. Sticky, and the pill for whatever is on screen
-                 lights up - the same blue pills System Contents uses for its
-                 own sections, one level up. --}}
-            <nav class="settings-section-nav" aria-label="System settings sections" data-settings-nav>
-                <span class="settings-section-nav-label">Jump to</span>
-
-                <a class="settings-section-link" href="#systemContentsPane" data-settings-link>
-                    <i class="bi bi-globe" aria-hidden="true"></i>
-                    System Contents
-                </a>
-
-                <a class="settings-section-link" href="#generalSettingsPane" data-settings-link>
-                    <i class="bi bi-sliders" aria-hidden="true"></i>
-                    General
-                </a>
-            </nav>
-
-            {{-- System Contents lives inside System Settings: the public
-                 website belongs to the Super Admin alone. --}}
-                <div class="card shadow-sm border-0 rounded-2 mb-4" id="systemContentsPane" data-content-editor>
-                    <div class="card-body p-4">
-
-                        <div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3">
-                            <div>
-                                <h5 class="fw-bold mb-1">
-                                    <i class="bi bi-globe me-1 text-primary" aria-hidden="true"></i>
-                                    System Contents
-                                </h5>
-                                <p class="text-secondary small mb-0">
-                                    Everything the public website shows. Changes go live immediately.
-                                </p>
-                            </div>
-
-                            <a class="btn btn-outline-secondary btn-sm" href="{{ route('landing.home') }}"
-                                target="_blank" rel="noopener">
-                                <i class="bi bi-box-arrow-up-right me-1" aria-hidden="true"></i>
-                                View website
-                            </a>
-                        </div>
-
-                        {{-- Blue pills, so which part of the website is being
-                             edited is obvious at a glance. --}}
-                        <ul class="nav nav-pills gap-2 mb-4 content-section-nav" data-content-sections>
-                            @foreach ($contentSections as $key => $label)
-                                <li class="nav-item">
-                                    <button type="button"
-                                        class="nav-link {{ $loop->first ? 'active' : '' }}"
-                                        data-content-section="{{ $key }}">
-                                        {{ $label }}
-                                    </button>
-                                </li>
-                            @endforeach
-                        </ul>
-
-                        <div class="text-secondary small py-3 px-1 d-none" data-content-loading>
-                            <span class="spinner-border spinner-border-sm me-2" role="status"
-                                aria-hidden="true"></span>
-                            Loading content&hellip;
-                        </div>
-
-                        <div class="content-section-panel">
-                            <div class="content-section-panel-title" data-content-section-title></div>
-
-                            <form data-content-form novalidate>
-                                <div class="row g-4" data-content-fields></div>
-
-                                <div class="d-flex align-items-center gap-2 mt-4">
-                                    <button type="submit" class="btn btn-primary px-4" data-content-save>
-                                        <span class="spinner-border spinner-border-sm me-1 d-none"
-                                            role="status" aria-hidden="true" data-content-save-spinner></span>
-                                        Save Changes
-                                    </button>
-
-                                    {{-- A re-read rather than an undo stack: the
-                                         saved values are the only thing that was
-                                         ever true, so fetching them back is what
-                                         discarding a change means. --}}
-                                    <button type="button" class="btn btn-outline-secondary px-4"
-                                        data-content-cancel>
-                                        Cancel
-                                    </button>
-
-                                    <span class="text-success small d-none" data-content-saved>
-                                        <i class="bi bi-check2-circle me-1" aria-hidden="true"></i>Saved
-                                    </span>
-                                </div>
-                            </form>
-                        </div>
-
-                        <div class="alert alert-danger mt-3 d-none" role="alert" data-content-error></div>
-
-
+                {{-- Each category is a button with its types folded away
+                     beneath it. Opening a category shows its pane and slides
+                     its types open; only the open category's list is ever
+                     unfolded. The categories are systemSettingsNav.js, the
+                     types are systemContents.js - each editor owns its own
+                     list, found through data-content-nav. --}}
+                <nav class="settings-sidebar" aria-label="System settings">
+                    <div class="settings-sidebar-heading">
+                        <i class="bi bi-gear" aria-hidden="true"></i>
+                        System Settings
                     </div>
-                </div>
 
-                {{-- The operational settings: how long a project waits on its
+                    <ul class="settings-sidebar-nav" data-settings-nav>
+                        @foreach ($settingsCategories as $category)
+                            @php($isOpen = $loop->first)
+                            <li class="settings-sidebar-group">
+                                <button type="button" class="settings-sidebar-link {{ $isOpen ? 'active' : '' }}"
+                                    id="{{ $category['id'] }}Tab" data-settings-category="{{ $category['id'] }}Pane"
+                                    aria-controls="{{ $category['id'] }}Menu"
+                                    aria-expanded="{{ $isOpen ? 'true' : 'false' }}"
+                                    @if ($isOpen) aria-current="true" @endif>
+                                    <span class="settings-sidebar-icon">
+                                        <i class="bi {{ $category['icon'] }}" aria-hidden="true"></i>
+                                    </span>
+                                    <span class="settings-sidebar-text">
+                                        <span class="settings-sidebar-label">{{ $category['label'] }}</span>
+                                        <span class="settings-sidebar-hint">{{ $category['hint'] }}</span>
+                                    </span>
+                                    <i class="bi bi-chevron-down settings-sidebar-chevron" aria-hidden="true"></i>
+                                </button>
+
+                                <div class="collapse {{ $isOpen ? 'show' : '' }}" id="{{ $category['id'] }}Menu">
+                                    <ul class="settings-subnav" id="{{ $category['id'] }}Types" data-content-sections
+                                        aria-label="{{ $category['label'] }} types">
+                                        @foreach ($category['types'] as $key => $type)
+                                            <li>
+                                                <button type="button"
+                                                    class="settings-subnav-link {{ $loop->first ? 'active' : '' }}"
+                                                    data-content-section="{{ $key }}"
+                                                    data-icon="{{ $sectionIcons[$key] ?? $category['icon'] }}"
+                                                    @if ($type['panel']) data-content-kind="panel" @endif
+                                                    @if ($category['accents']) data-settings-accent="{{ $key }}" @endif
+                                                    @if ($loop->first) aria-current="true" @endif>
+                                                    <i class="bi {{ $sectionIcons[$key] ?? $category['icon'] }}"
+                                                        aria-hidden="true"></i>
+                                                    <span>{{ $type['label'] }}</span>
+                                                </button>
+                                            </li>
+                                        @endforeach
+                                    </ul>
+                                </div>
+                            </li>
+                        @endforeach
+                    </ul>
+                </nav>
+
+                <div class="tab-content settings-main">
+
+                {{-- ---------------- General Settings ----------------
+                     The operational settings: how long a project waits on its
                      client, how often one visitor may write in, and the Terms
                      and Conditions everybody is asked to accept.
 
-                     The same editor as System Contents above, against the same
+                     The same editor as System Contents, against the same
                      endpoints - one catalogue, one table, one audit entry. What
-                     differs is only the list of pills, because "rewrite the
+                     differs is only the list of types, because "rewrite the
                      About page" and "complete projects after five days instead
                      of seven" are not the same kind of decision. --}}
-                <div class="card shadow-sm border-0 rounded-2" id="generalSettingsPane" data-content-editor>
+                <div class="tab-pane fade show active" id="generalSettingsPane" role="region"
+                    aria-labelledby="generalSettingsTab">
+                <div class="card shadow-sm border-0 rounded-2" data-content-editor
+                    data-content-nav="generalSettingsTypes">
                     <div class="card-body p-4">
 
-                        <div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3">
+                        <div class="settings-panel-head">
                             <div>
                                 <h5 class="fw-bold mb-1">
                                     <i class="bi bi-sliders me-1 text-primary" aria-hidden="true"></i>
-                                    General
+                                    General Settings
                                 </h5>
                                 <p class="text-secondary small mb-0">
-                                    How the system behaves. Changes apply immediately.
+                                    How the system behaves. Saved changes apply immediately.
                                 </p>
                             </div>
                         </div>
 
-                        <ul class="nav nav-pills gap-2 mb-4 content-section-nav" data-content-sections>
-                            @foreach ($settingsSections as $key => $label)
-                                <li class="nav-item">
-                                    <button type="button" class="nav-link {{ $loop->first ? 'active' : '' }}"
-                                        data-content-section="{{ $key }}">
-                                        {{ $label }}
-                                    </button>
-                                </li>
-                            @endforeach
-                        </ul>
+                        @include('super-admin.partials.settings-editor-form', ['loadingLabel' => 'Loading settings'])
 
-                        <div class="text-secondary small py-3 px-1 d-none" data-content-loading>
-                            <span class="spinner-border spinner-border-sm me-2" role="status"
-                                aria-hidden="true"></span>
-                            Loading settings&hellip;
-                        </div>
+                        {{-- The General Settings types that are not catalogue
+                             fields: Project Types and Default Phases & Tasks.
+                             Each is a table with its own endpoints and its own
+                             saving, so the editor cannot build them - it shows
+                             the one whose entry was chosen in the sidebar
+                             (data-content-kind="panel") and hides its own form
+                             while it does. See showPanel() in systemContents.js.
 
-                        <div class="content-section-panel">
-                            <div class="content-section-panel-title" data-content-section-title></div>
-
-                            <form data-content-form novalidate>
-                                <div class="row g-4" data-content-fields></div>
-
-                                <div class="d-flex align-items-center gap-2 mt-4">
-                                    <button type="submit" class="btn btn-primary px-4" data-content-save>
-                                        <span class="spinner-border spinner-border-sm me-1 d-none"
-                                            role="status" aria-hidden="true" data-content-save-spinner></span>
-                                        Save Changes
-                                    </button>
-
-                                    <button type="button" class="btn btn-outline-secondary px-4"
-                                        data-content-cancel>
-                                        Cancel
-                                    </button>
-
-                                    <span class="text-success small d-none" data-content-saved>
-                                        <i class="bi bi-check2-circle me-1" aria-hidden="true"></i>Saved
-                                    </span>
-                                </div>
-                            </form>
-                        </div>
-
-                        <div class="alert alert-danger mt-3 d-none" role="alert" data-content-error></div>
-
-                        {{-- Project Types belongs to Project Settings: the
-                             catalogue of work the company does is a project
-                             setting, and the one list serves two screens - it is
+                             Project Types is the catalogue of work the company
+                             does, and the one list serves two screens - it is
                              what a project may be, and what a technician may be
-                             qualified for.
-
-                             It is not a catalogue field, so it cannot be one of
-                             the inputs the editor builds; it rides along instead,
-                             shown and hidden with the section it belongs to. See
-                             [data-content-extra] in systemContents.js. --}}
-                        <div data-content-extra="project_settings" hidden>
-                            <hr class="my-4">
-
+                             qualified for. --}}
+                        <div data-content-extra="project_types" hidden>
                             <div class="project-types-panel" id="projectTypesPane">
 
                                     <div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3">
@@ -720,7 +714,9 @@
                                     <div class="alert alert-danger mt-3 mb-0 d-none" role="alert" data-project-type-error></div>
                                     <div class="alert alert-success mt-3 mb-0 d-none" role="alert" data-project-type-success></div>
                             </div>
+                        </div>
 
+                        <div data-content-extra="phase_templates" hidden>
                             {{-- Default Phases & Tasks.
                                  =====================================
 
@@ -745,8 +741,6 @@
                                  already been set up. A template is copied onto a
                                  project once, on its phase setup screen, and is
                                  fully editable there. --}}
-                            <hr class="my-4">
-
                             <div class="phase-template-panel" id="phaseTemplatesPane">
 
                                 <div class="phase-template-header">
@@ -938,7 +932,54 @@
                         </div>
                     </div>
                 </div>
-            </div>
+                </div>
+
+                {{-- ---------------- System Contents ----------------
+                     Everything the public website shows. It lives inside System
+                     Settings because the public website belongs to the Super
+                     Admin alone.
+
+                     Each content type wears an accent colour of its own - on
+                     its entry in the sidebar, the panel's top border, its
+                     heading and its tint - so which part of the website is being
+                     edited is never a guess. The colours only tell the types
+                     apart; none of them means anything about state. They come
+                     from data-settings-accent, which systemContents.js keeps in
+                     step with the chosen type - see configuration.css. --}}
+                <div class="tab-pane fade" id="systemContentsPane" role="region"
+                    aria-labelledby="systemContentsTab">
+                <div class="card shadow-sm border-0 rounded-2" data-content-editor
+                    data-content-nav="systemContentsTypes" data-content-accents
+                    data-settings-accent="{{ array_key_first($contentSections) }}">
+                    <div class="card-body p-4">
+
+                        <div class="settings-panel-head">
+                            <div>
+                                <h5 class="fw-bold mb-1">
+                                    <i class="bi bi-globe me-1 text-primary" aria-hidden="true"></i>
+                                    System Contents
+                                </h5>
+                                <p class="text-secondary small mb-0">
+                                    Everything the public website shows. Saved changes go live immediately.
+                                </p>
+                            </div>
+
+                            <a class="btn btn-outline-secondary btn-sm" href="{{ route('landing.home') }}"
+                                target="_blank" rel="noopener">
+                                <i class="bi bi-box-arrow-up-right me-1" aria-hidden="true"></i>
+                                View website
+                            </a>
+                        </div>
+
+                        @include('super-admin.partials.settings-editor-form', ['loadingLabel' => 'Loading content'])
+
+                    </div>
+                </div>
+                </div>
+
+                </div>{{-- /.settings-main --}}
+            </div>{{-- /.settings-layout --}}
+        </div>
         @endif
 
         {{-- ==================== TAB 4: INQUIRIES ==================== --}}
