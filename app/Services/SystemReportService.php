@@ -41,7 +41,7 @@ class SystemReportService
      */
     public const EXPORT_TYPES = [
         'project' => 'Project Report',
-        'new_projects' => 'New Projects Report',
+        'created_projects' => 'Created Projects Report',
         'schedule' => 'Schedule Report',
         'technician' => 'Technician Report',
     ];
@@ -950,7 +950,7 @@ class SystemReportService
         $report = match ($reportType) {
             'schedule' => $this->scheduleReport($period),
             'technician' => $this->technicianReport($period, $filters),
-            'new_projects' => $this->newProjectsReport($period),
+            'created_projects' => $this->createdProjectsReport($period),
             default => $this->projectReport($period, $filters['project_status'] ?? 'all'),
         };
 
@@ -1029,20 +1029,27 @@ class SystemReportService
     }
 
     /**
-     * The work that was opened in the period, whatever became of it since.
+     * The projects whose creation date falls inside the period, whatever
+     * became of them since.
      *
      * A report of its own because the Project Report now answers a different
      * question. That one asks "what was the business carrying in August?" and
-     * so counts a project opened in May and still running; this one asks "what
-     * came in during August?", which is the intake figure - and the two are
-     * only the same in a month where nothing was carried over.
+     * so counts a project created in May and still running; this one asks
+     * "what was created during August?" - and the two are only the same in a
+     * month where nothing was carried over.
      *
-     * Ordered by the day it arrived, because that is the thing being counted.
+     * Inclusion is decided by the project row's own `created_at` and by
+     * nothing else. Not its start date, not its first schedule, not its first
+     * phase, not its completion, not when it was last touched: the report is
+     * named for the creation date, so the creation date is what it filters on.
+     *
+     * Ordered by the day it was created, because that is the thing being
+     * counted.
      *
      * @param  array{start: CarbonImmutable, end: CarbonImmutable}  $period
      * @return array<string, mixed>
      */
-    private function newProjectsReport(array $period): array
+    private function createdProjectsReport(array $period): array
     {
         $projects = $this->excludeArchived(Project::query())
             ->whereBetween('created_at', [$period['start'], $period['end']])
@@ -1054,7 +1061,7 @@ class SystemReportService
         $rows = $projects
             ->map(fn (Project $project): array => [
                 'reference_no' => $project->reference_no ?: '—',
-                'opened_on' => $this->formatDate($project->created_at),
+                'created_on' => $this->formatDate($project->created_at),
                 'client' => $this->clientName($project),
                 'client_type' => $project->clientType() ? ucfirst(mb_strtolower($project->clientType())) : '—',
                 'project_types' => $project->projectTypes->pluck('type_name')->all(),
@@ -1069,11 +1076,11 @@ class SystemReportService
 
         return [
             'sections' => [[
-                'key' => 'new_projects',
-                'title' => 'Projects Opened',
+                'key' => 'created_projects',
+                'title' => 'Created Projects',
                 'rows' => $rows,
                 'summary' => [
-                    ['label' => 'Projects Opened', 'value' => number_format($rows->count())],
+                    ['label' => 'Projects Created', 'value' => number_format($rows->count())],
                     ['label' => 'Total Quotation', 'value' => $this->money($this->billableTotal($rows))],
                     ...$this->statusCounts($rows),
                 ],

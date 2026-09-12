@@ -105,6 +105,8 @@
             padding: 4px 6px;
             border-bottom: 1px solid #eef2f7;
             vertical-align: top;
+            /* Every column reads from the same left edge, ids included. */
+            text-align: left;
             /* Descriptions run long; they wrap rather than push the columns
                beside them off the page. */
             word-wrap: break-word;

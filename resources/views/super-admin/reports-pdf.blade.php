@@ -144,16 +144,14 @@
             padding: 4px 6px;
             border: 1px solid #cbd5e1;
             vertical-align: top;
+            /* Every column reads from the same left edge, counts included. */
+            text-align: left;
             /* Long client names wrap; reference numbers are never cut. */
             word-wrap: break-word;
         }
 
         .nowrap {
             white-space: nowrap;
-        }
-
-        .num {
-            text-align: right;
         }
 
         /* One stacked value per line, with room between them. */
@@ -191,6 +189,7 @@
             font-size: 8.5px;
             padding: 1px 10px 1px 0;
             width: 25%;
+            text-align: left;
         }
 
         .summary .value {

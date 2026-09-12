@@ -82,13 +82,15 @@
             </table>
         @endif
 
-        {{-- ------------- New Projects Report ------------- --}}
-        @if ($section['key'] === 'new_projects')
+        {{-- ------------- Created Projects Report ------------- --}}
+        @if ($section['key'] === 'created_projects')
             <table class="data">
                 <thead>
                     <tr>
                         <th style="width:12%">Reference No.</th>
-                        <th style="width:11%">Opened</th>
+                        {{-- The project row's own creation date, which is the
+                             only thing this report is filtered on. --}}
+                        <th style="width:11%">Created</th>
                         <th style="width:20%">Client</th>
                         <th style="width:10%">Client Type</th>
                         <th style="width:20%">Project Type</th>
@@ -99,7 +101,7 @@
                     @foreach ($rows as $row)
                         <tr>
                             <td class="nowrap">{{ $row['reference_no'] }}</td>
-                            <td class="nowrap">{{ $row['opened_on'] }}</td>
+                            <td class="nowrap">{{ $row['created_on'] }}</td>
                             <td>{{ $row['client'] }}</td>
                             <td>{{ $row['client_type'] }}</td>
                             <td>{!! $stack($row['project_types'], 'No Project Type') !!}</td>
@@ -118,7 +120,7 @@
                         <th style="width:14%">Reference No.</th>
                         <th style="width:26%">Client</th>
                         <th style="width:28%">Schedule</th>
-                        <th style="width:14%" class="num">Duration</th>
+                        <th style="width:14%">Duration</th>
                         <th>Status</th>
                     </tr>
                 </thead>
@@ -129,7 +131,7 @@
                             <td>{{ $row['client'] }}</td>
                             {{-- Every range that touches the period, in date order. --}}
                             <td>{!! $stack($row['schedules'], 'No Schedule') !!}</td>
-                            <td class="num nowrap">
+                            <td class="nowrap">
                                 {{ $row['duration'] }} {{ $row['duration'] === 1 ? 'day' : 'days' }}
                                 @if ($row['entries'] > 1)
                                     <div class="sub">{{ $row['entries'] }} bookings</div>
@@ -205,7 +207,7 @@
                                 <th style="width:13%">Reference No.</th>
                                 <th style="width:22%">Client</th>
                                 <th style="width:23%">Schedule</th>
-                                <th style="width:11%" class="num">Scheduled Days</th>
+                                <th style="width:11%">Scheduled Days</th>
                                 <th>Status</th>
                             </tr>
                         </thead>
@@ -219,7 +221,7 @@
                                     <td class="nowrap">{{ $row['reference_no'] }}</td>
                                     <td>{{ $row['client'] }}</td>
                                     <td>{{ $row['schedule'] }}</td>
-                                    <td class="num nowrap">
+                                    <td class="nowrap">
                                         {{ $row['duration'] }} {{ $row['duration'] === 1 ? 'day' : 'days' }}
                                     </td>
                                     <td>{{ $row['status_label'] ?: '—' }}</td>

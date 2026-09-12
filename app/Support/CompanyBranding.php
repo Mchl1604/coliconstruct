@@ -35,17 +35,72 @@ class CompanyBranding
     }
 
     /**
+     * The letterhead logo, in the two formats a document may be given it in.
+     *
+     * JPEG first, and not for the file size. dompdf 3.x throws out of
+     * Cpdf::addPngFromFile() the moment it is handed a PNG without ext-gd
+     * installed, and nothing in the render catches it - so on a PHP build
+     * without GD, which nothing else in this application needs, a PNG
+     * letterhead is the difference between a report that exports and a report
+     * that returns a 500. addJpegFromFile() uses no GD at all.
+     *
+     * The PNG stays as the fallback: it is what the browser is served
+     * elsewhere, and where GD is present dompdf renders it with the
+     * transparency intact.
+     *
+     * @var array<string, string>
+     */
+    private const LETTERHEAD_LOGOS = [
+        'image/jpeg' => 'img/coliconstruct-letterhead.jpg',
+        'image/png' => 'img/coliconstructlogor.png',
+    ];
+
+    /**
      * The logo as bytes, because dompdf cannot fetch one over HTTP.
+     *
+     * Null when there is nothing this environment can embed, which prints the
+     * letterhead without a mark rather than failing the export over it.
      */
     public static function logoDataUri(): ?string
     {
-        $path = public_path('img/coliconstructlogor.png');
+        $logo = self::letterheadLogo();
 
-        if (! is_file($path)) {
+        if ($logo === null) {
             return null;
         }
 
-        return 'data:image/png;base64,'.base64_encode((string) file_get_contents($path));
+        return 'data:'.$logo['mime'].';base64,'.base64_encode((string) file_get_contents($logo['path']));
+    }
+
+    /**
+     * Which letterhead file this environment can actually render, or null when
+     * it can render neither. Named for the diagnostics, which report the file
+     * a deployment would use rather than the one a developer assumes.
+     */
+    public static function letterheadLogoPath(): ?string
+    {
+        return self::letterheadLogo()['path'] ?? null;
+    }
+
+    /**
+     * @return array{mime: string, path: string}|null
+     */
+    private static function letterheadLogo(): ?array
+    {
+        foreach (self::LETTERHEAD_LOGOS as $mime => $relative) {
+            // A PNG is only offered where GD is installed to decode it.
+            if ($mime === 'image/png' && ! extension_loaded('gd')) {
+                continue;
+            }
+
+            $path = public_path($relative);
+
+            if (is_file($path)) {
+                return ['mime' => $mime, 'path' => $path];
+            }
+        }
+
+        return null;
     }
 
     /**

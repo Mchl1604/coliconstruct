@@ -206,7 +206,7 @@ class AuditDecisionsTest extends TestCase
         );
     }
 
-    public function test_the_new_projects_report_counts_what_arrived_that_month(): void
+    public function test_the_created_projects_report_counts_what_was_created_that_month(): void
     {
         $this->actingAsSuperAdmin();
 
@@ -219,27 +219,27 @@ class AuditDecisionsTest extends TestCase
         $reports = app(SystemReportService::class);
         $august = $reports->resolveExportPeriod('monthly', 8, 2026);
 
-        $intake = $reports->exportReport('new_projects', $august)['sections'][0];
+        $intake = $reports->exportReport('created_projects', $august)['sections'][0];
 
         // Only the one that arrived in August, not the one being carried.
         $this->assertCount(1, $intake['rows']);
         $this->assertSame($opened->reference_no, $intake['rows'][0]['reference_no']);
-        $this->assertSame('Projects Opened', $intake['title']);
+        $this->assertSame('Created Projects', $intake['title']);
 
         // While the Project Report, asking a different question, carries both.
         $this->assertCount(2, $reports->exportReport('project', $august)['sections'][0]['rows']);
     }
 
-    public function test_the_new_projects_report_is_offered_and_exports(): void
+    public function test_the_created_projects_report_is_offered_and_exports(): void
     {
         $this->actingAsSuperAdmin();
 
         $this->get(route('super-admin.reports.index'))
             ->assertOk()
-            ->assertSee('New Projects Report');
+            ->assertSee('Created Projects Report');
 
         $this->post(route('super-admin.reports.export'), [
-            'report_type' => 'new_projects',
+            'report_type' => 'created_projects',
             'period' => 'monthly',
             'month' => (int) CarbonImmutable::today()->format('n'),
             'year' => (int) CarbonImmutable::today()->format('Y'),

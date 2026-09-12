@@ -199,6 +199,10 @@
     padding: 4px 6px;
     border: 1px solid #cbd5e1;
     vertical-align: top;
+    /* Every column reads from the same left edge - a date, a name and a count
+       alike. Stated rather than left to the default, because the preview is
+       rendered inside a dialog that may align its own content. */
+    text-align: left;
     /* Long client names wrap; reference numbers are never cut. */
     overflow-wrap: break-word;
     word-wrap: break-word;
@@ -206,10 +210,6 @@
 
 .report-doc .nowrap {
     white-space: nowrap;
-}
-
-.report-doc .num {
-    text-align: right;
 }
 
 /* One stacked value per line, with room between them. */
@@ -274,6 +274,7 @@
     padding: 1px 10px 1px 0;
     width: 25%;
     border: none;
+    text-align: left;
 }
 
 .report-doc .summary .value {

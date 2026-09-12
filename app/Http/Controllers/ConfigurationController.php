@@ -17,7 +17,7 @@ use App\Support\BusinessTime;
 use App\Support\CompanyBranding;
 use App\Support\PasswordPolicy;
 use App\Support\PersonName;
-use Barryvdh\DomPDF\Facade\Pdf;
+use App\Support\ReportPdf;
 use Illuminate\Contracts\Validation\Validator as ValidatorContract;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -416,17 +416,24 @@ class ConfigurationController extends Controller
             )
         );
 
-        $pdf = Pdf::loadView('super-admin.activity-logs-pdf', [
-            'columns' => self::LOG_EXPORT_COLUMNS,
-            'rows' => $logs,
-            'matched' => $matched,
-            'limit' => self::EXPORT_ROW_LIMIT,
-            'appliedFilters' => $appliedFilters,
-            'generatedBy' => $request->user()?->fullName() ?? 'Administrator',
-            'generatedAt' => BusinessTime::now(),
-            'logoData' => CompanyBranding::logoDataUri(),
-            'company' => CompanyBranding::letterhead(),
-        ])->setPaper('a4', 'landscape');
+        try {
+            $pdf = ReportPdf::render('super-admin.activity-logs-pdf', [
+                'columns' => self::LOG_EXPORT_COLUMNS,
+                'rows' => $logs,
+                'matched' => $matched,
+                'limit' => self::EXPORT_ROW_LIMIT,
+                'appliedFilters' => $appliedFilters,
+                'generatedBy' => $request->user()?->fullName() ?? 'Administrator',
+                'generatedAt' => BusinessTime::now(),
+                'logoData' => CompanyBranding::logoDataUri(),
+                'company' => CompanyBranding::letterhead(),
+            ]);
+        } catch (RuntimeException) {
+            // ReportPdf logged the cause; the page is told the short version.
+            return redirect()
+                ->route('super-admin.configuration.index')
+                ->with('error', 'The PDF could not be built.');
+        }
 
         return $pdf->download('activity-logs-'.BusinessTime::now()->format('Ymd-His').'.pdf');
     }

@@ -12,10 +12,12 @@ use App\Services\SystemReportService;
 use App\Support\BusinessTime;
 use App\Support\CompanyBranding;
 use App\Support\DisplayCode;
-use Barryvdh\DomPDF\Facade\Pdf;
+use App\Support\ReportPdf;
 use Carbon\CarbonImmutable;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
+use RuntimeException;
 
 /**
  * Centralised reporting: every technician report in one place, plus the
@@ -413,8 +415,13 @@ class ReportController extends Controller
         $reportType = $document['reportType'];
         $period = $document['period'];
 
-        $pdf = Pdf::loadView('super-admin.reports-pdf', $document)
-            ->setPaper('a4', 'landscape');
+        try {
+            $pdf = ReportPdf::render('super-admin.reports-pdf', $document);
+        } catch (RuntimeException) {
+            // ReportPdf has already logged the cause. The page gets the short
+            // version; whoever reads the log gets the exception.
+            return response()->json(['error' => 'The PDF could not be built.'], 500);
+        }
 
         $fileName = sprintf(
             '%s-%s.pdf',
@@ -448,7 +455,7 @@ class ReportController extends Controller
      * fetched once from the same service call. Returns the view data, or the
      * 422 response the request has earned.
      *
-     * @return array<string, mixed>|\Illuminate\Http\JsonResponse
+     * @return array<string, mixed>|JsonResponse
      */
     private function buildDocument(Request $request, SystemReportService $reports)
     {
@@ -573,9 +580,9 @@ class ReportController extends Controller
         $allowed = match ($reportType) {
             'project' => ['project_status'],
             'technician' => ['technician_scope', 'technician_id', 'technician_kind'],
-            // The New Projects Report counts intake, and everything opened in
-            // the period is in it whatever became of it since - so there is
-            // nothing to narrow it by.
+            // The Created Projects Report counts what was created in the
+            // period, whatever became of it since - so there is nothing to
+            // narrow it by.
             default => [],
         };
 
