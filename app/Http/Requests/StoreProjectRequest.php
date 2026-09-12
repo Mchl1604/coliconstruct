@@ -59,7 +59,7 @@ class StoreProjectRequest extends FormRequest
             // NotAnEmployeeEmail.
             'client_email' => ['required', 'email:rfc', 'max:255', new NotAnEmployeeEmail],
             'client_phone' => ['required', 'regex:/^09\d{9}$/'],
-            'project_address' => ['required', 'string'],
+            'project_address' => ['required', 'string', 'max:500'],
             'quotation_amount' => ['required', 'numeric', 'min:0'],
             'project_types' => ['required', 'array', 'min:1'],
             'project_types.*' => ['required', 'string', Rule::in($projectTypes)],

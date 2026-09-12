@@ -168,7 +168,8 @@
                         <div class="col-12">
                             <label for="projectAddress" class="form-label">Project Address</label>
                             <textarea name="project_address" id="projectAddress" rows="3" class="form-control"
-                                placeholder="Enter project address" data-summary-input="project_address" required></textarea>
+                                placeholder="House/Unit No., Street, Barangay, City/Municipality, Province" maxlength="500"
+                                data-summary-input="project_address" required></textarea>
                         </div>
 
                         <div class="col-md-6">

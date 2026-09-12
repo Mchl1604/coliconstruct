@@ -1533,7 +1533,7 @@ class ProjectController extends Controller
             'middle_initial' => PersonName::middleInitialRules(),
             'last_name' => ['required', 'string', 'max:255'],
             'company_name' => ['nullable', 'string', 'max:255'],
-            'address' => ['required', 'string'],
+            'address' => ['required', 'string', 'max:500'],
             'contact_number' => ['required', 'regex:/^09\d{9}$/'],
             // The same rule the wizard applies: a project's client may
             // not be one of the staff, whose address is the key their

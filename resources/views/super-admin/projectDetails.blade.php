@@ -2165,9 +2165,10 @@
 
                         <div class="mt-4">
 
-                            <label class="form-label">Address</label>
+                            <label class="form-label">Project Address</label>
 
-                            <input type="text" class="form-control" name="address" value="{{ $project->address }}">
+                            <textarea class="form-control" name="address" rows="3" maxlength="500"
+                                placeholder="House/Unit No., Street, Barangay, City/Municipality, Province">{{ $project->address }}</textarea>
 
                         </div>
 
