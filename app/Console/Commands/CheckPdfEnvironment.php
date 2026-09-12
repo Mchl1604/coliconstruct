@@ -2,7 +2,10 @@
 
 namespace App\Console\Commands;
 
+use App\Services\SystemReportService;
+use App\Support\CompanyBranding;
 use App\Support\ReportPdf;
+use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
 use Throwable;
 
@@ -19,7 +22,9 @@ use Throwable;
  */
 class CheckPdfEnvironment extends Command
 {
-    protected $signature = 'pdf:check {--keep= : Write the rendered test document to this path}';
+    protected $signature = 'pdf:check
+        {--keep= : Write the rendered documents to this directory}
+        {--report= : Also render one real report - project, created_projects, schedule or technician}';
 
     protected $description = 'Check that this environment can build PDF exports, and render one to prove it.';
 
@@ -89,7 +94,97 @@ class CheckPdfEnvironment extends Command
             return self::FAILURE;
         }
 
-        return $this->renderSmokeTest();
+        if (($status = $this->renderSmokeTest()) !== self::SUCCESS) {
+            return $status;
+        }
+
+        return $this->renderRealReport();
+    }
+
+    /**
+     * Render an actual report through the actual template.
+     *
+     * The smoke test proves the environment; this proves the document. They
+     * are different templates - the report has a repeating fixed header, page
+     * counters and a wider table - so one rendering correctly says nothing
+     * about the other, which is exactly the gap that let a broken export hide
+     * behind a passing check.
+     */
+    private function renderRealReport(): int
+    {
+        $type = (string) ($this->option('report') ?: '');
+
+        if ($type === '') {
+            return self::SUCCESS;
+        }
+
+        if (! array_key_exists($type, SystemReportService::EXPORT_TYPES)) {
+            $this->error('Unknown report. Choose one of: '.implode(', ', array_keys(SystemReportService::EXPORT_TYPES)));
+
+            return self::FAILURE;
+        }
+
+        $reports = app(SystemReportService::class);
+        $today = CarbonImmutable::today();
+        $period = $reports->resolveExportPeriod('monthly', (int) $today->format('n'), (int) $today->format('Y'));
+        $report = $reports->exportReport($type, $period, []);
+
+        try {
+            $pdf = ReportPdf::render('super-admin.reports-pdf', [
+                'report' => $report,
+                'reportType' => $type,
+                'reportTitle' => $report['title'],
+                'period' => $period,
+                'appliedFilters' => [],
+                'generatedBy' => 'pdf:check',
+                'generatedAt' => CarbonImmutable::now(),
+                'logoData' => CompanyBranding::logoDataUri(),
+                'company' => CompanyBranding::letterhead(),
+            ]);
+
+            $output = $pdf->output();
+        } catch (Throwable $exception) {
+            $this->error('The report failed to render: '.$exception->getMessage());
+
+            if ($previous = $exception->getPrevious()) {
+                $this->line('  Cause: '.$previous->getMessage());
+            }
+
+            return self::FAILURE;
+        }
+
+        $this->describe($report['title'], $output);
+
+        if ($keep = $this->option('keep')) {
+            $path = rtrim($keep, '/\\').'/'.$type.'.pdf';
+
+            if (! is_dir(dirname($path))) {
+                @mkdir(dirname($path), 0775, true);
+            }
+
+            file_put_contents($path, $output);
+            $this->line('  Written to '.$path);
+        }
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * What a rendered document is actually carrying, so a good render and a
+     * bad one can be told apart by more than their file size.
+     */
+    private function describe(string $label, string $pdf): void
+    {
+        preg_match_all('/\/BaseFont\s*\/([A-Za-z0-9+,\-]+)/', $pdf, $matches);
+
+        $fonts = array_keys(array_count_values($matches[1]));
+
+        $this->line('');
+        $this->line('  '.$label);
+        $this->line('    Size ............. '.number_format(strlen($pdf) / 1024, 1).' KB');
+        $this->line('    Embedded fonts ... '.substr_count($pdf, '/FontFile2'));
+        $this->line('    Font names ....... '.($fonts ? implode(', ', $fonts) : 'none'));
+        $this->line('    Subsetted ........ '.(preg_match('/\/BaseFont\s*\/[A-Z]{6}\+/', $pdf) ? 'yes' : 'no'));
     }
 
     /**
@@ -122,11 +217,15 @@ class CheckPdfEnvironment extends Command
             return self::FAILURE;
         }
 
+        $this->describe('Environment check document', $output);
+
         if ($keep = $this->option('keep')) {
-            file_put_contents($keep, $pdf->output());
-            $this->line('  Written to '.$keep);
+            $path = rtrim($keep, '/\\').'/pdf-check.pdf';
+            file_put_contents($path, $output);
+            $this->line('  Written to '.$path);
         }
 
+        $this->line('');
         $this->info(sprintf('PDF export works here - rendered a %s KB document.', number_format($bytes / 1024, 1)));
 
         return self::SUCCESS;
