@@ -89,6 +89,8 @@
                     <td>
                         @if (is_bool($value))
                             {{ $value ? 'yes' : 'no' }}
+                        @elseif (is_array($value))
+                            {{ $value === [] ? 'none' : implode(', ', $value) }}
                         @else
                             {{ $value ?? '—' }}
                         @endif

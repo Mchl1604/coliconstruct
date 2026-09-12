@@ -4,6 +4,9 @@ namespace App\Support;
 
 use Barryvdh\DomPDF\Facade\Pdf;
 use Barryvdh\DomPDF\PDF as PdfWrapper;
+use Dompdf\Dompdf;
+use Dompdf\Options;
+use FontLib\Font;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 use Throwable;
@@ -80,12 +83,25 @@ class ReportPdf
         self::raiseTimeLimit();
 
         try {
+            if ($missing = self::missingFontFiles()) {
+                // Refused rather than rendered. dompdf would return a document
+                // that looks right and reads as nothing, which is worse than
+                // no document at all - see missingFontFiles().
+                throw new RuntimeException(
+                    'Font files are missing from this installation: '.implode(', ', $missing)
+                );
+            }
+
             $pdf = Pdf::loadView($view, $data)->setPaper($paper, $orientation);
 
             // Rendered here rather than left to the response, so a failure is
             // caught while there is still a log entry's worth of context and
             // not halfway through streaming a download to the browser.
-            $pdf->output();
+            $output = $pdf->output();
+
+            if (! self::embedsFontProgram($output)) {
+                throw new RuntimeException('The rendered document carries no embedded font.');
+            }
 
             return $pdf;
         } catch (Throwable $exception) {
@@ -159,6 +175,7 @@ class ReportPdf
             'temp_dir_writable' => self::isUsableDirectory($tempDir),
             'public_path' => (string) config('dompdf.public_path'),
             'letterhead' => CompanyBranding::letterheadLogoPath(),
+            'missing_font_files' => self::missingFontFiles(),
         ];
     }
 
@@ -174,6 +191,113 @@ class ReportPdf
             ['dom', 'mbstring'],
             fn (string $extension): bool => ! extension_loaded($extension)
         ));
+    }
+
+    /**
+     * The font family every document asks for by name.
+     *
+     * DejaVu because it carries the peso sign; the PDF core fonts do not.
+     */
+    public const FONT_FAMILY = 'dejavu sans';
+
+    /**
+     * Font files the documents need and this installation cannot read.
+     *
+     * Worth a check of its own because of how quietly it fails. dompdf does
+     * not complain when it cannot read a font: it writes the text as glyph
+     * indices, embeds nothing, and returns a PDF whose rules, tables and
+     * images are all perfectly correct and whose every word is invisible -
+     * the reader's viewer substitutes a font and reads those glyph indices as
+     * character codes, which is where the Arabic and Greek come from.
+     *
+     * The paths are dompdf's own, resolved through its font lookup rather than
+     * guessed, so this keeps working if the package moves them.
+     *
+     * @return array<int, string>
+     */
+    public static function missingFontFiles(): array
+    {
+        $dompdf = new Dompdf(self::options());
+        $families = $dompdf->getFontMetrics()->getFontFamilies();
+
+        $missing = [];
+
+        foreach ($families[self::FONT_FAMILY] ?? [] as $variant) {
+            // dompdf stores each face without a suffix: the .ttf is the font
+            // it embeds, the .ufm the metrics it sets the text with.
+            foreach (['.ttf', '.ufm'] as $extension) {
+                if (! is_readable($variant.$extension)) {
+                    $missing[] = $variant.$extension;
+                }
+            }
+        }
+
+        return $missing;
+    }
+
+    /**
+     * Whether a rendered document actually carries its font, rather than only
+     * naming one. This is the difference between a report and a page of
+     * invisible text, and nothing else in the render reports it.
+     */
+    public static function embedsFontProgram(string $pdf): bool
+    {
+        return str_contains($pdf, '/FontFile2') || str_contains($pdf, '/FontFile3');
+    }
+
+    /**
+     * Font faces that are present but that this installation cannot actually
+     * parse - a file cut short by a build that ran out of disk, say.
+     *
+     * A readable path is not the same as a usable font, and a half-written
+     * .ttf embeds just as silently as a missing one. Kept out of the render
+     * path because parsing four faces costs more than a request should spend
+     * proving something that is almost always true; `pdf:check` runs it.
+     *
+     * @return array<int, string>
+     */
+    public static function unreadableFontFiles(): array
+    {
+        $dompdf = new Dompdf(self::options());
+        $families = $dompdf->getFontMetrics()->getFontFamilies();
+
+        $broken = [];
+
+        foreach ($families[self::FONT_FAMILY] ?? [] as $variant) {
+            $file = $variant.'.ttf';
+
+            if (! is_readable($file)) {
+                continue;
+            }
+
+            try {
+                $font = Font::load($file);
+                $font->parse();
+
+                // No character map means nothing can be looked up, which is
+                // what a truncated file usually amounts to.
+                if ($font->getData('cmap', 'subtables') === null) {
+                    $broken[] = $file;
+                }
+
+                $font->close();
+            } catch (Throwable) {
+                $broken[] = $file;
+            }
+        }
+
+        return $broken;
+    }
+
+    /**
+     * dompdf's options as this application configures them.
+     */
+    private static function options(): Options
+    {
+        $options = new Options(config('dompdf.options', []));
+        $options->setChroot(config('dompdf.options.chroot', base_path()));
+
+        return $options;
     }
 
     private static function isUsableDirectory(string $path): bool

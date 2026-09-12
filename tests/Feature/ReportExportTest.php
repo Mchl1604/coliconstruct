@@ -192,6 +192,87 @@ class ReportExportTest extends TestCase
         $this->assertSame([], ReportPdf::missingExtensions());
     }
 
+    /**
+     * The quiet failure: dompdf that cannot read its font does not complain.
+     * It writes the text as glyph indices, embeds no font program, and returns
+     * a document whose rules, tables and images are all correct and whose
+     * every word is invisible - the reader's viewer substitutes a font and
+     * reads those glyph indices as character codes, which is why the result
+     * comes out as Arabic and Greek.
+     *
+     * So the bytes are checked, not just the exit status.
+     */
+    public function test_every_export_embeds_its_font_program(): void
+    {
+        $this->projectCreatedOn(CarbonImmutable::today()->toDateString());
+
+        foreach (array_keys(ReportController::EXPORT_TYPES) as $type) {
+            $pdf = $this->post(route('super-admin.reports.export'), $this->payload([
+                'report_type' => $type,
+            ]))->getContent();
+
+            $this->assertTrue(
+                ReportPdf::embedsFontProgram($pdf),
+                "{$type} exported a document with no embedded font - its text would be unreadable."
+            );
+        }
+    }
+
+    public function test_the_report_font_is_present_and_parseable_on_this_installation(): void
+    {
+        $this->assertSame([], ReportPdf::missingFontFiles(), 'A font file is missing.');
+        $this->assertSame([], ReportPdf::unreadableFontFiles(), 'A font file is present but corrupt.');
+    }
+
+    /**
+     * An installation missing its font files is refused outright. A report
+     * that cannot be read is worse than a report that did not arrive, because
+     * only one of the two is obvious to whoever asked for it.
+     */
+    public function test_a_missing_font_file_is_refused_rather_than_rendered_unreadably(): void
+    {
+        $font = ReportPdf::missingFontFiles() === []
+            ? $this->fontPath()
+            : null;
+
+        $this->assertNotNull($font, 'Expected a readable font to hide.');
+
+        $hidden = $font.'.hidden';
+        rename($font, $hidden);
+
+        try {
+            $this->assertNotSame([], ReportPdf::missingFontFiles());
+
+            $this->expectException(RuntimeException::class);
+
+            ReportPdf::render('super-admin.reports-pdf', $this->documentFor('project'));
+        } finally {
+            rename($hidden, $font);
+        }
+    }
+
+    public function test_the_check_command_fails_when_a_font_file_is_missing(): void
+    {
+        $font = $this->fontPath();
+        $hidden = $font.'.hidden';
+
+        rename($font, $hidden);
+
+        try {
+            $this->artisan('pdf:check')
+                ->expectsOutputToContain('Font files are missing')
+                ->assertFailed();
+        } finally {
+            rename($hidden, $font);
+        }
+    }
+
+    /** The regular face of the report font, as dompdf resolves it. */
+    private function fontPath(): string
+    {
+        return base_path('vendor/dompdf/dompdf/lib/fonts/DejaVuSans.ttf');
+    }
+
     // ==================================================================
     // Table alignment
     // ==================================================================

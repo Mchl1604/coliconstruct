@@ -41,6 +41,9 @@ class CheckPdfEnvironment extends Command
         $this->line('  Temp directory ...... '.$diagnostics['temp_dir'].' '.$this->writable($diagnostics['temp_dir_writable']));
         $this->line('  Public path ......... '.$diagnostics['public_path']);
         $this->line('  Letterhead .......... '.($diagnostics['letterhead'] ?? 'none - documents print without a logo'));
+        $this->line('  Report font ......... '.($diagnostics['missing_font_files']
+            ? count($diagnostics['missing_font_files']).' FILE(S) MISSING'
+            : ReportPdf::FONT_FAMILY.' (readable)'));
         $this->line('');
 
         if ($missing = ReportPdf::missingExtensions()) {
@@ -51,6 +54,37 @@ class CheckPdfEnvironment extends Command
 
         if (! $diagnostics['temp_dir_writable']) {
             $this->error('No writable temporary directory. Set DOMPDF_TEMP_DIR to one dompdf may write to.');
+
+            return self::FAILURE;
+        }
+
+        // The quiet one. dompdf renders a perfectly laid-out document with
+        // every word invisible when it cannot read its font, so this is
+        // checked before the render and again on the bytes that come out.
+        if ($missing = $diagnostics['missing_font_files']) {
+            $this->error('Font files are missing - exports would render as unreadable glyphs:');
+
+            foreach ($missing as $file) {
+                $this->line('    '.$file);
+            }
+
+            $this->line('');
+            $this->line('  These ship inside the dompdf package. Reinstall it on this machine:');
+            $this->line('    composer install --no-dev --optimize-autoloader');
+
+            return self::FAILURE;
+        }
+
+        if ($broken = ReportPdf::unreadableFontFiles()) {
+            $this->error('Font files are present but unusable - a truncated or corrupt install:');
+
+            foreach ($broken as $file) {
+                $this->line('    '.$file);
+            }
+
+            $this->line('');
+            $this->line('  Reinstall the package on this machine:');
+            $this->line('    rm -rf vendor && composer install --no-dev --optimize-autoloader');
 
             return self::FAILURE;
         }
@@ -70,7 +104,14 @@ class CheckPdfEnvironment extends Command
                 'diagnostics' => ReportPdf::diagnostics(),
             ], 'a4', 'landscape');
 
-            $bytes = strlen($pdf->output());
+            $output = $pdf->output();
+            $bytes = strlen($output);
+
+            if (! ReportPdf::embedsFontProgram($output)) {
+                $this->error('The rendered document carries no embedded font; its text would be unreadable.');
+
+                return self::FAILURE;
+            }
         } catch (Throwable $exception) {
             $this->error('Rendering failed: '.$exception->getMessage());
 
