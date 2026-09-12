@@ -51,8 +51,45 @@ class TaskPolicy
      * A technician closes the work assigned to them; a lead may also close
      * anything on a project they run, for work that is finished on site but
      * was never marked.
+     *
+     * Never before the day the work was due to begin. A task ticked off ahead
+     * of its start date is not a completion, it is a claim about work nobody
+     * has been on site for - and the record would then carry a completion
+     * instant days before the first scheduled day. The date is read off the
+     * office clock and moves on its own, so a task refused this morning is
+     * offered the moment its start date arrives, with nobody to change
+     * anything.
+     *
+     * This policy is the technician portal's alone - see the class docblock -
+     * so the rule reaches exactly the two roles it is meant for. An
+     * administrator closing a task on the crew's behalf goes through
+     * TaskController and is not asked, the same allowance they have on every
+     * other completion rule.
      */
     public function complete(User $user, Task $task): bool
+    {
+        return $this->completableBy($user, $task) && ! $task->startsInFuture();
+    }
+
+    /**
+     * Whether the start date is the only thing standing in the way.
+     *
+     * What the boards draw a disabled button from: a refusal that simply
+     * removes the control leaves the technician to wonder where it went, so
+     * the button stays, greyed, carrying Task::NOT_STARTED_REFUSAL. False
+     * where the task was never this person's to close anyway, because there is
+     * no button to grey out in that case.
+     */
+    public function blockedByStartDate(User $user, Task $task): bool
+    {
+        return $task->startsInFuture() && $this->completableBy($user, $task);
+    }
+
+    /**
+     * Everything complete() asks except the start date: whose task it is, and
+     * whether the project it sits on is still live.
+     */
+    private function completableBy(User $user, Task $task): bool
     {
         $project = $task->project;
 

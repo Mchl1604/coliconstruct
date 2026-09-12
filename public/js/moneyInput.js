@@ -75,9 +75,13 @@
         var field = input.closest('[data-money-field]');
         var hidden = field ? field.querySelector('[data-money-value]') : null;
 
-        if (!hidden) {
+        // Once per field: a second set of listeners would group every
+        // keystroke twice.
+        if (!hidden || input.dataset.moneyReady) {
             return;
         }
+
+        input.dataset.moneyReady = '1';
 
         var sync = function (keepCaret) {
             var before = input.value;
@@ -133,13 +137,21 @@
         sync(false);
     }
 
-    function init() {
-        document.querySelectorAll('[data-money-input]').forEach(setup);
+    function init(root) {
+        (root || document).querySelectorAll('[data-money-input]').forEach(setup);
     }
 
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', init);
+        document.addEventListener('DOMContentLoaded', function () {
+            init(document);
+        });
     } else {
-        init();
+        init(document);
     }
+
+    // Project Details redraws its edit dialog after a save - see
+    // projectWorkspace.js.
+    document.addEventListener('workspace:updated', function (event) {
+        init(event.detail.root);
+    });
 })();

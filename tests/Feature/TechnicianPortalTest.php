@@ -133,15 +133,31 @@ class TechnicianPortalTest extends TestCase
         return CarbonImmutable::today()->addDays($offset)->toDateString();
     }
 
-    private function task(Technician $technician, string $title, string $status = 'pending'): Task
-    {
+    /**
+     * A task somebody could close today.
+     *
+     * It starts today rather than on one of the project's booked days ahead,
+     * because a task cannot be completed before its start date - see
+     * TaskPolicy - and almost every test below is about what happens when one
+     * IS closed. Today is the boundary the rule allows, so the fixture proves
+     * that case on its way past.
+     *
+     * `$startsIn` is for the tests that want the other side of the rule: a
+     * task whose first day has not arrived.
+     */
+    private function task(
+        Technician $technician,
+        string $title,
+        string $status = 'pending',
+        int $startsIn = 0
+    ): Task {
         return Task::create([
             'project_id' => $this->project->project_id,
             'technician_id' => $technician->technician_id,
             'task_title' => $title,
             'task_description' => 'Do the thing',
-            'start_date' => $this->day(11),
-            'due_date' => $this->day(12),
+            'start_date' => $this->day($startsIn),
+            'due_date' => $this->day(max($startsIn, 0) + 12),
             'status' => $status,
         ]);
     }
@@ -1099,6 +1115,7 @@ class TechnicianPortalTest extends TestCase
     public function test_completing_a_project_early_releases_its_future_dates(): void
     {
         $this->task($this->mate, 'Done', 'completed');
+        $this->completePhases($this->project);
 
         // The fixture schedule runs from day +10 to +20, entirely ahead.
         $this->assertSame(1, $this->project->schedules()->count());
@@ -1129,6 +1146,7 @@ class TechnicianPortalTest extends TestCase
         $this->project->schedules()->delete();
         $this->schedule($this->project, -3, 20);
         $this->task($this->mate, 'Done', 'completed');
+        $this->completePhases($this->project);
 
         $this->actingAs($this->leadAccount);
 
@@ -1160,6 +1178,7 @@ class TechnicianPortalTest extends TestCase
         $this->project->schedules()->delete();
         $this->schedule($this->project, -10, -1);
         $this->task($this->mate, 'Done', 'completed');
+        $this->completePhases($this->project);
 
         $this->actingAs($this->leadAccount);
 
@@ -1178,6 +1197,7 @@ class TechnicianPortalTest extends TestCase
         $this->project->schedules()->delete();
         $this->schedule($this->project, -10, -1);
         $this->task($this->mate, 'Done', 'completed');
+        $this->completePhases($this->project);
 
         $this->actingAs($this->leadAccount);
 
@@ -1213,6 +1233,7 @@ class TechnicianPortalTest extends TestCase
         $this->project->schedules()->delete();
         $this->schedule($this->project, -10, -1);
         $this->task($this->mate, 'Done', 'completed');
+        $this->completePhases($this->project);
 
         $this->actingAs($this->leadAccount);
 
@@ -1365,12 +1386,19 @@ class TechnicianPortalTest extends TestCase
             []
         )->assertStatus(422)->json('blockers');
 
-        $this->assertCount(1, $blockers);
+        // The open task and the phases it is holding up. Both are things the
+        // lead can go and deal with, so both carry a link.
+        $this->assertCount(2, $blockers);
         $this->assertSame(
-            route('technician.projects.show', $this->project->project_id).'#tasks',
+            route('technician.projects.show', $this->project->project_id).'#phases',
             $blockers[0]['action']['url']
         );
-        $this->assertSame('Go to the open task', $blockers[0]['action']['label']);
+        $this->assertSame('Go to the open phases', $blockers[0]['action']['label']);
+        $this->assertSame(
+            route('technician.projects.show', $this->project->project_id).'#tasks',
+            $blockers[1]['action']['url']
+        );
+        $this->assertSame('Go to the open task', $blockers[1]['action']['label']);
     }
 
     public function test_the_project_page_prints_the_blocker_link_beside_the_reason(): void

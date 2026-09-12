@@ -25,8 +25,10 @@
              than on the toast itself: `d-flex` carries !important, and on
              `.toast` it would beat the rule that keeps a toast hidden until
              it is shown. --}}
+        {{-- `data-toast-type` is how a page that saved with fetch reads what
+             the server said - see projectWorkspace.js. --}}
         <div class="toast align-items-center border-0 {{ $background }}" role="alert" aria-live="assertive"
-            aria-atomic="true" data-bs-autohide="true" data-bs-delay="3000">
+            aria-atomic="true" data-bs-autohide="true" data-bs-delay="3000" data-toast-type="{{ $key }}">
 
             <div class="d-flex">
                 <div class="toast-body">{{ session($key) }}</div>

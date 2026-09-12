@@ -74,6 +74,13 @@
     }
 
     function initForm(form) {
+        const modeSelect = form.querySelector('[data-reopen-mode]');
+
+        // Before the pickers: which fields are live does not depend on them.
+        if (modeSelect) {
+            initModeGroups(form, modeSelect);
+        }
+
         if (!global.flatpickr) {
             return;
         }
@@ -175,8 +182,6 @@
         // reopen carrying dates from a mode nobody chose - the server reads
         // only the fields the chosen mode names, but a stale value re-appearing
         // when somebody switches back reads as a date they picked.
-        const modeSelect = form.querySelector('[data-reopen-mode]');
-
         if (modeSelect) {
             modeSelect.addEventListener('change', function () {
                 const partial = modeSelect.value === MODE_PARTIAL_DAY;
@@ -191,7 +196,51 @@
         }
     }
 
+    /**
+     * Swapping the mode swaps which fields are live. Disabling the hidden
+     * group is what stops the browser demanding a start date nobody can see,
+     * and stops it being submitted alongside the hours - the server would then
+     * have two readings to choose from.
+     *
+     * Was an inline script on the page; here it is set up again whenever the
+     * dialog is redrawn, which an inline DOMContentLoaded handler never was.
+     */
+    function initModeGroups(form, modeSelect) {
+        const groups = {
+            date_based: form.querySelector('[data-reopen-date-based]'),
+            partial_day: form.querySelector('[data-reopen-partial-day]'),
+        };
+
+        function apply() {
+            Object.keys(groups).forEach(function (key) {
+                const group = groups[key];
+
+                if (!group) {
+                    return;
+                }
+
+                const active = modeSelect.value === key;
+
+                group.hidden = !active;
+
+                group.querySelectorAll('input, select').forEach(function (field) {
+                    field.disabled = !active;
+                    field.required = active;
+                });
+            });
+        }
+
+        modeSelect.addEventListener('change', apply);
+        apply();
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
         document.querySelectorAll('[data-reopen-form]').forEach(initForm);
+    });
+
+    // Project Details redraws its content after a save - see
+    // projectWorkspace.js.
+    document.addEventListener('workspace:updated', function (event) {
+        event.detail.root.querySelectorAll('[data-reopen-form]').forEach(initForm);
     });
 })(window);

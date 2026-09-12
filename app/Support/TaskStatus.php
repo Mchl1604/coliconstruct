@@ -152,6 +152,28 @@ class TaskStatus
     }
 
     /**
+     * Whether the work has not been due to begin yet.
+     *
+     * The task's own start date against the office's today, compared as two
+     * calendar days for the same reason overdue() is - see dueOn(). A task
+     * with no start date has no day to be early of, so it never reads as one:
+     * the work is undated, which the board already chases as a missing date.
+     *
+     * What this is for is a completion that cannot be true yet. A technician
+     * ticking off Friday's task on Tuesday has not done it, and the record
+     * would then say the work was finished three days before anybody was due
+     * on site.
+     */
+    public static function startsInFuture(Task $task): bool
+    {
+        if ($task->start_date === null) {
+            return false;
+        }
+
+        return self::startsOn($task) > BusinessTime::today()->toDateString();
+    }
+
+    /**
      * Unfinished, with the due date behind us.
      *
      * Compared against the office's today rather than the server's: the due
@@ -295,5 +317,14 @@ class TaskStatus
     private static function dueOn(Task $task): string
     {
         return CarbonImmutable::parse($task->due_date)->toDateString();
+    }
+
+    /**
+     * The start date as the calendar day it is, 'Y-m-d'. The twin of dueOn(),
+     * and compared the same way and for the same reasons.
+     */
+    private static function startsOn(Task $task): string
+    {
+        return CarbonImmutable::parse($task->start_date)->toDateString();
     }
 }

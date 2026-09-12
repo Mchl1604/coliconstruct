@@ -292,19 +292,22 @@ class NotificationEventsTest extends TestCase
     {
         $admin = $this->employee('admin', 'admin@example.test');
 
-        $day10 = CarbonImmutable::today()->addDays(10)->toDateString();
+        // Booked and dated for today, because a task cannot be closed before
+        // its start date - see TaskPolicy - and this test is about who hears
+        // about the closure rather than about when it is allowed.
+        $today = CarbonImmutable::today()->toDateString();
 
         $project = $this->project();
         $worker = $this->technician('Bea Free');
-        $this->book($project, $worker, $day10, $day10);
+        $this->book($project, $worker, $today, $today);
 
         $task = Task::create([
             'project_id' => $project->project_id,
             'technician_id' => $worker->technician_id,
             'task_title' => 'Install CCTV Cameras',
             'task_description' => 'Mount and wire the cameras.',
-            'start_date' => $day10,
-            'due_date' => $day10,
+            'start_date' => $today,
+            'due_date' => $today,
             'status' => 'pending',
         ]);
 

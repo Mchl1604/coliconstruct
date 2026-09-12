@@ -40,7 +40,10 @@
     let handler = null;
 
     function parts() {
-        if (modalEl) {
+        // Still the dialog on the page. Project Details redraws its content
+        // after a save (see projectWorkspace.js), dialog included, and the
+        // one held from before is then detached.
+        if (modalEl && modalEl.isConnected) {
             return true;
         }
 

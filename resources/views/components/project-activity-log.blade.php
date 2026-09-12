@@ -52,7 +52,7 @@
                  actually the case and offers the way back. --}}
             <div class="project-history-empty">
                 <p class="mb-2">There is nothing on this page of the activity log.</p>
-                <a href="{{ $logs->url(1) }}">Back to the latest entries</a>
+                <a href="{{ $logs->url(1) }}" data-workspace-link>Back to the latest entries</a>
             </div>
 
         @else
@@ -101,7 +101,11 @@
                  page draws, in the shared `.table-pagination` shell from
                  theme.css - so the two read the same. Links rather than
                  buttons: this section is server-rendered, and a page of an
-                 audit trail should be somewhere a person can return to. --}}
+                 audit trail should be somewhere a person can return to.
+
+                 `data-workspace-link` has Project Details redraw its content
+                 for the next page instead of reloading the application - see
+                 projectWorkspace.js. The address still changes with it. --}}
             <nav class="table-pagination" aria-label="Activity log pages" data-project-activity-pagination>
 
                 <span class="table-pagination-summary">
@@ -114,7 +118,7 @@
                         <button type="button" class="btn btn-outline-secondary" disabled>Previous</button>
                     @else
                         <a href="{{ $logs->previousPageUrl() }}" class="btn btn-outline-secondary"
-                            rel="prev">Previous</a>
+                            rel="prev" data-workspace-link>Previous</a>
                     @endif
 
                     <button type="button" class="btn btn-outline-secondary" disabled>
@@ -122,7 +126,8 @@
                     </button>
 
                     @if ($logs->hasMorePages())
-                        <a href="{{ $logs->nextPageUrl() }}" class="btn btn-outline-secondary" rel="next">Next</a>
+                        <a href="{{ $logs->nextPageUrl() }}" class="btn btn-outline-secondary" rel="next"
+                            data-workspace-link>Next</a>
                     @else
                         <button type="button" class="btn btn-outline-secondary" disabled>Next</button>
                     @endif

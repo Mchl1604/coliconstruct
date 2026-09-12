@@ -82,6 +82,17 @@ href="https://cdn.datatables.net/2.3.8/css/dataTables.dataTables.css">
     @endphp
 
     <div class="admin-shell" data-admin-shell>
+        {{-- A collapsed sidebar stays collapsed from one page to the next.
+             Applied here, before the sidebar below is drawn, so it never
+             appears open and then folds away. The key is adminShell.js's. --}}
+        <script>
+            try {
+                if (localStorage.getItem('adminShell.sidebarCollapsed') === '1') {
+                    document.currentScript.parentElement.classList.add('sidebar-collapsed');
+                }
+            } catch (error) {}
+        </script>
+
         <aside class="admin-sidebar" aria-label="Admin navigation">
             {{-- Home for this shell is the dashboard, for an Admin as much as
                  a Super Admin - both land there after signing in. Named rather
@@ -148,53 +159,11 @@ href="https://cdn.datatables.net/2.3.8/css/dataTables.dataTables.css">
         ]);
     </script>
     <script src="/js/notifications.js"></script>
-    <script>
-        document.addEventListener('DOMContentLoaded', function () {
-            const toastElList = document.querySelectorAll('.toast');
-
-    toastElList.forEach(function (toastEl) {
-        const toast = new bootstrap.Toast(toastEl);
-        toast.show();
-    });
-            const shell = document.querySelector('[data-admin-shell]');
-            const toggle = document.querySelector('[data-sidebar-toggle]');
-            const backdrop = document.querySelector('[data-sidebar-backdrop]');
-
-            if (!shell || !toggle || !backdrop) {
-                return;
-            }
-
-            function setSidebarOpen(isOpen) {
-                shell.classList.toggle('sidebar-open', isOpen);
-                toggle.setAttribute('aria-expanded', String(isOpen));
-            }
-
-            function setSidebarCollapsed(isCollapsed) {
-                shell.classList.toggle('sidebar-collapsed', isCollapsed);
-                toggle.setAttribute('aria-expanded', String(!isCollapsed));
-            }
-
-            toggle.addEventListener('click', function () {
-                if (window.innerWidth >= 992) {
-                    setSidebarCollapsed(!shell.classList.contains('sidebar-collapsed'));
-                    setSidebarOpen(false);
-                    return;
-                }
-
-                setSidebarOpen(!shell.classList.contains('sidebar-open'));
-            });
-
-            backdrop.addEventListener('click', function () {
-                setSidebarOpen(false);
-            });
-
-            window.addEventListener('resize', function () {
-                if (window.innerWidth >= 992) {
-                    setSidebarOpen(false);
-                }
-            });
-        });
-    </script>
+    {{-- The sidebar and the toasts, shared with the technician portal. --}}
+    <script src="/js/adminShell.js"></script>
+    {{-- Which tab and how far down, kept across a save's redirect. Before
+         the page's own scripts - see the file. --}}
+    <script src="/js/pageMemory.js"></script>
 
     @stack('scripts')
 </body>

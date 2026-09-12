@@ -754,6 +754,20 @@ class TechnicianPortalController extends Controller
      */
     public function completeTask(Request $request, Task $task)
     {
+        // Reach first, then the calendar, then the completion rule. Asked in
+        // that order so a task that is nothing to do with this technician is
+        // still a flat 403 rather than a sentence about its start date, and so
+        // the one refusal a technician can do something about - come back on
+        // the day - arrives as a message instead of a bare 403.
+        $this->authorize('view', $task);
+
+        // Read off the task as it stands in the database, not off whatever the
+        // page was drawn from: the button may have been enabled when it was
+        // rendered, or never have been drawn at all.
+        if ($task->startsInFuture()) {
+            return $this->failed($request, Task::NOT_STARTED_REFUSAL);
+        }
+
         $this->authorize('complete', $task);
 
         $user = $request->user();
@@ -1045,6 +1059,20 @@ class TechnicianPortalController extends Controller
     private function technician(Request $request): Technician
     {
         return $request->user()->technicianRecord();
+    }
+
+    /**
+     * Why a task's Complete button is not offered, when the answer is "not
+     * yet" rather than "not yours". Null in every other case, including a task
+     * this account could never have closed anyway.
+     */
+    private function startDateRefusal(Task $task): ?string
+    {
+        $user = request()->user();
+
+        return $user !== null && app(TaskPolicy::class)->blockedByStartDate($user, $task)
+            ? Task::NOT_STARTED_REFUSAL
+            : null;
     }
 
     /**
@@ -1375,6 +1403,11 @@ class TechnicianPortalController extends Controller
             // A lead may close anything on a project they run, so this asks
             // the policy rather than re-deriving the rule.
             'can_complete' => request()->user()?->can('complete', $task) ?? false,
+            // Set only where the button would otherwise have been drawn and
+            // the start date is what stopped it, so the panel can say why the
+            // control is missing instead of leaving a gap - see
+            // TaskPolicy::blockedByStartDate().
+            'completion_blocked_reason' => $this->startDateRefusal($task),
             'completion_notes' => $task->completion_notes,
             // Through BusinessTime, not formatted off the stored instant: the
             // column is UTC, so a task closed at 7 AM in Manila is stored on

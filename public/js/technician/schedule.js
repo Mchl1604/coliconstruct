@@ -224,6 +224,10 @@ document.addEventListener("DOMContentLoaded", function () {
 
         tasksEl.innerHTML = tasks
             .map(function (task) {
+                // Offered, refused with a reason, or absent. The middle case
+                // is work that has not reached its start date: the server says
+                // so - see TaskPolicy - and a disabled button carrying the
+                // sentence is more use here than no button at all.
                 const completeButton = task.can_complete
                     ? '<button type="button" class="btn btn-sm btn-success mt-2" ' +
                       'data-complete-task="' +
@@ -232,7 +236,15 @@ document.addEventListener("DOMContentLoaded", function () {
                       portal.escapeHtml(task.title) +
                       '">' +
                       '<i class="bi bi-check-lg me-1"></i>Complete</button>'
-                    : "";
+                    : task.completion_blocked_reason
+                      ? '<button type="button" class="btn btn-sm btn-success mt-2" disabled title="' +
+                        portal.escapeHtml(task.completion_blocked_reason) +
+                        '">' +
+                        '<i class="bi bi-check-lg me-1"></i>Complete</button>' +
+                        '<div class="panel-task-blocked">' +
+                        portal.escapeHtml(task.completion_blocked_reason) +
+                        "</div>"
+                      : "";
 
                 // What was submitted when the task was closed: the note and
                 // the photos, not just the note.

@@ -90,6 +90,13 @@
         $quotationHistoryCount = $project->quotationHistory->count()
             + $documentHistoryByType->get('quotation', collect())->count();
     @endphp
+    {{-- The workspace: everything a save on this page can change, dialogs
+         included. A save is sent with fetch and only this is redrawn from the
+         server's answer - the layout around it, the sidebar and the open tab
+         stay where they are. See projectWorkspace.js. The id is how it tells
+         an answer about this project from one about somewhere else. --}}
+    <div data-project-workspace="{{ $project->project_id }}">
+
     {{-- `project-details-page` is what applies the brand blue from the
          client's own project page; the layout below is unchanged. --}}
     <div class="container-fluid py-4 project-details-page">
@@ -142,12 +149,16 @@
             </div>
         </div>
 
-        {{-- A save the server refused. The Edit Project Details dialog posts
-             a full page, and without this a refused one - a file of the wrong
-             type, a quotation change nobody confirmed - came back to a page
-             that looked exactly as if it had worked. --}}
+        {{-- A save the server refused. Without this a refused one - a file of
+             the wrong type, a quotation change nobody confirmed - came back to
+             a page that looked exactly as if it had worked.
+
+             `data-workspace-errors` is how a save sent with fetch reads the
+             same messages back out of the answer, to print them in the dialog
+             that is still open instead - see projectWorkspace.js. This alert
+             is what a page loaded the ordinary way shows. --}}
         @if ($errors->any())
-            <div class="alert alert-danger alert-dismissible" role="alert">
+            <div class="alert alert-danger alert-dismissible" role="alert" data-workspace-errors>
                 <div class="fw-semibold mb-1">
                     <i class="bi bi-exclamation-octagon me-1" aria-hidden="true"></i>
                     Your changes were not saved.
@@ -718,51 +729,9 @@
                 </div>
             </div>
 
-            @if ($partialDayAllowed)
-                @push('scripts')
-                    <script>
-                        // Swapping the mode swaps which fields are live. Disabling the
-                        // hidden group is what stops the browser demanding a start date
-                        // nobody can see, and stops it being submitted alongside the
-                        // hours - the server would then have two readings to choose from.
-                        document.addEventListener('DOMContentLoaded', function() {
-                            const form = document.querySelector('[data-reopen-form]');
-                            const mode = form && form.querySelector('[data-reopen-mode]');
-
-                            if (!form || !mode) {
-                                return;
-                            }
-
-                            const groups = {
-                                date_based: form.querySelector('[data-reopen-date-based]'),
-                                partial_day: form.querySelector('[data-reopen-partial-day]'),
-                            };
-
-                            function apply() {
-                                Object.keys(groups).forEach(function(key) {
-                                    const group = groups[key];
-
-                                    if (!group) {
-                                        return;
-                                    }
-
-                                    const active = mode.value === key;
-
-                                    group.hidden = !active;
-
-                                    group.querySelectorAll('input, select').forEach(function(field) {
-                                        field.disabled = !active;
-                                        field.required = active;
-                                    });
-                                });
-                            }
-
-                            mode.addEventListener('change', apply);
-                            apply();
-                        });
-                    </script>
-                @endpush
-            @endif
+            {{-- Which of the two field groups is live for the chosen mode is
+                 reopenProject.js's job, so it is set up again whenever this
+                 dialog is redrawn. --}}
         @endif
 
         {{-- How the project was finally closed. Shown only once it is, and it
@@ -1653,9 +1622,13 @@
                     <div class="tab-pane fade show active" id="reports">
                         <div class="d-flex justify-content-between align-items-center mb-3">
 
+                            {{-- requestSubmit() rather than submit(): the submit
+                                 event is what lets the workspace redraw the
+                                 list in place, on the tab it is on, instead of
+                                 reloading onto the first one. --}}
                             <form method="GET" action="{{ route('super-admin.projects.show', $project->project_id) }}">
 
-                                <select class="form-select" name="report_type" onchange="this.form.submit()">
+                                <select class="form-select" name="report_type" onchange="this.form.requestSubmit()">
 
                                     <option value="" {{ request('report_type') == '' ? 'selected' : '' }}>
                                         All Reports
@@ -3017,16 +2990,6 @@
 
     <x-import-team-modal />
 
-    @push('scripts')
-        <script>
-            window.assignedTeamData = @json($assignedTeamLookup);
-            window.assignedTeamState = @json([
-                'leadTechId' => $currentLeadTechnicianId,
-                'technicianIds' => $currentTeamTechnicianIds,
-            ]);
-        </script>
-    @endpush
-
     <!-- Add Technician Report Modal -->
     {{-- Drawn only where the report could actually be filed, so the form is not
          sitting in the page of a closed or paused project waiting for somebody
@@ -3405,9 +3368,33 @@
         @endif
     @endforeach
 
+    {{-- What the page's scripts are handed about this project as it stands.
+         Inside the workspace rather than pushed to the foot of the page, so a
+         redraw after a save runs it again and the team picker and the
+         Registered User search start from the saved team and accounts, not
+         the ones the page was first loaded with. --}}
+    <script>
+        window.projectHistoryUrl = @json(route('super-admin.projects.history', ['id' => $project->project_id, 'section' => '__SECTION__']));
+        window.assignedTeamData = @json($assignedTeamLookup);
+        window.assignedTeamState = @json([
+            'leadTechId' => $currentLeadTechnicianId,
+            'technicianIds' => $currentTeamTechnicianIds,
+        ]);
+        window.importTeamProjectId = @json($project->project_id);
+        {{-- Every account the picker may offer, already narrowed by
+             ProjectRegisteredUser::candidates(). Deactivated accounts are
+             included on purpose - one switched off today may be switched back
+             on, and the label says which they are. --}}
+        window.registeredUserOptions = @json($registeredUserPickerOptions);
+    </script>
+
+    </div>{{-- /[data-project-workspace] --}}
+
     @push('scripts')
         {{-- Before every script that asks a question with it. --}}
         <script src="/js/confirmDialog.js"></script>
+        {{-- Saves on this page redraw its content in place - see the file. --}}
+        <script src="/js/super-admin/projectWorkspace.js"></script>
         {{-- Same range-aware task date pickers the Tasks page uses. --}}
         <script src="/js/super-admin/taskDatePickers.js"></script>
         {{-- Greys out the days the Reopen dialog cannot book. --}}
@@ -3421,13 +3408,6 @@
              only the file changed. After moneyInput.js, whose fields it reads. --}}
         <script src="/js/super-admin/quotationSync.js"></script>
         <script src="/js/importTeam.js"></script>
-        {{-- Every account the picker may offer, already narrowed by
-             ProjectRegisteredUser::candidates(). Deactivated accounts are
-             included on purpose - one switched off today may be switched back
-             on, and the label says which they are. --}}
-        <script>
-            window.registeredUserOptions = @json($registeredUserPickerOptions);
-        </script>
         <script src="/js/accountPicker.js"></script>
         <script src="/js/super-admin/projectDetails.js"></script>
         <script src="/js/super-admin/projectHistory.js"></script>
@@ -3436,14 +3416,5 @@
              board are all inside one of them. Completing a phase redirects
              back to #project-progress, and this is what opens it. --}}
         <script src="/js/tabFromHash.js"></script>
-        <script>
-            window.projectHistoryUrl = @json(route('super-admin.projects.history', ['id' => $project->project_id, 'section' => '__SECTION__']));
-            window.assignedTeamData = @json($assignedTeamLookup);
-            window.assignedTeamState = @json([
-                'leadTechId' => $currentLeadTechnicianId,
-                'technicianIds' => $currentTeamTechnicianIds,
-            ]);
-            window.importTeamProjectId = @json($project->project_id);
-        </script>
     @endpush
 @endsection

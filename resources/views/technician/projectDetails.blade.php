@@ -725,6 +725,18 @@
                                                             title="{{ $task->technician_id === $technicianId ? 'Mark as completed' : 'Mark as completed on their behalf' }}">
                                                             <i class="bi bi-check-lg" aria-hidden="true"></i>
                                                         </button>
+                                                    @elsecan('blockedByStartDate', $task)
+                                                        {{-- Work that has not been due to start
+                                                             yet. The button stays, disabled and
+                                                             saying why, rather than vanishing and
+                                                             leaving the reader to guess - and it
+                                                             becomes live on its own the day the
+                                                             task begins. The backend refuses it
+                                                             either way; see TaskPolicy. --}}
+                                                        <button type="button" class="btn btn-sm btn-success" disabled
+                                                            title="{{ \App\Models\Task::NOT_STARTED_REFUSAL }}">
+                                                            <i class="bi bi-check-lg" aria-hidden="true"></i>
+                                                        </button>
                                                     @endcan
 
                                                     @can('delete', $task)

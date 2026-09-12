@@ -1,8 +1,31 @@
-document.addEventListener('DOMContentLoaded', function () {
-    const container = document.getElementById('projectTypesContainer');
-    const inputs = document.getElementById('projectTypesInputs');
+/**
+ * The Project Details page's own behaviour: the edit dialog's project types and
+ * upload lists, the report image preview, the task list, the assigned-team
+ * editor and document removal.
+ *
+ * The page is a workspace (see projectWorkspace.js): a save redraws its content
+ * in place rather than reloading it. So everything that binds to the page's
+ * markup lives in init(root), which runs once on load and again on every
+ * `workspace:updated` with the freshly drawn content. What is delegated from
+ * the document is bound once, here, and finds its elements when it is used.
+ */
+(function () {
+    'use strict';
+
+    // ------------------------------------------------------------------
+    // Project types in the edit dialog
+    //
+    // Delegated, so it survives the dialog being redrawn; the container and
+    // the hidden inputs are looked up at the moment of the click.
+    // ------------------------------------------------------------------
 
     document.addEventListener('click', function (e) {
+        const container = document.getElementById('projectTypesContainer');
+        const inputs = document.getElementById('projectTypesInputs');
+
+        if (!container || !inputs) {
+            return;
+        }
 
         // Remove
         if (e.target.classList.contains('remove-project-type')) {
@@ -56,563 +79,601 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
     });
-document.getElementById('reportImages').addEventListener('change', function () {
 
-    const preview = document.getElementById('imagePreview');
-    preview.innerHTML = '';
+    /**
+     * The task list.
+     *
+     * Built the first time the Tasks tab can actually be seen, and never
+     * before: a table measured while its pane is display:none has no width to
+     * measure, and its columns come out wrong. Every show after that
+     * re-measures instead.
+     *
+     * "Can be seen" rather than "the Tasks tab was clicked": the Tasks pane
+     * may already be the open one inside Project Progress - kept open across a
+     * save, or across a reload - and is then revealed by the OUTER tab, which
+     * is the only one that fires. So any tab being shown asks again.
+     *
+     * This used to be built twice - once on tab-show and once again on ready -
+     * so the on-ready copy won the race, sized itself against a hidden pane, and
+     * left the tab-show handler taking the "already built" branch on the very
+     * first click. That branch then reached for the DataTables Responsive
+     * extension to recalculate. The extension is not loaded on this page - nor
+     * anywhere in the app - so the call threw a TypeError every single time the
+     * Tasks tab was opened, and the `responsive: true` option was dead config
+     * for the same reason. Both are gone; columns.adjust() is core, and it is
+     * what was actually doing the work.
+     *
+     * The page, the search and the sort are saved for the browser tab
+     * (stateSave, in sessionStorage), so redrawing the list after a task is
+     * edited puts the person back on the page of it they were working through.
+     */
+    function ensureTasksTable() {
+        const table = document.getElementById('tasksTable');
 
-    Array.from(this.files).forEach(file => {
-
-        const reader = new FileReader();
-
-        reader.onload = function(e){
-
-            preview.innerHTML += `
-                <div class="col-md-3">
-                    <div class="card">
-                        <img src="${e.target.result}"
-                             class="card-img-top"
-                             style="height:160px;object-fit:cover;">
-                    </div>
-                </div>
-            `;
-        };
-
-        reader.readAsDataURL(file);
-
-    });
-
-});
-
-/**
- * The task list.
- *
- * Built the first time the Tasks tab is opened, and never before: a table
- * measured while its pane is display:none has no width to measure, and its
- * columns come out wrong. Every show after that re-measures instead.
- *
- * This used to be built twice - once here on tab-show and once again on ready -
- * so the on-ready copy won the race, sized itself against a hidden pane, and
- * left the tab-show handler taking the "already built" branch on the very first
- * click. That branch then reached for the DataTables Responsive extension to
- * recalculate. The extension is not loaded on this page - nor anywhere in the
- * app - so the call threw a TypeError every single time the Tasks tab was
- * opened, and the `responsive: true` option was dead config for the same
- * reason. Both are gone; columns.adjust() is core, and it is what was actually
- * doing the work.
- */
-let tasksTable;
-
-$('button[data-bs-target="#tasks"]').on('shown.bs.tab', function () {
-
-    if (tasksTable) {
-
-        tasksTable.columns.adjust();
-
-        return;
-
-    }
-
-    tasksTable = $('#tasksTable').DataTable({
-        autoWidth: false,
-        pageLength: 5,
-        lengthMenu: [5, 10, 25, 50],
-        info: false,
-        columnDefs: [
-            // Phase carries a `data-order` sequence, which DataTables reads as
-            // numeric and then right-aligns on its own.
-            { targets: 1, className: "text-start" },
-            // Sorting a column of buttons means nothing, and the header
-            // offering it invites a click that does nothing.
-            { targets: -1, orderable: false },
-        ],
-        language: {
-            search: "",
-            searchPlaceholder: "Search tasks..."
+        if (!table || !table.getClientRects().length) {
+            return;
         }
-    });
 
-});
+        if ($.fn.dataTable.isDataTable(table)) {
+            $(table).DataTable().columns.adjust();
 
-// The Add Task dialog is not on every project: a project whose phases have not
-// been finalized is offered Set Up Project Phases instead, and the dialog is
-// not rendered at all. Without this guard the lookup returns null, the
-// exception stops the rest of this file, and the team editor below it silently
-// dies on exactly those projects.
-const taskStartDate = document.getElementById('taskStartDate');
+            return;
+        }
 
-if (taskStartDate) {
-
-    taskStartDate.addEventListener('change', function () {
-
-        document.getElementById('taskDueDate').min = this.value;
-
-    });
-
-}
-
-    const form = document.querySelector('[data-team-form]');
-
-    if (!form) {
-        return;
-    }
-
-    const teamData = Array.isArray(window.assignedTeamData) ? window.assignedTeamData : [];
-    const initialState = window.assignedTeamState || { leadTechId: null, technicianIds: [] };
-    const technicianLookup = new Map(teamData.map(function(technician) {
-        return [String(technician.id), technician];
-    }));
-
-    const leadTechSelect = form.querySelector('[data-lead-tech-select]');
-    const leadTechError = form.querySelector('[data-lead-tech-error]');
-    const dropdownButton = form.querySelector('[data-technician-dropdown-button]');
-    const dropdownMenu = form.querySelector('[data-technician-dropdown-menu]');
-    const selectedList = form.querySelector('[data-technician-selected-list]');
-    const hiddenInputsContainer = form.querySelector('[data-technician-hidden-inputs]');
-
-    function selectedTechnicianIds() {
-        return Array.from(hiddenInputsContainer.querySelectorAll('input[type="hidden"]')).map(function(input) {
-            return input.value;
+        $(table).DataTable({
+            autoWidth: false,
+            pageLength: 5,
+            lengthMenu: [5, 10, 25, 50],
+            info: false,
+            stateSave: true,
+            stateDuration: -1,
+            columnDefs: [
+                // Phase carries a `data-order` sequence, which DataTables reads as
+                // numeric and then right-aligns on its own.
+                { targets: 1, className: "text-start" },
+                // Sorting a column of buttons means nothing, and the header
+                // offering it invites a click that does nothing.
+                { targets: -1, orderable: false },
+            ],
+            language: {
+                search: "",
+                searchPlaceholder: "Search tasks..."
+            }
         });
     }
 
-    function selectedTechnicians() {
-        return selectedTechnicianIds()
-            .map(function(technicianId) {
-                return technicianLookup.get(String(technicianId));
-            })
-            .filter(Boolean);
-    }
+    $(document).on('shown.bs.tab', ensureTasksTable);
 
-    // Whether the unavailable section is expanded, kept outside renderDropdown
-    // so re-rendering after a pick does not collapse it again.
-    let blockedOpen = false;
+    function initReportImages(root) {
+        // Only drawn where a report can be filed - a closed or paused project
+        // has no Add Report dialog, and reaching for it here used to throw and
+        // take the rest of this file down with it.
+        const input = root.querySelector('#reportImages');
+        const preview = root.querySelector('#imagePreview');
 
-    function escapeHtml(value) {
-        const span = document.createElement('span');
-        span.textContent = value == null ? '' : String(value);
-
-        return span.innerHTML;
-    }
-
-    /**
-     * One technician's card: picture, name, role, the specialties that match
-     * this project, and - for a blocked one, below - why they are out.
-     */
-    function avatarMarkup(technician) {
-        if (!technician.avatar_url) {
-            return '';
+        if (!input || !preview) {
+            return;
         }
 
-        return '<img class="user-avatar user-avatar-md technician-option-avatar" src="' +
-            escapeHtml(technician.avatar_url) + '" alt="" loading="lazy">';
+        input.addEventListener('change', function () {
+
+            preview.innerHTML = '';
+
+            Array.from(this.files).forEach(file => {
+
+                const reader = new FileReader();
+
+                reader.onload = function(e){
+
+                    preview.innerHTML += `
+                        <div class="col-md-3">
+                            <div class="card">
+                                <img src="${e.target.result}"
+                                     class="card-img-top"
+                                     style="height:160px;object-fit:cover;">
+                            </div>
+                        </div>
+                    `;
+                };
+
+                reader.readAsDataURL(file);
+
+            });
+
+        });
     }
 
-    function optionMarkup(technician, isSelected) {
-        const skills = (technician.skills || []).join(', ');
+    // The Add Task dialog is not on every project: a project whose phases have
+    // not been finalized is offered Set Up Project Phases instead, and the
+    // dialog is not rendered at all.
+    function initTaskDates(root) {
+        const taskStartDate = root.querySelector('#taskStartDate');
 
-        return '<li><button type="button" class="dropdown-item technician-option' +
-            (isSelected ? ' is-selected' : '') + '" ' +
-            'data-technician-option="' + technician.id + '" ' +
-            'aria-pressed="' + (isSelected ? 'true' : 'false') + '">' +
-            avatarMarkup(technician) +
-            '<span class="technician-option-body">' +
-            '<span class="technician-option-name">' + escapeHtml(technician.name) + '</span>' +
-            '<span class="technician-option-role">' +
-            escapeHtml(technician.role_label || 'Technician') + '</span>' +
-            (skills ? '<span class="technician-option-skills">' + escapeHtml(skills) + '</span>' : '') +
-            // Once somebody is on the team, saying "Available" of them is
-            // answering a question nobody is asking any more.
-            (isSelected
-                ? '<span class="technician-option-selected-note">On this project</span>'
-                : '<span class="technician-option-available">Available</span>') +
-            '</span>' +
-            '<i class="bi bi-check-lg technician-option-check" aria-hidden="true"></i>' +
-            '</button></li>';
-    }
-
-    function groupMarkup(label, technicians, selectedIds) {
-        if (!technicians.length) {
-            return '';
+        if (!taskStartDate) {
+            return;
         }
 
-        return '<li><h6 class="dropdown-header">' + escapeHtml(label) + '</h6></li>' +
-            technicians.map(function(technician) {
-                return optionMarkup(technician, selectedIds.includes(String(technician.id)));
-            }).join('');
+        taskStartDate.addEventListener('change', function () {
+
+            const due = document.getElementById('taskDueDate');
+
+            if (due) {
+                due.min = this.value;
+            }
+
+        });
     }
 
-    // Shown so the scheduler can see who is out and why, but rendered as plain
-    // rows rather than buttons - there is nothing here to click.
-    function blockedMarkup(technicians) {
-        if (!technicians.length) {
-            return '';
+    function initTeamForm(root) {
+        const form = root.querySelector('[data-team-form]');
+
+        if (!form) {
+            return;
         }
 
-        const rows = technicians.map(function(technician) {
-            return '<div class="technician-option is-disabled" aria-disabled="true">' +
+        const teamData = Array.isArray(window.assignedTeamData) ? window.assignedTeamData : [];
+        const initialState = window.assignedTeamState || { leadTechId: null, technicianIds: [] };
+        const technicianLookup = new Map(teamData.map(function(technician) {
+            return [String(technician.id), technician];
+        }));
+
+        const leadTechSelect = form.querySelector('[data-lead-tech-select]');
+        const leadTechError = form.querySelector('[data-lead-tech-error]');
+        const dropdownButton = form.querySelector('[data-technician-dropdown-button]');
+        const dropdownMenu = form.querySelector('[data-technician-dropdown-menu]');
+        const selectedList = form.querySelector('[data-technician-selected-list]');
+        const hiddenInputsContainer = form.querySelector('[data-technician-hidden-inputs]');
+
+        function selectedTechnicianIds() {
+            return Array.from(hiddenInputsContainer.querySelectorAll('input[type="hidden"]')).map(function(input) {
+                return input.value;
+            });
+        }
+
+        function selectedTechnicians() {
+            return selectedTechnicianIds()
+                .map(function(technicianId) {
+                    return technicianLookup.get(String(technicianId));
+                })
+                .filter(Boolean);
+        }
+
+        // Whether the unavailable section is expanded, kept outside renderDropdown
+        // so re-rendering after a pick does not collapse it again.
+        let blockedOpen = false;
+
+        function escapeHtml(value) {
+            const span = document.createElement('span');
+            span.textContent = value == null ? '' : String(value);
+
+            return span.innerHTML;
+        }
+
+        /**
+         * One technician's card: picture, name, role, the specialties that match
+         * this project, and - for a blocked one, below - why they are out.
+         */
+        function avatarMarkup(technician) {
+            if (!technician.avatar_url) {
+                return '';
+            }
+
+            return '<img class="user-avatar user-avatar-md technician-option-avatar" src="' +
+                escapeHtml(technician.avatar_url) + '" alt="" loading="lazy">';
+        }
+
+        function optionMarkup(technician, isSelected) {
+            const skills = (technician.skills || []).join(', ');
+
+            return '<li><button type="button" class="dropdown-item technician-option' +
+                (isSelected ? ' is-selected' : '') + '" ' +
+                'data-technician-option="' + technician.id + '" ' +
+                'aria-pressed="' + (isSelected ? 'true' : 'false') + '">' +
                 avatarMarkup(technician) +
                 '<span class="technician-option-body">' +
                 '<span class="technician-option-name">' + escapeHtml(technician.name) + '</span>' +
                 '<span class="technician-option-role">' +
                 escapeHtml(technician.role_label || 'Technician') + '</span>' +
-                '<span class="technician-option-reason">' + escapeHtml(technician.reason) + '</span>' +
+                (skills ? '<span class="technician-option-skills">' + escapeHtml(skills) + '</span>' : '') +
+                // Once somebody is on the team, saying "Available" of them is
+                // answering a question nobody is asking any more.
+                (isSelected
+                    ? '<span class="technician-option-selected-note">On this project</span>'
+                    : '<span class="technician-option-available">Available</span>') +
                 '</span>' +
-                '</div>';
-        }).join('');
-
-        return '<li><hr class="dropdown-divider"></li>' +
-            '<li class="technician-blocked-wrap">' +
-            '<button type="button" class="schedule-blocked-toggle' + (blockedOpen ? ' is-open' : '') + '" ' +
-            'data-technician-blocked-toggle>' +
-            '<i class="bi bi-chevron-right" aria-hidden="true"></i>' +
-            '<span>' + (blockedOpen ? 'Hide' : 'Show') + ' unavailable technicians (' + technicians.length + ')</span>' +
-            '</button>' +
-            '<div class="schedule-blocked-list' + (blockedOpen ? '' : ' d-none') + '">' + rows + '</div>' +
-            '</li>';
-    }
-
-    /**
-     * The row at the foot of the menu: how many people are on the team so far,
-     * and Done.
-     *
-     * With the menu open there was nothing in it that looked like a way out -
-     * the only one was pressing the field again, above the list, which is not
-     * where anybody looks. The count is the other half of the tick: a tick
-     * answers for one row, this answers for the whole list at once.
-     */
-    function footerMarkup(count) {
-        return '<li class="technician-dropdown-footer">' +
-            '<span class="technician-dropdown-count' + (count ? '' : ' is-empty') + '">' +
-            (count ? count + ' selected' : 'None selected') + '</span>' +
-            '<button type="button" class="btn btn-sm btn-primary" data-technician-done>Done</button>' +
-            '</li>';
-    }
-
-    function closePicker() {
-        if (!window.bootstrap || !window.bootstrap.Dropdown) {
-            return;
+                '<i class="bi bi-check-lg technician-option-check" aria-hidden="true"></i>' +
+                '</button></li>';
         }
 
-        window.bootstrap.Dropdown.getOrCreateInstance(dropdownButton).hide();
-    }
+        function groupMarkup(label, technicians, selectedIds) {
+            if (!technicians.length) {
+                return '';
+            }
 
-    function renderDropdown() {
-        const selectedIds = selectedTechnicianIds();
-        const leadId = leadTechSelect.value;
+            return '<li><h6 class="dropdown-header">' + escapeHtml(label) + '</h6></li>' +
+                technicians.map(function(technician) {
+                    return optionMarkup(technician, selectedIds.includes(String(technician.id)));
+                }).join('');
+        }
 
-        // Lead technicians are picked in their own select, so they never appear
-        // in the team list.
-        const candidates = teamData.filter(function(technician) {
-            return technician.role !== 'lead_technician';
-        });
+        // Shown so the scheduler can see who is out and why, but rendered as plain
+        // rows rather than buttons - there is nothing here to click.
+        function blockedMarkup(technicians) {
+            if (!technicians.length) {
+                return '';
+            }
 
-        // Somebody already on the team stays in this list, ticked, rather
-        // than disappearing out of it. Vanishing was the only feedback a pick
-        // gave, and losing a name off a list does not read as choosing it -
-        // it reads as a mistake. Staying put also means the way to take
-        // somebody off is where the way to put them on was.
-        const pickable = candidates.filter(function(technician) {
-            return technician.available
-                && String(technician.id) !== String(leadId);
-        });
+            const rows = technicians.map(function(technician) {
+                return '<div class="technician-option is-disabled" aria-disabled="true">' +
+                    avatarMarkup(technician) +
+                    '<span class="technician-option-body">' +
+                    '<span class="technician-option-name">' + escapeHtml(technician.name) + '</span>' +
+                    '<span class="technician-option-role">' +
+                    escapeHtml(technician.role_label || 'Technician') + '</span>' +
+                    '<span class="technician-option-reason">' + escapeHtml(technician.reason) + '</span>' +
+                    '</span>' +
+                    '</div>';
+            }).join('');
 
-        const suggested = pickable.filter(function(technician) {
-            return technician.suggested;
-        });
+            return '<li><hr class="dropdown-divider"></li>' +
+                '<li class="technician-blocked-wrap">' +
+                '<button type="button" class="schedule-blocked-toggle' + (blockedOpen ? ' is-open' : '') + '" ' +
+                'data-technician-blocked-toggle>' +
+                '<i class="bi bi-chevron-right" aria-hidden="true"></i>' +
+                '<span>' + (blockedOpen ? 'Hide' : 'Show') + ' unavailable technicians (' + technicians.length + ')</span>' +
+                '</button>' +
+                '<div class="schedule-blocked-list' + (blockedOpen ? '' : ' d-none') + '">' + rows + '</div>' +
+                '</li>';
+        }
 
-        const others = pickable.filter(function(technician) {
-            return !technician.suggested;
-        });
+        /**
+         * The row at the foot of the menu: how many people are on the team so far,
+         * and Done.
+         *
+         * With the menu open there was nothing in it that looked like a way out -
+         * the only one was pressing the field again, above the list, which is not
+         * where anybody looks. The count is the other half of the tick: a tick
+         * answers for one row, this answers for the whole list at once.
+         */
+        function footerMarkup(count) {
+            return '<li class="technician-dropdown-footer">' +
+                '<span class="technician-dropdown-count' + (count ? '' : ' is-empty') + '">' +
+                (count ? count + ' selected' : 'None selected') + '</span>' +
+                '<button type="button" class="btn btn-sm btn-primary" data-technician-done>Done</button>' +
+                '</li>';
+        }
 
-        const blocked = candidates.filter(function(technician) {
-            return !technician.available;
-        });
+        function closePicker() {
+            if (!window.bootstrap || !window.bootstrap.Dropdown) {
+                return;
+            }
 
-        const groups = groupMarkup('Suggested — matches this project', suggested, selectedIds) +
-            groupMarkup(suggested.length ? 'Other available' : 'Available', others, selectedIds);
+            window.bootstrap.Dropdown.getOrCreateInstance(dropdownButton).hide();
+        }
 
-        dropdownMenu.innerHTML = (groups ||
-            '<li><span class="dropdown-item-text text-secondary">No technicians available.</span></li>') +
-            blockedMarkup(blocked) +
-            footerMarkup(selectedIds.length);
+        function renderDropdown() {
+            const selectedIds = selectedTechnicianIds();
+            const leadId = leadTechSelect.value;
 
-        dropdownMenu.querySelectorAll('[data-technician-option]').forEach(function(button) {
-            button.addEventListener('click', function() {
-                const technicianId = button.dataset.technicianOption;
-
-                if (selectedTechnicianIds().includes(String(technicianId))) {
-                    removeTechnician(String(technicianId));
-                } else {
-                    addTechnician(technicianId);
-                }
+            // Lead technicians are picked in their own select, so they never appear
+            // in the team list.
+            const candidates = teamData.filter(function(technician) {
+                return technician.role !== 'lead_technician';
             });
-        });
 
-        const done = dropdownMenu.querySelector('[data-technician-done]');
-
-        if (done) {
-            done.addEventListener('click', closePicker);
-        }
-
-        const blockedToggle = dropdownMenu.querySelector('[data-technician-blocked-toggle]');
-
-        if (blockedToggle) {
-            blockedToggle.addEventListener('click', function() {
-                blockedOpen = !blockedOpen;
-                renderDropdown();
+            // Somebody already on the team stays in this list, ticked, rather
+            // than disappearing out of it. Vanishing was the only feedback a pick
+            // gave, and losing a name off a list does not read as choosing it -
+            // it reads as a mistake. Staying put also means the way to take
+            // somebody off is where the way to put them on was.
+            const pickable = candidates.filter(function(technician) {
+                return technician.available
+                    && String(technician.id) !== String(leadId);
             });
-        }
-    }
 
-    function renderChips() {
-        const selected = selectedTechnicians();
-        selectedList.innerHTML = '';
+            const suggested = pickable.filter(function(technician) {
+                return technician.suggested;
+            });
 
-        if (!selected.length) {
-            const emptyState = document.createElement('div');
-            emptyState.className = 'technician-empty-state';
-            emptyState.textContent = 'No technicians selected yet.';
-            selectedList.appendChild(emptyState);
-        } else {
-            selected.forEach(function(technician) {
-                const chip = document.createElement('span');
-                chip.className = 'technician-chip';
-                chip.textContent = technician.name;
+            const others = pickable.filter(function(technician) {
+                return !technician.suggested;
+            });
 
-                const removeButton = document.createElement('button');
-                removeButton.type = 'button';
-                removeButton.className = 'technician-chip-remove';
-                removeButton.setAttribute('aria-label', 'Remove ' + technician.name);
-                removeButton.innerHTML = '<i class="bi bi-x" aria-hidden="true"></i>';
-                removeButton.addEventListener('click', function() {
-                    removeTechnician(String(technician.id));
+            const blocked = candidates.filter(function(technician) {
+                return !technician.available;
+            });
+
+            const groups = groupMarkup('Suggested — matches this project', suggested, selectedIds) +
+                groupMarkup(suggested.length ? 'Other available' : 'Available', others, selectedIds);
+
+            dropdownMenu.innerHTML = (groups ||
+                '<li><span class="dropdown-item-text text-secondary">No technicians available.</span></li>') +
+                blockedMarkup(blocked) +
+                footerMarkup(selectedIds.length);
+
+            dropdownMenu.querySelectorAll('[data-technician-option]').forEach(function(button) {
+                button.addEventListener('click', function() {
+                    const technicianId = button.dataset.technicianOption;
+
+                    if (selectedTechnicianIds().includes(String(technicianId))) {
+                        removeTechnician(String(technicianId));
+                    } else {
+                        addTechnician(technicianId);
+                    }
                 });
-
-                chip.appendChild(removeButton);
-                selectedList.appendChild(chip);
             });
+
+            const done = dropdownMenu.querySelector('[data-technician-done]');
+
+            if (done) {
+                done.addEventListener('click', closePicker);
+            }
+
+            const blockedToggle = dropdownMenu.querySelector('[data-technician-blocked-toggle]');
+
+            if (blockedToggle) {
+                blockedToggle.addEventListener('click', function() {
+                    blockedOpen = !blockedOpen;
+                    renderDropdown();
+                });
+            }
         }
 
-        dropdownButton.textContent = selected.length ? selected.length + ' selected' : 'Select technicians';
-    }
+        function renderChips() {
+            const selected = selectedTechnicians();
+            selectedList.innerHTML = '';
 
-    function addTechnician(technicianId) {
-        if (selectedTechnicianIds().includes(String(technicianId))) {
-            return;
+            if (!selected.length) {
+                const emptyState = document.createElement('div');
+                emptyState.className = 'technician-empty-state';
+                emptyState.textContent = 'No technicians selected yet.';
+                selectedList.appendChild(emptyState);
+            } else {
+                selected.forEach(function(technician) {
+                    const chip = document.createElement('span');
+                    chip.className = 'technician-chip';
+                    chip.textContent = technician.name;
+
+                    const removeButton = document.createElement('button');
+                    removeButton.type = 'button';
+                    removeButton.className = 'technician-chip-remove';
+                    removeButton.setAttribute('aria-label', 'Remove ' + technician.name);
+                    removeButton.innerHTML = '<i class="bi bi-x" aria-hidden="true"></i>';
+                    removeButton.addEventListener('click', function() {
+                        removeTechnician(String(technician.id));
+                    });
+
+                    chip.appendChild(removeButton);
+                    selectedList.appendChild(chip);
+                });
+            }
+
+            dropdownButton.textContent = selected.length ? selected.length + ' selected' : 'Select technicians';
         }
 
-        const hiddenInput = document.createElement('input');
-        hiddenInput.type = 'hidden';
-        hiddenInput.name = 'technicians[]';
-        hiddenInput.value = technicianId;
-        hiddenInputsContainer.appendChild(hiddenInput);
+        function addTechnician(technicianId) {
+            if (selectedTechnicianIds().includes(String(technicianId))) {
+                return;
+            }
 
-        renderChips();
-        renderDropdown();
-    }
-
-    function removeTechnician(technicianId) {
-        const hiddenInputs = Array.from(hiddenInputsContainer.querySelectorAll('input[type="hidden"]'));
-        const hiddenInput = hiddenInputs.find(function(input) {
-            return input.value === technicianId;
-        });
-
-        if (hiddenInput) {
-            hiddenInput.remove();
-        }
-
-        renderChips();
-        renderDropdown();
-    }
-
-    function seedInitialTechnicians() {
-        (initialState.technicianIds || []).forEach(function(technicianId) {
             const hiddenInput = document.createElement('input');
             hiddenInput.type = 'hidden';
             hiddenInput.name = 'technicians[]';
             hiddenInput.value = technicianId;
             hiddenInputsContainer.appendChild(hiddenInput);
+
+            renderChips();
+            renderDropdown();
+        }
+
+        function removeTechnician(technicianId) {
+            const hiddenInputs = Array.from(hiddenInputsContainer.querySelectorAll('input[type="hidden"]'));
+            const hiddenInput = hiddenInputs.find(function(input) {
+                return input.value === technicianId;
+            });
+
+            if (hiddenInput) {
+                hiddenInput.remove();
+            }
+
+            renderChips();
+            renderDropdown();
+        }
+
+        function seedInitialTechnicians() {
+            (initialState.technicianIds || []).forEach(function(technicianId) {
+                const hiddenInput = document.createElement('input');
+                hiddenInput.type = 'hidden';
+                hiddenInput.name = 'technicians[]';
+                hiddenInput.value = technicianId;
+                hiddenInputsContainer.appendChild(hiddenInput);
+            });
+        }
+
+        leadTechSelect.addEventListener('change', function() {
+            leadTechError.classList.add('d-none');
+            leadTechSelect.setCustomValidity('');
+            renderDropdown();
         });
-    }
 
-    leadTechSelect.addEventListener('change', function() {
-        leadTechError.classList.add('d-none');
-        leadTechSelect.setCustomValidity('');
-        renderDropdown();
-    });
+        /**
+         * A project carries exactly one lead, so choosing a different one in the
+         * select is not an addition - it REPLACES the lead who is there, and the
+         * outgoing lead comes off the team entirely along with any unfinished task
+         * they were holding.
+         *
+         * That is the intended way to change a lead, and it stays a single save.
+         * What it must not be is a surprise: the select looks like every other
+         * field on the form, and nothing else on the page says that picking a name
+         * in it removes somebody. So the replacement is named before it happens.
+         */
+        /**
+         * Whether this save is replacing the lead, rather than leaving them alone.
+         */
+        function replacesLead() {
+            const previousLeadId = initialState.leadTechId;
 
-    /**
-     * A project carries exactly one lead, so choosing a different one in the
-     * select is not an addition - it REPLACES the lead who is there, and the
-     * outgoing lead comes off the team entirely along with any unfinished task
-     * they were holding.
-     *
-     * That is the intended way to change a lead, and it stays a single save.
-     * What it must not be is a surprise: the select looks like every other
-     * field on the form, and nothing else on the page says that picking a name
-     * in it removes somebody. So the replacement is named before it happens.
-     */
-    /**
-     * Whether this save is replacing the lead, rather than leaving them alone.
-     */
-    function replacesLead() {
-        const previousLeadId = initialState.leadTechId;
+            return Boolean(previousLeadId)
+                && String(previousLeadId) !== String(leadTechSelect.value);
+        }
 
-        return Boolean(previousLeadId)
-            && String(previousLeadId) !== String(leadTechSelect.value);
-    }
+        /**
+         * Ask, in the page's own dialog.
+         *
+         * Was a window.confirm(), which put the consequence - somebody comes off
+         * the project and their work is unassigned - into the same grey paragraph
+         * as the question, in a box that looks like the browser complaining. It is
+         * the most consequential thing this form does and it should read like it.
+         */
+        function confirmLeadReplacement() {
+            const outgoing = technicianLookup.get(String(initialState.leadTechId));
+            const incoming = technicianLookup.get(String(leadTechSelect.value));
 
-    /**
-     * Ask, in the page's own dialog.
-     *
-     * Was a window.confirm(), which put the consequence - somebody comes off
-     * the project and their work is unassigned - into the same grey paragraph
-     * as the question, in a box that looks like the browser complaining. It is
-     * the most consequential thing this form does and it should read like it.
-     */
-    function confirmLeadReplacement() {
-        const outgoing = technicianLookup.get(String(initialState.leadTechId));
-        const incoming = technicianLookup.get(String(leadTechSelect.value));
+            return window.confirmDialog({
+                title: 'Replace the lead technician?',
+                body:
+                    (outgoing ? outgoing.name : 'The current lead technician') +
+                    ' will be replaced by ' +
+                    (incoming ? incoming.name : 'the selected technician') + '.',
+                detail:
+                    (outgoing ? outgoing.name : 'The current lead') +
+                    ' comes off the project, and their open tasks become Unassigned.',
+                label: 'Replace Lead',
+            });
+        }
 
-        return window.confirmDialog({
-            title: 'Replace the lead technician?',
-            body:
-                (outgoing ? outgoing.name : 'The current lead technician') +
-                ' will be replaced by ' +
-                (incoming ? incoming.name : 'the selected technician') + '.',
-            detail:
-                (outgoing ? outgoing.name : 'The current lead') +
-                ' comes off the project, and their open tasks become Unassigned.',
-            label: 'Replace Lead',
-        });
-    }
+        /**
+         * The dialog answers later than a submit handler can wait, so the submit is
+         * always stopped and re-fired once the question has been answered. The flag
+         * is what stops the second pass asking again.
+         */
+        let leadReplacementConfirmed = false;
 
-    /**
-     * The dialog answers later than a submit handler can wait, so the submit is
-     * always stopped and re-fired once the question has been answered. The flag
-     * is what stops the second pass asking again.
-     */
-    let leadReplacementConfirmed = false;
+        form.addEventListener('submit', function(event) {
+            if (!leadTechSelect.value) {
+                event.preventDefault();
+                leadTechError.classList.remove('d-none');
+                leadTechSelect.setCustomValidity('A lead technician is required.');
+                leadTechSelect.reportValidity();
 
-    form.addEventListener('submit', function(event) {
-        if (!leadTechSelect.value) {
+                return;
+            }
+
+            if (leadReplacementConfirmed || !replacesLead()) {
+                return;
+            }
+
             event.preventDefault();
-            leadTechError.classList.remove('d-none');
-            leadTechSelect.setCustomValidity('A lead technician is required.');
-            leadTechSelect.reportValidity();
 
-            return;
-        }
-
-        if (leadReplacementConfirmed || !replacesLead()) {
-            return;
-        }
-
-        event.preventDefault();
-
-        confirmLeadReplacement().then(function(confirmed) {
-            if (!confirmed) {
-                return;
-            }
-
-            leadReplacementConfirmed = true;
-            // requestSubmit() rather than submit(), so the form runs its own
-            // validation and this handler sees the second pass - submit()
-            // would skip both.
-            form.requestSubmit();
-        });
-    });
-
-    /**
-     * Copying a team from another project puts its people into this same
-     * picker. Nothing is saved and nothing is locked: the chips can be removed,
-     * more technicians added, and the lead changed, exactly as if every one of
-     * them had been chosen by hand.
-     */
-    function initImportTeam() {
-        const importModal = document.querySelector('[data-import-team-modal]');
-        const teamModal = document.getElementById('editAssignedTeamModal');
-        const openButton = form.querySelector('[data-import-team-open]');
-
-        if (!importModal || !teamModal || !openButton || !window.importTeam || !window.bootstrap) {
-            return;
-        }
-
-        const leadOption = function (technicianId) {
-            return leadTechSelect.querySelector('option[value="' + technicianId + '"]');
-        };
-
-        // One dialog at a time, and the editor is always what you come back
-        // to - with whoever was imported already in the picker, ready to be
-        // adjusted and saved.
-        let handingOver = false;
-
-        openButton.addEventListener('click', function () {
-            handingOver = true;
-            window.bootstrap.Modal.getOrCreateInstance(teamModal).hide();
-        });
-
-        teamModal.addEventListener('hidden.bs.modal', function () {
-            if (!handingOver) {
-                return;
-            }
-
-            handingOver = false;
-            window.bootstrap.Modal.getOrCreateInstance(importModal).show();
-        });
-
-        importModal.addEventListener('hidden.bs.modal', function () {
-            window.bootstrap.Modal.getOrCreateInstance(teamModal).show();
-        });
-
-        window.importTeam.init({
-            modal: importModal,
-            confirmLeadChange: true,
-            params: function () {
-                return { project_id: window.importTeamProjectId };
-            },
-            currentLeadId: function () {
-                if (!leadTechSelect.value) {
-                    return null;
+            confirmLeadReplacement().then(function(confirmed) {
+                if (!confirmed) {
+                    return;
                 }
 
-                const technician = technicianLookup.get(String(leadTechSelect.value));
+                leadReplacementConfirmed = true;
+                // requestSubmit() rather than submit(), so the form runs its own
+                // validation and this handler sees the second pass - submit()
+                // would skip both.
+                form.requestSubmit();
+            });
+        });
 
-                return {
-                    id: leadTechSelect.value,
-                    name: technician ? technician.name : 'the current lead technician',
-                };
-            },
-            onImport: function (result) {
-                if (result.lead && !result.keepCurrentLead) {
-                    const option = leadOption(result.lead.id);
+        // A refused save leaves the dialog open. Trying again is a new
+        // decision about the lead, so it is asked again.
+        form.addEventListener('workspace:failed', function() {
+            leadReplacementConfirmed = false;
+        });
 
-                    if (option) {
-                        // The server screened this person against this
-                        // project's dates just now, so a stale disabled
-                        // attribute from page load must not stand in the way.
-                        option.disabled = false;
-                        leadTechSelect.value = String(result.lead.id);
+        /**
+         * Copying a team from another project puts its people into this same
+         * picker. Nothing is saved and nothing is locked: the chips can be removed,
+         * more technicians added, and the lead changed, exactly as if every one of
+         * them had been chosen by hand.
+         */
+        function initImportTeam() {
+            const importModal = root.querySelector('[data-import-team-modal]');
+            const teamModal = root.querySelector('#editAssignedTeamModal');
+            const openButton = form.querySelector('[data-import-team-open]');
+
+            if (!importModal || !teamModal || !openButton || !window.importTeam || !window.bootstrap) {
+                return;
+            }
+
+            const leadOption = function (technicianId) {
+                return leadTechSelect.querySelector('option[value="' + technicianId + '"]');
+            };
+
+            // One dialog at a time, and the editor is always what you come back
+            // to - with whoever was imported already in the picker, ready to be
+            // adjusted and saved.
+            let handingOver = false;
+
+            openButton.addEventListener('click', function () {
+                handingOver = true;
+                window.bootstrap.Modal.getOrCreateInstance(teamModal).hide();
+            });
+
+            teamModal.addEventListener('hidden.bs.modal', function () {
+                if (!handingOver) {
+                    return;
+                }
+
+                handingOver = false;
+                window.bootstrap.Modal.getOrCreateInstance(importModal).show();
+            });
+
+            importModal.addEventListener('hidden.bs.modal', function () {
+                window.bootstrap.Modal.getOrCreateInstance(teamModal).show();
+            });
+
+            window.importTeam.init({
+                modal: importModal,
+                confirmLeadChange: true,
+                params: function () {
+                    return { project_id: window.importTeamProjectId };
+                },
+                currentLeadId: function () {
+                    if (!leadTechSelect.value) {
+                        return null;
                     }
-                }
 
-                result.technicians.forEach(function (technician) {
-                    addTechnician(String(technician.id));
-                });
+                    const technician = technicianLookup.get(String(leadTechSelect.value));
 
-                leadTechError.classList.add('d-none');
-                leadTechSelect.setCustomValidity('');
-                renderChips();
-                renderDropdown();
-            },
-        });
+                    return {
+                        id: leadTechSelect.value,
+                        name: technician ? technician.name : 'the current lead technician',
+                    };
+                },
+                onImport: function (result) {
+                    if (result.lead && !result.keepCurrentLead) {
+                        const option = leadOption(result.lead.id);
+
+                        if (option) {
+                            // The server screened this person against this
+                            // project's dates just now, so a stale disabled
+                            // attribute from page load must not stand in the way.
+                            option.disabled = false;
+                            leadTechSelect.value = String(result.lead.id);
+                        }
+                    }
+
+                    result.technicians.forEach(function (technician) {
+                        addTechnician(String(technician.id));
+                    });
+
+                    leadTechError.classList.add('d-none');
+                    leadTechSelect.setCustomValidity('');
+                    renderChips();
+                    renderDropdown();
+                },
+            });
+        }
+
+        seedInitialTechnicians();
+        renderChips();
+        renderDropdown();
+        initImportTeam();
     }
-
-    seedInitialTechnicians();
-    renderChips();
-    renderDropdown();
-    initImportTeam();
 
     // ------------------------------------------------------------------
     // Project documents
@@ -628,8 +689,8 @@ if (taskStartDate) {
      * which is thin when the files are being added to a project rather than
      * replacing what is there.
      */
-    (function initPickedFileLists() {
-        document.querySelectorAll('[data-upload-input]').forEach(function (input) {
+    function initPickedFileLists(root) {
+        root.querySelectorAll('[data-upload-input]').forEach(function (input) {
             const list = input.parentElement.querySelector('[data-picked-list]');
 
             if (!list) {
@@ -651,16 +712,16 @@ if (taskStartDate) {
                 list.classList.toggle('d-none', files.length === 0);
             });
         });
-    })();
+    }
 
-    (function initDocumentRemoval() {
-        const wrap = document.querySelector('[data-project-documents]');
+    function initDocumentRemoval(root) {
+        const wrap = root.querySelector('[data-project-documents]');
 
         if (!wrap) {
             return;
         }
 
-        const errorBox = document.querySelector('[data-document-error]');
+        const errorBox = root.querySelector('[data-document-error]');
         const token = document.querySelector('meta[name="csrf-token"]')?.content || '';
 
         function showError(message) {
@@ -726,27 +787,33 @@ if (taskStartDate) {
 
                     row?.remove();
 
-                    if (!group) {
-                        return;
+                    if (group) {
+                        // The count beside the heading, and the "none uploaded"
+                        // line that takes over when the last one goes.
+                        const remaining = group.querySelectorAll('[data-document-row]').length;
+                        const badge = group.querySelector('.badge');
+
+                        if (badge) {
+                            badge.textContent = String(remaining);
+                            badge.classList.toggle('d-none', remaining === 0);
+                        }
+
+                        if (remaining === 0) {
+                            const name = group.querySelector('.fw-semibold')?.textContent.trim() || 'file';
+                            const empty = document.createElement('span');
+
+                            empty.className = 'text-muted small';
+                            empty.textContent = 'No ' + name.toLowerCase() + ' uploaded.';
+                            group.appendChild(empty);
+                        }
                     }
 
-                    // The count beside the heading, and the "none uploaded"
-                    // line that takes over when the last one goes.
-                    const remaining = group.querySelectorAll('[data-document-row]').length;
-                    const badge = group.querySelector('.badge');
-
-                    if (badge) {
-                        badge.textContent = String(remaining);
-                        badge.classList.toggle('d-none', remaining === 0);
-                    }
-
-                    if (remaining === 0) {
-                        const name = group.querySelector('.fw-semibold')?.textContent.trim() || 'file';
-                        const empty = document.createElement('span');
-
-                        empty.className = 'text-muted small';
-                        empty.textContent = 'No ' + name.toLowerCase() + ' uploaded.';
-                        group.appendChild(empty);
+                    // The row is gone already; the rest of the page still
+                    // counts the file - the edit dialog's "on file" badges,
+                    // the history that now records its removal - so it is
+                    // redrawn from the server behind the change.
+                    if (window.projectWorkspace) {
+                        window.projectWorkspace.refresh();
                     }
                 })
                 .catch(function () {
@@ -754,6 +821,22 @@ if (taskStartDate) {
                     showError('Unable to remove that file.');
                 });
         });
-    })();
+    }
 
-});
+    function init(root) {
+        initReportImages(root);
+        initTaskDates(root);
+        initTeamForm(root);
+        initPickedFileLists(root);
+        initDocumentRemoval(root);
+        ensureTasksTable();
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        init(document);
+    });
+
+    document.addEventListener('workspace:updated', function (event) {
+        init(event.detail.root);
+    });
+})();

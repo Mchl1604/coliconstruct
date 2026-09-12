@@ -26,6 +26,13 @@ class ProjectPolicy
     private const REPORTABLE_STATUSES = ['unscheduled', 'pending', 'ongoing'];
 
     /**
+     * The summary a project with no phase structure carries, named because
+     * blockerDetailsFor() has to recognise its own blocker: that one refusal
+     * stands alone, where every other one is listed alongside the rest.
+     */
+    private const NO_PHASES_SUMMARY = 'no phases set up';
+
+    /**
      * A technician sees a project because they are on its team - never
      * because they typed its id into the address bar.
      *
@@ -143,9 +150,10 @@ class ProjectPolicy
      * screen that fixes it, and the two dialogs that close a project render
      * it as a link rather than reprinting the sentence.
      *
-     * Who is asking matters in exactly one place: a Super Admin may close out
-     * a project that has not reached its first scheduled day, so "Not started
-     * yet" is not a refusal for them - see Project::isCompletableBy(). Every
+     * Who is asking matters in two places. A Super Admin may close out a
+     * project that has not reached its first scheduled day, so "Not started
+     * yet" is not a refusal for them - see Project::isCompletableBy(). And the
+     * phases are a technician's refusal alone: see phaseBlockers(). Every
      * other blocker below reads the work recorded on the project and is the
      * same sentence for everybody, an administrator included: they may go
      * ahead with it outstanding, but only by saying why.
@@ -188,7 +196,17 @@ class ProjectPolicy
             return [$this->statusBlocker($project, $projectUrl)];
         }
 
-        $blockers = [];
+        // Phases first, because everything below them depends on there being
+        // a structure: a project whose phases are not settled accepts no tasks
+        // at all, so "No tasks yet" on one of those is a consequence rather
+        // than a second thing to go and fix.
+        $phaseBlockers = $this->phaseBlockers($project, $viewer);
+
+        if ($phaseBlockers !== [] && $phaseBlockers[0]['summary'] === self::NO_PHASES_SUMMARY) {
+            return $phaseBlockers;
+        }
+
+        $blockers = $phaseBlockers;
 
         // Read from a count the caller loaded where there is one. The projects
         // listing asks this of every row at once, and two queries per project
@@ -226,6 +244,64 @@ class ProjectPolicy
         // argue with - completing the project releases those dates instead
         // (see ProjectCompletion).
         return $blockers;
+    }
+
+    /**
+     * Why this project's phases stand between a lead technician and closing
+     * it, if they do.
+     *
+     * Three states, told apart deliberately, because collapsing them is the
+     * bug this exists to prevent. "No phase is outstanding" is true of a
+     * project with four finished phases AND of a project nobody has set any up
+     * for, and only the first of those is finished work. So the structure is
+     * asked about first, and an empty phase list is a refusal in its own right
+     * rather than a silent pass.
+     *
+     * A lead technician's refusal alone. An Admin or a Super Admin closing a
+     * project on the team's behalf gets neither sentence: they may need to
+     * close out a job whose phases were never set up or never ticked off, and
+     * that allowance is the whole reason the two roles exist on this screen.
+     * A null viewer is read as the technician's case, which is the stricter
+     * of the two - see the note on $viewer above.
+     *
+     * Read from the database on every call rather than from anything the page
+     * had loaded. A phase closed in another tab, or reopened by a Super Admin
+     * after this page was drawn, has to count: the whole point of the check is
+     * that a stale browser cannot get past it.
+     *
+     * @return array<int, array{message: string, summary: string, action: array{label: string, url: string}|null}>
+     */
+    private function phaseBlockers(Project $project, ?User $viewer): array
+    {
+        if ($viewer !== null && ! $viewer->needsTechnicianRecord()) {
+            return [];
+        }
+
+        // One query for both figures. Only the two columns the answer is made
+        // of, because nothing here reads a phase's title or its notes.
+        $phases = $project->phases()->get(['phase_id', 'completed_at']);
+
+        if (! $project->phasesAreFinalized() || $phases->isEmpty()) {
+            return [$this->blocker(
+                'Set up the project phases before completing the project.',
+                self::NO_PHASES_SUMMARY,
+                'Set up the phases',
+                route('technician.projects.phases.setup', $project->project_id)
+            )];
+        }
+
+        $outstanding = $phases->whereNull('completed_at')->count();
+
+        if ($outstanding === 0) {
+            return [];
+        }
+
+        return [$this->blocker(
+            'Complete all project phases before completing the project.',
+            $outstanding === 1 ? '1 incomplete phase' : $outstanding.' incomplete phases',
+            $outstanding === 1 ? 'Go to the open phase' : 'Go to the open phases',
+            route('technician.projects.show', $project->project_id).'#phases'
+        )];
     }
 
     /**

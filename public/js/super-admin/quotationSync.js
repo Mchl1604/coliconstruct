@@ -40,8 +40,8 @@
         },
     };
 
-    function init() {
-        const form = document.querySelector('[data-edit-project-form]');
+    function init(root) {
+        const form = (root || document).querySelector('[data-edit-project-form]');
         const step = form ? form.querySelector('[data-quotation-sync]') : null;
 
         if (!form || !step) {
@@ -285,15 +285,36 @@
         /**
          * Send the form with the answer on it.
          *
-         * submit() rather than requestSubmit(): the form's own validation has
-         * already passed - the submit event that opened this step only fires
-         * once it has - and the only fields changed since are the quotation's,
-         * which are checked here.
+         * requestSubmit() rather than submit(): submit() skips the submit
+         * event, and the event is what lets the page send this with fetch and
+         * redraw in place - see projectWorkspace.js. The handler below lets it
+         * straight through, because `sending` is already set.
          */
         function send(answer, button) {
             change.value = answer;
             busy(button);
-            form.submit();
+            form.requestSubmit();
+        }
+
+        /**
+         * The save was refused and the dialog is still open. Back to the form,
+         * everything as it was typed, so the reason printed at the top of it
+         * can be acted on and the save tried again.
+         */
+        function recover() {
+            sending = false;
+
+            [yesButton, noButton, cancelButton, backButton, saveButton].forEach(function (control) {
+                control.disabled = false;
+            });
+
+            show(spinner, false);
+
+            if (mode !== null) {
+                close(false);
+            }
+
+            change.value = 'none';
         }
 
         // ------------------------------------------------------------------
@@ -381,11 +402,20 @@
                 }
             });
         }
+
+        form.addEventListener('workspace:failed', recover);
     }
 
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', init);
+        document.addEventListener('DOMContentLoaded', function () {
+            init(document);
+        });
     } else {
-        init();
+        init(document);
     }
+
+    // The dialog is redrawn after every save - see projectWorkspace.js.
+    document.addEventListener('workspace:updated', function (event) {
+        init(event.detail.root);
+    });
 })();

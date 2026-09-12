@@ -90,6 +90,17 @@
                                     $canComplete = $task->isOpen()
                                         && $task->status !== 'unassigned'
                                         && ($canManage || $isMine);
+                                    // Work that has not been due to start yet
+                                    // cannot be ticked off - see TaskPolicy,
+                                    // which refuses the request as well. The
+                                    // crew's rule, not the office's: this board
+                                    // is shared, and $viewerTechnicianId is
+                                    // null for an administrator, who may still
+                                    // close a task on the crew's behalf.
+                                    $startsLater = $canComplete
+                                        && $viewerTechnicianId !== null
+                                        && $task->startsInFuture();
+                                    $canComplete = $canComplete && ! $startsLater;
                                     // What, if anything, is stopping this task
                                     // proceeding. One rule decides it - see
                                     // Task::assignmentGap() - and the attention
@@ -174,6 +185,14 @@
                                                     title="{{ $isMine ? 'Mark as completed' : 'Mark as completed on their behalf' }}">
                                                     <i class="bi bi-check-lg" aria-hidden="true"></i>
                                                 </button>
+                                            @elseif ($startsLater)
+                                                {{-- Left in place, disabled, saying why. It
+                                                     becomes live on its own the day the task
+                                                     starts, with nobody to change anything. --}}
+                                                <button type="button" class="btn btn-sm btn-success py-1 px-2" disabled
+                                                    title="{{ \App\Models\Task::NOT_STARTED_REFUSAL }}">
+                                                    <i class="bi bi-check-lg" aria-hidden="true"></i>
+                                                </button>
                                             @endif
 
                                             @if ($canManage)
@@ -208,7 +227,10 @@
                 :update-action="$canManage ? route($updateRoute, $task->task_id) : null"
                 :update-method="$updateMethod" />
 
-            @if ($task->isOpen() && $task->status !== 'unassigned' && ($canManage || $isMine))
+            @if ($task->isOpen()
+                && $task->status !== 'unassigned'
+                && ($canManage || $isMine)
+                && ! ($viewerTechnicianId !== null && $task->startsInFuture()))
                 <x-task-complete-modal :task="$task"
                     :action="route($completeRoute, $task->task_id)" :method="$completeMethod" />
             @endif

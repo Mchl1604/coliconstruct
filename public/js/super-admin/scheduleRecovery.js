@@ -56,11 +56,39 @@
         busy: false,
     };
 
-    let conflictModal = null;
-
     // ------------------------------------------------------------------
     // Small helpers
     // ------------------------------------------------------------------
+
+    /**
+     * Where to go once the project is back. On Project Details the answer is
+     * the page already open, so only its content is redrawn - see
+     * projectWorkspace.js - and the server's message is raised here, since a
+     * redraw brings no flashed toast with it. Everywhere else, and whenever
+     * the server names another page, the browser goes there as it always did.
+     */
+    function arrive(payload) {
+        const redirect = (payload && payload.redirect) || global.location.href;
+        let samePage = false;
+
+        try {
+            samePage = new URL(redirect, global.location.href).pathname === global.location.pathname;
+        } catch (error) {
+            samePage = false;
+        }
+
+        if (samePage && global.projectWorkspace) {
+            global.projectWorkspace.refresh().then(function (drawn) {
+                if (drawn && payload && payload.message && global.adminShell) {
+                    global.adminShell.showToast('success', payload.message);
+                }
+            });
+
+            return;
+        }
+
+        global.location = redirect;
+    }
 
     function escapeHtml(value) {
         return String(value === null || value === undefined ? '' : value)
@@ -228,7 +256,7 @@
                 if (result.ok) {
                     // The success toast belongs on the page the project is now
                     // on, which the server names.
-                    global.location = result.payload.redirect || global.location.href;
+                    arrive(result.payload);
 
                     return;
                 }
@@ -282,11 +310,9 @@
         state.report = report;
         render();
 
-        if (!conflictModal) {
-            conflictModal = new global.bootstrap.Modal(element);
-        }
-
-        conflictModal.show();
+        // Asked of the element each time rather than held: Project Details
+        // redraws its content after a save, this dialog with it.
+        global.bootstrap.Modal.getOrCreateInstance(element).show();
     }
 
     function feedback(kind, message) {
@@ -983,7 +1009,7 @@
                 state.busy = false;
 
                 if (result.ok) {
-                    global.location = result.payload.redirect || global.location.href;
+                    arrive(result.payload);
 
                     return;
                 }
@@ -1027,13 +1053,15 @@
             submitRecovery(recoveryForm, recoveryForm.querySelector('[data-recovery-submit]'));
         });
 
-        const element = modalElement();
+        // The dialog's own controls, listened for from the document and
+        // matched to the dialog on the way through: on Project Details the
+        // dialog is drawn again after every save, and listeners bound to the
+        // one that was here at load would be listening to nothing.
+        document.addEventListener('change', function (event) {
+            if (!event.target.closest('[data-conflict-modal]')) {
+                return;
+            }
 
-        if (!element) {
-            return;
-        }
-
-        element.addEventListener('change', function (event) {
             const row = event.target.closest('[data-range-row]');
 
             if (row && event.target.closest('[data-range-mode]')) {
@@ -1041,7 +1069,11 @@
             }
         });
 
-        element.addEventListener('click', function (event) {
+        document.addEventListener('click', function (event) {
+            if (!event.target.closest('[data-conflict-modal]')) {
+                return;
+            }
+
             const row = event.target.closest('[data-range-row]');
             const range = row ? rangeFor(row.dataset.scheduleId) : null;
 

@@ -19,27 +19,33 @@
             min-height: 100vh;
         }
 
-        .admin-shell.sidebar-collapsed .admin-sidebar {
-            width: 84px;
-        }
+        /* Collapsing is a desktop layout. The choice is remembered, so a
+           page opened on a phone can arrive already carrying the class -
+           there the sidebar is a drawer, and an 84px gutter beside it would
+           only squeeze the page. */
+        @media (min-width: 992px) {
+            .admin-shell.sidebar-collapsed .admin-sidebar {
+                width: 84px;
+            }
 
-        .admin-shell.sidebar-collapsed .admin-content {
-            padding-left: 84px;
-        }
+            .admin-shell.sidebar-collapsed .admin-content {
+                padding-left: 84px;
+            }
 
-        .admin-shell.sidebar-collapsed .admin-brand span,
-        .admin-shell.sidebar-collapsed .admin-nav-heading,
-        .admin-shell.sidebar-collapsed .admin-sidebar-link span {
-            display: none;
-        }
+            .admin-shell.sidebar-collapsed .admin-brand span,
+            .admin-shell.sidebar-collapsed .admin-nav-heading,
+            .admin-shell.sidebar-collapsed .admin-sidebar-link span {
+                display: none;
+            }
 
-        .admin-shell.sidebar-collapsed .admin-sidebar-link {
-            justify-content: center;
-            gap: 0;
-        }
+            .admin-shell.sidebar-collapsed .admin-sidebar-link {
+                justify-content: center;
+                gap: 0;
+            }
 
-        .admin-shell.sidebar-collapsed .admin-sidebar-link i {
-            width: auto;
+            .admin-shell.sidebar-collapsed .admin-sidebar-link i {
+                width: auto;
+            }
         }
 
         .admin-sidebar {

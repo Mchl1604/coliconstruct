@@ -63,6 +63,13 @@ class Task extends Model
         self::GAP_BOTH => 'Missing Technician & Date',
     ];
 
+    /**
+     * Why a task that has not reached its start date is refused, in the one
+     * sentence every surface says it in: the button's tooltip, the schedule
+     * panel, and the response to a request that arrived without one.
+     */
+    public const NOT_STARTED_REFUSAL = 'This task cannot be completed before its start date.';
+
     protected $fillable = [
         'project_id',
         'phase_id',
@@ -331,6 +338,19 @@ class Task extends Model
     public function isOverdue(): bool
     {
         return TaskStatus::overdue($this);
+    }
+
+    /**
+     * The work is not due to begin yet, so there is nothing that could have
+     * been finished.
+     *
+     * Becomes false on its own as the office date rolls over, exactly as
+     * isOverdue() becomes true - see TaskStatus, which decides both against
+     * the same clock. A task with no start date is never early.
+     */
+    public function startsInFuture(): bool
+    {
+        return TaskStatus::startsInFuture($this);
     }
 
     /**

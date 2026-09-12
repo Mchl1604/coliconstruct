@@ -68,6 +68,31 @@ abstract class TestCase extends BaseTestCase
     }
 
     /**
+     * Tick off every phase the project has, the way a lead working down the
+     * panel would have.
+     *
+     * A lead technician cannot close a project with a phase still open - see
+     * ProjectPolicy::blockerDetailsFor() - so a fixture built for a test about
+     * something else on the far side of that gate has to have been through it.
+     * Written straight onto the rows rather than through
+     * ProjectPhaseProgress::complete(), because what those tests need is the
+     * state, not the audit trail of reaching it.
+     *
+     * A test that wants the OTHER case - a phase still open, or no structure
+     * at all - simply does not call this. ProjectCompletionRulesTest is built
+     * that way throughout.
+     */
+    protected function completePhases(Project $project): void
+    {
+        $project->phases()->whereNull('completed_at')->update([
+            'completed_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $project->unsetRelation('phases');
+    }
+
+    /**
      * The phase a task fixture should be filed under: the first of the
      * project's, finalizing a structure for it if it has none yet.
      */

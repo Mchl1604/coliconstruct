@@ -57,9 +57,11 @@
         var results = container.querySelector("[data-picker-results]");
         var clear = container.querySelector("[data-picker-clear]");
 
-        if (!search || !hidden || !results) {
+        if (!search || !hidden || !results || container.dataset.pickerReady) {
             return;
         }
+
+        container.dataset.pickerReady = "1";
 
         // The form's own submit button, when it has one - looked up from the
         // form rather than the container, since it lives in the modal footer.
@@ -239,14 +241,6 @@
             });
         }
 
-        // A click anywhere else closes the list. Without this it stays open
-        // behind the rest of the dialog.
-        document.addEventListener("click", function (event) {
-            if (!container.contains(event.target)) {
-                close();
-            }
-        });
-
         // A name typed but never picked is not a choice, and it must not look
         // like one on the way out either.
         if (form) {
@@ -260,7 +254,36 @@
         syncSubmit();
     }
 
+    // A click anywhere else closes an open list. Without this it stays open
+    // behind the rest of the dialog. One listener for every picker, so a
+    // picker drawn again after a save does not leave its old one behind.
+    document.addEventListener("click", function (event) {
+        document.querySelectorAll("[data-account-picker]").forEach(function (container) {
+            if (container.contains(event.target)) {
+                return;
+            }
+
+            var search = container.querySelector("[data-picker-search]");
+            var results = container.querySelector("[data-picker-results]");
+
+            if (results && !results.classList.contains("d-none")) {
+                results.classList.add("d-none");
+                results.innerHTML = "";
+
+                if (search) {
+                    search.setAttribute("aria-expanded", "false");
+                }
+            }
+        });
+    });
+
     document.addEventListener("DOMContentLoaded", function () {
         document.querySelectorAll("[data-account-picker]").forEach(setUp);
+    });
+
+    // Project Details redraws its dialogs after a save - see
+    // projectWorkspace.js - and hands the picker its candidates again first.
+    document.addEventListener("workspace:updated", function (event) {
+        event.detail.root.querySelectorAll("[data-account-picker]").forEach(setUp);
     });
 })();

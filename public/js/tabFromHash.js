@@ -130,7 +130,10 @@ document.addEventListener("DOMContentLoaded", function () {
     document.addEventListener("click", function (event) {
         const link = event.target.closest('a[href*="#"]');
 
-        if (!link) {
+        // Already taken by another script - a page of the activity log that
+        // Project Details redraws in place, say (projectWorkspace.js), which
+        // brings the reader to the section itself once it has.
+        if (!link || event.defaultPrevented) {
             return;
         }
 

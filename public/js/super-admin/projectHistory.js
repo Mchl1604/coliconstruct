@@ -9,23 +9,46 @@
  * behind those actions, because "Juan was on this from 3 July to 27 August" is
  * a different fact from "Michael removed 2 technicians on 27 August", and the
  * project details page could show neither.
+ *
+ * The page redraws its content after every save (see projectWorkspace.js), so
+ * the buttons are listened for from the document and the dialog is looked up
+ * when one is pressed, rather than held from page load.
  */
-document.addEventListener("DOMContentLoaded", function () {
-    const modalEl = document.querySelector("[data-project-history-modal]");
+(function () {
+    let modalEl = null;
+    let eyebrowEl = null;
+    let titleEl = null;
+    let loadingEl = null;
+    let errorEl = null;
+    let emptyEl = null;
+    let membershipsWrap = null;
+    let membershipsEl = null;
+    let entriesWrap = null;
+    let entriesEl = null;
 
-    if (!modalEl || !window.bootstrap) {
-        return;
+    /** The dialog on the page now, which after a redraw is not the one from before. */
+    function parts() {
+        const current = document.querySelector("[data-project-history-modal]");
+
+        if (!current || !window.bootstrap) {
+            return false;
+        }
+
+        if (current !== modalEl) {
+            modalEl = current;
+            eyebrowEl = modalEl.querySelector("[data-history-eyebrow]");
+            titleEl = modalEl.querySelector("[data-history-title]");
+            loadingEl = modalEl.querySelector("[data-history-loading]");
+            errorEl = modalEl.querySelector("[data-history-error]");
+            emptyEl = modalEl.querySelector("[data-history-empty]");
+            membershipsWrap = modalEl.querySelector("[data-history-memberships-wrap]");
+            membershipsEl = modalEl.querySelector("[data-history-memberships]");
+            entriesWrap = modalEl.querySelector("[data-history-entries-wrap]");
+            entriesEl = modalEl.querySelector("[data-history-entries]");
+        }
+
+        return true;
     }
-
-    const eyebrowEl = modalEl.querySelector("[data-history-eyebrow]");
-    const titleEl = modalEl.querySelector("[data-history-title]");
-    const loadingEl = modalEl.querySelector("[data-history-loading]");
-    const errorEl = modalEl.querySelector("[data-history-error]");
-    const emptyEl = modalEl.querySelector("[data-history-empty]");
-    const membershipsWrap = modalEl.querySelector("[data-history-memberships-wrap]");
-    const membershipsEl = modalEl.querySelector("[data-history-memberships]");
-    const entriesWrap = modalEl.querySelector("[data-history-entries-wrap]");
-    const entriesEl = modalEl.querySelector("[data-history-entries]");
 
     const TITLES = {
         team: "Assigned Team History",
@@ -151,6 +174,10 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function open(section) {
+        if (!parts()) {
+            return;
+        }
+
         const current = ++token;
 
         titleEl.textContent = TITLES[section] || "Change History";
@@ -206,9 +233,11 @@ document.addEventListener("DOMContentLoaded", function () {
             });
     }
 
-    document.querySelectorAll("[data-project-history]").forEach(function (button) {
-        button.addEventListener("click", function () {
+    document.addEventListener("click", function (event) {
+        const button = event.target.closest("[data-project-history]");
+
+        if (button) {
             open(button.getAttribute("data-project-history"));
-        });
+        }
     });
-});
+})();

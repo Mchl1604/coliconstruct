@@ -642,6 +642,14 @@
     margin-bottom: 0.35rem;
 }
 
+/* Why the Complete button beside it is greyed out - work that has not
+   reached its start date. See TaskPolicy. */
+.panel-task-blocked {
+    font-size: 0.78rem;
+    color: #6c757d;
+    margin-top: 0.35rem;
+}
+
 /* ---- Specialty requests ----
    Reviewed inside a technician's own details dialog rather than in a queue of
    their own, so the table's job is only to say who is waiting. */

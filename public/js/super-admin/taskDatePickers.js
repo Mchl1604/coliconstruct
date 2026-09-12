@@ -190,4 +190,10 @@
     document.addEventListener('DOMContentLoaded', function () {
         initInlineRows(document);
     });
+
+    // Project Details redraws its content after a save - see
+    // projectWorkspace.js - and the redrawn task dialogs need pickers again.
+    document.addEventListener('workspace:updated', function (event) {
+        initInlineRows(event.detail.root);
+    });
 })(window);
