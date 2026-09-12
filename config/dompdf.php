@@ -86,7 +86,29 @@ return [
         'artifactPathValidation' => null,
         'log_output_file' => null,
 
-        'enable_font_subsetting' => false,
+        /*
+         * ON, and this is not an optimisation - it is what makes the text
+         * legible.
+         *
+         * dompdf embeds DejaVu as a CID font with Identity-H encoding, where
+         * every code in the content stream is a GLYPH index and /CIDToGIDMap
+         * is what translates them. With subsetting off, dompdf writes Unicode
+         * code points into that stream instead and never builds a map that
+         * bridges the two, so a reader draws glyph 80 for "P", glyph 1593 for
+         * "s", and the page comes out as Arabic, Greek and schwas. The
+         * /ToUnicode CMap it writes alongside is a flat <0000><FFFF><0000>
+         * identity, so the text still *extracts* correctly - which is how a
+         * document this broken passes every check that reads it rather than
+         * looking at it.
+         *
+         * Subsetting builds a real reduced font with a correct map. It also
+         * takes a report from 2.3 MB to about 60 KB, which is the part you
+         * notice second.
+         *
+         * It writes the reduced font through a temporary file, so temp_dir
+         * above has to be writable - ReportPdf guarantees that.
+         */
+        'enable_font_subsetting' => true,
         'pdf_backend' => 'CPDF',
         'default_media_type' => 'print',
         'default_paper_size' => 'a4',

@@ -42,6 +42,12 @@ use Throwable;
  *      than a typical php.ini allows a web request. The limit is raised for
  *      the render alone and put back afterwards.
  *
+ *   4. THE FONT ENCODING. dompdf writes Unicode into an Identity-H content
+ *      stream unless font subsetting is on, which draws the wrong glyph for
+ *      every character - see the note in config/dompdf.php. Guarded below on
+ *      the bytes that come out, because the failure is invisible to anything
+ *      that reads the document rather than rendering it.
+ *
  * Anything that still goes wrong is logged with the cause intact. The caller
  * shows a short message; the log says what actually happened.
  */
@@ -101,6 +107,10 @@ class ReportPdf
 
             if (! self::embedsFontProgram($output)) {
                 throw new RuntimeException('The rendered document carries no embedded font.');
+            }
+
+            if (! self::subsetsFonts($output)) {
+                throw new RuntimeException('The rendered document embeds unsubsetted fonts; its text would be unreadable.');
             }
 
             return $pdf;
@@ -287,6 +297,19 @@ class ReportPdf
         }
 
         return $broken;
+    }
+
+    /**
+     * Whether a rendered document's fonts are subsetted, which for this
+     * renderer is the difference between readable text and glyph soup.
+     *
+     * A subset font is named with a six-letter tag - "SUBAAC+DejaVuSans" -
+     * so the tag is the proof, taken from the finished bytes rather than from
+     * the setting that was supposed to produce them.
+     */
+    public static function subsetsFonts(string $pdf): bool
+    {
+        return (bool) preg_match('/\/BaseFont\s*\/[A-Z]{6}\+/', $pdf);
     }
 
     /**

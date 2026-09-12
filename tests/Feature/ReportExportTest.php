@@ -218,6 +218,54 @@ class ReportExportTest extends TestCase
         }
     }
 
+    /**
+     * The failure that looked like a working export.
+     *
+     * dompdf writes Unicode code points into an Identity-H content stream
+     * unless font subsetting is on, so the reader draws the wrong glyph for
+     * every character and the report comes out as Arabic and Greek. The
+     * /ToUnicode map it writes alongside is a flat identity, which means the
+     * text still extracts correctly - so this has to be asserted on the font
+     * tags, not by reading the document back.
+     */
+    public function test_every_export_subsets_its_fonts(): void
+    {
+        $this->projectCreatedOn(CarbonImmutable::today()->toDateString());
+
+        foreach (array_keys(ReportController::EXPORT_TYPES) as $type) {
+            $pdf = $this->post(route('super-admin.reports.export'), $this->payload([
+                'report_type' => $type,
+            ]))->getContent();
+
+            $this->assertTrue(
+                ReportPdf::subsetsFonts($pdf),
+                "{$type} embedded an unsubsetted font - every character would draw the wrong glyph."
+            );
+        }
+    }
+
+    /** Subsetting is what makes the text legible, so it is not optional. */
+    public function test_font_subsetting_is_enabled(): void
+    {
+        $this->assertTrue(config('dompdf.options.enable_font_subsetting'));
+    }
+
+    /**
+     * A subsetted report is a fraction of the size of an unsubsetted one.
+     * Asserted loosely: the point is that the whole font is not being carried,
+     * not that it lands on a particular number of kilobytes.
+     */
+    public function test_a_report_is_not_carrying_whole_font_files(): void
+    {
+        $this->projectCreatedOn(CarbonImmutable::today()->toDateString());
+
+        $pdf = $this->post(route('super-admin.reports.export'), $this->payload())->getContent();
+
+        // One full DejaVu face alone is about 700 KB; three of them were what
+        // an unsubsetted export used to ship.
+        $this->assertLessThan(700 * 1024, strlen($pdf));
+    }
+
     public function test_the_report_font_is_present_and_parseable_on_this_installation(): void
     {
         $this->assertSame([], ReportPdf::missingFontFiles(), 'A font file is missing.');

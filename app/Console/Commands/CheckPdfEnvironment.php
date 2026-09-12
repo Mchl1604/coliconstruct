@@ -207,6 +207,13 @@ class CheckPdfEnvironment extends Command
 
                 return self::FAILURE;
             }
+
+            // Unsubsetted fonts render as glyph soup - see config/dompdf.php.
+            if (! ReportPdf::subsetsFonts($output)) {
+                $this->error('The rendered document embeds unsubsetted fonts; its text would be unreadable.');
+
+                return self::FAILURE;
+            }
         } catch (Throwable $exception) {
             $this->error('Rendering failed: '.$exception->getMessage());
 
