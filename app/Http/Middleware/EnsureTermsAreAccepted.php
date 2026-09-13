@@ -38,6 +38,8 @@ class EnsureTermsAreAccepted
      * `auth.password.*` is left open so a client who must also change their
      * password is not caught between two gates, each redirecting to the
      * other's page. `media.system` serves the logo the held page draws.
+     * `errors.not-found` is the fallback route, which only ever answers 404:
+     * a mistyped address should say so, not bounce to the home page.
      *
      * @var array<int, string>
      */
@@ -46,6 +48,7 @@ class EnsureTermsAreAccepted
         'auth.logout',
         'auth.password.*',
         'media.system',
+        'errors.not-found',
     ];
 
     /**

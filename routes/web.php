@@ -675,3 +675,12 @@ Route::middleware(['auth', 'password.changed', 'role:super_admin,admin,lead_tech
 // A client has no portal of their own. Signing in lands them on the public
 // website, and My Projects there shows the work booked under their email -
 // see PublicSiteController.
+
+// Any address nothing above answers. Without this the router throws its 404
+// before the web middleware runs, so the error page has no session and would
+// offer a signed-in technician the public home page instead of their own
+// portal. Answered with a real 404 - never a redirect - so the browser, search
+// engines and monitoring all see the address as missing. Named so the terms
+// gate lets it through: a client being held should still be told a page does
+// not exist rather than bounced to the home page.
+Route::fallback(static fn () => abort(404))->name('errors.not-found');
