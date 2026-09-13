@@ -613,8 +613,15 @@
 
         // The dialog may have been opened by a refusal that named the two
         // endpoints; a report arriving any other way carries them too.
-        state.commitUrl = labels.commit_url || state.commitUrl;
-        state.conflictsUrl = labels.conflicts_url || state.conflictsUrl;
+        //
+        // What the form named wins, because submitRecovery always sets both
+        // before this dialog can open and the form's copy is the more specific
+        // one: it is the same endpoint with the page the button was pressed on
+        // attached to it. Taking the label's bare route instead would resolve
+        // a clash on the Schedules page and then land the reader on the
+        // Projects list.
+        state.commitUrl = state.commitUrl || labels.commit_url;
+        state.conflictsUrl = state.conflictsUrl || labels.conflicts_url;
 
         attachPickers(list);
     }

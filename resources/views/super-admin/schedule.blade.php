@@ -4,6 +4,8 @@
     <link href="/css/super-admin/schedule.css" rel="stylesheet">
     <link href="/css/calendar.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.css">
+    {{-- The Schedule Conflict dialog a refused Resume opens. --}}
+    <link href="/css/super-admin/restoreConflicts.css" rel="stylesheet">
 @endpush
 
 @section('content')
@@ -89,25 +91,64 @@
                                     <x-project-status-badge :project="$project" />
                                 </td>
                                 <td class="text-center">
+                                    <div class="d-flex flex-wrap gap-1 justify-content-center">
                                     {{-- A closed record and a paused project are
                                          both fixed until something else changes,
                                          so both get the view-only panel. Asked of
                                          the model so this button and the endpoint
                                          behind it cannot disagree. --}}
+                                    {{-- Icon only, like the Projects page's row of
+                                         actions: four of them side by side in a
+                                         table cell is a column that pushes the
+                                         dates out of the row. Each one carries its
+                                         name for anybody hovering it and for
+                                         anybody reading the page rather than
+                                         looking at it, which an icon on its own
+                                         does not say. --}}
                                     @if (! $project->scheduleIsEditable())
                                         <button type="button" class="btn btn-sm btn-outline-secondary py-1 px-2"
                                             data-bs-toggle="modal"
-                                            data-bs-target="#scheduleViewModal{{ $project->project_id }}">
-                                            <i class="bi bi-eye"></i>
-                                            View Schedule
+                                            data-bs-target="#scheduleViewModal{{ $project->project_id }}"
+                                            title="View Schedule" aria-label="View Schedule">
+                                            <i class="bi bi-eye" aria-hidden="true"></i>
                                         </button>
                                     @else
                                         <button type="button" class="btn btn-sm btn-primary py-1 px-2"
-                                            data-bs-toggle="modal" data-bs-target="#scheduleEditModal{{ $project->project_id }}">
-                                            <i class="bi bi-calendar2-week"></i>
-                                            Edit Schedule
+                                            data-bs-toggle="modal" data-bs-target="#scheduleEditModal{{ $project->project_id }}"
+                                            title="Edit Schedule" aria-label="Edit Schedule">
+                                            <i class="bi bi-calendar2-week" aria-hidden="true"></i>
                                         </button>
                                     @endif
+
+                                    {{-- Pausing and resuming, from the page the
+                                         dates are read on - the reason a hold is
+                                         usually decided here in the first place.
+                                         Both post to the endpoints the Projects
+                                         page posts to, under the same conditions
+                                         that page draws its buttons by, so all
+                                         three entry points are one action. See
+                                         ProjectController::putOnHold() and
+                                         ::resume(). --}}
+                                    @if (! $project->isReadOnly())
+                                        @if ($project->on_hold !== true && $project->status !== 'unscheduled')
+                                            <button type="button" class="btn btn-sm btn-warning py-1 px-2"
+                                                data-bs-toggle="modal"
+                                                data-bs-target="#onHoldModal{{ $project->project_id }}"
+                                                title="Put on Hold" aria-label="Put on Hold">
+                                                <i class="bi bi-pause" aria-hidden="true"></i>
+                                            </button>
+                                        @endif
+
+                                        @if ($project->on_hold === true)
+                                            <button type="button" class="btn btn-sm btn-success py-1 px-2"
+                                                data-bs-toggle="modal"
+                                                data-bs-target="#resumeModal{{ $project->project_id }}"
+                                                title="Resume Project" aria-label="Resume Project">
+                                                <i class="bi bi-play" aria-hidden="true"></i>
+                                            </button>
+                                        @endif
+                                    @endif
+                                    </div>
                                 </td>
                             </tr>
                         @endforeach
@@ -116,6 +157,113 @@
             </div>
         </div>
     </div>
+
+    {{-- The hold and resume dialogs for the rows above, gathered here rather
+         than written inside the table. A <div> is not valid as a child of
+         <tbody>: a browser repairs that by lifting the markup out of the table
+         entirely, so the rendered page stops matching its own source - and this
+         table is redrawn by DataTables on every sort, search and page change.
+
+         Both dialogs are the Projects page's, word for word, posting to the
+         same two endpoints. `origin` is the only difference: it is what brings
+         the reader back to this page instead of to the Projects list. --}}
+    @foreach ($scheduledProjects as $project)
+        @if (! $project->isReadOnly())
+            @if ($project->on_hold !== true && $project->status !== 'unscheduled')
+                <!-- ON HOLD MODAL -->
+                <div class="modal fade" id="onHoldModal{{ $project->project_id }}" tabindex="-1"
+                    aria-labelledby="onHoldModalLabel{{ $project->project_id }}" aria-hidden="true">
+                    <div class="modal-dialog modal-dialog-centered">
+                        <div class="modal-content">
+
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="onHoldModalLabel{{ $project->project_id }}">
+                                    Put Project On Hold
+                                </h5>
+
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"
+                                    aria-label="Close"></button>
+                            </div>
+
+                            <div class="modal-body">
+                                Put <strong>{{ $project->reference_no }}</strong> on hold?
+                                Dates from tomorrow are released.
+                            </div>
+
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                                    Cancel
+                                </button>
+
+                                <form method="POST"
+                                    action="{{ route('super-admin.projects.hold', ['id' => $project->project_id, 'origin' => 'schedules']) }}">
+                                    @csrf
+                                    @method('PUT')
+                                    <button type="submit" class="btn btn-warning">
+                                        Put on Hold
+                                    </button>
+                                </form>
+                            </div>
+
+                        </div>
+                    </div>
+                </div>
+            @endif
+
+            @if ($project->on_hold === true)
+                <!-- RESUME MODAL -->
+                <div class="modal fade" id="resumeModal{{ $project->project_id }}" tabindex="-1"
+                    aria-labelledby="resumeModalLabel{{ $project->project_id }}" aria-hidden="true">
+                    <div class="modal-dialog modal-dialog-centered">
+                        <div class="modal-content">
+
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="resumeModalLabel{{ $project->project_id }}">
+                                    Resume Project
+                                </h5>
+
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"
+                                    aria-label="Close"></button>
+                            </div>
+
+                            <div class="modal-body">
+                                Resume <strong>{{ $project->reference_no }}</strong>?
+                                The dates it kept come back into force, so its team has to
+                                still be free for them.
+
+                                <div class="alert alert-danger mt-3 mb-0 d-none" role="alert"
+                                    data-recovery-error></div>
+                            </div>
+
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                                    Cancel
+                                </button>
+
+                                {{-- Sent with fetch rather than as a plain submit so a
+                                     refused resume can open the Schedule Conflict dialog
+                                     with the clash in it, rather than bouncing the page
+                                     and reducing it to a toast. This is still a real
+                                     form: a browser running no script submits it, and
+                                     the endpoint answers both. --}}
+                                <form method="POST" data-recovery-form
+                                    data-conflicts-url="{{ route('super-admin.projects.resume-conflicts', $project->project_id) }}"
+                                    data-recovery-failure="Unable to resume project. Nothing was changed."
+                                    action="{{ route('super-admin.projects.resume', ['id' => $project->project_id, 'origin' => 'schedules']) }}">
+                                    @csrf
+                                    @method('PUT')
+                                    <button type="submit" class="btn btn-success" data-recovery-submit>
+                                        Resume Project
+                                    </button>
+                                </form>
+                            </div>
+
+                        </div>
+                    </div>
+                </div>
+            @endif
+        @endif
+    @endforeach
 
     {{-- Per-project schedule edit modals. A completed project is a historical
          record and a held one is paused, so neither gets an edit modal at all -
@@ -412,6 +560,27 @@
                         </div>
 
                         <div class="modal-footer">
+                            {{-- Pausing the project, from the panel its dates
+                                 are read in - the same panel a calendar bar
+                                 opens, which is where a hold is usually
+                                 decided. It opens the project's confirmation
+                                 dialog rather than posting from here: the
+                                 hold's form cannot live inside this one -
+                                 a <form> inside a <form> is not markup a
+                                 browser keeps - and going straight through
+                                 would skip the question every other Put on
+                                 Hold asks. The dialog it opens is the Projects
+                                 page's, posting to the same endpoint. --}}
+                            @if (! $project->isReadOnly()
+                                && $project->on_hold !== true
+                                && $project->status !== 'unscheduled')
+                                <button type="button" class="btn btn-warning me-auto" data-hold-action
+                                    data-open-modal="#onHoldModal{{ $project->project_id }}">
+                                    <i class="bi bi-pause-circle me-1" aria-hidden="true"></i>
+                                    Put on Hold
+                                </button>
+                            @endif
+
                             <button type="button" class="btn btn-light" data-bs-dismiss="modal">
                                 Cancel
                             </button>
@@ -537,6 +706,25 @@
                     </div>
 
                     <div class="modal-footer">
+                        {{-- The one thing that can still be done to a paused
+                             project's schedule, offered in the panel that
+                             explains why it cannot be edited. Read-only for
+                             any other reason - completed, cancelled - is
+                             final, and gets no action here.
+
+                             It opens the project's resume dialog rather than
+                             posting, because a resume can be refused by the
+                             calendar and that refusal needs the Schedule
+                             Conflict dialog behind it. Same endpoint, same
+                             dialog, same service. --}}
+                        @if ($project->on_hold && ! $project->isReadOnly())
+                            <button type="button" class="btn btn-success me-auto"
+                                data-open-modal="#resumeModal{{ $project->project_id }}">
+                                <i class="bi bi-play-fill me-1" aria-hidden="true"></i>
+                                Resume Project
+                            </button>
+                        @endif
+
                         <button type="button" class="btn btn-light" data-bs-dismiss="modal">
                             Close
                         </button>
@@ -916,9 +1104,18 @@
          worked. --}}
     <x-confirm-dialog />
 
+    {{-- Where a refused Resume goes: the dates a held project kept may have
+         been claimed by other work while it was paused, and this is the one
+         dialog that says so and lets it be sorted out. The same component the
+         Projects page and the archive use, answered by the same service. --}}
+    <x-schedule-conflict-modal />
+
     @push('scripts')
         {{-- Before every script that asks a question with it. --}}
         <script src="/js/confirmDialog.js"></script>
+        {{-- Sends Resume, and opens the Schedule Conflict dialog when the
+             calendar refuses it. --}}
+        <script src="/js/super-admin/scheduleRecovery.js"></script>
         <script>
             {{-- The one place the partial-day window is decided, handed to the
                  page rather than repeated in it. See Schedule. --}}

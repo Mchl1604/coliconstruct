@@ -130,6 +130,21 @@
                      that may be closed out, which is what puts a Pending
                      project within a Super Admin's reach here as well as on
                      the Projects page. --}}
+                {{-- Pausing the project, from the page it is read on. The
+                     same action the Projects page offers, posting to the same
+                     endpoint - ProjectController::putOnHold() - under the same
+                     conditions: not a locked record, not already paused, and
+                     not a project with no dates to release. Resuming is
+                     offered by the hold banner below, so the pair is never
+                     both in the header at once. --}}
+                @if (! $isReadOnly && ! $isOnHold && $project->status !== 'unscheduled')
+                    <button type="button" class="btn btn-warning" data-bs-toggle="modal"
+                        data-bs-target="#onHoldModal">
+                        <i class="bi bi-pause-circle me-1" aria-hidden="true"></i>
+                        Put on Hold
+                    </button>
+                @endif
+
                 @if ($canComplete && ! $project->isOverdue())
                     <button type="button" class="btn btn-success" data-bs-toggle="modal"
                         data-bs-target="#completeProjectModal">
@@ -169,6 +184,57 @@
                     @endforeach
                 </ul>
                 <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        @endif
+
+        <!-- ON HOLD MODAL -->
+        {{-- Word for word the Projects page's dialog, because it is the same
+             action: the wording, the button and the endpoint are one thing
+             said in two places rather than two things that have to be kept
+             agreeing.
+
+             `origin` is what brings the reader back here instead of to the
+             Projects list. The redirect it asks for lands on this same path,
+             which projectWorkspace.js answers by replacing the workspace
+             alone - so the tab that was open stays open and the success toast
+             arrives on it. See ProjectController::projectActionReturn(). --}}
+        @if (! $isReadOnly && ! $isOnHold && $project->status !== 'unscheduled')
+            <div class="modal fade" id="onHoldModal" tabindex="-1" aria-labelledby="onHoldModalLabel"
+                aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content">
+
+                        <div class="modal-header">
+                            <h5 class="modal-title" id="onHoldModalLabel">
+                                Put Project On Hold
+                            </h5>
+
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"
+                                aria-label="Close"></button>
+                        </div>
+
+                        <div class="modal-body">
+                            Put <strong>{{ $project->reference_no }}</strong> on hold?
+                            Dates from tomorrow are released.
+                        </div>
+
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                                Cancel
+                            </button>
+
+                            <form method="POST"
+                                action="{{ route('super-admin.projects.hold', ['id' => $project->project_id, 'origin' => 'project']) }}">
+                                @csrf
+                                @method('PUT')
+                                <button type="submit" class="btn btn-warning">
+                                    Put on Hold
+                                </button>
+                            </form>
+                        </div>
+
+                    </div>
+                </div>
             </div>
         @endif
 

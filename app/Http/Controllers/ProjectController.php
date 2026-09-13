@@ -1803,19 +1803,48 @@ class ProjectController extends Controller
         ]);
     }
 
+    /**
+     * Where a project action sends the reader back to.
+     *
+     * Putting a project on hold - and resuming it - is offered from three
+     * places now: the Projects list, the Schedules page and a project's own
+     * page. All three post to the one endpoint, which is the point; but an
+     * endpoint that bounced every one of them to the Projects list would send
+     * two of the three to a page they were not on.
+     *
+     * So the button says where it was pressed, in `origin`, and this resolves
+     * it against a fixed set of pages. An allowlist rather than a URL read off
+     * the request: a redirect target taken from what was posted is a redirect
+     * anybody can aim. Anything absent or unrecognised gives the default the
+     * endpoint has always used.
+     */
+    private function projectActionReturn(Request $request, int $id, string $default): string
+    {
+        return match ((string) $request->input('origin')) {
+            // A project's own page. Deliberately the same path the reader is
+            // already on: projectWorkspace.js answers a redirect back to this
+            // page by replacing the workspace alone, which leaves the open tab
+            // and the scroll where they were instead of reloading onto
+            // Project Information.
+            'project' => route('super-admin.projects.show', $id),
+            'schedules' => route('super-admin.schedules.index'),
+            default => $default,
+        };
+    }
+
     public function putOnHold(Request $request, int $id)
     {
         $project = Project::findOrFail($id);
 
         if ($project->isReadOnly()) {
             return redirect()
-                ->route('super-admin.projects', $id)
+                ->to($this->projectActionReturn($request, $id, route('super-admin.projects', $id)))
                 ->with('error', 'This project is '.$project->status.' and cannot be put on hold.');
         }
 
         if ($project->status === 'unscheduled') {
             return redirect()
-                ->route('super-admin.projects', $id)
+                ->to($this->projectActionReturn($request, $id, route('super-admin.projects', $id)))
                 ->with('error', 'This project has no schedule yet.');
         }
 
@@ -1856,11 +1885,11 @@ class ProjectController extends Controller
             );
 
             return redirect()
-                ->route('super-admin.projects', $id)
+                ->to($this->projectActionReturn($request, $id, route('super-admin.projects', $id)))
                 ->with('success', 'Project put on hold.');
         } catch (Throwable $e) {
             return redirect()
-                ->route('super-admin.projects', $id)
+                ->to($this->projectActionReturn($request, $id, route('super-admin.projects', $id)))
                 ->with('error', $this->safeErrorMessage($e, 'Unable to put project on hold. Nothing was changed.'));
         }
     }
@@ -1922,7 +1951,7 @@ class ProjectController extends Controller
             }
 
             return redirect()
-                ->route('super-admin.projects', $id)
+                ->to($this->projectActionReturn($request, $id, route('super-admin.projects', $id)))
                 ->with('error', $conflicts['message']);
         }
 
@@ -1982,12 +2011,12 @@ class ProjectController extends Controller
         if ($request->expectsJson()) {
             return response()->json([
                 'message' => $success,
-                'redirect' => route('super-admin.projects.show', $id),
+                'redirect' => $this->projectActionReturn($request, $id, route('super-admin.projects.show', $id)),
             ]);
         }
 
         return redirect()
-            ->route('super-admin.projects', $id)
+            ->to($this->projectActionReturn($request, $id, route('super-admin.projects', $id)))
             ->with('success', $success);
     }
 
@@ -2042,7 +2071,7 @@ class ProjectController extends Controller
         }
 
         return redirect()
-            ->route('super-admin.projects', $id)
+            ->to($this->projectActionReturn($request, $id, route('super-admin.projects', $id)))
             ->with('error', $message);
     }
 

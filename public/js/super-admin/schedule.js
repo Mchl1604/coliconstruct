@@ -17,6 +17,61 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
+    // ------------------------------------------------------------------
+    // Handing one dialog over to another
+    // ------------------------------------------------------------------
+
+    /**
+     * `data-open-modal="#someModal"` closes the dialog the button is in and
+     * opens the one it names.
+     *
+     * The schedule panels carry Put on Hold and Resume Project, and both of
+     * those already have a confirmation dialog of their own - the Projects
+     * page's, rendered once per project below the table. This is what gets the
+     * reader from the first to the second.
+     *
+     * Two dialogs open at once is the thing being avoided: Bootstrap will
+     * happily stack them, and what you get is two backdrops over one screen
+     * and a scroll lock that outlives the dialog that set it. So the panel is
+     * closed first and the confirmation opened once it has finished closing -
+     * the same handoff the technicians page makes.
+     *
+     * Delegated from the document because the edit panel is redrawn and the
+     * confirmation dialogs are written one per project; a listener bound per
+     * button at load would miss any of them that were not there yet.
+     */
+    document.addEventListener("click", function (event) {
+        const trigger = event.target.closest("[data-open-modal]");
+
+        if (!trigger || !window.bootstrap) {
+            return;
+        }
+
+        const wanted = document.querySelector(trigger.dataset.openModal);
+
+        if (!wanted) {
+            return;
+        }
+
+        const open = function () {
+            window.bootstrap.Modal.getOrCreateInstance(wanted).show();
+        };
+
+        const current = trigger.closest(".modal");
+        const instance = current
+            ? window.bootstrap.Modal.getInstance(current)
+            : null;
+
+        if (!instance) {
+            open();
+
+            return;
+        }
+
+        current.addEventListener("hidden.bs.modal", open, { once: true });
+        instance.hide();
+    });
+
     const MODE_DATE_BASED = "date_based";
     const MODE_PARTIAL_DAY = "partial_day";
     const MINUTES_PER_DAY = 1440;
@@ -1236,6 +1291,11 @@ document.addEventListener("DOMContentLoaded", function () {
         const historicalConfirm = modal.querySelector("[data-historical-confirm]");
         const historicalBack = modal.querySelector("[data-historical-back]");
         const saveButton = modal.querySelector("[data-schedule-submit]");
+        // Put on Hold, which this panel offers beside Save. Absent whenever
+        // the project cannot be held. It belongs to the dates step and is
+        // hidden with Save for the correction step, which is one question in
+        // the middle of another and no place to be offered a third.
+        const holdButton = modal.querySelector("[data-hold-action]");
 
         // Everybody the server offered for the dates being recorded, and who
         // has been named so far. Both are replaced each time the step opens:
@@ -1599,6 +1659,10 @@ document.addEventListener("DOMContentLoaded", function () {
                 saveButton.classList.remove("d-none");
             }
 
+            if (holdButton) {
+                holdButton.classList.remove("d-none");
+            }
+
             if (historicalError) {
                 historicalError.classList.add("d-none");
                 historicalError.textContent = "";
@@ -1766,6 +1830,10 @@ document.addEventListener("DOMContentLoaded", function () {
 
             if (saveButton) {
                 saveButton.classList.add("d-none");
+            }
+
+            if (holdButton) {
+                holdButton.classList.add("d-none");
             }
 
             [historicalConfirm, historicalBack].forEach(function (button) {
