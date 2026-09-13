@@ -1276,7 +1276,7 @@ class ProjectController extends Controller
             ->reject(fn ($technicianId) => $technicianId === $currentLeadTechnicianId)
             ->values();
 
-        // The lead select and the technician picker draw from the same screened
+        // The lead picker and the technician picker draw from the same screened
         // list, so the two can never disagree about who is free.
         $leadTechnicianOptions = $teamCandidates
             ->filter(fn (array $candidate): bool => $candidate['role'] === 'lead_technician')

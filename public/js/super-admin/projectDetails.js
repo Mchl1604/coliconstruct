@@ -217,7 +217,9 @@
             return [String(technician.id), technician];
         }));
 
-        const leadTechSelect = form.querySelector('[data-lead-tech-select]');
+        const leadTechButton = form.querySelector('[data-lead-tech-button]');
+        const leadTechMenu = form.querySelector('[data-lead-tech-menu]');
+        const leadTechInput = form.querySelector('[data-lead-tech-input]');
         const leadTechError = form.querySelector('[data-lead-tech-error]');
         const dropdownButton = form.querySelector('[data-technician-dropdown-button]');
         const dropdownMenu = form.querySelector('[data-technician-dropdown-menu]');
@@ -238,9 +240,10 @@
                 .filter(Boolean);
         }
 
-        // Whether the unavailable section is expanded, kept outside renderDropdown
-        // so re-rendering after a pick does not collapse it again.
+        // Whether each menu's unavailable section is expanded, kept outside the
+        // render functions so re-rendering after a pick does not collapse it again.
         let blockedOpen = false;
+        let blockedLeadsOpen = false;
 
         function escapeHtml(value) {
             const span = document.createElement('span');
@@ -262,12 +265,12 @@
                 escapeHtml(technician.avatar_url) + '" alt="" loading="lazy">';
         }
 
-        function optionMarkup(technician, isSelected) {
+        function optionMarkup(technician, isSelected, attribute) {
             const skills = (technician.skills || []).join(', ');
 
             return '<li><button type="button" class="dropdown-item technician-option' +
                 (isSelected ? ' is-selected' : '') + '" ' +
-                'data-technician-option="' + technician.id + '" ' +
+                (attribute || 'data-technician-option') + '="' + technician.id + '" ' +
                 'aria-pressed="' + (isSelected ? 'true' : 'false') + '">' +
                 avatarMarkup(technician) +
                 '<span class="technician-option-body">' +
@@ -285,20 +288,20 @@
                 '</button></li>';
         }
 
-        function groupMarkup(label, technicians, selectedIds) {
+        function groupMarkup(label, technicians, selectedIds, attribute) {
             if (!technicians.length) {
                 return '';
             }
 
             return '<li><h6 class="dropdown-header">' + escapeHtml(label) + '</h6></li>' +
                 technicians.map(function(technician) {
-                    return optionMarkup(technician, selectedIds.includes(String(technician.id)));
+                    return optionMarkup(technician, selectedIds.includes(String(technician.id)), attribute);
                 }).join('');
         }
 
         // Shown so the scheduler can see who is out and why, but rendered as plain
         // rows rather than buttons - there is nothing here to click.
-        function blockedMarkup(technicians) {
+        function blockedMarkup(technicians, isOpen, attribute, noun) {
             if (!technicians.length) {
                 return '';
             }
@@ -317,12 +320,12 @@
 
             return '<li><hr class="dropdown-divider"></li>' +
                 '<li class="technician-blocked-wrap">' +
-                '<button type="button" class="schedule-blocked-toggle' + (blockedOpen ? ' is-open' : '') + '" ' +
-                'data-technician-blocked-toggle>' +
+                '<button type="button" class="schedule-blocked-toggle' + (isOpen ? ' is-open' : '') + '" ' +
+                attribute + '>' +
                 '<i class="bi bi-chevron-right" aria-hidden="true"></i>' +
-                '<span>' + (blockedOpen ? 'Hide' : 'Show') + ' unavailable technicians (' + technicians.length + ')</span>' +
+                '<span>' + (isOpen ? 'Hide' : 'Show') + ' unavailable ' + noun + ' (' + technicians.length + ')</span>' +
                 '</button>' +
-                '<div class="schedule-blocked-list' + (blockedOpen ? '' : ' d-none') + '">' + rows + '</div>' +
+                '<div class="schedule-blocked-list' + (isOpen ? '' : ' d-none') + '">' + rows + '</div>' +
                 '</li>';
         }
 
@@ -335,27 +338,108 @@
          * where anybody looks. The count is the other half of the tick: a tick
          * answers for one row, this answers for the whole list at once.
          */
-        function footerMarkup(count) {
+        function footerMarkup(label, isEmpty, attribute) {
             return '<li class="technician-dropdown-footer">' +
-                '<span class="technician-dropdown-count' + (count ? '' : ' is-empty') + '">' +
-                (count ? count + ' selected' : 'None selected') + '</span>' +
-                '<button type="button" class="btn btn-sm btn-primary" data-technician-done>Done</button>' +
+                '<span class="technician-dropdown-count' + (isEmpty ? ' is-empty' : '') + '">' +
+                escapeHtml(label) + '</span>' +
+                '<button type="button" class="btn btn-sm btn-primary" ' + attribute + '>Done</button>' +
                 '</li>';
         }
 
-        function closePicker() {
+        function closePicker(button) {
             if (!window.bootstrap || !window.bootstrap.Dropdown) {
                 return;
             }
 
-            window.bootstrap.Dropdown.getOrCreateInstance(dropdownButton).hide();
+            window.bootstrap.Dropdown.getOrCreateInstance(button).hide();
+        }
+
+        /**
+         * The Lead Technician menu: the Technicians menu's cards and groups,
+         * holding one choice instead of many.
+         *
+         * Whoever is `selectable` can be picked - that is everyone free, plus
+         * anyone already on the team even if a clash slipped in, so the current
+         * lead never sits in a field its own menu refuses to offer.
+         */
+        function renderLeadDropdown() {
+            const leadId = String(leadTechInput.value || '');
+            const selectedIds = leadId ? [leadId] : [];
+
+            const leads = teamData.filter(function(technician) {
+                return technician.role === 'lead_technician';
+            });
+
+            const pickable = leads.filter(function(technician) {
+                return technician.selectable;
+            });
+
+            const suggested = pickable.filter(function(technician) {
+                return technician.suggested;
+            });
+
+            const others = pickable.filter(function(technician) {
+                return !technician.suggested;
+            });
+
+            const blocked = leads.filter(function(technician) {
+                return !technician.selectable;
+            });
+
+            const groups = groupMarkup('Suggested — matches this project', suggested, selectedIds, 'data-lead-option') +
+                groupMarkup(suggested.length ? 'Other available' : 'Available', others, selectedIds, 'data-lead-option');
+
+            const chosen = technicianLookup.get(leadId);
+
+            leadTechMenu.innerHTML = (groups ||
+                '<li><span class="dropdown-item-text text-secondary">No lead technicians available.</span></li>') +
+                blockedMarkup(blocked, blockedLeadsOpen, 'data-lead-blocked-toggle', 'lead technicians') +
+                footerMarkup(chosen ? chosen.name : 'No lead chosen', !chosen, 'data-lead-done');
+
+            leadTechMenu.querySelectorAll('[data-lead-option]').forEach(function(button) {
+                button.addEventListener('click', function() {
+                    // A project always has a lead, so pressing the chosen one
+                    // again keeps them rather than emptying a required field.
+                    setLead(button.dataset.leadOption);
+
+                    // One lead per project, so choosing finishes the job.
+                    closePicker(leadTechButton);
+                });
+            });
+
+            const done = leadTechMenu.querySelector('[data-lead-done]');
+
+            if (done) {
+                done.addEventListener('click', function() {
+                    closePicker(leadTechButton);
+                });
+            }
+
+            const blockedToggle = leadTechMenu.querySelector('[data-lead-blocked-toggle]');
+
+            if (blockedToggle) {
+                blockedToggle.addEventListener('click', function() {
+                    blockedLeadsOpen = !blockedLeadsOpen;
+                    renderLeadDropdown();
+                });
+            }
+
+            leadTechButton.textContent = chosen ? chosen.name : 'Select lead technician';
+        }
+
+        function setLead(leadId) {
+            leadTechInput.value = leadId ? String(leadId) : '';
+            leadTechError.classList.add('d-none');
+
+            renderLeadDropdown();
+            renderDropdown();
         }
 
         function renderDropdown() {
             const selectedIds = selectedTechnicianIds();
-            const leadId = leadTechSelect.value;
+            const leadId = leadTechInput.value;
 
-            // Lead technicians are picked in their own select, so they never appear
+            // Lead technicians are picked in their own menu, so they never appear
             // in the team list.
             const candidates = teamData.filter(function(technician) {
                 return technician.role !== 'lead_technician';
@@ -388,8 +472,12 @@
 
             dropdownMenu.innerHTML = (groups ||
                 '<li><span class="dropdown-item-text text-secondary">No technicians available.</span></li>') +
-                blockedMarkup(blocked) +
-                footerMarkup(selectedIds.length);
+                blockedMarkup(blocked, blockedOpen, 'data-technician-blocked-toggle', 'technicians') +
+                footerMarkup(
+                    selectedIds.length ? selectedIds.length + ' selected' : 'None selected',
+                    !selectedIds.length,
+                    'data-technician-done'
+                );
 
             dropdownMenu.querySelectorAll('[data-technician-option]').forEach(function(button) {
                 button.addEventListener('click', function() {
@@ -406,7 +494,9 @@
             const done = dropdownMenu.querySelector('[data-technician-done]');
 
             if (done) {
-                done.addEventListener('click', closePicker);
+                done.addEventListener('click', function() {
+                    closePicker(dropdownButton);
+                });
             }
 
             const blockedToggle = dropdownMenu.querySelector('[data-technician-blocked-toggle]');
@@ -490,20 +580,14 @@
             });
         }
 
-        leadTechSelect.addEventListener('change', function() {
-            leadTechError.classList.add('d-none');
-            leadTechSelect.setCustomValidity('');
-            renderDropdown();
-        });
-
         /**
          * A project carries exactly one lead, so choosing a different one in the
-         * select is not an addition - it REPLACES the lead who is there, and the
+         * menu is not an addition - it REPLACES the lead who is there, and the
          * outgoing lead comes off the team entirely along with any unfinished task
          * they were holding.
          *
          * That is the intended way to change a lead, and it stays a single save.
-         * What it must not be is a surprise: the select looks like every other
+         * What it must not be is a surprise: the menu looks like every other
          * field on the form, and nothing else on the page says that picking a name
          * in it removes somebody. So the replacement is named before it happens.
          */
@@ -514,7 +598,7 @@
             const previousLeadId = initialState.leadTechId;
 
             return Boolean(previousLeadId)
-                && String(previousLeadId) !== String(leadTechSelect.value);
+                && String(previousLeadId) !== String(leadTechInput.value);
         }
 
         /**
@@ -527,7 +611,7 @@
          */
         function confirmLeadReplacement() {
             const outgoing = technicianLookup.get(String(initialState.leadTechId));
-            const incoming = technicianLookup.get(String(leadTechSelect.value));
+            const incoming = technicianLookup.get(String(leadTechInput.value));
 
             return window.confirmDialog({
                 title: 'Replace the lead technician?',
@@ -550,11 +634,13 @@
         let leadReplacementConfirmed = false;
 
         form.addEventListener('submit', function(event) {
-            if (!leadTechSelect.value) {
+            // A hidden input takes no part in the browser's own validation, so
+            // the requirement is enforced here and the menu is put in front of
+            // the person to answer it.
+            if (!leadTechInput.value) {
                 event.preventDefault();
                 leadTechError.classList.remove('d-none');
-                leadTechSelect.setCustomValidity('A lead technician is required.');
-                leadTechSelect.reportValidity();
+                leadTechButton.focus();
 
                 return;
             }
@@ -599,10 +685,6 @@
                 return;
             }
 
-            const leadOption = function (technicianId) {
-                return leadTechSelect.querySelector('option[value="' + technicianId + '"]');
-            };
-
             // One dialog at a time, and the editor is always what you come back
             // to - with whoever was imported already in the picker, ready to be
             // adjusted and saved.
@@ -633,27 +715,27 @@
                     return { project_id: window.importTeamProjectId };
                 },
                 currentLeadId: function () {
-                    if (!leadTechSelect.value) {
+                    if (!leadTechInput.value) {
                         return null;
                     }
 
-                    const technician = technicianLookup.get(String(leadTechSelect.value));
+                    const technician = technicianLookup.get(String(leadTechInput.value));
 
                     return {
-                        id: leadTechSelect.value,
+                        id: leadTechInput.value,
                         name: technician ? technician.name : 'the current lead technician',
                     };
                 },
                 onImport: function (result) {
                     if (result.lead && !result.keepCurrentLead) {
-                        const option = leadOption(result.lead.id);
+                        const lead = technicianLookup.get(String(result.lead.id));
 
-                        if (option) {
+                        if (lead) {
                             // The server screened this person against this
-                            // project's dates just now, so a stale disabled
-                            // attribute from page load must not stand in the way.
-                            option.disabled = false;
-                            leadTechSelect.value = String(result.lead.id);
+                            // project's dates just now, so a stale "unavailable"
+                            // from page load must not stand in the way.
+                            lead.selectable = true;
+                            leadTechInput.value = String(result.lead.id);
                         }
                     }
 
@@ -662,8 +744,8 @@
                     });
 
                     leadTechError.classList.add('d-none');
-                    leadTechSelect.setCustomValidity('');
                     renderChips();
+                    renderLeadDropdown();
                     renderDropdown();
                 },
             });
@@ -671,6 +753,7 @@
 
         seedInitialTechnicians();
         renderChips();
+        renderLeadDropdown();
         renderDropdown();
         initImportTeam();
     }

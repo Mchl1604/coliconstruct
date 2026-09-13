@@ -2636,43 +2636,28 @@
                                 Lead Technician <span class="text-danger">*</span>
                             </label>
 
-                            @php
-                                // Same three buckets the technician picker uses: skills
-                                // that match the project types first, then everyone else
-                                // who is free, then the booked ones - shown so the
-                                // scheduler knows why, but not choosable.
-                                $leadGroups = [
-                                    'Suggested — matches this project' => $leadTechnicianOptions->where('suggested', true),
-                                    'Other available' => $leadTechnicianOptions->where('suggested', false)->where('available', true),
-                                    'Unavailable for these dates' => $leadTechnicianOptions->where('available', false),
-                                ];
-                            @endphp
+                            {{-- The same picker the Technicians field below uses,
+                                 written by renderLeadDropdown() from the same
+                                 screened list, so the two fields look and read
+                                 alike: picture, role, specialties, and the
+                                 unavailable ones folded away with the reason.
+                                 Single-select, so the chosen lead is held in the
+                                 hidden input rather than in a chip list. --}}
+                            <div class="technician-picker" data-lead-tech-picker>
+                                <div class="dropdown w-100">
+                                    <button type="button" class="form-select technician-dropdown-toggle text-start"
+                                        id="editLeadTech" data-bs-toggle="dropdown" data-bs-auto-close="outside"
+                                        aria-expanded="false" data-lead-tech-button>
+                                        Select lead technician
+                                    </button>
 
-                            <select class="form-select" id="editLeadTech" name="lead_tech" required
-                                data-lead-tech-select>
-                                <option value="" disabled {{ $currentLeadTechnicianId ? '' : 'selected' }}>
-                                    Select lead technician
-                                </option>
+                                    <ul class="dropdown-menu w-100 technician-dropdown-menu"
+                                        data-lead-tech-menu></ul>
+                                </div>
 
-                                @foreach ($leadGroups as $groupLabel => $groupOptions)
-                                    @continue($groupOptions->isEmpty())
-
-                                    <optgroup label="{{ $groupLabel }}">
-                                        @foreach ($groupOptions as $candidate)
-                                            <option value="{{ $candidate['id'] }}"
-                                                @disabled(!$candidate['selectable'])
-                                                {{ (string) $candidate['id'] === (string) $currentLeadTechnicianId ? 'selected' : '' }}>
-                                                {{ $candidate['name'] }}@if ($candidate['matched_skills'])
-                                                    — {{ implode(', ', $candidate['matched_skills']) }}
-                                                @endif
-                                                @if (!$candidate['available'])
-                                                    ({{ $candidate['reason'] }})
-                                                @endif
-                                            </option>
-                                        @endforeach
-                                    </optgroup>
-                                @endforeach
-                            </select>
+                                <input type="hidden" name="lead_tech" value="{{ $currentLeadTechnicianId }}"
+                                    data-lead-tech-input>
+                            </div>
 
                             <div class="form-text text-danger d-none" data-lead-tech-error>
                                 A lead technician is required.

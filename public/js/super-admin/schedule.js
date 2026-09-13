@@ -3861,9 +3861,48 @@ document.addEventListener("DOMContentLoaded", function () {
 
     const calendarEl = document.getElementById("schedulesCalendar");
 
+    // The month being looked at, kept for the browser tab. Saving a schedule,
+    // a hold or a date reloads this page, and a reload used to throw the
+    // calendar back to today's month - so somebody working through October
+    // was put back in September after every change and had to page forward
+    // again. sessionStorage rather than the URL because some of those saves
+    // come back through a server redirect, which would drop a query string.
+    const CALENDAR_MONTH_KEY = "schedule.calendarMonth";
+
+    function rememberedMonth() {
+        try {
+            const value = window.sessionStorage.getItem(CALENDAR_MONTH_KEY);
+
+            return /^\d{4}-\d{2}-01$/.test(value || "") ? value : undefined;
+        } catch (error) {
+            return undefined;
+        }
+    }
+
+    function rememberMonth(date) {
+        try {
+            window.sessionStorage.setItem(
+                CALENDAR_MONTH_KEY,
+                date.getFullYear() +
+                    "-" +
+                    String(date.getMonth() + 1).padStart(2, "0") +
+                    "-01",
+            );
+        } catch (error) {
+            // Storage refused (private mode, blocked site data): the calendar
+            // simply opens on today, as it always did.
+        }
+    }
+
     if (calendarEl && window.FullCalendar) {
         const calendar = new window.FullCalendar.Calendar(calendarEl, {
             initialView: "dayGridMonth",
+            initialDate: rememberedMonth(),
+            // getDate() is the month the view is on, not the first cell of
+            // the grid, which usually belongs to the month before.
+            datesSet: function () {
+                rememberMonth(calendar.getDate());
+            },
             headerToolbar: window.calendarHeader.toolbar(),
             height: "auto",
             dayMaxEvents: true,
