@@ -18,28 +18,41 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     // ------------------------------------------------------------------
-    // Handing one dialog over to another
+    // Handing one dialog over to another, and back again
     // ------------------------------------------------------------------
 
     /**
      * `data-open-modal="#someModal"` closes the dialog the button is in and
-     * opens the one it names.
+     * opens the one it names. Closing that second dialog without going through
+     * with it brings the first one back.
      *
      * The schedule panels carry Put on Hold and Resume Project, and both of
      * those already have a confirmation dialog of their own - the Projects
      * page's, rendered once per project below the table. This is what gets the
-     * reader from the first to the second.
+     * reader from the panel to the question, and - if they think better of it -
+     * back to the panel they were reading rather than to a bare page.
      *
-     * Two dialogs open at once is the thing being avoided: Bootstrap will
-     * happily stack them, and what you get is two backdrops over one screen
-     * and a scroll lock that outlives the dialog that set it. So the panel is
-     * closed first and the confirmation opened once it has finished closing -
-     * the same handoff the technicians page makes.
+     * Two dialogs open at once is the thing being avoided throughout: Bootstrap
+     * will happily stack them, and what you get is two backdrops over one
+     * screen and a scroll lock that outlives the dialog that set it. So each is
+     * closed before the next is opened, in both directions - the same handoff
+     * the technicians page makes.
      *
-     * Delegated from the document because the edit panel is redrawn and the
-     * confirmation dialogs are written one per project; a listener bound per
-     * button at load would miss any of them that were not there yet.
+     * Going through with the action must NOT bring the panel back. The awkward
+     * case is a resume: it is sent with fetch, and one the calendar refuses
+     * closes this dialog in order to open the Schedule Conflict dialog.
+     * Reopening the schedule panel on top of that would bury the clash the
+     * reader has just been handed. So a dialog gives up its way back the moment
+     * its form is sent - unless the reader then presses Cancel, which is the
+     * one gesture that always means "put me back", including after a send that
+     * came back refused.
+     *
+     * Delegated from the document because the panels are redrawn and the
+     * dialogs are written one per project; a listener bound per button at load
+     * would miss any of them that were not there yet.
      */
+    const handoff = new WeakMap();
+
     document.addEventListener("click", function (event) {
         const trigger = event.target.closest("[data-open-modal]");
 
@@ -53,13 +66,18 @@ document.addEventListener("DOMContentLoaded", function () {
             return;
         }
 
+        const panel = trigger.closest(".modal");
+
         const open = function () {
+            if (panel) {
+                handoff.set(wanted, { panel: panel, committed: false });
+            }
+
             window.bootstrap.Modal.getOrCreateInstance(wanted).show();
         };
 
-        const current = trigger.closest(".modal");
-        const instance = current
-            ? window.bootstrap.Modal.getInstance(current)
+        const instance = panel
+            ? window.bootstrap.Modal.getInstance(panel)
             : null;
 
         if (!instance) {
@@ -68,8 +86,63 @@ document.addEventListener("DOMContentLoaded", function () {
             return;
         }
 
-        current.addEventListener("hidden.bs.modal", open, { once: true });
+        panel.addEventListener("hidden.bs.modal", open, { once: true });
         instance.hide();
+    });
+
+    /**
+     * Sending the dialog's form is going through with it, so the way back is
+     * given up - whether the page is about to navigate or the answer is about
+     * to arrive as another dialog.
+     */
+    document.addEventListener("submit", function (event) {
+        const dialog =
+            event.target instanceof HTMLFormElement
+                ? event.target.closest(".modal")
+                : null;
+        const state = dialog ? handoff.get(dialog) : null;
+
+        if (state) {
+            state.committed = true;
+        }
+    });
+
+    /**
+     * Cancel, or the dialog's close button. Always a way back, even after a
+     * send that was refused and left the reader looking at the reason.
+     */
+    document.addEventListener("click", function (event) {
+        const dismiss = event.target.closest('[data-bs-dismiss="modal"]');
+        const dialog = dismiss ? dismiss.closest(".modal") : null;
+        const state = dialog ? handoff.get(dialog) : null;
+
+        if (state) {
+            state.committed = false;
+        }
+    });
+
+    /**
+     * The dialog is closed. Give the panel back unless it was gone through
+     * with - and either way forget it, so a later opening of the same dialog
+     * from somewhere else starts clean.
+     *
+     * Bootstrap's own events bubble, so one listener serves every dialog on
+     * the page.
+     */
+    document.addEventListener("hidden.bs.modal", function (event) {
+        const state = handoff.get(event.target);
+
+        if (!state) {
+            return;
+        }
+
+        handoff.delete(event.target);
+
+        if (state.committed || !window.bootstrap) {
+            return;
+        }
+
+        window.bootstrap.Modal.getOrCreateInstance(state.panel).show();
     });
 
     const MODE_DATE_BASED = "date_based";
