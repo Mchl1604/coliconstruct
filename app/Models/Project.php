@@ -747,13 +747,47 @@ class Project extends Model
      * that is a rule ProjectTeamRules and TechnicianRoleChangeRules enforce on
      * the way in, and a reader is no place to throw over data that already
      * exists.
+     *
+     * On a settled project the lead is the member who held the role on it,
+     * not whoever holds it today - see isLeadMember().
      */
     public function leadAssignment(): ?ProjectTechnician
     {
         $this->loadMissing('projectTechnicians.technician.account');
 
         return $this->projectTechnicians
-            ->first(fn (ProjectTechnician $assignment): bool => (bool) $assignment->technician?->isLead());
+            ->first(fn (ProjectTechnician $assignment): bool => $this->isLeadMember($assignment));
+    }
+
+    /**
+     * Whether this membership is (or was) the lead of this project.
+     *
+     * Two answers, and which one applies depends on whether the membership is
+     * still live work or already a record.
+     *
+     * Live work - an open membership on a project that is neither finished nor
+     * archived - asks the account, exactly as it always has. The lead's powers
+     * on the task board, the reports and Complete Project are gated on the
+     * account role, and TechnicianRoleChangeRules keeps that role in step with
+     * who leads each live project, so this is the answer the permissions see.
+     *
+     * A record - a closed membership, or any membership on a project that is
+     * awaiting confirmation, completed, cancelled or archived - asks the role
+     * recorded on the membership. The role-change guard does not reach those,
+     * by design, which is exactly why they cannot read the account: demoting a
+     * lead after the job was finished would otherwise rewrite who led it.
+     *
+     * Every screen that shows a project's team decides "lead" through here, so
+     * a finished project cannot name one lead on the admin page and another on
+     * the client's.
+     */
+    public function isLeadMember(ProjectTechnician $assignment): bool
+    {
+        if ($assignment->isRemoved() || $this->isReadOnly() || $this->isArchived()) {
+            return $assignment->heldLeadRole();
+        }
+
+        return (bool) $assignment->technician?->isLead();
     }
 
     /**

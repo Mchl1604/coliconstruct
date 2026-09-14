@@ -1218,6 +1218,10 @@ class TechnicianPortalController extends Controller
      *
      * Read off the link rather than queried again: the schedule is only here
      * because one of their memberships is booked on it, so the row is in hand.
+     *
+     * A range can carry two of them - taken off part-way through it and put
+     * back on before it ended - and the open span wins: the range is still
+     * theirs, so it must not be drawn as a former booking.
      */
     private function membershipFor(Schedule $schedule, Technician $technician): ?ProjectTechnician
     {
@@ -1225,6 +1229,7 @@ class TechnicianPortalController extends Controller
             ->map(fn (ScheduleTechnician $link): ?ProjectTechnician => $link->projectTechnician)
             ->filter(fn (?ProjectTechnician $assignment): bool => $assignment !== null
                 && (int) $assignment->technician_id === (int) $technician->technician_id)
+            ->sortBy(fn (ProjectTechnician $assignment): int => $assignment->isRemoved() ? 1 : 0)
             ->first();
     }
 
@@ -1371,7 +1376,7 @@ class TechnicianPortalController extends Controller
                 ->map(fn (ProjectTechnician $assignment): ?array => $assignment->technician ? [
                     'technician_id' => $assignment->technician->technician_id,
                     'name' => $assignment->technician->name,
-                    'is_lead' => optional($assignment->technician->account)->role === 'lead_technician',
+                    'is_lead' => $project->isLeadMember($assignment),
                 ] : null)
                 ->filter()
                 ->sortByDesc('is_lead')

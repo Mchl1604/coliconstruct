@@ -10,6 +10,8 @@ use App\Models\Skill;
 use App\Models\Technician;
 use App\Models\User;
 use App\Policies\ProjectPolicy;
+use App\Services\ClientProjects;
+use App\Services\ProjectTeam;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Testing\TestResponse;
 use Tests\TestCase;
@@ -131,6 +133,90 @@ class LeadTechnicianRoleChangeTest extends TestCase
         $this->assign($archived, $lead);
 
         $this->changeRole($lead->account, 'technician')->assertOk();
+    }
+
+    public function test_joining_a_team_records_the_role_held_on_it(): void
+    {
+        $lead = $this->technician('Rita Lead', User::ROLE_LEAD_TECHNICIAN);
+        $mate = $this->technician('Ana Mendoza', 'technician');
+        $project = $this->project('PRJ-0001', 'ongoing');
+
+        $team = app(ProjectTeam::class);
+
+        $this->assertSame(User::ROLE_LEAD_TECHNICIAN, $team->attach($project, (int) $lead->technician_id)->team_role);
+        $this->assertSame('technician', $team->attach($project, (int) $mate->technician_id)->team_role);
+    }
+
+    /**
+     * Demoting a lead after their projects are finished is allowed - and must
+     * not rewrite who led those projects.
+     *
+     * The lead used to be read off the account role everywhere, so the demotion
+     * re-labelled every finished job: the team history stopped calling them the
+     * lead, and the client's page named no lead at all.
+     */
+    public function test_a_finished_project_still_names_the_lead_who_ran_it_after_a_demotion(): void
+    {
+        $lead = $this->technician('Rita Lead', User::ROLE_LEAD_TECHNICIAN);
+        $project = $this->project('PRJ-0001', 'ongoing');
+
+        app(ProjectTeam::class)->attach($project, (int) $lead->technician_id);
+
+        $project->update(['status' => 'completed']);
+
+        $this->changeRole($lead->account, 'technician')->assertOk();
+
+        $project = $project->fresh();
+
+        $this->assertSame((int) $lead->technician_id, (int) $project->leadAssignment()?->technician_id);
+        $this->assertSame('Rita Lead', app(ClientProjects::class)->leadTechnicianName($project));
+
+        $history = $this->getJson(route('super-admin.projects.history', [
+            'id' => $project->project_id,
+            'section' => 'team',
+        ]))->assertOk()->json('memberships');
+
+        $this->assertTrue(collect($history)->firstWhere('name', 'Rita Lead')['is_lead']);
+    }
+
+    /**
+     * A closed membership is a record too, on a live project as much as a
+     * finished one.
+     */
+    public function test_a_former_lead_keeps_the_role_in_the_history_of_a_live_project(): void
+    {
+        $lead = $this->technician('Rita Lead', User::ROLE_LEAD_TECHNICIAN);
+        $project = $this->project('PRJ-0001', 'ongoing');
+
+        app(ProjectTeam::class)->attach($project, (int) $lead->technician_id)
+            ->update(['removed_at' => now()]);
+
+        $lead->account->forceFill(['role' => 'technician'])->save();
+
+        $history = $this->getJson(route('super-admin.projects.history', [
+            'id' => $project->project_id,
+            'section' => 'team',
+        ]))->assertOk()->json('memberships');
+
+        $this->assertTrue(collect($history)->firstWhere('name', 'Rita Lead')['is_lead']);
+    }
+
+    /**
+     * Live work is untouched: the lead's powers are gated on the account role,
+     * so an open membership on a live project still asks the account.
+     */
+    public function test_a_live_project_still_takes_its_lead_from_the_account(): void
+    {
+        $technician = $this->technician('Ana Mendoza', 'technician');
+        $project = $this->project('PRJ-0001', 'ongoing');
+
+        ProjectTechnician::create([
+            'project_id' => $project->project_id,
+            'technician_id' => $technician->technician_id,
+            'team_role' => User::ROLE_LEAD_TECHNICIAN,
+        ]);
+
+        $this->assertNull($project->fresh()->leadAssignment());
     }
 
     public function test_leaving_the_technician_roles_altogether_is_guarded_the_same_way(): void

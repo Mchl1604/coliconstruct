@@ -375,7 +375,7 @@
                                                     <span class="badge bg-info text-dark">You</span>
                                                 @endif
 
-                                                @if (optional($technician->account)->role === 'lead_technician')
+                                                @if ($project->isLeadMember($projectTechnician))
                                                     <span class="badge project-lead-badge">Lead Technician</span>
                                                 @else
                                                     <span class="badge bg-secondary">Technician</span>

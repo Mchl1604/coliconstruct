@@ -577,6 +577,41 @@ class NotificationEventsTest extends TestCase
         );
     }
 
+    /**
+     * A technician taken off a project keeps the work dated to their time on
+     * it, but can no longer open the project - so the reminder about it goes to
+     * the people who can act on it instead of to them.
+     */
+    public function test_a_removed_technician_is_not_reminded_about_work_they_left_behind(): void
+    {
+        $this->actingAsSuperAdmin();
+
+        $project = $this->project();
+        $lead = $this->technician('Lito Lead', 'lead_technician');
+        $worker = $this->technician('Bea Free');
+        $this->assign($project, $lead);
+
+        $this->assign($project, $worker)->update([
+            'joined_at' => CarbonImmutable::today()->subDays(10),
+            'removed_at' => CarbonImmutable::today()->subDay(),
+        ]);
+
+        Task::create([
+            'project_id' => $project->project_id,
+            'technician_id' => $worker->technician_id,
+            'task_title' => 'Install CCTV Cameras',
+            'task_description' => 'Work.',
+            'start_date' => CarbonImmutable::today()->subDays(5)->toDateString(),
+            'due_date' => CarbonImmutable::today()->subDays(3)->toDateString(),
+            'status' => 'pending',
+        ]);
+
+        $this->artisan('tasks:remind')->assertSuccessful();
+
+        $this->assertNotContains('Task Overdue', $this->titlesFor($worker->account));
+        $this->assertContains('Task Overdue', $this->titlesFor($lead->account));
+    }
+
     public function test_a_completed_task_gets_no_reminder(): void
     {
         $this->actingAsSuperAdmin();

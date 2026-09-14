@@ -353,8 +353,13 @@ class TechnicianController extends Controller
         // project's CURRENT team on it and a note saying when this technician
         // left. What it does not get is the removal controls: there is nothing
         // left to remove, and read_only below is what withholds them.
+        // The most recent span they left, when they have been on and off more
+        // than once - it is the removal the note has to date.
         $former = $assignment === null
-            ? $project->teamHistory->firstWhere('technician_id', $technician->technician_id)
+            ? $project->teamHistory
+                ->where('technician_id', $technician->technician_id)
+                ->sortByDesc(fn (ProjectTechnician $membership): int => $membership->removed_at?->timestamp ?? PHP_INT_MAX)
+                ->first()
             : null;
 
         if ($assignment === null && $former === null) {
@@ -1096,6 +1101,10 @@ class TechnicianController extends Controller
      *
      * Read off the link rather than queried again: the schedule is only in
      * hand because one of their memberships is booked on it.
+     *
+     * A range can carry two of them - somebody taken off part-way through it
+     * and put back on before it ended keeps the old span's link and gains a new
+     * one. The open span wins: the range is still theirs.
      */
     private function membershipFor(Schedule $schedule, Technician $technician): ?ProjectTechnician
     {
@@ -1103,6 +1112,7 @@ class TechnicianController extends Controller
             ->map(fn (ScheduleTechnician $link): ?ProjectTechnician => $link->projectTechnician)
             ->filter(fn (?ProjectTechnician $assignment): bool => $assignment !== null
                 && (int) $assignment->technician_id === (int) $technician->technician_id)
+            ->sortBy(fn (ProjectTechnician $assignment): int => $assignment->isRemoved() ? 1 : 0)
             ->first();
     }
 
@@ -1129,10 +1139,13 @@ class TechnicianController extends Controller
             ->get();
     }
 
+    /**
+     * The project's own answer - see Project::leadAssignment() - so a finished
+     * project's panel names the lead who ran it, not whoever holds the role now.
+     */
     private function leadAssignment(Project $project): ?ProjectTechnician
     {
-        return $project->projectTechnicians
-            ->first(fn (ProjectTechnician $assignment): bool => optional($assignment->technician?->account)->role === self::LEAD_ROLE);
+        return $project->leadAssignment();
     }
 
     /**
@@ -1227,7 +1240,7 @@ class TechnicianController extends Controller
                 ->map(fn (ProjectTechnician $assignment): ?array => $assignment->technician ? [
                     'technician_id' => $assignment->technician->technician_id,
                     'name' => $assignment->technician->name,
-                    'is_lead' => optional($assignment->technician->account)->role === self::LEAD_ROLE,
+                    'is_lead' => $project->isLeadMember($assignment),
                 ] : null)
                 ->filter()
                 ->values()

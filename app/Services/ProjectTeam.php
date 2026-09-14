@@ -7,8 +7,11 @@ use App\Models\ProjectTechnician;
 use App\Models\Schedule;
 use App\Models\ScheduleTechnician;
 use App\Models\Task;
+use App\Models\Technician;
+use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
+use RuntimeException;
 
 /**
  * Putting a technician on a project's team, and taking them off it.
@@ -81,26 +84,33 @@ class ProjectTeam
      *                             it - a reopen restoring a team, a console
      *                             command.
      *
-     * Somebody rejoining a project they were taken off reopens the membership
-     * they already had rather than starting a second one. Their old span stays
-     * as it is, closed, and the record reads the way it happened: on from
-     * March to June, off, on again from today. A second row would say they
-     * were on the project twice over from the beginning.
+     * Somebody rejoining a project they were taken off starts a NEW span. The
+     * closed one is left exactly as it is, so the record reads the way it
+     * happened: on from March to June, off, on again from today.
+     *
+     * It used to reopen the old row instead, moving its joined_at up to today.
+     * That wiped the first span out of history: every reader asks whether a
+     * span covers a date, so March to June stopped belonging to anybody - the
+     * Schedule page's day panel, the technician schedule report and the exports
+     * all dropped the person from weeks they had genuinely worked, while the
+     * booking links for those weeks sat there pointing at a span that no longer
+     * reached them.
      */
     public function attach(Project $project, int $technicianId, ?int $addedBy = null): ProjectTechnician
     {
-        // Written against the model rather than the scoped relation on
-        // purpose: Project::projectTechnicians() only sees open memberships,
-        // and this has to find the closed one to reopen it.
+        // Only an OPEN membership counts as already being on the team. A
+        // closed one is history and is never touched here.
         $assignment = ProjectTechnician::query()
             ->where('project_id', $project->project_id)
             ->where('technician_id', $technicianId)
+            ->active()
             ->first();
 
         if ($assignment === null) {
             $assignment = ProjectTechnician::create([
                 'project_id' => $project->project_id,
                 'technician_id' => $technicianId,
+                'team_role' => $this->currentRoleOf($technicianId),
                 // The moment, not the day. Every date comparison on this
                 // column goes through whereDate() or toDateString() - see
                 // ProjectTechnician::coveredOn() - so the time costs nothing
@@ -109,13 +119,6 @@ class ProjectTeam
                 // timestamp and sort arbitrarily.
                 'joined_at' => Schedule::businessNow(),
                 'joined_by' => $addedBy,
-            ]);
-        } elseif ($assignment->isRemoved()) {
-            $assignment->update([
-                'joined_at' => Schedule::businessNow(),
-                'joined_by' => $addedBy,
-                'removed_at' => null,
-                'removed_by' => null,
             ]);
         }
 
@@ -156,9 +159,19 @@ class ProjectTeam
      * Nothing is booked here. Which schedule rows the crew is written against
      * is the correction's own decision - see HistoricalScheduleCorrection.
      *
+     * A technician can hold several spans on one project - on, off, on again -
+     * and those spans must never overlap, or the same person is on the crew
+     * twice for one day. So the span widened is the nearest one that can be
+     * widened without running into another; failing that, the days are given a
+     * closed span of their own; and if even that would overlap, the correction
+     * is refused rather than written as two claims on the same days.
+     *
      * @param  CarbonImmutable  $from  the first day being recorded
      * @param  CarbonImmutable  $to  the last day being recorded
      * @param  int|null  $actorId  the Super Admin making the correction
+     *
+     * @throws RuntimeException when the days cannot be recorded without
+     *                          overlapping a span the technician already holds
      */
     public function coverHistoricalWork(
         Project $project,
@@ -170,44 +183,143 @@ class ProjectTeam
         $from = $from->startOfDay();
         $to = $to->startOfDay();
 
-        $assignment = ProjectTechnician::query()
+        $memberships = ProjectTechnician::query()
             ->where('project_id', $project->project_id)
             ->where('technician_id', $technicianId)
-            ->first();
+            ->get();
 
-        if ($assignment === null) {
-            return ProjectTechnician::create([
-                'project_id' => $project->project_id,
-                'technician_id' => $technicianId,
-                'joined_at' => $from,
-                'joined_by' => $actorId,
-                // Exclusive, the way every membership close is - see
-                // ProjectTechnician::coveredOn() - so the last recorded day is
-                // still inside the span.
-                'removed_at' => $to->addDay(),
-                'removed_by' => $actorId,
-            ]);
+        foreach ($this->nearestFirst($memberships, $from, $to) as $assignment) {
+            $changes = [];
+
+            if ($assignment->joined_at === null
+                || CarbonImmutable::parse($assignment->joined_at)->gt($from)) {
+                $changes['joined_at'] = $from;
+                $changes['joined_by'] = $actorId;
+            }
+
+            if ($assignment->removed_at !== null
+                && CarbonImmutable::parse($assignment->removed_at)->lte($to)) {
+                $changes['removed_at'] = $to->addDay();
+                $changes['removed_by'] = $actorId;
+            }
+
+            $widened = [
+                $changes['joined_at'] ?? $assignment->joined_at,
+                array_key_exists('removed_at', $changes) ? $changes['removed_at'] : $assignment->removed_at,
+            ];
+
+            if ($this->overlapsAny($widened, $memberships->reject(fn (ProjectTechnician $other): bool => $other->is($assignment)))) {
+                continue;
+            }
+
+            if ($changes !== []) {
+                $assignment->update($changes);
+            }
+
+            return $assignment;
         }
 
-        $changes = [];
+        // Exclusive, the way every membership close is - see
+        // ProjectTechnician::coveredOn() - so the last recorded day is still
+        // inside the span.
+        $span = [$from, $to->addDay()];
 
-        if ($assignment->joined_at === null
-            || CarbonImmutable::parse($assignment->joined_at)->gt($from)) {
-            $changes['joined_at'] = $from;
-            $changes['joined_by'] = $actorId;
+        if ($this->overlapsAny($span, $memberships)) {
+            throw new RuntimeException(
+                'These dates overlap a period this technician already has on the project. Record them in smaller parts.'
+            );
         }
 
-        if ($assignment->removed_at !== null
-            && CarbonImmutable::parse($assignment->removed_at)->lte($to)) {
-            $changes['removed_at'] = $to->addDay();
-            $changes['removed_by'] = $actorId;
+        return ProjectTechnician::create([
+            'project_id' => $project->project_id,
+            'technician_id' => $technicianId,
+            'team_role' => $this->currentRoleOf($technicianId),
+            'joined_at' => $span[0],
+            'joined_by' => $actorId,
+            'removed_at' => $span[1],
+            'removed_by' => $actorId,
+        ]);
+    }
+
+    /**
+     * A technician's spans, the ones closest to the recorded days first.
+     *
+     * A span that already touches or overlaps the days is distance zero; any
+     * other is as far away as the gap between them. Widening the nearest one is
+     * what a single-span technician has always had done to them, so nothing
+     * changes for anybody who has only ever held one.
+     *
+     * @param  Collection<int, ProjectTechnician>  $memberships
+     * @return Collection<int, ProjectTechnician>
+     */
+    private function nearestFirst(Collection $memberships, CarbonImmutable $from, CarbonImmutable $to): Collection
+    {
+        return $memberships
+            ->sortBy(function (ProjectTechnician $membership) use ($from, $to): int {
+                if ($membership->removed_at !== null && CarbonImmutable::parse($membership->removed_at)->startOfDay()->lt($from)) {
+                    return (int) CarbonImmutable::parse($membership->removed_at)->startOfDay()->diffInDays($from);
+                }
+
+                if ($membership->joined_at !== null && CarbonImmutable::parse($membership->joined_at)->startOfDay()->gt($to->addDay())) {
+                    return (int) $to->addDay()->diffInDays(CarbonImmutable::parse($membership->joined_at)->startOfDay());
+                }
+
+                return 0;
+            })
+            ->values();
+    }
+
+    /**
+     * Whether a span, as [joined, removed), shares a day with any of the given
+     * memberships. Null ends run forever in their direction; days are compared
+     * rather than moments, exactly as ProjectTechnician::coveredOn() does.
+     *
+     * A span that opens and closes on the same day covers no day at all - the
+     * technician added by mistake and taken straight back off - so it can
+     * neither overlap anything nor be overlapped.
+     *
+     * @param  array{0: mixed, 1: mixed}  $span
+     * @param  Collection<int, ProjectTechnician>  $memberships
+     */
+    private function overlapsAny(array $span, Collection $memberships): bool
+    {
+        $day = fn ($value): ?string => $value === null ? null : CarbonImmutable::parse($value)->toDateString();
+        $isEmpty = fn (?string $start, ?string $end): bool => $start !== null && $end !== null && $start >= $end;
+
+        [$start, $end] = [$day($span[0]), $day($span[1])];
+
+        if ($isEmpty($start, $end)) {
+            return false;
         }
 
-        if ($changes !== []) {
-            $assignment->update($changes);
-        }
+        return $memberships->contains(function (ProjectTechnician $other) use ($day, $isEmpty, $start, $end): bool {
+            $otherStart = $day($other->joined_at);
+            $otherEnd = $day($other->removed_at);
 
-        return $assignment;
+            if ($isEmpty($otherStart, $otherEnd)) {
+                return false;
+            }
+
+            $startsBeforeOtherEnds = $otherEnd === null || $start === null || $start < $otherEnd;
+            $otherStartsBeforeEnd = $end === null || $otherStart === null || $otherStart < $end;
+
+            return $startsBeforeOtherEnds && $otherStartsBeforeEnd;
+        });
+    }
+
+    /**
+     * The role a technician's account holds right now, as a membership records
+     * it - or null for an account that no longer holds a technician role.
+     */
+    private function currentRoleOf(int $technicianId): ?string
+    {
+        $role = Technician::query()
+            ->with('account:id,role')
+            ->find($technicianId)
+            ?->account
+            ?->role;
+
+        return in_array($role, User::TECHNICIAN_ROLES, true) ? $role : null;
     }
 
     /**
@@ -237,6 +349,22 @@ class ProjectTeam
      * Completed work keeps its technician either way: it is a record of who
      * did it, not a statement about who is available now.
      *
+     * Tasks are released by the same line the span draws. The removal closes
+     * the span at today, so work due before today fell entirely inside the
+     * days this technician was on the team - it was theirs, and it stays
+     * theirs, finished or not. Releasing it used to erase them from the record
+     * of work dated to weeks they genuinely held: the Tasks section of the
+     * technician report stopped listing them against it. An overdue task kept
+     * this way is still open and still Overdue on the board, and the lead and
+     * the administrators go on being reminded of it - see SendTaskReminders.
+     *
+     * What IS released is the open work that reaches today or later, or that
+     * has no due date to place it: nobody is on the team to do it now.
+     *
+     * Closed work is never touched, cancelled included. Only OPEN_STATUSES are
+     * released - releasing a cancelled task used to set it back to
+     * Unassigned, quietly reopening work somebody had called off.
+     *
      * @param  int|null  $removedBy  the account making the removal, for the
      *                               audit trail. Null where no user is behind
      *                               it - a console command, a cascade.
@@ -248,10 +376,15 @@ class ProjectTeam
     {
         $this->releaseUnfinishedLinks($project, $assignment);
 
+        $removedAt = Schedule::businessNow();
+
         $released = Task::query()
             ->where('project_id', $project->project_id)
             ->where('technician_id', $assignment->technician_id)
-            ->where('status', '!=', 'completed')
+            ->whereIn('status', Task::OPEN_STATUSES)
+            ->where(fn ($unfinished) => $unfinished
+                ->whereNull('due_date')
+                ->orWhereDate('due_date', '>=', $removedAt->toDateString()))
             ->get();
 
         Task::query()
@@ -262,7 +395,7 @@ class ProjectTeam
             ]);
 
         $assignment->update([
-            'removed_at' => Schedule::businessNow(),
+            'removed_at' => $removedAt,
             'removed_by' => $removedBy,
         ]);
 

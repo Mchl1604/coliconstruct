@@ -9,6 +9,8 @@ use App\Models\ScheduleTechnician;
 use App\Models\Task;
 use App\Models\Technician;
 use App\Models\User;
+use App\Services\ProjectTeam;
+use App\Services\TechnicianAvailabilityService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -441,7 +443,7 @@ class ProjectTeamScheduleLinkTest extends TestCase
             'technicians' => [],
         ])->assertSessionHas('success');
 
-        $busy = app(\App\Services\TechnicianAvailabilityService::class)
+        $busy = app(TechnicianAvailabilityService::class)
             ->unavailableDatesByTechnician(
                 [$leaving->technician_id],
                 [[
@@ -453,7 +455,7 @@ class ProjectTeamScheduleLinkTest extends TestCase
         $this->assertSame([], $busy[$leaving->technician_id] ?? []);
 
         // The lead, who was not removed, is still held by the same range.
-        $leadBusy = app(\App\Services\TechnicianAvailabilityService::class)
+        $leadBusy = app(TechnicianAvailabilityService::class)
             ->unavailableDatesByTechnician(
                 [$lead->technician_id],
                 [[
@@ -463,6 +465,218 @@ class ProjectTeamScheduleLinkTest extends TestCase
             );
 
         $this->assertNotEmpty($leadBusy[$lead->technician_id] ?? []);
+    }
+
+    /**
+     * Putting somebody back on a project must not rewrite the first time they
+     * were on it.
+     *
+     * attach() used to reopen the closed membership and move its joined_at up
+     * to today, which left the days they had already worked outside every
+     * span - so the day panel, the reports and the exports all dropped them
+     * from weeks they genuinely held.
+     */
+    public function test_re_adding_a_removed_technician_keeps_the_days_they_worked_before(): void
+    {
+        $project = $this->createProject();
+        $this->addRange($project, $this->day(-10), $this->day(10));
+
+        $lead = $this->createTechnician('Lead Person', 'lead_technician');
+        $returning = $this->createTechnician('Returning Tech');
+
+        $this->put(route('super-admin.projects.team.update', $project->project_id), [
+            'lead_tech' => $lead->technician_id,
+            'technicians' => [$returning->technician_id],
+        ])->assertSessionHas('success');
+
+        $this->joinedOn($project, [$lead, $returning], $this->day(-12));
+
+        $this->put(route('super-admin.projects.team.update', $project->project_id), [
+            'lead_tech' => $lead->technician_id,
+            'technicians' => [],
+        ])->assertSessionHas('success');
+
+        $this->put(route('super-admin.projects.team.update', $project->project_id), [
+            'lead_tech' => $lead->technician_id,
+            'technicians' => [$returning->technician_id],
+        ])->assertSessionHas('success');
+
+        $spans = ProjectTechnician::query()
+            ->where('project_id', $project->project_id)
+            ->where('technician_id', $returning->technician_id)
+            ->orderBy('project_technician_id')
+            ->get();
+
+        // Two spans: the first closed exactly as it was, the second open.
+        $this->assertCount(2, $spans);
+        $this->assertSame($this->day(-12), $spans[0]->joined_at->toDateString());
+        $this->assertNotNull($spans[0]->removed_at);
+        $this->assertNull($spans[1]->removed_at);
+
+        $project->refresh();
+
+        $this->assertContains(
+            $returning->technician_id,
+            $project->crewOn($this->day(-5))->pluck('technician_id')->all()
+        );
+        $this->assertContains(
+            $returning->technician_id,
+            $project->crewOn($this->day(5))->pluck('technician_id')->all()
+        );
+
+        // One person on the crew per day, never two copies of them.
+        $this->assertCount(
+            1,
+            $project->crewOn($this->day(5))->where('technician_id', $returning->technician_id)
+        );
+    }
+
+    public function test_the_team_history_lists_each_span_of_a_returning_technician(): void
+    {
+        $project = $this->createProject();
+
+        $lead = $this->createTechnician('Lead Person', 'lead_technician');
+        $returning = $this->createTechnician('Returning Tech');
+
+        foreach ([[$returning->technician_id], [], [$returning->technician_id]] as $technicians) {
+            $this->put(route('super-admin.projects.team.update', $project->project_id), [
+                'lead_tech' => $lead->technician_id,
+                'technicians' => $technicians,
+            ])->assertSessionHas('success');
+        }
+
+        $memberships = collect(
+            $this->getJson(route('super-admin.projects.history', [
+                'id' => $project->project_id,
+                'section' => 'team',
+            ]))->assertOk()->json('memberships')
+        )->where('name', 'Returning Tech');
+
+        $this->assertCount(2, $memberships);
+        $this->assertSame([false, true], $memberships->pluck('is_current')->sort()->values()->all());
+    }
+
+    /**
+     * A historical correction for a technician who has been on and off the
+     * project widens the span nearest the recorded days - and never one that
+     * would then run into the other.
+     */
+    public function test_a_correction_widens_the_nearest_span_without_overlapping_another(): void
+    {
+        $project = $this->createProject();
+        $technician = $this->createTechnician('Two Spans');
+
+        $first = ProjectTechnician::create([
+            'project_id' => $project->project_id,
+            'technician_id' => $technician->technician_id,
+            'joined_at' => $this->day(-20),
+            'removed_at' => $this->day(-10),
+        ]);
+
+        $second = ProjectTechnician::create([
+            'project_id' => $project->project_id,
+            'technician_id' => $technician->technician_id,
+            'joined_at' => $this->day(-5),
+        ]);
+
+        $widened = app(ProjectTeam::class)->coverHistoricalWork(
+            $project,
+            (int) $technician->technician_id,
+            CarbonImmutable::parse($this->day(-8)),
+            CarbonImmutable::parse($this->day(-7))
+        );
+
+        $this->assertTrue($widened->is($second));
+        $this->assertSame($this->day(-8), $second->fresh()->joined_at->toDateString());
+        $this->assertSame($this->day(-10), $first->fresh()->removed_at->toDateString());
+        $this->assertSame(2, ProjectTechnician::where('technician_id', $technician->technician_id)->count());
+    }
+
+    public function test_a_correction_that_would_overlap_two_spans_is_refused(): void
+    {
+        $project = $this->createProject();
+        $technician = $this->createTechnician('Two Spans');
+
+        ProjectTechnician::create([
+            'project_id' => $project->project_id,
+            'technician_id' => $technician->technician_id,
+            'joined_at' => $this->day(-20),
+            'removed_at' => $this->day(-10),
+        ]);
+
+        ProjectTechnician::create([
+            'project_id' => $project->project_id,
+            'technician_id' => $technician->technician_id,
+            'joined_at' => $this->day(-5),
+        ]);
+
+        $this->expectException(\RuntimeException::class);
+
+        app(ProjectTeam::class)->coverHistoricalWork(
+            $project,
+            (int) $technician->technician_id,
+            CarbonImmutable::parse($this->day(-15)),
+            CarbonImmutable::parse($this->day(-3))
+        );
+    }
+
+    /**
+     * A removal releases the work nobody is left to do, and nothing that was
+     * already theirs.
+     *
+     * Work due before the removal fell inside the days the technician held, so
+     * it stays against their name whether or not it was finished. Work due
+     * today or later, or with no date at all, is released. Closed work -
+     * cancelled as well as completed - is never touched: releasing a cancelled
+     * task used to reopen it as Unassigned.
+     */
+    public function test_removal_keeps_work_dated_before_it_and_releases_the_rest(): void
+    {
+        $project = $this->createProject();
+
+        $lead = $this->createTechnician('Lead Person', 'lead_technician');
+        $leaving = $this->createTechnician('Leaving Tech');
+
+        $this->put(route('super-admin.projects.team.update', $project->project_id), [
+            'lead_tech' => $lead->technician_id,
+            'technicians' => [$leaving->technician_id],
+        ])->assertSessionHas('success');
+
+        // Business dates, the same clock the removal is measured against.
+        $businessDay = fn (int $offset): string => Schedule::businessToday()->addDays($offset)->toDateString();
+
+        $task = fn (string $title, string $status, ?string $start, ?string $due): Task => Task::create([
+            'project_id' => $project->project_id,
+            'technician_id' => $leaving->technician_id,
+            'task_title' => $title,
+            'task_description' => 'Work',
+            'status' => $status,
+            'start_date' => $start,
+            'due_date' => $due,
+        ]);
+
+        $overdue = $task('Overdue', 'pending', $businessDay(-4), $businessDay(-2));
+        $dueToday = $task('Due today', 'ongoing', $businessDay(-1), $businessDay(0));
+        $spanning = $task('Spanning', 'pending', $businessDay(-3), $businessDay(3));
+        $future = $task('Future', 'pending', $businessDay(2), $businessDay(4));
+        $undated = $task('Undated', 'pending', null, null);
+        $cancelled = $task('Cancelled', 'cancelled', $businessDay(2), $businessDay(4));
+
+        $this->put(route('super-admin.projects.team.update', $project->project_id), [
+            'lead_tech' => $lead->technician_id,
+            'technicians' => [],
+        ])->assertSessionHas('success');
+
+        $this->assertSame($leaving->technician_id, $overdue->fresh()->technician_id);
+        $this->assertSame('pending', $overdue->fresh()->status);
+
+        foreach ([$dueToday, $spanning, $future, $undated] as $released) {
+            $this->assertNull($released->fresh()->technician_id, $released->task_title.' should be released');
+            $this->assertSame('unassigned', $released->fresh()->status);
+        }
+
+        $this->assertSame($leaving->technician_id, $cancelled->fresh()->technician_id);
+        $this->assertSame('cancelled', $cancelled->fresh()->status);
     }
 
     public function test_a_schedule_added_later_books_the_whole_current_team(): void

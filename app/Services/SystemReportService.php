@@ -1251,7 +1251,9 @@ class SystemReportService
                     // formatDate() prints an em dash for null, which is exactly
                     // what an assignment nobody has ended should show.
                     'removed_on' => $this->formatDate($assignment->removed_at),
-                    'schedules' => $schedules[$technicianId.'|'.$project->project_id] ?? [],
+                    // This span's own dates. Somebody on a project twice holds
+                    // two rows, and each must carry only the days of its span.
+                    'schedules' => $schedules[(int) $assignment->project_technician_id] ?? [],
                     // The project's own state, kept because the table already
                     // carried it and because it is the one thing here that is
                     // NOT the technician's status.
@@ -1268,12 +1270,12 @@ class SystemReportService
 
     /**
      * The dates each technician actually held, as printable ranges, keyed by
-     * technician and project.
+     * the membership span that held them.
      *
      * @param  array{start: CarbonImmutable, end: CarbonImmutable}  $period
      * @param  Collection<int, Project>  $projects
      * @param  Collection<int, array{name: string, position: string}>  $directory
-     * @return Collection<string, array<int, string>>
+     * @return Collection<int, array<int, string>>
      */
     private function assignedDateLabels(array $period, Collection $projects, Collection $directory): Collection
     {
@@ -1294,7 +1296,7 @@ class SystemReportService
             ->filter(fn (array $run): bool => collect($run['dates'])->contains(
                 fn (string $date): bool => $date >= $from && $date <= $to
             ))
-            ->groupBy(fn (array $run): string => $run['technician_id'].'|'.$run['project_id'])
+            ->groupBy(fn (array $run): int => $run['project_technician_id'])
             // Chronological, and every run - a technician taken off in August
             // and put back on in September holds two, and joining them would
             // claim the weeks between.

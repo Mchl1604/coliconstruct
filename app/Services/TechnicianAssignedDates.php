@@ -50,7 +50,8 @@ use Illuminate\Support\Collection;
  * What comes back is runs of consecutive dates rather than loose days, because
  * a report listing thirty single dates is unreadable. The grouping is the last
  * step and never the first: a run is broken by a change of technician, of
- * project, of schedule row, or of which side of today the date falls on, and a
+ * project, of membership span, of schedule row, or of which side of today the
+ * date falls on, and a
  * missing date breaks it too - so Aug 24-26 and Aug 28-30 stay two runs and
  * never become Aug 24-30.
  */
@@ -89,6 +90,7 @@ class TechnicianAssignedDates
      * @return Collection<int, array{
      *     technician_id: int,
      *     project_id: int,
+     *     project_technician_id: int,
      *     schedule_id: int,
      *     is_past: bool,
      *     dates: array<int, string>,
@@ -106,8 +108,10 @@ class TechnicianAssignedDates
         $wanted = $technicianIds->map(fn ($id): int => (int) $id)->flip();
         $todayString = $today->toDateString();
 
-        // technician|project|schedule|side => the dates it holds. Keyed by all
-        // four because those are exactly the things a run may not span.
+        // technician|project|membership|schedule|side => the dates it holds.
+        // Keyed by all five because those are exactly the things a run may not
+        // span. The membership is one of them because a technician can be on a
+        // project more than once, and each span is its own assignment.
         $buckets = [];
         $schedules = [];
 
@@ -130,7 +134,7 @@ class TechnicianAssignedDates
                         // already worked.
                         $side = $splitAtToday && $date >= $todayString ? 'future' : 'past';
 
-                        $buckets[$technicianId.'|'.((int) $project->project_id).'|'.$scheduleId.'|'.$side][] = $date;
+                        $buckets[$technicianId.'|'.((int) $project->project_id).'|'.((int) $assignment->project_technician_id).'|'.$scheduleId.'|'.$side][] = $date;
                     }
                 }
             }
@@ -189,7 +193,7 @@ class TechnicianAssignedDates
         $runs = collect();
 
         foreach ($buckets as $key => $dates) {
-            [$technicianId, $projectId, $scheduleId, $side] = explode('|', $key);
+            [$technicianId, $projectId, $membershipId, $scheduleId, $side] = explode('|', $key);
 
             $dates = array_values(array_unique($dates));
             sort($dates);
@@ -198,7 +202,7 @@ class TechnicianAssignedDates
 
             foreach ($dates as $date) {
                 if ($current !== [] && ! $this->followsOn(end($current), $date)) {
-                    $runs->push($this->run($technicianId, $projectId, $scheduleId, $side, $current, $schedules, $today, $splitAtToday));
+                    $runs->push($this->run($technicianId, $projectId, $membershipId, $scheduleId, $side, $current, $schedules, $today, $splitAtToday));
                     $current = [];
                 }
 
@@ -206,7 +210,7 @@ class TechnicianAssignedDates
             }
 
             if ($current !== []) {
-                $runs->push($this->run($technicianId, $projectId, $scheduleId, $side, $current, $schedules, $today, $splitAtToday));
+                $runs->push($this->run($technicianId, $projectId, $membershipId, $scheduleId, $side, $current, $schedules, $today, $splitAtToday));
             }
         }
 
@@ -231,6 +235,7 @@ class TechnicianAssignedDates
     private function run(
         string $technicianId,
         string $projectId,
+        string $membershipId,
         string $scheduleId,
         string $side,
         array $dates,
@@ -244,6 +249,7 @@ class TechnicianAssignedDates
         return [
             'technician_id' => (int) $technicianId,
             'project_id' => (int) $projectId,
+            'project_technician_id' => (int) $membershipId,
             'schedule_id' => (int) $scheduleId,
             // With the cut, the bucket already settled it. Without it, a run
             // is behind us only when the last of its days is.

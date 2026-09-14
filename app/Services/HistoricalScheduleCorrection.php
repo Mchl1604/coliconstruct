@@ -877,17 +877,31 @@ class HistoricalScheduleCorrection
      */
     private function whyNotAMember(Project $project, int $technicianId, array $dates): string
     {
-        $membership = $project->teamHistory
-            ->first(fn (ProjectTechnician $assignment): bool => (int) $assignment->technician_id === $technicianId);
+        $memberships = $project->teamHistory
+            ->filter(fn (ProjectTechnician $assignment): bool => (int) $assignment->technician_id === $technicianId)
+            ->sortBy(fn (ProjectTechnician $assignment): int => $assignment->joined_at?->timestamp ?? 0)
+            ->values();
 
-        if (! $membership) {
+        if ($memberships->isEmpty()) {
             return 'Not on this project';
         }
 
-        if ($membership->isRemoved()
-            && CarbonImmutable::parse($membership->removed_at)->lte(CarbonImmutable::parse($dates[0]))) {
-            return 'Left this project on '.BusinessTime::format($membership->removed_at);
+        $first = CarbonImmutable::parse($dates[0]);
+
+        // Somebody can be on and off a project more than once. The span that
+        // speaks to these dates is the last one that began by the first of
+        // them - if that one had already closed, they had left.
+        $before = $memberships
+            ->filter(fn (ProjectTechnician $assignment): bool => $assignment->joined_at === null
+                || CarbonImmutable::parse($assignment->joined_at)->startOfDay()->lte($first))
+            ->last();
+
+        if ($before?->isRemoved()
+            && CarbonImmutable::parse($before->removed_at)->lte($first)) {
+            return 'Left this project on '.BusinessTime::format($before->removed_at);
         }
+
+        $membership = $before ?? $memberships->first();
 
         return $membership->joined_at
             ? 'Joined this project on '.BusinessTime::format($membership->joined_at)

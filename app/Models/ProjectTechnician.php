@@ -26,6 +26,14 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * spans, which is what every screen in the application means by "the team".
  * Project::teamHistory() is every span there has ever been, and only the
  * handful of places that deliberately look backwards use it.
+ *
+ * One row is one continuous span, not one person. Somebody taken off a project
+ * and later put back holds two rows - the closed one keeps the days they
+ * worked the first time, and the new one opens at the day they returned. The
+ * spans of one technician on one project never overlap; ProjectTeam keeps it
+ * that way, and every reader relies on it.
+ *
+ * team_role is the role the span was opened with - see heldLeadRole().
  */
 class ProjectTechnician extends Model
 {
@@ -38,6 +46,7 @@ class ProjectTechnician extends Model
     protected $fillable = [
         'project_id',
         'technician_id',
+        'team_role',
         'joined_at',
         'joined_by',
         'removed_at',
@@ -87,9 +96,9 @@ class ProjectTechnician extends Model
      *
      * The boundaries are deliberately lopsided. joined_at is inclusive: the
      * day you arrive is a day you were on the team. removed_at is exclusive:
-     * the day you are taken off is a day you were still there for, so the span
-     * has to reach past it - a removal recorded at noon does not unmake the
-     * morning.
+     * it is the first day you are NOT on the team, so a removal recorded on
+     * Aug 21 leaves Aug 20 as the last day of the span. Days are compared, not
+     * moments - a removal recorded at noon takes the whole of that day.
      *
      * A row with no joined_at - which the backfill should have left none of -
      * counts as having always been there, because the alternative is dropping
@@ -111,6 +120,29 @@ class ProjectTechnician extends Model
     public function isRemoved(): bool
     {
         return $this->removed_at !== null;
+    }
+
+    /**
+     * Whether this span was held as the project's Lead Technician.
+     *
+     * Read from team_role, which is written when the span opens, so the answer
+     * is the role the person had on this project rather than the one their
+     * account has now. A lead demoted after the job was finished still led it.
+     *
+     * A row with nothing recorded falls back to the account - the same answer
+     * every membership gave before the column existed, and still the right one
+     * for a row somebody wrote without it.
+     *
+     * This is the question a RECORD asks. The live team still asks the account
+     * - see Project::isLeadMember(), which decides which of the two applies.
+     */
+    public function heldLeadRole(): bool
+    {
+        if ($this->team_role !== null) {
+            return $this->team_role === User::ROLE_LEAD_TECHNICIAN;
+        }
+
+        return (bool) $this->technician?->isLead();
     }
 
     /**

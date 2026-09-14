@@ -1374,6 +1374,21 @@ class NotificationService
         );
     }
 
+    /**
+     * Whether the technician holding a task is on its project's team now.
+     */
+    private function stillOnTeam(Task $task): bool
+    {
+        if (! $task->project || $task->technician_id === null) {
+            return false;
+        }
+
+        $task->project->loadMissing('projectTechnicians');
+
+        return $task->project->projectTechnicians
+            ->contains(fn ($assignment): bool => (int) $assignment->technician_id === (int) $task->technician_id);
+    }
+
     private function remindAboutTask(
         Task $task,
         string $title,
@@ -1382,7 +1397,14 @@ class NotificationService
     ): void {
         $audience = collect();
 
-        if ($owner = $this->taskOwner($task)) {
+        // The holder is reminded only while they are still on the team. A
+        // technician taken off the project keeps the work that was dated to
+        // their time on it - see ProjectTeam::detach() - but can no longer open
+        // the project to do anything about it, so the reminder goes to the lead
+        // and, for overdue work, the administrators who can reassign it.
+        $owner = $this->taskOwner($task);
+
+        if ($owner && $this->stillOnTeam($task)) {
             $audience->push($owner);
         }
 

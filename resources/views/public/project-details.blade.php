@@ -322,7 +322,7 @@
                                                 <span class="text-truncate">{{ $technician->name }}</span>
                                             </div>
 
-                                            @if (optional($technician->account)->role === 'lead_technician')
+                                            @if ($project->isLeadMember($projectTechnician))
                                                 <span class="badge client-lead-badge flex-shrink-0">Lead Technician</span>
                                             @endif
                                         </li>

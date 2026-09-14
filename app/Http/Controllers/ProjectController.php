@@ -972,7 +972,10 @@ class ProjectController extends Controller
             ])
             ->map(fn (ProjectTechnician $assignment): array => [
                 'name' => $assignment->technician->name,
-                'is_lead' => optional($assignment->technician->account)->role === 'lead_technician',
+                // The role held on this project, not the account's role today:
+                // a history that re-labels people when their job title changes
+                // is not a history. See ProjectTechnician::heldLeadRole().
+                'is_lead' => $project->isLeadMember($assignment),
                 'joined_on' => $assignment->joined_at
                     ? CarbonImmutable::parse($assignment->joined_at)->format(BusinessTime::DATE)
                     : null,
@@ -1253,9 +1256,7 @@ class ProjectController extends Controller
 
         ])->findOrFail($id);
         $sortedProjectTechnicians = $project->projectTechnicians
-            ->sortByDesc(function ($projectTechnician) {
-                return optional($projectTechnician->technician?->account)->role === 'lead_technician' ? 1 : 0;
-            })
+            ->sortByDesc(fn (ProjectTechnician $projectTechnician): int => $project->isLeadMember($projectTechnician) ? 1 : 0)
             ->values();
 
         $project->setRelation('projectTechnicians', $sortedProjectTechnicians);
@@ -1265,11 +1266,7 @@ class ProjectController extends Controller
         // types come up as suggestions.
         $teamCandidates = app(ProjectTeamCandidates::class)->forProject($project);
 
-        $currentLeadTechnicianId = optional(
-            $project->projectTechnicians->first(function ($projectTechnician) {
-                return optional($projectTechnician->technician?->account)->role === 'lead_technician';
-            })
-        )->technician_id;
+        $currentLeadTechnicianId = $project->leadAssignment()?->technician_id;
 
         $currentTeamTechnicianIds = $project->projectTechnicians
             ->pluck('technician_id')

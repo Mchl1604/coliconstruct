@@ -248,12 +248,7 @@ class ClientProjects
      */
     public function leadTechnicianName(Project $project): ?string
     {
-        $project->loadMissing('projectTechnicians.technician.account');
-
-        $lead = $project->projectTechnicians
-            ->first(fn ($projectTechnician): bool => $projectTechnician->technician?->account?->role === User::ROLE_LEAD_TECHNICIAN);
-
-        return $lead?->technician?->name;
+        return $project->leadAssignment()?->technician?->name;
     }
 
     /**

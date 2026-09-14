@@ -1507,7 +1507,10 @@
                                             <div class="d-flex flex-wrap align-items-center gap-2">
                                                 <span class="fw-semibold">{{ $technician->name }}</span>
 
-                                                @if (optional($technician->account)->role === 'lead_technician')
+                                                {{-- Asked of the project, so a finished job keeps
+                                                     naming the lead who ran it after their job
+                                                     title changes. See Project::isLeadMember(). --}}
+                                                @if ($project->isLeadMember($projectTechnician))
                                                     <span class="badge project-lead-badge">Lead Technician</span>
                                                 @else
                                                     <span class="badge bg-secondary">Technician</span>
