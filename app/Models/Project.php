@@ -833,6 +833,10 @@ class Project extends Model
         $this->loadMissing('teamHistory');
 
         $day = fn (?string $date): string => $date ? CarbonImmutable::parse($date)->format(BusinessTime::DATE) : '';
+        // One day off, or one day covered, is that day - not "Sep 18 - Sep 18".
+        $days = fn (?string $first, ?string $last): string => $day($first) === $day($last)
+            ? $day($first)
+            : $day($first).' - '.$day($last);
 
         $siblings = $this->teamHistory->filter(fn (ProjectTechnician $other): bool => ! $other->is($span)
             && (int) $other->technician_id === (int) $span->technician_id
@@ -845,7 +849,7 @@ class Project extends Model
                 ->first();
 
             return $return
-                ? 'Off '.$day($span->endDate()).' - '.$day(CarbonImmutable::parse($return->startDate())->subDay()->toDateString())
+                ? 'Off '.$days($span->endDate(), CarbonImmutable::parse($return->startDate())->subDay()->toDateString())
                 : 'Leaving '.$day($span->endDate());
         }
 
@@ -855,7 +859,7 @@ class Project extends Model
             }
 
             return $this->isLeadCover($span)
-                ? 'Covers '.$day($span->startDate()).' - '.$day($span->lastDay()?->toDateString())
+                ? 'Covers '.$days($span->startDate(), $span->lastDay()?->toDateString())
                 : 'Starts '.$day($span->startDate());
         }
 
@@ -922,6 +926,13 @@ class Project extends Model
 
         foreach ($spans as $span) {
             if ($span->isLeaving() && ($label = $this->scheduledChangeLabel($span))) {
+                // Days off with no working day in them change nothing for
+                // anybody - there was no work to be off from - so they are not
+                // listed, and neither is the return that ends them.
+                if (str_starts_with($label, 'Off') && ! $this->worksBetween(...$this->daysOffAround($span, $spans))) {
+                    continue;
+                }
+
                 $items[] = $item($label, $span, str_starts_with($label, 'Off') ? 'Cancel days off' : 'Cancel removal');
 
                 continue;
@@ -932,21 +943,108 @@ class Project extends Model
             }
 
             $label = (string) $this->scheduledChangeLabel($span);
+            $word = strtok($label, ' ');
 
-            $items[] = $item($label, $span, match (strtok($label, ' ')) {
-                'Returns' => 'Cancel return',
-                'Covers' => 'Cancel cover',
-                default => 'Cancel start',
-            });
+            $idle = match ($word) {
+                'Returns' => ! $this->worksBetween(...$this->daysOffBefore($span, $spans)),
+                'Covers' => ! $this->worksBetween($span->startDate(), $span->lastDay()?->toDateString()),
+                default => false,
+            };
+
+            if (! $idle) {
+                $items[] = $item($label, $span, match ($word) {
+                    'Returns' => 'Cancel return',
+                    'Covers' => 'Cancel cover',
+                    default => 'Cancel start',
+                });
+            }
 
             // The removal at the end of it, on its own: they still come, and
-            // stay on if it is cancelled.
+            // stay on if it is cancelled. With a later return of theirs it is
+            // days off rather than leaving - and, like any days off, left out
+            // when no working day falls in them.
             if ($endLabel = $this->scheduledEndLabel($span)) {
-                $items[] = $item($endLabel, $span, 'Cancel removal', 'removal');
+                [$offFrom, $offTo] = $this->daysOffAround($span, $spans);
+
+                if ($offTo === null) {
+                    $items[] = $item($endLabel, $span, 'Cancel removal', 'removal');
+                } elseif ($this->worksBetween($offFrom, $offTo)) {
+                    $first = CarbonImmutable::parse($offFrom)->format(BusinessTime::DATE);
+                    $last = CarbonImmutable::parse($offTo)->format(BusinessTime::DATE);
+
+                    $items[] = $item('Off '.($first === $last ? $first : $first.' - '.$last), $span, 'Cancel days off', 'removal');
+                }
             }
         }
 
         return $items;
+    }
+
+    /**
+     * The days off a closing span begins: from the day it ends to the day
+     * before the same technician's next span, as [first, last].
+     *
+     * @param  Collection<int, ProjectTechnician>  $theirs
+     * @return array{0: ?string, 1: ?string}
+     */
+    private function daysOffAround(ProjectTechnician $span, Collection $theirs): array
+    {
+        $return = $theirs
+            ->filter(fn (ProjectTechnician $other): bool => ! $other->is($span)
+                && ! $other->isEmptySpan()
+                && $other->startDate() !== null
+                && $other->startDate() > (string) $span->endDate())
+            ->sortBy(fn (ProjectTechnician $other): string => (string) $other->startDate())
+            ->first();
+
+        return [
+            $span->endDate(),
+            $return ? CarbonImmutable::parse($return->startDate())->subDay()->toDateString() : null,
+        ];
+    }
+
+    /**
+     * The days off a return ends: from the day the same technician's previous
+     * span closed to the day before this one starts, as [first, last].
+     *
+     * @param  Collection<int, ProjectTechnician>  $theirs
+     * @return array{0: ?string, 1: ?string}
+     */
+    private function daysOffBefore(ProjectTechnician $span, Collection $theirs): array
+    {
+        $previous = $theirs
+            ->filter(fn (ProjectTechnician $other): bool => ! $other->is($span)
+                && ! $other->isEmptySpan()
+                && $other->endDate() !== null
+                && $other->endDate() <= (string) $span->startDate())
+            ->sortByDesc(fn (ProjectTechnician $other): string => (string) $other->endDate())
+            ->first();
+
+        return [
+            $previous?->endDate(),
+            CarbonImmutable::parse($span->startDate())->subDay()->toDateString(),
+        ];
+    }
+
+    /**
+     * Whether any day from $first to $last is a working day on this project's
+     * schedule. A range it cannot bound is assumed to hold work, so nothing is
+     * hidden on a guess.
+     */
+    private function worksBetween(?string $first, ?string $last): bool
+    {
+        if ($first === null || $last === null) {
+            return true;
+        }
+
+        if ($first > $last) {
+            return false;
+        }
+
+        $this->loadMissing('schedules');
+
+        return $this->schedules->contains(fn (Schedule $schedule): bool => $schedule->startsOn()->toDateString() <= $last
+            && $schedule->endsOn()->toDateString() >= $first);
     }
 
     /**
@@ -1011,12 +1109,16 @@ class Project extends Model
             && ! $span->isEmptySpan());
 
         $today = Schedule::businessToday();
+        // A cancelled project keeps its schedule for the record, but nobody is
+        // booked past the day it was called off - the calendars stop there too.
+        $cutoff = $this->calendarCutoff();
         $days = [];
 
         foreach ($this->schedules as $schedule) {
             foreach ($spans as $span) {
                 if ($schedule->isPartialDay()) {
-                    if ($span->coveredOn($schedule->startsOn()->toDateString())) {
+                    if ($span->coveredOn($schedule->startsOn()->toDateString())
+                        && ($cutoff === null || $schedule->startsOn()->lte($cutoff))) {
                         $days[] = [
                             'start' => $schedule->startsOn()->toDateString(),
                             'end' => $schedule->startsOn()->toDateString(),
@@ -1038,6 +1140,10 @@ class Project extends Model
 
                 if ($span->lastDay() !== null && $span->lastDay()->lt($last)) {
                     $last = $span->lastDay();
+                }
+
+                if ($cutoff !== null && $cutoff->lt($last)) {
+                    $last = $cutoff;
                 }
 
                 if ($first->gt($last)) {

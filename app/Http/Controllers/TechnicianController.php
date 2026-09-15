@@ -397,15 +397,12 @@ class TechnicianController extends Controller
             'removed_on' => $former?->endDate()
                 ? CarbonImmutable::parse($former->endDate())->format(BusinessTime::DATE)
                 : null,
-            // Whatever is already scheduled for them here, in the words the
-            // project's team card uses - "Off Sep 22 - Sep 23", "Leaving
-            // Sep 30" - so the panel can say so.
-            'scheduled' => $spans
-                ->flatMap(fn (ProjectTechnician $span): array => [
-                    $project->scheduledChangeLabel($span),
-                    $project->scheduledEndLabel($span),
-                ])
-                ->filter()
+            // Whatever is already scheduled for them here, in the words their
+            // schedule dialog uses - "Days off Sep 22 - Sep 23", "Leaving
+            // Sep 30" - so the panel can say so. Days off on no working day are
+            // left out there, and so here.
+            'scheduled' => collect($project->scheduledChangesFor((int) $technician->technician_id))
+                ->map(fn (array $change): string => $change['title'].' '.$change['when'])
                 ->values()
                 ->all(),
             'mode' => $mode,

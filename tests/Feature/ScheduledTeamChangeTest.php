@@ -846,6 +846,112 @@ class ScheduledTeamChangeTest extends TestCase
             ->exists());
     }
 
+    public function test_cancelling_a_project_keeps_a_technician_whose_days_off_are_under_way(): void
+    {
+        [$project, $lead, $ana] = $this->runningProject();
+
+        $this->daysOff($project, $ana, $this->day(0), $this->day(2))->assertOk();
+
+        $this->post(route('super-admin.projects.cancel', $project->project_id), [
+            'cancellation_date' => $this->day(0),
+            'cancellation_reason' => 'Client withdrew',
+        ]);
+
+        $this->assertSame('cancelled', $project->fresh()->status);
+
+        $spans = $this->spansOf($project, $ana);
+
+        // The days already off stay on the record; the return is brought
+        // forward to the closing, and nothing is left to come.
+        $this->assertCount(2, $spans);
+        $this->assertNull($spans->last()->removed_at);
+        $this->assertSame($this->day(0), $spans->last()->startDate());
+        $this->assertTrue($project->fresh()->rosterTechnicians->contains('technician_id', $ana->technician_id));
+        $this->assertSame([], $project->fresh()->scheduledChangesFor((int) $ana->technician_id));
+    }
+
+    public function test_completing_a_project_keeps_a_technician_whose_days_off_are_under_way(): void
+    {
+        [$project, $lead, $ana] = $this->runningProject();
+
+        $this->daysOff($project, $ana, $this->day(0), $this->day(2))->assertOk();
+
+        $this->post(route('super-admin.projects.complete', $project->project_id), [
+            'completion_date' => $this->day(0),
+            'completion_summary' => 'Everything on site is finished.',
+            'completion_override_reason' => 'QA: closing with phases outstanding.',
+        ])->assertRedirect();
+
+        $project = $project->fresh();
+
+        $this->assertTrue($project->isWorkFinished());
+        $this->assertTrue($project->rosterTechnicians->contains('technician_id', $ana->technician_id));
+        $this->assertSame([], $project->scheduledChangesFor((int) $ana->technician_id));
+    }
+
+    public function test_closing_during_a_leads_days_off_leaves_one_lead(): void
+    {
+        [$project, $john] = $this->runningProject();
+        $mary = $this->technician('Mary Santos', 'lead_technician');
+
+        $this->daysOff($project, $john, $this->day(0), $this->day(2), $mary)->assertOk();
+
+        $this->post(route('super-admin.projects.cancel', $project->project_id), [
+            'cancellation_date' => $this->day(0),
+            'cancellation_reason' => 'Client withdrew',
+        ]);
+
+        $project = $project->fresh();
+
+        $leads = $project->rosterTechnicians->filter(fn (ProjectTechnician $span): bool => $span->heldLeadRole());
+
+        $this->assertSame([$john->technician_id], $leads->pluck('technician_id')->map(fn ($id): int => (int) $id)->values()->all());
+        $this->assertSame([], $project->scheduledChangesFor((int) $john->technician_id));
+        $this->assertSame([], $project->scheduledChangesFor((int) $mary->technician_id));
+    }
+
+    public function test_days_off_on_no_working_day_are_not_listed(): void
+    {
+        [$project, $john, $ana, $schedule] = $this->runningProject();
+        $mary = $this->technician('Mary Santos', 'lead_technician');
+
+        // A gap in the schedule from day 5 to day 9.
+        $schedule->update(['end_datetime' => $this->day(4).' 23:59:59']);
+        Schedule::create([
+            'project_id' => $project->project_id,
+            'start_datetime' => $this->day(10).' 00:00:00',
+            'end_datetime' => $this->day(30).' 23:59:59',
+            'status' => 'scheduled',
+            'remarks' => 'After the gap',
+        ]);
+
+        $this->daysOff($project, $ana, $this->day(6), $this->day(8))->assertOk();
+        $this->daysOff($project, $john, $this->day(5), $this->day(9), $mary)->assertOk();
+
+        $project = $project->fresh();
+
+        $this->assertSame([], $project->scheduledChangesFor((int) $ana->technician_id));
+        $this->assertSame([], $project->scheduledChangesFor((int) $john->technician_id));
+        $this->assertSame([], $project->scheduledChangesFor((int) $mary->technician_id));
+
+        // Days off reaching a working day are listed, return and all.
+        $this->daysOff($project, $ana, $this->day(12), $this->day(13))->assertOk();
+
+        $this->assertSame(
+            ['Days off', 'Returns'],
+            array_column($project->fresh()->scheduledChangesFor((int) $ana->technician_id), 'title')
+        );
+    }
+
+    public function test_one_day_off_is_named_as_one_day(): void
+    {
+        [$project, $lead, $ana] = $this->runningProject();
+
+        $this->daysOff($project, $ana, $this->day(5), $this->day(5))->assertOk();
+
+        $this->assertSame('Off '.$this->label(5), $project->fresh()->scheduledChangeLabel($this->spansOf($project, $ana)->first()));
+    }
+
     public function test_the_schedules_day_panel_tells_days_off_from_leaving(): void
     {
         [$project, $lead, $tech] = $this->runningProject();

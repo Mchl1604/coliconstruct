@@ -1067,28 +1067,80 @@ class ProjectTeamChange
      * No rules are applied: the project is closing, there are no days left to
      * cover, and nobody is being given new work.
      *
+     * Days off already under way are the exception to "cancel what is still to
+     * come". The technician is part of the team - off for a few days, not off
+     * the project - so their return is brought forward to the closing moment
+     * rather than deleted, which would leave the closed job without them and
+     * shut them out of it. The days they were actually off stay on the record.
+     * A stand-in covering for a lead on those days stops at the same moment,
+     * so the job closes with the one lead it had.
+     *
      * @return array{removals: Collection<int, ProjectTechnician>, starts: Collection<int, ProjectTechnician>}
      */
     public function cancelScheduledAfterClosing(Project $project): array
     {
-        $spans = ProjectTechnician::query()
-            ->with('technician.account')
-            ->where('project_id', $project->project_id)
-            ->get()
-            ->reject(fn (ProjectTechnician $span): bool => $span->isEmptySpan());
+        $project->load('teamHistory.technician.account');
 
-        $starts = $spans->filter(fn (ProjectTechnician $span): bool => $span->isUpcoming())->values();
+        $spans = $project->teamHistory
+            ->reject(fn (ProjectTechnician $span): bool => $span->isEmptySpan())
+            ->values();
+
+        $now = Schedule::businessNow();
+
+        $onTeamToday = fn (ProjectTechnician $span): bool => $spans->contains(fn (ProjectTechnician $other): bool => (int) $other->technician_id === (int) $span->technician_id
+            && $other->isCurrent());
+
+        // Back from days off that have already begun: off the team today, with
+        // an earlier span of theirs that closed on or before this return.
+        $returning = $spans
+            ->filter(fn (ProjectTechnician $span): bool => $span->isUpcoming()
+                && ! $onTeamToday($span)
+                && $spans->contains(fn (ProjectTechnician $other): bool => (int) $other->technician_id === (int) $span->technician_id
+                    && ! $other->is($span)
+                    && $other->hasEnded()
+                    && $other->endDate() !== null
+                    && $other->endDate() <= (string) $span->startDate()))
+            ->values();
+
+        $starts = $spans
+            ->filter(fn (ProjectTechnician $span): bool => $span->isUpcoming()
+                && ! $returning->contains(fn (ProjectTechnician $back): bool => $back->is($span)))
+            ->values();
+
         $removals = $spans->filter(fn (ProjectTechnician $span): bool => $span->isLeaving())->values();
+
+        // Read before anything is written: a cover is recognised by the spans
+        // either side of it.
+        $coversUnderWay = $removals
+            ->filter(fn (ProjectTechnician $span): bool => $project->isLeadCover($span))
+            ->values();
 
         foreach ($starts as $start) {
             $this->team->cancelStart($start);
         }
 
+        foreach ($returning as $back) {
+            $back->update([
+                'joined_at' => $now,
+                'removed_at' => null,
+                'removed_by' => null,
+                'removal_recorded_at' => null,
+            ]);
+        }
+
         foreach ($removals as $removal) {
             // The bookings are not written back: a closed project occupies
             // nobody, and ProjectCompletion has already released its dates.
+            if ($coversUnderWay->contains(fn (ProjectTechnician $cover): bool => $cover->is($removal))) {
+                $removal->update(['removed_at' => $now, 'removal_recorded_at' => $now]);
+
+                continue;
+            }
+
             $removal->update(['removed_at' => null, 'removed_by' => null, 'removal_recorded_at' => null]);
         }
+
+        $project->unsetRelation('teamHistory');
 
         return ['removals' => $removals, 'starts' => $starts];
     }
