@@ -390,11 +390,53 @@
 
                                 <hr class="panel-divider">
 
+                                {{-- A change already scheduled for this technician on
+                                     this project, said out loud rather than offered
+                                     again. --}}
+                                <div class="alert alert-info mb-3 d-none" role="status" data-panel-note></div>
+
+                                {{-- What is being taken away: some days (off, then
+                                     back the day after), or everything from a day
+                                     onward. Today is the earliest either can start.
+                                     Removing a technician from the project outright,
+                                     today, is Project Details' Assigned Team. --}}
+                                <div class="technician-lead-panel d-none" data-panel-removal>
+                                    <div class="panel-section-heading">
+                                        <i class="bi bi-calendar-x" aria-hidden="true"></i>
+                                        Remove Schedule
+                                    </div>
+
+                                    <div class="btn-group w-100 mb-2" role="group" aria-label="What to remove">
+                                        <input type="radio" class="btn-check" name="panelRemovalMode" id="panelModeDays"
+                                            value="days" data-panel-mode checked>
+                                        <label class="btn btn-outline-secondary btn-sm" for="panelModeDays">These days</label>
+
+                                        <input type="radio" class="btn-check" name="panelRemovalMode" id="panelModeFrom"
+                                            value="from" data-panel-mode>
+                                        <label class="btn btn-outline-secondary btn-sm" for="panelModeFrom">From a date onward</label>
+                                    </div>
+
+                                    <div class="row g-2">
+                                        <div class="col-6">
+                                            <label class="form-label small mb-1">From</label>
+                                            <input type="date" class="form-control" data-panel-effective-date
+                                                aria-label="First day removed">
+                                        </div>
+                                        <div class="col-6" data-panel-until-wrap>
+                                            <label class="form-label small mb-1">To</label>
+                                            <input type="date" class="form-control" data-panel-until-date
+                                                aria-label="Last day removed">
+                                        </div>
+                                    </div>
+
+                                    <p class="text-muted small mt-2 mb-3" data-panel-effective-hint></p>
+                                </div>
+
                                 {{-- Inline lead reassignment - no modal. --}}
                                 <div class="technician-lead-panel d-none" data-panel-lead-replacement>
                                     <div class="panel-section-heading">
                                         <i class="bi bi-person-badge" aria-hidden="true"></i>
-                                        Assign New Lead Technician
+                                        <span data-panel-lead-heading>Assign New Lead Technician</span>
                                     </div>
                                     <p class="text-muted small mb-2" data-panel-lead-intro></p>
                                     <div class="technician-lead-options" data-panel-lead-options></div>
@@ -402,6 +444,18 @@
                                         No lead technician is free for these dates. Free one up or change the
                                         schedule first.
                                     </div>
+                                </div>
+
+                                {{-- Open tasks the removal would leave with somebody
+                                     no longer assigned for their dates. Each needs a
+                                     decision before the removal is saved. --}}
+                                <div class="technician-lead-panel mt-3 d-none" data-panel-conflicts>
+                                    <div class="panel-section-heading">
+                                        <i class="bi bi-list-check" aria-hidden="true"></i>
+                                        Tasks Needing a Decision
+                                    </div>
+                                    <p class="text-muted small mb-2" data-panel-conflicts-intro></p>
+                                    <div class="d-grid gap-2" data-panel-conflict-list></div>
                                 </div>
 
                                 <div class="alert alert-danger mt-3 mb-0 d-none" role="alert"
@@ -412,15 +466,15 @@
                                 <div class="d-grid gap-2 mt-3">
                                     <button type="button" class="btn btn-outline-danger d-none"
                                         data-panel-remove>
-                                        <i class="bi bi-person-dash me-1" aria-hidden="true"></i>
-                                        Remove Technician from Project
+                                        <i class="bi bi-calendar-x me-1" aria-hidden="true"></i>
+                                        Remove Schedule
                                     </button>
 
                                     <button type="button" class="btn btn-danger d-none" data-panel-confirm-remove
                                         disabled>
                                         <span class="spinner-border spinner-border-sm me-1 d-none" role="status"
                                             aria-hidden="true" data-panel-confirm-spinner></span>
-                                        Reassign Lead &amp; Remove
+                                        <span data-panel-confirm-label>Remove</span>
                                     </button>
 
                                     <button type="button" class="btn btn-link btn-sm d-none"

@@ -20,8 +20,6 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Validation\Rule;
-use Illuminate\Validation\Rules\Exists;
 
 class TaskController extends Controller
 {
@@ -45,13 +43,14 @@ class TaskController extends Controller
         // pending or ongoing. Not-yet-scheduled, on-hold, completed, cancelled
         // and archived projects are all left out.
         $projects = Project::query()
-            ->with(['schedules', 'projectTechnicians.technician.account'])
+            ->with(['schedules', 'rosterTechnicians.technician.account'])
             ->whereIn('status', Project::ACTIVE_PROJECT_STATUSES)
             ->where('is_archived', false)
             ->orderBy('name')
             ->get();
 
         $tasksByProject = Task::query()
+            ->withHolderCoverage()
             ->with(['technician', 'images', 'completedBy', 'phase'])
             ->whereIn('project_id', $projects->pluck('project_id'))
             ->orderByRaw("case when status = 'ongoing' then 0 when status = 'pending' then 1 when status = 'unassigned' then 2 else 3 end")
@@ -60,8 +59,20 @@ class TaskController extends Controller
             ->get()
             ->groupBy('project_id');
 
+        // Today's team and anybody due to join it: work can be dated for a
+        // technician's first week before that week arrives.
         $techniciansByProject = $projects->mapWithKeys(fn (Project $project): array => [
-            $project->project_id => $project->projectTechnicians->pluck('technician')->filter()->values(),
+            $project->project_id => $project->rosterTechnicians->pluck('technician')->filter()->unique('technician_id')->values(),
+        ]);
+
+        // Every span each of those technicians holds on the project, so the
+        // edit dialogs can grey out the days a chosen technician is not
+        // assigned for - see TaskAssignmentRules::periodsFor().
+        $periodsByProject = $projects->mapWithKeys(fn (Project $project): array => [
+            $project->project_id => $this->assignmentRules->periodsFor(
+                (int) $project->project_id,
+                $project->rosterTechnicians->pluck('technician_id')
+            ),
         ]);
 
         $rangesByProject = $projects->mapWithKeys(fn (Project $project): array => [
@@ -126,7 +137,8 @@ class TaskController extends Controller
             'schedulableProjects',
             'technicianActiveTaskCounts',
             'attentionSummary',
-            'phasesByProject'
+            'phasesByProject',
+            'periodsByProject'
         ));
     }
 
@@ -137,7 +149,7 @@ class TaskController extends Controller
      */
     public function projectFormData(int $projectId)
     {
-        $project = Project::with(['projectTechnicians.technician.account', 'schedules'])->findOrFail($projectId);
+        $project = Project::with(['rosterTechnicians.technician.account', 'schedules'])->findOrFail($projectId);
 
         if ($project->isReadOnly()) {
             return response()->json([
@@ -171,14 +183,16 @@ class TaskController extends Controller
         $scheduleStart = $project->schedules->min('start_datetime');
         $scheduleEnd = $project->schedules->max('end_datetime');
 
-        $technicians = $project->projectTechnicians
+        $technicians = $project->rosterTechnicians
             ->filter(fn ($projectTechnician) => $projectTechnician->technician)
-            ->map(fn ($projectTechnician) => $projectTechnician->technician);
+            ->map(fn ($projectTechnician) => $projectTechnician->technician)
+            ->unique('technician_id');
 
         $activeTaskCounts = app(TechnicianTaskLoad::class)->forProject($project->project_id);
+        $periods = $this->assignmentRules->periodsFor((int) $project->project_id, $technicians->pluck('technician_id'));
 
         $technicians = $technicians
-            ->map(function ($technician) use ($activeTaskCounts) {
+            ->map(function ($technician) use ($activeTaskCounts, $periods) {
                 $isLead = optional($technician->account)->role === 'lead_technician';
 
                 return [
@@ -196,6 +210,9 @@ class TaskController extends Controller
                     // two never show the same person differently.
                     'avatar_url' => $technician->account?->avatarUrl() ?? asset('img/default-avatar.svg'),
                     'active_task_count' => (int) ($activeTaskCounts[$technician->technician_id] ?? 0),
+                    // The days they are assigned to this project, so the date
+                    // pickers can grey out the rest once they are chosen.
+                    'periods' => $periods[(int) $technician->technician_id] ?? [],
                 ];
             })
             // The lead comes first, as they already do in the Assigned Team
@@ -257,7 +274,7 @@ class TaskController extends Controller
             'task_title' => 'required|string|max:255',
             'task_description' => 'required|string',
             'phase_id' => $this->phaseRules->rules($project),
-            'technician_id' => ['required', 'integer', $this->assignedTechnicianRule($project)],
+            'technician_id' => ['required', 'integer', 'exists:tbl_technicians,technician_id'],
             'start_date' => ['required', 'date'],
             'due_date' => ['required', 'date', 'after_or_equal:start_date'],
         ], $this->phaseRules->messages() + [
@@ -267,6 +284,9 @@ class TaskController extends Controller
         $this->attachRangeRule($validator, $ranges);
         // New work, so there is no current owner to make an exception for.
         $this->assignmentRules->attach($validator);
+        // Assigned to this project for every day of the task - see
+        // TaskAssignmentRules::periodRefusal().
+        $this->assignmentRules->attachPeriodRule($validator, $project);
 
         $validated = $validator->validate();
 
@@ -365,7 +385,7 @@ class TaskController extends Controller
             // already sitting on one may stay where it is, so its wording and
             // dates can still be corrected.
             'phase_id' => $this->phaseRules->rules($project, $task->phase_id),
-            'technician_id' => ['required', 'integer', $this->assignedTechnicianRule($project)],
+            'technician_id' => ['required', 'integer', 'exists:tbl_technicians,technician_id'],
             'start_date' => ['required', 'date'],
             'due_date' => ['required', 'date', 'after_or_equal:start_date'],
         ], $this->phaseRules->messages() + [
@@ -377,6 +397,9 @@ class TaskController extends Controller
         // re-submits the owner, and refusing that would make an inactive
         // technician's work uneditable - including the handover off them.
         $this->assignmentRules->attach($validator, (int) $task->technician_id);
+        // And they must be assigned for every day of it - unless neither the
+        // holder nor the dates are being changed. See attachPeriodRule().
+        $this->assignmentRules->attachPeriodRule($validator, $project, $task);
 
         $validated = $validator->validate();
 
@@ -562,24 +585,6 @@ class TaskController extends Controller
                 $this->safeErrorMessage($e, 'Unable to delete task. Nothing was changed.')
             );
         }
-    }
-
-    /**
-     * A task belongs to somebody on the project.
-     *
-     * The same rule the technician portal has always applied, stated the same
-     * way. Without it this board could hand work to a technician who is not on
-     * the team - and ProjectPolicy::viewAssigned() will then refuse them the
-     * project, so they are notified about a job they cannot open.
-     */
-    private function assignedTechnicianRule(Project $project): Exists
-    {
-        return Rule::exists('tbl_project_technicians', 'technician_id')
-            ->where('project_id', $project->project_id)
-            // Somebody taken off the team keeps their row - it carries the
-            // dates they worked - so the membership has to be an open one or
-            // a removed technician would still pass as assignable here.
-            ->whereNull('removed_at');
     }
 
     /**

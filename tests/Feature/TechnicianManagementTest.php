@@ -712,11 +712,11 @@ class TechnicianManagementTest extends TestCase
         ]);
 
         // Project still has exactly two technicians on it, one of them a lead.
-        // Counted through active(), because the outgoing lead's row is still
+        // Counted through current(), because the outgoing lead's row is still
         // there - closed - and it is the team that must be two, not the table.
         $this->assertSame(
             2,
-            ProjectTechnician::where('project_id', $project->project_id)->active()->count()
+            ProjectTechnician::where('project_id', $project->project_id)->current()->count()
         );
 
         // And the outgoing lead's membership survives as a record, which is
@@ -755,10 +755,23 @@ class TechnicianManagementTest extends TestCase
             'status' => 'completed',
         ]);
 
+        // Nothing happens to the open task until somebody says what should.
         $this->deleteJson(route('super-admin.technicians.projects.destroy', [
             $ana->technician_id,
             $project->project_id,
-        ]))->assertOk();
+        ]))
+            ->assertStatus(422)
+            ->assertJsonPath('needs_decisions', true)
+            ->assertJsonPath('conflicts.0.task_id', $open->task_id);
+
+        $this->assertSame($ana->technician_id, $open->fresh()->technician_id);
+
+        $this->deleteJson(route('super-admin.technicians.projects.destroy', [
+            $ana->technician_id,
+            $project->project_id,
+        ]), [
+            'task_resolutions' => [$open->task_id => 'unassign'],
+        ])->assertOk();
 
         $open->refresh();
         $done->refresh();

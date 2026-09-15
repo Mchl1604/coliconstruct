@@ -78,6 +78,25 @@
     margin-top: 0.35rem;
 }
 
+/* When the technician is on the project - "Joins Sep 5", "Until Aug 20" - or,
+   once dates are picked, why they cannot hold them. Written by
+   taskDatePickers.js from the card's assignment periods. */
+.task-assign-period {
+    color: #6c757d;
+    font-size: 0.8rem;
+    margin-top: 0.3rem;
+    line-height: 1.25;
+}
+
+.task-assign-period:empty {
+    display: none;
+}
+
+.task-assign-period.is-blocked {
+    color: #a05a00;
+    font-weight: 600;
+}
+
 /**
  * The view-only counterpart: who holds the task, stated rather than offered
  * as one greyed-out option among several.

@@ -713,7 +713,7 @@ class UserAccountService
         return Project::query()
             ->whereIn('status', Project::DERIVED_LIVE_STATUSES)
             ->where('is_archived', false)
-            ->whereHas('projectTechnicians', fn ($assignment) => $assignment->where('technician_id', $technicianId))
+            ->whereHas('rosterTechnicians', fn ($assignment) => $assignment->where('technician_id', $technicianId))
             ->orderBy('project_id')
             ->get();
     }

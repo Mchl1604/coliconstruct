@@ -162,7 +162,11 @@ document.addEventListener("DOMContentLoaded", function () {
                             "<label>" +
                             '<input type="radio" class="btn-check" name="technician_id" value="' +
                             technician.technician_id +
-                            '" required' +
+                            // The days they are assigned to the project - see
+                            // taskDatePickers.bindTechnicianPeriods().
+                            "\" data-assignment-periods='" +
+                            escapeHtml(JSON.stringify(technician.periods || [])) +
+                            "' required" +
                             (cannotReceiveWork ? " disabled" : "") +
                             ">" +
                             '<div class="task-assign-card">' +
@@ -197,6 +201,13 @@ document.addEventListener("DOMContentLoaded", function () {
                         );
                     })
                     .join("");
+
+                // Choosing a technician greys out the days they are not
+                // assigned for; choosing dates switches off whoever cannot hold
+                // them.
+                if (window.taskDatePickers && window.taskDatePickers.bindTechnicianPeriods) {
+                    window.taskDatePickers.bindTechnicianPeriods(form, startInput, dueInput, ranges);
+                }
 
                 fields.classList.remove("d-none");
                 submit.disabled = false;

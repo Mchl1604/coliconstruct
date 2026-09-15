@@ -4,7 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Project;
 use App\Models\ProjectPhase;
-use App\Models\ProjectPhaseDraftTask;
+use App\Models\ProjectTechnician;
 use App\Models\Technician;
 use App\Models\User;
 use App\Services\PhaseSetupTaskRules;
@@ -359,9 +359,12 @@ class ProjectPhaseController extends Controller
                     ->from('tbl_project_technicians')
                     ->where('project_id', $project->project_id)
                     // A technician taken off the team keeps their row, because
-                    // it carries the dates they worked - so the membership has
-                    // to be an open one.
-                    ->whereNull('removed_at');
+                    // it carries the dates they worked - so only spans that
+                    // have not ended count: today's team and anybody due to
+                    // join it.
+                    ->where(fn ($removed) => $removed
+                        ->whereNull('removed_at')
+                        ->orWhereDate('removed_at', '>', ProjectTechnician::today()));
             })
             ->get()
             ->filter(fn (Technician $technician): bool => $technician->isAssignable())

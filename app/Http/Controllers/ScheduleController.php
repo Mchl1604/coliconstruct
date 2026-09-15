@@ -14,6 +14,7 @@ use App\Services\HistoricalScheduleCorrection;
 use App\Services\NotificationService;
 use App\Services\ProjectStatusRules;
 use App\Services\ProjectTeam;
+use App\Services\ProjectTeamChange;
 use App\Services\ScheduleConsolidation;
 use App\Services\ScheduleDateRemoval;
 use App\Services\ScheduleModeRules;
@@ -302,9 +303,20 @@ class ScheduleController extends Controller
                         ->filter(fn (ProjectTechnician $assignment): bool => $assignment->technician !== null)
                         ->map(fn (ProjectTechnician $assignment): array => [
                             'name' => $assignment->technician->name,
+                            // Said of a removal that has happened, and of one
+                            // still to come - the panel reads "left" or
+                            // "leaving" from the date.
                             'removed_on' => $assignment->isRemoved()
-                                ? CarbonImmutable::parse($assignment->removed_at)->format(BusinessTime::DATE)
+                                ? CarbonImmutable::parse($assignment->endDate())->format(BusinessTime::DATE)
                                 : null,
+                            'has_left' => $assignment->hasEnded(),
+                            // A change still to come, in the team card's words:
+                            // a span closing for days off reads "Off A - B",
+                            // not "leaving A" - they are back the day after.
+                            'change' => $assignment->isRemoved() && ! $assignment->hasEnded()
+                                ? ($project->scheduledEndLabel($assignment) ?? $project->scheduledChangeLabel($assignment))
+                                : null,
+                            'is_lead' => $project->isLeadMember($assignment),
                         ])
                         ->values()
                         ->all(),
@@ -521,14 +533,14 @@ class ScheduleController extends Controller
         $scheduleLabel = $this->describeRangeEntry($entry);
 
         $projects = Project::query()
-            ->with(['clients', 'schedules', 'projectTechnicians.technician.account'])
+            ->with(['clients', 'schedules', 'projectTechnicians.technician.account', 'rosterTechnicians.technician.account'])
             ->whereIn('project_id', $validated['project_ids'])
             ->get();
 
         $availability = app(TechnicianAvailabilityService::class);
 
         try {
-            DB::transaction(function () use ($projects, $entry, $scheduleLabel, $scheduleRules, $availability): void {
+            DB::transaction(function () use ($projects, $entry, $scheduleLabel, $scheduleRules): void {
                 $claimedTechnicians = [];
 
                 foreach ($projects as $project) {
@@ -536,18 +548,15 @@ class ScheduleController extends Controller
                     $this->assertPartialDayAllowed($project, $entry['mode']);
                     $this->assertNoSelfOverlap($project, $entry, $scheduleRules);
 
-                    $technicianIds = $project->projectTechnicians
+                    $technicianIds = $project->rosterTechnicians
                         ->pluck('technician_id')
                         ->filter()
                         ->unique()
                         ->values();
 
-                    // Conflicts against everything already in the database.
-                    $availability->assertContinuouslyAvailable(
-                        $technicianIds,
-                        [$entry],
-                        $project->project_id
-                    );
+                    // Conflicts against everything already in the database -
+                    // each member over the days their own span holds.
+                    app(ProjectTeamChange::class)->assertTeamAvailableFor($project, [$entry]);
 
                     // Conflicts between the projects being saved right now,
                     // which share no rows yet and so can't be caught above.
@@ -555,7 +564,7 @@ class ScheduleController extends Controller
                         if (isset($claimedTechnicians[$technicianId])) {
                             throw new RuntimeException(sprintf(
                                 '%s is on both %s and %s and cannot share this schedule.',
-                                $project->projectTechnicians
+                                $project->rosterTechnicians
                                     ->firstWhere('technician_id', $technicianId)?->technician?->name
                                     ?? 'A technician',
                                 $claimedTechnicians[$technicianId],
@@ -1585,12 +1594,6 @@ class ScheduleController extends Controller
      */
     private function assertRangesAvailable(Project $project, Collection $ranges): void
     {
-        $technicianIds = $project->projectTechnicians->pluck('technician_id')->unique()->values();
-
-        if ($technicianIds->isEmpty()) {
-            return;
-        }
-
         $upcoming = $ranges
             ->map(fn (array $range): ?array => $this->upcomingPortionOf($range))
             ->filter()
@@ -1603,11 +1606,11 @@ class ScheduleController extends Controller
         // The project's own schedules are being replaced by this submission,
         // so they must not count against it. Overlaps between the submitted
         // ranges themselves are caught by assertNoOverlapWithinSubmission().
-        app(TechnicianAvailabilityService::class)->assertContinuouslyAvailable(
-            $technicianIds,
-            $upcoming->all(),
-            $project->project_id
-        );
+        //
+        // Each member is asked about the days their own span holds: somebody
+        // leaving on the 21st is not refused over the week after it, and
+        // somebody starting on the 1st is not refused over the week before.
+        app(ProjectTeamChange::class)->assertTeamAvailableFor($project, $upcoming->all());
     }
 
     /**

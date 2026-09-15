@@ -436,6 +436,50 @@ class Schedule extends Model
         return $times;
     }
 
+    /**
+     * This range as one technician's calendar draws it: stopped at the cutoff
+     * as toCalendarTimesThrough() stops it, and narrowed to the days their
+     * span on the project holds.
+     *
+     * Somebody taken off a project on Aug 21 was on its Aug 1 - Sep 30 range
+     * until the 20th, and their calendar says exactly that rather than claiming
+     * the whole of September. Somebody joining on the 21st sees the range from
+     * the 21st. A partial day is a single date, so it is drawn whole or not at
+     * all.
+     *
+     * @return array<string, mixed>|null null when the span holds none of the
+     *                                   range's days
+     */
+    public function toCalendarTimesForSpan(?CarbonImmutable $cutoff, ProjectTechnician $span): ?array
+    {
+        $times = $this->toCalendarTimesThrough($cutoff);
+
+        if ($this->isPartialDay()) {
+            return $span->coveredOn($this->startsOn()->toDateString()) ? $times : null;
+        }
+
+        $first = $this->startsOn();
+        $last = $cutoff !== null && $this->endsOn()->gt($cutoff) ? $cutoff->startOfDay() : $this->endsOn();
+
+        if ($span->startDate() !== null && $span->startDate() > $first->toDateString()) {
+            $first = CarbonImmutable::parse($span->startDate());
+        }
+
+        if ($span->lastDay() !== null && $span->lastDay()->lt($last)) {
+            $last = $span->lastDay();
+        }
+
+        if ($first->gt($last)) {
+            return null;
+        }
+
+        $times['start'] = $first->toDateString();
+        // All-day ends are exclusive in FullCalendar - see toCalendarTimes().
+        $times['end'] = $last->addDay()->toDateString();
+
+        return $times;
+    }
+
     public function toCalendarTimes(): array
     {
         if ($this->isPartialDay()) {

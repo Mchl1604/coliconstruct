@@ -678,9 +678,12 @@ class ImportTechnicianTeamTest extends TestCase
             'due_date' => $this->day(6),
         ]);
 
+        // Taking the task off them is the administrator's decision, stated in
+        // the save - see ProjectTeamChange.
         $this->put(route('super-admin.projects.team.update', $project->project_id), [
             'lead_tech' => $lead->technician_id,
             'technicians' => [],
+            'task_resolutions' => [$open->task_id => 'unassign'],
         ])->assertSessionHas('success');
 
         $this->assertNull($open->fresh()->technician_id);

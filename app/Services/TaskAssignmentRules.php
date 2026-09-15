@@ -2,7 +2,13 @@
 
 namespace App\Services;
 
+use App\Models\Project;
+use App\Models\ProjectTechnician;
+use App\Models\Task;
 use App\Models\Technician;
+use App\Support\BusinessTime;
+use Carbon\CarbonImmutable;
+use Illuminate\Support\Collection;
 use Illuminate\Validation\Validator;
 
 /**
@@ -63,6 +69,243 @@ class TaskAssignmentRules
             $technician->name,
             $reason
         );
+    }
+
+    /**
+     * Why this technician cannot hold a task over these dates on this project,
+     * or null when they can.
+     *
+     * The rule is strict: ONE span of theirs must hold every day from the
+     * task's start to its due date - see ProjectTechnician::coversPeriod(). A
+     * task with no dates can only sit with somebody whose membership has no end
+     * scheduled, because nothing else says the work falls inside their time on
+     * the project.
+     *
+     * The reasons are told apart, because each sends the reader to a different
+     * fix: somebody who leaves before the deadline, somebody who has not
+     * joined yet, somebody who is off the project part of the way through.
+     *
+     * @param  Collection<int, ProjectTechnician>|null  $spans  this technician's
+     *                                                          spans on the
+     *                                                          project, when the
+     *                                                          caller has them -
+     *                                                          including spans a
+     *                                                          planned change
+     *                                                          has not written
+     *                                                          yet
+     */
+    public function periodRefusal(
+        Technician $technician,
+        int $projectId,
+        ?string $start,
+        ?string $due,
+        ?Collection $spans = null
+    ): ?string {
+        $spans = ($spans ?? ProjectTechnician::query()
+            ->where('project_id', $projectId)
+            ->where('technician_id', $technician->technician_id)
+            ->get())
+            ->reject(fn (ProjectTechnician $span): bool => $span->isEmptySpan())
+            ->values();
+
+        $name = $technician->name;
+
+        if ($spans->isEmpty()) {
+            return 'Pick a technician who is assigned to this project.';
+        }
+
+        if ($start === null || $due === null) {
+            return $spans->contains(fn (ProjectTechnician $span): bool => $span->endDate() === null)
+                ? null
+                : sprintf('%s is not assigned to this project with no end date, so this task needs dates first.', $name);
+        }
+
+        if ($spans->contains(fn (ProjectTechnician $span): bool => $span->coversPeriod($start, $due))) {
+            return null;
+        }
+
+        $holdingStart = $spans->first(fn (ProjectTechnician $span): bool => $span->coveredOn($start));
+        $holdingDue = $spans->first(fn (ProjectTechnician $span): bool => $span->coveredOn($due));
+
+        if ($holdingStart && $holdingDue) {
+            return sprintf(
+                '%s is off this project from %s to %s, which this task runs across.',
+                $name,
+                BusinessTime::format($holdingStart->endDate()),
+                BusinessTime::format(CarbonImmutable::parse($holdingDue->startDate())->subDay())
+            );
+        }
+
+        // Days off at one end of the task: say so, rather than calling the
+        // return a join or the break an end.
+        $offUntil = fn (ProjectTechnician $span): ?ProjectTechnician => $spans
+            ->filter(fn (ProjectTechnician $later): bool => $span->endDate() !== null && $later->startDate() > $span->endDate())
+            ->sortBy(fn (ProjectTechnician $later): string => $later->startDate())
+            ->first();
+
+        if ($holdingStart && ($return = $offUntil($holdingStart))) {
+            return sprintf(
+                '%s is off this project from %s to %s, and this task is due %s.',
+                $name,
+                BusinessTime::format($holdingStart->endDate()),
+                BusinessTime::format(CarbonImmutable::parse($return->startDate())->subDay()),
+                BusinessTime::format($due)
+            );
+        }
+
+        $breakBefore = $holdingDue
+            ? $spans
+                ->filter(fn (ProjectTechnician $earlier): bool => $earlier->endDate() !== null && $earlier->endDate() < $holdingDue->startDate())
+                ->sortByDesc(fn (ProjectTechnician $earlier): string => $earlier->endDate())
+                ->first()
+            : null;
+
+        if ($holdingDue && $breakBefore) {
+            return sprintf(
+                '%s is off this project from %s to %s, and this task starts %s.',
+                $name,
+                BusinessTime::format($breakBefore->endDate()),
+                BusinessTime::format(CarbonImmutable::parse($holdingDue->startDate())->subDay()),
+                BusinessTime::format($start)
+            );
+        }
+
+        if ($holdingStart) {
+            return sprintf(
+                '%s is assigned to this project until %s, and this task is due %s.',
+                $name,
+                BusinessTime::format($holdingStart->lastDay()),
+                BusinessTime::format($due)
+            );
+        }
+
+        if ($holdingDue) {
+            return sprintf(
+                '%s joins this project on %s, and this task starts %s.',
+                $name,
+                BusinessTime::format($holdingDue->startDate()),
+                BusinessTime::format($start)
+            );
+        }
+
+        // Wholly after their time on the project ends, with no return.
+        $ended = $spans->every(fn (ProjectTechnician $span): bool => $span->endDate() !== null && $span->endDate() <= $start)
+            ? $spans->sortByDesc(fn (ProjectTechnician $span): string => $span->endDate())->first()
+            : null;
+
+        if ($ended) {
+            return sprintf(
+                '%s is assigned to this project until %s, and this task starts %s.',
+                $name,
+                BusinessTime::format($ended->lastDay()),
+                BusinessTime::format($start)
+            );
+        }
+
+        return sprintf(
+            '%s is not assigned to this project between %s and %s.',
+            $name,
+            BusinessTime::format($start),
+            BusinessTime::format($due)
+        );
+    }
+
+    /**
+     * Add the assignment-period check to a task form's validator.
+     *
+     * Runs after the dates' own rules, so a task with a bad or unbooked date is
+     * told about the date once rather than about the technician as well. The
+     * refusal goes on the technician field: changing who holds the task and
+     * changing its dates are both ways out, and the reason names the dates.
+     *
+     * An edit that leaves both the holder and the dates exactly as they were
+     * is never refused. A task whose holder has since been taken off the
+     * project stays editable - its wording, its phase - and the refusal
+     * applies the moment either the person or the dates are changed.
+     */
+    public function attachPeriodRule(
+        Validator $validator,
+        Project $project,
+        ?Task $task = null,
+        string $key = 'technician_id'
+    ): void {
+        $validator->after(function (Validator $validator) use ($project, $task, $key): void {
+            if ($validator->errors()->hasAny([$key, 'start_date', 'due_date'])) {
+                return;
+            }
+
+            $data = $validator->getData();
+            $technicianId = (int) ($data[$key] ?? 0);
+            $start = $this->dateOrNull($data['start_date'] ?? null);
+            $due = $this->dateOrNull($data['due_date'] ?? null);
+
+            if ($technicianId === 0) {
+                return;
+            }
+
+            if ($task !== null
+                && $technicianId === (int) $task->technician_id
+                && $start === $this->dateOrNull($task->start_date)
+                && $due === $this->dateOrNull($task->due_date)) {
+                return;
+            }
+
+            $technician = Technician::query()->with('account')->find($technicianId);
+
+            if ($technician === null) {
+                return;
+            }
+
+            $refusal = $this->periodRefusal($technician, (int) $project->project_id, $start, $due);
+
+            if ($refusal !== null) {
+                $validator->errors()->add($key, $refusal);
+            }
+        });
+    }
+
+    /**
+     * Every span each of these technicians has held on the project, as the
+     * pickers hand them to the browser: [{start, end}] with `end` the LAST day
+     * covered, inclusive, or null while nothing ends it.
+     *
+     * The browser uses these to grey out the days a chosen technician is not
+     * assigned for, and to switch off the technicians who cannot hold the dates
+     * already picked. The server applies the same rule on the way back in.
+     *
+     * @param  iterable<int, int>  $technicianIds
+     * @return array<int, array<int, array{start: ?string, end: ?string}>>
+     */
+    public function periodsFor(int $projectId, iterable $technicianIds): array
+    {
+        return ProjectTechnician::query()
+            ->where('project_id', $projectId)
+            ->whereIn('technician_id', collect($technicianIds)->map(fn ($id): int => (int) $id)->all())
+            ->orderBy('joined_at')
+            ->get()
+            ->reject(fn (ProjectTechnician $span): bool => $span->isEmptySpan())
+            ->groupBy('technician_id')
+            ->map(fn (Collection $spans): array => $spans
+                ->map(fn (ProjectTechnician $span): array => [
+                    'start' => $span->startDate(),
+                    'end' => $span->lastDay()?->toDateString(),
+                ])
+                ->values()
+                ->all())
+            ->all();
+    }
+
+    private function dateOrNull(mixed $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        try {
+            return CarbonImmutable::parse((string) $value)->toDateString();
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     /**

@@ -77,7 +77,7 @@ class SendTaskReminders extends Command
     private function openTasks()
     {
         return Task::query()
-            ->with(['technician.account', 'project.projectTechnicians.technician.account'])
+            ->with(['technician.account', 'project.projectTechnicians.technician.account', 'project.rosterTechnicians'])
             ->whereIn('status', Task::OPEN_STATUSES)
             ->whereNotNull('due_date')
             ->whereHas('project', function ($query): void {

@@ -101,7 +101,10 @@ class TaskPolicy
             return false;
         }
 
-        return $task->isAssignedTo($user)
+        // Their own task, while they are on the team: a technician taken off
+        // the project keeps the work dated to their time on it as a record,
+        // but can no longer close it - see ProjectPolicy::worksOn().
+        return ($task->isAssignedTo($user) && $this->projects->worksOn($user, $project))
             || $this->projects->manageTasks($user, $project);
     }
 

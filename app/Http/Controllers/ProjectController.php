@@ -33,11 +33,14 @@ use App\Services\ProjectScheduleRecovery;
 use App\Services\ProjectStatusRules;
 use App\Services\ProjectTeam;
 use App\Services\ProjectTeamCandidates;
+use App\Services\ProjectTeamChange;
+use App\Services\ProjectTeamChangePlan;
 use App\Services\ProjectTeamRules;
 use App\Services\QuotationChange;
 use App\Services\ScheduleConsolidation;
 use App\Services\ScheduleHoldCutoff;
 use App\Services\ScheduleModeRules;
+use App\Services\TaskAssignmentRules;
 use App\Services\TaskScheduleRules;
 use App\Services\TechnicianAvailabilityService;
 use App\Services\TechnicianTaskLoad;
@@ -735,7 +738,7 @@ class ProjectController extends Controller
      * @param  array<int, string>  $added
      * @param  array<int, string>  $removed
      */
-    private function describeTeamChange(Project $project, array $added, array $removed): string
+    private function describeTeamChange(Project $project, array $added, array $removed, ?CarbonImmutable $effective = null): string
     {
         $label = $project->reference_no ?: $project->name;
 
@@ -753,7 +756,11 @@ class ProjectController extends Controller
             return sprintf("Saved the assigned team on '%s' with no change.", $label);
         }
 
-        return sprintf("On '%s': %s.", $label, ucfirst(implode('; ', $parts)));
+        // A change still to come says when, or the trail would read as though
+        // it had already happened on the day it was recorded.
+        $when = $effective ? ', effective '.$effective->format(BusinessTime::DATE) : '';
+
+        return sprintf("On '%s': %s%s.", $label, ucfirst(implode('; ', $parts)), $when);
     }
 
     /**
@@ -897,28 +904,47 @@ class ProjectController extends Controller
         foreach ($project->teamHistory as $assignment) {
             $name = $assignment->technician?->name;
 
-            if ($name === null) {
+            if ($name === null || $assignment->isEmptySpan()) {
                 continue;
             }
 
             if ($assignment->joined_at !== null) {
-                $entries[] = $this->membershipEntry(
-                    'added',
-                    'Technician Added',
-                    $name.' was added to the team.',
-                    $assignment->joinedBy?->name,
-                    $assignment->joined_at
-                );
+                $entries[] = $assignment->isUpcoming()
+                    ? $this->membershipEntry(
+                        'added',
+                        'Technician Scheduled To Join',
+                        sprintf('%s is scheduled to join the team on %s.', $name, BusinessTime::format($assignment->startDate())),
+                        $assignment->joinedBy?->name,
+                        $assignment->joined_at
+                    )
+                    : $this->membershipEntry(
+                        'added',
+                        'Technician Added',
+                        $name.' was added to the team.',
+                        $assignment->joinedBy?->name,
+                        $assignment->joined_at
+                    );
             }
 
             if ($assignment->removed_at !== null) {
-                $entries[] = $this->membershipEntry(
-                    'removed',
-                    'Technician Removed',
-                    $name.' was removed from the team.',
-                    $assignment->removedBy?->name,
-                    $assignment->removed_at
-                );
+                // Dated by when the decision was made. A removal scheduled for
+                // next month was decided today, and is listed where today's
+                // changes are - saying which day it takes effect.
+                $entries[] = $assignment->hasEnded()
+                    ? $this->membershipEntry(
+                        'removed',
+                        'Technician Removed',
+                        $name.' was removed from the team.',
+                        $assignment->removedBy?->name,
+                        $assignment->removal_recorded_at ?? $assignment->removed_at
+                    )
+                    : $this->membershipEntry(
+                        'removed',
+                        'Technician Scheduled To Leave',
+                        sprintf('%s is scheduled to leave the team on %s.', $name, BusinessTime::format($assignment->endDate())),
+                        $assignment->removedBy?->name,
+                        $assignment->removal_recorded_at ?? $assignment->removed_at
+                    );
             }
         }
 
@@ -964,10 +990,18 @@ class ProjectController extends Controller
      */
     private function membershipTimeline(Project $project): array
     {
+        // Current first, then those still to join, then the people who have
+        // left - each group newest first.
+        $order = fn (ProjectTechnician $assignment): int => match (true) {
+            $assignment->isCurrent() => 0,
+            $assignment->isUpcoming() => 1,
+            default => 2,
+        };
+
         return $project->teamHistory
-            ->filter(fn (ProjectTechnician $assignment): bool => $assignment->technician !== null)
+            ->filter(fn (ProjectTechnician $assignment): bool => $assignment->technician !== null && ! $assignment->isEmptySpan())
             ->sortBy([
-                fn (ProjectTechnician $a, ProjectTechnician $b): int => ($a->isRemoved() ? 1 : 0) <=> ($b->isRemoved() ? 1 : 0),
+                fn (ProjectTechnician $a, ProjectTechnician $b): int => $order($a) <=> $order($b),
                 fn (ProjectTechnician $a, ProjectTechnician $b): int => ($b->joined_at?->timestamp ?? 0) <=> ($a->joined_at?->timestamp ?? 0),
             ])
             ->map(fn (ProjectTechnician $assignment): array => [
@@ -976,15 +1010,22 @@ class ProjectController extends Controller
                 // a history that re-labels people when their job title changes
                 // is not a history. See ProjectTechnician::heldLeadRole().
                 'is_lead' => $project->isLeadMember($assignment),
-                'joined_on' => $assignment->joined_at
-                    ? CarbonImmutable::parse($assignment->joined_at)->format(BusinessTime::DATE)
+                'joined_on' => $assignment->startDate()
+                    ? CarbonImmutable::parse($assignment->startDate())->format(BusinessTime::DATE)
                     : null,
-                'removed_on' => $assignment->removed_at
-                    ? CarbonImmutable::parse($assignment->removed_at)->format(BusinessTime::DATE)
+                // The effective removal date, and the last day it leaves them
+                // with - "Aug 1 - Aug 20, removed effective Aug 21" is the
+                // sentence a reader wants, and the exclusive date alone reads
+                // as one day too many.
+                'removed_on' => $assignment->endDate()
+                    ? CarbonImmutable::parse($assignment->endDate())->format(BusinessTime::DATE)
                     : null,
+                'last_day' => $assignment->lastDay()?->format(BusinessTime::DATE),
                 'added_by' => $assignment->joinedBy?->name,
                 'removed_by' => $assignment->removedBy?->name,
-                'is_current' => ! $assignment->isRemoved(),
+                'is_current' => $assignment->isCurrent(),
+                'is_upcoming' => $assignment->isUpcoming(),
+                'is_leaving' => $assignment->isLeaving(),
             ])
             ->values()
             ->all();
@@ -1242,6 +1283,8 @@ class ProjectController extends Controller
                 // count now comes from TechnicianTaskLoad and only from there.
                 $query->with(['account', 'skills']);
             },
+            // Who is scheduled to join, for the card's Upcoming list.
+            'upcomingTechnicians.technician.account',
 
             // The completion cycles this project has already been through, for
             // View Previous Completion Reports. Loaded with everything the
@@ -1297,6 +1340,7 @@ class ProjectController extends Controller
             ->where('project_id', $id);
 
         $tasks = Task::with(['technician', 'images', 'completedBy', 'phase'])
+            ->withHolderCoverage()
             ->where('project_id', $id)
             ->latest()
             ->get();
@@ -1407,6 +1451,26 @@ class ProjectController extends Controller
         // loaded. Never the current report: that one is read off the project.
         $previousCompletionReports = $project->completionReports;
 
+        // Who a task can be given to: today's team and anybody due to join it,
+        // with the days each is assigned for - see TaskAssignmentRules.
+        $taskTechnicians = $project->rosterTechnicians()
+            ->with('technician.account')
+            ->get()
+            ->pluck('technician')
+            ->filter()
+            ->unique('technician_id')
+            ->sortBy(fn (Technician $technician): string => sprintf(
+                '%d %s',
+                $technician->isLead() ? 0 : 1,
+                mb_strtolower($technician->name)
+            ))
+            ->values();
+
+        $technicianPeriods = app(TaskAssignmentRules::class)->periodsFor(
+            (int) $project->project_id,
+            $taskTechnicians->pluck('technician_id')
+        );
+
         // This project's own audit trail, for the section at the foot of
         // Project Information.
         //
@@ -1471,7 +1535,9 @@ class ProjectController extends Controller
             'canOverridePhaseStructure',
             'canOverridePhaseCompletion',
             'selectablePhases',
-            'activityLogs'
+            'activityLogs',
+            'taskTechnicians',
+            'technicianPeriods'
         ));
 
     }
@@ -2392,6 +2458,10 @@ class ProjectController extends Controller
                 // intact for the record. Technicians are still freed up for
                 // other work because the availability checker already
                 // ignores cancelled projects entirely.
+                //
+                // A team change still scheduled is called off, so the called-
+                // off job keeps the team it stopped with.
+                app(ProjectTeamChange::class)->cancelScheduledAfterClosing($project);
             });
 
             $this->activityLogger->record(
@@ -2983,12 +3053,182 @@ class ProjectController extends Controller
         }
     }
 
+    /**
+     * The master control: "the team is now this lead and these technicians".
+     *
+     * Takes effect today, and whoever is taken off comes off completely - any
+     * return from days off or later span of theirs goes too. Changes that take
+     * a technician off for some days, or from a later date, are made on the
+     * Technicians page. The rules and the writing live in ProjectTeamChange;
+     * this is the form around them.
+     * Every open task the change would leave with somebody no longer assigned
+     * for its dates must come with a choice - task_resolutions[task_id] is
+     * `unassign`, `keep` (for a change still to come) or the id of the
+     * technician taking it over - and the save is refused until each one has
+     * one. The dialog asks for them through teamPreview() before it submits.
+     */
     public function updateAssignedTeam(Request $request, int $id)
     {
         $project = Project::with(['schedules', 'projectTechnicians'])->findOrFail($id);
 
+        if ($refusal = $this->teamEditRefusal($project)) {
+            return back()->with('error', $refusal);
+        }
+
+        $validator = $this->teamChangeValidator($request);
+
+        if ($validator->fails()) {
+            return back()->withErrors($validator)->withInput();
+        }
+
+        $change = app(ProjectTeamChange::class);
+        $plan = $this->teamChangePlan($request, $project);
+
+        $change->validate($validator, $plan);
+        $validator->validate();
+
+        // Refused as a toast rather than against a field, the way this form has
+        // always reported somebody booked elsewhere.
+        if ($conflict = $change->availabilityConflict($plan)) {
+            return back()->with('error', $conflict);
+        }
+
+        $resolutions = (array) $request->input('task_resolutions', []);
+        $conflicts = $change->taskConflicts($plan);
+
+        if ($unresolved = $change->unresolved($conflicts, $resolutions)) {
+            return back()->with('error', implode(' ', $unresolved));
+        }
+
+        $actorId = $request->user()?->id;
+        $outcome = null;
+
+        DB::transaction(function () use ($change, $plan, $resolutions, $actorId, &$outcome): void {
+            $outcome = $change->apply($plan, $resolutions, $actorId);
+        });
+
+        $this->activityLogger->record(
+            ActivityLog::TECHNICIAN_ASSIGNED,
+            null,
+            $this->describeTeamChange(
+                $project,
+                $this->technicianNames($plan->addedIds()),
+                $this->technicianNames($plan->removedIds())
+            ),
+            $project
+        );
+
+        $change->notify($plan, $outcome);
+
+        return back()->with('success', 'Assigned team updated.');
+    }
+
+    /**
+     * What a team change would do, before it is saved - for the dialog to show.
+     *
+     * Answers in JSON with the same refusals the save would give, and the
+     * tasks it would strand along with who could take each one over, so the
+     * person decides about the work before pressing save rather than finding
+     * out afterwards.
+     */
+    public function teamPreview(Request $request, int $id)
+    {
+        $project = Project::with(['schedules', 'projectTechnicians'])->findOrFail($id);
+
+        if ($refusal = $this->teamEditRefusal($project)) {
+            return response()->json(['errors' => [$refusal], 'conflicts' => []], 422);
+        }
+
+        $validator = $this->teamChangeValidator($request);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()->all(), 'conflicts' => []], 422);
+        }
+
+        $change = app(ProjectTeamChange::class);
+        $plan = $this->teamChangePlan($request, $project);
+
+        $errors = array_values($change->problems($plan));
+
+        if ($errors === [] && ($conflict = $change->availabilityConflict($plan))) {
+            $errors[] = $conflict;
+        }
+
+        if ($errors !== []) {
+            return response()->json(['errors' => $errors, 'conflicts' => []], 422);
+        }
+
+        $leadBefore = $change->leadOnDay($plan->before, $plan->effectiveDate());
+        $leadAfter = $change->leadOnDay($plan->after, $plan->effectiveDate());
+
+        return response()->json([
+            'errors' => [],
+            'changes_anything' => $plan->changesAnything(),
+            'lead_change' => $leadBefore && $leadAfter && (int) $leadBefore->technician_id !== (int) $leadAfter->technician_id
+                ? ['from' => $leadBefore->technician?->name, 'to' => $leadAfter->technician?->name]
+                : null,
+            'removed' => $this->technicianNames($plan->removedIds()),
+            'added' => $this->technicianNames($plan->addedIds()),
+            'conflicts' => $change->conflictsPayload($change->taskConflicts($plan)),
+        ]);
+    }
+
+    /**
+     * Call off a team change that has not taken effect: a scheduled removal or
+     * a scheduled start. Cancelling one half of a lead handover cancels both -
+     * see ProjectTeamChange::cancelScheduled().
+     */
+    public function cancelScheduledTeamChange(Request $request, int $id, ProjectTechnician $membership)
+    {
+        $project = Project::findOrFail($id);
+
+        if ((int) $membership->project_id !== (int) $project->project_id) {
+            abort(404);
+        }
+
+        if ($refusal = $this->teamEditRefusal($project)) {
+            return back()->with('error', $refusal);
+        }
+
+        $cancelled = null;
+
+        try {
+            DB::transaction(function () use ($request, $project, $membership, &$cancelled): void {
+                $cancelled = app(ProjectTeamChange::class)->cancelScheduled(
+                    $project,
+                    $membership,
+                    $request->input('part') === 'removal'
+                );
+            });
+        } catch (Throwable $exception) {
+            return back()->with('error', $this->safeErrorMessage($exception, 'Unable to cancel that change. Nothing was changed.'));
+        }
+
+        foreach ($cancelled['notices'] as $notice) {
+            if ($notice['technician']?->account) {
+                $this->notifications->scheduledTeamChangeCancelled($project, $notice['technician']->account, $notice['what']);
+            }
+        }
+
+        $summary = 'Scheduled change cancelled: '.implode('; ', $cancelled['sentences']).'.';
+
+        $this->activityLogger->record(
+            ActivityLog::TECHNICIAN_ASSIGNED,
+            null,
+            sprintf("On '%s': %s", $project->reference_no ?: $project->name, $summary),
+            $project
+        );
+
+        return back()->with('success', $summary);
+    }
+
+    /**
+     * Why this project's team cannot be changed right now, or null.
+     */
+    private function teamEditRefusal(Project $project): ?string
+    {
         if ($project->isReadOnly()) {
-            return back()->with('error', 'This project is '.$project->status.' and its team can no longer be edited.');
+            return 'This project is '.$project->status.' and its team can no longer be edited.';
         }
 
         // A paused project takes no changes to who is on it. The crew is kept
@@ -2996,187 +3236,54 @@ class ProjectController extends Controller
         // rebuilt, and rearranging it while nobody is working is a decision
         // that belongs after the resume, not before it.
         if ($project->on_hold) {
-            return back()->with('error', 'This project is on hold. Resume it before changing its assigned technicians.');
+            return 'This project is on hold. Resume it before changing its assigned technicians.';
         }
 
-        $validator = Validator::make($request->all(), [
+        return null;
+    }
+
+    private function teamChangeValidator(Request $request): \Illuminate\Validation\Validator
+    {
+        return Validator::make($request->all(), [
             'lead_tech' => ['required', 'integer', 'exists:tbl_technicians,technician_id'],
             'technicians' => ['nullable', 'array'],
             'technicians.*' => ['integer', 'exists:tbl_technicians,technician_id'],
+            'task_resolutions' => ['nullable', 'array'],
         ], [
             'lead_tech.required' => 'A lead technician is required.',
         ]);
+    }
 
-        // The same three rules the wizard applies - a real Lead Technician,
-        // only one of them, and nobody whose account has been switched off.
-        // The crew already on the project is passed in so an existing member
-        // whose account was disabled after they were assigned does not make
-        // the form unsaveable: they can be kept or removed, but not re-added
-        // once gone.
-        $validator->after(fn (\Illuminate\Validation\Validator $validator) => app(ProjectTeamRules::class)->validate(
-            $validator,
-            $request->input('lead_tech'),
-            (array) $request->input('technicians', []),
-            $project->projectTechnicians
-                ->pluck('technician_id')
-                ->map(fn ($technicianId): int => (int) $technicianId)
-                ->all()
-        ));
+    private function teamChangePlan(Request $request, Project $project): ProjectTeamChangePlan
+    {
+        // Always today: the master control changes the team as it stands.
+        return app(ProjectTeamChange::class)->plan(
+            $project,
+            Schedule::businessToday(),
+            (int) $request->input('lead_tech') ?: null,
+            (array) $request->input('technicians', [])
+        );
+    }
 
-        $validated = $validator->validate();
-
-        $technicianIds = collect([
-            $validated['lead_tech'],
-            ...($validated['technicians'] ?? []),
-        ])
-            ->map(fn ($technicianId) => (int) $technicianId)
-            ->unique()
-            ->values();
-
-        $currentlyAssignedIds = $project->projectTechnicians->pluck('technician_id');
-        $newlyAddedIds = $technicianIds->diff($currentlyAssignedIds)->values();
-
-        // Read before the save so the people who are about to be dropped can
-        // still be identified.
-        $teamBefore = $this->notifications->projectTeam($project);
-        $previousLeadId = $this->notifications->projectLead($project)?->id;
-
-        // Every one of the project's schedules that has not finished has to be
-        // checked, not just the first one and not just the overall span, and
-        // every day inside each range - a technician who is free on the
-        // endpoints but booked mid-range must still be rejected. A partial-day
-        // schedule only asks about its own hours, so joining a team booked for a
-        // morning does not require the whole day to be free.
-        //
-        // The ranges that have ended are left out, and only those. Adding
-        // somebody to a team is a decision about the work still to come, so a
-        // week this project spent in August has no say in who may be put on it
-        // for September - screening against it refused technicians over dates
-        // that cannot be staffed differently now. A range that started before
-        // today keeps the days it has left, because those are still a real
-        // claim. The picker draws on the same rule through
-        // ProjectTeamCandidates, so what it offers is what this accepts.
-        $ranges = Schedule::upcomingAvailabilityRanges($project->schedules);
-
-        if ($ranges !== [] && $newlyAddedIds->isNotEmpty()) {
-            $availability = app(TechnicianAvailabilityService::class);
-
-            $conflicts = $availability->findConflicts(
-                $newlyAddedIds,
-                $ranges,
-                $project->project_id
-            );
-
-            if ($conflicts->isNotEmpty()) {
-                return back()->with('error', $availability->conflictMessage($conflicts));
-            }
+    /**
+     * @param  Collection<int, int>  $technicianIds
+     * @return array<int, string>
+     */
+    private function technicianNames(Collection $technicianIds): array
+    {
+        if ($technicianIds->isEmpty()) {
+            return [];
         }
-
-        // Both halves go through ProjectTeam, so somebody added here is booked
-        // onto the project's existing dates exactly as they are when they are
-        // added from the technician's own schedule page. Written any other way
-        // they would sit on the team while still reading as free for those
-        // dates, and could be booked onto a second project over them.
-        // technician_id => [name, tasks], gathered inside the transaction and
-        // told to people after it commits.
-        $unassignedWork = [];
-
-        $removedBy = $request->user()?->id;
-
-        // Who actually came off and who actually went on, by name, gathered as
-        // it happens so the audit line can say so. It used to read "4
-        // technician(s), 1 newly added", which is a count of the outcome
-        // rather than a record of the change: it named nobody, so the one
-        // question a team history is opened to answer - who left, and when -
-        // could not be answered from it at all.
-        $removedNames = [];
-
-        DB::transaction(function () use ($project, $technicianIds, $removedBy, &$unassignedWork, &$removedNames): void {
-            $project->projectTechnicians()
-                ->with('technician.account')
-                ->whereNotIn('technician_id', $technicianIds->all())
-                ->get()
-                ->each(function (ProjectTechnician $assignment) use ($project, $removedBy, &$unassignedWork, &$removedNames): void {
-                    $released = $this->projectTeam->detach($project, $assignment, $removedBy);
-
-                    $removedNames[] = $assignment->technician?->name ?? 'A technician';
-
-                    if ($released->isNotEmpty()) {
-                        $unassignedWork[] = [
-                            'name' => $assignment->technician?->name ?? 'A technician',
-                            'tasks' => $released,
-                        ];
-                    }
-                });
-
-            $technicianIds->each(function (int $technicianId) use ($project, $removedBy): void {
-                // Same actor as the removals above: one save, one person
-                // behind every change in it.
-                $this->projectTeam->attach($project, $technicianId, $removedBy);
-            });
-        });
 
         // Fetched as models and mapped rather than plucked: Technician::$name
         // is an accessor over the linked account (see getNameAttribute), not a
         // column, so pluck('name') selects a field the table does not have.
-        $addedNames = Technician::query()
+        return Technician::query()
             ->with('account')
-            ->whereIn('technician_id', $newlyAddedIds->all())
+            ->whereIn('technician_id', $technicianIds->all())
             ->orderBy('technician_id')
             ->get()
             ->map(fn (Technician $technician): string => $technician->name)
             ->all();
-
-        $this->activityLogger->record(
-            ActivityLog::TECHNICIAN_ASSIGNED,
-            null,
-            $this->describeTeamChange($project, $addedNames, $removedNames),
-            $project
-        );
-
-        $project->load('projectTechnicians.technician.account');
-
-        $teamAfter = $this->notifications->projectTeam($project);
-        $lead = $this->notifications->projectLead($project);
-
-        if ($lead && $lead->id !== $previousLeadId) {
-            $this->notifications->leadAssignedToProject($project, $lead);
-        }
-
-        if ($previousLeadId && $lead?->id !== $previousLeadId) {
-            $formerLead = $teamBefore->firstWhere('id', $previousLeadId);
-
-            if ($formerLead) {
-                $this->notifications->leadRemovedFromProject($project, $formerLead);
-            }
-        }
-
-        $this->notifications->techniciansAssignedToProject(
-            $project,
-            $teamAfter->filter(
-                fn (User $user): bool => $user->id !== $lead?->id
-                    && ! $teamBefore->contains(fn (User $before): bool => $before->id === $user->id)
-            )
-        );
-
-        $this->notifications->techniciansRemovedFromProject(
-            $project,
-            $teamBefore->filter(
-                fn (User $user): bool => $user->id !== $previousLeadId
-                    && ! $teamAfter->contains(fn (User $after): bool => $after->id === $user->id)
-            )
-        );
-
-        // Work the departing technicians were holding does not leave with
-        // them, so somebody has to be told it is waiting for an owner.
-        foreach ($unassignedWork as $released) {
-            $this->notifications->tasksUnassignedByTeamChange(
-                $project,
-                $released['name'],
-                $released['tasks']
-            );
-        }
-
-        return back()->with('success', 'Assigned team updated.');
     }
 }

@@ -189,7 +189,10 @@ class LeadTechnicianRoleChangeTest extends TestCase
         $project = $this->project('PRJ-0001', 'ongoing');
 
         app(ProjectTeam::class)->attach($project, (int) $lead->technician_id)
-            ->update(['removed_at' => now()]);
+            ->update([
+                'joined_at' => Schedule::businessToday()->subDays(10),
+                'removed_at' => Schedule::businessToday()->subDay(),
+            ]);
 
         $lead->account->forceFill(['role' => 'technician'])->save();
 

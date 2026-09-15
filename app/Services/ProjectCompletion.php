@@ -154,6 +154,11 @@ class ProjectCompletion
         // must stop reading as busy.
         $this->releaseFutureSchedules($project, $completedOn);
 
+        // A team change still scheduled - somebody due to leave, somebody due
+        // to start - is called off: the job finished with the team it had, and
+        // its Assigned Team must not change weeks after the work stopped.
+        app(ProjectTeamChange::class)->cancelScheduledAfterClosing($project);
+
         // Everything else (technicians, task history, and the days already
         // worked) is intentionally left untouched for auditing and reporting.
     }

@@ -21,11 +21,19 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * so the table answers "who was on this project on that day?" as easily as it
  * answers "who is on it now".
  *
+ * Either end may lie in the future. A removal can be scheduled - "John comes off
+ * this project from Aug 21" - and so can a start, which is how a replacement
+ * lead takes over on the same day. So whether a span is on the team is always
+ * a question about a DATE, never about whether removed_at is filled in:
+ *
+ *     current   covers today                    (a leaving member is current)
+ *     upcoming  starts after today
+ *     ended     its removal date has arrived
+ *
  * The distinction runs through the relations that read this table:
- * Project::projectTechnicians() is the current team and is scoped to open
- * spans, which is what every screen in the application means by "the team".
- * Project::teamHistory() is every span there has ever been, and only the
- * handful of places that deliberately look backwards use it.
+ * Project::projectTechnicians() is the team today, Project::rosterTechnicians()
+ * is everybody current or still to come, and Project::teamHistory() is every
+ * span there has ever been.
  *
  * One row is one continuous span, not one person. Somebody taken off a project
  * and later put back holds two rows - the closed one keeps the days they
@@ -51,11 +59,13 @@ class ProjectTechnician extends Model
         'joined_by',
         'removed_at',
         'removed_by',
+        'removal_recorded_at',
     ];
 
     protected $casts = [
         'joined_at' => 'datetime',
         'removed_at' => 'datetime',
+        'removal_recorded_at' => 'datetime',
     ];
 
     public function project(): BelongsTo
@@ -84,11 +94,60 @@ class ProjectTechnician extends Model
     }
 
     /**
-     * Memberships that have not been closed - the team as it stands.
+     * The team on a date - today's, by default. A member whose removal is
+     * scheduled for later is still on it; one who starts later is not yet.
      */
-    public function scopeActive(Builder $query): Builder
+    public function scopeCurrent(Builder $query, ?string $date = null): Builder
     {
-        return $query->whereNull('removed_at');
+        return $query->coveringDate($date ?? self::today());
+    }
+
+    /**
+     * Everybody on the team on a date or due to join it after - every span
+     * whose removal has not arrived by then.
+     *
+     * This is the set a change to the team is checked against: somebody
+     * starting next week is not on the team today, but they are not free to be
+     * added a second time either, and the lead rule has to see them coming.
+     */
+    public function scopeNotEnded(Builder $query, ?string $date = null): Builder
+    {
+        $date ??= self::today();
+
+        return $query->where(fn (Builder $removed): Builder => $removed
+            ->whereNull('removed_at')
+            ->orWhereDate('removed_at', '>', $date));
+    }
+
+    /**
+     * Spans that have not started yet, and still will.
+     */
+    public function scopeUpcoming(Builder $query, ?string $date = null): Builder
+    {
+        $date ??= self::today();
+
+        return $query->whereDate('joined_at', '>', $date)
+            ->where(fn (Builder $removed): Builder => $removed
+                ->whereNull('removed_at')
+                ->orWhereColumn('removed_at', '>', 'joined_at'));
+    }
+
+    /**
+     * Spans that hold the whole of a task's dates - the strict rule a task's
+     * technician is held to. See coversPeriod().
+     *
+     * Either end may be a column expression, so a task query can ask this of
+     * its own rows.
+     */
+    public function scopeCoveringPeriod(Builder $query, mixed $start, mixed $due): Builder
+    {
+        return $query
+            ->where(fn (Builder $joined): Builder => $joined
+                ->whereNull('joined_at')
+                ->orWhereDate('joined_at', '<=', $start))
+            ->where(fn (Builder $removed): Builder => $removed
+                ->whereNull('removed_at')
+                ->orWhereDate('removed_at', '>', $due));
     }
 
     /**
@@ -117,9 +176,124 @@ class ProjectTechnician extends Model
             });
     }
 
+    /**
+     * Whether a removal has been recorded against this span at all - taken
+     * effect or still to come. Most readers want hasEnded() or isLeaving().
+     */
     public function isRemoved(): bool
     {
         return $this->removed_at !== null;
+    }
+
+    /**
+     * The first day of the span as 'Y-m-d', or null for one that has always
+     * been there.
+     */
+    public function startDate(): ?string
+    {
+        return $this->joined_at === null ? null : CarbonImmutable::parse($this->joined_at)->toDateString();
+    }
+
+    /**
+     * The first day the span NO LONGER covers, as 'Y-m-d' - the effective
+     * removal date - or null while nothing ends it.
+     */
+    public function endDate(): ?string
+    {
+        return $this->removed_at === null ? null : CarbonImmutable::parse($this->removed_at)->toDateString();
+    }
+
+    /**
+     * The last day the span covers, inclusive - the day before the removal.
+     */
+    public function lastDay(): ?CarbonImmutable
+    {
+        return $this->removed_at === null ? null : CarbonImmutable::parse($this->endDate())->subDay();
+    }
+
+    /**
+     * A span that closes on the day it opened covers no day at all: the
+     * technician added by mistake and taken straight back off.
+     */
+    public function isEmptySpan(): bool
+    {
+        return $this->startDate() !== null && $this->endDate() !== null && $this->startDate() >= $this->endDate();
+    }
+
+    /**
+     * On the team on the given date - today, by default.
+     */
+    public function isCurrent(?string $date = null): bool
+    {
+        return ! $this->isEmptySpan() && $this->coveredOn($date ?? self::today());
+    }
+
+    /**
+     * Not on the team yet, and due to be.
+     */
+    public function isUpcoming(?string $date = null): bool
+    {
+        return ! $this->isEmptySpan() && $this->startDate() !== null && $this->startDate() > ($date ?? self::today());
+    }
+
+    /**
+     * Its removal has taken effect: a record of a membership, not a
+     * membership.
+     */
+    public function hasEnded(?string $date = null): bool
+    {
+        return $this->isEmptySpan() || ($this->endDate() !== null && $this->endDate() <= ($date ?? self::today()));
+    }
+
+    /**
+     * On the team today with a removal already scheduled.
+     */
+    public function isLeaving(?string $date = null): bool
+    {
+        return $this->isCurrent($date) && $this->endDate() !== null;
+    }
+
+    /**
+     * Whether this span holds every day from a task's start to its due date.
+     *
+     * One span, deliberately. A technician taken off a project on Aug 21 and
+     * put back on Sep 5 covers both Aug 18 and Sep 8 - but not the fortnight
+     * between, when the work was somebody else's to do. A task running across
+     * that gap is not theirs, even though both of its ends are. (A gap in the
+     * PROJECT's schedule is different: nobody is on site then at all, which is
+     * why TaskScheduleRules lets a task span one.)
+     */
+    public function coversPeriod(string $start, string $due): bool
+    {
+        if ($this->isEmptySpan()) {
+            return false;
+        }
+
+        return ($this->startDate() === null || $this->startDate() <= $start)
+            && ($this->endDate() === null || $this->endDate() > $due);
+    }
+
+    /**
+     * Whether this span shares at least one day with [$from, $until), where a
+     * null $until runs on forever.
+     */
+    public function overlaps(string $from, ?string $until): bool
+    {
+        if ($this->isEmptySpan() || ($until !== null && $from >= $until)) {
+            return false;
+        }
+
+        return ($this->endDate() === null || $this->endDate() > $from)
+            && ($until === null || $this->startDate() === null || $this->startDate() < $until);
+    }
+
+    /**
+     * The office's today, which every "is this span on the team?" question is
+     * measured against - never the server's midnight.
+     */
+    public static function today(): string
+    {
+        return Schedule::businessToday()->toDateString();
     }
 
     /**

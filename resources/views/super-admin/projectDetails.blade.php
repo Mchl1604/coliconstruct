@@ -1519,6 +1519,12 @@
                                                 @unless ($technician->isAssignable())
                                                     <span class="badge bg-warning text-dark">Account inactive</span>
                                                 @endunless
+
+                                                {{-- A removal already scheduled: still on the
+                                                     team today, and saying until when. --}}
+                                                @if ($label = $project->scheduledChangeLabel($projectTechnician))
+                                                    <span class="badge bg-light text-dark border">{{ $label }}</span>
+                                                @endif
                                             </div>
 
                                             <div class="d-flex flex-wrap gap-1 mt-1">
@@ -1529,6 +1535,13 @@
                                                 @endforelse
                                             </div>
                                         </div>
+
+                                        @if ($projectTechnician->isLeaving() && $canTakeWork)
+                                            @include('super-admin.partials.cancel-scheduled-team-change', [
+                                                'membership' => $projectTechnician,
+                                                'label' => str_starts_with((string) $project->scheduledChangeLabel($projectTechnician), 'Off') ? 'Cancel days off' : 'Cancel removal',
+                                            ])
+                                        @endif
 
                                     </li>
                                 @endif
@@ -1541,6 +1554,66 @@
                             @endforelse
 
                         </ul>
+
+                        {{-- Due to join, and not on the team yet. Listed apart from
+                             the team rather than inside it: Assigned Team is who is
+                             on the project today, and a replacement lead starting
+                             next week is not - but an administrator has to be able
+                             to see a handover coming, and call it off. --}}
+                        @if ($project->upcomingTechnicians->isNotEmpty())
+                            <div class="px-3 pt-3 pb-1 small text-uppercase text-secondary fw-semibold">
+                                Upcoming
+                            </div>
+                            <ul class="list-group list-group-flush" data-upcoming-team>
+                                @foreach ($project->upcomingTechnicians->sortBy(fn ($span) => $span->startDate()) as $upcoming)
+                                    @continue(! $upcoming->technician)
+                                    <li class="list-group-item d-flex align-items-center gap-3">
+                                        <x-user-avatar :user="$upcoming->technician->account" size="md" />
+
+                                        <div class="flex-grow-1 min-w-0">
+                                            <div class="d-flex flex-wrap align-items-center gap-2">
+                                                <span class="fw-semibold">{{ $upcoming->technician->name }}</span>
+
+                                                @if ($upcoming->technician->isLead())
+                                                    <span class="badge project-lead-badge">Lead Technician</span>
+                                                @else
+                                                    <span class="badge bg-secondary">Technician</span>
+                                                @endif
+
+                                                <span class="badge bg-light text-dark border">{{ $project->scheduledChangeLabel($upcoming) }}</span>
+
+                                                @if ($endLabel = $project->scheduledEndLabel($upcoming))
+                                                    <span class="badge bg-light text-dark border">{{ $endLabel }}</span>
+                                                @endif
+                                            </div>
+                                        </div>
+
+                                        @if ($canTakeWork)
+                                            <div class="d-flex flex-column align-items-end gap-1">
+                                                @include('super-admin.partials.cancel-scheduled-team-change', [
+                                                    'membership' => $upcoming,
+                                                    'label' => match (strtok((string) $project->scheduledChangeLabel($upcoming), ' ')) {
+                                                        'Returns' => 'Cancel return',
+                                                        'Covers' => 'Cancel cover',
+                                                        default => 'Cancel start',
+                                                    },
+                                                ])
+
+                                                {{-- The removal at the end of it, on its own:
+                                                     they still come, and stay on. --}}
+                                                @if ($endLabel)
+                                                    @include('super-admin.partials.cancel-scheduled-team-change', [
+                                                        'membership' => $upcoming,
+                                                        'label' => 'Cancel removal',
+                                                        'part' => 'removal',
+                                                    ])
+                                                @endif
+                                            </div>
+                                        @endif
+                                    </li>
+                                @endforeach
+                            </ul>
+                        @endif
 
                     </div>
 
@@ -2616,7 +2689,7 @@
         <div class="modal-dialog modal-lg">
 
             <form action="{{ route('super-admin.projects.team.update', $project->project_id) }}" method="POST"
-                data-team-form>
+                data-team-form data-preview-url="{{ route('super-admin.projects.team.preview', $project->project_id) }}">
 
                 @csrf
                 @method('PUT')
@@ -2632,7 +2705,16 @@
                         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                     </div>
 
-                    <div class="modal-body">
+                    <div class="modal-body" data-team-edit-step>
+
+                        {{-- The master control: whatever is saved here is the team
+                             from today, and anybody taken off comes off completely.
+                             Days off, and removals from a later date, are made on
+                             the Technicians page. --}}
+                        <p class="text-secondary small mb-3">
+                            Changes take effect today. Anybody removed here comes off this project completely.
+                            To take a technician off for some days, or from a later date, use the Technicians page.
+                        </p>
 
                         <div class="mb-4">
                             <label for="editLeadTech" class="form-label fw-bold">
@@ -2709,15 +2791,35 @@
 
                     </div>
 
+                    {{-- The second step, shown only when the change would leave
+                         open tasks with somebody who is no longer assigned for
+                         their dates. Each one needs an answer before the change
+                         is saved - nothing is moved on the administrator's
+                         behalf. Filled in by projectDetails.js from the preview
+                         endpoint. --}}
+                    <div class="modal-body d-none" data-team-review-step>
+                        <p class="fw-semibold mb-1" data-team-review-summary></p>
+                        <p class="text-secondary small mb-3">
+                            These tasks are dated to days their technician will not be assigned to this project.
+                            Choose what happens to each one.
+                        </p>
+                        <div class="d-grid gap-2" data-team-review-list></div>
+                    </div>
+
                     <div class="modal-footer">
 
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" data-team-close>
                             Close
                         </button>
 
-                        <button type="submit" class="btn btn-primary">
+                        <button type="button" class="btn btn-outline-secondary d-none" data-team-review-back>
+                            <i class="bi bi-arrow-left me-1" aria-hidden="true"></i>
+                            Back
+                        </button>
+
+                        <button type="submit" class="btn btn-primary" data-team-save>
                             <i class="bi bi-check-lg me-1"></i>
-                            Save Changes
+                            <span data-team-save-label>Save Changes</span>
                         </button>
 
                     </div>
@@ -3253,9 +3355,8 @@
                              everywhere. --}}
                         <div class="task-assign-row">
 
-                            @foreach ($project->projectTechnicians as $projectTechnician)
+                            @foreach ($taskTechnicians as $technician)
                                 @php
-                                    $technician = $projectTechnician->technician;
                                     $activeCount = $technicianActiveTaskCounts[$technician->technician_id] ?? 0;
                                     // Still listed, because deactivating an
                                     // account does not take somebody off a team -
@@ -3266,8 +3367,12 @@
                                 @endphp
 
                                 <label>
+                                    {{-- The days they are assigned to this project, so
+                                         choosing them greys out the rest of the
+                                         calendar - see taskDatePickers.js. --}}
                                     <input type="radio" class="btn-check" name="technician_id"
                                         value="{{ $technician->technician_id }}" required
+                                        data-assignment-periods='@json($technicianPeriods[$technician->technician_id] ?? [])'
                                         @disabled($cannotReceiveWork)>
 
                                     <div class="task-assign-card">
@@ -3286,6 +3391,7 @@
                                                 Account inactive
                                             </span>
                                         @endif
+                                        <div class="task-assign-period" data-period-note></div>
                                     </div>
                                 </label>
                             @endforeach
@@ -3322,12 +3428,12 @@
     @endif
 
     @php
-        $projectTechnicianModels = $project->projectTechnicians->pluck('technician')->filter()->values();
+        $projectTechnicianModels = $taskTechnicians;
     @endphp
 
     @foreach ($tasks as $task)
         {{-- Shared with the Tasks page and the technician portal. --}}
-        <x-task-details-modal :task="$task" :technicians="$projectTechnicianModels"
+        <x-task-details-modal :task="$task" :technicians="$projectTechnicianModels" :periods="$technicianPeriods"
             :active-task-counts="$technicianActiveTaskCounts" :schedule-ranges="$scheduleRanges"
             :phases="$selectablePhases"
             :update-action="$canTakeWork ? route('super-admin.tasks.update', $task->task_id) : null" />

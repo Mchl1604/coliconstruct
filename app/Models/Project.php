@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Services\SystemContentService;
+use App\Support\BusinessTime;
 use App\Support\DisplayCode;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
@@ -407,7 +408,7 @@ class Project extends Model
     }
 
     /**
-     * The team as it stands: memberships nobody has closed.
+     * The team as it stands today: every span that covers the office's today.
      *
      * Scoped rather than raw, because "the team" is what every screen, guard
      * and count in the application means when it reads this relation, and a
@@ -415,11 +416,38 @@ class Project extends Model
      * unscoped relation here would put everybody ever removed back onto the
      * project details page, the assign-task picker and the availability
      * checker in one go.
+     *
+     * Asked of a date rather than of whether removed_at is empty, because
+     * either end of a span can be scheduled: somebody leaving next week is
+     * still on the team today, and somebody starting next week is not yet.
      */
     public function projectTechnicians(): HasMany
     {
         return $this->hasMany(ProjectTechnician::class, 'project_id', 'project_id')
-            ->whereNull('removed_at');
+            ->current();
+    }
+
+    /**
+     * Today's team together with everybody due to join it - every span whose
+     * removal has not taken effect.
+     *
+     * What a CHANGE to the team is measured against: the replacement lead who
+     * starts on the 21st is not on the team today, but they already hold the
+     * lead from then, and a second one may not be booked over them.
+     */
+    public function rosterTechnicians(): HasMany
+    {
+        return $this->hasMany(ProjectTechnician::class, 'project_id', 'project_id')
+            ->notEnded();
+    }
+
+    /**
+     * The spans that have not started yet.
+     */
+    public function upcomingTechnicians(): HasMany
+    {
+        return $this->hasMany(ProjectTechnician::class, 'project_id', 'project_id')
+            ->upcoming();
     }
 
     /**
@@ -783,11 +811,113 @@ class Project extends Model
      */
     public function isLeadMember(ProjectTechnician $assignment): bool
     {
-        if ($assignment->isRemoved() || $this->isReadOnly() || $this->isArchived()) {
+        if ($assignment->hasEnded() || $this->isReadOnly() || $this->isArchived()) {
             return $assignment->heldLeadRole();
         }
 
         return (bool) $assignment->technician?->isLead();
+    }
+
+    /**
+     * What is scheduled for a span, in the words the team cards print - or
+     * null when nothing is.
+     *
+     *   Off Sep 22, 2026 - Sep 23, 2026   on the team, with days off to come
+     *   Leaving Sep 21, 2026              on the team, coming off it for good
+     *   Returns Sep 24, 2026              on days off now, back that day
+     *   Covers Sep 22, 2026 - Sep 23, 2026  a stand-in lead for somebody's days off
+     *   Starts Oct 1, 2026                due to join
+     */
+    public function scheduledChangeLabel(ProjectTechnician $span): ?string
+    {
+        $this->loadMissing('teamHistory');
+
+        $day = fn (?string $date): string => $date ? CarbonImmutable::parse($date)->format(BusinessTime::DATE) : '';
+
+        $siblings = $this->teamHistory->filter(fn (ProjectTechnician $other): bool => ! $other->is($span)
+            && (int) $other->technician_id === (int) $span->technician_id
+            && ! $other->isEmptySpan());
+
+        if ($span->isLeaving()) {
+            $return = $siblings
+                ->filter(fn (ProjectTechnician $other): bool => $other->startDate() !== null && $other->startDate() > $span->endDate())
+                ->sortBy(fn (ProjectTechnician $other): string => (string) $other->startDate())
+                ->first();
+
+            return $return
+                ? 'Off '.$day($span->endDate()).' - '.$day(CarbonImmutable::parse($return->startDate())->subDay()->toDateString())
+                : 'Leaving '.$day($span->endDate());
+        }
+
+        if ($span->isUpcoming()) {
+            if ($siblings->contains(fn (ProjectTechnician $other): bool => $other->endDate() !== null && $other->endDate() <= (string) $span->startDate())) {
+                return 'Returns '.$day($span->startDate());
+            }
+
+            return $this->isLeadCover($span)
+                ? 'Covers '.$day($span->startDate()).' - '.$day($span->lastDay()?->toDateString())
+                : 'Starts '.$day($span->startDate());
+        }
+
+        return null;
+    }
+
+    /**
+     * The removal already scheduled at the end of a span still to come - a
+     * return, or a start, that will itself come to an end - as "Leaving
+     * Oct 1, 2026". Null for anything else, a lead's cover included: a cover
+     * ends because the lead it covers comes back, not because of a removal.
+     */
+    public function scheduledEndLabel(ProjectTechnician $span): ?string
+    {
+        if (! $span->isUpcoming() || $span->endDate() === null || $this->isLeadCover($span)) {
+            return null;
+        }
+
+        return 'Leaving '.CarbonImmutable::parse($span->endDate())->format(BusinessTime::DATE);
+    }
+
+    /**
+     * Whether a span is a stand-in lead's: a lead span that starts the day
+     * another lead goes off and ends the day that lead comes back.
+     */
+    public function isLeadCover(ProjectTechnician $span): bool
+    {
+        if ($span->endDate() === null) {
+            return false;
+        }
+
+        $this->loadMissing('teamHistory.technician.account');
+
+        $isLead = fn (ProjectTechnician $other): bool => (bool) $other->technician?->isLead();
+
+        if (! $isLead($span)) {
+            return false;
+        }
+
+        $others = $this->teamHistory->filter(fn (ProjectTechnician $other): bool => (int) $other->technician_id !== (int) $span->technician_id
+            && ! $other->isEmptySpan()
+            && $isLead($other));
+
+        return $others->contains(fn (ProjectTechnician $off): bool => $off->endDate() === $span->startDate()
+            && $others->contains(fn (ProjectTechnician $back): bool => (int) $back->technician_id === (int) $off->technician_id
+                && $back->startDate() === $span->endDate()));
+    }
+
+    /**
+     * The lead on a given date - the lead-role span covering it.
+     *
+     * On today this is leadAssignment(). On a date still to come it is who a
+     * scheduled handover will have leading by then, which is what the team
+     * card's "Leaving" and "Upcoming" notes and the handover rules read.
+     */
+    public function leadOn(string $date): ?ProjectTechnician
+    {
+        $this->loadMissing('teamHistory.technician.account');
+
+        return $this->teamHistory
+            ->first(fn (ProjectTechnician $assignment): bool => $assignment->isCurrent($date)
+                && $this->isLeadMember($assignment));
     }
 
     /**
@@ -1702,7 +1832,9 @@ class Project extends Model
         return $query
             ->whereIn('status', self::DERIVED_LIVE_STATUSES)
             ->where('is_archived', false)
-            ->whereDoesntHave('projectTechnicians');
+            // A crew due to start next week is a crew: the project is staffed,
+            // it is simply not being worked yet.
+            ->whereDoesntHave('rosterTechnicians');
     }
 
     /**
@@ -1746,7 +1878,7 @@ class Project extends Model
             return [];
         }
 
-        $this->loadMissing(['schedules', 'projectTechnicians.technician.account']);
+        $this->loadMissing(['schedules', 'projectTechnicians.technician.account', 'rosterTechnicians']);
 
         $keys = [];
 
@@ -1763,7 +1895,7 @@ class Project extends Model
         // job needs dates putting on it", so both now file under Needs
         // Rescheduling. See needsScheduling().
 
-        if ($this->projectTechnicians->isEmpty()) {
+        if ($this->rosterTechnicians->isEmpty()) {
             $keys[] = 'no_technicians';
         }
 

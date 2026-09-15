@@ -344,9 +344,19 @@ class ProjectTeamScheduleLinkTest extends TestCase
             'due_date' => $this->day(6),
         ]);
 
+        // The open task needs a decision before the removal is saved - nothing
+        // is taken off anybody without one.
         $this->put(route('super-admin.projects.team.update', $project->project_id), [
             'lead_tech' => $lead->technician_id,
             'technicians' => [],
+        ])->assertSessionHas('error');
+
+        $this->assertSame($leaving->technician_id, $open->fresh()->technician_id);
+
+        $this->put(route('super-admin.projects.team.update', $project->project_id), [
+            'lead_tech' => $lead->technician_id,
+            'technicians' => [],
+            'task_resolutions' => [$open->task_id => 'unassign'],
         ])->assertSessionHas('success');
 
         $this->assertSame(0, $this->scheduleLinkCount($schedule, $leaving));
@@ -538,11 +548,18 @@ class ProjectTeamScheduleLinkTest extends TestCase
         $lead = $this->createTechnician('Lead Person', 'lead_technician');
         $returning = $this->createTechnician('Returning Tech');
 
-        foreach ([[$returning->technician_id], [], [$returning->technician_id]] as $technicians) {
+        foreach ([[$returning->technician_id], [], [$returning->technician_id]] as $step => $technicians) {
             $this->put(route('super-admin.projects.team.update', $project->project_id), [
                 'lead_tech' => $lead->technician_id,
                 'technicians' => $technicians,
             ])->assertSessionHas('success');
+
+            // On the team for a while before coming off: a span added and
+            // removed in the same instant covers no day and is no part of
+            // anybody's history.
+            if ($step === 0) {
+                $this->joinedOn($project, [$lead, $returning], Schedule::businessToday()->subDays(5)->toDateString());
+            }
         }
 
         $memberships = collect(
@@ -645,6 +662,9 @@ class ProjectTeamScheduleLinkTest extends TestCase
         // Business dates, the same clock the removal is measured against.
         $businessDay = fn (int $offset): string => Schedule::businessToday()->addDays($offset)->toDateString();
 
+        // On the team since before any of this work was dated.
+        $this->joinedOn($project, [$lead, $leaving], $businessDay(-10));
+
         $task = fn (string $title, string $status, ?string $start, ?string $due): Task => Task::create([
             'project_id' => $project->project_id,
             'technician_id' => $leaving->technician_id,
@@ -665,6 +685,9 @@ class ProjectTeamScheduleLinkTest extends TestCase
         $this->put(route('super-admin.projects.team.update', $project->project_id), [
             'lead_tech' => $lead->technician_id,
             'technicians' => [],
+            'task_resolutions' => collect([$dueToday, $spanning, $future, $undated])
+                ->mapWithKeys(fn (Task $released): array => [$released->task_id => 'unassign'])
+                ->all(),
         ])->assertSessionHas('success');
 
         $this->assertSame($leaving->technician_id, $overdue->fresh()->technician_id);

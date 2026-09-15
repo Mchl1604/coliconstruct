@@ -101,7 +101,7 @@ class Technician extends Model
     /**
      * The projects this technician is on now.
      *
-     * Scoped to open memberships for the same reason
+     * Scoped to the spans covering today for the same reason
      * Project::projectTechnicians() is: every workload count, dashboard tile
      * and "what is this technician on?" read means the current team, and a
      * membership row now outlives the membership. See ProjectTechnician.
@@ -109,7 +109,17 @@ class Technician extends Model
     public function projectTechnicians(): HasMany
     {
         return $this->hasMany(ProjectTechnician::class, 'technician_id', 'technician_id')
-            ->whereNull('removed_at');
+            ->current();
+    }
+
+    /**
+     * The projects this technician is on now or due to join - every span
+     * whose removal has not taken effect.
+     */
+    public function rosterMemberships(): HasMany
+    {
+        return $this->hasMany(ProjectTechnician::class, 'technician_id', 'technician_id')
+            ->notEnded();
     }
 
     /**

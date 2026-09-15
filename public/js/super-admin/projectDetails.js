@@ -211,9 +211,9 @@
             return;
         }
 
-        const teamData = Array.isArray(window.assignedTeamData) ? window.assignedTeamData : [];
-        const initialState = window.assignedTeamState || { leadTechId: null, technicianIds: [] };
-        const technicianLookup = new Map(teamData.map(function(technician) {
+        let teamData = Array.isArray(window.assignedTeamData) ? window.assignedTeamData : [];
+        let initialState = window.assignedTeamState || { leadTechId: null, technicianIds: [] };
+        let technicianLookup = new Map(teamData.map(function(technician) {
             return [String(technician.id), technician];
         }));
 
@@ -581,17 +581,6 @@
         }
 
         /**
-         * A project carries exactly one lead, so choosing a different one in the
-         * menu is not an addition - it REPLACES the lead who is there, and the
-         * outgoing lead comes off the team entirely along with any unfinished task
-         * they were holding.
-         *
-         * That is the intended way to change a lead, and it stays a single save.
-         * What it must not be is a surprise: the menu looks like every other
-         * field on the form, and nothing else on the page says that picking a name
-         * in it removes somebody. So the replacement is named before it happens.
-         */
-        /**
          * Whether this save is replacing the lead, rather than leaving them alone.
          */
         function replacesLead() {
@@ -601,73 +590,232 @@
                 && String(previousLeadId) !== String(leadTechInput.value);
         }
 
+        let reviewing = false;
+        let readyToSend = false;
+        let previewError = null;
+
+        const editStep = form.querySelector('[data-team-edit-step]');
+        const reviewStep = form.querySelector('[data-team-review-step]');
+        const reviewList = form.querySelector('[data-team-review-list]');
+        const reviewSummary = form.querySelector('[data-team-review-summary]');
+        const reviewBack = form.querySelector('[data-team-review-back]');
+        const closeButton = form.querySelector('[data-team-close]');
+
+        // ----------------------------------------------------------------
+        // Asking before it is saved
+        // ----------------------------------------------------------------
+
         /**
-         * Ask, in the page's own dialog.
-         *
-         * Was a window.confirm(), which put the consequence - somebody comes off
-         * the project and their work is unassigned - into the same grey paragraph
-         * as the question, in a box that looks like the browser complaining. It is
-         * the most consequential thing this form does and it should read like it.
+         * A project carries exactly one lead, so choosing a different one in the
+         * menu is not an addition - it REPLACES the lead who is there, on the
+         * day the change takes effect. That is the intended way to change a
+         * lead, and it stays a single save; what it must not be is a surprise,
+         * so the replacement is named before it happens.
          */
         function confirmLeadReplacement() {
             const outgoing = technicianLookup.get(String(initialState.leadTechId));
             const incoming = technicianLookup.get(String(leadTechInput.value));
+            const outgoingName = outgoing ? outgoing.name : 'The current lead technician';
 
             return window.confirmDialog({
                 title: 'Replace the lead technician?',
-                body:
-                    (outgoing ? outgoing.name : 'The current lead technician') +
-                    ' will be replaced by ' +
-                    (incoming ? incoming.name : 'the selected technician') + '.',
-                detail:
-                    (outgoing ? outgoing.name : 'The current lead') +
-                    ' comes off the project, and their open tasks become Unassigned.',
+                body: outgoingName + ' will be replaced by ' + (incoming ? incoming.name : 'the selected technician') + '.',
+                detail: outgoingName + ' comes off the project completely, today.',
                 label: 'Replace Lead',
             });
         }
 
-        /**
-         * The dialog answers later than a submit handler can wait, so the submit is
-         * always stopped and re-fired once the question has been answered. The flag
-         * is what stops the second pass asking again.
-         */
-        let leadReplacementConfirmed = false;
+        function showPreviewError(messages) {
+            if (!previewError) {
+                previewError = document.createElement('div');
+                previewError.className = 'alert alert-danger';
+                previewError.setAttribute('role', 'alert');
+                editStep.prepend(previewError);
+            }
 
-        form.addEventListener('submit', function(event) {
+            previewError.innerHTML = '';
+
+            const heading = document.createElement('div');
+            heading.className = 'fw-semibold mb-1';
+            heading.textContent = 'Your changes were not saved.';
+
+            const list = document.createElement('ul');
+            list.className = 'mb-0 ps-3';
+
+            messages.forEach(function (message) {
+                const item = document.createElement('li');
+                item.textContent = message;
+                list.appendChild(item);
+            });
+
+            previewError.append(heading, list);
+            previewError.classList.remove('d-none');
+            editStep.scrollTop = 0;
+        }
+
+        function clearPreviewError() {
+            if (previewError) {
+                previewError.classList.add('d-none');
+            }
+        }
+
+        function showEditStep() {
+            reviewing = false;
+            reviewList.innerHTML = '';
+            reviewStep.classList.add('d-none');
+            editStep.classList.remove('d-none');
+            reviewBack.classList.add('d-none');
+            closeButton.classList.remove('d-none');
+        }
+
+        /**
+         * One row per task the change strands, each with its own choice. The
+         * choices are ordinary form fields - task_resolutions[task_id] - so the
+         * save carries them to the server, which checks every one again.
+         */
+        function showReviewStep(preview) {
+            reviewing = true;
+
+            reviewSummary.textContent = preview.conflicts.length === 1
+                ? '1 task needs a decision before this change can be saved.'
+                : preview.conflicts.length + ' tasks need a decision before this change can be saved.';
+
+            reviewList.innerHTML = preview.conflicts.map(function (conflict) {
+                const options = ['<option value="" selected disabled>Choose what happens&hellip;</option>']
+                    .concat(conflict.options.map(function (option) {
+                        return '<option value="' + option.technician_id + '">Reassign to ' +
+                            escapeHtml(option.name) + '</option>';
+                    }))
+                    .concat(['<option value="unassign">Leave unassigned</option>'])
+                    .concat(conflict.can_keep
+                        ? ['<option value="keep">Keep with ' + escapeHtml(conflict.holder || 'the technician') +
+                            ' and flag it</option>']
+                        : [])
+                    .join('');
+
+                return '<div class="border rounded-2 p-3">' +
+                    '<div class="d-flex flex-wrap justify-content-between gap-2">' +
+                    '<span class="fw-semibold">' + escapeHtml(conflict.title) + '</span>' +
+                    '<span class="text-secondary small">' + escapeHtml(conflict.dates) + '</span>' +
+                    '</div>' +
+                    '<div class="text-secondary small mb-2">' + escapeHtml(conflict.reason) + '</div>' +
+                    '<select class="form-select form-select-sm" required name="task_resolutions[' +
+                    conflict.task_id + ']" aria-label="What happens to ' + escapeHtml(conflict.title) + '">' +
+                    options + '</select>' +
+                    (conflict.options.length
+                        ? ''
+                        : '<div class="form-text">Nobody on the team is assigned for all of these dates.</div>') +
+                    '</div>';
+            }).join('');
+
+            editStep.classList.add('d-none');
+            reviewStep.classList.remove('d-none');
+            reviewBack.classList.remove('d-none');
+            closeButton.classList.add('d-none');
+        }
+
+        reviewBack.addEventListener('click', showEditStep);
+
+        /**
+         * Ask the server what this change would do: the same refusals the save
+         * gives, and the tasks it would strand.
+         */
+        function preview() {
+            const data = new FormData(form);
+
+            // The preview is its own POST route; the form's PUT spoofing and
+            // any earlier task choices are not part of the question.
+            data.delete('_method');
+            Array.from(data.keys()).forEach(function (key) {
+                if (key.indexOf('task_resolutions') === 0) {
+                    data.delete(key);
+                }
+            });
+
+            return fetch(form.dataset.previewUrl, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                body: data,
+            })
+                .then(function (response) {
+                    return response.json().catch(function () {
+                        return { errors: ['Unable to check this change. Try again.'], conflicts: [] };
+                    });
+                })
+                .catch(function () {
+                    return { errors: ['Unable to reach the server. Nothing was changed.'], conflicts: [] };
+                });
+        }
+
+        /**
+         * The dialogs answer later than a submit handler can wait, so the submit
+         * is always stopped and re-fired once every question has been answered.
+         * `readyToSend` is what lets the second pass through to the page's own
+         * save - see projectWorkspace.js.
+         */
+        form.addEventListener('submit', function (event) {
             // A hidden input takes no part in the browser's own validation, so
             // the requirement is enforced here and the menu is put in front of
             // the person to answer it.
             if (!leadTechInput.value) {
                 event.preventDefault();
+                showEditStep();
                 leadTechError.classList.remove('d-none');
                 leadTechButton.focus();
 
                 return;
             }
 
-            if (leadReplacementConfirmed || !replacesLead()) {
+            if (readyToSend) {
+                readyToSend = false;
+
+                return;
+            }
+
+            // Every stranded task answered: this submit is the save, and it is
+            // left to go on to the page's own sending. It is not stopped and
+            // fired again - a form cannot be re-submitted from inside its own
+            // submit event, and the browser silently drops the second one,
+            // which left the button needing two presses. The selects are
+            // required, so the browser has already refused a missing choice
+            // before this handler runs.
+            if (reviewing) {
                 return;
             }
 
             event.preventDefault();
 
-            confirmLeadReplacement().then(function(confirmed) {
+            clearPreviewError();
+
+            (replacesLead() ? confirmLeadReplacement() : Promise.resolve(true)).then(function (confirmed) {
                 if (!confirmed) {
                     return;
                 }
 
-                leadReplacementConfirmed = true;
-                // requestSubmit() rather than submit(), so the form runs its own
-                // validation and this handler sees the second pass - submit()
-                // would skip both.
-                form.requestSubmit();
+                return preview().then(function (result) {
+                    if (result.errors && result.errors.length) {
+                        showPreviewError(result.errors);
+
+                        return;
+                    }
+
+                    if (result.conflicts && result.conflicts.length) {
+                        showReviewStep(result);
+
+                        return;
+                    }
+
+                    readyToSend = true;
+                    form.requestSubmit();
+                });
             });
         });
 
-        // A refused save leaves the dialog open. Trying again is a new
-        // decision about the lead, so it is asked again.
-        form.addEventListener('workspace:failed', function() {
-            leadReplacementConfirmed = false;
+        // A refused save leaves the dialog open. Trying again is a new decision,
+        // so every question is asked again.
+        form.addEventListener('workspace:failed', function () {
+            readyToSend = false;
         });
 
         /**
@@ -906,10 +1054,69 @@
         });
     }
 
+    // ------------------------------------------------------------------
+    // Scheduled team changes
+    // ------------------------------------------------------------------
+
+    /**
+     * Cancel a scheduled removal or start, after saying what it undoes.
+     *
+     * Cancelling either half of a lead handover cancels the other half as
+     * well - the server does it, see ProjectTeamChange::cancelScheduled() - so
+     * the dialog says so for a lead rather than let it come as a surprise.
+     */
+    function initTeamCancelForms(root) {
+        root.querySelectorAll('[data-team-cancel-form]').forEach(function (form) {
+            let confirmed = false;
+
+            form.addEventListener('submit', function (event) {
+                if (confirmed) {
+                    confirmed = false;
+
+                    return;
+                }
+
+                event.preventDefault();
+
+                const name = form.dataset.technicianName || 'This technician';
+                const label = form.dataset.label || 'Cancel';
+                const isLead = form.dataset.isLead === '1';
+
+                // What pressing it undoes, said the way the card said it.
+                const body = {
+                    'Cancel removal': name + ' will stay on this project.',
+                    'Cancel days off': name + ' will no longer take those days off.',
+                    'Cancel return': name + ' will not come back to this project.',
+                    'Cancel cover': name + ' will no longer lead in their place, and the days off they were covering are cancelled.',
+                    'Cancel start': name + ' will no longer join this project.',
+                }[label] || name + "'s scheduled change will be cancelled.";
+
+                window.confirmDialog({
+                    title: label + '?',
+                    body: body,
+                    detail: isLead && label !== 'Cancel return'
+                        ? 'A lead technician is involved, so whoever leads in their place is cancelled too.'
+                        : '',
+                    label: label.replace(/\b\w/g, function (letter) {
+                        return letter.toUpperCase();
+                    }),
+                }).then(function (answer) {
+                    if (!answer) {
+                        return;
+                    }
+
+                    confirmed = true;
+                    form.requestSubmit();
+                });
+            });
+        });
+    }
+
     function init(root) {
         initReportImages(root);
         initTaskDates(root);
         initTeamForm(root);
+        initTeamCancelForms(root);
         initPickedFileLists(root);
         initDocumentRemoval(root);
         ensureTasksTable();

@@ -31,7 +31,7 @@ class TaskAssignmentGaps
      *
      * @var array<int, string>
      */
-    public const ORDER = [Task::GAP_BOTH, Task::GAP_TECHNICIAN, Task::GAP_DATE];
+    public const ORDER = [Task::GAP_BOTH, Task::GAP_TECHNICIAN, Task::GAP_OFF_TEAM, Task::GAP_DATE];
 
     /**
      * What the affected tasks in this query add up to.
@@ -114,6 +114,7 @@ class TaskAssignmentGaps
         $what = match ($gap) {
             Task::GAP_TECHNICIAN => 'missing technician',
             Task::GAP_DATE => 'missing date',
+            Task::GAP_OFF_TEAM => 'held by a technician not assigned for its dates',
             default => 'missing technician and date',
         };
 

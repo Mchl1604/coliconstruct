@@ -4,9 +4,12 @@ namespace App\Services;
 
 use App\Models\Notification;
 use App\Models\Project;
+use App\Models\Schedule;
 use App\Models\SpecialtyRequest;
 use App\Models\Task;
 use App\Models\User;
+use App\Support\BusinessTime;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
@@ -207,9 +210,11 @@ class NotificationService
      */
     public function projectTeam(Project $project): Collection
     {
-        $project->loadMissing('projectTechnicians.technician.account');
+        // Today's team and anybody due to join it: somebody starting next week
+        // needs to hear that the dates moved as much as anybody on site today.
+        $project->loadMissing('rosterTechnicians.technician.account');
 
-        return $project->projectTechnicians
+        return $project->rosterTechnicians
             ->map(fn ($projectTechnician) => $projectTechnician->technician?->account)
             ->filter()
             ->unique('id')
@@ -221,8 +226,7 @@ class NotificationService
      */
     public function projectLead(Project $project): ?User
     {
-        return $this->projectTeam($project)
-            ->first(fn (User $user): bool => $user->role === User::ROLE_LEAD_TECHNICIAN);
+        return $project->leadAssignment()?->technician?->account;
     }
 
     /**
@@ -874,7 +878,7 @@ class NotificationService
     /**
      * @param  iterable<int, User>  $technicians
      */
-    public function techniciansAssignedToProject(Project $project, iterable $technicians): void
+    public function techniciansAssignedToProject(Project $project, iterable $technicians, ?CarbonImmutable $from = null): void
     {
         $technicians = collect($technicians)->values();
 
@@ -882,10 +886,14 @@ class NotificationService
             return;
         }
 
+        $starting = $this->scheduledDay($from);
+
         $this->deliver(
             $technicians,
             'New Project Assignment',
-            sprintf('You have been assigned to %s by %s.', $this->projectLabel($project), $this->actorName()),
+            $starting
+                ? sprintf('You have been assigned to %s by %s, starting %s.', $this->projectLabel($project), $this->actorName(), $starting)
+                : sprintf('You have been assigned to %s by %s.', $this->projectLabel($project), $this->actorName()),
             Notification::MODULE_PROJECTS,
             $project,
             $this->projectLink($project)
@@ -900,9 +908,10 @@ class NotificationService
                 $this->excludingActor([$lead]),
                 'Technician Joined Your Project',
                 sprintf(
-                    '%s joined %s.',
+                    $starting ? '%s will join %s on %s.' : '%s joined %s.',
                     $technicians->map(fn (User $user): string => $user->fullName())->implode(', '),
-                    $this->projectLabel($project)
+                    $this->projectLabel($project),
+                    $starting
                 ),
                 Notification::MODULE_PROJECTS,
                 $project,
@@ -914,7 +923,7 @@ class NotificationService
     /**
      * @param  iterable<int, User>  $technicians
      */
-    public function techniciansRemovedFromProject(Project $project, iterable $technicians): void
+    public function techniciansRemovedFromProject(Project $project, iterable $technicians, ?CarbonImmutable $from = null): void
     {
         $technicians = collect($technicians)->values();
 
@@ -922,10 +931,14 @@ class NotificationService
             return;
         }
 
+        $leaving = $this->scheduledDay($from);
+
         $this->deliver(
             $technicians,
-            'Removed From Project',
-            sprintf('You have been removed from %s.', $this->projectLabel($project)),
+            $leaving ? 'Leaving Project' : 'Removed From Project',
+            $leaving
+                ? sprintf('You will be removed from %s on %s.', $this->projectLabel($project), $leaving)
+                : sprintf('You have been removed from %s.', $this->projectLabel($project)),
             Notification::MODULE_PROJECTS,
             $project,
             $this->projectLink($project)
@@ -938,9 +951,10 @@ class NotificationService
                 $this->excludingActor([$lead]),
                 'Technician Removed From Your Project',
                 sprintf(
-                    '%s left %s.',
+                    $leaving ? '%s will leave %s on %s.' : '%s left %s.',
                     $technicians->map(fn (User $user): string => $user->fullName())->implode(', '),
-                    $this->projectLabel($project)
+                    $this->projectLabel($project),
+                    $leaving
                 ),
                 Notification::MODULE_PROJECTS,
                 $project,
@@ -949,12 +963,16 @@ class NotificationService
         }
     }
 
-    public function leadAssignedToProject(Project $project, User $lead): void
+    public function leadAssignedToProject(Project $project, User $lead, ?CarbonImmutable $from = null): void
     {
+        $starting = $this->scheduledDay($from);
+
         $this->deliver(
             $this->excludingActor([$lead]),
             'Assigned As Lead Technician',
-            sprintf('You are now the lead technician on %s.', $this->projectLabel($project)),
+            $starting
+                ? sprintf('You will be the lead technician on %s from %s.', $this->projectLabel($project), $starting)
+                : sprintf('You are now the lead technician on %s.', $this->projectLabel($project)),
             Notification::MODULE_PROJECTS,
             $project,
             $this->projectLink($project)
@@ -963,7 +981,9 @@ class NotificationService
         $this->deliver(
             $this->oversight(),
             'Lead Technician Assigned',
-            sprintf('%s now leads %s.', $lead->fullName(), $this->projectLabel($project)),
+            $starting
+                ? sprintf('%s will lead %s from %s.', $lead->fullName(), $this->projectLabel($project), $starting)
+                : sprintf('%s now leads %s.', $lead->fullName(), $this->projectLabel($project)),
             Notification::MODULE_PROJECTS,
             $project,
             $this->projectLink($project)
@@ -972,23 +992,108 @@ class NotificationService
         $this->deliver(
             $this->projectClients($project),
             'Lead Technician Assigned',
-            sprintf('%s will be leading the work on %s.', $lead->fullName(), $this->clientProjectLabel($project)),
+            $starting
+                ? sprintf('%s will be leading the work on %s from %s.', $lead->fullName(), $this->clientProjectLabel($project), $starting)
+                : sprintf('%s will be leading the work on %s.', $lead->fullName(), $this->clientProjectLabel($project)),
             Notification::MODULE_PROJECTS,
             $project,
             $this->projectLink($project)
         );
     }
 
-    public function leadRemovedFromProject(Project $project, User $lead): void
+    public function leadRemovedFromProject(Project $project, User $lead, ?CarbonImmutable $from = null): void
     {
+        $leaving = $this->scheduledDay($from);
+
         $this->deliver(
             $this->excludingActor([$lead]),
             'Removed As Lead Technician',
-            sprintf('You are no longer the lead technician on %s.', $this->projectLabel($project)),
+            $leaving
+                ? sprintf('You will no longer be the lead technician on %s from %s.', $this->projectLabel($project), $leaving)
+                : sprintf('You are no longer the lead technician on %s.', $this->projectLabel($project)),
             Notification::MODULE_PROJECTS,
             $project,
             $this->projectLink($project)
         );
+    }
+
+    /**
+     * A technician has been taken off a project for a run of days, and comes
+     * back the day after.
+     */
+    public function technicianDaysOffScheduled(Project $project, User $technician, CarbonImmutable $from, CarbonImmutable $lastDay): void
+    {
+        $this->deliver(
+            $this->excludingActor([$technician]),
+            'Days Off Project',
+            sprintf('You are off %s %s.', $this->projectLabel($project), $this->dayRange($from, $lastDay)),
+            Notification::MODULE_PROJECTS,
+            $project,
+            $this->projectLink($project)
+        );
+
+        $this->deliver(
+            $this->oversight(),
+            'Technician Days Off',
+            sprintf('%s is off %s %s.', $technician->fullName(), $this->projectLabel($project), $this->dayRange($from, $lastDay)),
+            Notification::MODULE_PROJECTS,
+            $project,
+            $this->projectLink($project)
+        );
+    }
+
+    /**
+     * A lead technician leads a project for somebody's days off.
+     */
+    public function standInLeadScheduled(Project $project, User $lead, CarbonImmutable $from, CarbonImmutable $lastDay, string $forName): void
+    {
+        $this->deliver(
+            $this->excludingActor([$lead]),
+            'Standing In As Lead Technician',
+            sprintf('You will lead %s %s while %s is away.', $this->projectLabel($project), $this->dayRange($from, $lastDay), $forName),
+            Notification::MODULE_PROJECTS,
+            $project,
+            $this->projectLink($project)
+        );
+    }
+
+    /**
+     * "on Sep 22, 2026" for one day, "from Sep 22, 2026 to Sep 23, 2026" for more.
+     */
+    private function dayRange(CarbonImmutable $from, CarbonImmutable $lastDay): string
+    {
+        return $from->isSameDay($lastDay)
+            ? 'on '.$from->format(BusinessTime::DATE)
+            : 'from '.$from->format(BusinessTime::DATE).' to '.$lastDay->format(BusinessTime::DATE);
+    }
+
+    /**
+     * A scheduled team change was called off before it took effect: told to
+     * the person it would have happened to.
+     */
+    public function scheduledTeamChangeCancelled(Project $project, User $technician, string $what): void
+    {
+        $this->deliver(
+            $this->excludingActor([$technician]),
+            'Scheduled Team Change Cancelled',
+            sprintf('Your scheduled %s on %s was cancelled.', $what, $this->projectLabel($project)),
+            Notification::MODULE_PROJECTS,
+            $project,
+            $this->projectLink($project)
+        );
+    }
+
+    /**
+     * "Aug 21, 2026" for a change that takes effect on a day still to come, or
+     * null for one taking effect now - which is worded the way it always was.
+     */
+    private function scheduledDay(?CarbonImmutable $day): ?string
+    {
+        if ($day === null || $day->startOfDay()->lte(Schedule::businessToday())) {
+            return null;
+        }
+
+        return $day->format(BusinessTime::DATE);
     }
 
     // ------------------------------------------------------------------
@@ -1085,7 +1190,7 @@ class NotificationService
             $this->oversight()->merge($lead ? [$lead] : []),
             'Tasks Left Unassigned',
             sprintf(
-                '%s on %s %s a technician after %s was removed.%s',
+                '%s on %s %s a technician after a team change for %s.%s',
                 $tasks->count() === 1
                     ? sprintf('"%s"', $tasks->first()->task_title)
                     : sprintf('%d tasks', $tasks->count()),
@@ -1383,9 +1488,11 @@ class NotificationService
             return false;
         }
 
-        $task->project->loadMissing('projectTechnicians');
+        // Today's team or due to join it: somebody starting tomorrow still
+        // wants to hear that a task of theirs is due tomorrow.
+        $task->project->loadMissing('rosterTechnicians');
 
-        return $task->project->projectTechnicians
+        return $task->project->rosterTechnicians
             ->contains(fn ($assignment): bool => (int) $assignment->technician_id === (int) $task->technician_id);
     }
 

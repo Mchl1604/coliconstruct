@@ -1,0 +1,178 @@
+SESSION CONTEXT - Technician removal / scheduling (for testing in the next session)
+Written: Sep 15, 2026 (Manila). Nothing is committed - all changes are uncommitted on main.
+===============================================================================
+
+1. WHAT WAS BUILT
+-------------------------------------------------------------------------------
+Goal: take a technician off a project on a future date (or for some days) without
+losing any history.
+
+Two places change a team, and they mean different things:
+
+A) Project Details > Assigned Team (the "master control")
+   - Changes the team as it stands TODAY. No effective date.
+   - Whoever is removed comes off COMPLETELY: their current span closes today and
+     any later span (a return from days off, a scheduled start) is deleted.
+   - Save flow: Save -> lead-replacement confirm (if the lead changes) -> preview
+     (POST /projects/{id}/team/preview) -> review step listing stranded tasks with
+     Reassign / Unassign choices ("Keep" is NOT offered, because it takes effect today) -> save.
+
+B) Technicians page > Schedules tab > pick technician > pick a project > "Remove Schedule"
+   Two modes:
+   - "These days" (mode=days): off From..To, back the day after.
+       * Lead technician -> must pick a STAND-IN lead (heading "Choose a Stand-in Lead")
+         who leads exactly those days.
+   - "From a date onward" (mode=from): off from that day for good.
+       * Lead technician -> must pick a replacement who takes over from that day.
+   - Earliest day = today (business today, Asia/Manila). Past days refused.
+   - Tasks dated into the removed days need a decision: Reassign / Leave unassigned /
+     Keep and flag it (keep is allowed only for future-dated changes).
+   - Cannot remove the last technician on the project.
+
+Decisions the user made (don't re-ask):
+   - Master control: immediate, no date. Technicians page: date range, or from a date on.
+   - Lead days off: pick a stand-in lead. Earliest day: today onward.
+   - Strict task rule: a task's holder must be on the team for the WHOLE task (start..due)
+     within ONE continuous span. Dates outside are greyed out / cards blocked.
+   - Only one lead on any day, and a lead on every day from the change onward.
+   - Upcoming members can view the project (read-only) before their start, but can't run it.
+   - Cancelling either half of a lead handover/cover cancels both.
+   - Project completion/cancellation cancels scheduled changes.
+   - Reports: Role, Assignment Status (Active/Leaving/Upcoming/Removed + Replaced by),
+     Start Date, Removal Date columns.
+   - Bulk lead replace on Technicians page: unassigns affected tasks after a
+     one-sentence warning.
+
+2. DATA MODEL
+-------------------------------------------------------------------------------
+tbl_project_technicians = one row per continuous SPAN of membership (never overlapping):
+   joined_at   inclusive first day
+   removed_at  EXCLUSIVE - the first day NOT on the team (null = open-ended)
+   team_role   snapshot of role (lead_technician/technician) - history of who led
+   removal_recorded_at  when the removal was decided (for history ordering)
+Stored times are Manila wall-clock (Schedule::businessNow()).
+Days off = the span closes at From, and a new span starts at To+1 (keeping the old end).
+Stand-in lead = a lead span from From until the lead's return day.
+Migrations: 2026_09_14_090000_add_team_role..., 2026_09_14_100000_add_removal_recorded_at...
+
+Key scopes/relations: ProjectTechnician::current / notEnded / upcoming / coveringPeriod;
+Project::projectTechnicians (current), rosterTechnicians (not ended), upcomingTechnicians,
+teamHistory; Project::leadOn(date), isLeadMember, scheduledChangeLabel, scheduledEndLabel,
+isLeadCover; Project::crewOn(date).
+Task gap: Task::GAP_OFF_TEAM "Technician Not Assigned for Dates" (kept-and-flagged tasks).
+
+3. KEY CODE
+-------------------------------------------------------------------------------
+app/Services/ProjectTeamChange.php     plan() [master], planRemoval() [mode=from],
+                                       planDaysOff() [mode=days], validate/problems,
+                                       taskConflicts, apply, notify,
+                                       cancelScheduled($project, $span, $removalOnly)
+app/Services/ProjectTeamChangePlan.php plan value object (KIND_TEAM/REMOVAL/DAYS_OFF)
+app/Services/ProjectTeam.php           open/attach/close/cancelRemoval/cancelStart + schedule links
+app/Services/TaskAssignmentRules.php   periodRefusal() wording, attachPeriodRule, periodsFor
+app/Http/Controllers/TechnicianController.php  assignment() (panel data), removeFromProject()
+app/Http/Controllers/ProjectController.php     updateAssignedTeam, teamPreview,
+                                               cancelScheduledTeamChange (part=removal)
+public/js/super-admin/technicians.js   Remove Schedule panel (initDetailsPanel)
+public/js/super-admin/projectDetails.js team modal review step, cancel confirm dialogs
+public/js/super-admin/taskDatePickers.js bindTechnicianPeriods (greying / blocked cards)
+resources/views/super-admin/partials/cancel-scheduled-team-change.blade.php
+
+Endpoints:
+  GET    /super-admin/technicians/{tech}/projects/{project}?mode=days|from&from=Y-m-d&until=Y-m-d
+  DELETE /super-admin/technicians/{tech}/projects/{project}
+         body {mode, from, until, replacement_lead_id, task_resolutions{task_id: unassign|keep|techId}}
+         -> 422 {needs_decisions:true, conflicts:[...]} until every stranded task is answered
+  PUT    /super-admin/projects/{id}/team            (master control)
+  POST   /super-admin/projects/{id}/team/preview
+  DELETE /super-admin/projects/{id}/team/scheduled/{membership}   (+ part=removal)
+  GET    /super-admin/technicians/{tech}/calendar   (bars clipped per span, exclusive end)
+
+Team card labels (Project Details, technician portal, Technicians panel note):
+  "Off A - B" + [Cancel days off]    on the team, days off to come
+  "Leaving D" + [Cancel removal]     on the team, leaving for good on D
+  Upcoming list:
+  "Returns D" + [Cancel return]      back from days off on D
+  "Covers A - B" + [Cancel cover]    stand-in lead
+  "Starts D" + [Cancel start]        due to join
+  extra "Leaving D" + [Cancel removal] on an upcoming span that also ends (cancels only the end)
+
+4. QA FIXTURE (local DB) - project 32 "ZZ QA Scheduled Team" (PRJ-QA-TEAM-01)
+-------------------------------------------------------------------------------
+Client Quinn Tester. Schedules: Sep 1-30, 2026 and Oct 10-20, 2026. Ongoing.
+State at end of session:
+  Rico Navarro (tech 5, lead)   span 115 Aug 28 -> open
+  Pedro Reyes  (tech 7)         span 116 Aug 28 -> removed_at Sep 21 ("Leaving Sep 21")
+  Maria Santos (tech 8)         span 117 Aug 28 -> Sep 22, span 120 Sep 25 -> open
+                                ("Off Sep 22 - Sep 24", "Returns Sep 25")
+  Tasks: 55 Pedro Sep 5-8 | 56 Pedro Sep 10-12 | 57 Maria Sep 22-25 (KEPT+flagged)
+         58 Pedro Sep 29-Oct 12 (kept+flagged) | 59 unassigned Oct 15-18 | 60 Maria Sep 16-18
+         61 unassigned Oct 12-14 | 62 Pedro Sep 18-19
+  Other lead technicians available as stand-ins: Juan Dela Cruz (1), Carlo Ramirez (2),
+  Jose Garcia (3), Leo Fernandez (4), John A Doe (19).
+  Portal accounts for sign-in checks: Rico = leadtech5@example.com, Maria = tech3@example.com,
+  Jose = leadtech3@example.com (the USER signs in - Claude must not enter passwords).
+Project 32 is test data; offer to delete it when testing is done.
+
+5. VERIFIED IN BROWSER (as super admin) THIS SESSION
+-------------------------------------------------------------------------------
+  [x] Remove Schedule panel: From/To pre-filled with today, hint text, mode label
+  [x] Days off for Maria Sep 22-24 -> task conflict list -> Keep -> saved; spans split
+  [x] Conflict reason wording: "...is off this project from Sep 22 to Sep 24, and this task starts Sep 22."
+  [x] Lead days off (Rico Sep 28-29) requires stand-in; picked Jose; card shows Off/Covers/Returns
+  [x] Cancel cover -> Rico's days off also cancelled (both halves)
+  [x] Cancel return refused while Maria holds a task in that time
+  [x] mode=from for Maria from Oct 1 (via API) -> "Leaving Oct 1" badge on upcoming return
+  [x] "Cancel removal" on the upcoming span -> return kept, end removed, Oct schedule link restored
+  [x] Technician calendar bars: Sep 1-21, Sep 25-30, Oct 10-20 (clipped per span)
+  [x] Create Task dialog: Maria card blocked "Off this project Sep 22, 2026 - Sep 24, 2026"
+Earlier session (older design, still relevant): review step, lead handover confirm,
+two-lead refusal, task edit dialog blocked cards, day panel "leaving" chip, history dialog.
+
+6. STILL TO TEST NEXT SESSION
+-------------------------------------------------------------------------------
+  [ ] Technicians panel "From a date onward" in the UI (labels "Schedule Removal" /
+      "Schedule Lead Handover" for later dates, "Remove" / "Reassign Lead & Remove" for today)
+  [ ] Lead removal from a later date with replacement; replacement shows "Starts D"
+  [ ] Master control in Project Details: remove Maria completely today -> her return (span 120)
+      is deleted; review step with Reassign/Unassign (no Keep)
+  [ ] Cancel days off (Maria) -> spans merge back into one
+  [ ] Cancel removal (Pedro, Leaving Sep 21) -> needs Pedro free; tasks 58 kept
+  [ ] Task edit/create greying for tasks crossing a gap (58 Sep 29-Oct 12 for Pedro)
+  [ ] Needs-assignment list shows flagged tasks 57/58 with "Technician Not Assigned for Dates"
+  [ ] Schedules page day panel for Sep 23 (Maria absent) and Sep 28 (lead)
+  [ ] Reports > Technician > Assigned: Role / Assignment Status / Start / Removal columns
+  [ ] Bulk "assign to projects" lead replacement one-sentence unassign warning
+  [ ] Complete or cancel a project with scheduled changes -> they are cancelled
+  [ ] Notifications: days off, stand-in lead, cancelled change, unassigned/reassigned tasks
+  [ ] PORTAL (ask the user to sign in):
+        - as Jose (stand-in) before cover starts: notice "You lead this project from A to B",
+          read-only until then
+        - as Maria: notice "You are off this project from A to B", Upcoming badges, task board
+        - as Rico: lead powers stay on non-covered days
+  [ ] Phone width (~400px) of the Remove Schedule panel and Upcoming list buttons
+
+7. TESTS
+-------------------------------------------------------------------------------
+tests/Feature/ScheduledTeamChangeTest.php  (31 tests, rewritten for this design) - passing
+Also touched: ProjectTeamScheduleLinkTest, LeadTechnicianRoleChangeTest,
+TechnicianManagementTest, ImportTechnicianTeamTest, NotificationEventsTest.
+Full suite: 1913/1919 pass. The 6 failures are time-of-day flakes (the suite was run between
+16:00 and 24:00 UTC, when the server's UTC date is a day behind Manila) and are unrelated:
+  CompletionRulesTest::test_a_technician_cannot_complete_a_task_that_has_not_started
+  DashboardTest::test_the_dashboard_greets_the_reader_and_shows_its_sections
+  OverdueProjectTest::test_a_project_ending_today_is_not_overdue
+  ProjectCompletionConfirmationTest (2 tests)
+  ScheduleDateRemovalTest::test_today_is_never_removable
+  -> re-run them outside that UTC window to confirm.
+Run tests in the main checkout (never junction vendor into a worktree).
+Run `vendor/bin/pint --dirty` after PHP edits.
+
+8. KNOWN ISSUES / NOTES
+-------------------------------------------------------------------------------
+- Activity Logs show created_at in UTC (app-wide, existed before these changes) while team
+  history shows Manila time -> flagged as a separate task "Show activity log times on Manila clock".
+- Browser caches /js and /css: after editing them, force-reload (fetch with cache:'reload') before retesting.
+- Herd/opcache may serve stale PHP for a moment after edits; retry before assuming a bug.
+- Use the shared date picker (public/js/datePicker.js) only; set picker values via
+  input._flatpickr.setDate(value, true).

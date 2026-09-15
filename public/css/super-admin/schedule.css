@@ -782,6 +782,7 @@
     /* Tighter on the left: the chip now leads with a round avatar, which
        carries its own visual padding. */
     padding: 0.15rem 0.65rem 0.15rem 0.2rem;
+    gap: 0.35rem;
 }
 
 /* Somebody who was on the crew that day but has since been taken off the

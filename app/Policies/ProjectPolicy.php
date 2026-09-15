@@ -42,8 +42,28 @@ class ProjectPolicy
      * layer's promise to keep, and every power a technician has on a project
      * is granted through this one method. Asking here costs nothing and means
      * the answer does not depend on somebody else having got it right.
+     *
+     * Somebody scheduled to join the team may look at the project before their
+     * first day, so they can see what they are walking into. Everything a
+     * technician can DO on a project waits for that day - see worksOn().
      */
     public function viewAssigned(User $user, Project $project): bool
+    {
+        return $this->membership($user, $project, onlyCurrent: false);
+    }
+
+    /**
+     * Whether this account is on the project's team today - not merely due to
+     * join it. Every power a lead holds on a project starts here, so a
+     * replacement lead starting on the 21st runs the job from the 21st and the
+     * lead they replace runs it until then.
+     */
+    public function worksOn(User $user, Project $project): bool
+    {
+        return $this->membership($user, $project, onlyCurrent: true);
+    }
+
+    private function membership(User $user, Project $project, bool $onlyCurrent): bool
     {
         $technicianId = $user->technicianId();
 
@@ -51,7 +71,7 @@ class ProjectPolicy
             return false;
         }
 
-        return $project->projectTechnicians()
+        return ($onlyCurrent ? $project->projectTechnicians() : $project->rosterTechnicians())
             ->where('technician_id', $technicianId)
             ->exists();
     }
@@ -64,7 +84,7 @@ class ProjectPolicy
     public function manageTasks(User $user, Project $project): bool
     {
         return $user->isLeadTechnician()
-            && $this->viewAssigned($user, $project)
+            && $this->worksOn($user, $project)
             && ! $project->isReadOnly()
             && ! $project->isArchived()
             && ! $project->on_hold
@@ -82,7 +102,7 @@ class ProjectPolicy
     public function submitReport(User $user, Project $project): bool
     {
         return $user->isLeadTechnician()
-            && $this->viewAssigned($user, $project)
+            && $this->worksOn($user, $project)
             && ! $project->isArchived()
             && ! $project->on_hold
             && in_array($project->status, self::REPORTABLE_STATUSES, true);
@@ -107,7 +127,7 @@ class ProjectPolicy
     public function offersCompletion(User $user, Project $project): bool
     {
         return $user->isLeadTechnician()
-            && $this->viewAssigned($user, $project)
+            && $this->worksOn($user, $project)
             && $project->isCompletable();
     }
 
@@ -119,7 +139,7 @@ class ProjectPolicy
     public function complete(User $user, Project $project): bool
     {
         return $user->isLeadTechnician()
-            && $this->viewAssigned($user, $project)
+            && $this->worksOn($user, $project)
             && $this->blockersFor($project, $user) === [];
     }
 

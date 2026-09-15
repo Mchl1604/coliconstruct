@@ -5,6 +5,10 @@
     'technicians' => collect(),
     'activeTaskCounts' => collect(),
     'scheduleRanges' => collect(),
+    // technician_id => the spans each holds on the project, for greying out the
+    // days a chosen technician is not assigned for. Null reads them here, one
+    // query, for a page that did not load them for the whole board.
+    'periods' => null,
     // The phases this task may be moved to: the project's open ones. Empty on
     // a page that does not offer editing, where the phase is shown as a fact
     // rather than a choice.
@@ -27,6 +31,23 @@
     $selectablePhases = $phases->contains(fn($phase) => $phase->phase_id == $task->phase_id)
         ? $phases
         : $phases->concat(array_filter([$task->phase]))->sortBy('sequence')->values();
+
+    $periods = $isEditable && $technicians->isNotEmpty()
+        ? ($periods ?? app(\App\Services\TaskAssignmentRules::class)->periodsFor(
+            (int) $task->project_id,
+            $technicians->pluck('technician_id')->push($task->technician_id)->filter()
+        ))
+        : [];
+
+    // Whoever holds the task stays on the row even after coming off the team,
+    // so the dialog can still show - and keep - them until somebody reassigns
+    // the work.
+    $holder = $isEditable && $task->technician
+        && ! $technicians->contains(fn ($technician) => (int) $technician->technician_id === (int) $task->technician_id)
+        ? $task->technician
+        : null;
+
+    $assignableTechnicians = $holder ? $technicians->concat([$holder]) : $technicians;
 @endphp
 
 {{--
@@ -118,7 +139,7 @@
 
                 @if ($isEditable)
                     <div class="task-assign-row">
-                        @forelse ($technicians as $technician)
+                        @forelse ($assignableTechnicians as $technician)
                             @php
                                 $activeCount = $activeTaskCounts[$technician->technician_id] ?? 0;
                                 $holdsThisTask = $task->technician_id == $technician->technician_id;
@@ -134,6 +155,8 @@
                             <label>
                                 <input type="radio" class="btn-check" name="technician_id"
                                     value="{{ $technician->technician_id }}"
+                                    data-assignment-periods='@json($periods[$technician->technician_id] ?? [])'
+                                    @if ($holdsThisTask) data-holds-task="1" @endif
                                     @checked($holdsThisTask) @disabled($cannotReceiveWork)>
 
                                 <div class="task-assign-card">

@@ -136,8 +136,10 @@ class ProjectPhaseRules
             return false;
         }
 
+        // A lead shapes the phases of a project they are running today - not
+        // one they are only scheduled to take over.
         if ($user->isLeadTechnician()) {
-            return $this->projects->viewAssigned($user, $project);
+            return $this->projects->worksOn($user, $project);
         }
 
         return true;

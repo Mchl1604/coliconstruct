@@ -37,7 +37,6 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
-use Illuminate\Validation\Rules\Exists;
 use Throwable;
 
 /**
@@ -100,12 +99,17 @@ class TechnicianPortalController extends Controller
         $technician = $this->technician($request);
         $projects = $this->assignedProjects($technician);
 
+        // One bar per span of theirs on a range: somebody taken off a project
+        // part-way through a booking and put back on before it ended worked
+        // two stretches of it, and each is drawn as the days it covers.
         $events = $this->bookedSchedules($technician)
-            ->map(fn (Schedule $schedule): array => $this->calendarEvent(
-                $schedule->project,
-                $schedule,
-                $this->membershipFor($schedule, $technician)
-            ))
+            ->flatMap(fn (Schedule $schedule): Collection => $this->membershipsFor($schedule, $technician)
+                ->map(fn (ProjectTechnician $membership): ?array => $this->calendarEvent(
+                    $schedule->project,
+                    $schedule,
+                    $membership
+                ))
+                ->filter())
             ->values();
 
         $today = CarbonImmutable::today();
@@ -190,6 +194,11 @@ class TechnicianPortalController extends Controller
             // The Assigned Team panel lists each technician's approved
             // specialties beside their name.
             'projectTechnicians.technician.skills',
+            // Who is scheduled to join, for the panel's Upcoming list and the
+            // Assign To picker - work can be dated for a first week before it
+            // arrives.
+            'upcomingTechnicians.technician.account',
+            'rosterTechnicians.technician.account',
         ]);
 
         // The lead first, matching how the Super Admin page orders the team.
@@ -206,6 +215,7 @@ class TechnicianPortalController extends Controller
         // page to be hidden - see Task::scopeVisibleTo.
         $tasks = Task::query()
             ->visibleTo($request->user())
+            ->withHolderCoverage()
             ->with(['technician.account', 'images', 'completedBy', 'phase'])
             ->where('project_id', $project->project_id)
             ->orderByRaw("case when status = 'ongoing' then 0 when status = 'pending' then 1 when status = 'unassigned' then 2 else 3 end")
@@ -230,9 +240,10 @@ class TechnicianPortalController extends Controller
 
         // The lead leads the Assign To picker, matching the administrator's
         // copy of this page and the Create Task dialog.
-        $technicians = $project->projectTechnicians
+        $technicians = $project->rosterTechnicians
             ->pluck('technician')
             ->filter()
+            ->unique('technician_id')
             ->sortBy(fn ($technician): string => sprintf(
                 '%d %s',
                 optional($technician->account)->role === 'lead_technician' ? 0 : 1,
@@ -251,6 +262,12 @@ class TechnicianPortalController extends Controller
             'tasks' => $tasks,
             'reports' => $reports,
             'technicians' => $technicians,
+            // Every span each of them holds here, so the task dialogs can grey
+            // out the days a chosen technician is not assigned for.
+            'technicianPeriods' => $this->assignmentRules->periodsFor(
+                (int) $project->project_id,
+                $technicians->pluck('technician_id')
+            ),
             'technicianActiveTaskCounts' => $technicianActiveTaskCounts,
             'technicianId' => $this->technician($request)->technician_id,
             'scheduleRanges' => collect($this->scheduleRules->ranges($project->project_id)),
@@ -304,6 +321,7 @@ class TechnicianPortalController extends Controller
 
         $tasks = Task::query()
             ->visibleTo($request->user())
+            ->withHolderCoverage()
             ->with(['technician.account', 'images', 'completedBy', 'phase'])
             ->whereIn('project_id', $projects->pluck('project_id'))
             ->orderByRaw("case when status = 'ongoing' then 0 when status = 'pending' then 1 when status = 'unassigned' then 2 else 3 end")
@@ -314,8 +332,20 @@ class TechnicianPortalController extends Controller
 
         // The per-task dialogs are the Super Admin ones, and they need each
         // project's own team and date ranges to render.
+        // Today's team and anybody due to join it: work can be dated for a
+        // technician's first week before that week arrives.
         $techniciansByProject = $projects->mapWithKeys(fn (Project $project): array => [
-            $project->project_id => $project->projectTechnicians->pluck('technician')->filter()->values(),
+            $project->project_id => $project->rosterTechnicians->pluck('technician')->filter()->unique('technician_id')->values(),
+        ]);
+
+        // Every span each of those technicians holds on the project, so the
+        // edit dialogs can grey out the days a chosen technician is not
+        // assigned for - see TaskAssignmentRules::periodsFor().
+        $periodsByProject = $projects->mapWithKeys(fn (Project $project): array => [
+            $project->project_id => $this->assignmentRules->periodsFor(
+                (int) $project->project_id,
+                $project->rosterTechnicians->pluck('technician_id')
+            ),
         ]);
 
         $rangesByProject = $projects->mapWithKeys(fn (Project $project): array => [
@@ -391,6 +421,7 @@ class TechnicianPortalController extends Controller
             'techniciansByProject' => $techniciansByProject,
             'rangesByProject' => $rangesByProject,
             'phasesByProject' => $phasesByProject,
+            'periodsByProject' => $periodsByProject,
             'technicianActiveTaskCounts' => $technicianActiveTaskCounts,
             'technicianId' => $technician->technician_id,
             'manageable' => $manageable,
@@ -628,7 +659,7 @@ class TechnicianPortalController extends Controller
             'task_title' => ['required', 'string', 'max:255'],
             'task_description' => ['required', 'string'],
             'phase_id' => $phaseRules->rules($project),
-            'technician_id' => ['required', 'integer', $this->assignedTechnicianRule($project)],
+            'technician_id' => ['required', 'integer', 'exists:tbl_technicians,technician_id'],
             'start_date' => ['required', 'date'],
             'due_date' => ['required', 'date', 'after_or_equal:start_date'],
         ], $phaseRules->messages() + [
@@ -638,6 +669,8 @@ class TechnicianPortalController extends Controller
         $this->scheduleRules->attach($validator, $ranges);
         // New work, so there is no current owner to make an exception for.
         $this->assignmentRules->attach($validator);
+        // Assigned to this project for every day of the task.
+        $this->assignmentRules->attachPeriodRule($validator, $project);
 
         if ($validator->fails()) {
             return $this->failed($request, $validator->errors()->first());
@@ -705,7 +738,7 @@ class TechnicianPortalController extends Controller
             // phase takes no work, except from a task already on one - which
             // may stay where it is.
             'phase_id' => app(TaskPhaseRules::class)->rules($project, $task->phase_id),
-            'technician_id' => ['required', 'integer', $this->assignedTechnicianRule($project)],
+            'technician_id' => ['required', 'integer', 'exists:tbl_technicians,technician_id'],
             'start_date' => ['required', 'date'],
             'due_date' => ['required', 'date', 'after_or_equal:start_date'],
         ], app(TaskPhaseRules::class)->messages());
@@ -715,6 +748,9 @@ class TechnicianPortalController extends Controller
         // re-submits the owner, and refusing that would make an inactive
         // technician's work uneditable - including the handover off them.
         $this->assignmentRules->attach($validator, (int) $task->technician_id);
+        // Assigned for every day of it, unless neither the holder nor the dates
+        // are changing.
+        $this->assignmentRules->attachPeriodRule($validator, $project, $task);
 
         if ($validator->fails()) {
             return $this->failed($request, $validator->errors()->first());
@@ -1118,7 +1154,7 @@ class TechnicianPortalController extends Controller
     private function assignedProjects(Technician $technician, array $hide = self::HIDDEN_STATUSES): Collection
     {
         return Project::query()
-            ->with(['clients', 'schedules', 'projectTechnicians.technician.account'])
+            ->with(['clients', 'schedules', 'projectTechnicians.technician.account', 'rosterTechnicians.technician.account'])
             // How far through its phases each project is, for the "3/4" chip
             // on the My Projects rows - see Project::phaseProgress(), which
             // reads these rather than asking per row.
@@ -1128,26 +1164,14 @@ class TechnicianPortalController extends Controller
             ])
             ->where('is_archived', false)
             ->whereNotIn('status', $hide)
+            // Including a project they are scheduled to join: they may open it
+            // before their first day - see ProjectPolicy::viewAssigned().
             ->whereHas(
-                'projectTechnicians',
+                'rosterTechnicians',
                 fn ($query) => $query->where('technician_id', $technician->technician_id)
             )
             ->orderByDesc('project_id')
             ->get();
-    }
-
-    /**
-     * "This technician is on that project" as a validation rule, so a posted
-     * technician_id can never reach across projects.
-     */
-    private function assignedTechnicianRule(Project $project): Exists
-    {
-        return Rule::exists('tbl_project_technicians', 'technician_id')
-            ->where('project_id', $project->project_id)
-            // Somebody taken off the team keeps their row - it carries the
-            // dates they worked - so the membership has to be an open one or
-            // a removed technician would still pass as assignable here.
-            ->whereNull('removed_at');
     }
 
     /**
@@ -1220,17 +1244,18 @@ class TechnicianPortalController extends Controller
      * because one of their memberships is booked on it, so the row is in hand.
      *
      * A range can carry two of them - taken off part-way through it and put
-     * back on before it ended - and the open span wins: the range is still
-     * theirs, so it must not be drawn as a former booking.
+     * back on before it ended - and each is its own stretch of the range.
+     *
+     * @return Collection<int, ProjectTechnician>
      */
-    private function membershipFor(Schedule $schedule, Technician $technician): ?ProjectTechnician
+    private function membershipsFor(Schedule $schedule, Technician $technician): Collection
     {
         return $schedule->scheduleTechnicians
             ->map(fn (ScheduleTechnician $link): ?ProjectTechnician => $link->projectTechnician)
             ->filter(fn (?ProjectTechnician $assignment): bool => $assignment !== null
                 && (int) $assignment->technician_id === (int) $technician->technician_id)
-            ->sortBy(fn (ProjectTechnician $assignment): int => $assignment->isRemoved() ? 1 : 0)
-            ->first();
+            ->unique(fn (ProjectTechnician $assignment): int => (int) $assignment->project_technician_id)
+            ->values();
     }
 
     /**
@@ -1240,15 +1265,24 @@ class TechnicianPortalController extends Controller
         Project $project,
         Schedule $schedule,
         ?ProjectTechnician $membership = null
-    ): array {
-        $isFormer = $membership?->isRemoved() ?? false;
+    ): ?array {
+        $isFormer = $membership?->hasEnded() ?? false;
+
+        // Only the days this span holds - see Schedule::toCalendarTimesForSpan().
+        $times = $membership
+            ? $schedule->toCalendarTimesForSpan($project->calendarCutoff(), $membership)
+            : $schedule->toCalendarTimesThrough($project->calendarCutoff());
+
+        if ($times === null) {
+            return null;
+        }
 
         return [
             'id' => $schedule->schedule_id,
             'title' => $project->reference_no,
             // A partial day comes back as a timed event, so the bar carries
             // its hours instead of reading as a whole day.
-            ...$schedule->toCalendarTimesThrough($project->calendarCutoff()),
+            ...$times,
             ...$project->calendarEventColors($schedule->isDateBased()),
             // Drawn flat and grey, so days that are a record of where you were
             // do not read as work you are still expected at.
@@ -1269,7 +1303,7 @@ class TechnicianPortalController extends Controller
                 // project at all. See the schedule page's eventClick.
                 'isFormer' => $isFormer,
                 'removedOn' => $isFormer
-                    ? CarbonImmutable::parse($membership->removed_at)->format(BusinessTime::DATE)
+                    ? CarbonImmutable::parse($membership->endDate())->format(BusinessTime::DATE)
                     : null,
             ],
         ];
@@ -1287,6 +1321,13 @@ class TechnicianPortalController extends Controller
 
         $ranges = $this->scheduleRules->ranges($project->project_id);
 
+        $project->loadMissing('rosterTechnicians.technician.account');
+
+        $periods = $this->assignmentRules->periodsFor(
+            (int) $project->project_id,
+            $project->rosterTechnicians->pluck('technician_id')
+        );
+
         return [
             'ranges' => $ranges,
             'ranges_label' => $this->scheduleRules->describe($ranges),
@@ -1300,10 +1341,12 @@ class TechnicianPortalController extends Controller
                 ])
                 ->values()
                 ->all(),
-            'technicians' => $project->projectTechnicians
+            'technicians' => $project->rosterTechnicians
+                ->unique('technician_id')
                 ->map(fn (ProjectTechnician $assignment): ?array => $assignment->technician ? [
                     'technician_id' => $assignment->technician->technician_id,
                     'name' => $assignment->technician->name,
+                    'periods' => $periods[(int) $assignment->technician_id] ?? [],
                     'role' => optional($assignment->technician->account)->role,
                     'is_lead' => optional($assignment->technician->account)->role === 'lead_technician',
                     // Somebody whose account has been switched off stays on the

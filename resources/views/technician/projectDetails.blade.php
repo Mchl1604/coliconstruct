@@ -50,6 +50,52 @@
              editing a task, and closing the project. The controls for those
              are already absent (the policy refuses them while a project is on
              hold); this says why. --}}
+        {{-- The reader's own place on the team, when a change to it is on the
+             calendar: somebody due to join can read the project before their
+             first day, and somebody due to leave is told when. --}}
+        @php
+            $mySpan = $project->rosterTechnicians
+                ->where('technician_id', $technicianId)
+                ->sortBy(fn ($span) => $span->isCurrent() ? 0 : 1)
+                ->first();
+        @endphp
+
+        @php
+            $myLabel = $mySpan ? $project->scheduledChangeLabel($mySpan) : null;
+            $myChange = $myLabel ? strtok($myLabel, ' ') : null;
+            $myDates = $myLabel ? trim(substr($myLabel, strlen($myChange))) : null;
+        @endphp
+
+        @if ($myChange)
+            <div class="alert alert-info border-0 shadow-sm" role="status">
+                <i class="bi bi-calendar-event me-1" aria-hidden="true"></i>
+                @switch($myChange)
+                    @case('Starts')
+                        <strong>You join this project on {{ $myDates }}.</strong>
+                        You can read it now; its work is yours from that day.
+                        @break
+                    @case('Covers')
+                        <strong>You lead this project {{ str_contains($myDates, ' - ') ? 'from '.str_replace(' - ', ' to ', $myDates) : 'on '.$myDates }}.</strong>
+                        You can read it now; its work is yours on those days.
+                        @break
+                    @case('Returns')
+                        <strong>You are off this project until you return on {{ $myDates }}.</strong>
+                        @break
+                    @case('Off')
+                        <strong>You are off this project from {{ str_replace(' - ', ' to ', $myDates) }}.</strong>
+                        You are back on it the day after.
+                        @break
+                    @default
+                        <strong>You are scheduled to come off this project on {{ $myDates }}.</strong>
+                        Your last day on it is {{ $mySpan->lastDay()?->format(\App\Support\BusinessTime::DATE) }}.
+                @endswitch
+
+                @if (in_array($myChange, ['Starts', 'Returns'], true) && $project->scheduledEndLabel($mySpan))
+                    Your last day on it is {{ $mySpan->lastDay()?->format(\App\Support\BusinessTime::DATE) }}.
+                @endif
+            </div>
+        @endif
+
         @if ($project->on_hold)
             <div class="alert alert-secondary border-0 shadow-sm" role="alert">
                 <i class="bi bi-pause-circle me-1" aria-hidden="true"></i>
@@ -384,6 +430,10 @@
                                                 @if ($flagsInactiveCrew && ! $technician->isAssignable())
                                                     <span class="badge bg-warning text-dark">Account inactive</span>
                                                 @endif
+
+                                                @if ($label = $project->scheduledChangeLabel($projectTechnician))
+                                                    <span class="badge bg-light text-dark border">{{ $label }}</span>
+                                                @endif
                                             </div>
 
                                             <div class="d-flex flex-wrap gap-1 mt-1">
@@ -400,6 +450,30 @@
                                 <li class="list-group-item text-muted">No technicians assigned.</li>
                             @endforelse
                         </ul>
+
+                        {{-- Due to join and not on the team yet - so the crew can see a
+                             handover coming. --}}
+                        @if ($project->upcomingTechnicians->isNotEmpty())
+                            <div class="px-3 pt-3 pb-1 small text-uppercase text-secondary fw-semibold">Upcoming</div>
+                            <ul class="list-group list-group-flush">
+                                @foreach ($project->upcomingTechnicians->sortBy(fn ($span) => $span->startDate()) as $upcoming)
+                                    @continue(! $upcoming->technician)
+                                    <li class="list-group-item d-flex align-items-center gap-3">
+                                        <x-user-avatar :user="$upcoming->technician->account" size="md" />
+                                        <div class="d-flex flex-wrap align-items-center gap-2">
+                                            <span class="fw-semibold">{{ $upcoming->technician->name }}</span>
+                                            @if ($upcoming->technician->isLead())
+                                                <span class="badge project-lead-badge">Lead Technician</span>
+                                            @endif
+                                            <span class="badge bg-light text-dark border">{{ $project->scheduledChangeLabel($upcoming) }}</span>
+                                            @if ($endLabel = $project->scheduledEndLabel($upcoming))
+                                                <span class="badge bg-light text-dark border">{{ $endLabel }}</span>
+                                            @endif
+                                        </div>
+                                    </li>
+                                @endforeach
+                            </ul>
+                        @endif
                     </div>
                 </div>
             </div>
@@ -768,7 +842,7 @@
     @foreach ($tasks as $task)
         {{-- The same dialogs the Super Admin portal opens. --}}
         <x-task-details-modal :task="$task"
-            :technicians="$canManageTasks ? $technicians : collect()"
+            :technicians="$canManageTasks ? $technicians : collect()" :periods="$technicianPeriods"
             :active-task-counts="$technicianActiveTaskCounts" :schedule-ranges="$scheduleRanges"
             :phases="$selectablePhases"
             :update-action="$canManageTasks ? route('technician.tasks.update', $task->task_id) : null"
@@ -870,6 +944,7 @@
                                 <label>
                                     <input type="radio" class="btn-check" name="technician_id"
                                         value="{{ $technician->technician_id }}" required
+                                        data-assignment-periods='@json($technicianPeriods[$technician->technician_id] ?? [])'
                                         @disabled($cannotReceiveWork)>
 
                                     <div class="task-assign-card">

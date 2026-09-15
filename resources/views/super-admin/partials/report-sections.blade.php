@@ -155,12 +155,14 @@
             <table class="data">
                 <thead>
                     <tr>
-                        <th style="width:16%">Technician</th>
-                        <th style="width:12%">Reference No.</th>
-                        <th style="width:18%">Client</th>
-                        <th style="width:10%">Assignment Status</th>
-                        <th style="width:11%">Removed Date</th>
-                        <th style="width:20%">Schedule</th>
+                        <th style="width:13%">Technician</th>
+                        <th style="width:9%">Reference No.</th>
+                        <th style="width:13%">Client</th>
+                        <th style="width:9%">Role</th>
+                        <th style="width:9%">Assignment Status</th>
+                        <th style="width:9%">Start Date</th>
+                        <th style="width:9%">Removal Date</th>
+                        <th style="width:16%">Schedule</th>
                         <th>Project Status</th>
                     </tr>
                 </thead>
@@ -173,7 +175,14 @@
                             </td>
                             <td class="nowrap">{{ $row['reference_no'] }}</td>
                             <td>{{ $row['client'] }}</td>
-                            <td>{{ $row['is_removed'] ? 'Removed' : 'Active' }}</td>
+                            <td>{{ $row['role'] }}</td>
+                            <td>
+                                {{ $row['assignment_status'] }}
+                                @if (! empty($row['replaced_by']))
+                                    <div class="sub">Replaced by {{ $row['replaced_by'] }}</div>
+                                @endif
+                            </td>
+                            <td class="nowrap">{{ $row['started_on'] }}</td>
                             <td class="nowrap">{{ $row['removed_on'] }}</td>
                             <td>{!! $stack($row['schedules'], 'No scheduled dates') !!}</td>
                             <td>{{ $row['status_label'] ?: '—' }}</td>

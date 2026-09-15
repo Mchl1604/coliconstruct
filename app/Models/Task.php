@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Support\TaskStatus;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -48,6 +49,18 @@ class Task extends Model
     public const GAP_BOTH = 'both';
 
     /**
+     * An owner and dates, but the owner is not assigned to the project for
+     * every one of those days - they leave before it is due, join after it
+     * starts, or are off the project part of the way through.
+     *
+     * Usually the trace of a team change still to come that somebody chose to
+     * sort out later, or of dates moved after the task was given out. Derived
+     * like the others, so it clears the moment the task or the team is put
+     * right.
+     */
+    public const GAP_OFF_TEAM = 'off_team';
+
+    /**
      * How each gap reads wherever it is printed - the row badge, the alert
      * chips, the dashboard.
      *
@@ -61,6 +74,7 @@ class Task extends Model
         self::GAP_TECHNICIAN => 'Missing Technician',
         self::GAP_DATE => 'Missing Date',
         self::GAP_BOTH => 'Missing Technician & Date',
+        self::GAP_OFF_TEAM => 'Technician Not Assigned for Dates',
     ];
 
     /**
@@ -195,7 +209,85 @@ class Task extends Model
             ->where(fn (Builder $gap) => $gap
                 ->whereNull('technician_id')
                 ->orWhereNull('start_date')
-                ->orWhereNull('due_date'));
+                ->orWhereNull('due_date')
+                ->orWhere(fn (Builder $offTeam) => $this->holderNotAssignedForDates($offTeam)));
+    }
+
+    /**
+     * Held, dated, and the holder has no single span on the project covering
+     * every one of those days - the strict rule TaskAssignmentRules applies on
+     * the way in, asked of the stored rows.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    private function holderNotAssignedForDates(Builder $query): Builder
+    {
+        return $query
+            ->whereNotNull('tbl_tasks.technician_id')
+            ->whereNotNull('tbl_tasks.start_date')
+            ->whereNotNull('tbl_tasks.due_date')
+            ->whereNotExists(fn ($span) => $span
+                ->selectRaw('1')
+                ->from('tbl_project_technicians')
+                ->whereColumn('tbl_project_technicians.project_id', 'tbl_tasks.project_id')
+                ->whereColumn('tbl_project_technicians.technician_id', 'tbl_tasks.technician_id')
+                ->where(fn ($joined) => $joined
+                    ->whereNull('tbl_project_technicians.joined_at')
+                    ->orWhereRaw('date(tbl_project_technicians.joined_at) <= tbl_tasks.start_date'))
+                ->where(fn ($removed) => $removed
+                    ->whereNull('tbl_project_technicians.removed_at')
+                    ->orWhereRaw('date(tbl_project_technicians.removed_at) > tbl_tasks.due_date')));
+    }
+
+    /**
+     * Load, alongside each task, whether its holder is assigned for all of its
+     * dates - so a board of tasks can say which ones are out of step without a
+     * query per row. See holderIsAssignedForDates().
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeWithHolderCoverage(Builder $query): Builder
+    {
+        if ($query->getQuery()->columns === null) {
+            $query->select('tbl_tasks.*');
+        }
+
+        return $query->selectRaw(
+            'case when tbl_tasks.technician_id is null or tbl_tasks.start_date is null or tbl_tasks.due_date is null then 1 '
+            .'when exists (select 1 from tbl_project_technicians '
+            .'where tbl_project_technicians.project_id = tbl_tasks.project_id '
+            .'and tbl_project_technicians.technician_id = tbl_tasks.technician_id '
+            .'and (tbl_project_technicians.joined_at is null or date(tbl_project_technicians.joined_at) <= tbl_tasks.start_date) '
+            .'and (tbl_project_technicians.removed_at is null or date(tbl_project_technicians.removed_at) > tbl_tasks.due_date)) then 1 '
+            .'else 0 end as holder_covers_dates'
+        );
+    }
+
+    /**
+     * Whether whoever holds this task is assigned to the project for every day
+     * of it. True when there is nobody or no dates to measure - those are the
+     * other gaps.
+     */
+    public function holderIsAssignedForDates(): bool
+    {
+        if ($this->technician_id === null || $this->start_date === null || $this->due_date === null) {
+            return true;
+        }
+
+        if (array_key_exists('holder_covers_dates', $this->attributes)) {
+            return (bool) $this->attributes['holder_covers_dates'];
+        }
+
+        return ProjectTechnician::query()
+            ->where('project_id', $this->project_id)
+            ->where('technician_id', $this->technician_id)
+            ->get()
+            ->contains(fn (ProjectTechnician $span): bool => $span->coversPeriod(
+                CarbonImmutable::parse($this->start_date)->toDateString(),
+                CarbonImmutable::parse($this->due_date)->toDateString()
+            ));
     }
 
     /**
@@ -224,6 +316,7 @@ class Task extends Model
             self::GAP_BOTH => $query
                 ->whereNull('technician_id')
                 ->where($undated),
+            self::GAP_OFF_TEAM => $this->holderNotAssignedForDates($query),
             default => $query,
         };
     }
@@ -263,6 +356,7 @@ class Task extends Model
             $this->missingTechnician() && $this->missingDate() => self::GAP_BOTH,
             $this->missingTechnician() => self::GAP_TECHNICIAN,
             $this->missingDate() => self::GAP_DATE,
+            ! $this->holderIsAssignedForDates() => self::GAP_OFF_TEAM,
             default => null,
         };
     }

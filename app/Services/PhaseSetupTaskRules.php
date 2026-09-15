@@ -4,9 +4,9 @@ namespace App\Services;
 
 use App\Models\Project;
 use App\Models\ProjectPhase;
+use App\Models\ProjectTechnician;
 use App\Models\ProjectTypeStageTask;
 use App\Models\Technician;
-use Illuminate\Support\Facades\DB;
 
 /**
  * What a task typed on the phase setup screen has to satisfy.
@@ -68,7 +68,7 @@ class PhaseSetupTaskRules
                 $key = sprintf('phases.%d.tasks.%d', $phaseIndex, $taskIndex);
                 $where = sprintf('Phase %d, task %d', $phaseIndex + 1, $taskIndex + 1);
 
-                foreach ($this->taskErrors($task, $where, $ranges, $team) as $field => $message) {
+                foreach ($this->taskErrors($project, $task, $where, $ranges, $team) as $field => $message) {
                     $errors[$key.'.'.$field] = $message;
                 }
             }
@@ -158,7 +158,7 @@ class PhaseSetupTaskRules
      * @param  array<int, int>  $team
      * @return array<string, string>
      */
-    private function taskErrors(array $task, string $where, array $ranges, array $team): array
+    private function taskErrors(Project $project, array $task, string $where, array $ranges, array $team): array
     {
         $task = $this->normalise($task);
 
@@ -217,25 +217,42 @@ class PhaseSetupTaskRules
                 $where,
                 $this->scheduleRules->describe($ranges)
             );
+
+            return $errors;
+        }
+
+        // The same strict rule every task form applies: whoever holds it is
+        // assigned to the project for every day of it.
+        if ($task['technician_id'] !== null && ! isset($errors['technician_id'])) {
+            $technician = Technician::query()->with('account')->find($task['technician_id']);
+
+            $refusal = $technician
+                ? $this->assignmentRules->periodRefusal($technician, (int) $project->project_id, $task['start_date'], $task['due_date'])
+                : null;
+
+            if ($refusal !== null) {
+                $errors['technician_id'] = $where.': '.$refusal;
+            }
         }
 
         return $errors;
     }
 
     /**
-     * Technicians on the project's team whose membership is still open.
+     * Technicians on the project's team, or due to join it.
      *
-     * The same test TaskController's own technician rule makes - a technician
-     * taken off the team keeps their row, because it carries the dates they
-     * worked, so the membership has to be an open one.
+     * A technician taken off the team keeps their row, because it carries the
+     * dates they worked, so only spans that have not ended count. Whether a
+     * task's dates fall inside the span is asked separately - see
+     * TaskAssignmentRules::periodRefusal().
      *
      * @return array<int, int>
      */
     private function assignableTechnicianIds(Project $project): array
     {
-        return DB::table('tbl_project_technicians')
+        return ProjectTechnician::query()
             ->where('project_id', $project->project_id)
-            ->whereNull('removed_at')
+            ->notEnded()
             ->pluck('technician_id')
             ->map(fn ($id): int => (int) $id)
             ->all();

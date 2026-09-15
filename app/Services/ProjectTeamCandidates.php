@@ -3,8 +3,10 @@
 namespace App\Services;
 
 use App\Models\Project;
+use App\Models\ProjectTechnician;
 use App\Models\Schedule;
 use App\Models\Technician;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 
 /**
@@ -47,8 +49,14 @@ class ProjectTeamCandidates
      *     reason: string
      * }>
      */
-    public function forProject(Project $project): Collection
+    public function forProject(Project $project, ?CarbonImmutable $effective = null): Collection
     {
+        // The day the change being made takes effect. Somebody busy elsewhere
+        // until a handover is still free to take it over, so the dates before
+        // it are not screened; and the team the picker starts from is the team
+        // on that day. Today, when nothing says otherwise.
+        $effective = ($effective ?? Schedule::businessToday())->startOfDay();
+
         // The picker cards show each technician's picture, so the account has
         // to bring its photo path and name parts along with the role - and
         // `status` / `is_archived` besides, because whether somebody may be
@@ -67,12 +75,15 @@ class ProjectTeamCandidates
             return collect();
         }
 
-        $assignedIds = $project->projectTechnicians
+        $project->loadMissing('teamHistory');
+
+        $assignedIds = $project->teamHistory
+            ->filter(fn (ProjectTechnician $span): bool => $span->isCurrent($effective->toDateString()))
             ->pluck('technician_id')
             ->map(fn ($technicianId): int => (int) $technicianId)
             ->all();
 
-        $busyDates = $this->busyDates($project, $technicians->pluck('technician_id'));
+        $busyDates = $this->busyDates($project, $technicians->pluck('technician_id'), $effective);
         $wantedSkills = $this->wantedSkills($project);
 
         return $technicians
@@ -139,7 +150,7 @@ class ProjectTeamCandidates
      * @param  Collection<int, mixed>  $technicianIds
      * @return array<int, array<int, string>>
      */
-    private function busyDates(Project $project, Collection $technicianIds): array
+    private function busyDates(Project $project, Collection $technicianIds, CarbonImmutable $effective): array
     {
         // Each schedule asks only about what it actually occupies: a whole-day
         // range about every day it covers, a partial day about its hours. So a
@@ -153,7 +164,7 @@ class ProjectTeamCandidates
         // change. Every remaining range is still checked, and a range that
         // started before today keeps the days it has left; see
         // Schedule::toUpcomingAvailabilityRange().
-        $ranges = Schedule::upcomingAvailabilityRanges($project->schedules);
+        $ranges = $this->fromDay(Schedule::upcomingAvailabilityRanges($project->schedules), $effective);
 
         if ($ranges === []) {
             // Nothing is scheduled yet, or nothing is left to schedule for, so
@@ -167,6 +178,32 @@ class ProjectTeamCandidates
                 $conflict['technician_id'] => $conflict['dates'],
             ])
             ->all();
+    }
+
+    /**
+     * The ranges with every day before $day cut away. A partial day is a
+     * single date, so it is kept or dropped whole.
+     *
+     * @param  array<int, array{start: CarbonImmutable, end: CarbonImmutable, mode: string}>  $ranges
+     * @return array<int, array{start: CarbonImmutable, end: CarbonImmutable, mode: string}>
+     */
+    private function fromDay(array $ranges, CarbonImmutable $day): array
+    {
+        $kept = [];
+
+        foreach ($ranges as $range) {
+            if ($range['end']->startOfDay()->lt($day)) {
+                continue;
+            }
+
+            if ($range['mode'] !== Schedule::MODE_PARTIAL_DAY && $range['start']->lt($day)) {
+                $range['start'] = $day;
+            }
+
+            $kept[] = $range;
+        }
+
+        return $kept;
     }
 
     /**

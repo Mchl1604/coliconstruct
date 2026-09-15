@@ -6,7 +6,6 @@ use App\Models\Project;
 use App\Models\ProjectTechnician;
 use App\Models\Schedule;
 use App\Models\ScheduleTechnician;
-use App\Models\Task;
 use App\Models\Technician;
 use App\Models\User;
 use Carbon\CarbonImmutable;
@@ -95,15 +94,24 @@ class ProjectTeam
      * all dropped the person from weeks they had genuinely worked, while the
      * booking links for those weeks sat there pointing at a span that no longer
      * reached them.
+     * @param  CarbonImmutable|null  $from  the day the span opens - a later day
+     *                                      schedules the start. Null, or today,
+     *                                      opens it now.
      */
-    public function attach(Project $project, int $technicianId, ?int $addedBy = null): ProjectTechnician
-    {
-        // Only an OPEN membership counts as already being on the team. A
-        // closed one is history and is never touched here.
+    public function attach(
+        Project $project,
+        int $technicianId,
+        ?int $addedBy = null,
+        ?CarbonImmutable $from = null
+    ): ProjectTechnician {
+        // A span that has not ended - current or still to come - counts as
+        // already being on the team. An ended one is history and is never
+        // touched here.
         $assignment = ProjectTechnician::query()
             ->where('project_id', $project->project_id)
             ->where('technician_id', $technicianId)
-            ->active()
+            ->notEnded()
+            ->orderBy('joined_at')
             ->first();
 
         if ($assignment === null) {
@@ -111,22 +119,165 @@ class ProjectTeam
                 'project_id' => $project->project_id,
                 'technician_id' => $technicianId,
                 'team_role' => $this->currentRoleOf($technicianId),
-                // The moment, not the day. Every date comparison on this
-                // column goes through whereDate() or toDateString() - see
-                // ProjectTechnician::coveredOn() - so the time costs nothing
-                // there, and the team history is unreadable without it: two
-                // changes on the same afternoon are otherwise the same
-                // timestamp and sort arbitrarily.
-                'joined_at' => Schedule::businessNow(),
+                'joined_at' => $this->moment($from),
                 'joined_by' => $addedBy,
             ]);
         }
 
-        foreach ($this->unfinishedScheduleIds($project) as $scheduleId) {
-            $this->link($scheduleId, (int) $assignment->project_technician_id);
-        }
+        $this->linkUnfinishedRanges($project, $assignment);
 
         return $assignment;
+    }
+
+    /**
+     * Start a new span, whatever the technician already holds.
+     *
+     * For a caller that has already worked out that no span of theirs covers
+     * the day - ProjectTeamChange, putting somebody back on from a date after a
+     * removal that is still to come. attach() would find that leaving span and
+     * return it; this opens the next one.
+     */
+    public function open(
+        Project $project,
+        int $technicianId,
+        ?int $addedBy = null,
+        ?CarbonImmutable $from = null,
+        ?CarbonImmutable $until = null
+    ): ProjectTechnician {
+        // $until is the first day the span no longer covers: a stand-in lead
+        // covering somebody's days off, or a technician's return that ends
+        // where their original span was already due to end.
+        $assignment = ProjectTechnician::create([
+            'project_id' => $project->project_id,
+            'technician_id' => $technicianId,
+            'team_role' => $this->currentRoleOf($technicianId),
+            'joined_at' => $this->moment($from),
+            'joined_by' => $addedBy,
+            'removed_at' => $until?->startOfDay(),
+            'removed_by' => $until ? $addedBy : null,
+            'removal_recorded_at' => $until ? Schedule::businessNow() : null,
+        ]);
+
+        $this->linkUnfinishedRanges($project, $assignment);
+
+        return $assignment;
+    }
+
+    /**
+     * Bring a span that has not started yet forward to an earlier day.
+     *
+     * Somebody due to join on Sep 1 who is now wanted from Aug 25 keeps the
+     * one span, opened sooner - not a second span beside the first.
+     */
+    public function startEarlier(
+        Project $project,
+        ProjectTechnician $assignment,
+        CarbonImmutable $from,
+        ?int $by = null
+    ): void {
+        $assignment->update([
+            'joined_at' => $this->moment($from),
+            'joined_by' => $by,
+        ]);
+
+        $this->linkUnfinishedRanges($project, $assignment);
+    }
+
+    /**
+     * End a span on a given day - today, or one still to come.
+     *
+     * $effective is the first day the technician is no longer on the team. A
+     * span that would not have started by then records nothing - a start that
+     * is being called off before it happens - so it is deleted along with its
+     * bookings rather than left as an empty row in the history.
+     *
+     * Nothing else is deleted. Bookings on ranges that begin on or after the
+     * removal are released, because none of their days belong to this span.
+     * A range that began before the removal keeps its link: the days before
+     * the removal were this technician's, and the span's end is what stops the
+     * rest being theirs - see Project::crewOn() and the availability walk,
+     * which both apply it.
+     *
+     * Tasks are not touched here. What happens to the work somebody was
+     * holding is the administrator's decision - see ProjectTeamChange.
+     */
+    public function close(
+        Project $project,
+        ProjectTechnician $assignment,
+        CarbonImmutable $effective,
+        ?int $by = null
+    ): void {
+        $effectiveDate = $effective->toDateString();
+
+        if ($assignment->startDate() !== null
+            && $assignment->startDate() >= $effectiveDate
+            && $assignment->isUpcoming()) {
+            ScheduleTechnician::query()
+                ->where('project_technician_id', $assignment->project_technician_id)
+                ->delete();
+
+            $assignment->delete();
+
+            return;
+        }
+
+        $this->releaseLinksFrom($project, $assignment, $effectiveDate);
+
+        $assignment->update([
+            'removed_at' => $this->moment($effective),
+            'removed_by' => $by,
+            'removal_recorded_at' => Schedule::businessNow(),
+        ]);
+    }
+
+    /**
+     * Take back a removal that has not happened yet.
+     *
+     * The span runs on again as if the removal had never been scheduled, and
+     * the bookings it released on the days after it are written back.
+     */
+    public function cancelRemoval(Project $project, ProjectTechnician $assignment, ?string $until = null): void
+    {
+        // $until is where the span now ends instead - the end of the return
+        // span it is being folded back together with, when the removal was the
+        // start of some days off. Null runs it on.
+        $assignment->update([
+            'removed_at' => $until === null ? null : CarbonImmutable::parse($until)->startOfDay(),
+            'removed_by' => $until === null ? null : $assignment->removed_by,
+            'removal_recorded_at' => $until === null ? null : $assignment->removal_recorded_at,
+        ]);
+
+        $this->linkUnfinishedRanges($project, $assignment);
+    }
+
+    /**
+     * Call off a start that has not happened yet: the span recorded nothing,
+     * so it goes, with its bookings.
+     */
+    public function cancelStart(ProjectTechnician $assignment): void
+    {
+        ScheduleTechnician::query()
+            ->where('project_technician_id', $assignment->project_technician_id)
+            ->delete();
+
+        $assignment->delete();
+    }
+
+    /**
+     * A day as the column stores it. Today is the moment, not midnight: two
+     * changes on the same afternoon are otherwise the same timestamp and the
+     * team history sorts them arbitrarily. Every date comparison on these
+     * columns reads the date part alone - see ProjectTechnician::coveredOn().
+     */
+    private function moment(?CarbonImmutable $day): CarbonImmutable
+    {
+        $today = Schedule::businessToday();
+
+        if ($day === null || $day->startOfDay()->lte($today)) {
+            return Schedule::businessNow();
+        }
+
+        return $day->startOfDay();
     }
 
     /**
@@ -323,119 +474,40 @@ class ProjectTeam
     }
 
     /**
-     * Take a technician off the team, off the dates still ahead of it, and off
-     * any unfinished task they were holding.
+     * Release the bookings a span holds on ranges that begin on or after the
+     * day it ends.
      *
-     * Nothing is deleted. The membership is closed with a date, and the
-     * bookings are released only where releasing them is a statement about the
-     * future: this is the exact mirror of attach(), which refuses to write a
-     * link onto a range that has already ended because somebody added today
-     * did not work last week. The same asymmetry backwards - somebody removed
-     * today DID work last week, and the row saying so is the only record of
-     * it.
+     * The line is drawn at where each range STARTS. A range that began before
+     * the removal is part record and part promise: its days before the removal
+     * were this technician's, and the link is the only thing that says by whom
+     * - deleting it would discard real history, which is what the cascade
+     * delete used to do. The days from the removal on are released by the span
+     * closing rather than by the link: removed_at bounds which of the range's
+     * days belong to this person, and every reader that asks about a date -
+     * Project::crewOn(), the availability walk - applies it.
      *
-     * That matters more than it sounds. tbl_schedule_technicians hangs off
-     * this row by a cascading foreign key, so deleting the membership took
-     * every date the technician had ever been booked for with it. A project's
-     * July history vanished because of an August staffing decision.
-     *
-     * A range still running - started before today, ending after it - is
-     * released rather than split. Half of it was worked and half was a promise
-     * being withdrawn, and keeping the link would leave the technician reading
-     * as booked for days they are now free for, which is a live wrong answer
-     * rather than a gap in the record. The membership's removed_at is what
-     * carries the fact that they were here for the first half.
-     *
-     * Completed work keeps its technician either way: it is a record of who
-     * did it, not a statement about who is available now.
-     *
-     * Tasks are released by the same line the span draws. The removal closes
-     * the span at today, so work due before today fell entirely inside the
-     * days this technician was on the team - it was theirs, and it stays
-     * theirs, finished or not. Releasing it used to erase them from the record
-     * of work dated to weeks they genuinely held: the Tasks section of the
-     * technician report stopped listing them against it. An overdue task kept
-     * this way is still open and still Overdue on the board, and the lead and
-     * the administrators go on being reminded of it - see SendTaskReminders.
-     *
-     * What IS released is the open work that reaches today or later, or that
-     * has no due date to place it: nobody is on the team to do it now.
-     *
-     * Closed work is never touched, cancelled included. Only OPEN_STATUSES are
-     * released - releasing a cancelled task used to set it back to
-     * Unassigned, quietly reopening work somebody had called off.
-     *
-     * @param  int|null  $removedBy  the account making the removal, for the
-     *                               audit trail. Null where no user is behind
-     *                               it - a console command, a cascade.
-     * @return Collection<int, Task> the tasks left without a technician, so a
-     *                               caller can say so rather than let the work
-     *                               go quietly unowned
+     * A range that begins on or after the removal holds none of this span's
+     * days, so its link records nothing and is deleted outright. For a removal
+     * effective today that is every range that has not started, which is the
+     * line this class has always drawn.
      */
-    public function detach(Project $project, ProjectTechnician $assignment, ?int $removedBy = null): Collection
+    private function releaseLinksFrom(Project $project, ProjectTechnician $assignment, string $effectiveDate): void
     {
-        $this->releaseUnfinishedLinks($project, $assignment);
-
-        $removedAt = Schedule::businessNow();
-
-        $released = Task::query()
-            ->where('project_id', $project->project_id)
-            ->where('technician_id', $assignment->technician_id)
-            ->whereIn('status', Task::OPEN_STATUSES)
-            ->where(fn ($unfinished) => $unfinished
-                ->whereNull('due_date')
-                ->orWhereDate('due_date', '>=', $removedAt->toDateString()))
-            ->get();
-
-        Task::query()
-            ->whereIn('task_id', $released->pluck('task_id'))
-            ->update([
-                'technician_id' => null,
-                'status' => 'unassigned',
-            ]);
-
-        $assignment->update([
-            'removed_at' => $removedAt,
-            'removed_by' => $removedBy,
-        ]);
-
-        return $released;
-    }
-
-    /**
-     * Hand back the dates this member was holding that have not been worked,
-     * and leave the ones that have.
-     *
-     * The line is drawn at whether a range has STARTED, not at whether it has
-     * ended. A range still running is half record and half promise: the days
-     * before today were worked and the link is the only thing that says by
-     * whom, so deleting it discards real history - the same history the
-     * cascade delete used to take, for a smaller window. The days from today
-     * on are the promise being withdrawn, and those are released by the
-     * membership close rather than by the link: removed_at bounds which of the
-     * range's days belong to this person, and every reader that asks about a
-     * date - Project::crewOn(), the availability walk - applies it.
-     *
-     * A range that has not started yet is a different case. Nothing on it was
-     * worked, so its link records nothing, and it is deleted outright.
-     *
-     * Read as rows and deleted by id rather than by a join, so the decision is
-     * made by the same lock state the rest of this class uses - see
-     * unfinishedScheduleIds() for why that cannot become a WHERE clause.
-     */
-    private function releaseUnfinishedLinks(Project $project, ProjectTechnician $assignment): void
-    {
-        $keep = Schedule::query()
+        $release = Schedule::query()
             ->where('project_id', $project->project_id)
             ->get(['schedule_id', 'start_datetime', 'end_datetime', 'scheduling_mode'])
-            ->filter($this->hasStarted(...))
+            ->filter(fn (Schedule $schedule): bool => $schedule->startsOn()->toDateString() >= $effectiveDate)
             ->map(fn (Schedule $schedule): int => (int) $schedule->schedule_id)
             ->values()
             ->all();
 
+        if ($release === []) {
+            return;
+        }
+
         ScheduleTechnician::query()
             ->where('project_technician_id', $assignment->project_technician_id)
-            ->when($keep !== [], fn ($query) => $query->whereNotIn('schedule_id', $keep))
+            ->whereIn('schedule_id', $release)
             ->delete();
     }
 
@@ -458,8 +530,8 @@ class ProjectTeam
      */
     public function linkScheduleToTeam(Schedule $schedule, Project $project): void
     {
-        foreach ($this->assignmentIds($project) as $projectTechnicianId) {
-            $this->link((int) $schedule->schedule_id, $projectTechnicianId);
+        foreach ($this->spansForNewRange($project, $schedule) as $assignment) {
+            $this->link((int) $schedule->schedule_id, (int) $assignment->project_technician_id);
         }
     }
 
@@ -494,13 +566,18 @@ class ProjectTeam
      * every one of those links BECAUSE they were taken off, so a repair that
      * did not know the difference would quietly re-book everybody who had ever
      * been removed. The scoped relation is what keeps them out - see
-     * Project::projectTechnicians().
+     * Project::rosterTechnicians().
+     *
+     * Within the spans that have not ended, a range is only missing a link from
+     * a span that holds some of its days. A member leaving on Aug 21 is not
+     * missing from a range that starts on Sep 1, and one starting on Sep 1 is
+     * not missing from a range that finishes in August.
      *
      * @return Collection<int, array{schedule_id: int, project_technician_id: int, technician_id: int}>
      */
     public function missingScheduleLinks(Project $project): Collection
     {
-        $project->loadMissing(['schedules.scheduleTechnicians', 'projectTechnicians']);
+        $project->loadMissing(['schedules.scheduleTechnicians', 'rosterTechnicians']);
 
         $missing = collect();
 
@@ -509,8 +586,9 @@ class ProjectTeam
                 ->map(fn (ScheduleTechnician $link): int => (int) $link->project_technician_id)
                 ->all();
 
-            foreach ($project->projectTechnicians as $assignment) {
-                if (in_array((int) $assignment->project_technician_id, $linked, true)) {
+            foreach ($project->rosterTechnicians as $assignment) {
+                if (in_array((int) $assignment->project_technician_id, $linked, true)
+                    || ! $this->spanReachesRange($assignment, $schedule)) {
                     continue;
                 }
 
@@ -554,7 +632,7 @@ class ProjectTeam
         // which is exactly what Resume has done by this point - would
         // otherwise be measured against the relation as it was before.
         $project->unsetRelation('schedules');
-        $project->unsetRelation('projectTechnicians');
+        $project->unsetRelation('rosterTechnicians');
 
         $inserted = 0;
 
@@ -585,34 +663,6 @@ class ProjectTeam
     }
 
     /**
-     * The ranges a joiner is booked onto: the project's, minus the ones that
-     * have finished.
-     *
-     * Read fresh rather than from a loaded relation: a caller that has just
-     * created a schedule, or that is part-way through rebuilding a team, would
-     * otherwise be working from a picture that is already out of date.
-     *
-     * Filtered in PHP rather than in the query on purpose. Whether a range has
-     * ended is Schedule::isLocked()'s answer, which reads end_datetime through
-     * endsOn() - and endsOn() falls back to start_datetime, because a row with
-     * no end is a single day. A WHERE clause on end_datetime would quietly get
-     * that one wrong, and there is no version of this worth a second
-     * definition of "ended". A project holds a handful of ranges, so there is
-     * nothing to gain by it either.
-     *
-     * @return Collection<int, int>
-     */
-    private function unfinishedScheduleIds(Project $project): Collection
-    {
-        return Schedule::query()
-            ->where('project_id', $project->project_id)
-            ->get(['schedule_id', 'start_datetime', 'end_datetime', 'scheduling_mode'])
-            ->reject($this->hasEnded(...))
-            ->map(fn (Schedule $schedule): int => (int) $schedule->schedule_id)
-            ->values();
-    }
-
-    /**
      * Whether a range is over, in the one place this class decides it.
      */
     private function hasEnded(Schedule $schedule): bool
@@ -621,39 +671,72 @@ class ProjectTeam
     }
 
     /**
-     * Whether any of a range's days have been reached - it has ended, or it is
-     * running. The test for "is there anything on this range worth keeping a
-     * record of?", which is a wider question than whether it has finished.
+     * Book a span onto every unfinished range that holds some of its days.
+     *
+     * Ranges that have already ended are skipped - see attach() for why - and
+     * so is any range that sits entirely outside the span: a member leaving on
+     * Aug 21 is not booked onto September, and one starting on Sep 1 is not
+     * booked onto August.
      */
-    private function hasStarted(Schedule $schedule): bool
+    private function linkUnfinishedRanges(Project $project, ProjectTechnician $assignment): void
     {
-        return ! $schedule->isFuture();
+        Schedule::query()
+            ->where('project_id', $project->project_id)
+            ->get(['schedule_id', 'start_datetime', 'end_datetime', 'scheduling_mode'])
+            ->reject($this->hasEnded(...))
+            ->filter(fn (Schedule $schedule): bool => $this->spanReachesRange($assignment, $schedule))
+            ->each(fn (Schedule $schedule) => $this->link(
+                (int) $schedule->schedule_id,
+                (int) $assignment->project_technician_id
+            ));
     }
 
     /**
-     * @return Collection<int, int>
+     * Whether a span holds at least one of a range's days.
      */
-    /**
-     * The memberships a newly created range is booked onto: the team as it
-     * stands, and only that.
-     *
-     * active() is not optional here. A membership row outlives the membership
-     * now - it carries the dates that technician worked - so an unscoped read
-     * of this table returns everybody who has ever been on the project, and
-     * linkScheduleToTeam() would book every one of them onto a range created
-     * after they left. The dates would then appear on their own calendar, and
-     * they would read as busy for days they have no business being on.
-     *
-     * Read fresh rather than through Project::projectTechnicians(), which is
-     * scoped the same way but may already be loaded and stale: a caller
-     * part-way through rebuilding a team is exactly who calls this.
-     */
-    private function assignmentIds(Project $project): Collection
+    private function spanReachesRange(ProjectTechnician $assignment, Schedule $schedule): bool
     {
+        return $assignment->overlaps(
+            $schedule->startsOn()->toDateString(),
+            $schedule->endsOn()->addDay()->toDateString()
+        );
+    }
+
+    /**
+     * The spans a newly created range is booked onto.
+     *
+     * Only spans that have not ended. A membership row outlives the membership
+     * now - it carries the dates that technician worked - so an unscoped read
+     * returns everybody who has ever been on the project, and every one of them
+     * would be booked onto a range created after they left: the dates would
+     * appear on their own calendar, and they would read as busy for days they
+     * have no business being on.
+     *
+     * Of those, a span is skipped only when it plainly holds none of the
+     * range's days - a removal taking effect before the range begins, or a
+     * start still to come that falls after it ends. The team as it stands
+     * today is always booked, whatever the range's dates: a range created in
+     * the past reaches here only because a Super Admin is recording work
+     * already done, or a reopen is restoring what a project held, and leaving
+     * it with nobody on it would not be a record of anything.
+     *
+     * Read fresh rather than through a loaded relation: a caller part-way
+     * through rebuilding a team is exactly who calls this.
+     *
+     * @return Collection<int, ProjectTechnician>
+     */
+    private function spansForNewRange(Project $project, Schedule $schedule): Collection
+    {
+        $rangeStart = $schedule->startsOn()->toDateString();
+        $rangeEnd = $schedule->endsOn()->toDateString();
+
         return ProjectTechnician::query()
             ->where('project_id', $project->project_id)
-            ->active()
-            ->pluck('project_technician_id')
-            ->map(fn ($projectTechnicianId): int => (int) $projectTechnicianId);
+            ->notEnded()
+            ->get()
+            ->reject(fn (ProjectTechnician $assignment): bool => $assignment->isEmptySpan()
+                || ($assignment->endDate() !== null && $assignment->endDate() <= $rangeStart)
+                || ($assignment->isUpcoming() && $assignment->startDate() > $rangeEnd))
+            ->values();
     }
 }

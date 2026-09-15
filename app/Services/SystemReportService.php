@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Project;
+use App\Models\ProjectTechnician;
 use App\Models\Schedule;
 use App\Models\Task;
 use App\Models\Technician;
@@ -777,8 +778,14 @@ class SystemReportService
             // Live assignments only. The table keeps closed memberships now so
             // a project's history survives a staffing change - see
             // ProjectTechnician - and a chart of who is leading what today
-            // must not count somebody taken off in March.
-            ->whereNull('pt.removed_at')
+            // must not count somebody taken off in March, or somebody who does
+            // not start until next month.
+            ->where(fn ($joined) => $joined
+                ->whereNull('pt.joined_at')
+                ->orWhereDate('pt.joined_at', '<=', ProjectTechnician::today()))
+            ->where(fn ($removed) => $removed
+                ->whereNull('pt.removed_at')
+                ->orWhereDate('pt.removed_at', '>', ProjectTechnician::today()))
             ->join('tbl_projects as p', 'p.project_id', '=', 'pt.project_id')
             ->join('tbl_technicians as t', 't.technician_id', '=', 'pt.technician_id')
             // The role on the account, never the order the team was assigned
@@ -1237,20 +1244,32 @@ class SystemReportService
             foreach ($project->teamHistory as $assignment) {
                 $technicianId = (int) $assignment->technician_id;
 
-                if (! $directory->has($technicianId)) {
+                if (! $directory->has($technicianId) || $assignment->isEmptySpan()) {
                     continue;
                 }
+
+                $isLead = $project->isLeadMember($assignment);
 
                 $rows->push($directory[$technicianId] + [
                     'technician_id' => $technicianId,
                     'project_id' => (int) $project->project_id,
                     'reference_no' => $project->reference_no ?: '—',
                     'client' => $this->clientName($project),
-                    'is_removed' => $assignment->isRemoved(),
-                    'assignment_status' => $assignment->isRemoved() ? 'Removed' : 'Active',
-                    // formatDate() prints an em dash for null, which is exactly
-                    // what an assignment nobody has ended should show.
-                    'removed_on' => $this->formatDate($assignment->removed_at),
+                    // Removed means the removal has taken effect. One scheduled
+                    // for next week is still an active assignment - Leaving -
+                    // and one that has not begun is Upcoming.
+                    'is_removed' => $assignment->hasEnded(),
+                    'assignment_status' => $this->assignmentStatus($assignment),
+                    // The role held on this project, which a later change of
+                    // job title does not rewrite - see heldLeadRole().
+                    'role' => $isLead ? 'Lead Technician' : 'Technician',
+                    'started_on' => $this->formatDate($assignment->startDate()),
+                    // The effective removal date: the first day they were no
+                    // longer on the team. formatDate() prints an em dash for
+                    // null, which is exactly what an assignment nobody has
+                    // ended should show.
+                    'removed_on' => $this->formatDate($assignment->endDate()),
+                    'replaced_by' => $isLead ? $this->replacementLeadName($project, $assignment) : null,
                     // This span's own dates. Somebody on a project twice holds
                     // two rows, and each must carry only the days of its span.
                     'schedules' => $schedules[(int) $assignment->project_technician_id] ?? [],
@@ -1266,6 +1285,36 @@ class SystemReportService
         return $rows
             ->sortBy(fn (array $row): array => [$row['technician'], $row['reference_no']])
             ->values();
+    }
+
+    /**
+     * Active, Leaving, Upcoming or Removed - measured against today.
+     */
+    private function assignmentStatus(ProjectTechnician $assignment): string
+    {
+        return match (true) {
+            $assignment->hasEnded() => 'Removed',
+            $assignment->isUpcoming() => 'Upcoming',
+            $assignment->isLeaving() => 'Leaving',
+            default => 'Active',
+        };
+    }
+
+    /**
+     * Who took the lead over from a lead span that ended - the lead span that
+     * started on the day it closed - or null when nobody did.
+     */
+    private function replacementLeadName(Project $project, ProjectTechnician $outgoing): ?string
+    {
+        if ($outgoing->endDate() === null) {
+            return null;
+        }
+
+        return $project->teamHistory
+            ->first(fn (ProjectTechnician $span): bool => ! $span->is($outgoing)
+                && $span->startDate() === $outgoing->endDate()
+                && $project->isLeadMember($span))
+            ?->technician?->name;
     }
 
     /**

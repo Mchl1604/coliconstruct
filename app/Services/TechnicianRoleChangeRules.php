@@ -94,8 +94,12 @@ class TechnicianRoleChangeRules
             return collect();
         }
 
+        // Leading it today, or due to lead it: a lead whose start on a project
+        // is scheduled for next week has already been given that project, and
+        // a demotion would take it off them just the same.
         return $this->liveProjectsCrewedBy($user)
-            ->filter(fn (Project $project): bool => (int) ($project->leadAssignment()?->technician_id ?? 0) === (int) $technicianId)
+            ->filter(fn (Project $project): bool => $user->role === User::ROLE_LEAD_TECHNICIAN
+                || (int) ($project->leadAssignment()?->technician_id ?? 0) === (int) $technicianId)
             ->values();
     }
 
@@ -118,8 +122,10 @@ class TechnicianRoleChangeRules
             ->with('projectTechnicians.technician.account')
             ->whereIn('status', Project::DERIVED_LIVE_STATUSES)
             ->where('is_archived', false)
+            // Today's team or a start scheduled for later - either way the
+            // project is theirs to work, and a role change decides who leads it.
             ->whereHas(
-                'projectTechnicians',
+                'rosterTechnicians',
                 fn ($assignment) => $assignment->where('technician_id', $technicianId)
             )
             ->orderBy('project_id')

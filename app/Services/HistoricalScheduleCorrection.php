@@ -223,10 +223,10 @@ class HistoricalScheduleCorrection
             $memberIds[] = $technicianId;
             $members[] = $this->candidatePayload(
                 $technician,
-                $assignment->isRemoved()
-                    ? 'On the team then, removed '.BusinessTime::format($assignment->removed_at)
+                $assignment->hasEnded()
+                    ? 'On the team then, removed '.BusinessTime::format($assignment->endDate())
                     : 'On the team for these dates',
-                ! $assignment->isRemoved()
+                ! $assignment->hasEnded()
             );
         }
 
@@ -897,8 +897,8 @@ class HistoricalScheduleCorrection
             ->last();
 
         if ($before?->isRemoved()
-            && CarbonImmutable::parse($before->removed_at)->lte($first)) {
-            return 'Left this project on '.BusinessTime::format($before->removed_at);
+            && CarbonImmutable::parse($before->endDate())->lte($first)) {
+            return 'Left this project on '.BusinessTime::format($before->endDate());
         }
 
         $membership = $before ?? $memberships->first();

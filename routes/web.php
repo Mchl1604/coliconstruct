@@ -382,6 +382,13 @@ Route::prefix('super-admin')
             ->name('projects.documents.destroy');
         Route::put('/projects/{id}', [ProjectController::class, 'update'])->name('projects.update');
         Route::put('/projects/{id}/team', [ProjectController::class, 'updateAssignedTeam'])->name('projects.team.update');
+        // What a team change would do before it is saved - its refusals and the
+        // tasks it would strand. Read by the Edit Assigned Team dialog.
+        Route::post('/projects/{id}/team/preview', [ProjectController::class, 'teamPreview'])->name('projects.team.preview');
+        // Call off a scheduled removal or start before it takes effect.
+        Route::delete('/projects/{id}/team/scheduled/{membership}', [ProjectController::class, 'cancelScheduledTeamChange'])
+            ->whereNumber('membership')
+            ->name('projects.team.scheduled.cancel');
         Route::post('/projects/{id}/reports', [TechnicianReportController::class, 'store'])->name('technician.reports.store');
         Route::post('/projects/{id}/task', [TaskController::class, 'store'])->name('task.store');
         Route::patch('/tasks/{task}/complete', [TaskController::class, 'complete'])->name('tasks.complete');

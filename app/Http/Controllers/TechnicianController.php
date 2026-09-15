@@ -15,6 +15,8 @@ use App\Services\ActivityLogger;
 use App\Services\NotificationService;
 use App\Services\ProfileService;
 use App\Services\ProjectTeam;
+use App\Services\ProjectTeamChange;
+use App\Services\ProjectTeamChangePlan;
 use App\Services\ProjectTeamRules;
 use App\Services\TechnicianAvailabilityService;
 use App\Support\BusinessTime;
@@ -218,39 +220,49 @@ class TechnicianController extends Controller
                 $schedule->project->calendarCutoff()
             ));
 
-        $events = $schedules->map(function (Schedule $schedule) use ($technician): array {
-            $project = $schedule->project;
+        // One bar per span of theirs on each range, drawn over the days that
+        // span holds - see Schedule::toCalendarTimesForSpan().
+        $events = $schedules->flatMap(fn (Schedule $schedule): Collection => $this->membershipsFor($schedule, $technician)
+            ->map(function (ProjectTechnician $membership) use ($schedule): ?array {
+                $project = $schedule->project;
+                $times = $schedule->toCalendarTimesForSpan($project->calendarCutoff(), $membership);
 
-            // Days this technician worked on a project they have since been
-            // taken off. The booking survives the removal - it is the record
-            // of where they were - so it stays on the calendar and is drawn
-            // black instead, the same treatment their own portal gives it.
-            $membership = $this->membershipFor($schedule, $technician);
-            $isFormer = $membership?->isRemoved() ?? false;
+                if ($times === null) {
+                    return null;
+                }
 
-            return [
-                'id' => $schedule->schedule_id,
-                'title' => $project->reference_no,
-                // A partial day comes back as a timed event, so the bar
-                // carries its hours instead of reading as a whole day.
-                ...$schedule->toCalendarTimesThrough($project->calendarCutoff()),
-                ...$project->calendarEventColors($schedule->isDateBased()),
-                ...($isFormer ? ['classNames' => ['fc-event-former']] : []),
-                'extendedProps' => [
-                    'projectId' => $project->project_id,
-                    'referenceNo' => $project->reference_no,
-                    'projectName' => $project->name,
-                    'client' => $this->clientName($project),
-                    'status' => $project->status,
-                    'statusLabel' => $this->statusLabel($project),
-                    'rangeLabel' => $schedule->describe(),
-                    'isFormer' => $isFormer,
-                    'removedOn' => $isFormer
-                        ? CarbonImmutable::parse($membership->removed_at)->format(BusinessTime::DATE)
-                        : null,
-                ],
-            ];
-        })->values();
+                // Days this technician worked on a project they have since
+                // been taken off. The booking survives the removal - it is the
+                // record of where they were - so it stays on the calendar and
+                // is drawn black instead, the same treatment their own portal
+                // gives it.
+                $isFormer = $membership->hasEnded();
+
+                return [
+                    'id' => $schedule->schedule_id,
+                    'title' => $project->reference_no,
+                    // A partial day comes back as a timed event, so the bar
+                    // carries its hours instead of reading as a whole day.
+                    ...$times,
+                    ...$project->calendarEventColors($schedule->isDateBased()),
+                    ...($isFormer ? ['classNames' => ['fc-event-former']] : []),
+                    'extendedProps' => [
+                        'projectId' => $project->project_id,
+                        'referenceNo' => $project->reference_no,
+                        'projectName' => $project->name,
+                        'client' => $this->clientName($project),
+                        'status' => $project->status,
+                        'statusLabel' => $this->statusLabel($project),
+                        'rangeLabel' => $schedule->describe(),
+                        'isFormer' => $isFormer,
+                        'removedOn' => $isFormer
+                            ? CarbonImmutable::parse($membership->endDate())->format(BusinessTime::DATE)
+                            : null,
+                    ],
+                ];
+            })
+            ->filter())
+            ->values();
 
         $assignedProjects = $this->assignedProjects($technician);
 
@@ -287,7 +299,9 @@ class TechnicianController extends Controller
             ->with(['clients', 'schedules', 'projectTechnicians.technician.account', 'phases'])
             ->where('is_archived', false)
             ->where('status', '!=', 'cancelled')
-            ->whereHas('projectTechnicians', function ($query) use ($technician): void {
+            // Including a project they are scheduled to join: it is work they
+            // are assigned, whether or not its first day has come.
+            ->whereHas('rosterTechnicians', function ($query) use ($technician): void {
                 $query->where('technician_id', $technician->technician_id);
             })
             ->orderByDesc('project_id')
@@ -314,9 +328,14 @@ class TechnicianController extends Controller
 
     /**
      * Everything the project details panel needs, including whether this
-     * technician is the project's lead and who could replace them.
+     * technician leads the project on the days being asked about and who could
+     * lead in their place.
+     *
+     * The days are the removal the panel is building: `mode` is `from` (off
+     * from `from` onward, the default) or `days` (off from `from` to `until`),
+     * with today as the default day.
      */
-    public function assignment(Technician $technician, Project $project)
+    public function assignment(Request $request, Technician $technician, Project $project)
     {
         // Everything the details panel shows, eager loaded in one go. Tasks
         // are scoped to the technician being viewed - the panel lists their
@@ -340,34 +359,32 @@ class TechnicianController extends Controller
             'phases',
         ]);
 
-        $assignment = $project->projectTechnicians
-            ->firstWhere('technician_id', $technician->technician_id);
+        [$mode, $from, $until] = $this->removalDays($request);
+
+        $spans = $project->teamHistory
+            ->filter(fn (ProjectTechnician $span): bool => (int) $span->technician_id === (int) $technician->technician_id
+                && ! $span->isEmptySpan());
+
+        // On the team now, or due back on it - the current span first.
+        $assignment = $spans
+            ->reject(fn (ProjectTechnician $span): bool => $span->hasEnded())
+            ->sortBy(fn (ProjectTechnician $span): int => $span->isCurrent() ? 0 : 1)
+            ->first();
 
         // Nobody on the team now - but their calendar may still carry days
         // they worked before they came off it, and clicking one of those has
-        // to answer with something. It used to answer with a 422, which the
-        // panel rendered as a project called "Unavailable" with every field
-        // blank: a dead end where an explanation belongs.
-        //
-        // So a closed membership gets the same panel, filled in, with the
-        // project's CURRENT team on it and a note saying when this technician
-        // left. What it does not get is the removal controls: there is nothing
-        // left to remove, and read_only below is what withholds them.
-        // The most recent span they left, when they have been on and off more
-        // than once - it is the removal the note has to date.
+        // to answer with something. So a closed membership gets the same
+        // panel, filled in, with a note saying when this technician left, and
+        // no removal controls: there is nothing left to remove.
         $former = $assignment === null
-            ? $project->teamHistory
-                ->where('technician_id', $technician->technician_id)
-                ->sortByDesc(fn (ProjectTechnician $membership): int => $membership->removed_at?->timestamp ?? PHP_INT_MAX)
-                ->first()
+            ? $spans->sortByDesc(fn (ProjectTechnician $span): string => (string) $span->endDate())->first()
             : null;
 
         if ($assignment === null && $former === null) {
             return response()->json(['error' => 'This technician is not assigned to that project.'], 422);
         }
 
-        $lead = $this->leadAssignment($project);
-        $isLead = $assignment !== null && $lead && (int) $lead->technician_id === (int) $technician->technician_id;
+        $isLead = $assignment !== null && $technician->isLead();
 
         $payload = [
             'project' => $this->projectPayload($project),
@@ -375,18 +392,40 @@ class TechnicianController extends Controller
             // A former assignment is a record, so the panel reads it the same
             // way it reads a completed project: nothing to change.
             'read_only' => $project->isReadOnly() || $former !== null,
+            'on_hold' => (bool) $project->on_hold,
             'is_former' => $former !== null,
-            'removed_on' => $former?->removed_at
-                ? CarbonImmutable::parse($former->removed_at)->format(BusinessTime::DATE)
+            'removed_on' => $former?->endDate()
+                ? CarbonImmutable::parse($former->endDate())->format(BusinessTime::DATE)
                 : null,
-            'remaining_after_removal' => $project->projectTechnicians->count() - ($assignment !== null ? 1 : 0),
+            // Whatever is already scheduled for them here, in the words the
+            // project's team card uses - "Off Sep 22 - Sep 23", "Leaving
+            // Sep 30" - so the panel can say so.
+            'scheduled' => $spans
+                ->flatMap(fn (ProjectTechnician $span): array => [
+                    $project->scheduledChangeLabel($span),
+                    $project->scheduledEndLabel($span),
+                ])
+                ->filter()
+                ->values()
+                ->all(),
+            'mode' => $mode,
+            'from' => $from->toDateString(),
+            'until' => $until?->toDateString(),
+            'min_date' => Schedule::businessToday()->toDateString(),
+            'remaining_after_removal' => $project->teamHistory
+                ->filter(fn (ProjectTechnician $span): bool => $span->isCurrent($from->toDateString()))
+                ->count() - ($assignment?->isCurrent($from->toDateString()) ? 1 : 0),
             'replacement_leads' => [],
         ];
 
-        // Replacements are lead-role technicians who are NOT already on this
-        // project and who are free for its whole schedule.
+        // Who could lead in their place: lead-role technicians not on this
+        // project for those days and free for the project's dates in them.
         if ($isLead && ! $project->isReadOnly()) {
-            $payload['replacement_leads'] = $this->availableReplacementLeads($project)
+            $payload['replacement_leads'] = $this->availableReplacementLeads(
+                $project,
+                $from,
+                $mode === 'days' ? $until?->addDay() : null
+            )
                 ->map(fn (Technician $candidate): array => [
                     'technician_id' => $candidate->technician_id,
                     'name' => $candidate->name,
@@ -400,83 +439,123 @@ class TechnicianController extends Controller
     }
 
     /**
-     * Remove one technician from one project.
+     * Take a technician off a project - for some days, or from a day onward.
      *
-     * When they are the project's lead, a replacement lead must be supplied;
-     * the replacement is added first and only then is the outgoing lead
-     * removed, so the project is never left without one.
+     *   mode=days   off from `from` to `until`, back the day after. A lead
+     *               needs a stand-in, who leads for exactly those days.
+     *   mode=from   off from `from` onward, entirely. A lead needs a
+     *               replacement, who takes the lead over for good.
+     *
+     * Both go through ProjectTeamChange, the same as the Edit Assigned Team
+     * dialog, so every rule is the same: a lead on every day, nobody given
+     * work they cannot receive, and every open task the change strands
+     * answered for - passed as task_resolutions[task_id]. Until each has an
+     * answer the reply is a 422 carrying the tasks and the choices, which the
+     * panel draws.
      */
     public function removeFromProject(Request $request, Technician $technician, Project $project)
     {
         $validator = Validator::make($request->all(), [
+            'mode' => ['nullable', 'in:from,days'],
             'replacement_lead_id' => ['nullable', 'integer', 'exists:tbl_technicians,technician_id'],
+            'from' => ['nullable', 'date_format:Y-m-d'],
+            'until' => ['nullable', 'date_format:Y-m-d'],
+            'effective_date' => ['nullable', 'date_format:Y-m-d'],
+            'task_resolutions' => ['nullable', 'array'],
         ]);
 
         if ($validator->fails()) {
             return response()->json(['error' => $validator->errors()->first()], 422);
         }
 
+        [$mode, $from, $until] = $this->removalDays($request);
         $replacementLeadId = $validator->validated()['replacement_lead_id'] ?? null;
+        $change = app(ProjectTeamChange::class);
+        $actorId = $request->user()?->id;
 
-        $removedBy = $request->user()?->id;
+        $project->load(['schedules', 'teamHistory.technician.account']);
 
         try {
-            DB::transaction(function () use ($technician, $project, $replacementLeadId, $removedBy): void {
-                $project->load(['schedules', 'projectTechnicians.technician.account']);
+            if ($project->isReadOnly()) {
+                throw new RuntimeException(sprintf(
+                    'This project is %s and its team can no longer be changed.',
+                    $project->status
+                ));
+            }
 
-                if ($project->isReadOnly()) {
-                    throw new RuntimeException(sprintf(
-                        'This project is %s and its team can no longer be changed.',
-                        $project->status
-                    ));
-                }
+            if ($project->on_hold) {
+                throw new RuntimeException('This project is on hold. Resume it before changing its assigned technicians.');
+            }
 
-                $assignment = $project->projectTechnicians
-                    ->firstWhere('technician_id', $technician->technician_id);
+            if ($from->lt(Schedule::businessToday())) {
+                throw new RuntimeException('A team change cannot take effect on a day that has already passed.');
+            }
 
-                if (! $assignment) {
-                    throw new RuntimeException('This technician is not assigned to that project.');
-                }
+            if ($mode === 'days' && ($until === null || $until->lt($from))) {
+                throw new RuntimeException('Choose the last day they are off, on or after the first.');
+            }
 
-                $lead = $this->leadAssignment($project);
-                $isLead = $lead && (int) $lead->technician_id === (int) $technician->technician_id;
+            $theirs = $project->teamHistory
+                ->filter(fn (ProjectTechnician $span): bool => (int) $span->technician_id === (int) $technician->technician_id
+                    && ! $span->isEmptySpan()
+                    && ! $span->hasEnded());
 
-                if (! $isLead && $project->projectTechnicians->count() <= 1) {
-                    throw new RuntimeException($this->sentence(
-                        'A project must keep at least one technician. Assign someone else first.'
-                    ));
-                }
+            if ($theirs->isEmpty()) {
+                throw new RuntimeException('This technician is not assigned to that project.');
+            }
 
-                if ($isLead) {
-                    $this->promoteReplacementLead($project, $technician, $replacementLeadId, $removedBy);
-                }
+            if ($technician->isLead() && ! $replacementLeadId) {
+                throw new RuntimeException(sprintf(
+                    $mode === 'days'
+                        ? '%s leads this project. Choose a lead technician to stand in for those days.'
+                        : '%s leads this project. Choose a replacement first.',
+                    $technician->name
+                ));
+            }
 
-                $released = $this->detachTechnician($project, $assignment, $removedBy);
+            if (! $technician->isLead()
+                && $project->teamHistory->filter(fn (ProjectTechnician $span): bool => $span->isCurrent($from->toDateString()))->count() <= 1
+                && $theirs->contains(fn (ProjectTechnician $span): bool => $span->isCurrent($from->toDateString()))) {
+                throw new RuntimeException($this->sentence(
+                    'A project must keep at least one technician. Assign someone else first.'
+                ));
+            }
 
-                // Told after the transaction commits, like every other
-                // notification: DB::afterCommit inside deliver() sees to it.
-                $this->notifications->tasksUnassignedByTeamChange(
-                    $project,
-                    $technician->name,
-                    $released
+            if ($replacementLeadId
+                && ! $this->availableReplacementLeads($project, $from, $mode === 'days' ? $until->addDay() : null)
+                    ->contains('technician_id', $replacementLeadId)) {
+                throw new RuntimeException(
+                    'That lead technician is no longer free for those days. Choose another.'
                 );
+            }
 
-                $this->activityLogger->record(
-                    ActivityLog::TECHNICIAN_REMOVED,
-                    $technician->account,
-                    sprintf(
-                        "Removed %s from '%s'.",
-                        $technician->name,
-                        $project->reference_no ?? $project->name
-                    ),
-                    $project
-                );
+            $plan = $mode === 'days'
+                ? $change->planDaysOff($project, (int) $technician->technician_id, $from, $until, $replacementLeadId)
+                : $change->planRemoval($project, (int) $technician->technician_id, $from, $replacementLeadId);
 
-                if ($technician->account) {
-                    $isLead
-                        ? $this->notifications->leadRemovedFromProject($project, $technician->account)
-                        : $this->notifications->techniciansRemovedFromProject($project, [$technician->account]);
-                }
+            if ($problem = collect($change->problems($plan))->first()) {
+                throw new RuntimeException($problem);
+            }
+
+            if ($conflict = $change->availabilityConflict($plan)) {
+                throw new RuntimeException($conflict);
+            }
+
+            $resolutions = (array) $request->input('task_resolutions', []);
+            $conflicts = $change->taskConflicts($plan);
+
+            if ($unresolved = $change->unresolved($conflicts, $resolutions)) {
+                return response()->json([
+                    'error' => implode(' ', $unresolved),
+                    'needs_decisions' => true,
+                    'conflicts' => $change->conflictsPayload($conflicts),
+                ], 422);
+            }
+
+            $outcome = null;
+
+            DB::transaction(function () use ($change, $plan, $resolutions, $actorId, &$outcome): void {
+                $outcome = $change->apply($plan, $resolutions, $actorId);
             });
         } catch (Throwable $e) {
             return response()->json([
@@ -484,9 +563,70 @@ class TechnicianController extends Controller
             ], 422);
         }
 
+        $cover = $replacementLeadId ? Technician::query()->with('account')->find($replacementLeadId)?->name : null;
+        $days = $mode === 'days'
+            ? ($from->isSameDay($until)
+                ? 'on '.$from->format(BusinessTime::DATE)
+                : 'from '.$from->format(BusinessTime::DATE).' to '.$until->format(BusinessTime::DATE))
+            : null;
+
+        $this->activityLogger->record(
+            ActivityLog::TECHNICIAN_REMOVED,
+            $technician->account,
+            $mode === 'days'
+                ? sprintf(
+                    "Took %s off '%s' %s%s.",
+                    $technician->name,
+                    $project->reference_no ?? $project->name,
+                    $days,
+                    $cover ? '; '.$cover.' leads in their place' : ''
+                )
+                : sprintf(
+                    "Removed %s from '%s'%s%s.",
+                    $technician->name,
+                    $project->reference_no ?? $project->name,
+                    $plan->isImmediate() ? '' : ', effective '.$from->format(BusinessTime::DATE),
+                    $cover ? '; '.$cover.' takes over as lead' : ''
+                ),
+            $project
+        );
+
+        $change->notify($plan, $outcome);
+
         return response()->json([
-            'message' => $this->sentence($technician->name.' was removed from '.$project->name),
+            'message' => match (true) {
+                $mode === 'days' => $this->sentence(sprintf('%s is off %s %s', $technician->name, $project->name, $days)),
+                $plan->isImmediate() => $this->sentence($technician->name.' was removed from '.$project->name),
+                default => $this->sentence(sprintf(
+                    '%s will be removed from %s on %s',
+                    $technician->name,
+                    $project->name,
+                    $from->format(BusinessTime::DATE)
+                )),
+            },
         ]);
+    }
+
+    /**
+     * The removal a request describes: its mode, first day, and last day (for
+     * days off). Today when no day is given; `effective_date` is still read as
+     * the first day, for a caller that sends the older field.
+     *
+     * @return array{0: string, 1: CarbonImmutable, 2: ?CarbonImmutable}
+     */
+    private function removalDays(Request $request): array
+    {
+        $day = function (mixed $value): ?CarbonImmutable {
+            return is_string($value) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)
+                ? CarbonImmutable::parse($value)->startOfDay()
+                : null;
+        };
+
+        $mode = $request->input('mode') === 'days' ? 'days' : 'from';
+        $from = $day($request->input('from')) ?? $day($request->input('effective_date')) ?? Schedule::businessToday();
+        $until = $mode === 'days' ? ($day($request->input('until')) ?? $from) : null;
+
+        return [$mode, $from, $until];
     }
 
     // ------------------------------------------------------------------
@@ -519,7 +659,7 @@ class TechnicianController extends Controller
             ->where(function ($query): void {
                 $query->where('on_hold', false)->orWhereNull('on_hold');
             })
-            ->whereDoesntHave('projectTechnicians', function ($query) use ($technician): void {
+            ->whereDoesntHave('rosterTechnicians', function ($query) use ($technician): void {
                 $query->where('technician_id', $technician->technician_id);
             })
             ->orderBy('name')
@@ -592,7 +732,7 @@ class TechnicianController extends Controller
             // assignToProjects() checks every part of that again.
             $existingLead = $isLeadTechnician ? $this->leadAssignment($project) : null;
 
-            $eligible[] = $this->projectPayload($project, null, $existingLead);
+            $eligible[] = $this->projectPayload($project, null, $existingLead, $technician);
         }
 
         return response()->json([
@@ -777,22 +917,31 @@ class TechnicianController extends Controller
                         }
                     }
 
-                    // The outgoing lead comes off FIRST, so the project is
-                    // never momentarily holding two of them - and so a failure
-                    // anywhere above has already rolled the whole thing back
-                    // rather than left the project leaderless.
+                    // The replacement happens today, through the same change
+                    // the team editor makes, so the outgoing lead's span closes
+                    // and the incoming lead's opens on the same day and the
+                    // project is never holding two leads, or none.
                     //
-                    // detachTechnician() is the same removal the team editor
-                    // and Remove From Project use: the schedule rows go with
-                    // the team row, so the outgoing lead reads as free for
-                    // these dates again, and their unfinished tasks are
-                    // released rather than left owned by somebody who is no
-                    // longer on the work.
+                    // There is no room on this screen to decide task by task,
+                    // so the outgoing lead's open work that they would no
+                    // longer be assigned for becomes Unassigned - which the
+                    // confirmation said in so many words before this was sent
+                    // (see lead_replacement.unassigned_task_count). Work dated
+                    // to their time on the project stays theirs.
                     $outgoingLeadName = $outgoingLead?->technician?->name ?? 'the previous lead technician';
 
                     if ($outgoingLead) {
                         $outgoingAccount = $outgoingLead->technician?->account;
-                        $released = $this->detachTechnician($project, $outgoingLead, $removedBy);
+                        $change = app(ProjectTeamChange::class);
+                        $plan = $this->leadReplacementPlan($project, $outgoingLead, $technician);
+
+                        $resolutions = $change->taskConflicts($plan)
+                            ->mapWithKeys(fn (array $conflict): array => [
+                                $conflict['task']->task_id => ProjectTeamChange::UNASSIGN,
+                            ])
+                            ->all();
+
+                        $outcome = $change->apply($plan, $resolutions, $removedBy);
 
                         $this->activityLogger->record(
                             ActivityLog::TECHNICIAN_REMOVED,
@@ -813,20 +962,20 @@ class TechnicianController extends Controller
                         $this->notifications->tasksUnassignedByTeamChange(
                             $project,
                             $outgoingLeadName,
-                            $released
+                            $outcome['unassigned']->pluck('task')
                         );
 
                         $replacedLeadNames[] = $outgoingLeadName;
 
-                        // The relation was loaded before the removal, so the
+                        // The relation was loaded before the change, so the
                         // departing lead is still in it. Anything asked of it
                         // after this point - the duplicate-assignment guard on
                         // the next project, say - has to see what the project
                         // actually holds.
                         $project->load('projectTechnicians.technician.account');
+                    } else {
+                        $this->attachTechnician($project, $technician, $removedBy);
                     }
-
-                    $this->attachTechnician($project, $technician, $removedBy);
 
                     // A lead joining a project is a different event from a
                     // technician joining it, and the audit trail says which.
@@ -892,49 +1041,32 @@ class TechnicianController extends Controller
     }
 
     /**
-     * Close a technician's membership, release the dates still ahead of it,
-     * and free any unfinished task they held - mirroring the assigned-team
-     * editor.
+     * The outgoing lead's open tasks a replacement made today would strand -
+     * work they would no longer be assigned for.
      *
-     * The dates already worked stay against their name; see ProjectTeam.
+     * @return Collection<int, array<string, mixed>>
      */
-    private function detachTechnician(
-        Project $project,
-        ProjectTechnician $assignment,
-        ?int $removedBy = null
-    ): Collection {
-        return $this->projectTeam->detach($project, $assignment, $removedBy);
+    private function leadReplacementConflicts(Project $project, ProjectTechnician $outgoing, Technician $incoming): Collection
+    {
+        $change = app(ProjectTeamChange::class);
+
+        return $change->taskConflicts($this->leadReplacementPlan($project, $outgoing, $incoming));
     }
 
-    /**
-     * Validate and install the incoming lead before the outgoing one leaves.
-     */
-    private function promoteReplacementLead(
-        Project $project,
-        Technician $outgoing,
-        ?int $replacementLeadId,
-        ?int $addedBy = null
-    ): void {
-        if (! $replacementLeadId) {
-            throw new RuntimeException(
-                $outgoing->name.' leads this project. Choose a replacement first.'
-            );
-        }
+    private function leadReplacementPlan(Project $project, ProjectTechnician $outgoing, Technician $incoming): ProjectTeamChangePlan
+    {
+        $team = $project->projectTechnicians
+            ->reject(fn (ProjectTechnician $span): bool => $span->is($outgoing))
+            ->pluck('technician_id')
+            ->map(fn ($id): int => (int) $id)
+            ->push((int) $incoming->technician_id);
 
-        if ((int) $replacementLeadId === (int) $outgoing->technician_id) {
-            throw new RuntimeException('The replacement lead must be a different technician.');
-        }
-
-        $replacement = $this->availableReplacementLeads($project)
-            ->firstWhere('technician_id', $replacementLeadId);
-
-        if (! $replacement) {
-            throw new RuntimeException(
-                'That replacement is no longer valid. Choose another lead who is free for the whole schedule.'
-            );
-        }
-
-        $this->attachTechnician($project, $replacement, $addedBy);
+        return app(ProjectTeamChange::class)->plan(
+            $project,
+            Schedule::businessToday(),
+            (int) $incoming->technician_id,
+            $team
+        );
     }
 
     /**
@@ -958,13 +1090,37 @@ class TechnicianController extends Controller
      * that on the team editor, and the two screens have to refuse the same
      * thing.
      *
+     * Screened from the day they would take over. Somebody busy elsewhere
+     * until a handover is still free to take it over, so the days before it
+     * are not asked about - and anybody already on this project's team, now or
+     * from a later day, is not offered: they have a place on it already.
+     *
      * @return Collection<int, Technician>
      */
-    private function availableReplacementLeads(Project $project): Collection
+    private function availableReplacementLeads(Project $project, ?CarbonImmutable $from = null, ?CarbonImmutable $until = null): Collection
     {
-        $ranges = $this->projectRanges($project);
+        // [$from, $until): the days they would lead. Null $until runs on.
+        $from = ($from ?? Schedule::businessToday())->startOfDay();
 
-        $assignedIds = $project->projectTechnicians->pluck('technician_id')->all();
+        $ranges = collect($this->projectRanges($project))
+            ->filter(fn (array $range): bool => $range['end']->gte($from)
+                && ($until === null || $range['start']->lt($until)))
+            ->map(fn (array $range): array => [
+                'start' => $range['start']->lt($from) ? $from : $range['start'],
+                'end' => $until !== null && $range['end']->gte($until) ? $until->subDay() : $range['end'],
+            ])
+            ->values()
+            ->all();
+
+        // Anybody on this project for any of those days already has a place
+        // on it, and a lead-role technician cannot hold two.
+        $assignedIds = ProjectTechnician::query()
+            ->where('project_id', $project->project_id)
+            ->notEnded()
+            ->get()
+            ->filter(fn (ProjectTechnician $span): bool => $span->overlaps($from->toDateString(), $until?->toDateString()))
+            ->pluck('technician_id')
+            ->all();
 
         $candidates = Technician::query()
             ->with(['account', 'skills'])
@@ -1104,16 +1260,18 @@ class TechnicianController extends Controller
      *
      * A range can carry two of them - somebody taken off part-way through it
      * and put back on before it ended keeps the old span's link and gains a new
-     * one. The open span wins: the range is still theirs.
+     * one - and each is its own stretch of the range.
+     *
+     * @return Collection<int, ProjectTechnician>
      */
-    private function membershipFor(Schedule $schedule, Technician $technician): ?ProjectTechnician
+    private function membershipsFor(Schedule $schedule, Technician $technician): Collection
     {
         return $schedule->scheduleTechnicians
             ->map(fn (ScheduleTechnician $link): ?ProjectTechnician => $link->projectTechnician)
             ->filter(fn (?ProjectTechnician $assignment): bool => $assignment !== null
                 && (int) $assignment->technician_id === (int) $technician->technician_id)
-            ->sortBy(fn (ProjectTechnician $assignment): int => $assignment->isRemoved() ? 1 : 0)
-            ->first();
+            ->unique(fn (ProjectTechnician $assignment): int => (int) $assignment->project_technician_id)
+            ->values();
     }
 
     private function technicianSchedules(Technician $technician): Collection
@@ -1162,7 +1320,8 @@ class TechnicianController extends Controller
     private function projectPayload(
         Project $project,
         ?string $reason = null,
-        ?ProjectTechnician $replaceableLead = null
+        ?ProjectTechnician $replaceableLead = null,
+        ?Technician $incomingLead = null
     ): array {
         $schedules = $project->schedules ?? collect();
         $start = $schedules->min('start_datetime');
@@ -1254,6 +1413,12 @@ class TechnicianController extends Controller
             'lead_replacement' => $replaceableLead ? [
                 'technician_id' => (int) $replaceableLead->technician_id,
                 'name' => $replaceableLead->technician?->name ?? 'another lead technician',
+                // How much of the outgoing lead's work would be left without a
+                // technician, so the confirmation can say so before anybody
+                // presses it.
+                'unassigned_task_count' => $incomingLead
+                    ? $this->leadReplacementConflicts($project, $replaceableLead, $incomingLead)->count()
+                    : 0,
             ] : null,
         ];
     }

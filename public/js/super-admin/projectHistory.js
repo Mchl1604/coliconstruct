@@ -87,12 +87,19 @@
         // 31 Jul" and "Added 31 Jul, removed 27 Aug" say what the dates ARE;
         // "31 Jul - 27 Aug" on its own could as easily be the dates they
         // worked, which is a different fact and one this row is not about.
+        //
+        // A change still to come is worded as one: "Starts" and "Leaves"
+        // rather than "Added" and "Removed", so a scheduled removal never
+        // reads as though it has already happened. A removal names the last
+        // day it leaves them with as well as the day it takes effect.
+        const start = (member.is_upcoming ? "Starts " : "Added ") + escapeHtml(member.joined_on || "?");
         const span = member.removed_on
-            ? "Added " +
-              escapeHtml(member.joined_on || "?") +
-              " &middot; Removed " +
+            ? start +
+              " &middot; " +
+              (member.last_day ? "Last day " + escapeHtml(member.last_day) + " &middot; " : "") +
+              (member.is_current || member.is_upcoming ? "Leaves " : "Removed effective ") +
               escapeHtml(member.removed_on)
-            : "Added " + escapeHtml(member.joined_on || "?");
+            : start;
 
         const credits = [];
 
@@ -101,7 +108,10 @@
         }
 
         if (member.removed_by) {
-            credits.push("Removed by " + escapeHtml(member.removed_by));
+            credits.push(
+                (member.is_current || member.is_upcoming ? "Removal scheduled by " : "Removed by ") +
+                    escapeHtml(member.removed_by),
+            );
         }
 
         const by = credits.length
@@ -112,7 +122,7 @@
 
         return (
             '<div class="project-history-member' +
-            (member.is_current ? "" : " is-former") +
+            (member.is_current || member.is_upcoming ? "" : " is-former") +
             '">' +
             '<div class="project-history-member-main">' +
             '<span class="project-history-name">' +
@@ -121,7 +131,13 @@
             (member.is_lead
                 ? '<span class="project-history-tag">Lead</span>'
                 : "") +
-            (member.is_current
+            (member.is_leaving
+                ? '<span class="project-history-tag is-former">Leaving</span>'
+                : "") +
+            (member.is_upcoming
+                ? '<span class="project-history-tag">Upcoming</span>'
+                : "") +
+            (member.is_current || member.is_upcoming
                 ? ""
                 : '<span class="project-history-tag is-former">No longer assigned</span>') +
             "</div>" +

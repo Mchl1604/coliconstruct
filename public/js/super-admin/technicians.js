@@ -1362,6 +1362,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
         const leadPanelEl = panel.querySelector("[data-panel-lead-replacement]");
         const leadIntroEl = panel.querySelector("[data-panel-lead-intro]");
+        const leadHeadingEl = panel.querySelector("[data-panel-lead-heading]");
         const leadOptionsEl = panel.querySelector("[data-panel-lead-options]");
         const leadEmptyEl = panel.querySelector("[data-panel-lead-empty]");
 
@@ -1370,11 +1371,205 @@ document.addEventListener("DOMContentLoaded", function () {
         const removeBtn = panel.querySelector("[data-panel-remove]");
         const confirmBtn = panel.querySelector("[data-panel-confirm-remove]");
         const confirmSpinner = panel.querySelector("[data-panel-confirm-spinner]");
+        const confirmLabel = panel.querySelector("[data-panel-confirm-label]");
         const cancelBtn = panel.querySelector("[data-panel-cancel-remove]");
+
+        const noteEl = panel.querySelector("[data-panel-note]");
+        const removalEl = panel.querySelector("[data-panel-removal]");
+        const effectiveInput = panel.querySelector("[data-panel-effective-date]");
+        const untilInput = panel.querySelector("[data-panel-until-date]");
+        const untilWrap = panel.querySelector("[data-panel-until-wrap]");
+        const modeRadios = panel.querySelectorAll("[data-panel-mode]");
+        const effectiveHint = panel.querySelector("[data-panel-effective-hint]");
+        const conflictsEl = panel.querySelector("[data-panel-conflicts]");
+        const conflictsIntroEl = panel.querySelector("[data-panel-conflicts-intro]");
+        const conflictListEl = panel.querySelector("[data-panel-conflict-list]");
 
         let projectId = null;
         let payload = null;
         let selectedLeadId = null;
+        // Whether the removal controls are open, so a change of dates re-reads
+        // the lead question without closing them.
+        let removing = false;
+
+        function formatDay(value) {
+            return value
+                ? new Date(value + "T00:00:00").toLocaleDateString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                  })
+                : "";
+        }
+
+        /** 'Y-m-d' plus a number of days, on the local calendar - never UTC. */
+        function shiftDay(value, days) {
+            const day = new Date(value + "T00:00:00");
+
+            day.setDate(day.getDate() + days);
+
+            return (
+                day.getFullYear() +
+                "-" +
+                String(day.getMonth() + 1).padStart(2, "0") +
+                "-" +
+                String(day.getDate()).padStart(2, "0")
+            );
+        }
+
+        function mode() {
+            const checked = Array.prototype.find.call(modeRadios, function (radio) {
+                return radio.checked;
+            });
+
+            return checked ? checked.value : "days";
+        }
+
+        /**
+         * Put a date into one of the pickers. Through the picker when it has
+         * one, so the field a person sees says the same as the value sent.
+         */
+        function setDay(input, value) {
+            if (input._flatpickr) {
+                input._flatpickr.setDate(value || null, false);
+            } else {
+                input.value = value || "";
+            }
+        }
+
+        function setMin(input, value) {
+            input.min = value;
+
+            if (input._flatpickr) {
+                input._flatpickr.set("minDate", value);
+            }
+        }
+
+        function renderConfirmLabel() {
+            const lead = payload && payload.is_lead;
+            const from = effectiveInput.value;
+            const until = untilInput.value || from;
+            const today = payload ? payload.min_date : "";
+
+            untilWrap.classList.toggle("d-none", mode() !== "days");
+
+            if (mode() === "days") {
+                confirmLabel.textContent = lead ? "Assign Stand-in & Remove Days" : "Remove These Days";
+                effectiveHint.textContent = from
+                    ? selectedTechnician.name +
+                      " is off this project " +
+                      (until === from
+                          ? "on " + formatDay(from)
+                          : "from " + formatDay(from) + " to " + formatDay(until)) +
+                      " and back on it " +
+                      formatDay(shiftDay(until, 1)) +
+                      "."
+                    : "Choose the days they are off.";
+
+                return;
+            }
+
+            const later = from && from > today;
+
+            confirmLabel.textContent = later
+                ? lead
+                    ? "Schedule Lead Handover"
+                    : "Schedule Removal"
+                : lead
+                  ? "Reassign Lead & Remove"
+                  : "Remove";
+
+            effectiveHint.textContent = later
+                ? selectedTechnician.name +
+                  " stays on this project until " +
+                  formatDay(shiftDay(from, -1)) +
+                  " and comes off it for good on " +
+                  formatDay(from) +
+                  "."
+                : selectedTechnician.name + " comes off this project for good today.";
+        }
+
+        function hideConflicts() {
+            conflictsEl.classList.add("d-none");
+            conflictListEl.innerHTML = "";
+        }
+
+        /**
+         * The open tasks the removal would strand, each with its own choice.
+         * The server refuses the removal until every one has an answer.
+         */
+        function renderConflicts(conflicts) {
+            conflictsIntroEl.textContent =
+                conflicts.length === 1
+                    ? "This task is dated to days " +
+                      selectedTechnician.name +
+                      " will not be assigned to this project. Choose what happens to it."
+                    : "These tasks are dated to days " +
+                      selectedTechnician.name +
+                      " will not be assigned to this project. Choose what happens to each one.";
+
+            conflictListEl.innerHTML = conflicts
+                .map(function (conflict) {
+                    const options =
+                        '<option value="" selected disabled>Choose what happens&hellip;</option>' +
+                        conflict.options
+                            .map(function (option) {
+                                return (
+                                    '<option value="' +
+                                    option.technician_id +
+                                    '">Reassign to ' +
+                                    escapeHtml(option.name) +
+                                    "</option>"
+                                );
+                            })
+                            .join("") +
+                        '<option value="unassign">Leave unassigned</option>' +
+                        (conflict.can_keep
+                            ? '<option value="keep">Keep with ' +
+                              escapeHtml(conflict.holder || "the technician") +
+                              " and flag it</option>"
+                            : "");
+
+                    return (
+                        '<div class="panel-task-card">' +
+                        '<div class="panel-task-range">' +
+                        escapeHtml(conflict.dates) +
+                        "</div>" +
+                        '<div class="panel-task-title">' +
+                        escapeHtml(conflict.title) +
+                        "</div>" +
+                        '<div class="text-muted small mb-2">' +
+                        escapeHtml(conflict.reason) +
+                        "</div>" +
+                        '<select class="form-select form-select-sm" data-conflict-task="' +
+                        conflict.task_id +
+                        '">' +
+                        options +
+                        "</select>" +
+                        "</div>"
+                    );
+                })
+                .join("");
+
+            conflictsEl.classList.remove("d-none");
+        }
+
+        function chosenResolutions() {
+            const choices = {};
+            let missing = false;
+
+            conflictListEl
+                .querySelectorAll("[data-conflict-task]")
+                .forEach(function (select) {
+                    if (!select.value) {
+                        missing = true;
+                    }
+
+                    choices[select.dataset.conflictTask] = select.value;
+                });
+
+            return missing ? null : choices;
+        }
 
         function showState(state) {
             noTechnicianEl.classList.toggle("d-none", state !== "no-technician");
@@ -1386,10 +1581,13 @@ document.addEventListener("DOMContentLoaded", function () {
             leadPanelEl.classList.add("d-none");
             leadOptionsEl.innerHTML = "";
             leadEmptyEl.classList.add("d-none");
+            removalEl.classList.add("d-none");
+            hideConflicts();
             confirmBtn.classList.add("d-none");
             confirmBtn.disabled = true;
             cancelBtn.classList.add("d-none");
             selectedLeadId = null;
+            removing = false;
         }
 
         /**
@@ -1486,9 +1684,22 @@ document.addEventListener("DOMContentLoaded", function () {
             const candidates = payload.replacement_leads || [];
 
             leadPanelEl.classList.remove("d-none");
+
+            const until = untilInput.value || effectiveInput.value;
+
+            leadHeadingEl.textContent = mode() === "days" ? "Choose a Stand-in Lead" : "Assign New Lead Technician";
             leadIntroEl.textContent =
-                selectedTechnician.name +
-                " leads this project. Choose a replacement who is free for its whole schedule.";
+                mode() === "days"
+                    ? selectedTechnician.name +
+                      " leads this project. Choose a lead technician to stand in " +
+                      (until === effectiveInput.value
+                          ? "on " + formatDay(effectiveInput.value)
+                          : "from " + formatDay(effectiveInput.value) + " to " + formatDay(until)) +
+                      "."
+                    : selectedTechnician.name +
+                      " leads this project. Choose who takes over from " +
+                      formatDay(effectiveInput.value) +
+                      " - they must be free for the rest of its schedule from that day.";
 
             if (!candidates.length) {
                 leadOptionsEl.innerHTML = "";
@@ -1632,7 +1843,28 @@ document.addEventListener("DOMContentLoaded", function () {
             setAlert(errorEl, "");
             setAlert(successEl, "");
 
-            removeBtn.classList.toggle("d-none", Boolean(data.read_only));
+            removeBtn.classList.toggle("d-none", Boolean(data.read_only || data.on_hold));
+
+            // Whatever is already scheduled for them here, as the project's
+            // team card says it. Cancelled there, where both halves of a lead's
+            // change can be seen.
+            const scheduled = data.scheduled || [];
+
+            noteEl.textContent = scheduled.length
+                ? "Already scheduled for " +
+                  selectedTechnician.name +
+                  " on this project: " +
+                  scheduled.join("; ") +
+                  ". To undo it, open the project and cancel it from Assigned Team."
+                : "";
+            noteEl.classList.toggle("d-none", !scheduled.length);
+
+            if (!removing) {
+                setMin(effectiveInput, data.min_date);
+                setMin(untilInput, data.min_date);
+                setDay(effectiveInput, data.from);
+                setDay(untilInput, data.until || data.from);
+            }
 
             // Two different reasons the removal controls are withheld, and
             // they must not borrow each other's wording. A former assignment
@@ -1660,31 +1892,92 @@ document.addEventListener("DOMContentLoaded", function () {
             showState("project");
         }
 
+        /**
+         * Open the removal controls: the date it takes effect, and - for the
+         * lead on that date - who takes over.
+         */
+        function openRemoval() {
+            removing = true;
+            removeBtn.classList.add("d-none");
+            removalEl.classList.remove("d-none");
+            confirmBtn.classList.remove("d-none");
+            cancelBtn.classList.remove("d-none");
+            hideConflicts();
+
+            if (payload.is_lead) {
+                renderLeadOptions();
+                confirmBtn.disabled = !selectedLeadId;
+            } else {
+                leadPanelEl.classList.add("d-none");
+                confirmBtn.disabled = false;
+            }
+
+            renderConfirmLabel();
+        }
+
         removeBtn.addEventListener("click", function () {
             if (!payload) {
                 return;
             }
 
-            if (!payload.is_lead) {
-                if (payload.remaining_after_removal < 1) {
-                    setAlert(
-                        errorEl,
-                        "A project must keep at least one technician. Assign someone else first.",
-                    );
-
-                    return;
-                }
-
-                submitRemoval(null);
+            if (!payload.is_lead && payload.remaining_after_removal < 1) {
+                setAlert(
+                    errorEl,
+                    "A project must keep at least one technician. Assign someone else first.",
+                );
 
                 return;
             }
 
-            // Leads need a replacement picked first, inline in this panel.
-            removeBtn.classList.add("d-none");
-            confirmBtn.classList.remove("d-none");
-            cancelBtn.classList.remove("d-none");
-            renderLeadOptions();
+            openRemoval();
+        });
+
+        // Different days can mean different people free to lead in their place,
+        // so the panel asks again whenever the mode or a date changes.
+        function reloadForDays() {
+            if (!payload || !projectId || !effectiveInput.value) {
+                renderConfirmLabel();
+
+                return;
+            }
+
+            // The last day can never come before the first.
+            if (untilInput.value && untilInput.value < effectiveInput.value) {
+                setDay(untilInput, effectiveInput.value);
+            }
+
+            setMin(untilInput, effectiveInput.value);
+            setAlert(errorEl, "");
+            selectedLeadId = null;
+
+            request(
+                "/super-admin/technicians/" +
+                    selectedTechnician.technician_id +
+                    "/projects/" +
+                    projectId +
+                    "?mode=" +
+                    encodeURIComponent(mode()) +
+                    "&from=" +
+                    encodeURIComponent(effectiveInput.value) +
+                    (mode() === "days"
+                        ? "&until=" + encodeURIComponent(untilInput.value || effectiveInput.value)
+                        : ""),
+            ).then(function (result) {
+                if (!result.ok) {
+                    setAlert(errorEl, result.body.error || "Unable to load assignment.");
+
+                    return;
+                }
+
+                payload = result.body;
+                openRemoval();
+            });
+        }
+
+        effectiveInput.addEventListener("change", reloadForDays);
+        untilInput.addEventListener("change", reloadForDays);
+        modeRadios.forEach(function (radio) {
+            radio.addEventListener("change", reloadForDays);
         });
 
         cancelBtn.addEventListener("click", function () {
@@ -1694,23 +1987,35 @@ document.addEventListener("DOMContentLoaded", function () {
         });
 
         confirmBtn.addEventListener("click", function () {
-            if (!selectedLeadId) {
-                setAlert(errorEl, "Choose a replacement lead technician.");
+            if (payload.is_lead && !selectedLeadId) {
+                setAlert(
+                    errorEl,
+                    mode() === "days"
+                        ? "Choose a lead technician to stand in for those days."
+                        : "Choose a replacement lead technician.",
+                );
 
                 return;
             }
 
-            submitRemoval(selectedLeadId);
+            let resolutions = {};
+
+            if (!conflictsEl.classList.contains("d-none")) {
+                resolutions = chosenResolutions();
+
+                if (!resolutions) {
+                    setAlert(errorEl, "Choose what happens to every task listed.");
+
+                    return;
+                }
+            }
+
+            submitRemoval(selectedLeadId, resolutions);
         });
 
-        function submitRemoval(replacementLeadId) {
-            const busyButton = replacementLeadId ? confirmBtn : removeBtn;
-
-            busyButton.disabled = true;
-
-            if (replacementLeadId) {
-                confirmSpinner.classList.remove("d-none");
-            }
+        function submitRemoval(replacementLeadId, resolutions) {
+            confirmBtn.disabled = true;
+            confirmSpinner.classList.remove("d-none");
 
             setAlert(errorEl, "");
 
@@ -1722,14 +2027,24 @@ document.addEventListener("DOMContentLoaded", function () {
                 {
                     method: "DELETE",
                     body: JSON.stringify({
+                        mode: mode(),
+                        from: effectiveInput.value,
+                        until: mode() === "days" ? untilInput.value || effectiveInput.value : null,
                         replacement_lead_id: replacementLeadId,
+                        task_resolutions: resolutions || {},
                     }),
                 },
             ).then(function (result) {
                 confirmSpinner.classList.add("d-none");
-                busyButton.disabled = false;
+                confirmBtn.disabled = false;
 
                 if (!result.ok) {
+                    // Tasks the removal would strand: listed with a choice each,
+                    // and the removal waits for them.
+                    if (result.body.needs_decisions && result.body.conflicts) {
+                        renderConflicts(result.body.conflicts);
+                    }
+
                     setAlert(
                         errorEl,
                         result.body.error || "Unable to remove technician.",
@@ -2080,6 +2395,21 @@ document.addEventListener("DOMContentLoaded", function () {
                         "Currently led by " +
                         escapeHtml(project.lead_replacement.name) +
                         "</span>" +
+                        // The outgoing lead's work they would no longer be
+                        // assigned for is unassigned by this change - said in
+                        // one sentence before anybody presses confirm.
+                        (project.lead_replacement.unassigned_task_count > 0
+                            ? '<span class="d-block small fw-semibold text-danger mt-1">' +
+                              escapeHtml(
+                                  project.lead_replacement.unassigned_task_count +
+                                      (project.lead_replacement.unassigned_task_count === 1
+                                          ? " open task held by "
+                                          : " open tasks held by ") +
+                                      project.lead_replacement.name +
+                                      " will become Unassigned.",
+                              ) +
+                              "</span>"
+                            : "") +
                         "</span>" +
                         "</div>"
                     );

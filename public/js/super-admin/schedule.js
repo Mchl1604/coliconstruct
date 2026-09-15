@@ -2443,6 +2443,23 @@ document.addEventListener("DOMContentLoaded", function () {
                     );
                 }
 
+                // A removal still to come: on the team that day, and on it
+                // today, with the day they come off said beside the name.
+                if (member.has_left === false) {
+                    const change = member.change || "Leaving " + removedOn;
+
+                    return (
+                        '<span class="schedule-tech-chip" title="' +
+                        escapeHtml(change) +
+                        '">' +
+                        escapeHtml(name) +
+                        '<span class="schedule-tech-chip-note">' +
+                        escapeHtml(change) +
+                        "</span>" +
+                        "</span>"
+                    );
+                }
+
                 // Still listed, because they were here on the day being
                 // looked at. Marked, because they are not on the team any
                 // more and a bare chip would read as though they were.
