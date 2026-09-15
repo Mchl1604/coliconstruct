@@ -1078,6 +1078,25 @@
 
                 event.preventDefault();
 
+                // Asked from inside a technician's schedule dialog: that dialog
+                // steps aside for the question - Bootstrap does not stack two -
+                // and comes back if the answer is no.
+                const scheduleModal = form.closest('[data-team-schedule-modal]');
+
+                if (scheduleModal && scheduleModal.classList.contains('show')) {
+                    scheduleModal.addEventListener('hidden.bs.modal', function () {
+                        ask(scheduleModal);
+                    }, { once: true });
+
+                    window.bootstrap.Modal.getOrCreateInstance(scheduleModal).hide();
+
+                    return;
+                }
+
+                ask(null);
+            });
+
+            function ask(scheduleModal) {
                 const name = form.dataset.technicianName || 'This technician';
                 const label = form.dataset.label || 'Cancel';
                 const isLead = form.dataset.isLead === '1';
@@ -1102,13 +1121,17 @@
                     }),
                 }).then(function (answer) {
                     if (!answer) {
+                        if (scheduleModal && scheduleModal.isConnected) {
+                            window.bootstrap.Modal.getOrCreateInstance(scheduleModal).show();
+                        }
+
                         return;
                     }
 
                     confirmed = true;
                     form.requestSubmit();
                 });
-            });
+            }
         });
     }
 

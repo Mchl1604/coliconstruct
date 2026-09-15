@@ -732,6 +732,19 @@ class TechnicianController extends Controller
             // assignToProjects() checks every part of that again.
             $existingLead = $isLeadTechnician ? $this->leadAssignment($project) : null;
 
+            // Replacing today is refused where the team editor would refuse it
+            // - a lead handover already booked for a later day would leave two
+            // leads from that day on - so it is not offered here either.
+            $replacementProblem = $existingLead
+                ? $this->leadReplacementProblem($project, $existingLead, $technician)
+                : null;
+
+            if ($replacementProblem !== null) {
+                $blocked[] = $this->projectPayload($project, $replacementProblem);
+
+                continue;
+            }
+
             $eligible[] = $this->projectPayload($project, null, $existingLead, $technician);
         }
 
@@ -935,6 +948,10 @@ class TechnicianController extends Controller
                         $change = app(ProjectTeamChange::class);
                         $plan = $this->leadReplacementPlan($project, $outgoingLead, $technician);
 
+                        if ($problem = collect($change->problems($plan))->first()) {
+                            throw new RuntimeException($problem);
+                        }
+
                         $resolutions = $change->taskConflicts($plan)
                             ->mapWithKeys(fn (array $conflict): array => [
                                 $conflict['task']->task_id => ProjectTeamChange::UNASSIGN,
@@ -1051,6 +1068,17 @@ class TechnicianController extends Controller
         $change = app(ProjectTeamChange::class);
 
         return $change->taskConflicts($this->leadReplacementPlan($project, $outgoing, $incoming));
+    }
+
+    /**
+     * Why replacing the sitting lead today would break the team rules - the
+     * team editor's own sentence - or null when it would not.
+     */
+    private function leadReplacementProblem(Project $project, ProjectTechnician $outgoing, Technician $incoming): ?string
+    {
+        return collect(app(ProjectTeamChange::class)->problems(
+            $this->leadReplacementPlan($project, $outgoing, $incoming)
+        ))->first();
     }
 
     private function leadReplacementPlan(Project $project, ProjectTechnician $outgoing, Technician $incoming): ProjectTeamChangePlan

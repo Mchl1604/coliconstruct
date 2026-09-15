@@ -114,6 +114,55 @@ document.addEventListener("DOMContentLoaded", function () {
             : '<div class="panel-schedule-item is-past">No schedule set</div>';
     }
 
+    /**
+     * The reader's own days on the project, one to a line and greyed once
+     * behind them, with any change still to come underneath.
+     */
+    function renderMySchedule(schedule) {
+        const daysEl = panelEl.querySelector("[data-panel-my-days]");
+        const changesEl = panelEl.querySelector("[data-panel-my-changes]");
+
+        if (!daysEl || !changesEl) {
+            return;
+        }
+
+        const days = (schedule && schedule.days) || [];
+        const changes = (schedule && schedule.changes) || [];
+
+        daysEl.innerHTML = days.length
+            ? days
+                  .map(function (day) {
+                      return (
+                          '<div class="panel-schedule-item' +
+                          (day.is_past ? " is-past" : "") +
+                          '">' +
+                          portal.escapeHtml(day.label) +
+                          "</div>"
+                      );
+                  })
+                  .join("")
+            : '<div class="text-muted small">You have no days booked on this project yet.</div>';
+
+        changesEl.innerHTML = changes
+            .map(function (change) {
+                return (
+                    '<div class="panel-my-change">' +
+                    '<i class="bi ' +
+                    portal.escapeHtml(change.icon) +
+                    '" aria-hidden="true"></i>' +
+                    '<span class="panel-my-change-title">' +
+                    portal.escapeHtml(change.title) +
+                    "</span>" +
+                    "<span>" +
+                    portal.escapeHtml(change.when) +
+                    "</span>" +
+                    "</div>"
+                );
+            })
+            .join("");
+        changesEl.classList.toggle("d-none", changes.length === 0);
+    }
+
     function renderProject(project) {
         setText("[data-panel-ref]", project.reference_no);
         setText("[data-panel-name]", project.name);
@@ -323,6 +372,7 @@ document.addEventListener("DOMContentLoaded", function () {
             .request(url + "?mine_only=1")
             .then(function (body) {
                 renderProject(body.project);
+                renderMySchedule(body.my_schedule);
                 renderTasks(body.tasks);
                 setState("project");
             })

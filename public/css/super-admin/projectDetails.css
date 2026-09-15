@@ -981,3 +981,95 @@
     background-color: #7c3aed;
     color: #fff;
 }
+
+/* ---- Assigned Team: each technician's schedule ----
+   One icon button per row opens that technician's dialog of days off,
+   leaving, starting and returning; the count says something is booked. */
+.team-schedule-button {
+    position: relative;
+}
+
+.team-schedule-count {
+    position: absolute;
+    top: -0.45rem;
+    right: -0.45rem;
+    min-width: 1.1rem;
+    height: 1.1rem;
+    padding: 0 0.3rem;
+    border-radius: 999px;
+    background: var(--project-blue, #2d8de1);
+    color: #fff;
+    font-size: 0.68rem;
+    font-weight: 700;
+    line-height: 1.1rem;
+    text-align: center;
+}
+
+.team-schedule-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 0;
+}
+
+.team-schedule-item + .team-schedule-item {
+    border-top: 1px solid #e9ecef;
+}
+
+.team-schedule-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 50%;
+    background: rgba(45, 141, 225, 0.12);
+    color: var(--project-blue-deep, #2370b4);
+    font-size: 1rem;
+}
+
+/* ---- Your Schedule (technician portal) ----
+   The reader's own booked days, one to a line, with any change still to come
+   underneath in a quieter voice. Days already behind them are greyed. */
+.my-schedule-day {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.2rem 0;
+    font-weight: 600;
+    color: #1e293b;
+}
+
+.my-schedule-day i {
+    color: var(--project-blue-deep, #2370b4);
+}
+
+.my-schedule-day.is-past {
+    color: #94a3b8;
+    font-weight: 500;
+}
+
+.my-schedule-day.is-past i {
+    color: #cbd5e1;
+}
+
+.my-schedule-changes {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px dashed #dbe3ec;
+    display: grid;
+    gap: 0.35rem;
+}
+
+.my-schedule-change {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: 0.4rem;
+    font-size: 0.875rem;
+}
+
+.my-schedule-change i {
+    color: #64748b;
+}

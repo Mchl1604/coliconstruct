@@ -102,12 +102,20 @@ class TechnicianPortalController extends Controller
         // One bar per span of theirs on a range: somebody taken off a project
         // part-way through a booking and put back on before it ended worked
         // two stretches of it, and each is drawn as the days it covers.
+        //
+        // A closed span is only a record once they are off the project for
+        // good. Somebody on days off, with a return booked, is still on the
+        // team: their earlier stretch keeps the project's colour and still
+        // opens the project.
+        $stillOnTeam = $projects->pluck('project_id')->map(fn ($id): int => (int) $id)->all();
+
         $events = $this->bookedSchedules($technician)
             ->flatMap(fn (Schedule $schedule): Collection => $this->membershipsFor($schedule, $technician)
                 ->map(fn (ProjectTechnician $membership): ?array => $this->calendarEvent(
                     $schedule->project,
                     $schedule,
-                    $membership
+                    $membership,
+                    in_array((int) $schedule->project_id, $stillOnTeam, true)
                 ))
                 ->filter())
             ->values();
@@ -610,6 +618,18 @@ class TechnicianPortalController extends Controller
 
         return response()->json([
             'project' => $this->projectPayload($project),
+            // The reader's own days and changes, apart from the project's
+            // schedule - see Project::bookedDaysFor().
+            'my_schedule' => [
+                'days' => $project->bookedDaysFor((int) $technician->technician_id),
+                'changes' => collect($project->scheduledChangesFor((int) $technician->technician_id))
+                    ->map(fn (array $change): array => [
+                        'title' => $change['title'],
+                        'when' => $change['when'],
+                        'icon' => $change['icon'],
+                    ])
+                    ->all(),
+            ],
             'tasks' => $project->tasks->map(fn (Task $task): array => $this->taskPayload($task, $technician))->all(),
             'reports' => $reports->map(fn (TechnicianReport $report): array => $this->reportPayload($report, $user))->all(),
             'permissions' => [
@@ -1264,9 +1284,10 @@ class TechnicianPortalController extends Controller
     private function calendarEvent(
         Project $project,
         Schedule $schedule,
-        ?ProjectTechnician $membership = null
+        ?ProjectTechnician $membership = null,
+        bool $stillOnTeam = false
     ): ?array {
-        $isFormer = $membership?->hasEnded() ?? false;
+        $isFormer = ! $stillOnTeam && ($membership?->hasEnded() ?? false);
 
         // Only the days this span holds - see Schedule::toCalendarTimesForSpan().
         $times = $membership

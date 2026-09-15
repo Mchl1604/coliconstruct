@@ -153,6 +153,20 @@
 
                         <hr class="panel-divider">
 
+                        {{-- The reader's own days on this project, apart from
+                             the project's schedule above: narrowed to their time
+                             on the team, with any change still to come under
+                             them. See Project::bookedDaysFor(). --}}
+                        <div class="panel-section-heading">
+                            <i class="bi bi-person-check" aria-hidden="true"></i>
+                            Your Schedule
+                        </div>
+
+                        <div class="panel-schedule-list" data-panel-my-days></div>
+                        <div class="panel-my-changes d-none" data-panel-my-changes></div>
+
+                        <hr class="panel-divider">
+
                         <div class="panel-section-heading">
                             <i class="bi bi-people-fill" aria-hidden="true"></i>
                             {{-- Today's team, not the crew on any one of the

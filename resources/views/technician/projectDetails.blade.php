@@ -50,52 +50,6 @@
              editing a task, and closing the project. The controls for those
              are already absent (the policy refuses them while a project is on
              hold); this says why. --}}
-        {{-- The reader's own place on the team, when a change to it is on the
-             calendar: somebody due to join can read the project before their
-             first day, and somebody due to leave is told when. --}}
-        @php
-            $mySpan = $project->rosterTechnicians
-                ->where('technician_id', $technicianId)
-                ->sortBy(fn ($span) => $span->isCurrent() ? 0 : 1)
-                ->first();
-        @endphp
-
-        @php
-            $myLabel = $mySpan ? $project->scheduledChangeLabel($mySpan) : null;
-            $myChange = $myLabel ? strtok($myLabel, ' ') : null;
-            $myDates = $myLabel ? trim(substr($myLabel, strlen($myChange))) : null;
-        @endphp
-
-        @if ($myChange)
-            <div class="alert alert-info border-0 shadow-sm" role="status">
-                <i class="bi bi-calendar-event me-1" aria-hidden="true"></i>
-                @switch($myChange)
-                    @case('Starts')
-                        <strong>You join this project on {{ $myDates }}.</strong>
-                        You can read it now; its work is yours from that day.
-                        @break
-                    @case('Covers')
-                        <strong>You lead this project {{ str_contains($myDates, ' - ') ? 'from '.str_replace(' - ', ' to ', $myDates) : 'on '.$myDates }}.</strong>
-                        You can read it now; its work is yours on those days.
-                        @break
-                    @case('Returns')
-                        <strong>You are off this project until you return on {{ $myDates }}.</strong>
-                        @break
-                    @case('Off')
-                        <strong>You are off this project from {{ str_replace(' - ', ' to ', $myDates) }}.</strong>
-                        You are back on it the day after.
-                        @break
-                    @default
-                        <strong>You are scheduled to come off this project on {{ $myDates }}.</strong>
-                        Your last day on it is {{ $mySpan->lastDay()?->format(\App\Support\BusinessTime::DATE) }}.
-                @endswitch
-
-                @if (in_array($myChange, ['Starts', 'Returns'], true) && $project->scheduledEndLabel($mySpan))
-                    Your last day on it is {{ $mySpan->lastDay()?->format(\App\Support\BusinessTime::DATE) }}.
-                @endif
-            </div>
-        @endif
-
         @if ($project->on_hold)
             <div class="alert alert-secondary border-0 shadow-sm" role="alert">
                 <i class="bi bi-pause-circle me-1" aria-hidden="true"></i>
@@ -403,6 +357,14 @@
                             </div>
                         @endif
 
+                        {{-- Each technician's days off, leaving, starting and returning
+                             sit in their schedule dialog rather than on the row - the
+                             same button and dialog as the administrator's card, with
+                             nothing to cancel. --}}
+                        @php
+                            ['entries' => $teamSchedules, 'upcoming' => $upcomingOnly] = $project->teamSchedules();
+                        @endphp
+
                         <ul class="list-group list-group-flush">
                             @forelse ($project->projectTechnicians as $projectTechnician)
                                 @php
@@ -430,10 +392,6 @@
                                                 @if ($flagsInactiveCrew && ! $technician->isAssignable())
                                                     <span class="badge bg-warning text-dark">Account inactive</span>
                                                 @endif
-
-                                                @if ($label = $project->scheduledChangeLabel($projectTechnician))
-                                                    <span class="badge bg-light text-dark border">{{ $label }}</span>
-                                                @endif
                                             </div>
 
                                             <div class="d-flex flex-wrap gap-1 mt-1">
@@ -444,6 +402,11 @@
                                                 @endforelse
                                             </div>
                                         </div>
+
+                                        @include('super-admin.partials.team-schedule-button', [
+                                            'technician' => $technician,
+                                            'count' => count($teamSchedules[$technician->technician_id]['items'] ?? []),
+                                        ])
                                     </li>
                                 @endif
                             @empty
@@ -453,33 +416,95 @@
 
                         {{-- Due to join and not on the team yet - so the crew can see a
                              handover coming. --}}
-                        @if ($project->upcomingTechnicians->isNotEmpty())
+                        @if ($upcomingOnly->isNotEmpty())
                             <div class="px-3 pt-3 pb-1 small text-uppercase text-secondary fw-semibold">Upcoming</div>
                             <ul class="list-group list-group-flush">
-                                @foreach ($project->upcomingTechnicians->sortBy(fn ($span) => $span->startDate()) as $upcoming)
-                                    @continue(! $upcoming->technician)
+                                @foreach ($upcomingOnly as $upcoming)
                                     <li class="list-group-item d-flex align-items-center gap-3">
                                         <x-user-avatar :user="$upcoming->technician->account" size="md" />
-                                        <div class="d-flex flex-wrap align-items-center gap-2">
-                                            <span class="fw-semibold">{{ $upcoming->technician->name }}</span>
-                                            @if ($upcoming->technician->isLead())
-                                                <span class="badge project-lead-badge">Lead Technician</span>
-                                            @endif
-                                            <span class="badge bg-light text-dark border">{{ $project->scheduledChangeLabel($upcoming) }}</span>
-                                            @if ($endLabel = $project->scheduledEndLabel($upcoming))
-                                                <span class="badge bg-light text-dark border">{{ $endLabel }}</span>
-                                            @endif
+
+                                        <div class="flex-grow-1 min-w-0">
+                                            <div class="d-flex flex-wrap align-items-center gap-2">
+                                                <span class="fw-semibold">{{ $upcoming->technician->name }}</span>
+
+                                                @if ($upcoming->technician_id === $technicianId)
+                                                    <span class="badge bg-info text-dark">You</span>
+                                                @endif
+
+                                                @if ($upcoming->technician->isLead())
+                                                    <span class="badge project-lead-badge">Lead Technician</span>
+                                                @else
+                                                    <span class="badge bg-secondary">Technician</span>
+                                                @endif
+                                            </div>
                                         </div>
+
+                                        @include('super-admin.partials.team-schedule-button', [
+                                            'technician' => $upcoming->technician,
+                                            'count' => count($teamSchedules[$upcoming->technician_id]['items']),
+                                        ])
                                     </li>
                                 @endforeach
                             </ul>
                         @endif
+
+                        {{-- View-only: a technician can read a colleague's schedule,
+                             not change it. --}}
+                        @foreach ($teamSchedules as $schedule)
+                            @include('super-admin.partials.team-schedule-modal', [
+                                'technician' => $schedule['technician'],
+                                'isLead' => $schedule['is_lead'],
+                                'items' => $schedule['items'],
+                                'canCancel' => false,
+                            ])
+                        @endforeach
                     </div>
                 </div>
             </div>
 
-            <div class="col-lg-6 mb-3">
-                <div class="card shadow-sm h-100">
+            <div class="col-lg-6 mb-3 d-flex flex-column gap-3">
+                {{-- The reader's own days, apart from the project's: the
+                     project's schedule narrowed to their time on the team, and
+                     any change to it still to come. See Project::bookedDaysFor()
+                     and Project::scheduledChangesFor(). --}}
+                @php
+                    $myDays = $project->bookedDaysFor((int) $technicianId);
+                    $myChanges = $project->scheduledChangesFor((int) $technicianId);
+                @endphp
+
+                <div class="card shadow-sm" data-my-schedule>
+                    <div class="card-header bg-white">
+                        <h4 class="mb-0 fw-bold">Your Schedule</h4>
+                    </div>
+
+                    <div class="card-body">
+                        @forelse ($myDays as $day)
+                            <div class="my-schedule-day {{ $day['is_past'] ? 'is-past' : '' }}">
+                                <i class="bi bi-calendar-check" aria-hidden="true"></i>
+                                <span>{{ $day['label'] }}</span>
+                                @if ($day['is_past'])
+                                    <span class="visually-hidden">(done)</span>
+                                @endif
+                            </div>
+                        @empty
+                            <p class="text-muted mb-0">You have no days booked on this project yet.</p>
+                        @endforelse
+
+                        @if ($myChanges !== [])
+                            <div class="my-schedule-changes">
+                                @foreach ($myChanges as $change)
+                                    <div class="my-schedule-change">
+                                        <i class="bi {{ $change['icon'] }}" aria-hidden="true"></i>
+                                        <span class="fw-semibold">{{ $change['title'] }}</span>
+                                        <span class="text-secondary">{{ $change['when'] }}</span>
+                                    </div>
+                                @endforeach
+                            </div>
+                        @endif
+                    </div>
+                </div>
+
+                <div class="card shadow-sm flex-grow-1">
                     <div class="card-header bg-white">
                         <h4 class="mb-0 fw-bold">Project Schedule</h4>
                     </div>

@@ -565,8 +565,8 @@ class ScheduledTeamChangeTest extends TestCase
 
         $this->get(route('super-admin.projects.show', $project->project_id))
             ->assertOk()
-            ->assertSee('Returns '.$this->label(7))
-            ->assertSee('Leaving '.$this->label(12))
+            ->assertSeeInOrder(['Returns', $this->label(7), 'Cancel return'])
+            ->assertSeeInOrder(['Leaving', $this->label(12), 'Cancel removal'])
             ->assertSee('name="part" value="removal"', false);
 
         // Just the removal: they still come back, and stay on.
@@ -667,10 +667,10 @@ class ScheduledTeamChangeTest extends TestCase
 
         $this->get(route('super-admin.projects.show', $project->project_id))
             ->assertOk()
-            ->assertSee('Off '.$this->label(5).' - '.$this->label(6))
-            ->assertSee('Covers '.$this->label(10).' - '.$this->label(11))
-            ->assertSee('Cancel days off')
-            ->assertSee('Cancel cover')
+            // In each technician's schedule dialog, one change to a line.
+            ->assertSee('data-team-schedule-modal', false)
+            ->assertSeeInOrder(['Days off', $this->label(5).' - '.$this->label(6), 'Cancel days off'])
+            ->assertSeeInOrder(['Covers as lead', $this->label(10).' - '.$this->label(11), 'Cancel cover'])
             ->assertDontSee('data-team-effective-date', false)
             ->assertSee('data-assignment-periods', false);
     }
@@ -705,7 +705,82 @@ class ScheduledTeamChangeTest extends TestCase
         $this->actingAs($mary->account)
             ->get(route('technician.projects.show', $project->project_id))
             ->assertOk()
-            ->assertSee('You lead this project from '.$this->label(10).' to '.$this->label(11));
+            // Said in Your Schedule, not in a banner over the page.
+            ->assertDontSee('You lead this project from')
+            ->assertSeeInOrder(['Your Schedule', $this->label(10).' - '.$this->label(11), 'Covers as lead', 'Project Schedule'])
+            // The team card: a view-only schedule dialog per technician, with
+            // John's days off in his and nothing to cancel.
+            ->assertSee('data-team-schedule-modal', false)
+            ->assertSeeInOrder(['John Lead', 'Days off', $this->label(10).' - '.$this->label(11)])
+            ->assertDontSee('data-team-cancel-form', false);
+    }
+
+    public function test_a_technician_sees_their_own_schedule_apart_from_the_projects(): void
+    {
+        [$project, , $ana] = $this->runningProject();
+
+        $ana->account->forceFill([
+            'status' => User::STATUS_ACTIVE,
+            'email_verified_at' => now(),
+        ] + $this->acceptedTerms())->save();
+
+        $this->daysOff($project, $ana, $this->day(5), $this->day(6))->assertOk();
+
+        $project = $project->fresh();
+
+        $this->assertSame(
+            [$this->label(-7).' - '.$this->label(4), $this->label(7).' - '.$this->label(30)],
+            array_column($project->bookedDaysFor((int) $ana->technician_id), 'label')
+        );
+        $this->assertSame(
+            ['Days off', 'Returns'],
+            array_column($project->scheduledChangesFor((int) $ana->technician_id), 'title')
+        );
+
+        $this->actingAs($ana->account)
+            ->get(route('technician.projects.show', $project->project_id))
+            ->assertOk()
+            ->assertSee('data-my-schedule', false)
+            ->assertSeeInOrder([
+                'Your Schedule',
+                $this->label(-7).' - '.$this->label(4),
+                $this->label(7).' - '.$this->label(30),
+                'Days off',
+                $this->label(5).' - '.$this->label(6),
+                'Project Schedule',
+            ]);
+
+        $this->actingAs($ana->account)
+            ->getJson(route('technician.projects.details', $project->project_id).'?mine_only=1')
+            ->assertOk()
+            ->assertJsonPath('my_schedule.days.1.label', $this->label(7).' - '.$this->label(30))
+            ->assertJsonPath('my_schedule.changes.0.title', 'Days off')
+            ->assertJsonPath('my_schedule.changes.1.when', $this->label(7));
+    }
+
+    public function test_a_technician_on_days_off_keeps_the_project_on_their_calendar_in_its_colours(): void
+    {
+        [$project, , $ana] = $this->runningProject();
+
+        $ana->account->forceFill([
+            'status' => User::STATUS_ACTIVE,
+            'email_verified_at' => now(),
+        ] + $this->acceptedTerms())->save();
+
+        $this->daysOff($project, $ana, $this->day(0), $this->day(2))->assertOk();
+
+        $events = collect($this->actingAs($ana->account)
+            ->get(route('technician.schedule'))
+            ->assertOk()
+            ->viewData('events'));
+
+        $this->assertCount(2, $events);
+        $this->assertTrue($events->every(fn (array $event): bool => $event['extendedProps']['isFormer'] === false
+            && ! isset($event['classNames'])));
+
+        $this->actingAs($ana->account)
+            ->getJson(route('technician.projects.details', $project->project_id))
+            ->assertOk();
     }
 
     public function test_the_technician_panel_offers_stand_ins_for_the_days_asked_about(): void
@@ -739,6 +814,36 @@ class ScheduledTeamChangeTest extends TestCase
 
         // Exclusive ends, FullCalendar's way.
         $this->assertSame([[$this->day(-7), $this->day(5)], [$this->day(7), $this->day(31)]], $events);
+    }
+
+    public function test_a_lead_cannot_be_replaced_today_over_a_handover_already_booked(): void
+    {
+        [$project, $lead] = $this->runningProject();
+        $booked = $this->technician('Jose Booked', 'lead_technician');
+        $incoming = $this->technician('Juan Incoming', 'lead_technician');
+
+        $this->removeFrom($project, $lead, $this->day(10), $booked)->assertOk();
+
+        $listing = $this->getJson(route('super-admin.technicians.assignable', $incoming->technician_id))->assertOk();
+
+        $this->assertNotContains($project->project_id, collect($listing->json('projects'))->pluck('project_id')->all());
+        $this->assertStringContainsString(
+            'would both lead this project',
+            (string) collect($listing->json('blocked'))->firstWhere('project_id', $project->project_id)['reason']
+        );
+
+        $this->postJson(route('super-admin.technicians.projects.store', $incoming->technician_id), [
+            'project_ids' => [$project->project_id],
+            'lead_replacements' => [[
+                'project_id' => $project->project_id,
+                'replacing_technician_id' => $lead->technician_id,
+            ]],
+        ])->assertStatus(422);
+
+        $this->assertFalse(ProjectTechnician::query()
+            ->where('project_id', $project->project_id)
+            ->where('technician_id', $incoming->technician_id)
+            ->exists());
     }
 
     public function test_the_schedules_day_panel_tells_days_off_from_leaving(): void

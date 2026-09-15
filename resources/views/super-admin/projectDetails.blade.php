@@ -1491,6 +1491,16 @@
                             </div>
                         @endif
 
+                        {{-- Every change still to come for each technician - days off,
+                             leaving, starting, returning, covering as lead - kept off
+                             the rows and listed in that technician's schedule dialog,
+                             each with its own Cancel. A technician on the team today
+                             who is also due back from days off has one dialog holding
+                             both halves, and is not listed again under Upcoming. --}}
+                        @php
+                            ['entries' => $teamSchedules, 'upcoming' => $upcomingOnly] = $project->teamSchedules();
+                        @endphp
+
                         <ul class="list-group list-group-flush">
 
                             @forelse($project->projectTechnicians as $projectTechnician)
@@ -1519,12 +1529,6 @@
                                                 @unless ($technician->isAssignable())
                                                     <span class="badge bg-warning text-dark">Account inactive</span>
                                                 @endunless
-
-                                                {{-- A removal already scheduled: still on the
-                                                     team today, and saying until when. --}}
-                                                @if ($label = $project->scheduledChangeLabel($projectTechnician))
-                                                    <span class="badge bg-light text-dark border">{{ $label }}</span>
-                                                @endif
                                             </div>
 
                                             <div class="d-flex flex-wrap gap-1 mt-1">
@@ -1536,12 +1540,10 @@
                                             </div>
                                         </div>
 
-                                        @if ($projectTechnician->isLeaving() && $canTakeWork)
-                                            @include('super-admin.partials.cancel-scheduled-team-change', [
-                                                'membership' => $projectTechnician,
-                                                'label' => str_starts_with((string) $project->scheduledChangeLabel($projectTechnician), 'Off') ? 'Cancel days off' : 'Cancel removal',
-                                            ])
-                                        @endif
+                                        @include('super-admin.partials.team-schedule-button', [
+                                            'technician' => $technician,
+                                            'count' => count($teamSchedules[$technician->technician_id]['items'] ?? []),
+                                        ])
 
                                     </li>
                                 @endif
@@ -1560,13 +1562,12 @@
                              on the project today, and a replacement lead starting
                              next week is not - but an administrator has to be able
                              to see a handover coming, and call it off. --}}
-                        @if ($project->upcomingTechnicians->isNotEmpty())
+                        @if ($upcomingOnly->isNotEmpty())
                             <div class="px-3 pt-3 pb-1 small text-uppercase text-secondary fw-semibold">
                                 Upcoming
                             </div>
                             <ul class="list-group list-group-flush" data-upcoming-team>
-                                @foreach ($project->upcomingTechnicians->sortBy(fn ($span) => $span->startDate()) as $upcoming)
-                                    @continue(! $upcoming->technician)
+                                @foreach ($upcomingOnly as $upcoming)
                                     <li class="list-group-item d-flex align-items-center gap-3">
                                         <x-user-avatar :user="$upcoming->technician->account" size="md" />
 
@@ -1579,41 +1580,26 @@
                                                 @else
                                                     <span class="badge bg-secondary">Technician</span>
                                                 @endif
-
-                                                <span class="badge bg-light text-dark border">{{ $project->scheduledChangeLabel($upcoming) }}</span>
-
-                                                @if ($endLabel = $project->scheduledEndLabel($upcoming))
-                                                    <span class="badge bg-light text-dark border">{{ $endLabel }}</span>
-                                                @endif
                                             </div>
                                         </div>
 
-                                        @if ($canTakeWork)
-                                            <div class="d-flex flex-column align-items-end gap-1">
-                                                @include('super-admin.partials.cancel-scheduled-team-change', [
-                                                    'membership' => $upcoming,
-                                                    'label' => match (strtok((string) $project->scheduledChangeLabel($upcoming), ' ')) {
-                                                        'Returns' => 'Cancel return',
-                                                        'Covers' => 'Cancel cover',
-                                                        default => 'Cancel start',
-                                                    },
-                                                ])
-
-                                                {{-- The removal at the end of it, on its own:
-                                                     they still come, and stay on. --}}
-                                                @if ($endLabel)
-                                                    @include('super-admin.partials.cancel-scheduled-team-change', [
-                                                        'membership' => $upcoming,
-                                                        'label' => 'Cancel removal',
-                                                        'part' => 'removal',
-                                                    ])
-                                                @endif
-                                            </div>
-                                        @endif
+                                        @include('super-admin.partials.team-schedule-button', [
+                                            'technician' => $upcoming->technician,
+                                            'count' => count($teamSchedules[$upcoming->technician_id]['items']),
+                                        ])
                                     </li>
                                 @endforeach
                             </ul>
                         @endif
+
+                        @foreach ($teamSchedules as $technicianId => $schedule)
+                            @include('super-admin.partials.team-schedule-modal', [
+                                'technician' => $schedule['technician'],
+                                'isLead' => $schedule['is_lead'],
+                                'items' => $schedule['items'],
+                                'canCancel' => $canTakeWork,
+                            ])
+                        @endforeach
 
                     </div>
 

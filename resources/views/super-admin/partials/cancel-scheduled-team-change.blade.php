@@ -21,7 +21,7 @@
         <input type="hidden" name="part" value="{{ $part }}">
     @endif
 
-    <button type="submit" class="btn btn-sm btn-outline-secondary text-nowrap">
+    <button type="submit" class="btn btn-sm btn-outline-danger text-nowrap">
         <i class="bi bi-x-circle me-1" aria-hidden="true"></i>
         {{ $label }}
     </button>

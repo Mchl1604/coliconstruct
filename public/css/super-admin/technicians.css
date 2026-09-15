@@ -761,3 +761,37 @@
     line-height: 1.5;
     color: #64748b;
 }
+
+/* Your Schedule on the technician's My Schedule panel: the reader's own days
+   use .panel-schedule-item above; a change still to come sits under them in a
+   quieter voice, one to a line. The same size as the project's dates in the
+   meta lines above, so neither reads as the more important of the two. */
+[data-panel-my-days] {
+    font-size: 0.83rem;
+}
+
+.panel-my-changes {
+    display: grid;
+    gap: 0.25rem;
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 1px dashed #e2e8f0;
+    font-size: 0.85rem;
+}
+
+.panel-my-change {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: 0.4rem;
+    color: #475569;
+}
+
+.panel-my-change .bi {
+    color: #64748b;
+}
+
+.panel-my-change-title {
+    font-weight: 600;
+    color: #1e293b;
+}

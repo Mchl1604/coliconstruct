@@ -878,6 +878,191 @@ class Project extends Model
     }
 
     /**
+     * One technician's changes still to come on this project, in date order -
+     * the lines their schedule dialog and "Your Schedule" print, each with the
+     * Cancel an administrator would press to call it off.
+     *
+     * @return array<int, array{kind: string, title: string, when: string, icon: string, span: ProjectTechnician, cancel: string, part: ?string}>
+     */
+    public function scheduledChangesFor(int $technicianId): array
+    {
+        $this->loadMissing('teamHistory');
+
+        $item = function (string $label, ProjectTechnician $span, string $cancel, ?string $part = null): array {
+            $word = strtok($label, ' ');
+
+            return [
+                'kind' => strtolower($word),
+                'title' => match ($word) {
+                    'Off' => 'Days off',
+                    'Leaving' => 'Leaving',
+                    'Returns' => 'Returns',
+                    'Covers' => 'Covers as lead',
+                    default => 'Starts',
+                },
+                'when' => trim(substr($label, strlen($word))),
+                'icon' => match ($word) {
+                    'Off' => 'bi-calendar-x',
+                    'Leaving' => 'bi-box-arrow-right',
+                    'Returns' => 'bi-arrow-return-left',
+                    'Covers' => 'bi-person-badge',
+                    default => 'bi-box-arrow-in-right',
+                },
+                'span' => $span,
+                'cancel' => $cancel,
+                'part' => $part,
+            ];
+        };
+
+        $items = [];
+
+        $spans = $this->teamHistory
+            ->filter(fn (ProjectTechnician $span): bool => (int) $span->technician_id === $technicianId)
+            ->sortBy(fn (ProjectTechnician $span): string => (string) $span->startDate());
+
+        foreach ($spans as $span) {
+            if ($span->isLeaving() && ($label = $this->scheduledChangeLabel($span))) {
+                $items[] = $item($label, $span, str_starts_with($label, 'Off') ? 'Cancel days off' : 'Cancel removal');
+
+                continue;
+            }
+
+            if (! $span->isUpcoming()) {
+                continue;
+            }
+
+            $label = (string) $this->scheduledChangeLabel($span);
+
+            $items[] = $item($label, $span, match (strtok($label, ' ')) {
+                'Returns' => 'Cancel return',
+                'Covers' => 'Cancel cover',
+                default => 'Cancel start',
+            });
+
+            // The removal at the end of it, on its own: they still come, and
+            // stay on if it is cancelled.
+            if ($endLabel = $this->scheduledEndLabel($span)) {
+                $items[] = $item($endLabel, $span, 'Cancel removal', 'removal');
+            }
+        }
+
+        return $items;
+    }
+
+    /**
+     * The Assigned Team card's schedule buttons, for both portals: every
+     * technician on the team today or due to join, with their changes still to
+     * come - and which of them belong under Upcoming. Somebody on the team today
+     * who is also due back from days off is one entry, listed once.
+     *
+     * @return array{entries: array<int, array{technician: Technician, is_lead: bool, items: array<int, array<string, mixed>>}>, upcoming: Collection<int, ProjectTechnician>}
+     */
+    public function teamSchedules(): array
+    {
+        $this->loadMissing(['projectTechnicians.technician', 'upcomingTechnicians.technician']);
+
+        $entries = [];
+
+        foreach ($this->projectTechnicians as $span) {
+            if ($span->technician) {
+                $entries[$span->technician_id] ??= [
+                    'technician' => $span->technician,
+                    'is_lead' => $this->isLeadMember($span),
+                ];
+            }
+        }
+
+        $upcoming = $this->upcomingTechnicians
+            ->filter(fn (ProjectTechnician $span): bool => $span->technician !== null && ! isset($entries[$span->technician_id]))
+            ->sortBy(fn (ProjectTechnician $span): string => (string) $span->startDate())
+            ->unique('technician_id')
+            ->values();
+
+        foreach ($upcoming as $span) {
+            $entries[$span->technician_id] = [
+                'technician' => $span->technician,
+                'is_lead' => (bool) $span->technician->isLead(),
+            ];
+        }
+
+        foreach ($entries as $technicianId => $entry) {
+            $entries[$technicianId]['items'] = $this->scheduledChangesFor((int) $technicianId);
+        }
+
+        return ['entries' => $entries, 'upcoming' => $upcoming];
+    }
+
+    /**
+     * The days one technician is booked on this project: its schedule,
+     * narrowed to their time on the team.
+     *
+     * Not the project's schedule. Somebody off Sep 22 - 24 is booked Sep 1 - 21
+     * and Sep 25 - 30 of a September range, and somebody joining on Oct 1 has
+     * none of September at all. A partial day is a single date, so it is theirs
+     * whole or not at all.
+     *
+     * @return array<int, array{start: string, end: string, label: string, is_past: bool, is_partial: bool}>
+     */
+    public function bookedDaysFor(int $technicianId): array
+    {
+        $this->loadMissing(['teamHistory', 'schedules']);
+
+        $spans = $this->teamHistory->filter(fn (ProjectTechnician $span): bool => (int) $span->technician_id === $technicianId
+            && ! $span->isEmptySpan());
+
+        $today = Schedule::businessToday();
+        $days = [];
+
+        foreach ($this->schedules as $schedule) {
+            foreach ($spans as $span) {
+                if ($schedule->isPartialDay()) {
+                    if ($span->coveredOn($schedule->startsOn()->toDateString())) {
+                        $days[] = [
+                            'start' => $schedule->startsOn()->toDateString(),
+                            'end' => $schedule->startsOn()->toDateString(),
+                            'label' => $schedule->describe(),
+                            'is_past' => $schedule->isLocked(),
+                            'is_partial' => true,
+                        ];
+                    }
+
+                    continue;
+                }
+
+                $first = $schedule->startsOn();
+                $last = $schedule->endsOn();
+
+                if ($span->startDate() !== null && $span->startDate() > $first->toDateString()) {
+                    $first = CarbonImmutable::parse($span->startDate());
+                }
+
+                if ($span->lastDay() !== null && $span->lastDay()->lt($last)) {
+                    $last = $span->lastDay();
+                }
+
+                if ($first->gt($last)) {
+                    continue;
+                }
+
+                $start = $first->format(BusinessTime::DATE);
+                $end = $last->format(BusinessTime::DATE);
+
+                $days[] = [
+                    'start' => $first->toDateString(),
+                    'end' => $last->toDateString(),
+                    'label' => $start === $end ? $start : $start.' - '.$end,
+                    'is_past' => $last->lt($today),
+                    'is_partial' => false,
+                ];
+            }
+        }
+
+        usort($days, fn (array $a, array $b): int => [$a['start'], $a['end']] <=> [$b['start'], $b['end']]);
+
+        return $days;
+    }
+
+    /**
      * Whether a span is a stand-in lead's: a lead span that starts the day
      * another lead goes off and ends the day that lead comes back.
      */

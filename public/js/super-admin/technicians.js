@@ -1360,30 +1360,33 @@ document.addEventListener("DOMContentLoaded", function () {
         const taskCountEl = panel.querySelector("[data-panel-task-count]");
         const taskNoteEl = panel.querySelector("[data-panel-tasks-note]");
 
-        const leadPanelEl = panel.querySelector("[data-panel-lead-replacement]");
-        const leadIntroEl = panel.querySelector("[data-panel-lead-intro]");
-        const leadHeadingEl = panel.querySelector("[data-panel-lead-heading]");
-        const leadOptionsEl = panel.querySelector("[data-panel-lead-options]");
-        const leadEmptyEl = panel.querySelector("[data-panel-lead-empty]");
-
         const errorEl = panel.querySelector("[data-panel-error]");
         const successEl = panel.querySelector("[data-panel-success]");
         const removeBtn = panel.querySelector("[data-panel-remove]");
-        const confirmBtn = panel.querySelector("[data-panel-confirm-remove]");
-        const confirmSpinner = panel.querySelector("[data-panel-confirm-spinner]");
-        const confirmLabel = panel.querySelector("[data-panel-confirm-label]");
-        const cancelBtn = panel.querySelector("[data-panel-cancel-remove]");
-
         const noteEl = panel.querySelector("[data-panel-note]");
-        const removalEl = panel.querySelector("[data-panel-removal]");
-        const effectiveInput = panel.querySelector("[data-panel-effective-date]");
-        const untilInput = panel.querySelector("[data-panel-until-date]");
-        const untilWrap = panel.querySelector("[data-panel-until-wrap]");
-        const modeRadios = panel.querySelectorAll("[data-panel-mode]");
-        const effectiveHint = panel.querySelector("[data-panel-effective-hint]");
-        const conflictsEl = panel.querySelector("[data-panel-conflicts]");
-        const conflictsIntroEl = panel.querySelector("[data-panel-conflicts-intro]");
-        const conflictListEl = panel.querySelector("[data-panel-conflict-list]");
+
+        // The removal itself is asked in a dialog of its own, opened from the
+        // panel's Remove Schedule button.
+        const removalModal = document.querySelector("[data-remove-schedule-modal]");
+        const leadPanelEl = removalModal.querySelector("[data-panel-lead-replacement]");
+        const leadIntroEl = removalModal.querySelector("[data-panel-lead-intro]");
+        const leadHeadingEl = removalModal.querySelector("[data-panel-lead-heading]");
+        const leadOptionsEl = removalModal.querySelector("[data-panel-lead-options]");
+        const leadEmptyEl = removalModal.querySelector("[data-panel-lead-empty]");
+        const removalErrorEl = removalModal.querySelector("[data-removal-error]");
+        const removalTechnicianEl = removalModal.querySelector("[data-removal-technician]");
+        const removalProjectEl = removalModal.querySelector("[data-removal-project]");
+        const confirmBtn = removalModal.querySelector("[data-panel-confirm-remove]");
+        const confirmSpinner = removalModal.querySelector("[data-panel-confirm-spinner]");
+        const confirmLabel = removalModal.querySelector("[data-panel-confirm-label]");
+        const effectiveInput = removalModal.querySelector("[data-panel-effective-date]");
+        const untilInput = removalModal.querySelector("[data-panel-until-date]");
+        const untilWrap = removalModal.querySelector("[data-panel-until-wrap]");
+        const modeRadios = removalModal.querySelectorAll("[data-panel-mode]");
+        const effectiveHint = removalModal.querySelector("[data-panel-effective-hint]");
+        const conflictsEl = removalModal.querySelector("[data-panel-conflicts]");
+        const conflictsIntroEl = removalModal.querySelector("[data-panel-conflicts-intro]");
+        const conflictListEl = removalModal.querySelector("[data-panel-conflict-list]");
 
         let projectId = null;
         let payload = null;
@@ -1581,14 +1584,25 @@ document.addEventListener("DOMContentLoaded", function () {
             leadPanelEl.classList.add("d-none");
             leadOptionsEl.innerHTML = "";
             leadEmptyEl.classList.add("d-none");
-            removalEl.classList.add("d-none");
             hideConflicts();
-            confirmBtn.classList.add("d-none");
             confirmBtn.disabled = true;
-            cancelBtn.classList.add("d-none");
+            confirmSpinner.classList.add("d-none");
+            setAlert(removalErrorEl, "");
             selectedLeadId = null;
             removing = false;
         }
+
+        function hideRemovalModal() {
+            const instance = window.bootstrap.Modal.getInstance(removalModal);
+
+            if (instance) {
+                instance.hide();
+            }
+        }
+
+        // Closing the dialog - Cancel, the X, Escape - drops whatever was
+        // half-chosen, so it opens fresh next time.
+        removalModal.addEventListener("hidden.bs.modal", resetRemovalUi);
 
         /**
          * The badge a task is drawn in.
@@ -1751,7 +1765,7 @@ document.addEventListener("DOMContentLoaded", function () {
                             });
 
                         confirmBtn.disabled = false;
-                        setAlert(errorEl, "");
+                        setAlert(removalErrorEl, "");
                     });
                 });
         }
@@ -1897,11 +1911,19 @@ document.addEventListener("DOMContentLoaded", function () {
          * lead on that date - who takes over.
          */
         function openRemoval() {
+            renderRemoval();
+
+            removalTechnicianEl.textContent = selectedTechnician.name;
+            removalProjectEl.textContent = [payload.project.reference_no, payload.project.name]
+                .filter(Boolean)
+                .join(" · ");
+
+            window.bootstrap.Modal.getOrCreateInstance(removalModal).show();
+        }
+
+        /** The dialog's contents for the mode and days currently chosen. */
+        function renderRemoval() {
             removing = true;
-            removeBtn.classList.add("d-none");
-            removalEl.classList.remove("d-none");
-            confirmBtn.classList.remove("d-none");
-            cancelBtn.classList.remove("d-none");
             hideConflicts();
 
             if (payload.is_lead) {
@@ -1947,7 +1969,7 @@ document.addEventListener("DOMContentLoaded", function () {
             }
 
             setMin(untilInput, effectiveInput.value);
-            setAlert(errorEl, "");
+            setAlert(removalErrorEl, "");
             selectedLeadId = null;
 
             request(
@@ -1964,13 +1986,13 @@ document.addEventListener("DOMContentLoaded", function () {
                         : ""),
             ).then(function (result) {
                 if (!result.ok) {
-                    setAlert(errorEl, result.body.error || "Unable to load assignment.");
+                    setAlert(removalErrorEl, result.body.error || "Unable to load assignment.");
 
                     return;
                 }
 
                 payload = result.body;
-                openRemoval();
+                renderRemoval();
             });
         }
 
@@ -1980,16 +2002,10 @@ document.addEventListener("DOMContentLoaded", function () {
             radio.addEventListener("change", reloadForDays);
         });
 
-        cancelBtn.addEventListener("click", function () {
-            resetRemovalUi();
-            removeBtn.classList.remove("d-none");
-            setAlert(errorEl, "");
-        });
-
         confirmBtn.addEventListener("click", function () {
             if (payload.is_lead && !selectedLeadId) {
                 setAlert(
-                    errorEl,
+                    removalErrorEl,
                     mode() === "days"
                         ? "Choose a lead technician to stand in for those days."
                         : "Choose a replacement lead technician.",
@@ -2004,7 +2020,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 resolutions = chosenResolutions();
 
                 if (!resolutions) {
-                    setAlert(errorEl, "Choose what happens to every task listed.");
+                    setAlert(removalErrorEl, "Choose what happens to every task listed.");
 
                     return;
                 }
@@ -2017,7 +2033,7 @@ document.addEventListener("DOMContentLoaded", function () {
             confirmBtn.disabled = true;
             confirmSpinner.classList.remove("d-none");
 
-            setAlert(errorEl, "");
+            setAlert(removalErrorEl, "");
 
             request(
                 "/super-admin/technicians/" +
@@ -2046,13 +2062,14 @@ document.addEventListener("DOMContentLoaded", function () {
                     }
 
                     setAlert(
-                        errorEl,
+                        removalErrorEl,
                         result.body.error || "Unable to remove technician.",
                     );
 
                     return;
                 }
 
+                hideRemovalModal();
                 setAlert(successEl, result.body.message);
 
                 // The technician is off this project, so it leaves their
@@ -2069,6 +2086,7 @@ document.addEventListener("DOMContentLoaded", function () {
             projectId = null;
             payload = null;
             highlightAssignmentRow(null);
+            hideRemovalModal();
             resetRemovalUi();
             setAlert(errorEl, "");
             setAlert(successEl, "");
