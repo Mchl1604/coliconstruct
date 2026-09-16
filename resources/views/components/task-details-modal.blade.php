@@ -189,10 +189,14 @@
                          like a choice that is merely disabled. --}}
                     @if ($task->technician)
                         <div class="task-assign-static">
-                            <x-user-avatar :user="$task->technician->account" size="lg"
-                                class="task-assign-avatar" />
+                            <x-technician-link :technician="$task->technician">
+                                <x-user-avatar :user="$task->technician->account" size="lg"
+                                    class="task-assign-avatar" />
+                            </x-technician-link>
                             <div>
-                                <div class="task-assign-name">{{ $task->technician->name }}</div>
+                                <div class="task-assign-name">
+                                    <x-technician-link :technician="$task->technician" />
+                                </div>
                                 @if (optional($task->technician->account)->role === 'lead_technician')
                                     <span class="badge bg-primary">Lead Technician</span>
                                 @else

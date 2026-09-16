@@ -34,12 +34,21 @@ document.addEventListener("DOMContentLoaded", function () {
               '" alt="" loading="lazy">'
             : "";
 
+        // A technician's name opens their details on the Technicians page;
+        // an administrator's has nothing to open, and stays text.
+        const name = report.submitted_by_url
+            ? '<a class="technician-link" href="' +
+              escapeHtml(report.submitted_by_url) +
+              '">' +
+              escapeHtml(report.submitted_by) +
+              "</a>"
+            : "<span>" + escapeHtml(report.submitted_by) + "</span>";
+
         return (
             '<div class="d-flex align-items-center gap-2">' +
             avatar +
-            "<span>" +
-            escapeHtml(report.submitted_by) +
-            "</span></div>"
+            name +
+            "</div>"
         );
     }
 

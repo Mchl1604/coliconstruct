@@ -653,6 +653,11 @@ class ReportController extends Controller
             'type_accent_class' => $report->typeAccentClass(),
             'submitted_by' => $report->submitterName(),
             'submitted_by_avatar' => $report->submitterAvatarUrl(),
+            // Where the submitter's name leads: their details on the
+            // Technicians page. Null for a report an administrator filed.
+            'submitted_by_url' => ($submitter = $report->submitterTechnician())
+                ? route('super-admin.technicians.index', ['technician' => $submitter->technician_id])
+                : null,
             'report_date' => $report->report_date?->toDateString(),
             'report_date_label' => $report->report_date?->format(BusinessTime::DATE) ?? '—',
             'image_count' => $report->images->count(),

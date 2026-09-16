@@ -208,6 +208,92 @@
     font-size: 0.9rem;
 }
 
+/* ---- Edit Assigned Team: the team, one technician per row ---- */
+
+.team-member-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.team-member-count {
+    font-size: 0.78rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: #64748b;
+}
+
+.team-member-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.5rem;
+    background: #fff;
+}
+
+.team-member-body {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.team-member-heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.team-member-name {
+    font-weight: 600;
+    color: #1e293b;
+}
+
+.team-member-skills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    margin-top: 0.35rem;
+}
+
+.team-member-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin-top: 0.35rem;
+    font-size: 0.8rem;
+}
+
+.team-member-status.is-clear {
+    color: #15803d;
+}
+
+.team-member-status.is-warning {
+    color: #b45309;
+}
+
+.team-member-actions {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+/* Narrow screens: the buttons drop under the details rather than squeezing
+   the name into a column a word wide. */
+@media (max-width: 575.98px) {
+    .team-member-row {
+        flex-wrap: wrap;
+    }
+
+    .team-member-actions {
+        width: 100%;
+        justify-content: flex-end;
+    }
+}
+
 /* ---- Assigned-team picker: suggestions and blocked technicians ---- */
 
 .technician-dropdown-menu {

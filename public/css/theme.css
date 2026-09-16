@@ -198,3 +198,34 @@
     color: #7a5510;
     font-size: .86rem;
 }
+
+/* ---- Technician links ----
+   A technician's name that opens their details on the Technicians page. Reads
+   as the name it replaces until it is pointed at, so a table full of them does
+   not turn into a wall of blue. See components/technician-link.blade.php. */
+
+.technician-link {
+    color: inherit;
+    text-decoration: none;
+}
+
+/* A name drawn as a button (it opens a dialog rather than a page) reads as
+   text. A chip keeps the padding, border and background its own class sets. */
+button.technician-link {
+    font: inherit;
+    text-align: inherit;
+    cursor: pointer;
+}
+
+button.technician-link:not(.schedule-tech-chip) {
+    padding: 0;
+    border: 0;
+    background: none;
+}
+
+.technician-link:hover,
+.technician-link:focus-visible {
+    color: #1d4ed8;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}

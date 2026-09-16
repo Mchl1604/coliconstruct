@@ -166,7 +166,6 @@ document.addEventListener("DOMContentLoaded", function () {
     function renderProject(project) {
         setText("[data-panel-ref]", project.reference_no);
         setText("[data-panel-name]", project.name);
-        setText("[data-panel-id]", project.project_id);
         setText("[data-panel-client]", project.client);
         setText("[data-panel-address]", project.address);
         renderRanges(project.ranges || []);

@@ -509,32 +509,79 @@
             }
         }
 
+        /**
+         * Where a technician's "View schedule" leads: their calendar on the
+         * Technicians page, opened on the Schedules tab by `?schedule=`.
+         */
+        function scheduleUrlFor(technician) {
+            const base = selectedList.dataset.scheduleUrl || '/super-admin/technicians';
+
+            return base + '?schedule=' + encodeURIComponent(technician.id);
+        }
+
+        /**
+         * One team member's row: picture, name, role, specialties and whether
+         * their dates are clear, then View schedule and Remove.
+         */
+        function memberRowMarkup(technician) {
+            const skills = technician.skills || [];
+
+            const skillsMarkup = skills.length
+                ? skills.map(function(skill) {
+                    return '<span class="technician-chip">' + escapeHtml(skill) + '</span>';
+                }).join('')
+                : '<span class="text-muted small">No specialties assigned.</span>';
+
+            // Somebody already on the team can stay on it through a clash
+            // that slipped in elsewhere, so the row says so rather than
+            // calling them available.
+            const statusMarkup = technician.available
+                ? '<span class="team-member-status is-clear">' +
+                    '<i class="bi bi-check-circle" aria-hidden="true"></i> Available</span>'
+                : '<span class="team-member-status is-warning">' +
+                    '<i class="bi bi-exclamation-triangle" aria-hidden="true"></i> ' +
+                    escapeHtml(technician.reason || 'Unavailable') + '</span>';
+
+            return '<div class="team-member-row" data-team-member="' + escapeHtml(technician.id) + '">' +
+                (technician.avatar_url
+                    ? '<img class="user-avatar user-avatar-md" src="' + escapeHtml(technician.avatar_url) +
+                        '" alt="" loading="lazy">'
+                    : '') +
+                '<div class="team-member-body">' +
+                '<div class="team-member-heading">' +
+                '<span class="team-member-name">' + escapeHtml(technician.name) + '</span>' +
+                '<span class="badge bg-secondary">' + escapeHtml(technician.role_label || 'Technician') + '</span>' +
+                '</div>' +
+                '<div class="team-member-skills">' + skillsMarkup + '</div>' +
+                statusMarkup +
+                '</div>' +
+                '<div class="team-member-actions">' +
+                '<a class="btn btn-sm btn-outline-primary" target="_blank" rel="noopener" href="' +
+                    escapeHtml(scheduleUrlFor(technician)) + '" ' +
+                    'title="Opens in a new tab, so nothing chosen here is lost">' +
+                '<i class="bi bi-calendar3 me-1" aria-hidden="true"></i>View schedule</a>' +
+                '<button type="button" class="btn btn-sm btn-outline-danger" data-team-member-remove ' +
+                    'aria-label="Remove ' + escapeHtml(technician.name) + '" title="Remove from team">' +
+                '<i class="bi bi-x-lg" aria-hidden="true"></i></button>' +
+                '</div>' +
+                '</div>';
+        }
+
         function renderChips() {
             const selected = selectedTechnicians();
-            selectedList.innerHTML = '';
 
             if (!selected.length) {
-                const emptyState = document.createElement('div');
-                emptyState.className = 'technician-empty-state';
-                emptyState.textContent = 'No technicians selected yet.';
-                selectedList.appendChild(emptyState);
+                selectedList.innerHTML = '<div class="technician-empty-state">No technicians selected yet.</div>';
             } else {
-                selected.forEach(function(technician) {
-                    const chip = document.createElement('span');
-                    chip.className = 'technician-chip';
-                    chip.textContent = technician.name;
+                selectedList.innerHTML =
+                    '<div class="team-member-count">' + selected.length + ' ' +
+                        (selected.length === 1 ? 'technician' : 'technicians') + ' on this team</div>' +
+                    selected.map(memberRowMarkup).join('');
 
-                    const removeButton = document.createElement('button');
-                    removeButton.type = 'button';
-                    removeButton.className = 'technician-chip-remove';
-                    removeButton.setAttribute('aria-label', 'Remove ' + technician.name);
-                    removeButton.innerHTML = '<i class="bi bi-x" aria-hidden="true"></i>';
-                    removeButton.addEventListener('click', function() {
-                        removeTechnician(String(technician.id));
+                selectedList.querySelectorAll('[data-team-member-remove]').forEach(function(button) {
+                    button.addEventListener('click', function() {
+                        removeTechnician(button.closest('[data-team-member]').dataset.teamMember);
                     });
-
-                    chip.appendChild(removeButton);
-                    selectedList.appendChild(chip);
                 });
             }
 

@@ -225,6 +225,22 @@ document.addEventListener("DOMContentLoaded", function () {
               escapeHtml(row.initials) +
               "</span>";
 
+        // A technician's picture and name open their details on the
+        // Technicians page; anybody else's stay as they are.
+        if (row.technician_url) {
+            return (
+                '<a class="config-user-cell technician-link" href="' +
+                escapeHtml(row.technician_url) +
+                '" title="View ' +
+                escapeHtml(row.full_name) +
+                "'s details\">" +
+                avatar +
+                '<span class="fw-semibold">' +
+                escapeHtml(row.full_name) +
+                "</span></a>"
+            );
+        }
+
         return (
             '<div class="config-user-cell">' +
             avatar +
@@ -726,6 +742,7 @@ document.addEventListener("DOMContentLoaded", function () {
         ["[data-log-role]", "role"],
         ["[data-log-module]", "module"],
         ["[data-log-range]", "range"],
+        ["[data-log-per-page]", "per_page"],
     ].forEach(function (pair) {
         const element = document.querySelector(pair[0]);
 
@@ -743,6 +760,23 @@ document.addEventListener("DOMContentLoaded", function () {
     const logFrom = document.querySelector("[data-log-from]");
     const logTo = document.querySelector("[data-log-to]");
     const logSorts = document.querySelectorAll("[data-log-sort]");
+
+    // How many entries a page holds. Put back inside 1-max before the table
+    // reads it: this listener is added before createTable() adds its own, so
+    // a typed 0 or 500 is corrected first and the request never carries it.
+    const logPerPage = document.querySelector("[data-log-per-page]");
+
+    if (logPerPage) {
+        logPerPage.addEventListener("change", function () {
+            const max = Number(logPerPage.max) || 100;
+            const fallback = Number(logPerPage.defaultValue) || 10;
+            const value = Math.floor(Number(logPerPage.value));
+
+            logPerPage.value = String(
+                Number.isFinite(value) && value >= 1 ? Math.min(value, max) : fallback,
+            );
+        });
+    }
 
     // Newest first, which is what an audit trail is read in.
     let logSort = "date";
@@ -763,6 +797,7 @@ document.addEventListener("DOMContentLoaded", function () {
                   "[data-log-role]",
                   "[data-log-module]",
                   "[data-log-range]",
+                  "[data-log-per-page]",
               ],
               extraParams: function () {
                   const extra = { sort: logSort, direction: logDirection };

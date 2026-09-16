@@ -67,7 +67,7 @@
                                             <img class="user-avatar user-avatar-xs"
                                                 src="{{ $report->submitterAvatarUrl() }}" alt="" loading="lazy">
                                         @endif
-                                        <span>{{ $report->submitterName() }}</span>
+                                        <x-technician-link :technician="$report->submitterTechnician()">{{ $report->submitterName() }}</x-technician-link>
                                     </div>
                                 </td>
                                 <td data-order="{{ $report->report_date?->timestamp ?? 0 }}">

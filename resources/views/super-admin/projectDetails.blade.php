@@ -1511,11 +1511,13 @@
                                 @if ($technician)
                                     <li class="list-group-item d-flex align-items-start gap-3">
 
-                                        <x-user-avatar :user="$technician->account" size="md" />
+                                        <x-technician-link :technician="$technician">
+                                            <x-user-avatar :user="$technician->account" size="md" />
+                                        </x-technician-link>
 
                                         <div class="flex-grow-1 min-w-0">
                                             <div class="d-flex flex-wrap align-items-center gap-2">
-                                                <span class="fw-semibold">{{ $technician->name }}</span>
+                                                <x-technician-link :technician="$technician" class="fw-semibold" />
 
                                                 {{-- Asked of the project, so a finished job keeps
                                                      naming the lead who ran it after their job
@@ -1569,11 +1571,13 @@
                             <ul class="list-group list-group-flush" data-upcoming-team>
                                 @foreach ($upcomingOnly as $upcoming)
                                     <li class="list-group-item d-flex align-items-center gap-3">
-                                        <x-user-avatar :user="$upcoming->technician->account" size="md" />
+                                        <x-technician-link :technician="$upcoming->technician">
+                                            <x-user-avatar :user="$upcoming->technician->account" size="md" />
+                                        </x-technician-link>
 
                                         <div class="flex-grow-1 min-w-0">
                                             <div class="d-flex flex-wrap align-items-center gap-2">
-                                                <span class="fw-semibold">{{ $upcoming->technician->name }}</span>
+                                                <x-technician-link :technician="$upcoming->technician" class="fw-semibold" />
 
                                                 @if ($upcoming->technician->isLead())
                                                     <span class="badge project-lead-badge">Lead Technician</span>
@@ -1840,7 +1844,7 @@
                                                     loading="lazy">
                                             @endif
                                             <small class="text-muted">
-                                                by {{ $report->submitterName() }}
+                                                by <x-technician-link :technician="$report->submitterTechnician()">{{ $report->submitterName() }}</x-technician-link>
                                             </small>
                                         </div>
 
@@ -2061,7 +2065,7 @@
                                                     <x-user-avatar :user="$task->technician?->account"
                                                         size="sm"
                                                         :alt="$task->technician?->name ?? 'Unassigned'" />
-                                                    <span>{{ $task->technician?->name ?? 'Unassigned' }}</span>
+                                                    <x-technician-link :technician="$task->technician" />
                                                 </div>
                                             </td>
 
@@ -2771,7 +2775,15 @@
                                     data-technician-dropdown-menu></ul>
                             </div>
 
-                            <div class="technician-selected-list mt-3" data-technician-selected-list></div>
+                            {{-- Who is on the team, one row each: picture,
+                                 role, specialties and whether their dates are
+                                 clear, with a way to look at their schedule
+                                 and a way to take them off. Written by
+                                 renderChips() in projectDetails.js. The
+                                 schedule opens in a new tab so nothing picked
+                                 here is lost on the way. --}}
+                            <div class="team-member-list mt-3" data-technician-selected-list
+                                data-schedule-url="{{ route('super-admin.technicians.index') }}"></div>
                             <div class="technician-hidden-inputs" data-technician-hidden-inputs></div>
                         </div>
 

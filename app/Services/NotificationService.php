@@ -1084,6 +1084,30 @@ class NotificationService
     }
 
     /**
+     * Days off - or a stand-in's cover through them - called off because the
+     * schedule no longer holds any work on those days. Told to the person
+     * whose days they were, so a return they were planning around is not a
+     * surprise.
+     */
+    public function daysOffCancelledByScheduleChange(Project $project, User $technician, CarbonImmutable $from, CarbonImmutable $lastDay, bool $asCover): void
+    {
+        $this->deliver(
+            $this->excludingActor([$technician]),
+            $asCover ? 'Stand-in Lead Cancelled' : 'Days Off Cancelled',
+            sprintf(
+                $asCover
+                    ? 'You no longer stand in as lead on %s %s: those dates were removed from its schedule.'
+                    : 'Your days off on %s %s were cancelled: those dates were removed from its schedule.',
+                $this->projectLabel($project),
+                $this->dayRange($from, $lastDay)
+            ),
+            Notification::MODULE_PROJECTS,
+            $project,
+            $this->projectLink($project)
+        );
+    }
+
+    /**
      * "Aug 21, 2026" for a change that takes effect on a day still to come, or
      * null for one taking effect now - which is worded the way it always was.
      */

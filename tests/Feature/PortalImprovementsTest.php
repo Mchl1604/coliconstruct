@@ -357,11 +357,44 @@ class PortalImprovementsTest extends TestCase
             ->assertOk()
             ->assertSee('project-details-page', escape: false)
             ->assertSee('project-type-badge', escape: false)
-            ->assertSee('Project ID: '.sprintf('PROJ-%04d', $project->project_id))
+            // A technician is shown the reference number, never the internal
+            // project ID an administrator works from.
+            ->assertSee('PRJ-1')
+            ->assertDontSee('Project ID:')
+            ->assertDontSee(sprintf('PROJ-%04d', $project->project_id))
             ->assertSee('Assigned Team')
             // The assigned team still carries the picture, role and approved
             // specialties the profile work added.
             ->assertSee(asset('img/default-avatar.svg'), escape: false)
             ->assertSee('Project Activity');
+    }
+
+    /**
+     * A technician's name on an administrator's page leads to their details
+     * on the Technicians page; the same project seen from the portal names
+     * them without sending anybody to a page they cannot open.
+     */
+    public function test_technician_names_link_to_their_details_for_administrators_only(): void
+    {
+        $owner = $this->account('super_admin', 'o@example.test');
+        $project = $this->project('c@example.test');
+
+        $tech = $this->account('technician', 't@example.test');
+        $technician = Technician::create(['account_id' => $tech->id, 'role' => 'technician', 'name' => 'Tech Person']);
+        ProjectTechnician::create(['project_id' => $project->project_id, 'technician_id' => $technician->technician_id]);
+
+        $detailsUrl = route('super-admin.technicians.index', ['technician' => $technician->technician_id]);
+
+        $this->actingAs($owner)
+            ->get(route('super-admin.projects.show', $project->project_id))
+            ->assertOk()
+            ->assertSee($detailsUrl, escape: false)
+            // The Edit Assigned Team list has somewhere to send View schedule.
+            ->assertSee('data-schedule-url="'.route('super-admin.technicians.index').'"', escape: false);
+
+        $this->actingAs($tech)
+            ->get(route('technician.projects.show', $project->project_id))
+            ->assertOk()
+            ->assertDontSee($detailsUrl, escape: false);
     }
 }

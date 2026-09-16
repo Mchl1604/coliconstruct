@@ -849,17 +849,19 @@ class Project extends Model
                 ->first();
 
             return $return
-                ? 'Off '.$days($span->endDate(), CarbonImmutable::parse($return->startDate())->subDay()->toDateString())
+                ? 'Off '.$days(...$this->workedPartOf($span->endDate(), CarbonImmutable::parse($return->startDate())->subDay()->toDateString()))
                 : 'Leaving '.$day($span->endDate());
         }
 
         if ($span->isUpcoming()) {
             if ($siblings->contains(fn (ProjectTechnician $other): bool => $other->endDate() !== null && $other->endDate() <= (string) $span->startDate())) {
-                return 'Returns '.$day($span->startDate());
+                // Back on the first working day from then - the day there is
+                // work to come back to - rather than a date with none.
+                return 'Returns '.$day($this->firstScheduledDayFrom(CarbonImmutable::parse($span->startDate()))?->toDateString() ?? $span->startDate());
             }
 
             return $this->isLeadCover($span)
-                ? 'Covers '.$days($span->startDate(), $span->lastDay()?->toDateString())
+                ? 'Covers '.$days(...$this->workedPartOf($span->startDate(), $span->lastDay()?->toDateString()))
                 : 'Starts '.$day($span->startDate());
         }
 
@@ -929,7 +931,7 @@ class Project extends Model
                 // Days off with no working day in them change nothing for
                 // anybody - there was no work to be off from - so they are not
                 // listed, and neither is the return that ends them.
-                if (str_starts_with($label, 'Off') && ! $this->worksBetween(...$this->daysOffAround($span, $spans))) {
+                if (str_starts_with($label, 'Off') && ! $this->hasWorkBetween(...$this->daysOffAround($span, $spans))) {
                     continue;
                 }
 
@@ -946,8 +948,8 @@ class Project extends Model
             $word = strtok($label, ' ');
 
             $idle = match ($word) {
-                'Returns' => ! $this->worksBetween(...$this->daysOffBefore($span, $spans)),
-                'Covers' => ! $this->worksBetween($span->startDate(), $span->lastDay()?->toDateString()),
+                'Returns' => ! $this->hasWorkBetween(...$this->daysOffBefore($span, $spans)),
+                'Covers' => ! $this->hasWorkBetween($span->startDate(), $span->lastDay()?->toDateString()),
                 default => false,
             };
 
@@ -968,9 +970,10 @@ class Project extends Model
 
                 if ($offTo === null) {
                     $items[] = $item($endLabel, $span, 'Cancel removal', 'removal');
-                } elseif ($this->worksBetween($offFrom, $offTo)) {
-                    $first = CarbonImmutable::parse($offFrom)->format(BusinessTime::DATE);
-                    $last = CarbonImmutable::parse($offTo)->format(BusinessTime::DATE);
+                } elseif ($this->hasWorkBetween($offFrom, $offTo)) {
+                    [$workFrom, $workTo] = $this->workedPartOf($offFrom, $offTo);
+                    $first = CarbonImmutable::parse($workFrom)->format(BusinessTime::DATE);
+                    $last = CarbonImmutable::parse($workTo)->format(BusinessTime::DATE);
 
                     $items[] = $item('Off '.($first === $last ? $first : $first.' - '.$last), $span, 'Cancel days off', 'removal');
                 }
@@ -1027,24 +1030,90 @@ class Project extends Model
     }
 
     /**
+     * The first and last working days from $first to $last, as 'Y-m-d' - the
+     * part of a stretch of days off or cover that has work in it - or null
+     * when none of those days is scheduled.
+     *
+     * @return array{0: string, 1: string}|null
+     */
+    public function workingDaysBetween(string $first, string $last): ?array
+    {
+        if ($first > $last) {
+            return null;
+        }
+
+        $this->loadMissing('schedules');
+
+        $overlaps = $this->schedules
+            ->map(fn (Schedule $schedule): array => [
+                max($schedule->startsOn()->toDateString(), $first),
+                min($schedule->endsOn()->toDateString(), $last),
+            ])
+            ->filter(fn (array $range): bool => $range[0] <= $range[1]);
+
+        if ($overlaps->isEmpty()) {
+            return null;
+        }
+
+        return [$overlaps->min(fn (array $range): string => $range[0]), $overlaps->max(fn (array $range): string => $range[1])];
+    }
+
+    /**
      * Whether any day from $first to $last is a working day on this project's
      * schedule. A range it cannot bound is assumed to hold work, so nothing is
-     * hidden on a guess.
+     * hidden or cancelled on a guess.
      */
-    private function worksBetween(?string $first, ?string $last): bool
+    public function hasWorkBetween(?string $first, ?string $last): bool
     {
         if ($first === null || $last === null) {
             return true;
         }
 
-        if ($first > $last) {
-            return false;
+        return $this->workingDaysBetween($first, $last) !== null;
+    }
+
+    /**
+     * The days from $first to $last narrowed to the ones with work in them,
+     * for a label - or the days as they are when they cannot be narrowed.
+     *
+     * @return array{0: ?string, 1: ?string}
+     */
+    private function workedPartOf(?string $first, ?string $last): array
+    {
+        if ($first === null || $last === null) {
+            return [$first, $last];
         }
 
+        return $this->workingDaysBetween($first, $last) ?? [$first, $last];
+    }
+
+    /**
+     * Whether $date ('Y-m-d') is one of this project's scheduled days. A
+     * partial day counts: somebody is on site that date.
+     */
+    public function isScheduledOn(string $date): bool
+    {
         $this->loadMissing('schedules');
 
-        return $this->schedules->contains(fn (Schedule $schedule): bool => $schedule->startsOn()->toDateString() <= $last
-            && $schedule->endsOn()->toDateString() >= $first);
+        return $this->schedules->contains(fn (Schedule $schedule): bool => $schedule->startsOn()->toDateString() <= $date
+            && $schedule->endsOn()->toDateString() >= $date);
+    }
+
+    /**
+     * The first of this project's scheduled days on or after $date, or null
+     * when it has none left.
+     */
+    public function firstScheduledDayFrom(CarbonImmutable $date): ?CarbonImmutable
+    {
+        $this->loadMissing('schedules');
+
+        $day = $date->startOfDay();
+
+        return $this->schedules
+            ->filter(fn (Schedule $schedule): bool => $schedule->endsOn()->gte($day))
+            ->map(fn (Schedule $schedule): CarbonImmutable => $schedule->startsOn()->gt($day) ? $schedule->startsOn() : $day)
+            ->sort()
+            ->first();
     }
 
     /**

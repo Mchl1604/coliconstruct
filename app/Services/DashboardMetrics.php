@@ -527,6 +527,7 @@ class DashboardMetrics
                 ->with(['projectTechnicians.project' => fn ($project) => $project->activeToday()])
                 ->get()
                 ->map(fn (Technician $technician): array => [
+                    'technician_id' => $technician->technician_id,
                     'name' => $technician->name,
                     'role' => $technician->account?->roleLabel() ?? 'Technician',
                     'avatar_url' => $technician->account?->avatarUrl(),

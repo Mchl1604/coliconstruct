@@ -1135,4 +1135,35 @@ class ConfigurationUserManagementTest extends TestCase
         $response->assertSee('Ana B Mendoza');
         $response->assertSee('Electrical Wiring');
     }
+
+    /**
+     * A technician's row leads to their details on the Technicians page; an
+     * administrator's row has no technician record and leads nowhere.
+     */
+    public function test_a_technician_row_links_to_their_details(): void
+    {
+        $account = User::create([
+            'user_code' => 'EMP-0900',
+            'name' => 'Linked Technician',
+            'first_name' => 'Linked',
+            'last_name' => 'Technician',
+            'email' => 'linked.technician@example.test',
+            'role' => 'technician',
+            'status' => User::STATUS_ACTIVE,
+            'password' => 'correct-password',
+        ]);
+
+        $technician = Technician::create(['account_id' => $account->id, 'role' => 'technician']);
+
+        $rows = collect($this->getJson(route('super-admin.configuration.users.employees'))
+            ->assertOk()
+            ->json('rows'));
+
+        $this->assertSame(
+            route('super-admin.technicians.index', ['technician' => $technician->technician_id]),
+            $rows->firstWhere('id', $account->id)['technician_url'],
+        );
+
+        $this->assertNull($rows->firstWhere('role', 'super_admin')['technician_url'] ?? null);
+    }
 }

@@ -744,6 +744,40 @@ document.addEventListener("DOMContentLoaded", function () {
 
     showPendingSpecialtyRequests();
 
+    /**
+     * Arriving from a technician's name somewhere else in the system - see
+     * components/technician-link.blade.php. The link names the technician in
+     * the query string and the page opens straight into their dialog.
+     *
+     * The parameter is taken back off the address once it has been read, so
+     * reloading the page, or coming back to it, lands on the table rather than
+     * reopening a dialog that has already been closed.
+     */
+    function openTechnicianFromQuery() {
+        const params = new URLSearchParams(window.location.search);
+        const wanted = params.get("technician");
+
+        if (!wanted || !/^\d+$/.test(wanted) || !detailsModal) {
+            return;
+        }
+
+        params.delete("technician");
+
+        const query = params.toString();
+
+        window.history.replaceState(
+            null,
+            "",
+            window.location.pathname +
+                (query ? "?" + query : "") +
+                window.location.hash,
+        );
+
+        detailsModal.open(wanted);
+    }
+
+    openTechnicianFromQuery();
+
     // ---------------------------------------------------------------
     // Tab 2 - technician schedules
     // ---------------------------------------------------------------
@@ -1329,6 +1363,40 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
+    /**
+     * Arriving from a "View schedule" button elsewhere - the Edit Assigned
+     * Team dialog on a project. The Schedules tab is opened on the technician
+     * named in `?schedule=`, through the same tab trigger and picker a person
+     * would use, and the parameter is then taken off the address so a reload
+     * lands where the page normally does.
+     */
+    (function openScheduleFromQuery() {
+        const params = new URLSearchParams(window.location.search);
+        const wanted = params.get("schedule");
+
+        if (!wanted || !/^\d+$/.test(wanted)) {
+            return;
+        }
+
+        params.delete("schedule");
+
+        const query = params.toString();
+
+        window.history.replaceState(
+            null,
+            "",
+            window.location.pathname +
+                (query ? "?" + query : "") +
+                window.location.hash,
+        );
+
+        if (window.bootstrap && schedulesTabBtn) {
+            window.bootstrap.Tab.getOrCreateInstance(schedulesTabBtn).show();
+        }
+
+        window.technicianSchedules.show(wanted);
+    })();
+
     // ---------------------------------------------------------------
     // Project details panel (permanent, right-hand column)
     //
@@ -1448,6 +1516,74 @@ document.addEventListener("DOMContentLoaded", function () {
             }
         }
 
+        /** The project's scheduled ranges, as {start, end} 'Y-m-d' pairs. */
+        function scheduleRanges() {
+            return (payload && payload.project && payload.project.ranges) || [];
+        }
+
+        /**
+         * Whether a day is one the project is scheduled on. Only those can be
+         * taken away - the server refuses any other. A project with no
+         * schedule yet has no days to narrow to.
+         */
+        function isScheduledDay(day) {
+            const ranges = scheduleRanges();
+
+            return !ranges.length || ranges.some(function (range) {
+                return range.start <= day && day <= range.end;
+            });
+        }
+
+        /** Grey out every day the project is not scheduled on. */
+        function limitToSchedule(input) {
+            if (!input._flatpickr) {
+                return;
+            }
+
+            const picker = input._flatpickr;
+
+            picker.set("enable", [
+                function (date) {
+                    return isScheduledDay(picker.formatDate(date, "Y-m-d"));
+                },
+            ]);
+        }
+
+        /**
+         * The first scheduled day after $day - when somebody off until then is
+         * next on site. The day after, for a project with no schedule; null
+         * when the schedule has no day left after it.
+         */
+        function nextScheduledDay(day) {
+            const ranges = scheduleRanges();
+            const after = shiftDay(day, 1);
+
+            if (!ranges.length) {
+                return after;
+            }
+
+            return (
+                ranges
+                    .filter(function (range) {
+                        return range.end >= after;
+                    })
+                    .map(function (range) {
+                        return range.start > after ? range.start : after;
+                    })
+                    .sort()[0] || null
+            );
+        }
+
+        /** Whether any scheduled day is left from today onward. */
+        function hasScheduledDaysLeft() {
+            const ranges = scheduleRanges();
+            const today = payload ? payload.min_date : "";
+
+            return !ranges.length || ranges.some(function (range) {
+                return range.end >= today;
+            });
+        }
+
         function renderConfirmLabel() {
             const lead = payload && payload.is_lead;
             const from = effectiveInput.value;
@@ -1464,9 +1600,9 @@ document.addEventListener("DOMContentLoaded", function () {
                       (until === from
                           ? "on " + formatDay(from)
                           : "from " + formatDay(from) + " to " + formatDay(until)) +
-                      " and back on it " +
-                      formatDay(shiftDay(until, 1)) +
-                      "."
+                      (nextScheduledDay(until)
+                          ? " and back on it " + formatDay(nextScheduledDay(until)) + "."
+                          : ", to the end of its schedule.")
                     : "Choose the days they are off.";
 
                 return;
@@ -1839,14 +1975,29 @@ document.addEventListener("DOMContentLoaded", function () {
                 return !item.is_lead;
             });
 
-            leadEl.textContent = lead ? lead.name : "None assigned";
+            // Each name opens that technician's details dialog on this page,
+            // through the same [data-view-technician] handler the table's
+            // View button uses.
+            if (lead) {
+                leadEl.innerHTML =
+                    '<button type="button" class="technician-link" data-view-technician="' +
+                    escapeHtml(String(lead.technician_id)) +
+                    '">' +
+                    escapeHtml(lead.name) +
+                    "</button>";
+            } else {
+                leadEl.textContent = "None assigned";
+            }
+
             supportingEl.innerHTML = supporting.length
                 ? supporting
                       .map(function (item) {
                           return (
-                              '<span class="schedule-tech-chip">' +
+                              '<button type="button" class="schedule-tech-chip technician-link" data-view-technician="' +
+                              escapeHtml(String(item.technician_id)) +
+                              '">' +
                               escapeHtml(item.name) +
-                              "</span>"
+                              "</button>"
                           );
                       })
                       .join("")
@@ -1876,6 +2027,10 @@ document.addEventListener("DOMContentLoaded", function () {
             if (!removing) {
                 setMin(effectiveInput, data.min_date);
                 setMin(untilInput, data.min_date);
+                limitToSchedule(effectiveInput);
+                limitToSchedule(untilInput);
+                // The server defaults From to the project's next scheduled
+                // day, so both open on a day that can actually be picked.
                 setDay(effectiveInput, data.from);
                 setDay(untilInput, data.until || data.from);
             }
@@ -1925,6 +2080,22 @@ document.addEventListener("DOMContentLoaded", function () {
         function renderRemoval() {
             removing = true;
             hideConflicts();
+
+            // Nothing on the calendar from today on means nothing to take
+            // away here, whichever mode is chosen.
+            if (!hasScheduledDaysLeft()) {
+                leadPanelEl.classList.add("d-none");
+                confirmBtn.disabled = true;
+                renderConfirmLabel();
+                setAlert(
+                    removalErrorEl,
+                    "This project has no scheduled days left to remove. To take " +
+                        selectedTechnician.name +
+                        " off it, use Assigned Team on the project.",
+                );
+
+                return;
+            }
 
             if (payload.is_lead) {
                 renderLeadOptions();

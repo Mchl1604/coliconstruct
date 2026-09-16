@@ -10,6 +10,7 @@ use App\Models\Task;
 use App\Models\Technician;
 use App\Models\User;
 use App\Policies\ProjectPolicy;
+use App\Services\ProjectTeam;
 use App\Services\SystemReportService;
 use App\Services\TaskAssignmentRules;
 use App\Services\TechnicianAvailabilityService;
@@ -910,12 +911,147 @@ class ScheduledTeamChangeTest extends TestCase
         $this->assertSame([], $project->scheduledChangesFor((int) $mary->technician_id));
     }
 
+    /**
+     * The running project's booking cut into three ranges - A to day 4, B from
+     * day 6 to day 10, C from day 12 - with a gap day either side of B.
+     *
+     * @return array{0: Schedule, 1: Schedule, 2: Schedule}
+     */
+    private function threeRanges(Project $project, Schedule $schedule): array
+    {
+        $schedule->update(['end_datetime' => $this->day(4).' 23:59:59']);
+
+        $made = [$schedule];
+
+        foreach ([[6, 10], [12, 30]] as [$from, $to]) {
+            $range = Schedule::create([
+                'project_id' => $project->project_id,
+                'start_datetime' => $this->day($from).' 00:00:00',
+                'end_datetime' => $this->day($to).' 23:59:59',
+                'status' => 'scheduled',
+                'remarks' => 'Range',
+            ]);
+
+            app(ProjectTeam::class)->linkScheduleToTeam($range, $project->fresh());
+
+            $made[] = $range;
+        }
+
+        return $made;
+    }
+
+    /**
+     * Resubmit the project's schedule as these ranges, the way the Schedules
+     * editor does - a range left out is given up.
+     *
+     * @param  array<int, array{0: ?Schedule, 1: int, 2: int}>  $ranges
+     */
+    private function saveRanges(Project $project, array $ranges)
+    {
+        return $this->put(route('super-admin.schedules.update', $project->project_id), [
+            'ranges' => array_map(fn (array $range): array => array_filter([
+                'schedule_id' => $range[0]?->schedule_id,
+                'scheduling_mode' => Schedule::MODE_DATE_BASED,
+                'start_date' => $this->day($range[1]),
+                'end_date' => $this->day($range[2]),
+            ]), $ranges),
+        ]);
+    }
+
+    public function test_days_off_whose_range_is_removed_are_cancelled_and_do_not_come_back(): void
+    {
+        [$project, , $ana, $schedule] = $this->runningProject();
+        [$a, $b, $c] = $this->threeRanges($project, $schedule);
+
+        $this->daysOff($project, $ana, $this->day(6), $this->day(10))->assertOk();
+        $this->assertCount(2, $this->spansOf($project, $ana));
+
+        // B given up: the days off hold no working day now.
+        $this->saveRanges($project, [[$a, -7, 4], [$c, 12, 30]])->assertSessionHas('success');
+
+        $spans = $this->spansOf($project, $ana);
+        $this->assertCount(1, $spans);
+        $this->assertNull($spans->first()->removed_at);
+        $this->assertDatabaseHas('tbl_notifications', [
+            'user_id' => $ana->account_id,
+            'title' => 'Days Off Cancelled',
+        ]);
+
+        // Putting the dates back books her on them - no days off return.
+        $this->saveRanges($project, [[$a, -7, 4], [null, 6, 10], [$c, 12, 30]])->assertSessionHas('success');
+
+        $project = $project->fresh();
+        $this->assertSame([], $project->scheduledChangesFor((int) $ana->technician_id));
+        $this->assertContains($ana->technician_id, $this->crewOn($project, 8));
+    }
+
+    public function test_a_stand_in_whose_days_are_all_removed_is_taken_off(): void
+    {
+        [$project, $john, , $schedule] = $this->runningProject();
+        $mary = $this->technician('Mary Santos', 'lead_technician');
+        [$a, $b, $c] = $this->threeRanges($project, $schedule);
+
+        $this->daysOff($project, $john, $this->day(6), $this->day(10), $mary)->assertOk();
+
+        $this->saveRanges($project, [[$a, -7, 4], [$c, 12, 30]])->assertSessionHas('success');
+
+        $this->assertCount(1, $this->spansOf($project, $john));
+        $this->assertCount(0, $this->spansOf($project, $mary));
+        $this->assertFalse($project->fresh()->upcomingTechnicians->contains('technician_id', $mary->technician_id));
+        $this->assertDatabaseHas('tbl_notifications', [
+            'user_id' => $mary->account_id,
+            'title' => 'Stand-in Lead Cancelled',
+        ]);
+    }
+
+    public function test_days_off_across_two_ranges_keep_the_part_with_work_and_say_so(): void
+    {
+        [$project, , $ana, $schedule] = $this->runningProject();
+        [$a, $b, $c] = $this->threeRanges($project, $schedule);
+
+        // Day 3 to day 8: the end of A, the gap day, the start of B.
+        $this->daysOff($project, $ana, $this->day(3), $this->day(8))->assertOk();
+
+        // B given up: days 3 and 4 still have work in them.
+        $this->saveRanges($project, [[$a, -7, 4], [$c, 12, 30]])->assertSessionHas('success');
+
+        $project = $project->fresh();
+
+        $this->assertCount(2, $this->spansOf($project, $ana));
+        $this->assertSame(
+            ['Days off '.$this->label(3).' - '.$this->label(4), 'Returns '.$this->label(12)],
+            array_map(fn (array $change): string => $change['title'].' '.$change['when'], $project->scheduledChangesFor((int) $ana->technician_id))
+        );
+    }
+
+    public function test_removing_the_last_working_date_of_days_off_cancels_them(): void
+    {
+        [$project, , $ana, $schedule] = $this->runningProject();
+        [$a, $b, $c] = $this->threeRanges($project, $schedule);
+
+        // Days 9 and 10, the last two days of B.
+        $this->daysOff($project, $ana, $this->day(9), $this->day(10))->assertOk();
+
+        $this->deleteJson(route('super-admin.schedules.dates.destroy', ['schedule' => $b->schedule_id, 'date' => $this->day(10)]))->assertOk();
+        $this->assertCount(2, $this->spansOf($project, $ana));
+
+        $b = Schedule::query()->where('project_id', $project->project_id)->whereDate('start_datetime', $this->day(6))->firstOrFail();
+
+        $this->deleteJson(route('super-admin.schedules.dates.destroy', ['schedule' => $b->schedule_id, 'date' => $this->day(9)]))->assertOk();
+        $this->assertCount(1, $this->spansOf($project, $ana));
+    }
+
     public function test_days_off_on_no_working_day_are_not_listed(): void
     {
         [$project, $john, $ana, $schedule] = $this->runningProject();
         $mary = $this->technician('Mary Santos', 'lead_technician');
 
-        // A gap in the schedule from day 5 to day 9.
+        // Booked on working days...
+        $this->daysOff($project, $ana, $this->day(6), $this->day(8))->assertOk();
+        $this->daysOff($project, $john, $this->day(5), $this->day(9), $mary)->assertOk();
+
+        // ...which are then taken off the schedule, leaving a gap from day 5
+        // to day 9.
         $schedule->update(['end_datetime' => $this->day(4).' 23:59:59']);
         Schedule::create([
             'project_id' => $project->project_id,
@@ -924,9 +1060,6 @@ class ScheduledTeamChangeTest extends TestCase
             'status' => 'scheduled',
             'remarks' => 'After the gap',
         ]);
-
-        $this->daysOff($project, $ana, $this->day(6), $this->day(8))->assertOk();
-        $this->daysOff($project, $john, $this->day(5), $this->day(9), $mary)->assertOk();
 
         $project = $project->fresh();
 
@@ -941,6 +1074,49 @@ class ScheduledTeamChangeTest extends TestCase
             ['Days off', 'Returns'],
             array_column($project->fresh()->scheduledChangesFor((int) $ana->technician_id), 'title')
         );
+    }
+
+    public function test_only_the_projects_scheduled_days_can_be_removed(): void
+    {
+        [$project, $john, $ana, $schedule] = $this->runningProject();
+
+        // Scheduled to day 4, then again from day 10.
+        $schedule->update(['end_datetime' => $this->day(4).' 23:59:59']);
+        Schedule::create([
+            'project_id' => $project->project_id,
+            'start_datetime' => $this->day(10).' 00:00:00',
+            'end_datetime' => $this->day(30).' 23:59:59',
+            'status' => 'scheduled',
+            'remarks' => 'After the gap',
+        ]);
+
+        $this->daysOff($project, $ana, $this->day(6), $this->day(12))
+            ->assertStatus(422)
+            ->assertJsonPath('error', $this->label(6).' is not a scheduled day on Warehouse Fit-out. Choose one of its scheduled days.');
+
+        $this->daysOff($project, $ana, $this->day(3), $this->day(7))
+            ->assertStatus(422)
+            ->assertJsonPath('error', $this->label(7).' is not a scheduled day on Warehouse Fit-out. Choose one of its scheduled days.');
+
+        $this->removeFrom($project, $ana, $this->day(31))->assertStatus(422);
+
+        // Across the gap is fine: both ends are working days.
+        $this->daysOff($project, $ana, $this->day(3), $this->day(10))->assertOk();
+    }
+
+    public function test_the_panel_opens_on_the_projects_next_scheduled_day(): void
+    {
+        [$project, $john, $ana, $schedule] = $this->runningProject();
+
+        // Nothing scheduled until day 10.
+        $schedule->update([
+            'start_datetime' => $this->day(10).' 00:00:00',
+            'end_datetime' => $this->day(20).' 23:59:59',
+        ]);
+
+        $this->getJson(route('super-admin.technicians.assignment', [$ana->technician_id, $project->project_id]))
+            ->assertOk()
+            ->assertJsonPath('from', $this->day(10));
     }
 
     public function test_one_day_off_is_named_as_one_day(): void

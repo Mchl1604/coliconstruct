@@ -175,12 +175,10 @@
 
                         <span class="fw-bold me-4 mb-3 project-reference">{{ $project->reference_no }}</span>
 
+                        {{-- The reference number above is the only identifier a
+                             technician is shown; the internal project ID is an
+                             administrator's label. --}}
                         <div class="text-muted">
-                            <span class="me-2">
-                                <i class="bi bi-file-earmark-text text-brand-blue" aria-hidden="true"></i>
-                                Project ID: {{ $project->displayCode() }}
-                            </span>
-
                             <span>
                                 <i class="bi bi-geo-alt text-brand-blue" aria-hidden="true"></i>
                                 {{ $project->address }}

@@ -359,7 +359,7 @@ class TechnicianController extends Controller
             'phases',
         ]);
 
-        [$mode, $from, $until] = $this->removalDays($request);
+        [$mode, $from, $until] = $this->removalDays($request, $project);
 
         $spans = $project->teamHistory
             ->filter(fn (ProjectTechnician $span): bool => (int) $span->technician_id === (int) $technician->technician_id
@@ -465,7 +465,7 @@ class TechnicianController extends Controller
             return response()->json(['error' => $validator->errors()->first()], 422);
         }
 
-        [$mode, $from, $until] = $this->removalDays($request);
+        [$mode, $from, $until] = $this->removalDays($request, $project);
         $replacementLeadId = $validator->validated()['replacement_lead_id'] ?? null;
         $change = app(ProjectTeamChange::class);
         $actorId = $request->user()?->id;
@@ -490,6 +490,21 @@ class TechnicianController extends Controller
 
             if ($mode === 'days' && ($until === null || $until->lt($from))) {
                 throw new RuntimeException('Choose the last day they are off, on or after the first.');
+            }
+
+            // Only the project's own scheduled days can be taken away - a day
+            // nobody is booked on site has nothing to remove. A project with no
+            // schedule yet has no days to hold anybody to.
+            if ($project->schedules->isNotEmpty()) {
+                foreach (array_filter([$from, $until]) as $chosen) {
+                    if (! $project->isScheduledOn($chosen->toDateString())) {
+                        throw new RuntimeException(sprintf(
+                            '%s is not a scheduled day on %s. Choose one of its scheduled days.',
+                            $chosen->format(BusinessTime::DATE),
+                            $project->name
+                        ));
+                    }
+                }
             }
 
             $theirs = $project->teamHistory
@@ -611,7 +626,7 @@ class TechnicianController extends Controller
      *
      * @return array{0: string, 1: CarbonImmutable, 2: ?CarbonImmutable}
      */
-    private function removalDays(Request $request): array
+    private function removalDays(Request $request, Project $project): array
     {
         $day = function (mixed $value): ?CarbonImmutable {
             return is_string($value) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)
@@ -620,7 +635,12 @@ class TechnicianController extends Controller
         };
 
         $mode = $request->input('mode') === 'days' ? 'days' : 'from';
-        $from = $day($request->input('from')) ?? $day($request->input('effective_date')) ?? Schedule::businessToday();
+        // Asked of nothing, the first day that can be taken away: the
+        // project's next scheduled day from today, or today when it has none.
+        $from = $day($request->input('from'))
+            ?? $day($request->input('effective_date'))
+            ?? $project->firstScheduledDayFrom(Schedule::businessToday())
+            ?? Schedule::businessToday();
         $until = $mode === 'days' ? ($day($request->input('until')) ?? $from) : null;
 
         return [$mode, $from, $until];

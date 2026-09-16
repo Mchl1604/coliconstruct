@@ -148,14 +148,35 @@
 
                 <ul class="dash-people">
                     @forelse ($activeTechnicians as $person)
+                        @php
+                            // Opens the person's details on the Technicians
+                            // page. Read defensively: a panel cached before
+                            // the id was part of the row simply does not link
+                            // until the cache turns over.
+                            $personUrl = isset($person['technician_id'])
+                                ? route('super-admin.technicians.index', ['technician' => $person['technician_id']])
+                                : null;
+                        @endphp
                         <li>
                             @if ($person['avatar_url'])
-                                <img class="user-avatar user-avatar-md" src="{{ $person['avatar_url'] }}" alt=""
-                                    loading="lazy">
+                                @if ($personUrl)
+                                    <a href="{{ $personUrl }}" class="technician-link" tabindex="-1" aria-hidden="true">
+                                        <img class="user-avatar user-avatar-md" src="{{ $person['avatar_url'] }}" alt=""
+                                            loading="lazy">
+                                    </a>
+                                @else
+                                    <img class="user-avatar user-avatar-md" src="{{ $person['avatar_url'] }}" alt=""
+                                        loading="lazy">
+                                @endif
                             @endif
 
                             <span class="dash-person-body">
-                                <span class="dash-person-name">{{ $person['name'] }}</span>
+                                @if ($personUrl)
+                                    <a href="{{ $personUrl }}" class="dash-person-name technician-link"
+                                        title="View {{ $person['name'] }}'s details">{{ $person['name'] }}</a>
+                                @else
+                                    <span class="dash-person-name">{{ $person['name'] }}</span>
+                                @endif
                                 <span class="dash-person-role">{{ $person['role'] }}</span>
                             </span>
 

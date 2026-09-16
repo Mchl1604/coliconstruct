@@ -110,7 +110,7 @@
                                         <i class="bi bi-search" aria-hidden="true"></i>
                                     </span>
                                     <input type="search" class="form-control" id="projectSearch"
-                                        placeholder="Search ID, reference, type, client or address&hellip;"
+                                        placeholder="Search reference, type, client or address&hellip;"
                                         data-project-search>
                                 </div>
                             </div>

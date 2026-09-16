@@ -69,11 +69,11 @@ class ProjectController extends Controller
     private const REOPEN_PICKER_HORIZON_MONTHS = 24;
 
     /**
-     * How many entries a page of the Activity Logs section on Project
-     * Information holds. Ten, the same as every other paginated table in the
-     * system - see ConfigurationController::PER_PAGE.
+     * The query parameter that says how many entries a page of the Activity
+     * Logs section on Project Information holds. Ten unless the reader asks
+     * for another number - see ActivityLog::perPage().
      */
-    private const PROJECT_ACTIVITY_PER_PAGE = 10;
+    private const PROJECT_ACTIVITY_PER_PAGE_NAME = 'activity_per_page';
 
     /**
      * The query parameter that section pages on.
@@ -1496,7 +1496,7 @@ class ProjectController extends Controller
             ->visibleTo($request->user())
             ->latestFirst()
             ->paginate(
-                self::PROJECT_ACTIVITY_PER_PAGE,
+                ActivityLog::perPage($request->query(self::PROJECT_ACTIVITY_PER_PAGE_NAME)),
                 ['*'],
                 self::PROJECT_ACTIVITY_PAGE_NAME
             )
@@ -2874,9 +2874,15 @@ class ProjectController extends Controller
             ...$scheduleRules->rules(),
         ], $scheduleRules->messages());
 
+        $releasedDaysOff = [];
+
         try {
-            DB::transaction(function () use ($recovery, $project, $validated, $context): void {
+            DB::transaction(function () use ($recovery, $project, $validated, $context, &$releasedDaysOff): void {
                 $outcome = $recovery->resolveRange($project, $validated);
+
+                // A range moved or given up here can leave days off with no
+                // working day in them, exactly as on the schedules page.
+                $releasedDaysOff = app(ProjectTeamChange::class)->cancelDaysOffWithoutWork($project);
 
                 $this->activityLogger->record(
                     ActivityLog::PROJECT_RESCHEDULED,
@@ -2907,6 +2913,8 @@ class ProjectController extends Controller
                 'error' => $this->safeErrorMessage($e, 'Unable to change that schedule range. Nothing was changed.'),
             ], 422);
         }
+
+        app(ProjectTeamChange::class)->notifyDaysOffWithoutWork($project, $releasedDaysOff);
 
         return response()->json(
             $recovery->report($project->fresh(['schedules', 'projectTechnicians']), $flow)

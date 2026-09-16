@@ -253,7 +253,7 @@
                         <div>
                             <h6 class="config-table-title mb-0">
                                 <i class="bi bi-clock-history me-1" aria-hidden="true"></i>
-                                Audit Trail
+                                
                             </h6>
                             <span class="text-secondary small" data-log-count></span>
                         </div>
@@ -278,6 +278,18 @@
                                     <option value="{{ $module }}">{{ $module }}</option>
                                 @endforeach
                             </select>
+
+                            {{-- How many entries one page of the table holds.
+                                 Kept in range by configuration.js before it is
+                                 sent, and by the server again after. --}}
+                            <div class="config-per-page">
+                                <label class="small text-secondary mb-0" for="logPerPage">Show</label>
+                                <input type="number" class="form-control form-control-sm" id="logPerPage"
+                                    min="1" max="{{ \App\Models\ActivityLog::MAX_PER_PAGE }}" step="1"
+                                    value="{{ \App\Models\ActivityLog::DEFAULT_PER_PAGE }}"
+                                    inputmode="numeric" aria-describedby="logPerPageHint" data-log-per-page>
+                                <span class="small text-secondary" id="logPerPageHint">entries</span>
+                            </div>
 
                             <select class="form-select form-select-sm config-filter" aria-label="Filter by date"
                                 data-log-range>

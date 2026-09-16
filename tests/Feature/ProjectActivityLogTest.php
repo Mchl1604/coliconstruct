@@ -555,4 +555,64 @@ class ProjectActivityLogTest extends TestCase
             ->assertSee('What the technician did.')
             ->assertDontSee('What the other administrator did.');
     }
+
+    /**
+     * The reader chooses how many entries a page of the section holds, and
+     * the choice is kept inside what the tables allow.
+     */
+    public function test_the_section_shows_as_many_entries_as_the_reader_asks_for(): void
+    {
+        $project = $this->createProject('REF-ACT-30');
+
+        foreach (range(1, 12) as $number) {
+            $this->log('Project', $project->project_id, "Entry number {$number} happened.");
+        }
+
+        $url = route('super-admin.projects.show', $project->project_id);
+
+        $this->get($url.'?activity_per_page=5')
+            ->assertOk()
+            ->assertSee('Page 1 of 3')
+            ->assertSee('name="activity_per_page"', false)
+            ->assertSee('value="5"', false);
+
+        $this->get($url.'?activity_per_page=50')
+            ->assertOk()
+            ->assertSee('Page 1 of 1')
+            ->assertSee('Entry number 1 happened.')
+            ->assertSee('Entry number 12 happened.');
+
+        // Out of range, or not a number: the default ten, not an error.
+        $this->get($url.'?activity_per_page=0')->assertOk()->assertSee('Page 1 of 2');
+        $this->get($url.'?activity_per_page=abc')->assertOk()->assertSee('Page 1 of 2');
+    }
+
+    /**
+     * The Activity Logs page on Configuration takes the same choice, and
+     * refuses a number outside it rather than drawing an enormous page.
+     */
+    public function test_the_activity_logs_page_shows_as_many_entries_as_asked_for(): void
+    {
+        $project = $this->createProject('REF-ACT-31');
+
+        foreach (range(1, 12) as $number) {
+            $this->log('Project', $project->project_id, "Entry number {$number} happened.");
+        }
+
+        $route = route('super-admin.configuration.activity-logs');
+
+        $this->getJson($route.'?per_page=5')
+            ->assertOk()
+            ->assertJsonCount(5, 'rows');
+
+        $this->getJson($route)
+            ->assertOk()
+            ->assertJsonCount(10, 'rows');
+
+        $this->getJson($route.'?per_page='.(ActivityLog::MAX_PER_PAGE + 1))
+            ->assertStatus(422);
+
+        $this->getJson($route.'?per_page=0')
+            ->assertStatus(422);
+    }
 }

@@ -1145,6 +1145,124 @@ class ProjectTeamChange
         return ['removals' => $removals, 'starts' => $starts];
     }
 
+    /**
+     * Cancel days off - and the stand-in covering a lead through them - that
+     * no longer hold a single working day, after the project's schedule has
+     * changed underneath them.
+     *
+     * Days off only mean anything on days there is work to be off from. Once
+     * the schedule gives up every one of them, what is left is a gap in the
+     * technician's membership over empty dates: invisible on every screen, but
+     * still there, so that putting those dates back would quietly bring the
+     * days off back with them and re-book a stand-in nobody remembers. So the
+     * gap is closed as though the days off had been cancelled: the technician's
+     * two spans are folded back into one and the cover is removed.
+     *
+     * Days off partly on working days are left as booked - only how they are
+     * shown is narrowed, see Project::scheduledChangeLabel() - and days off
+     * that are already over are history and left alone.
+     *
+     * No rules are asked: a gap with no working day in it gives nobody back
+     * any work, so there is nothing for availability or the one-lead rule to
+     * refuse.
+     *
+     * @return array<int, array{technician: ?Technician, from: CarbonImmutable, until: CarbonImmutable, cover: bool}>
+     *                                                                                                                who to tell, and about what
+     */
+    public function cancelDaysOffWithoutWork(Project $project): array
+    {
+        $released = [];
+        $today = ProjectTechnician::today();
+
+        // One fold can make the next pair of spans an idle gap too, so ask
+        // again until nothing is left to fold. Bounded, because a loop over
+        // stored data should never be able to run away.
+        for ($pass = 0; $pass < 20; $pass++) {
+            $project->unsetRelation('schedules');
+            $project->load(['schedules', 'teamHistory.technician.account']);
+
+            $spans = $project->teamHistory
+                ->reject(fn (ProjectTechnician $span): bool => $span->isEmptySpan())
+                ->values();
+
+            $idle = null;
+
+            foreach ($spans->groupBy('technician_id') as $theirs) {
+                $ordered = $theirs->sortBy(fn (ProjectTechnician $span): string => (string) $span->startDate())->values();
+
+                for ($i = 0; $i < $ordered->count() - 1; $i++) {
+                    $off = $ordered[$i];
+                    $back = $ordered[$i + 1];
+
+                    if ($off->endDate() === null || $back->startDate() === null
+                        || $back->startDate() <= $off->endDate()
+                        || $back->startDate() <= $today) {
+                        continue;
+                    }
+
+                    $lastDayOff = CarbonImmutable::parse($back->startDate())->subDay()->toDateString();
+
+                    if ($project->hasWorkBetween($off->endDate(), $lastDayOff)) {
+                        continue;
+                    }
+
+                    $idle = [$off, $back, $lastDayOff];
+
+                    break 2;
+                }
+            }
+
+            if ($idle === null) {
+                break;
+            }
+
+            [$off, $back, $lastDayOff] = $idle;
+
+            $covers = $spans->filter(fn (ProjectTechnician $other): bool => (int) $other->technician_id !== (int) $off->technician_id
+                && $other->heldLeadRole()
+                && $off->heldLeadRole()
+                && $other->startDate() === $off->endDate()
+                && $other->endDate() === $back->startDate());
+
+            $from = CarbonImmutable::parse($off->endDate());
+            $until = CarbonImmutable::parse($lastDayOff);
+
+            $this->team->cancelRemoval($project, $off, $back->endDate());
+            $this->team->cancelStart($back);
+
+            $released[] = ['technician' => $off->technician, 'from' => $from, 'until' => $until, 'cover' => false];
+
+            foreach ($covers as $cover) {
+                $this->team->cancelStart($cover);
+                $released[] = ['technician' => $cover->technician, 'from' => $from, 'until' => $until, 'cover' => true];
+            }
+        }
+
+        $project->unsetRelation('teamHistory');
+        $project->unsetRelation('projectTechnicians');
+        $project->unsetRelation('rosterTechnicians');
+        $project->unsetRelation('upcomingTechnicians');
+
+        return $released;
+    }
+
+    /**
+     * Tell whoever cancelDaysOffWithoutWork() released. Separate so a caller
+     * can send it once its transaction has committed.
+     *
+     * @param  array<int, array{technician: ?Technician, from: CarbonImmutable, until: CarbonImmutable, cover: bool}>  $released
+     */
+    public function notifyDaysOffWithoutWork(Project $project, array $released): void
+    {
+        $notifications = app(NotificationService::class);
+
+        foreach ($released as $entry) {
+            if ($account = $entry['technician']?->account) {
+                $notifications->daysOffCancelledByScheduleChange($project, $account, $entry['from'], $entry['until'], $entry['cover']);
+            }
+        }
+    }
+
     // ------------------------------------------------------------------
     // Internals
     // ------------------------------------------------------------------

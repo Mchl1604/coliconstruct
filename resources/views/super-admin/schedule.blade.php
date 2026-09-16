@@ -656,11 +656,15 @@
                                 @forelse ($project->projectTechnicians as $projectTechnician)
                                     @continue(! $projectTechnician->technician)
 
-                                    <span class="schedule-tech-chip">
+                                    {{-- A view, not an editor, so a name can
+                                         lead off to the technician's details
+                                         without losing anything unsaved. --}}
+                                    <x-technician-link :technician="$projectTechnician->technician"
+                                        class="schedule-tech-chip">
                                         <x-user-avatar :user="$projectTechnician->technician->account"
                                             size="xs" class="me-1" />
                                         {{ $projectTechnician->technician->name }}
-                                    </span>
+                                    </x-technician-link>
                                 @empty
                                     <span class="text-muted small">No technicians assigned</span>
                                 @endforelse

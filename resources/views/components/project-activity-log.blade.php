@@ -13,10 +13,15 @@
     Configuration - this is a view onto that trail narrowed to one job, not a
     second record of it. Nothing here writes anything.
 
-    Deliberately plain: date, who, what, a page at a time. The filters, the
-    sorting and the export belong to the full page, and duplicating them here
-    would be a second thing to keep in step with no reader asking for it.
+    Deliberately plain: date, who, what, a page at a time, with a choice of how
+    many entries a page holds. The filters, the sorting and the export belong
+    to the full page, and duplicating them here would be a second thing to keep
+    in step with no reader asking for it.
 --}}
+
+@php
+    $perPageName = 'activity_per_page';
+@endphp
 <div class="card shadow-sm project-activity-log" id="project-activity-log">
 
     <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -33,6 +38,27 @@
                 @endunless
             </span>
         </div>
+
+        {{-- How many entries a page holds. A GET form, so projectWorkspace.js
+             redraws the section in place and the address keeps the choice.
+             Whatever else the page was asked for travels along as hidden
+             fields; the page number does not, because page 4 of ten-a-page
+             is not page 4 of fifty. --}}
+        <form method="GET" action="{{ url()->current() }}#project-activity-log"
+            class="project-activity-per-page d-flex align-items-center gap-2">
+            @foreach (request()->except([$perPageName, $logs->getPageName()]) as $name => $value)
+                @if (is_scalar($value))
+                    <input type="hidden" name="{{ $name }}" value="{{ $value }}">
+                @endif
+            @endforeach
+
+            <label class="small text-secondary mb-0" for="projectActivityPerPage">Show</label>
+            <input type="number" class="form-control form-control-sm" id="projectActivityPerPage"
+                name="{{ $perPageName }}" min="1" max="{{ \App\Models\ActivityLog::MAX_PER_PAGE }}" step="1"
+                value="{{ $logs->perPage() }}" inputmode="numeric" style="width: 4.5rem"
+                onchange="this.form.requestSubmit()">
+            <span class="small text-secondary">entries</span>
+        </form>
 
     </div>
 

@@ -114,6 +114,26 @@ class TechnicianReport extends Model
     }
 
     /**
+     * The technician record behind submitterName(), when it names one.
+     *
+     * Null when the report was filed by an administrator, whose name has no
+     * technician's details to open. A report from before `submitted_by`
+     * existed was filed by the technician it is about.
+     */
+    public function submitterTechnician(): ?Technician
+    {
+        if (! $this->technician) {
+            return null;
+        }
+
+        if ($this->submitter && (int) $this->submitter->id !== (int) $this->technician->account_id) {
+            return null;
+        }
+
+        return $this->technician;
+    }
+
+    /**
      * The picture to show beside submitterName(), from the same account.
      *
      * Null only when nobody can be identified; a report is always filed by

@@ -46,6 +46,31 @@ class ActivityLog extends Model
     public const MODULE_CONFIGURATION = 'Configuration';
 
     /**
+     * How many entries a reader may ask to see on one page of an activity
+     * log - the Activity Logs page on Configuration and the section on a
+     * project alike. Ten is what either shows until somebody asks otherwise.
+     */
+    public const DEFAULT_PER_PAGE = 10;
+
+    public const MAX_PER_PAGE = 100;
+
+    /**
+     * A requested page size, kept inside what the tables allow. Anything that
+     * is not a whole number in range falls back to the default rather than
+     * refusing the page - this is a display preference, not data.
+     */
+    public static function perPage(mixed $requested): int
+    {
+        $value = filter_var($requested, FILTER_VALIDATE_INT);
+
+        if ($value === false || $value < 1) {
+            return self::DEFAULT_PER_PAGE;
+        }
+
+        return min($value, self::MAX_PER_PAGE);
+    }
+
+    /**
      * Every module the filter offers, in the order it lists them. Inventory and
      * Purchase Orders are here before those modules exist so the audit trail is
      * ready for them.

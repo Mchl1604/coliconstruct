@@ -367,7 +367,6 @@ class PublicSiteController extends Controller
     private function searchText(Project $project, ?string $clientName): string
     {
         return mb_strtolower(collect([
-            $project->project_id,
             $project->reference_no,
             $project->name,
             $project->projectTypes->pluck('type_name')->implode(' '),

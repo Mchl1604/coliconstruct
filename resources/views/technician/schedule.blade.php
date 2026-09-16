@@ -110,11 +110,6 @@
                         <h5 class="panel-project-name" data-panel-name></h5>
 
                         <div class="panel-meta">
-                            <i class="bi bi-hash" aria-hidden="true"></i>
-                            <span>Project ID: <span data-panel-id></span></span>
-                        </div>
-
-                        <div class="panel-meta">
                             <i class="bi bi-person" aria-hidden="true"></i>
                             <span data-panel-client></span>
                         </div>

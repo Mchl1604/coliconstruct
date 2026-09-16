@@ -348,7 +348,7 @@ class ConfigurationController extends Controller
         $page = $this->activityLogQuery($request, $filters)
             ->orderBy(...$this->activityLogOrder($filters))
             ->orderByDesc('activity_log_id')
-            ->paginate(self::PER_PAGE)
+            ->paginate(ActivityLog::perPage($filters['per_page'] ?? null))
             ->withQueryString();
 
         return response()->json([
@@ -473,7 +473,13 @@ class ConfigurationController extends Controller
             'sort' => ['nullable', 'string', Rule::in(array_keys(self::LOG_SORTS))],
             'direction' => ['nullable', 'string', Rule::in(['asc', 'desc'])],
             'page' => ['nullable', 'integer', 'min:1'],
+            // How many entries the table shows at once, from the field beside
+            // its filters.
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:'.ActivityLog::MAX_PER_PAGE],
         ], [
+            'per_page.max' => 'Show at most '.ActivityLog::MAX_PER_PAGE.' entries at once.',
+            'per_page.min' => 'Show at least 1 entry at once.',
+            'per_page.integer' => 'The number of entries to show must be a whole number.',
             'from.required' => 'Choose the date to export from.',
             'to.required' => 'Choose the date to export to.',
             'to.after_or_equal' => 'The To date cannot be before the From date.',
@@ -1047,6 +1053,11 @@ class ConfigurationController extends Controller
             // makes the listing fall back to initials for a client.
             'avatar_url' => $user->avatarUrl(),
             'initials' => $user->initials(),
+            // A technician's name opens their details on the Technicians page.
+            // Null for every other employee, whose name has nothing to open.
+            'technician_url' => $user->technician
+                ? route('super-admin.technicians.index', ['technician' => $user->technician->technician_id])
+                : null,
         ];
     }
 

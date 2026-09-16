@@ -32,6 +32,17 @@
     min-width: 9rem;
 }
 
+/* "Show [10] entries" beside the filters. */
+.config-per-page {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.config-per-page .form-control {
+    width: 4.5rem;
+}
+
 /* On a phone the controls get the full width rather than three cramped
    columns squeezed onto one line. */
 @media (max-width: 575.98px) {

@@ -857,6 +857,7 @@ class ScheduleController extends Controller
         $overrode = false;
         $corrected = [];
         $confirmedConflicts = [];
+        $releasedDaysOff = [];
 
         try {
             DB::transaction(function () use (
@@ -869,7 +870,8 @@ class ScheduleController extends Controller
                 $storedLabels,
                 &$overrode,
                 &$corrected,
-                &$confirmedConflicts
+                &$confirmedConflicts,
+                &$releasedDaysOff
             ): void {
                 $ranges = $this->resolveSubmittedRanges(
                     $project,
@@ -1047,11 +1049,17 @@ class ScheduleController extends Controller
                 // shape that was actually stored.
                 app(ScheduleConsolidation::class)->consolidate($project);
 
+                // Days off left with no working day in them are cancelled, so
+                // putting those dates back later cannot quietly bring them back.
+                $releasedDaysOff = app(ProjectTeamChange::class)->cancelDaysOffWithoutWork($project);
+
                 $this->syncTaskDatesWithSchedule($project);
                 // Status follows the dates in every direction: given up
                 // entirely, moved forward, or moved into the past.
                 $this->syncStatusWithSchedule($project);
             });
+
+            app(ProjectTeamChange::class)->notifyDaysOffWithoutWork($project, $releasedDaysOff);
 
             $project->unsetRelation('schedules');
             $stored = $project->schedules()->orderBy('start_datetime')->get();
@@ -1405,19 +1413,24 @@ class ScheduleController extends Controller
 
         $removal = app(ScheduleDateRemoval::class);
         $clearedTasks = collect();
+        $releasedDaysOff = [];
 
         // Read before anything moves, so the log can say what changed.
         $labelsBefore = $this->scheduleLabels($project->schedules);
         $label = $day->format(BusinessTime::DATE);
 
         try {
-            DB::transaction(function () use ($project, $schedule, $day, $removal, $mayOverrideLock, &$clearedTasks): void {
+            DB::transaction(function () use ($project, $schedule, $day, $removal, $mayOverrideLock, &$clearedTasks, &$releasedDaysOff): void {
                 $this->assertDateRemovable($project);
                 $this->assertDayRemovable($day, $mayOverrideLock);
 
                 $removal->remove($schedule, $day);
 
                 $project->unsetRelation('schedules');
+
+                // The same as a reschedule: days off with no working day left
+                // in them are cancelled.
+                $releasedDaysOff = app(ProjectTeamChange::class)->cancelDaysOffWithoutWork($project);
 
                 // A task can only sit inside a date the project still holds,
                 // which is the same rule a reschedule applies - so it is the
@@ -1462,6 +1475,7 @@ class ScheduleController extends Controller
 
         $this->notifications->projectScheduleChanged($project, $rangesAfter);
         $this->notifications->taskDatesCleared($project, $clearedTasks);
+        app(ProjectTeamChange::class)->notifyDaysOffWithoutWork($project, $releasedDaysOff);
 
         return response()->json([
             'message' => sprintf('%s was removed from %s.', $label, $project->name),

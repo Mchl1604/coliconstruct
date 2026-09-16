@@ -133,11 +133,15 @@
                                              nobody to show. --}}
                                         <div class="d-flex align-items-center gap-2">
                                             @if ($task->technician?->account)
-                                                <x-user-avatar :user="$task->technician->account" size="xs" />
+                                                <x-technician-link :technician="$task->technician">
+                                                    <x-user-avatar :user="$task->technician->account" size="xs" />
+                                                </x-technician-link>
                                             @endif
 
                                             <span>
-                                                {{ $task->technician?->name ?? 'Unassigned' }}
+                                                {{-- A link for an administrator,
+                                                     plain text in the portal. --}}
+                                                <x-technician-link :technician="$task->technician" />
                                                 @if ($isMine)
                                                     <span class="badge bg-info text-dark ms-1">You</span>
                                                 @endif
