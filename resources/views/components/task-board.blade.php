@@ -145,6 +145,7 @@
                                                 @if ($isMine)
                                                     <span class="badge bg-info text-dark ms-1">You</span>
                                                 @endif
+                                                <x-task-holder-flag :task="$task" />
                                             </span>
                                         </div>
                                     </td>

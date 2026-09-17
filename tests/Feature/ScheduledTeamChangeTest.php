@@ -120,39 +120,36 @@ class ScheduledTeamChangeTest extends TestCase
     /**
      * Technicians page: off from $from onward.
      */
-    private function removeFrom(Project $project, Technician $technician, string $from, ?Technician $replacement = null, array $resolutions = [])
+    private function removeFrom(Project $project, Technician $technician, string $from, ?Technician $replacement = null)
     {
         return $this->deleteJson(route('super-admin.technicians.projects.destroy', [$technician->technician_id, $project->project_id]), [
             'mode' => 'from',
             'from' => $from,
             'replacement_lead_id' => $replacement?->technician_id,
-            'task_resolutions' => $resolutions,
         ]);
     }
 
     /**
      * Technicians page: off from $from to $until, back the day after.
      */
-    private function daysOff(Project $project, Technician $technician, string $from, string $until, ?Technician $standIn = null, array $resolutions = [])
+    private function daysOff(Project $project, Technician $technician, string $from, string $until, ?Technician $standIn = null)
     {
         return $this->deleteJson(route('super-admin.technicians.projects.destroy', [$technician->technician_id, $project->project_id]), [
             'mode' => 'days',
             'from' => $from,
             'until' => $until,
             'replacement_lead_id' => $standIn?->technician_id,
-            'task_resolutions' => $resolutions,
         ]);
     }
 
     /**
      * Project Details: the master control.
      */
-    private function saveTeam(Project $project, Technician $lead, array $technicians, array $resolutions = [])
+    private function saveTeam(Project $project, Technician $lead, array $technicians)
     {
         return $this->put(route('super-admin.projects.team.update', $project->project_id), [
             'lead_tech' => $lead->technician_id,
             'technicians' => array_map(fn (Technician $technician): int => (int) $technician->technician_id, $technicians),
-            'task_resolutions' => $resolutions,
         ]);
     }
 
@@ -352,6 +349,52 @@ class ScheduledTeamChangeTest extends TestCase
         $this->assertSame($this->day(7), $spans->last()->startDate());
     }
 
+    public function test_days_off_to_the_end_of_the_schedule_book_no_return(): void
+    {
+        [$project, $lead, $tech] = $this->runningProject();
+
+        $this->daysOff($project, $tech, $this->day(28), $this->day(30))->assertOk();
+
+        // Nothing scheduled after the days off, so nothing to come back to.
+        $spans = $this->spansOf($project, $tech);
+        $this->assertCount(1, $spans);
+        $this->assertSame($this->day(28), $spans->first()->endDate());
+
+        $changes = $project->fresh()->scheduledChangesFor((int) $tech->technician_id);
+        $this->assertSame(['Leaving'], array_column($changes, 'title'));
+        $this->assertSame([$this->label(28)], array_column($changes, 'when'));
+    }
+
+    public function test_a_lead_off_to_the_end_of_the_schedule_is_covered_from_then_on(): void
+    {
+        [$project, $john] = $this->runningProject();
+        $mary = $this->technician('Mary Santos', 'lead_technician');
+
+        $this->daysOff($project, $john, $this->day(28), $this->day(30), $mary)->assertOk();
+
+        $project = $project->fresh();
+
+        $this->assertCount(1, $this->spansOf($project, $john));
+        $this->assertSame((int) $mary->technician_id, (int) $project->leadOn($this->day(30))->technician_id);
+        $this->assertNull($this->spansOf($project, $mary)->first()->endDate());
+    }
+
+    public function test_a_return_with_no_scheduled_day_after_it_is_not_listed(): void
+    {
+        [$project, $lead, $tech] = $this->runningProject();
+
+        $this->daysOff($project, $tech, $this->day(5), $this->day(6))->assertOk();
+
+        // The schedule is cut short to end inside the days off, leaving the
+        // return with no work to come back to.
+        $project->schedules()->update(['end_datetime' => $this->day(6).' 23:59:59']);
+
+        $changes = $project->fresh()->scheduledChangesFor((int) $tech->technician_id);
+
+        $this->assertNotContains('Returns', array_column($changes, 'title'));
+        $this->assertSame([$this->label(5)], array_column($changes, 'when'));
+    }
+
     public function test_one_day_off_today_is_allowed(): void
     {
         [$project, $lead, $tech] = $this->runningProject();
@@ -396,7 +439,7 @@ class ScheduledTeamChangeTest extends TestCase
     // Tasks the change strands
     // ------------------------------------------------------------------
 
-    public function test_work_on_removed_days_needs_a_decision_and_other_work_does_not(): void
+    public function test_work_on_removed_days_stays_with_the_technician_and_is_flagged(): void
     {
         [$project, $lead, $tech] = $this->runningProject();
 
@@ -405,38 +448,73 @@ class ScheduledTeamChangeTest extends TestCase
         $spanning = $this->task($project, $tech, $this->day(4), $this->day(8), 'Spanning');
         $after = $this->task($project, $tech, $this->day(8), $this->day(9), 'After');
 
-        $response = $this->daysOff($project, $tech, $this->day(5), $this->day(6))->assertStatus(422)->assertJsonPath('needs_decisions', true);
+        // Nothing to decide: the days off are saved straight away.
+        $this->daysOff($project, $tech, $this->day(5), $this->day(6))->assertOk()->assertJsonMissingPath('needs_decisions');
 
-        $this->assertEqualsCanonicalizing([$during->task_id, $spanning->task_id], array_column($response->json('conflicts'), 'task_id'));
-        $this->assertCount(1, $this->spansOf($project, $tech));
+        $this->assertCount(2, $this->spansOf($project, $tech));
 
-        $this->daysOff($project, $tech, $this->day(5), $this->day(6), null, [
-            $during->task_id => (string) $lead->technician_id,
-            $spanning->task_id => 'keep',
-        ])->assertOk();
-
-        $this->assertSame($tech->technician_id, $before->fresh()->technician_id);
-        $this->assertSame($tech->technician_id, $after->fresh()->technician_id);
-        $this->assertSame($lead->technician_id, $during->fresh()->technician_id);
+        foreach ([$before, $during, $spanning, $after] as $task) {
+            $this->assertSame($tech->technician_id, $task->fresh()->technician_id);
+        }
 
         // Kept - and flagged, until somebody sorts it out.
-        $this->assertSame($tech->technician_id, $spanning->fresh()->technician_id);
-        $this->assertTrue(Task::query()->needsAssignment()->withAssignmentGap(Task::GAP_OFF_TEAM)->whereKey($spanning->task_id)->exists());
-        $this->assertFalse(Task::query()->needsAssignment()->whereKey($before->task_id)->exists());
+        $flagged = Task::query()->needsAssignment()->withAssignmentGap(Task::GAP_OFF_TEAM)->pluck('task_id')->all();
+
+        $this->assertEqualsCanonicalizing([$during->task_id, $spanning->task_id], $flagged);
     }
 
-    public function test_keeping_a_stranded_task_is_not_offered_for_a_change_taking_effect_today(): void
+    public function test_a_task_is_flagged_only_for_a_day_off_on_a_scheduled_day(): void
     {
-        [$project, $lead, $tech] = $this->runningProject();
+        [$project, $lead, $tech, $schedule] = $this->runningProject();
 
-        $task = $this->task($project, $tech, $this->day(2), $this->day(5));
+        $spanning = $this->task($project, $tech, $this->day(4), $this->day(8), 'Spanning');
+        $clear = $this->task($project, $tech, $this->day(8), $this->day(9), 'Clear');
 
-        $this->saveTeam($project, $lead, [], [$task->task_id => 'keep'])->assertSessionHas('error');
+        $this->daysOff($project, $tech, $this->day(5), $this->day(6))->assertOk();
 
-        $this->assertSame($tech->technician_id, $task->fresh()->technician_id);
+        $flagged = fn (): array => Task::query()->needsAssignment()->withAssignmentGap(Task::GAP_OFF_TEAM)->pluck('task_id')->all();
+        // The row badge reads the same rule, loaded with the board.
+        $badge = fn (Task $task): ?string => Task::query()->withHolderCoverage()->find($task->task_id)->assignmentGap();
+
+        $this->assertTrue($spanning->fresh()->holderHasDayOffInDates());
+        $this->assertFalse($clear->fresh()->holderHasDayOffInDates());
+        $this->assertSame([$spanning->task_id], $flagged());
+        $this->assertSame(Task::GAP_OFF_TEAM, $badge($spanning));
+        $this->assertNull($badge($clear));
+
+        // Take days 5 and 6 out of the schedule: nobody works them, so being
+        // off the team then is no day off.
+        $schedule->update(['end_datetime' => $this->day(4).' 23:59:59']);
+        Schedule::create([
+            'project_id' => $project->project_id,
+            'start_datetime' => $this->day(7).' 00:00:00',
+            'end_datetime' => $this->day(30).' 23:59:59',
+            'status' => 'scheduled',
+            'remarks' => 'Booking',
+        ]);
+
+        $this->assertFalse($spanning->fresh()->holderHasDayOffInDates());
+        $this->assertSame([], $flagged());
+        $this->assertNull($badge($spanning));
     }
 
-    public function test_the_master_control_asks_about_tasks_before_it_removes_anybody(): void
+    public function test_a_technician_removed_for_good_is_flagged_only_for_scheduled_days_after(): void
+    {
+        [$project, $lead, $tech, $schedule] = $this->runningProject();
+
+        // Due after the schedule ends: the removal day itself is still worked.
+        $late = $this->task($project, $tech, $this->day(29), $this->day(33), 'Late');
+        // Entirely past the schedule: nobody works those days.
+        $after = $this->task($project, $tech, $this->day(31), $this->day(33), 'After');
+
+        $this->removeFrom($project, $tech, $this->day(30))->assertOk();
+
+        $this->assertSame([$late->task_id], Task::query()->needsAssignment()->withAssignmentGap(Task::GAP_OFF_TEAM)->pluck('task_id')->all());
+        $this->assertTrue($late->fresh()->holderHasDayOffInDates());
+        $this->assertFalse($after->fresh()->holderHasDayOffInDates());
+    }
+
+    public function test_the_master_control_keeps_the_tasks_of_whoever_it_removes(): void
     {
         [$project, $lead, $tech] = $this->runningProject();
 
@@ -445,11 +523,12 @@ class ScheduledTeamChangeTest extends TestCase
         $this->postJson(route('super-admin.projects.team.preview', $project->project_id), [
             'lead_tech' => $lead->technician_id,
             'technicians' => [],
-        ])->assertOk()->assertJsonPath('conflicts.0.task_id', $task->task_id);
+        ])->assertOk()->assertJsonMissingPath('conflicts');
 
-        $this->saveTeam($project, $lead, [], [$task->task_id => 'unassign'])->assertSessionHas('success');
+        $this->saveTeam($project, $lead, [])->assertSessionHas('success');
 
-        $this->assertNull($task->fresh()->technician_id);
+        $this->assertSame($tech->technician_id, $task->fresh()->technician_id);
+        $this->assertSame(Task::GAP_OFF_TEAM, $task->fresh()->assignmentGap());
     }
 
     // ------------------------------------------------------------------

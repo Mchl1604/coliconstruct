@@ -311,7 +311,7 @@ class ProjectTeamScheduleLinkTest extends TestCase
         ]);
     }
 
-    public function test_removing_a_technician_clears_their_schedule_rows_and_releases_open_tasks(): void
+    public function test_removing_a_technician_clears_their_schedule_rows_and_keeps_open_tasks(): void
     {
         $project = $this->createProject();
         $schedule = $this->addRange($project, $this->day(5), $this->day(7));
@@ -344,19 +344,10 @@ class ProjectTeamScheduleLinkTest extends TestCase
             'due_date' => $this->day(6),
         ]);
 
-        // The open task needs a decision before the removal is saved - nothing
-        // is taken off anybody without one.
+        // Saved straight away - the open task is not a question to answer.
         $this->put(route('super-admin.projects.team.update', $project->project_id), [
             'lead_tech' => $lead->technician_id,
             'technicians' => [],
-        ])->assertSessionHas('error');
-
-        $this->assertSame($leaving->technician_id, $open->fresh()->technician_id);
-
-        $this->put(route('super-admin.projects.team.update', $project->project_id), [
-            'lead_tech' => $lead->technician_id,
-            'technicians' => [],
-            'task_resolutions' => [$open->task_id => 'unassign'],
         ])->assertSessionHas('success');
 
         $this->assertSame(0, $this->scheduleLinkCount($schedule, $leaving));
@@ -370,10 +361,10 @@ class ProjectTeamScheduleLinkTest extends TestCase
             'removed_at' => null,
         ]);
 
-        // Unfinished work is released; what they already completed is a record
-        // of who did it and keeps its technician.
-        $this->assertNull($open->fresh()->technician_id);
-        $this->assertSame('unassigned', $open->fresh()->status);
+        // Unfinished work stays theirs, flagged; what they already completed
+        // is a record of who did it.
+        $this->assertSame($leaving->technician_id, $open->fresh()->technician_id);
+        $this->assertSame('pending', $open->fresh()->status);
         $this->assertSame($leaving->technician_id, $done->fresh()->technician_id);
         $this->assertSame('completed', $done->fresh()->status);
     }
@@ -638,16 +629,11 @@ class ProjectTeamScheduleLinkTest extends TestCase
     }
 
     /**
-     * A removal releases the work nobody is left to do, and nothing that was
-     * already theirs.
-     *
-     * Work due before the removal fell inside the days the technician held, so
-     * it stays against their name whether or not it was finished. Work due
-     * today or later, or with no date at all, is released. Closed work -
-     * cancelled as well as completed - is never touched: releasing a cancelled
-     * task used to reopen it as Unassigned.
+     * A removal takes no work off the technician. Work due before the removal
+     * fell inside the days they held and is not flagged; work dated past it
+     * stays theirs and is flagged. Closed work is never touched.
      */
-    public function test_removal_keeps_work_dated_before_it_and_releases_the_rest(): void
+    public function test_removal_keeps_all_work_and_flags_what_runs_past_it(): void
     {
         $project = $this->createProject();
 
@@ -685,17 +671,19 @@ class ProjectTeamScheduleLinkTest extends TestCase
         $this->put(route('super-admin.projects.team.update', $project->project_id), [
             'lead_tech' => $lead->technician_id,
             'technicians' => [],
-            'task_resolutions' => collect([$dueToday, $spanning, $future, $undated])
-                ->mapWithKeys(fn (Task $released): array => [$released->task_id => 'unassign'])
-                ->all(),
         ])->assertSessionHas('success');
 
         $this->assertSame($leaving->technician_id, $overdue->fresh()->technician_id);
         $this->assertSame('pending', $overdue->fresh()->status);
+        $this->assertNotSame(Task::GAP_OFF_TEAM, $overdue->fresh()->assignmentGap());
 
-        foreach ([$dueToday, $spanning, $future, $undated] as $released) {
-            $this->assertNull($released->fresh()->technician_id, $released->task_title.' should be released');
-            $this->assertSame('unassigned', $released->fresh()->status);
+        foreach ([$dueToday, $spanning, $future, $undated] as $kept) {
+            $this->assertSame($leaving->technician_id, $kept->fresh()->technician_id, $kept->task_title.' should be kept');
+            $this->assertNotSame('unassigned', $kept->fresh()->status);
+        }
+
+        foreach ([$dueToday, $spanning, $future] as $flagged) {
+            $this->assertSame(Task::GAP_OFF_TEAM, $flagged->fresh()->assignmentGap(), $flagged->task_title.' should be flagged');
         }
 
         $this->assertSame($leaving->technician_id, $cancelled->fresh()->technician_id);

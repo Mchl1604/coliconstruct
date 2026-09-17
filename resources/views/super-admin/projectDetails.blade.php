@@ -2065,7 +2065,10 @@
                                                     <x-user-avatar :user="$task->technician?->account"
                                                         size="sm"
                                                         :alt="$task->technician?->name ?? 'Unassigned'" />
-                                                    <x-technician-link :technician="$task->technician" />
+                                                    <span>
+                                                        <x-technician-link :technician="$task->technician" />
+                                                        <x-task-holder-flag :task="$task" />
+                                                    </span>
                                                 </div>
                                             </td>
 
@@ -2789,30 +2792,10 @@
 
                     </div>
 
-                    {{-- The second step, shown only when the change would leave
-                         open tasks with somebody who is no longer assigned for
-                         their dates. Each one needs an answer before the change
-                         is saved - nothing is moved on the administrator's
-                         behalf. Filled in by projectDetails.js from the preview
-                         endpoint. --}}
-                    <div class="modal-body d-none" data-team-review-step>
-                        <p class="fw-semibold mb-1" data-team-review-summary></p>
-                        <p class="text-secondary small mb-3">
-                            These tasks are dated to days their technician will not be assigned to this project.
-                            Choose what happens to each one.
-                        </p>
-                        <div class="d-grid gap-2" data-team-review-list></div>
-                    </div>
-
                     <div class="modal-footer">
 
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" data-team-close>
                             Close
-                        </button>
-
-                        <button type="button" class="btn btn-outline-secondary d-none" data-team-review-back>
-                            <i class="bi bi-arrow-left me-1" aria-hidden="true"></i>
-                            Back
                         </button>
 
                         <button type="submit" class="btn btn-primary" data-team-save>

@@ -438,17 +438,16 @@ class TechnicianController extends Controller
     /**
      * Take a technician off a project - for some days, or from a day onward.
      *
-     *   mode=days   off from `from` to `until`, back the day after. A lead
-     *               needs a stand-in, who leads for exactly those days.
+     *   mode=days   off from `from` to `until`, back on the next scheduled day
+     *               after - or not back at all when the project has none. A
+     *               lead needs a stand-in, who leads for those days.
      *   mode=from   off from `from` onward, entirely. A lead needs a
      *               replacement, who takes the lead over for good.
      *
      * Both go through ProjectTeamChange, the same as the Edit Assigned Team
-     * dialog, so every rule is the same: a lead on every day, nobody given
-     * work they cannot receive, and every open task the change strands
-     * answered for - passed as task_resolutions[task_id]. Until each has an
-     * answer the reply is a 422 carrying the tasks and the choices, which the
-     * panel draws.
+     * dialog, so every rule is the same: a lead on every day, and nobody given
+     * work they cannot receive. Open tasks the change strands stay with the
+     * technician, flagged on the task board.
      */
     public function removeFromProject(Request $request, Technician $technician, Project $project)
     {
@@ -458,7 +457,6 @@ class TechnicianController extends Controller
             'from' => ['nullable', 'date_format:Y-m-d'],
             'until' => ['nullable', 'date_format:Y-m-d'],
             'effective_date' => ['nullable', 'date_format:Y-m-d'],
-            'task_resolutions' => ['nullable', 'array'],
         ]);
 
         if ($validator->fails()) {
@@ -553,22 +551,7 @@ class TechnicianController extends Controller
                 throw new RuntimeException($conflict);
             }
 
-            $resolutions = (array) $request->input('task_resolutions', []);
-            $conflicts = $change->taskConflicts($plan);
-
-            if ($unresolved = $change->unresolved($conflicts, $resolutions)) {
-                return response()->json([
-                    'error' => implode(' ', $unresolved),
-                    'needs_decisions' => true,
-                    'conflicts' => $change->conflictsPayload($conflicts),
-                ], 422);
-            }
-
-            $outcome = null;
-
-            DB::transaction(function () use ($change, $plan, $resolutions, $actorId, &$outcome): void {
-                $outcome = $change->apply($plan, $resolutions, $actorId);
-            });
+            DB::transaction(fn () => $change->apply($plan, $actorId));
         } catch (Throwable $e) {
             return response()->json([
                 'error' => $this->safeErrorMessage($e, 'Unable to save that change. Nothing was changed.'),
@@ -603,7 +586,7 @@ class TechnicianController extends Controller
             $project
         );
 
-        $change->notify($plan, $outcome);
+        $change->notify($plan);
 
         return response()->json([
             'message' => match (true) {
@@ -762,7 +745,7 @@ class TechnicianController extends Controller
                 continue;
             }
 
-            $eligible[] = $this->projectPayload($project, null, $existingLead, $technician);
+            $eligible[] = $this->projectPayload($project, null, $existingLead);
         }
 
         return response()->json([
@@ -952,12 +935,9 @@ class TechnicianController extends Controller
                     // and the incoming lead's opens on the same day and the
                     // project is never holding two leads, or none.
                     //
-                    // There is no room on this screen to decide task by task,
-                    // so the outgoing lead's open work that they would no
-                    // longer be assigned for becomes Unassigned - which the
-                    // confirmation said in so many words before this was sent
-                    // (see lead_replacement.unassigned_task_count). Work dated
-                    // to their time on the project stays theirs.
+                    // The outgoing lead's open work stays theirs, flagged on
+                    // the task board where they are no longer assigned for its
+                    // dates - see ProjectTeamChange::apply().
                     $outgoingLeadName = $outgoingLead?->technician?->name ?? 'the previous lead technician';
 
                     if ($outgoingLead) {
@@ -969,13 +949,7 @@ class TechnicianController extends Controller
                             throw new RuntimeException($problem);
                         }
 
-                        $resolutions = $change->taskConflicts($plan)
-                            ->mapWithKeys(fn (array $conflict): array => [
-                                $conflict['task']->task_id => ProjectTeamChange::UNASSIGN,
-                            ])
-                            ->all();
-
-                        $outcome = $change->apply($plan, $resolutions, $removedBy);
+                        $change->apply($plan, $removedBy);
 
                         $this->activityLogger->record(
                             ActivityLog::TECHNICIAN_REMOVED,
@@ -992,12 +966,6 @@ class TechnicianController extends Controller
                         if ($outgoingAccount) {
                             $this->notifications->leadRemovedFromProject($project, $outgoingAccount);
                         }
-
-                        $this->notifications->tasksUnassignedByTeamChange(
-                            $project,
-                            $outgoingLeadName,
-                            $outcome['unassigned']->pluck('task')
-                        );
 
                         $replacedLeadNames[] = $outgoingLeadName;
 
@@ -1072,19 +1040,6 @@ class TechnicianController extends Controller
         ?int $addedBy = null
     ): void {
         $this->projectTeam->attach($project, (int) $technician->technician_id, $addedBy);
-    }
-
-    /**
-     * The outgoing lead's open tasks a replacement made today would strand -
-     * work they would no longer be assigned for.
-     *
-     * @return Collection<int, array<string, mixed>>
-     */
-    private function leadReplacementConflicts(Project $project, ProjectTechnician $outgoing, Technician $incoming): Collection
-    {
-        $change = app(ProjectTeamChange::class);
-
-        return $change->taskConflicts($this->leadReplacementPlan($project, $outgoing, $incoming));
     }
 
     /**
@@ -1365,8 +1320,7 @@ class TechnicianController extends Controller
     private function projectPayload(
         Project $project,
         ?string $reason = null,
-        ?ProjectTechnician $replaceableLead = null,
-        ?Technician $incomingLead = null
+        ?ProjectTechnician $replaceableLead = null
     ): array {
         $schedules = $project->schedules ?? collect();
         $start = $schedules->min('start_datetime');
@@ -1458,12 +1412,6 @@ class TechnicianController extends Controller
             'lead_replacement' => $replaceableLead ? [
                 'technician_id' => (int) $replaceableLead->technician_id,
                 'name' => $replaceableLead->technician?->name ?? 'another lead technician',
-                // How much of the outgoing lead's work would be left without a
-                // technician, so the confirmation can say so before anybody
-                // presses it.
-                'unassigned_task_count' => $incomingLead
-                    ? $this->leadReplacementConflicts($project, $replaceableLead, $incomingLead)->count()
-                    : 0,
             ] : null,
         ];
     }

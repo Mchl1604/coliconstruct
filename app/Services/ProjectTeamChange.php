@@ -7,7 +7,6 @@ use App\Models\ProjectTechnician;
 use App\Models\Schedule;
 use App\Models\Task;
 use App\Models\Technician;
-use App\Models\User;
 use App\Support\BusinessTime;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
@@ -21,8 +20,7 @@ use RuntimeException;
  * dialog, and Remove From Project on the Technicians page. A change is stated
  * the way an administrator thinks about it - "from Aug 21, the team is this
  * lead and these technicians" - and this class works out what that means for
- * the membership spans, decides whether it is allowed, lists the work it would
- * strand, and then writes it.
+ * the membership spans, decides whether it is allowed, and then writes it.
  *
  * The rules, all asked of the team as it will read after the change (see
  * ProjectTeamChangePlan):
@@ -39,24 +37,15 @@ use RuntimeException;
  *   - Everybody starting is free for the project's remaining dates from the
  *     day they start, and no earlier - somebody busy elsewhere until the
  *     handover is still free to take it over.
- *   - No open task is left with a holder who is not assigned for the whole of
- *     its dates. Each one the change would strand has to be answered for:
- *     given to somebody who is assigned for all of it, unassigned, or - for a
- *     change still to come - kept and flagged until somebody sorts it out.
- *     Nothing is moved on the administrator's behalf.
+ *
+ * Tasks are left alone. Work held by somebody the change takes off the
+ * project stays theirs, and the task tables flag it.
  */
 class ProjectTeamChange
 {
-    /** Leave the task with its holder, flagged as a conflict. */
-    public const KEEP = 'keep';
-
-    /** Take the holder off the task; it shows as Missing Technician. */
-    public const UNASSIGN = 'unassign';
-
     public function __construct(
         private readonly ProjectTeam $team,
         private readonly ProjectTeamRules $teamRules,
-        private readonly TaskAssignmentRules $taskRules,
         private readonly TechnicianAvailabilityService $availability,
     ) {}
 
@@ -219,15 +208,25 @@ class ProjectTeamChange
             ));
         }
 
+        // Back only when the project still has a scheduled day to come back to
+        // while their span runs. With none, there is no return to book: the
+        // days off run to the end of the work, and a stand-in lead leads on
+        // for as long as the lead's span was due to.
+        $project->loadMissing('schedules');
+
+        $backOn = $project->schedules->isEmpty() ? $resumesOn : $project->firstScheduledDayFrom($resumesOn);
+        $spanEnd = $span->endDate() === null ? null : CarbonImmutable::parse($span->endDate());
+        $returns = $backOn !== null && ($spanEnd === null || $spanEnd->gt($backOn));
+
         $joining = collect();
 
         // Back the day after, for as long as the span they are being taken off
         // was due to run.
-        if ($span->endDate() === null || $span->endDate() > $resumesOn->toDateString()) {
+        if ($returns) {
             $joining->push([
                 'technician_id' => $technicianId,
                 'from' => $resumesOn,
-                'until' => $span->endDate() === null ? null : CarbonImmutable::parse($span->endDate()),
+                'until' => $spanEnd,
             ]);
         }
 
@@ -235,9 +234,7 @@ class ProjectTeamChange
             $joining->push([
                 'technician_id' => $standInLeadId,
                 'from' => $from,
-                'until' => $span->endDate() !== null && $span->endDate() < $resumesOn->toDateString()
-                    ? CarbonImmutable::parse($span->endDate())
-                    : $resumesOn,
+                'until' => $returns ? $resumesOn : $spanEnd,
             ]);
         }
 
@@ -500,141 +497,20 @@ class ProjectTeamChange
         return $conflicts->isEmpty() ? null : $this->availability->conflictMessage($conflicts);
     }
 
-    /**
-     * The open tasks this change would strand: their holder is assigned for
-     * all of their dates now, and would not be afterwards.
-     *
-     * A task that was already out of step before the change is not this
-     * change's to answer for - it is flagged on the board already.
-     *
-     * @return Collection<int, array{task: Task, reason: string, options: Collection<int, Technician>, can_keep: bool}>
-     */
-    public function taskConflicts(ProjectTeamChangePlan $plan): Collection
-    {
-        $tasks = Task::query()
-            ->with('technician.account')
-            ->where('project_id', $plan->project->project_id)
-            ->whereIn('status', Task::OPEN_STATUSES)
-            ->whereNotNull('technician_id')
-            ->orderByRaw('due_date is null, due_date')
-            ->orderBy('task_id')
-            ->get();
-
-        $candidateIds = $plan->after->pluck('technician_id')->map(fn ($id): int => (int) $id)->unique()->values();
-
-        $candidates = Technician::query()
-            ->with('account')
-            ->whereIn('technician_id', $candidateIds->all())
-            ->get()
-            ->keyBy(fn (Technician $technician): int => (int) $technician->technician_id);
-
-        return $tasks
-            ->map(function (Task $task) use ($plan, $candidates): ?array {
-                $holderId = (int) $task->technician_id;
-                [$start, $due] = $this->taskDates($task);
-
-                if (! $this->holds($plan->spansBeforeFor($holderId), $start, $due)
-                    || $this->holds($plan->spansAfterFor($holderId), $start, $due)) {
-                    return null;
-                }
-
-                $options = $candidates
-                    ->reject(fn (Technician $technician): bool => (int) $technician->technician_id === $holderId)
-                    ->filter(fn (Technician $technician): bool => $technician->isAssignable()
-                        && $this->holds($plan->spansAfterFor((int) $technician->technician_id), $start, $due))
-                    ->sortBy(fn (Technician $technician): string => mb_strtolower($technician->name))
-                    ->values();
-
-                return [
-                    'task' => $task,
-                    'reason' => (string) $this->taskRules->periodRefusal(
-                        $task->technician,
-                        (int) $plan->project->project_id,
-                        $start,
-                        $due,
-                        $plan->spansAfterFor($holderId)
-                    ),
-                    'options' => $options,
-                    'can_keep' => ! $plan->isImmediate(),
-                ];
-            })
-            ->filter()
-            ->values();
-    }
-
-    /**
-     * What the person still has to decide, as sentences - empty when every
-     * stranded task has a valid answer.
-     *
-     * @param  Collection<int, array<string, mixed>>  $conflicts
-     * @param  array<int|string, mixed>  $resolutions  task_id => keep | unassign | technician_id
-     * @return array<int, string>
-     */
-    public function unresolved(Collection $conflicts, array $resolutions): array
-    {
-        $missing = [];
-        $invalid = [];
-
-        foreach ($conflicts as $conflict) {
-            $task = $conflict['task'];
-            $choice = (string) ($resolutions[$task->task_id] ?? '');
-
-            if ($choice === '') {
-                $missing[] = $task->task_title;
-
-                continue;
-            }
-
-            $valid = $choice === self::UNASSIGN
-                || ($choice === self::KEEP && $conflict['can_keep'])
-                || (ctype_digit($choice) && $conflict['options']->contains(
-                    fn (Technician $technician): bool => (int) $technician->technician_id === (int) $choice
-                ));
-
-            if (! $valid) {
-                $invalid[] = $task->task_title;
-            }
-        }
-
-        $messages = [];
-
-        if ($missing !== []) {
-            $messages[] = sprintf(
-                'Choose what happens to %s before saving: %s.',
-                count($missing) === 1 ? 'the task this change affects' : count($missing).' tasks this change affects',
-                $this->quotedList($missing)
-            );
-        }
-
-        if ($invalid !== []) {
-            $messages[] = sprintf(
-                'The choice for %s is no longer possible. Review the affected tasks and save again.',
-                $this->quotedList($invalid)
-            );
-        }
-
-        return $messages;
-    }
-
     // ------------------------------------------------------------------
     // Doing it
     // ------------------------------------------------------------------
 
     /**
-     * Write the change and carry out the choices made for the stranded tasks.
+     * Write the change.
      *
-     * The caller has already validated the plan and its resolutions and holds
-     * the transaction.
+     * Tasks are never touched: work held by somebody the change takes off the
+     * project for some of its dates stays theirs, and the task tables flag it.
      *
-     * @param  array<int|string, mixed>  $resolutions
-     * @return array{unassigned: Collection<int, array{task: Task, holder: string}>, reassigned: Collection<int, array{task: Task, previous: ?User}>, kept: Collection<int, Task>}
+     * The caller has already validated the plan and holds the transaction.
      */
-    public function apply(ProjectTeamChangePlan $plan, array $resolutions, ?int $actorId): array
+    public function apply(ProjectTeamChangePlan $plan, ?int $actorId): void
     {
-        // Read before anything is written: the conflicts are a question about
-        // the team as it stands now against the team as it will be.
-        $conflicts = $this->taskConflicts($plan);
-
         foreach ($plan->cancelling as $span) {
             $this->team->cancelStart($span);
         }
@@ -650,83 +526,6 @@ class ProjectTeamChange
         foreach ($plan->joining as $join) {
             $this->team->open($plan->project, $join['technician_id'], $actorId, $join['from'], $join['until']);
         }
-
-        return $this->resolve($conflicts, $resolutions);
-    }
-
-    /**
-     * Carry out the choices for stranded tasks.
-     *
-     * @param  Collection<int, array<string, mixed>>  $conflicts
-     * @param  array<int|string, mixed>  $resolutions
-     * @return array{unassigned: Collection<int, array{task: Task, holder: string}>, reassigned: Collection<int, array{task: Task, previous: ?User}>, kept: Collection<int, Task>}
-     */
-    public function resolve(Collection $conflicts, array $resolutions): array
-    {
-        $unassigned = collect();
-        $reassigned = collect();
-        $kept = collect();
-
-        foreach ($conflicts as $conflict) {
-            $task = $conflict['task'];
-            $choice = (string) ($resolutions[$task->task_id] ?? self::UNASSIGN);
-
-            if ($choice === self::KEEP) {
-                $kept->push($task);
-
-                continue;
-            }
-
-            if ($choice === self::UNASSIGN) {
-                $holder = $task->technician?->name ?? 'A technician';
-
-                $task->update(['technician_id' => null, 'status' => 'unassigned']);
-                $unassigned->push(['task' => $task, 'holder' => $holder]);
-
-                continue;
-            }
-
-            $previous = $task->technician?->account;
-
-            $task->update(['technician_id' => (int) $choice]);
-            $task->unsetRelation('technician');
-
-            $reassigned->push(['task' => $task, 'previous' => $previous]);
-        }
-
-        return ['unassigned' => $unassigned, 'reassigned' => $reassigned, 'kept' => $kept];
-    }
-
-    /**
-     * The stranded tasks as the dialogs draw them: each task, why it is
-     * stranded, and who could take it over.
-     *
-     * @param  Collection<int, array<string, mixed>>  $conflicts
-     * @return array<int, array<string, mixed>>
-     */
-    public function conflictsPayload(Collection $conflicts): array
-    {
-        return $conflicts
-            ->map(fn (array $conflict): array => [
-                'task_id' => $conflict['task']->task_id,
-                'title' => $conflict['task']->task_title,
-                'holder' => $conflict['task']->technician?->name,
-                'dates' => $conflict['task']->start_date && $conflict['task']->due_date
-                    ? CarbonImmutable::parse($conflict['task']->start_date)->format(BusinessTime::DATE)
-                        .' - '.CarbonImmutable::parse($conflict['task']->due_date)->format(BusinessTime::DATE)
-                    : 'No dates set',
-                'reason' => $conflict['reason'],
-                'can_keep' => $conflict['can_keep'],
-                'options' => $conflict['options']
-                    ->map(fn (Technician $technician): array => [
-                        'technician_id' => $technician->technician_id,
-                        'name' => $technician->name,
-                    ])
-                    ->values()
-                    ->all(),
-            ])
-            ->values()
-            ->all();
     }
 
     /**
@@ -791,10 +590,8 @@ class ProjectTeamChange
      * NotificationService::deliver(). A change still to come says the day it
      * takes effect in every message, so nobody reads a scheduled removal as
      * having happened.
-     *
-     * @param  array{unassigned: Collection<int, array{task: Task, holder: string}>, reassigned: Collection<int, array{task: Task, previous: ?User}>, kept: Collection<int, Task>}  $outcome
      */
-    public function notify(ProjectTeamChangePlan $plan, array $outcome): void
+    public function notify(ProjectTeamChangePlan $plan): void
     {
         $notifications = app(NotificationService::class);
         $project = $plan->project;
@@ -823,21 +620,6 @@ class ProjectTeamChange
             }
         } else {
             $this->notifyTeamChange($notifications, $plan, $effective);
-        }
-
-        // Work the departing technicians were holding does not leave with them
-        // unless somebody said so, and whoever runs the project is told what
-        // became of it.
-        $outcome['unassigned']
-            ->groupBy('holder')
-            ->each(fn (Collection $released, string $holder) => $notifications->tasksUnassignedByTeamChange(
-                $project,
-                $holder,
-                $released->pluck('task')
-            ));
-
-        foreach ($outcome['reassigned'] as $reassigned) {
-            $notifications->taskReassigned($reassigned['task']->fresh('technician.account'), $reassigned['previous']);
         }
     }
 

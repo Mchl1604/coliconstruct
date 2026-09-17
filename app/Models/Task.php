@@ -49,14 +49,14 @@ class Task extends Model
     public const GAP_BOTH = 'both';
 
     /**
-     * An owner and dates, but the owner is not assigned to the project for
-     * every one of those days - they leave before it is due, join after it
-     * starts, or are off the project part of the way through.
+     * An owner and dates, but the owner has a day off inside them: a day the
+     * project is scheduled to work that they are not on its team for. A gap in
+     * the team over days nobody works is not one. See holderHasDayOffInDates().
      *
-     * Usually the trace of a team change still to come that somebody chose to
-     * sort out later, or of dates moved after the task was given out. Derived
-     * like the others, so it clears the moment the task or the team is put
-     * right.
+     * Usually the trace of a technician taken off the project, for some days
+     * or for good, while the task stayed theirs, or of dates moved after the
+     * task was given out. Derived like the others, so it clears the moment the
+     * task or the team is put right.
      */
     public const GAP_OFF_TEAM = 'off_team';
 
@@ -210,40 +210,72 @@ class Task extends Model
                 ->whereNull('technician_id')
                 ->orWhereNull('start_date')
                 ->orWhereNull('due_date')
-                ->orWhere(fn (Builder $offTeam) => $this->holderNotAssignedForDates($offTeam)));
+                ->orWhere(fn (Builder $offTeam) => $this->holderHasDayOffInDatesScope($offTeam)));
     }
 
     /**
-     * Held, dated, and the holder has no single span on the project covering
-     * every one of those days - the strict rule TaskAssignmentRules applies on
-     * the way in, asked of the stored rows.
+     * Held, dated, and the holder has a day off inside those dates - see
+     * holderDayOffSql().
      *
      * @param  Builder<self>  $query
      * @return Builder<self>
      */
-    private function holderNotAssignedForDates(Builder $query): Builder
+    private function holderHasDayOffInDatesScope(Builder $query): Builder
     {
-        return $query
-            ->whereNotNull('tbl_tasks.technician_id')
-            ->whereNotNull('tbl_tasks.start_date')
-            ->whereNotNull('tbl_tasks.due_date')
-            ->whereNotExists(fn ($span) => $span
-                ->selectRaw('1')
-                ->from('tbl_project_technicians')
-                ->whereColumn('tbl_project_technicians.project_id', 'tbl_tasks.project_id')
-                ->whereColumn('tbl_project_technicians.technician_id', 'tbl_tasks.technician_id')
-                ->where(fn ($joined) => $joined
-                    ->whereNull('tbl_project_technicians.joined_at')
-                    ->orWhereRaw('date(tbl_project_technicians.joined_at) <= tbl_tasks.start_date'))
-                ->where(fn ($removed) => $removed
-                    ->whereNull('tbl_project_technicians.removed_at')
-                    ->orWhereRaw('date(tbl_project_technicians.removed_at) > tbl_tasks.due_date')));
+        return $query->whereRaw(self::holderDayOffSql());
     }
 
     /**
-     * Load, alongside each task, whether its holder is assigned for all of its
-     * dates - so a board of tasks can say which ones are out of step without a
-     * query per row. See holderIsAssignedForDates().
+     * The day-off rule as one SQL condition on a tbl_tasks row, so the row
+     * badge, the attention chips and the dashboard count all ask the same
+     * question.
+     *
+     * A day off is a day from the task's start to its due date that the
+     * project is scheduled to work (any day, for a project with no schedule
+     * yet) and that no span of the holder's on the project covers. Days
+     * cannot be listed in SQL, but the first day of any such run of days is
+     * always one of three: the task's own start, the first day of one of the
+     * project's schedules, or the day one of the holder's spans ends. So only
+     * those are asked.
+     */
+    private static function holderDayOffSql(): string
+    {
+        $scheduled = fn (string $day, string $alias): string => "(not exists (select 1 from tbl_schedule {$alias}_any "
+            ."where {$alias}_any.project_id = tbl_tasks.project_id) "
+            ."or exists (select 1 from tbl_schedule {$alias}_on "
+            ."where {$alias}_on.project_id = tbl_tasks.project_id "
+            ."and date({$alias}_on.start_datetime) <= {$day} "
+            ."and date(coalesce({$alias}_on.end_datetime, {$alias}_on.start_datetime)) >= {$day}))";
+
+        $covered = fn (string $day, string $alias): string => "exists (select 1 from tbl_project_technicians {$alias}_span "
+            ."where {$alias}_span.project_id = tbl_tasks.project_id "
+            ."and {$alias}_span.technician_id = tbl_tasks.technician_id "
+            ."and ({$alias}_span.joined_at is null or date({$alias}_span.joined_at) <= {$day}) "
+            ."and ({$alias}_span.removed_at is null or date({$alias}_span.removed_at) > {$day}))";
+
+        $start = 'date(tbl_tasks.start_date)';
+        $due = 'date(tbl_tasks.due_date)';
+
+        return 'tbl_tasks.technician_id is not null and tbl_tasks.start_date is not null and tbl_tasks.due_date is not null and ('
+            // The task's first day.
+            .'('.$scheduled($start, 'first').' and not '.$covered($start, 'first').')'
+            // The first day of a schedule inside the task's dates.
+            .' or exists (select 1 from tbl_schedule booked where booked.project_id = tbl_tasks.project_id '
+            ."and date(booked.start_datetime) between {$start} and {$due} "
+            .'and not '.$covered('date(booked.start_datetime)', 'booked').')'
+            // The day one of the holder's spans ends.
+            .' or exists (select 1 from tbl_project_technicians ended where ended.project_id = tbl_tasks.project_id '
+            .'and ended.technician_id = tbl_tasks.technician_id and ended.removed_at is not null '
+            ."and date(ended.removed_at) between {$start} and {$due} "
+            .'and '.$scheduled('date(ended.removed_at)', 'ended')
+            .' and not '.$covered('date(ended.removed_at)', 'ended').')'
+            .')';
+    }
+
+    /**
+     * Load, alongside each task, whether its holder has a day off inside its
+     * dates - so a board of tasks can flag them without a query per row. See
+     * holderHasDayOffInDates().
      *
      * @param  Builder<self>  $query
      * @return Builder<self>
@@ -254,40 +286,49 @@ class Task extends Model
             $query->select('tbl_tasks.*');
         }
 
-        return $query->selectRaw(
-            'case when tbl_tasks.technician_id is null or tbl_tasks.start_date is null or tbl_tasks.due_date is null then 1 '
-            .'when exists (select 1 from tbl_project_technicians '
-            .'where tbl_project_technicians.project_id = tbl_tasks.project_id '
-            .'and tbl_project_technicians.technician_id = tbl_tasks.technician_id '
-            .'and (tbl_project_technicians.joined_at is null or date(tbl_project_technicians.joined_at) <= tbl_tasks.start_date) '
-            .'and (tbl_project_technicians.removed_at is null or date(tbl_project_technicians.removed_at) > tbl_tasks.due_date)) then 1 '
-            .'else 0 end as holder_covers_dates'
-        );
+        return $query->selectRaw('case when '.self::holderDayOffSql().' then 1 else 0 end as holder_has_day_off');
     }
 
     /**
-     * Whether whoever holds this task is assigned to the project for every day
-     * of it. True when there is nobody or no dates to measure - those are the
-     * other gaps.
+     * Whether whoever holds this task has a day off inside its dates: a day the
+     * project is scheduled to work on (any day, for a project with no schedule
+     * yet) that they are not on its team for. A day nobody works is not a day
+     * off, so a gap in the team over unscheduled dates does not count. False
+     * when there is nobody or no dates to measure - those are the other gaps.
      */
-    public function holderIsAssignedForDates(): bool
+    public function holderHasDayOffInDates(): bool
     {
         if ($this->technician_id === null || $this->start_date === null || $this->due_date === null) {
-            return true;
+            return false;
         }
 
-        if (array_key_exists('holder_covers_dates', $this->attributes)) {
-            return (bool) $this->attributes['holder_covers_dates'];
+        if (array_key_exists('holder_has_day_off', $this->attributes)) {
+            return (bool) $this->attributes['holder_has_day_off'];
         }
 
-        return ProjectTechnician::query()
+        $project = $this->project()->with('schedules')->first();
+
+        $spans = ProjectTechnician::query()
             ->where('project_id', $this->project_id)
             ->where('technician_id', $this->technician_id)
-            ->get()
-            ->contains(fn (ProjectTechnician $span): bool => $span->coversPeriod(
-                CarbonImmutable::parse($this->start_date)->toDateString(),
-                CarbonImmutable::parse($this->due_date)->toDateString()
-            ));
+            ->get();
+
+        $day = CarbonImmutable::parse($this->start_date)->startOfDay();
+        $due = CarbonImmutable::parse($this->due_date)->startOfDay();
+
+        for (; $day->lte($due); $day = $day->addDay()) {
+            $date = $day->toDateString();
+
+            if ($project && $project->schedules->isNotEmpty() && ! $project->isScheduledOn($date)) {
+                continue;
+            }
+
+            if (! $spans->contains(fn (ProjectTechnician $span): bool => $span->coversPeriod($date, $date))) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -316,7 +357,7 @@ class Task extends Model
             self::GAP_BOTH => $query
                 ->whereNull('technician_id')
                 ->where($undated),
-            self::GAP_OFF_TEAM => $this->holderNotAssignedForDates($query),
+            self::GAP_OFF_TEAM => $this->holderHasDayOffInDatesScope($query),
             default => $query,
         };
     }
@@ -356,7 +397,7 @@ class Task extends Model
             $this->missingTechnician() && $this->missingDate() => self::GAP_BOTH,
             $this->missingTechnician() => self::GAP_TECHNICIAN,
             $this->missingDate() => self::GAP_DATE,
-            ! $this->holderIsAssignedForDates() => self::GAP_OFF_TEAM,
+            $this->holderHasDayOffInDates() => self::GAP_OFF_TEAM,
             default => null,
         };
     }

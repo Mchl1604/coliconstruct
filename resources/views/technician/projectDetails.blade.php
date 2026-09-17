@@ -783,7 +783,10 @@
                                                     <x-user-avatar :user="$task->technician?->account"
                                                         size="sm"
                                                         :alt="$task->technician?->name ?? 'Unassigned'" />
-                                                    <span>{{ $task->technician?->name ?? 'Unassigned' }}</span>
+                                                    <span>
+                                                        {{ $task->technician?->name ?? 'Unassigned' }}
+                                                        <x-task-holder-flag :task="$task" />
+                                                    </span>
                                                     @if ($task->technician_id === $technicianId)
                                                         <span class="badge bg-info text-dark">You</span>
                                                     @endif

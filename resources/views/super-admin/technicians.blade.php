@@ -636,18 +636,6 @@
                         </div>
                     </div>
 
-                    {{-- Open tasks the removal would leave with somebody no longer
-                         assigned for their dates. Each needs a decision before the
-                         removal is saved. --}}
-                    <div class="technician-lead-panel mt-3 d-none" data-panel-conflicts>
-                        <div class="panel-section-heading">
-                            <i class="bi bi-list-check" aria-hidden="true"></i>
-                            Tasks Needing a Decision
-                        </div>
-                        <p class="text-muted small mb-2" data-panel-conflicts-intro></p>
-                        <div class="d-grid gap-2" data-panel-conflict-list></div>
-                    </div>
-
                     <div class="alert alert-danger mt-3 mb-0 d-none" role="alert" data-removal-error></div>
                 </div>
 

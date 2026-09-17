@@ -843,8 +843,12 @@ class Project extends Model
             && ! $other->isEmptySpan());
 
         if ($span->isLeaving()) {
+            // A return with no scheduled day left from it brings nobody back
+            // to any work, so what is to come is a departure, not days off.
             $return = $siblings
-                ->filter(fn (ProjectTechnician $other): bool => $other->startDate() !== null && $other->startDate() > $span->endDate())
+                ->filter(fn (ProjectTechnician $other): bool => $other->startDate() !== null
+                    && $other->startDate() > $span->endDate()
+                    && $this->hasScheduledDayFrom($other->startDate()))
                 ->sortBy(fn (ProjectTechnician $other): string => (string) $other->startDate())
                 ->first();
 
@@ -948,7 +952,8 @@ class Project extends Model
             $word = strtok($label, ' ');
 
             $idle = match ($word) {
-                'Returns' => ! $this->hasWorkBetween(...$this->daysOffBefore($span, $spans)),
+                'Returns' => ! $this->hasWorkBetween(...$this->daysOffBefore($span, $spans))
+                    || ! $this->hasScheduledDayFrom($span->startDate()),
                 'Covers' => ! $this->hasWorkBetween($span->startDate(), $span->lastDay()?->toDateString()),
                 default => false,
             };
@@ -1097,6 +1102,19 @@ class Project extends Model
 
         return $this->schedules->contains(fn (Schedule $schedule): bool => $schedule->startsOn()->toDateString() <= $date
             && $schedule->endsOn()->toDateString() >= $date);
+    }
+
+    /**
+     * Whether this project has a scheduled day on or after $date ('Y-m-d') - or
+     * no schedule at all yet, when every day is still open to it.
+     */
+    public function hasScheduledDayFrom(?string $date): bool
+    {
+        $this->loadMissing('schedules');
+
+        return $date === null
+            || $this->schedules->isEmpty()
+            || $this->firstScheduledDayFrom(CarbonImmutable::parse($date)) !== null;
     }
 
     /**

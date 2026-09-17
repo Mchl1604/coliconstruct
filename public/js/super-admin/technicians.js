@@ -1452,9 +1452,6 @@ document.addEventListener("DOMContentLoaded", function () {
         const untilWrap = removalModal.querySelector("[data-panel-until-wrap]");
         const modeRadios = removalModal.querySelectorAll("[data-panel-mode]");
         const effectiveHint = removalModal.querySelector("[data-panel-effective-hint]");
-        const conflictsEl = removalModal.querySelector("[data-panel-conflicts]");
-        const conflictsIntroEl = removalModal.querySelector("[data-panel-conflicts-intro]");
-        const conflictListEl = removalModal.querySelector("[data-panel-conflict-list]");
 
         let projectId = null;
         let payload = null;
@@ -1628,88 +1625,6 @@ document.addEventListener("DOMContentLoaded", function () {
                 : selectedTechnician.name + " comes off this project for good today.";
         }
 
-        function hideConflicts() {
-            conflictsEl.classList.add("d-none");
-            conflictListEl.innerHTML = "";
-        }
-
-        /**
-         * The open tasks the removal would strand, each with its own choice.
-         * The server refuses the removal until every one has an answer.
-         */
-        function renderConflicts(conflicts) {
-            conflictsIntroEl.textContent =
-                conflicts.length === 1
-                    ? "This task is dated to days " +
-                      selectedTechnician.name +
-                      " will not be assigned to this project. Choose what happens to it."
-                    : "These tasks are dated to days " +
-                      selectedTechnician.name +
-                      " will not be assigned to this project. Choose what happens to each one.";
-
-            conflictListEl.innerHTML = conflicts
-                .map(function (conflict) {
-                    const options =
-                        '<option value="" selected disabled>Choose what happens&hellip;</option>' +
-                        conflict.options
-                            .map(function (option) {
-                                return (
-                                    '<option value="' +
-                                    option.technician_id +
-                                    '">Reassign to ' +
-                                    escapeHtml(option.name) +
-                                    "</option>"
-                                );
-                            })
-                            .join("") +
-                        '<option value="unassign">Leave unassigned</option>' +
-                        (conflict.can_keep
-                            ? '<option value="keep">Keep with ' +
-                              escapeHtml(conflict.holder || "the technician") +
-                              " and flag it</option>"
-                            : "");
-
-                    return (
-                        '<div class="panel-task-card">' +
-                        '<div class="panel-task-range">' +
-                        escapeHtml(conflict.dates) +
-                        "</div>" +
-                        '<div class="panel-task-title">' +
-                        escapeHtml(conflict.title) +
-                        "</div>" +
-                        '<div class="text-muted small mb-2">' +
-                        escapeHtml(conflict.reason) +
-                        "</div>" +
-                        '<select class="form-select form-select-sm" data-conflict-task="' +
-                        conflict.task_id +
-                        '">' +
-                        options +
-                        "</select>" +
-                        "</div>"
-                    );
-                })
-                .join("");
-
-            conflictsEl.classList.remove("d-none");
-        }
-
-        function chosenResolutions() {
-            const choices = {};
-            let missing = false;
-
-            conflictListEl
-                .querySelectorAll("[data-conflict-task]")
-                .forEach(function (select) {
-                    if (!select.value) {
-                        missing = true;
-                    }
-
-                    choices[select.dataset.conflictTask] = select.value;
-                });
-
-            return missing ? null : choices;
-        }
-
         function showState(state) {
             noTechnicianEl.classList.toggle("d-none", state !== "no-technician");
             noProjectEl.classList.toggle("d-none", state !== "no-project");
@@ -1720,7 +1635,6 @@ document.addEventListener("DOMContentLoaded", function () {
             leadPanelEl.classList.add("d-none");
             leadOptionsEl.innerHTML = "";
             leadEmptyEl.classList.add("d-none");
-            hideConflicts();
             confirmBtn.disabled = true;
             confirmSpinner.classList.add("d-none");
             setAlert(removalErrorEl, "");
@@ -2079,7 +1993,6 @@ document.addEventListener("DOMContentLoaded", function () {
         /** The dialog's contents for the mode and days currently chosen. */
         function renderRemoval() {
             removing = true;
-            hideConflicts();
 
             // Nothing on the calendar from today on means nothing to take
             // away here, whichever mode is chosen.
@@ -2185,22 +2098,10 @@ document.addEventListener("DOMContentLoaded", function () {
                 return;
             }
 
-            let resolutions = {};
-
-            if (!conflictsEl.classList.contains("d-none")) {
-                resolutions = chosenResolutions();
-
-                if (!resolutions) {
-                    setAlert(removalErrorEl, "Choose what happens to every task listed.");
-
-                    return;
-                }
-            }
-
-            submitRemoval(selectedLeadId, resolutions);
+            submitRemoval(selectedLeadId);
         });
 
-        function submitRemoval(replacementLeadId, resolutions) {
+        function submitRemoval(replacementLeadId) {
             confirmBtn.disabled = true;
             confirmSpinner.classList.remove("d-none");
 
@@ -2218,7 +2119,6 @@ document.addEventListener("DOMContentLoaded", function () {
                         from: effectiveInput.value,
                         until: mode() === "days" ? untilInput.value || effectiveInput.value : null,
                         replacement_lead_id: replacementLeadId,
-                        task_resolutions: resolutions || {},
                     }),
                 },
             ).then(function (result) {
@@ -2226,12 +2126,6 @@ document.addEventListener("DOMContentLoaded", function () {
                 confirmBtn.disabled = false;
 
                 if (!result.ok) {
-                    // Tasks the removal would strand: listed with a choice each,
-                    // and the removal waits for them.
-                    if (result.body.needs_decisions && result.body.conflicts) {
-                        renderConflicts(result.body.conflicts);
-                    }
-
                     setAlert(
                         removalErrorEl,
                         result.body.error || "Unable to remove technician.",
@@ -2584,21 +2478,6 @@ document.addEventListener("DOMContentLoaded", function () {
                         "Currently led by " +
                         escapeHtml(project.lead_replacement.name) +
                         "</span>" +
-                        // The outgoing lead's work they would no longer be
-                        // assigned for is unassigned by this change - said in
-                        // one sentence before anybody presses confirm.
-                        (project.lead_replacement.unassigned_task_count > 0
-                            ? '<span class="d-block small fw-semibold text-danger mt-1">' +
-                              escapeHtml(
-                                  project.lead_replacement.unassigned_task_count +
-                                      (project.lead_replacement.unassigned_task_count === 1
-                                          ? " open task held by "
-                                          : " open tasks held by ") +
-                                      project.lead_replacement.name +
-                                      " will become Unassigned.",
-                              ) +
-                              "</span>"
-                            : "") +
                         "</span>" +
                         "</div>"
                     );

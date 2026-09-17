@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Models\Notification;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
 use App\Models\Schedule;
@@ -648,9 +647,9 @@ class ImportTechnicianTeamTest extends TestCase
     }
 
     /**
-     * Work does not leave with the person holding it.
+     * Work stays with the person holding it, flagged rather than unassigned.
      */
-    public function test_removing_a_technician_reports_the_work_they_leave_behind(): void
+    public function test_removing_a_technician_keeps_their_work_and_flags_it(): void
     {
         $lead = $this->createTechnician('Lead Person', 'lead_technician');
         $leaving = $this->createTechnician('Leaving Tech');
@@ -678,26 +677,18 @@ class ImportTechnicianTeamTest extends TestCase
             'due_date' => $this->day(6),
         ]);
 
-        // Taking the task off them is the administrator's decision, stated in
-        // the save - see ProjectTeamChange.
+        // See ProjectTeamChange::apply().
         $this->put(route('super-admin.projects.team.update', $project->project_id), [
             'lead_tech' => $lead->technician_id,
             'technicians' => [],
-            'task_resolutions' => [$open->task_id => 'unassign'],
         ])->assertSessionHas('success');
 
-        $this->assertNull($open->fresh()->technician_id);
-        $this->assertSame('unassigned', $open->fresh()->status);
+        $this->assertSame($leaving->technician_id, $open->fresh()->technician_id);
+        $this->assertSame('pending', $open->fresh()->status);
+        $this->assertSame(Task::GAP_OFF_TEAM, $open->fresh()->assignmentGap());
         $this->assertSame($leaving->technician_id, $done->fresh()->technician_id);
 
-        $this->assertDatabaseHas('tbl_notifications', [
-            'user_id' => $lead->account_id,
-            'title' => 'Tasks Left Unassigned',
-        ]);
-
-        $notification = Notification::where('title', 'Tasks Left Unassigned')->first();
-        $this->assertStringContainsString('Leaving Tech', $notification->message);
-        $this->assertStringContainsString('Fit the ducting', $notification->message);
+        $this->assertDatabaseMissing('tbl_notifications', ['title' => 'Tasks Left Unassigned']);
     }
 
     public function test_removing_a_technician_holding_no_work_raises_no_notification(): void

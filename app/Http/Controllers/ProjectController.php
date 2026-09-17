@@ -3070,10 +3070,8 @@ class ProjectController extends Controller
      * Technicians page. The rules and the writing live in ProjectTeamChange;
      * this is the form around them.
      * Every open task the change would leave with somebody no longer assigned
-     * for its dates must come with a choice - task_resolutions[task_id] is
-     * `unassign`, `keep` (for a change still to come) or the id of the
-     * technician taking it over - and the save is refused until each one has
-     * one. The dialog asks for them through teamPreview() before it submits.
+     * for its dates stays with them, flagged on the task board - see
+     * ProjectTeamChange::apply().
      */
     public function updateAssignedTeam(Request $request, int $id)
     {
@@ -3101,19 +3099,9 @@ class ProjectController extends Controller
             return back()->with('error', $conflict);
         }
 
-        $resolutions = (array) $request->input('task_resolutions', []);
-        $conflicts = $change->taskConflicts($plan);
-
-        if ($unresolved = $change->unresolved($conflicts, $resolutions)) {
-            return back()->with('error', implode(' ', $unresolved));
-        }
-
         $actorId = $request->user()?->id;
-        $outcome = null;
 
-        DB::transaction(function () use ($change, $plan, $resolutions, $actorId, &$outcome): void {
-            $outcome = $change->apply($plan, $resolutions, $actorId);
-        });
+        DB::transaction(fn () => $change->apply($plan, $actorId));
 
         $this->activityLogger->record(
             ActivityLog::TECHNICIAN_ASSIGNED,
@@ -3126,7 +3114,7 @@ class ProjectController extends Controller
             $project
         );
 
-        $change->notify($plan, $outcome);
+        $change->notify($plan);
 
         return back()->with('success', 'Assigned team updated.');
     }
@@ -3134,23 +3122,22 @@ class ProjectController extends Controller
     /**
      * What a team change would do, before it is saved - for the dialog to show.
      *
-     * Answers in JSON with the same refusals the save would give, and the
-     * tasks it would strand along with who could take each one over, so the
-     * person decides about the work before pressing save rather than finding
-     * out afterwards.
+     * Answers in JSON with the same refusals the save would give, and what it
+     * would change - who comes off, who joins, whether the lead changes - so
+     * the person can confirm it before pressing save.
      */
     public function teamPreview(Request $request, int $id)
     {
         $project = Project::with(['schedules', 'projectTechnicians'])->findOrFail($id);
 
         if ($refusal = $this->teamEditRefusal($project)) {
-            return response()->json(['errors' => [$refusal], 'conflicts' => []], 422);
+            return response()->json(['errors' => [$refusal]], 422);
         }
 
         $validator = $this->teamChangeValidator($request);
 
         if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()->all(), 'conflicts' => []], 422);
+            return response()->json(['errors' => $validator->errors()->all()], 422);
         }
 
         $change = app(ProjectTeamChange::class);
@@ -3163,7 +3150,7 @@ class ProjectController extends Controller
         }
 
         if ($errors !== []) {
-            return response()->json(['errors' => $errors, 'conflicts' => []], 422);
+            return response()->json(['errors' => $errors], 422);
         }
 
         $leadBefore = $change->leadOnDay($plan->before, $plan->effectiveDate());
@@ -3177,7 +3164,6 @@ class ProjectController extends Controller
                 : null,
             'removed' => $this->technicianNames($plan->removedIds()),
             'added' => $this->technicianNames($plan->addedIds()),
-            'conflicts' => $change->conflictsPayload($change->taskConflicts($plan)),
         ]);
     }
 
@@ -3256,7 +3242,6 @@ class ProjectController extends Controller
             'lead_tech' => ['required', 'integer', 'exists:tbl_technicians,technician_id'],
             'technicians' => ['nullable', 'array'],
             'technicians.*' => ['integer', 'exists:tbl_technicians,technician_id'],
-            'task_resolutions' => ['nullable', 'array'],
         ], [
             'lead_tech.required' => 'A lead technician is required.',
         ]);

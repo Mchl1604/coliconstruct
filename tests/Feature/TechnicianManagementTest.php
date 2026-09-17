@@ -732,7 +732,7 @@ class TechnicianManagementTest extends TestCase
         $this->assertSame(2, ScheduleTechnician::count());
     }
 
-    public function test_removing_a_technician_releases_their_unfinished_tasks(): void
+    public function test_removing_a_technician_keeps_their_unfinished_tasks(): void
     {
         $lead = $this->leadTechnician('Jose Garcia');
         $ana = $this->technician('Ana Mendoza');
@@ -755,29 +755,19 @@ class TechnicianManagementTest extends TestCase
             'status' => 'completed',
         ]);
 
-        // Nothing happens to the open task until somebody says what should.
+        // Nobody is asked, and nothing is unassigned: the open task stays hers.
         $this->deleteJson(route('super-admin.technicians.projects.destroy', [
             $ana->technician_id,
             $project->project_id,
         ]))
-            ->assertStatus(422)
-            ->assertJsonPath('needs_decisions', true)
-            ->assertJsonPath('conflicts.0.task_id', $open->task_id);
-
-        $this->assertSame($ana->technician_id, $open->fresh()->technician_id);
-
-        $this->deleteJson(route('super-admin.technicians.projects.destroy', [
-            $ana->technician_id,
-            $project->project_id,
-        ]), [
-            'task_resolutions' => [$open->task_id => 'unassign'],
-        ])->assertOk();
+            ->assertOk()
+            ->assertJsonMissingPath('needs_decisions');
 
         $open->refresh();
         $done->refresh();
 
-        $this->assertNull($open->technician_id);
-        $this->assertSame('unassigned', $open->status);
+        $this->assertSame($ana->technician_id, $open->technician_id);
+        $this->assertSame('pending', $open->status);
 
         // Finished work keeps its history.
         $this->assertSame($ana->technician_id, $done->technician_id);

@@ -229,3 +229,21 @@ button.technician-link:not(.schedule-tech-chip) {
     text-decoration: underline;
     text-underline-offset: 2px;
 }
+
+/* ---- Task holder flag ----
+   Under a task's technician when they are no longer assigned to the project
+   for all of its dates. See components/task-holder-flag.blade.php. */
+
+.task-holder-flag {
+    display: block;
+    margin-top: .15rem;
+    color: #b42318;
+    font-size: .75rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.task-holder-flag .bi {
+    font-size: .7rem;
+    margin-right: .15rem;
+}

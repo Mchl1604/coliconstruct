@@ -637,16 +637,10 @@
                 && String(previousLeadId) !== String(leadTechInput.value);
         }
 
-        let reviewing = false;
         let readyToSend = false;
         let previewError = null;
 
         const editStep = form.querySelector('[data-team-edit-step]');
-        const reviewStep = form.querySelector('[data-team-review-step]');
-        const reviewList = form.querySelector('[data-team-review-list]');
-        const reviewSummary = form.querySelector('[data-team-review-summary]');
-        const reviewBack = form.querySelector('[data-team-review-back]');
-        const closeButton = form.querySelector('[data-team-close]');
 
         // ----------------------------------------------------------------
         // Asking before it is saved
@@ -706,78 +700,16 @@
             }
         }
 
-        function showEditStep() {
-            reviewing = false;
-            reviewList.innerHTML = '';
-            reviewStep.classList.add('d-none');
-            editStep.classList.remove('d-none');
-            reviewBack.classList.add('d-none');
-            closeButton.classList.remove('d-none');
-        }
-
-        /**
-         * One row per task the change strands, each with its own choice. The
-         * choices are ordinary form fields - task_resolutions[task_id] - so the
-         * save carries them to the server, which checks every one again.
-         */
-        function showReviewStep(preview) {
-            reviewing = true;
-
-            reviewSummary.textContent = preview.conflicts.length === 1
-                ? '1 task needs a decision before this change can be saved.'
-                : preview.conflicts.length + ' tasks need a decision before this change can be saved.';
-
-            reviewList.innerHTML = preview.conflicts.map(function (conflict) {
-                const options = ['<option value="" selected disabled>Choose what happens&hellip;</option>']
-                    .concat(conflict.options.map(function (option) {
-                        return '<option value="' + option.technician_id + '">Reassign to ' +
-                            escapeHtml(option.name) + '</option>';
-                    }))
-                    .concat(['<option value="unassign">Leave unassigned</option>'])
-                    .concat(conflict.can_keep
-                        ? ['<option value="keep">Keep with ' + escapeHtml(conflict.holder || 'the technician') +
-                            ' and flag it</option>']
-                        : [])
-                    .join('');
-
-                return '<div class="border rounded-2 p-3">' +
-                    '<div class="d-flex flex-wrap justify-content-between gap-2">' +
-                    '<span class="fw-semibold">' + escapeHtml(conflict.title) + '</span>' +
-                    '<span class="text-secondary small">' + escapeHtml(conflict.dates) + '</span>' +
-                    '</div>' +
-                    '<div class="text-secondary small mb-2">' + escapeHtml(conflict.reason) + '</div>' +
-                    '<select class="form-select form-select-sm" required name="task_resolutions[' +
-                    conflict.task_id + ']" aria-label="What happens to ' + escapeHtml(conflict.title) + '">' +
-                    options + '</select>' +
-                    (conflict.options.length
-                        ? ''
-                        : '<div class="form-text">Nobody on the team is assigned for all of these dates.</div>') +
-                    '</div>';
-            }).join('');
-
-            editStep.classList.add('d-none');
-            reviewStep.classList.remove('d-none');
-            reviewBack.classList.remove('d-none');
-            closeButton.classList.add('d-none');
-        }
-
-        reviewBack.addEventListener('click', showEditStep);
-
         /**
          * Ask the server what this change would do: the same refusals the save
-         * gives, and the tasks it would strand.
+         * gives.
          */
         function preview() {
             const data = new FormData(form);
 
-            // The preview is its own POST route; the form's PUT spoofing and
-            // any earlier task choices are not part of the question.
+            // The preview is its own POST route; the form's PUT spoofing is not
+            // part of the question.
             data.delete('_method');
-            Array.from(data.keys()).forEach(function (key) {
-                if (key.indexOf('task_resolutions') === 0) {
-                    data.delete(key);
-                }
-            });
 
             return fetch(form.dataset.previewUrl, {
                 method: 'POST',
@@ -787,11 +719,11 @@
             })
                 .then(function (response) {
                     return response.json().catch(function () {
-                        return { errors: ['Unable to check this change. Try again.'], conflicts: [] };
+                        return { errors: ['Unable to check this change. Try again.'] };
                     });
                 })
                 .catch(function () {
-                    return { errors: ['Unable to reach the server. Nothing was changed.'], conflicts: [] };
+                    return { errors: ['Unable to reach the server. Nothing was changed.'] };
                 });
         }
 
@@ -807,7 +739,6 @@
             // the person to answer it.
             if (!leadTechInput.value) {
                 event.preventDefault();
-                showEditStep();
                 leadTechError.classList.remove('d-none');
                 leadTechButton.focus();
 
@@ -817,17 +748,6 @@
             if (readyToSend) {
                 readyToSend = false;
 
-                return;
-            }
-
-            // Every stranded task answered: this submit is the save, and it is
-            // left to go on to the page's own sending. It is not stopped and
-            // fired again - a form cannot be re-submitted from inside its own
-            // submit event, and the browser silently drops the second one,
-            // which left the button needing two presses. The selects are
-            // required, so the browser has already refused a missing choice
-            // before this handler runs.
-            if (reviewing) {
                 return;
             }
 
@@ -843,12 +763,6 @@
                 return preview().then(function (result) {
                     if (result.errors && result.errors.length) {
                         showPreviewError(result.errors);
-
-                        return;
-                    }
-
-                    if (result.conflicts && result.conflicts.length) {
-                        showReviewStep(result);
 
                         return;
                     }
