@@ -228,7 +228,7 @@ class TermsAcceptanceTest extends TestCase
     public function test_self_registration_records_the_current_version(): void
     {
         $client = app(UserAccountService::class)->registerClient([
-            'full_name' => 'New Client',
+            'first_name' => 'New', 'last_name' => 'Client',
             'contact_number' => '09171234567',
             'birthdate' => '1990-01-01',
             'email' => 'new.client@example.test',

@@ -98,11 +98,11 @@ class UserAccountService
         $password = $this->temporaryPasswordFrom($data);
 
         $user = DB::transaction(function () use ($data, $password): User {
-            [$first, $middle, $last] = $this->splitFullName($data['full_name']);
+            [$first, $middle, $last] = $this->clientNameParts($data);
 
             return User::create([
                 'user_code' => $this->nextUserCode('CLI'),
-                'name' => trim($data['full_name']),
+                'name' => $this->displayName(['first_name' => $first, 'middle_name' => $middle, 'last_name' => $last]),
                 'first_name' => $first,
                 'middle_name' => $middle,
                 'last_name' => $last,
@@ -163,7 +163,12 @@ class UserAccountService
 
             return PendingRegistration::create([
                 'email' => $email,
-                'full_name' => trim((string) $data['full_name']),
+                'first_name' => trim((string) $data['first_name']),
+                'middle_name' => $this->middleInitial($data['middle_name'] ?? null),
+                'last_name' => trim((string) $data['last_name']),
+                // Kept alongside the parts: the verification email greets the
+                // whole name before any account exists.
+                'full_name' => $this->displayName(['middle_name' => $this->middleInitial($data['middle_name'] ?? null)] + $data),
                 'contact_number' => trim((string) $data['contact_number']),
                 'birthdate' => $data['birthdate'],
                 // Hashed on the way in. The row is then worth no more to
@@ -186,6 +191,11 @@ class UserAccountService
     public function completeRegistration(PendingRegistration $pending): User
     {
         $user = $this->registerClient([
+            'first_name' => $pending->first_name,
+            'middle_name' => $pending->middle_name,
+            'last_name' => $pending->last_name,
+            // Only read for a registration started before the name was asked
+            // for in parts - see clientNameParts().
             'full_name' => $pending->full_name,
             'contact_number' => $pending->contact_number,
             'birthdate' => $pending->birthdate,
@@ -236,11 +246,11 @@ class UserAccountService
         }
 
         $user = DB::transaction(function () use ($data): User {
-            [$first, $middle, $last] = $this->splitFullName($data['full_name']);
+            [$first, $middle, $last] = $this->clientNameParts($data);
 
             return User::create([
                 'user_code' => $this->nextUserCode('CLI'),
-                'name' => trim($data['full_name']),
+                'name' => $this->displayName(['first_name' => $first, 'middle_name' => $middle, 'last_name' => $last]),
                 'first_name' => $first,
                 'middle_name' => $middle,
                 'last_name' => $last,
@@ -350,10 +360,10 @@ class UserAccountService
         $this->guardEditable($user);
 
         DB::transaction(function () use ($user, $data): void {
-            [$first, $middle, $last] = $this->splitFullName($data['full_name']);
+            [$first, $middle, $last] = $this->clientNameParts($data);
 
             $user->fill([
-                'name' => trim($data['full_name']),
+                'name' => $this->displayName(['first_name' => $first, 'middle_name' => $middle, 'last_name' => $last]),
                 'first_name' => $first,
                 'middle_name' => $middle,
                 'last_name' => $last,
@@ -830,7 +840,36 @@ class UserAccountService
     }
 
     /**
-     * Clients are captured as one full name, but the name parts still get
+     * A client's name as first name, middle initial and last name.
+     *
+     * Every form now asks for the three parts. A single `full_name` is still
+     * understood, for a pending registration submitted before that change.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array{0: string, 1: ?string, 2: ?string}
+     */
+    private function clientNameParts(array $data): array
+    {
+        if (! array_key_exists('first_name', $data) || blank($data['first_name'])) {
+            return $this->splitFullName((string) ($data['full_name'] ?? ''));
+        }
+
+        return [
+            trim((string) $data['first_name']),
+            $this->middleInitial($data['middle_name'] ?? null),
+            trim((string) ($data['last_name'] ?? '')) ?: null,
+        ];
+    }
+
+    private function middleInitial(mixed $value): ?string
+    {
+        $value = trim((string) $value);
+
+        return $value === '' ? null : mb_strtoupper($value);
+    }
+
+    /**
+     * Clients were once captured as one full name, but the name parts still get
      * filled so both tables can sort and search the same way.
      *
      * @return array{0: string, 1: string|null, 2: string|null}

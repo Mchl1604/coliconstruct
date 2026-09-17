@@ -302,7 +302,7 @@ class AuditDecisionsTest extends TestCase
         Mail::fake();
 
         $this->post(route('auth.register.store'), [
-            'full_name' => 'New Comer',
+            'first_name' => 'New', 'last_name' => 'Comer',
             'contact_number' => '09123456789',
             'birthdate' => '1990-01-01',
             'email' => 'newcomer@example.test',

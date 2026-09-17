@@ -100,7 +100,7 @@ class EmailSystemTest extends TestCase
         });
 
         $this->post(route('auth.register.store'), [
-            'full_name' => 'Jose Garcia',
+            'first_name' => 'Jose', 'last_name' => 'Garcia',
             'email' => 'rejected@example.test',
             'contact_number' => '09175551234',
             'birthdate' => '1990-05-04',

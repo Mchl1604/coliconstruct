@@ -192,7 +192,6 @@
                                         maxlength="{{ \App\Models\User::CONTACT_NUMBER_LENGTH }}"
                                         placeholder="09171234567" autocomplete="tel"
                                         value="{{ old('contact_number', $account->contact_number) }}" required>
-                                    <div class="form-text">11 digits, numbers only.</div>
                                     @error('contact_number', 'information')
                                         <div class="invalid-feedback">{{ $message }}</div>
                                     @enderror

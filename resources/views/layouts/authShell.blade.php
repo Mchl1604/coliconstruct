@@ -19,14 +19,10 @@
     <link href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css" rel="stylesheet">
     <link href="/css/datePicker.css" rel="stylesheet">
     <link href="/css/theme.css" rel="stylesheet">
-    <style>
-        body {
-            background: #f8f9fa;
-        }
-    </style>
+    <link href="/css/authShell.css" rel="stylesheet">
 </head>
 
-<body>
+<body class="auth-body">
 
     <x-flash-toasts />
 
@@ -35,9 +31,17 @@
          to choose rather than this shell's; `max-width: 100%` keeps every one
          of them single-column on a phone. --}}
     <div class="d-flex align-items-center justify-content-center min-vh-100 py-4 px-3">
-        <div class="card shadow-sm" style="width: @yield('card-width', '460px'); max-width: 100%;">
-            <div class="card-body p-4 p-md-5 text-center">
-                @yield('card')
+        <div style="width: @yield('card-width', '460px'); max-width: 100%;">
+            {{-- A way back to the website from any of these pages. --}}
+            <a href="{{ route('landing.home') }}" class="auth-back">
+                <i class="bi bi-arrow-left" aria-hidden="true"></i>
+                Back to home
+            </a>
+
+            <div class="card auth-card">
+                <div class="card-body p-4 p-md-5 text-center">
+                    @yield('card')
+                </div>
             </div>
         </div>
     </div>

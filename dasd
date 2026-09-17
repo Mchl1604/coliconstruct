@@ -1,0 +1,109 @@
+[33me851986[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m technician removal and scheduing and portal ui and activity log improvements
+[33mfe1099e[m technician removal and scheduling part 2
+[33m6a58704[m technician removal and scheduling part 2
+[33m07af8b3[m ADD REMOVAL OF TECH FUNCTIONALITIES PART 1
+[33m9593456[m[33m ([m[1;32mclaude/recursing-cartwright-c83737[m[33m)[m fix technician bugs
+[33m61012f5[m fix edit lead tech dropdown design and month persistence
+[33mad19675[m dedicated error pages
+[33m481f3df[m Return to the schedule panel when a hold is cancelled
+[33m9610b4a[m projectHold functionality
+[33mcd1555f[m project address field
+[33mdbdebd7[m pdf fix 3
+[33mbbf543d[m pdf fix 2
+[33mf3910c2[m pdf fix 1
+[33m17d0334[m Export reports pdf and alignment fixes
+[33m6951cd2[m project Details partial updates and task and project completion rules
+[33m87db1ae[m Strong password policy system wide
+[33m3934def[m system settings navigation redesign
+[33m3f027f5[m fix phases issue
+[33m5d194b4[m quotation and file history
+[33mfc035fb[m add act ;logs in each project
+[33m5cdcde9[m add default tasks to phases and remove my projects to homepage if not signed in
+[33m76355c2[m fix the ui in selecting tech
+[33me71e6a2[m[33m ([m[1;32mclaude/cool-agnesi-dc8ac7[m[33m)[m improve sidepanel in my schedule and move the logout button to header
+[33md37001c[m add phases to task column
+[33m02ba321[m add print functionalities to reports directly in the website
+[33m2970fd5[m Merge branch 'codex/gcopilot' Add phases functionality
+[33m484cefc[m[33m ([m[1;31morigin/codex/gcopilot[m[33m, [m[1;32mcodex/gcopilot[m[33m)[m add phases feature
+[33mf8f3bfa[m Merge pull request #1 from Mchl1604/codex/gcopilot
+[33m69c0876[m change public page. add images to services offered
+[33ma183fa8[m wala lang
+[33m196c012[m remove uncessary comments and whitespace from the edit email
+[33m7f69f6b[m fix system reports
+[33m938ac63[m project completion edge cases
+[33m75aaf21[m[33m ([m[1;32mclaude/wonderful-leakey-24ee59[m[33m, [m[1;32mclaude/quizzical-margulis-a7b379[m[33m)[m super admin schedulle override fix for historical record- assign technician to added past schedule
+[33m5da48f2[m partial day scheduule in recovery forms and resuming project update
+[33m0dd7501[m fix partial day config settings
+[33m77916bf[m major fix
+[33mdb3efe4[m fix middle name and client email cant be employee
+[33mc658265[m fixed archive workflow
+[33m25af4f9[m fix somethings
+[33m9e9fa7f[m delete files for vercel
+[33m5f46c8d[m fix local environment images
+[33m37bc001[m fix tthe storage of images
+[33mf4579cd[m fix email error message
+[33m6701e68[m fix registration page
+[33m2698445[m fix timezone
+[33m9502fca[m fix sendTestEmail
+[33m36f90e4[m fix email
+[33m18c0eec[m fix the trustproxies
+[33me171a9d[m modift composers
+[33ma38684a[m add nixpacks
+[33m17080bf[m change logging.php in config
+[33m28ed730[m vercel ayoko na
+[33m41e6554[m vercel
+[33m8efd978[m vercel pa ren
+[33md60eb48[m back to 7.4
+[33m930ef29[m vercel change to 8.3
+[33m4a7d92d[m try to deploy invercel partt 5
+[33m774c3a1[m try to deploy using vercel part 4
+[33mc5c1e0c[m try to host using vercel 3
+[33m27ca614[m try to deploy with vercel part 2
+[33me30dc11[m create files for vercel deployment
+[33mbb9d4da[m fix git igoner
+[33mc720c84[m change superadmin seeder
+[33m3dd6b90[m remove upload files
+[33m261c2a0[m trying to host
+[33m227fc58[m schedule date validation
+[33m30b91b6[m hotdog
+[33mebb419e[m add inquiry functionality
+[33m2a7c271[m First Bug fixes
+[33m35974b4[m fix system reports
+[33m144c7b5[m project completion confirmation and schedule cleanup
+[33m3d98afd[m add import team feature and remove a specific date in date range
+[33m4b46973[m Read a project's schedule as dates rather than as form fields
+[33m839501b[m Offer Import Team in the wizard before the dates are chosen
+[33mde967f7[m Hand the assigned-team editor over to the import dialog, and take it back
+[33m4ed7796[m Import a technician team from another project
+[33ma4b9e31[m Measure a task against the project's scheduled period, not one range of it
+[33m36a74c8[m Remove a single date from a project's schedule
+[33ma092e92[m Call a project with no dates Unscheduled
+[33m302f45a[m[33m ([m[1;32mfix/project-team-schedule-links[m[33m)[m Repair the team members left unbooked by the old editor
+[33mdeafa56[m Write a team member onto their project's schedules, always
+[33ma610852[m fixing website 1.0
+[33mb489a6c[m add time based project schedule
+[33m393a839[m added email functionalities
+[33m7325ad2[m add dashboard not finished
+[33md6ac79c[m add profile page
+[33m4bb1b02[m fix the errors and report modal
+[33mf4babfa[m add homepage
+[33m4c5f6c5[m add activity log need fixing
+[33m359889b[m fix the login bug(untested) and add tech portal
+[33m3f7e53f[m fix the login bug (untested) and do thte tech portal
+[33md1c767c[m claude finish lead tech
+[33m326ba58[m claude add configuration page and log in sign in function
+[33m4103c46[m claude- add reports page
+[33m077f3d4[m Claude 3 - add overdue status
+[33mdcf51fa[m Claude 2- before implementing overdue status
+[33m407a398[m claude code 1 - Technicians page, schedule, task, optimize create project
+[33m9604e08[m add task page
+[33maedb512[m add archive,  cancellation,  and completion function
+[33mce2a75e[m debug schedule page
+[33m791a8ec[m start schedule page
+[33mf925931[m fix task unassigned function
+[33mc58550f[m add on hold functionality and edit technician functionality
+[33me4fb53d[m create technician report and task functions
+[33mce90aa2[m start project details
+[33m820a505[m create new project and display projects
+[33m0069e59[m show list of technicians in creating projects
+[33m0805b0c[m first commit

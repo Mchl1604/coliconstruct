@@ -765,7 +765,9 @@ class ConfigurationController extends Controller
         // credential, and nothing in this module moves it. So is the picture:
         // clients do not have one.
         $validator = Validator::make($request->all(), [
-            'full_name' => ['required', 'string', 'max:255'],
+            'first_name' => ['required', 'string', 'max:100'],
+            'middle_name' => PersonName::middleInitialRules(),
+            'last_name' => ['required', 'string', 'max:100'],
             'contact_number' => ['required', 'string', 'max:'.User::CONTACT_NUMBER_LENGTH, self::CONTACT_NUMBER_RULE],
             // Optional here for the same reason it is on the employee form:
             // an older account has none on file, but one that is supplied is
@@ -915,7 +917,9 @@ class ConfigurationController extends Controller
     private function clientRules(): array
     {
         return [
-            'full_name' => ['required', 'string', 'max:255'],
+            'first_name' => ['required', 'string', 'max:100'],
+            'middle_name' => PersonName::middleInitialRules(),
+            'last_name' => ['required', 'string', 'max:100'],
             'contact_number' => ['required', 'string', 'max:'.User::CONTACT_NUMBER_LENGTH, self::CONTACT_NUMBER_RULE],
             'birthdate' => AccountAge::rules(),
             'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users', 'email')],

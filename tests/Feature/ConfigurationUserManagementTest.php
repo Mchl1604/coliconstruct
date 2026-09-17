@@ -62,7 +62,7 @@ class ConfigurationUserManagementTest extends TestCase
     private function clientPayload(array $overrides = []): array
     {
         return array_merge([
-            'full_name' => 'Jose Garcia',
+            'first_name' => 'Jose', 'last_name' => 'Garcia',
             'contact_number' => '09175551234',
             'birthdate' => '1988-11-20',
             'email' => 'jose.garcia@example.test',
@@ -464,7 +464,7 @@ class ConfigurationUserManagementTest extends TestCase
 
     public function test_a_client_still_requires_a_name_number_and_email(): void
     {
-        foreach (['full_name', 'contact_number', 'email'] as $field) {
+        foreach (['first_name', 'last_name', 'contact_number', 'email'] as $field) {
             $response = $this->postJson(
                 route('super-admin.configuration.users.clients.store'),
                 $this->clientPayload([$field => ''])

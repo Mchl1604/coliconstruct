@@ -1,0 +1,139 @@
+/* The signed-out pages: sign in, register, and the password and verification
+   steps around them. Minimal on purpose - the brand's blue carries the page,
+   a touch of its yellow marks the card, and everything else stays quiet so
+   the form is the only thing asking for attention. The colours are the
+   public site's own (see publicSite.css), so leaving the website for Log In
+   does not feel like arriving somewhere else. */
+
+.auth-body {
+    --brand-blue: #2d8de1;
+    --brand-blue-deep: #2370b4;
+    --brand-blue-dark: #1b5688;
+    --brand-blue-soft: #eaf4fd;
+    --brand-yellow: #f9ee3c;
+    --brand-ink: #1b3a52;
+
+    min-height: 100vh;
+    color: var(--brand-ink);
+    /* Two soft washes of colour in opposite corners over a pale blue, rather
+       than a flat grey. */
+    background:
+        radial-gradient(circle at 0% 0%, rgba(45, 141, 225, .18), transparent 42%),
+        radial-gradient(circle at 100% 100%, rgba(249, 238, 60, .22), transparent 38%),
+        #f4f9fe;
+}
+
+.auth-back {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    margin-bottom: .85rem;
+    font-size: .875rem;
+    font-weight: 600;
+    color: var(--brand-blue-deep);
+    text-decoration: none;
+}
+
+.auth-back:hover,
+.auth-back:focus {
+    color: var(--brand-blue-dark);
+    text-decoration: underline;
+}
+
+.auth-card {
+    position: relative;
+    overflow: hidden;
+    border: 0;
+    border-radius: 18px;
+    box-shadow: 0 18px 44px rgba(27, 58, 82, .12);
+}
+
+/* The brand's two colours as one thin strip along the top edge. */
+.auth-card::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto;
+    height: 5px;
+    background: linear-gradient(90deg, var(--brand-blue-deep) 0%, var(--brand-blue) 70%, var(--brand-yellow) 70%);
+}
+
+.auth-card h3 {
+    font-weight: 700;
+    color: var(--brand-ink);
+}
+
+.auth-card .form-label {
+    font-size: .875rem;
+    font-weight: 600;
+    color: var(--brand-ink);
+}
+
+.auth-card .form-control {
+    border-radius: 10px;
+    border-color: #d5e3ef;
+    background-color: #fbfdff;
+}
+
+.auth-card .form-control:focus {
+    border-color: var(--brand-blue);
+    background-color: #fff;
+    box-shadow: 0 0 0 .2rem rgba(45, 141, 225, .18);
+}
+
+/* The eye button reads as part of the password field it sits in. */
+.auth-card .input-group > .form-control {
+    border-radius: 10px 0 0 10px;
+}
+
+.auth-card .input-group > [data-password-toggle] {
+    border-color: #d5e3ef;
+    border-radius: 0 10px 10px 0;
+    background-color: #fbfdff;
+    color: #6c8193;
+}
+
+.auth-card .input-group:focus-within > [data-password-toggle] {
+    border-color: var(--brand-blue);
+}
+
+/* The page's one action is solid, like the website's Log In button. theme.css
+   outlines every button through Bootstrap's own variables, so the fill is set
+   the same way. */
+.auth-card .btn-primary {
+    --bs-btn-color: #fff;
+    --bs-btn-bg: var(--brand-blue-deep);
+    --bs-btn-border-color: var(--brand-blue-deep);
+    --bs-btn-hover-color: #fff;
+    --bs-btn-hover-bg: var(--brand-blue-dark);
+    --bs-btn-hover-border-color: var(--brand-blue-dark);
+    --bs-btn-active-color: #fff;
+    --bs-btn-active-bg: var(--brand-blue-dark);
+    --bs-btn-active-border-color: var(--brand-blue-dark);
+    --bs-btn-focus-shadow-rgb: 45, 141, 225;
+
+    border-radius: 10px;
+    font-weight: 600;
+}
+
+.auth-card a:not(.btn) {
+    color: var(--brand-blue-deep);
+    font-weight: 600;
+}
+
+.auth-card a:not(.btn):hover {
+    color: var(--brand-blue-dark);
+}
+
+.auth-card .btn-link {
+    color: var(--brand-blue-deep);
+}
+
+.auth-card .form-check-input:checked {
+    border-color: var(--brand-blue-deep);
+    background-color: var(--brand-blue-deep);
+}
+
+.auth-card .form-check-input:focus {
+    border-color: var(--brand-blue);
+    box-shadow: 0 0 0 .2rem rgba(45, 141, 225, .18);
+}

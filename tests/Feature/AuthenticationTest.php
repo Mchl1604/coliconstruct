@@ -212,7 +212,7 @@ class AuthenticationTest extends TestCase
         Mail::fake();
 
         $response = $this->post(route('auth.register.store'), [
-            'full_name' => 'Jose Garcia',
+            'first_name' => 'Jose', 'last_name' => 'Garcia',
             'email' => 'jose@example.test',
             'contact_number' => '09175551234',
             'birthdate' => '1990-05-04',
@@ -249,6 +249,53 @@ class AuthenticationTest extends TestCase
     }
 
     /**
+     * The name is asked for in its parts, and the account keeps those parts
+     * exactly as typed - a two-word first name is not mistaken for a middle
+     * name, and the middle initial is optional.
+     */
+    public function test_registration_keeps_the_name_in_its_parts(): void
+    {
+        Mail::fake();
+
+        $this->post(route('auth.register.store'), [
+            'first_name' => 'Maria Clara', 'middle_name' => 'd', 'last_name' => 'Dela Cruz',
+            'email' => 'maria@example.test',
+            'contact_number' => '09175551234',
+            'birthdate' => '1990-05-04',
+            'password' => 'My-own-password1',
+            'password_confirmation' => 'My-own-password1',
+            'terms' => '1',
+        ])->assertRedirect(route('auth.verify'));
+
+        $pending = PendingRegistration::where('email', 'maria@example.test')->firstOrFail();
+        $this->assertSame('D', $pending->middle_name);
+
+        $user = app(\App\Services\UserAccountService::class)->completeRegistration($pending);
+
+        $this->assertSame('Maria Clara', $user->first_name);
+        $this->assertSame('D', $user->middle_name);
+        $this->assertSame('Dela Cruz', $user->last_name);
+        $this->assertSame('Maria Clara D Dela Cruz', $user->fullName());
+    }
+
+    public function test_registration_refuses_a_middle_initial_longer_than_one_letter(): void
+    {
+        Mail::fake();
+
+        $this->post(route('auth.register.store'), [
+            'first_name' => 'Jose', 'middle_name' => 'Santos', 'last_name' => 'Garcia',
+            'email' => 'jose@example.test',
+            'contact_number' => '09175551234',
+            'birthdate' => '1990-05-04',
+            'password' => 'My-own-password1',
+            'password_confirmation' => 'My-own-password1',
+            'terms' => '1',
+        ])->assertSessionHasErrors('middle_name');
+
+        $this->assertNull(PendingRegistration::where('email', 'jose@example.test')->first());
+    }
+
+    /**
      * Filling the form in again replaces the registration rather than being
      * refused as a duplicate. This is the point of the pending table: an
      * abandoned attempt must never hold an address against the person who
@@ -261,7 +308,7 @@ class AuthenticationTest extends TestCase
         $this->travelTo(now()->subMinutes(5));
 
         $this->post(route('auth.register.store'), [
-            'full_name' => 'Jose Gracia',
+            'first_name' => 'Jose', 'last_name' => 'Gracia',
             'email' => 'jose@example.test',
             'contact_number' => '09175551234',
             'birthdate' => '1990-05-04',
@@ -273,7 +320,7 @@ class AuthenticationTest extends TestCase
         $this->travelBack();
 
         $this->post(route('auth.register.store'), [
-            'full_name' => 'Jose Garcia',
+            'first_name' => 'Jose', 'last_name' => 'Garcia',
             'email' => 'jose@example.test',
             'contact_number' => '09175559999',
             'birthdate' => '1990-05-04',
@@ -300,7 +347,7 @@ class AuthenticationTest extends TestCase
         Mail::fake();
 
         $this->post(route('auth.register.store'), [
-            'full_name' => 'Jose Garcia',
+            'first_name' => 'Jose', 'last_name' => 'Garcia',
             'email' => 'jose@example.test',
             'contact_number' => '09175551234',
             'birthdate' => '1990-05-04',
@@ -324,7 +371,7 @@ class AuthenticationTest extends TestCase
         Mail::fake();
 
         $this->post(route('auth.register.store'), [
-            'full_name' => 'Jose Garcia',
+            'first_name' => 'Jose', 'last_name' => 'Garcia',
             'email' => 'jose@example.test',
             'contact_number' => '09175551234',
             'birthdate' => '1990-05-04',
@@ -368,7 +415,7 @@ class AuthenticationTest extends TestCase
         Mail::fake();
 
         $this->post(route('auth.register.store'), [
-            'full_name' => 'Jose Garcia',
+            'first_name' => 'Jose', 'last_name' => 'Garcia',
             'email' => 'jose@example.test',
             'contact_number' => '09175551234',
             'birthdate' => '1990-05-04',
@@ -404,7 +451,7 @@ class AuthenticationTest extends TestCase
         Mail::fake();
 
         $this->post(route('auth.register.store'), [
-            'full_name' => 'Jose Garcia',
+            'first_name' => 'Jose', 'last_name' => 'Garcia',
             'email' => 'jose@example.test',
             'contact_number' => '09175551234',
             'birthdate' => '1990-05-04',
@@ -510,7 +557,7 @@ class AuthenticationTest extends TestCase
         Mail::fake();
 
         $this->post(route('auth.register.store'), [
-            'full_name' => 'Sneaky Person',
+            'first_name' => 'Sneaky', 'last_name' => 'Person',
             'email' => 'sneaky@example.test',
             'contact_number' => '09175551234',
             'birthdate' => '1990-05-04',
@@ -536,7 +583,7 @@ class AuthenticationTest extends TestCase
         $this->account('client', ['email' => 'taken@example.test']);
 
         $this->post(route('auth.register.store'), [
-            'full_name' => 'Jose Garcia',
+            'first_name' => 'Jose', 'last_name' => 'Garcia',
             'email' => 'taken@example.test',
             'contact_number' => '09175551234',
             'birthdate' => '1990-05-04',
@@ -555,7 +602,7 @@ class AuthenticationTest extends TestCase
         $underage = CarbonImmutable::today()->subYears(17)->toDateString();
 
         $this->post(route('auth.register.store'), [
-            'full_name' => 'Young Person',
+            'first_name' => 'Young', 'last_name' => 'Person',
             'email' => 'young@example.test',
             'contact_number' => '09175551234',
             'birthdate' => $underage,
@@ -566,11 +613,12 @@ class AuthenticationTest extends TestCase
 
         $this->assertSame(0, User::where('email', 'young@example.test')->count());
 
-        // The form asks for it in the first place.
+        // The form asks for it in the first place, without a hint under it.
         $this->get(route('auth.register'))
             ->assertOk()
             ->assertSee('name="birthdate"', escape: false)
-            ->assertSee('at least 18 years old', escape: false);
+            ->assertDontSee('You must be at least 18 years old to register.', escape: false)
+            ->assertDontSee('11 digits, numbers only.', escape: false);
     }
 
     /**
@@ -583,7 +631,7 @@ class AuthenticationTest extends TestCase
         $birthdate = CarbonImmutable::today()->subYears(18)->toDateString();
 
         $this->post(route('auth.register.store'), [
-            'full_name' => 'Just Eighteen',
+            'first_name' => 'Just', 'last_name' => 'Eighteen',
             'email' => 'eighteen@example.test',
             'contact_number' => '09175551234',
             'birthdate' => $birthdate,
@@ -602,7 +650,7 @@ class AuthenticationTest extends TestCase
     public function test_registration_requires_matching_passwords(): void
     {
         $this->post(route('auth.register.store'), [
-            'full_name' => 'Jose Garcia',
+            'first_name' => 'Jose', 'last_name' => 'Garcia',
             'email' => 'jose@example.test',
             'contact_number' => '09175551234',
             'birthdate' => '1990-05-04',
@@ -907,10 +955,11 @@ class AuthenticationTest extends TestCase
 
         $this->get(route('landing.home'))
             ->assertOk()
-            // The guest header's one button, which leads to Login and from
-            // there to the registration form.
-            ->assertSee('Get Started')
+            // The guest header's Log In and Sign Up buttons.
+            ->assertSee('Log In')
+            ->assertSee('Sign Up')
             ->assertSee(route('auth.login'), escape: false)
+            ->assertSee(route('auth.register'), escape: false)
             // No signed-in chrome survives the sign-out.
             ->assertDontSee('data-notification-bell', escape: false);
     }

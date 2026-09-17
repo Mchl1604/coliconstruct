@@ -36,6 +36,9 @@ class PendingRegistration extends Model
 
     protected $fillable = [
         'email',
+        'first_name',
+        'middle_name',
+        'last_name',
         'full_name',
         'contact_number',
         'birthdate',

@@ -1138,8 +1138,9 @@
                                 Personal Information
                             </div>
 
-                            {{-- Employee name fields --}}
-                            <div class="row g-3 mb-3" data-employee-only>
+                            {{-- Name fields, the same three for employees and
+                                 Registered Users. --}}
+                            <div class="row g-3 mb-3">
                                 <div class="col-md-4">
                                     <label class="form-label small fw-semibold mb-1" for="userFirstName">
                                         First Name <span class="text-danger">*</span>
@@ -1167,17 +1168,6 @@
                                 </div>
                             </div>
 
-                            {{-- Registered User name --}}
-                            <div class="row g-3 mb-3 d-none" data-client-only>
-                                <div class="col-12">
-                                    <label class="form-label small fw-semibold mb-1" for="userFullName">
-                                        Full Name <span class="text-danger">*</span>
-                                    </label>
-                                    <input type="text" id="userFullName" class="form-control" name="full_name"
-                                        maxlength="255" autocomplete="off">
-                                </div>
-                            </div>
-
                             <div class="row g-3 mb-3">
                                 <div class="col-md-4">
                                     <label class="form-label small fw-semibold mb-1" for="userContactNumber">
@@ -1190,9 +1180,7 @@
                                     <input type="text" id="userContactNumber" class="form-control"
                                         name="contact_number" inputmode="numeric" data-digits-only
                                         maxlength="{{ \App\Models\User::CONTACT_NUMBER_LENGTH }}"
-                                        placeholder="09171234567" autocomplete="off"
-                                        aria-describedby="userContactNumberHelp">
-                                    <div class="form-text" id="userContactNumberHelp">11 digits, numbers only.</div>
+                                        placeholder="09171234567" autocomplete="off">
                                 </div>
                                 <div class="col-md-4">
                                     <label class="form-label small fw-semibold mb-1" for="userBirthdate">
@@ -1205,7 +1193,6 @@
                                     <input type="date" id="userBirthdate" class="form-control" name="birthdate"
                                         min="{{ \App\Support\AccountAge::earliestAllowed() }}"
                                         max="{{ \App\Support\AccountAge::latestAllowed() }}" autocomplete="off">
-                                    <div class="form-text">Must be at least 18 years old.</div>
                                 </div>
                                 <div class="col-md-4" data-email-field>
                                     <label class="form-label small fw-semibold mb-1" for="userEmail">

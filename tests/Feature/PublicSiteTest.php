@@ -212,19 +212,16 @@ class PublicSiteTest extends TestCase
     }
 
     /**
-     * The header offers a guest one door - Get Started - which opens Login,
-     * and the form behind it carries the way through to Register, so somebody
-     * without an account yet is never stranded.
+     * The header offers a guest Log In and Sign Up, and a signed-in client
+     * their profile instead.
      */
-    public function test_a_guest_is_offered_get_started_and_a_client_their_profile(): void
+    public function test_a_guest_is_offered_log_in_and_sign_up_and_a_client_their_profile(): void
     {
         $this->get(route('landing.home'))
             ->assertOk()
-            ->assertSee('Get Started')
-            ->assertSee(route('auth.login'), escape: false);
-
-        $this->get(route('auth.login'))
-            ->assertOk()
+            ->assertSee('Log In')
+            ->assertSee('Sign Up')
+            ->assertSee(route('auth.login'), escape: false)
             ->assertSee(route('auth.register'), escape: false);
 
         $client = $this->account('client', 'client@example.test');
@@ -291,7 +288,7 @@ class PublicSiteTest extends TestCase
      * A guest is offered no route to My Projects anywhere on the homepage -
      * not the header item, not the yellow hero button, not the footer's
      * navigation column. The page behind it has nothing on it for them, and
-     * the header's Get Started is the door they are meant to take. The About
+     * the header's Log In and Sign Up are the doors they are meant to take. The About
      * and Contact doors are untouched.
      */
     public function test_a_guest_is_offered_no_route_to_my_projects_on_the_homepage(): void

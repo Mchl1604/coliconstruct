@@ -13,6 +13,7 @@ use App\Services\SessionGuard;
 use App\Services\UserAccountService;
 use App\Support\AccountAge;
 use App\Support\PasswordPolicy;
+use App\Support\PersonName;
 use App\Support\PortalHome;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -232,7 +233,10 @@ class AuthController extends Controller
     public function register(Request $request)
     {
         $validated = $request->validate([
-            'full_name' => ['required', 'string', 'max:255'],
+            'first_name' => ['required', 'string', 'max:100'],
+            // An initial, not a name - see PersonName.
+            'middle_name' => PersonName::middleInitialRules(),
+            'last_name' => ['required', 'string', 'max:100'],
             'contact_number' => ['required', 'string', 'max:'.User::CONTACT_NUMBER_LENGTH, User::CONTACT_NUMBER_RULE],
             // Nobody under 18 gets an account, whichever form opens it.
             'birthdate' => AccountAge::rules(),
@@ -246,7 +250,7 @@ class AuthController extends Controller
             'contact_number.regex' => User::CONTACT_NUMBER_MESSAGE,
             'contact_number.max' => User::CONTACT_NUMBER_MESSAGE,
             'terms.accepted' => 'Accept the Terms and Conditions to continue.',
-        ] + AccountAge::messages() + PasswordPolicy::messages());
+        ] + PersonName::middleInitialMessages() + AccountAge::messages() + PasswordPolicy::messages());
 
         // Never handed to the account service: agreeing is a precondition of
         // registering, not a column on the account.

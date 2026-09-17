@@ -81,6 +81,22 @@
     color: var(--brand-blue-deep);
 }
 
+/* The one solid blue button: the header's Log In, set beside the outlined
+   Sign Up so the two doors are told apart at a glance. */
+.btn-brand-blue-solid {
+    background: var(--brand-blue-deep);
+    border: 1px solid var(--brand-blue-deep);
+    color: #fff;
+    font-weight: 600;
+}
+
+.btn-brand-blue-solid:hover,
+.btn-brand-blue-solid:focus {
+    background: var(--brand-blue-dark);
+    border-color: var(--brand-blue-dark);
+    color: #fff;
+}
+
 /* Kept as its own class because the markup names it, but with the filled blue
    one now outlined too the two read alike - there is only the one blue button. */
 .btn-outline-brand-blue {

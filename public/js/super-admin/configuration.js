@@ -1410,19 +1410,17 @@ document.addEventListener("DOMContentLoaded", function () {
         userForm.querySelector('[name="birthdate"]').value = account.birthdate || "";
         emailInput.value = account.email || "";
 
+        userForm.querySelector('[name="first_name"]').value = account.first_name || "";
+        userForm.querySelector('[name="middle_name"]').value = account.middle_name || "";
+        userForm.querySelector('[name="last_name"]').value = account.last_name || "";
+
         if (account.is_client) {
-            userForm.querySelector('[name="full_name"]').value = account.full_name || "";
 
             // The address is the client's login credential, so it moves only
             // through the Change Email workflow.
             emailInput.disabled = true;
             emailLockedNote.classList.remove("d-none");
         } else {
-            userForm.querySelector('[name="first_name"]').value =
-                account.first_name || "";
-            userForm.querySelector('[name="middle_name"]').value =
-                account.middle_name || "";
-            userForm.querySelector('[name="last_name"]').value = account.last_name || "";
 
             if (account.role === "super_admin") {
                 lockRoleSelect(account.role_label);
@@ -1517,18 +1515,17 @@ document.addEventListener("DOMContentLoaded", function () {
 
         payload.set("contact_number", userForm.querySelector('[name="contact_number"]').value);
         payload.set("birthdate", userForm.querySelector('[name="birthdate"]').value);
+        payload.set("first_name", userForm.querySelector('[name="first_name"]').value);
+        payload.set("middle_name", userForm.querySelector('[name="middle_name"]').value);
+        payload.set("last_name", userForm.querySelector('[name="last_name"]').value);
 
         if (accountType === "client") {
-            payload.set("full_name", userForm.querySelector('[name="full_name"]').value);
 
             // An existing client's email address is fixed.
             if (!editing) {
                 payload.set("email", emailInput.value);
             }
         } else {
-            payload.set("first_name", userForm.querySelector('[name="first_name"]').value);
-            payload.set("middle_name", userForm.querySelector('[name="middle_name"]').value);
-            payload.set("last_name", userForm.querySelector('[name="last_name"]').value);
             payload.set("email", emailInput.value);
 
             // A locked Super Admin role is never sent; the server keeps it.

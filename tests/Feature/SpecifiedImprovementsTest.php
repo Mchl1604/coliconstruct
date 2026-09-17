@@ -124,7 +124,7 @@ class SpecifiedImprovementsTest extends TestCase
     private function registration(array $overrides = []): array
     {
         return array_merge([
-            'full_name' => 'Jose Garcia',
+            'first_name' => 'Jose', 'last_name' => 'Garcia',
             'email' => 'jose@example.test',
             'contact_number' => '09171234567',
             'birthdate' => '1990-05-04',

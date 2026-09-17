@@ -400,7 +400,7 @@ class RegisteredUserAssignmentTest extends TestCase
 
         $this->actingAs($admin)
             ->postJson(route('super-admin.configuration.users.clients.store'), [
-                'full_name' => 'New Registered Person',
+                'first_name' => 'New', 'last_name' => 'Person',
                 'contact_number' => '09171234567',
                 'birthdate' => CarbonImmutable::today()->subYears(30)->toDateString(),
                 'email' => 'new.person@example.test',

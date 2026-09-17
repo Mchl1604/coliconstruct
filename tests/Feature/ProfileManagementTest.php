@@ -128,19 +128,17 @@ class ProfileManagementTest extends TestCase
     }
 
     /**
-     * One button, not two. Get Started opens Login - which is what most people
-     * arriving here want - and the form behind it is where somebody without an
-     * account yet is sent to Register.
+     * Two doors for a guest: Log In for somebody with an account, Sign Up for
+     * somebody without one.
      */
-    public function test_a_guest_header_offers_get_started(): void
+    public function test_a_guest_header_offers_log_in_and_sign_up(): void
     {
         $this->get(route('landing.home'))
             ->assertOk()
-            ->assertSee('Get Started')
-            ->assertSee(route('auth.login'), escape: false);
-
-        $this->get(route('auth.login'))
-            ->assertOk()
+            ->assertSee('Log In')
+            ->assertSee('Sign Up')
+            ->assertDontSee('Get Started')
+            ->assertSee(route('auth.login'), escape: false)
             ->assertSee(route('auth.register'), escape: false);
     }
 

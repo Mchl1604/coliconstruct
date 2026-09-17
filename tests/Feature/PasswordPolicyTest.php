@@ -270,7 +270,7 @@ class PasswordPolicyTest extends TestCase
         $this->actingAsSuperAdmin();
 
         $this->postJson(route('super-admin.configuration.users.clients.store'), [
-            'full_name' => 'Jose Garcia',
+            'first_name' => 'Jose', 'last_name' => 'Garcia',
             'contact_number' => '09175551234',
             'birthdate' => '1988-11-20',
             'email' => 'jose@example.test',
@@ -304,7 +304,7 @@ class PasswordPolicyTest extends TestCase
         $this->actingAsSuperAdmin();
 
         $response = $this->postJson(route('super-admin.configuration.users.clients.store'), [
-            'full_name' => 'Jose Garcia',
+            'first_name' => 'Jose', 'last_name' => 'Garcia',
             'contact_number' => '09175551234',
             'birthdate' => '1988-11-20',
             'email' => 'jose@example.test',
@@ -415,15 +415,15 @@ class PasswordPolicyTest extends TestCase
                 'password' => 'password1',
             ]),
             fn () => $accounts->createClient([
-                'full_name' => 'Jose Garcia', 'contact_number' => '09175551234',
+                'first_name' => 'Jose', 'last_name' => 'Garcia', 'contact_number' => '09175551234',
                 'birthdate' => '1988-11-20', 'email' => 'jose@example.test', 'password' => 'Password!',
             ]),
             fn () => $accounts->startRegistration([
-                'full_name' => 'Maria Santos', 'contact_number' => '09175551234',
+                'first_name' => 'Maria', 'last_name' => 'Santos', 'contact_number' => '09175551234',
                 'birthdate' => '1988-11-20', 'email' => 'maria@example.test', 'password' => 'PASSWORD1!',
             ]),
             fn () => $accounts->registerClient([
-                'full_name' => 'Maria Santos', 'contact_number' => '09175551234',
+                'first_name' => 'Maria', 'last_name' => 'Santos', 'contact_number' => '09175551234',
                 'birthdate' => '1988-11-20', 'email' => 'maria@example.test', 'password' => 'password!',
             ]),
         ];
@@ -548,7 +548,7 @@ class PasswordPolicyTest extends TestCase
     private function register(string $password, ?string $confirmation = null): TestResponse
     {
         return $this->post(route('auth.register.store'), [
-            'full_name' => 'Jose Garcia',
+            'first_name' => 'Jose', 'last_name' => 'Garcia',
             'email' => 'jose@example.test',
             'contact_number' => '09175551234',
             'birthdate' => '1990-05-04',
