@@ -68,6 +68,13 @@ class TechnicianPortalController extends Controller
      */
     private const HIDDEN_STATUSES = ['cancelled', 'archived'];
 
+    /**
+     * Why a lead's report is refused on a day the project is not booked for,
+     * and the note the pages show in place of the button - see
+     * ProjectPolicy::submitReport().
+     */
+    public const REPORT_NOT_SCHEDULED_TODAY = 'Reports can only be submitted on one of the project\'s scheduled days.';
+
     public function __construct(
         private TaskScheduleRules $scheduleRules,
         private readonly TaskAssignmentRules $assignmentRules,
@@ -281,6 +288,10 @@ class TechnicianPortalController extends Controller
             'scheduleRanges' => collect($this->scheduleRules->ranges($project->project_id)),
             'canManageTasks' => $this->projectPolicy->manageTasks($user, $project),
             'canSubmitReport' => $this->projectPolicy->submitReport($user, $project),
+            // A lead who files this project's reports, on a day it is not
+            // booked for: the button is shown disabled, saying why.
+            'reportWaitsForScheduledDay' => $this->projectPolicy->reportsOn($user, $project)
+                && ! $this->projectPolicy->submitReport($user, $project),
             // Whether this project is even in a state to be closed out. A
             // Pending, Unscheduled or paused project is not, so the button is
             // not drawn at all rather than opening a dialog that can only
@@ -951,6 +962,13 @@ class TechnicianPortalController extends Controller
      */
     public function storeReport(Request $request, Project $project)
     {
+        // Said in words rather than as a bare 403: the lead does run this
+        // project, it is just not one of its scheduled days.
+        if ($this->projectPolicy->reportsOn($request->user(), $project)
+            && ! $project->isScheduledOn(BusinessTime::today()->toDateString())) {
+            return $this->failed($request, self::REPORT_NOT_SCHEDULED_TODAY);
+        }
+
         $this->authorize('submitReport', $project);
 
         $validator = Validator::make($request->all(), [

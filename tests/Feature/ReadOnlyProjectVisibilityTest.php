@@ -340,6 +340,37 @@ class ReadOnlyProjectVisibilityTest extends TestCase
         $this->assertNotContains($archived->project_id, $selectable);
     }
 
+    public function test_add_task_dropdown_excludes_unscheduled_and_on_hold_projects(): void
+    {
+        $pending = $this->createProject('Pending Project', 'pending');
+        $unscheduled = $this->createProject('Unscheduled Project', 'unscheduled');
+        $onHold = $this->createProject('On Hold Project', 'ongoing');
+        $onHold->forceFill(['on_hold' => true])->save();
+
+        $response = $this->get(route('super-admin.tasks.index'));
+        $response->assertOk();
+
+        $selectable = $response->viewData('schedulableProjects')->pluck('project_id')->all();
+
+        $this->assertContains($pending->project_id, $selectable);
+        $this->assertNotContains($unscheduled->project_id, $selectable);
+        $this->assertNotContains($onHold->project_id, $selectable);
+    }
+
+    public function test_project_without_finalized_phases_is_listed_but_disabled(): void
+    {
+        $project = $this->createProject('Unphased Project', 'pending');
+        $project->forceFill(['phase_setup_status' => Project::PHASE_SETUP_PENDING])->save();
+
+        $response = $this->get(route('super-admin.tasks.index'));
+        $response->assertOk();
+
+        $this->assertContains($project->project_id, $response->viewData('schedulableProjects')->pluck('project_id')->all());
+        $response->assertSee('value="'.$project->project_id.'" class="text-secondary" disabled', false);
+        $response->assertSee("Finalize this project's phases first before adding new tasks.", false);
+        $response->assertSee(route('super-admin.projects.show', $project->project_id), false);
+    }
+
     /**
      * A hand-rolled "no rows" <tr> has a single colspan cell, which DataTables
      * cannot parse - it throws "Requested unknown parameter '1' for row 0".

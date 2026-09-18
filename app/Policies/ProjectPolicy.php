@@ -5,6 +5,7 @@ namespace App\Policies;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\User;
+use App\Support\BusinessTime;
 
 /**
  * What a technician may do with a project they are assigned to.
@@ -100,6 +101,20 @@ class ProjectPolicy
      * report describes a visit, and nobody visits a project that is paused.
      */
     public function submitReport(User $user, Project $project): bool
+    {
+        return $this->reportsOn($user, $project)
+            && $project->isScheduledOn(BusinessTime::today()->toDateString());
+    }
+
+    /**
+     * Everything submitReport() asks except the date: whether this lead files
+     * this project's reports at all, on the days it is scheduled.
+     *
+     * A report is dated the day it is filed and describes that day's visit, so
+     * it is only taken on one of the project's scheduled days. Asked on its own
+     * so a page can tell "not today" apart from "not yours", and say which.
+     */
+    public function reportsOn(User $user, Project $project): bool
     {
         return $user->isLeadTechnician()
             && $this->worksOn($user, $project)

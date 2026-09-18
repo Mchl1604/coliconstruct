@@ -579,7 +579,7 @@ class ProjectClientConfirmationReachTest extends TestCase
 
         $this->get(route('super-admin.projects.show', $project->project_id))
             ->assertOk()
-            ->assertSee("This registered user's email doesn't match the project's.", false)
+            ->assertSee("The linked account's email differs from the project's.", false)
             ->assertSee('Use account email', false);
     }
 
@@ -592,7 +592,7 @@ class ProjectClientConfirmationReachTest extends TestCase
 
         $this->get(route('super-admin.projects.show', $project->project_id))
             ->assertOk()
-            ->assertDontSee("This registered user's email doesn't match the project's.", false);
+            ->assertDontSee("The linked account's email differs from the project's.", false);
     }
 
     /**

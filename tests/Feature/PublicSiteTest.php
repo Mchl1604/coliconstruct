@@ -676,6 +676,38 @@ About | /about",
         $this->assertNotNull($card['updated_at']);
     }
 
+    public function test_a_card_names_the_current_range_or_else_the_next_one(): void
+    {
+        $client = $this->account('client', 'client@example.test');
+        $project = $this->projectFor('client@example.test');
+        $today = Schedule::businessToday();
+
+        $book = fn (int $from, int $to) => Schedule::create([
+            'project_id' => $project->project_id,
+            'start_datetime' => $today->addDays($from)->toDateString().' 00:00:00',
+            'end_datetime' => $today->addDays($to)->toDateString().' 23:59:59',
+            'status' => 'scheduled',
+            'remarks' => 'Booking',
+        ]);
+
+        $later = $book(20, 25);
+        $next = $book(5, 8);
+
+        $card = fn () => collect($this->actingAs($client)->get(route('public.projects'))->viewData('cards'))->first();
+
+        $this->assertSame(['label' => 'Upcoming', 'range' => $next->describe()], $card()['date_range']);
+
+        $current = $book(-2, 2);
+
+        $response = $this->actingAs($client)->get(route('public.projects'));
+        $this->assertSame(['label' => 'Current', 'range' => $current->describe()], collect($response->viewData('cards'))->first()['date_range']);
+        $response->assertSee('Current:');
+        $this->assertNotSame($later->describe(), $card()['date_range']['range']);
+
+        $project->update(['status' => 'cancelled']);
+        $this->assertNull($card()['date_range']);
+    }
+
     // ------------------------------------------------------------------
     // Project details
     // ------------------------------------------------------------------

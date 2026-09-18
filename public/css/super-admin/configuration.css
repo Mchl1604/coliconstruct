@@ -1052,103 +1052,6 @@
     margin-right: .35rem;
 }
 
-/* The reassurance that makes the rest of the panel safe to touch: nothing
-   here can reach a project that is already running. */
-.phase-template-safe-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: .4rem;
-    padding: .4rem .7rem;
-    border-radius: 2rem;
-    background: #e8f6ee;
-    color: #1d7a45;
-    border: 1px solid #bfe6cf;
-    font-size: .76rem;
-    font-weight: 600;
-}
-
-/* ---------- The explainer ---------- */
-
-.phase-template-explainer {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 1.25rem;
-    padding: 1rem 1.15rem;
-    margin-bottom: 1.25rem;
-    border-radius: .6rem;
-    background: linear-gradient(135deg, #f4f9fe 0%, #eef5fc 100%);
-    border: 1px solid var(--phase-accent-line);
-}
-
-.phase-explainer-copy {
-    flex: 1 1 22rem;
-    min-width: 0;
-}
-
-.phase-explainer-copy h6 {
-    color: var(--phase-accent-dark);
-    font-weight: 700;
-}
-
-.phase-explainer-copy p {
-    color: var(--phase-ink);
-}
-
-/* A worked example of the merge, because the sentence describing it has never
-   been enough on its own. Decorative - aria-hidden in the markup. */
-.phase-explainer-demo {
-    display: flex;
-    align-items: center;
-    gap: .6rem;
-    flex: 0 1 auto;
-    font-size: .68rem;
-}
-
-.phase-demo-side {
-    display: flex;
-    flex-direction: column;
-    gap: .2rem;
-    padding: .5rem .6rem;
-    border-radius: .45rem;
-    background: #fff;
-    border: 1px solid #dbe6f2;
-    min-width: 8.5rem;
-}
-
-.phase-demo-chip {
-    align-self: flex-start;
-    padding: .1rem .4rem;
-    border-radius: 1rem;
-    font-weight: 700;
-    font-size: .62rem;
-    color: #fff;
-}
-
-.phase-demo-chip-a { background: #2370b4; }
-.phase-demo-chip-b { background: #6f42c1; }
-
-.phase-demo-line {
-    font-weight: 700;
-    color: var(--phase-ink);
-}
-
-.phase-demo-task {
-    color: var(--phase-muted);
-}
-
-.phase-demo-plus,
-.phase-demo-arrow {
-    color: var(--phase-accent);
-    font-weight: 700;
-}
-
-.phase-demo-result {
-    border-color: var(--phase-accent);
-    background: var(--phase-accent-soft);
-    box-shadow: 0 0 0 3px rgba(35, 112, 180, .08);
-}
-
 /* ---------- The two steps ---------- */
 
 .phase-template-grid {
@@ -1711,14 +1614,6 @@
         border-radius: .5rem;
         border: 1px solid #eef1f5;
     }
-
-    /* The worked example is decorative and has a floor of about 460px it
-       cannot go below without the three panels colliding. It goes as soon as
-       the layout stops being two columns - the paragraph beside it says the
-       same thing in words. */
-    .phase-explainer-demo {
-        display: none;
-    }
 }
 
 @media (max-width: 575.98px) {
@@ -1751,9 +1646,5 @@
 
     .phase-template-col-types {
         order: 1;
-    }
-
-    .phase-explainer-demo {
-        display: none;
     }
 }

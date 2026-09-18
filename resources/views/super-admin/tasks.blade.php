@@ -60,6 +60,7 @@
     <x-task-board :projects="$projects" :tasks-by-project="$tasksByProject"
         :technicians-by-project="$techniciansByProject" :ranges-by-project="$rangesByProject" :phases-by-project="$phasesByProject" :periods-by-project="$periodsByProject"
         :active-task-counts-by-project="$technicianActiveTaskCounts" :manageable="$manageable"
+        project-route="super-admin.projects.show"
         update-route="super-admin.tasks.update" complete-route="super-admin.tasks.complete"
         delete-route="super-admin.tasks.destroy"
         empty-message="No active projects to show." />

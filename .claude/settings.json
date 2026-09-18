@@ -2,6 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "permissions": {
     "allow": [
+      "mcp__Claude_Browser",
       "WebFetch(domain:coliconstruct.test)",
       "Bash(php artisan test*)",
       "Bash(php artisan route:list*)",

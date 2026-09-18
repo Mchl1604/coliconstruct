@@ -320,6 +320,9 @@ class ConfigurationController extends Controller
             'address' => $project->address,
             'status_label' => $project->statusLabel(),
             'status_badge_class' => $project->statusBadgeClass(),
+            // What projectStatus.css paints the badge from - without it every
+            // status would be drawn in the same neutral colour.
+            'status_key' => $project->statusKey(),
             'is_archived' => (bool) $project->is_archived,
             'types' => $project->projectTypes->pluck('type_name')->all(),
             'dates' => $start && $end

@@ -176,6 +176,17 @@
                                          answers that instead. --}}
                                     <x-project-phase-line :project="$card['project']" compact class="mb-3" />
 
+                                    {{-- Not the whole booking, just the range that
+                                         matters now: the one being worked, or the
+                                         next one coming. --}}
+                                    @if ($card['date_range'])
+                                        <p class="project-card-meta" data-project-date-range>
+                                            <i class="bi bi-calendar-event text-primary" aria-hidden="true"></i>
+                                            <strong>{{ $card['date_range']['label'] }}:</strong>
+                                            {{ $card['date_range']['range'] }}
+                                        </p>
+                                    @endif
+
                                     @if ($card['service'])
                                         <p class="project-card-meta">
                                             <strong>Service:</strong> {{ $card['service'] }}

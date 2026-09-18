@@ -25,6 +25,9 @@
     'updateRoute',
     'completeRoute',
     'deleteRoute',
+    // Route name for a project's own page; the card's reference number
+    // links to it. Null leaves it as plain text.
+    'projectRoute' => null,
     'updateMethod' => 'PUT',
     'completeMethod' => 'PATCH',
     'emptyMessage' => 'There are no projects to show.',
@@ -57,7 +60,14 @@
 
                 <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
                     <div>
-                        <div class="technician-eyebrow">{{ $project->reference_no }}</div>
+                        <div class="technician-eyebrow">
+                            @if ($projectRoute)
+                                <a href="{{ route($projectRoute, $project->project_id) }}"
+                                    class="text-primary text-decoration-none" title="Open project details">{{ $project->reference_no }}</a>
+                            @else
+                                {{ $project->reference_no }}
+                            @endif
+                        </div>
                         <h5 class="fw-bold mb-1">{{ $project->name }}</h5>
                         <div class="d-flex align-items-center gap-2 flex-wrap">
                             <x-project-status-badge :project="$project" />
@@ -66,6 +76,14 @@
                                 {{ \Illuminate\Support\Str::plural('task', $projectTasks->count()) }}
                             </span>
                         </div>
+                        {{-- Why this project is greyed out in the Add Task
+                             dialog: new work is filed under a phase. --}}
+                        @unless ($project->phasesAreFinalized())
+                            <div class="text-secondary small mt-2">
+                                <i class="bi bi-info-circle me-1" aria-hidden="true"></i>
+                                Finalize this project's phases first before adding new tasks.
+                            </div>
+                        @endunless
                     </div>
                 </div>
 

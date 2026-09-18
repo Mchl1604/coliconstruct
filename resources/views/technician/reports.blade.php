@@ -42,8 +42,8 @@
     @if ($reportableProjects->isEmpty())
         <div class="alert alert-info">
             <i class="bi bi-info-circle me-1" aria-hidden="true"></i>
-            None of your projects can receive a report right now. Completed, cancelled and archived
-            projects are closed records.
+            None of your projects can receive a report right now. Reports can only be submitted on
+            a project's scheduled days, and completed, cancelled and archived projects are closed records.
         </div>
     @endif
 

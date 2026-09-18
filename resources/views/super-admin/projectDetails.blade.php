@@ -138,26 +138,23 @@
                      offered by the hold banner below, so the pair is never
                      both in the header at once. --}}
                 @if (! $isReadOnly && ! $isOnHold && $project->status !== 'unscheduled')
-                    <button type="button" class="btn btn-warning" data-bs-toggle="modal"
-                        data-bs-target="#onHoldModal">
-                        <i class="bi bi-pause-circle me-1" aria-hidden="true"></i>
-                        Put on Hold
+                    <button type="button" class="btn btn-warning project-header-action" data-bs-toggle="modal"
+                        data-bs-target="#onHoldModal" aria-label="Put on Hold" title="Put on Hold">
+                        <i class="bi bi-pause-circle" aria-hidden="true"></i>
                     </button>
                 @endif
 
                 @if ($canComplete && ! $project->isOverdue())
-                    <button type="button" class="btn btn-success" data-bs-toggle="modal"
-                        data-bs-target="#completeProjectModal">
-                        <i class="bi bi-check-circle me-1" aria-hidden="true"></i>
-                        Complete Project
+                    <button type="button" class="btn btn-success project-header-action" data-bs-toggle="modal"
+                        data-bs-target="#completeProjectModal" aria-label="Complete Project" title="Complete Project">
+                        <i class="bi bi-check-circle" aria-hidden="true"></i>
                     </button>
                 @endif
 
                 @if ($canArchive)
-                    <button type="button" class="btn btn-dark" data-bs-toggle="modal"
-                        data-bs-target="#archiveProjectModal">
-                        <i class="bi bi-archive me-1" aria-hidden="true"></i>
-                        Archive Project
+                    <button type="button" class="btn btn-dark project-header-action" data-bs-toggle="modal"
+                        data-bs-target="#archiveProjectModal" aria-label="Archive Project" title="Archive Project">
+                        <i class="bi bi-archive" aria-hidden="true"></i>
                     </button>
                 @endif
 
@@ -1001,7 +998,7 @@
                             </span>
                         </div>
 
-                        <div class="text-muted mb-3">
+                        <div class="text-muted">
                             <span>
                                 <i class="bi bi-telephone"></i>
                                 {{ $client?->contact_number ?? 'N/A' }}
@@ -1012,6 +1009,77 @@
                                 {{ $client?->email_address ?? 'N/A' }}
                             </span>
                         </div>
+
+                        {{-- Linked account: which account on the public website
+                             follows this project. A different fact from the
+                             client details above - neither edits the other - but
+                             one line is all it needs. Admin and Super Admin get
+                             the Link / Change / Unlink controls; the endpoints
+                             behind them ask the same question again. --}}
+                        <div class="text-muted mb-3 d-flex flex-wrap align-items-center gap-2"
+                            id="linked-account" style="scroll-margin-top: 1.5rem;">
+                            <span>
+                                <i class="bi bi-person-check"></i>
+                                Linked account:
+                            </span>
+
+                            @if ($assignedRegisteredUser)
+                                <span class="d-inline-flex align-items-center gap-1 text-body">
+                                    <x-user-avatar :user="$assignedRegisteredUser" size="xs" />
+                                    <span class="fw-semibold">{{ $assignedRegisteredUser->fullName() }}</span>
+                                </span>
+                                <span>({{ $assignedRegisteredUser->email }})</span>
+
+                                {{-- Only worth a badge when it is not the usual
+                                     case: a deactivated account is still the one
+                                     linked, and saying so is how somebody works
+                                     out why the client cannot sign in. --}}
+                                @unless ($assignedRegisteredUser->isActive())
+                                    <span class="badge {{ $assignedRegisteredUser->statusBadgeClass() }}">
+                                        {{ $assignedRegisteredUser->statusLabel() }}
+                                    </span>
+                                @endunless
+                            @else
+                                <span>None</span>
+                            @endif
+
+                            @if ($canManageRegisteredUser)
+                                <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none"
+                                    data-bs-toggle="modal" data-bs-target="#editRegisteredUserModal">
+                                    {{ $assignedRegisteredUser ? 'Change' : 'Link account' }}
+                                </button>
+
+                                @if ($assignedRegisteredUser)
+                                    <button type="button"
+                                        class="btn btn-link btn-sm p-0 text-danger text-decoration-none"
+                                        data-bs-toggle="modal" data-bs-target="#removeRegisteredUserModal">
+                                        Unlink
+                                    </button>
+                                @endif
+                            @endif
+                        </div>
+
+                        {{-- The two addresses may differ, and often correctly: a
+                             job booked to a company mailbox and followed by a
+                             person is ordinary. Both receive this project's
+                             messages (see ProjectEmails::recipients), so this is
+                             information rather than a warning; the button is for
+                             when the project's own address is simply wrong. --}}
+                        @if ($accountEmailDiffers)
+                            <div class="small text-muted mb-3 d-flex flex-wrap align-items-center gap-2" role="status">
+                                <span>
+                                    <i class="bi bi-info-circle text-brand-blue"></i>
+                                    The linked account's email differs from the project's.
+                                </span>
+
+                                @if ($canManageRegisteredUser)
+                                    <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none"
+                                        data-bs-toggle="modal" data-bs-target="#useAccountEmailModal">
+                                        Use account email
+                                    </button>
+                                @endif
+                            </div>
+                        @endif
 
                         @foreach ($project->projectTypes as $type)
                             <span class="badge rounded-pill fs-6 px-3 py-2 project-type-badge">
@@ -1292,146 +1360,6 @@
 
             </div>
         </div>
-        {{-- Registered User Account.
-
-             Deliberately a section of its own, beside the client details
-             rather than inside them. The Client Information above is what the
-             project says about who the work is for - a name, an address, a
-             number, written when the job was booked and belonging to the
-             project. This is which account on the public website follows the
-             work, which is a different fact and can be got wrong on its own.
-             Neither one edits the other. --}}
-        <div class="card shadow-sm mb-4" id="registered-user" style="scroll-margin-top: 1.5rem;">
-
-            <div class="card-header bg-white d-flex flex-wrap justify-content-between align-items-center gap-2">
-
-                <h4 class="mb-0 fw-bold">
-                    <i class="bi bi-person-check text-brand-blue me-1" aria-hidden="true"></i>
-                    Registered User Account
-                </h4>
-
-                {{-- Admin and Super Admin only. The two endpoints behind these
-                     buttons ask the same question again, so hiding them is a
-                     courtesy rather than the rule. --}}
-                @if ($canManageRegisteredUser)
-                    <div class="d-flex flex-wrap align-items-center gap-2">
-                        <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal"
-                            data-bs-target="#editRegisteredUserModal">
-                            <i class="bi bi-person-gear me-1" aria-hidden="true"></i>
-                            Edit Registered User
-                        </button>
-
-                        @if ($assignedRegisteredUser)
-                            <button type="button" class="btn btn-outline-danger btn-sm" data-bs-toggle="modal"
-                                data-bs-target="#removeRegisteredUserModal">
-                                <i class="bi bi-person-dash me-1" aria-hidden="true"></i>
-                                Remove Registered User
-                            </button>
-                        @endif
-                    </div>
-                @endif
-
-            </div>
-
-            <div class="card-body">
-
-                @if ($assignedRegisteredUser)
-                    <div class="d-flex align-items-start gap-3">
-
-                        <x-user-avatar :user="$assignedRegisteredUser" size="md" />
-
-                        <div class="flex-grow-1 min-w-0">
-
-                            <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
-                                <span class="fw-semibold fs-5">{{ $assignedRegisteredUser->fullName() }}</span>
-                                <span class="badge bg-primary">Assigned</span>
-
-                                {{-- The account's own state, which is not the
-                                     same thing as the assignment: a deactivated
-                                     account is still the one this project
-                                     belongs to, and saying so is how somebody
-                                     works out why the client cannot sign in. --}}
-                                <span class="badge {{ $assignedRegisteredUser->statusBadgeClass() }}">
-                                    {{ $assignedRegisteredUser->statusLabel() }}
-                                </span>
-                            </div>
-
-                            <div class="text-muted">
-                                <span class="me-3">
-                                    <i class="bi bi-person-vcard" aria-hidden="true"></i>
-                                    {{ $assignedRegisteredUser->user_code ?? 'N/A' }}
-                                </span>
-
-                                <span class="me-3">
-                                    <i class="bi bi-envelope" aria-hidden="true"></i>
-                                    {{ $assignedRegisteredUser->email }}
-                                </span>
-
-                                <span>
-                                    <i class="bi bi-telephone" aria-hidden="true"></i>
-                                    {{ $assignedRegisteredUser->contact_number ?? 'N/A' }}
-                                </span>
-                            </div>
-
-                            <div class="text-muted small mt-1">
-                                Registered
-                                {{ \App\Support\BusinessTime::format($assignedRegisteredUser->created_at, \App\Support\BusinessTime::DATE, 'N/A') }}
-                                &middot; This project appears on their My Projects page.
-                            </div>
-
-                            {{-- The two addresses differ, which is allowed and is
-                                 often correct: a job booked to a company mailbox and
-                                 followed by a person is an ordinary arrangement. What
-                                 is not acceptable is an administrator not knowing,
-                                 so it is stated - as information, not as an error.
-
-                                 Both addresses receive this project's messages (see
-                                 ProjectEmails::recipients), so this is not a warning
-                                 that anybody is being missed. The button is here for
-                                 the other case: the project's address is simply
-                                 wrong, and the account's is the right one. --}}
-                            @if ($accountEmailDiffers)
-                                <div class="alert alert-info border-0 mt-3 mb-0 py-2 px-3 small" role="status">
-                                    <div class="d-flex flex-wrap align-items-center gap-2">
-                                        <div class="flex-grow-1">
-                                            This registered user's email doesn't match the project's.
-                                            Change the project's email to this one?
-                                        </div>
-
-                                        @if ($canManageRegisteredUser)
-                                            <button type="button" class="btn btn-sm btn-outline-primary"
-                                                data-bs-toggle="modal" data-bs-target="#useAccountEmailModal">
-                                                <i class="bi bi-envelope-check me-1" aria-hidden="true"></i>
-                                                Use account email
-                                            </button>
-                                        @endif
-                                    </div>
-                                </div>
-                            @endif
-
-                        </div>
-
-                    </div>
-                @else
-                    {{-- The empty state is a fact worth stating rather than a
-                         blank panel: a project with nobody following it is
-                         ordinary at the start and a mistake later on. --}}
-                    <div class="d-flex align-items-center gap-3 text-muted">
-                        <i class="bi bi-person-slash fs-3" aria-hidden="true"></i>
-                        <div>
-                            <div class="fw-semibold">No Registered User Assigned</div>
-                            <div class="small">
-                                Nobody follows this project on the public website yet. The project's client
-                                details above are unaffected.
-                            </div>
-                        </div>
-                    </div>
-                @endif
-
-            </div>
-
-        </div>
-
         <!-- Team + Date -->
         <div class="row mb-4">
 
@@ -2815,7 +2743,7 @@
     <!-- END OF EDIT ASSIGNED TEAM MODAL -->
 
     @if ($canManageRegisteredUser)
-        <!-- EDIT REGISTERED USER MODAL -->
+        <!-- LINK ACCOUNT MODAL -->
         <div class="modal fade" id="editRegisteredUserModal" tabindex="-1"
             aria-labelledby="editRegisteredUserModalLabel" aria-hidden="true">
 
@@ -2832,7 +2760,7 @@
                         <div class="modal-header bg-primary text-white">
                             <h5 class="modal-title" id="editRegisteredUserModalLabel">
                                 <i class="bi bi-person-gear me-2" aria-hidden="true"></i>
-                                Edit Registered User
+                                Link Account
                             </h5>
 
                             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
@@ -2842,7 +2770,7 @@
                         <div class="modal-body">
 
                             <p class="text-muted small">
-                                Choose the account that follows this project on the public website. The
+                                Choose the account on the public website to link to this project. The
                                 project's own client details are not changed by this.
                             </p>
 
@@ -2859,7 +2787,7 @@
                                  stays disabled until somebody has picked. --}}
                             <div class="config-actor-search" data-account-picker="registeredUserOptions">
                                 <label for="registeredUserSearch" class="form-label fw-bold">
-                                    Registered User <span class="text-danger">*</span>
+                                    Account <span class="text-danger">*</span>
                                 </label>
 
                                 <div class="input-group">
@@ -2877,7 +2805,7 @@
 
                                     <button type="button"
                                         class="btn btn-outline-secondary {{ $assignedRegisteredUser ? '' : 'd-none' }}"
-                                        aria-label="Clear the chosen Registered User" data-picker-clear>
+                                        aria-label="Clear the chosen account" data-picker-clear>
                                         <i class="bi bi-x-lg" aria-hidden="true"></i>
                                     </button>
                                 </div>
@@ -2894,8 +2822,8 @@
 
                             @if ($registeredUserOptions->isEmpty())
                                 <div class="form-text text-danger">
-                                    There are no Registered User accounts yet. Open one in Configuration,
-                                    under User Management, first.
+                                    There are no accounts to link yet. Open one in Configuration, under
+                                    User Management, first.
                                 </div>
                             @endif
 
@@ -2908,7 +2836,7 @@
                                 @disabled($registeredUserOptions->isEmpty() || ! $assignedRegisteredUser)
                                 data-picker-submit>
                                 <i class="bi bi-check-lg me-1" aria-hidden="true"></i>
-                                Save Registered User
+                                Link Account
                             </button>
                         </div>
 
@@ -2919,10 +2847,10 @@
             </div>
 
         </div>
-        <!-- END OF EDIT REGISTERED USER MODAL -->
+        <!-- END OF LINK ACCOUNT MODAL -->
 
         @if ($assignedRegisteredUser)
-            <!-- REMOVE REGISTERED USER MODAL -->
+            <!-- UNLINK ACCOUNT MODAL -->
             <div class="modal fade" id="removeRegisteredUserModal" tabindex="-1"
                 aria-labelledby="removeRegisteredUserModalLabel" aria-hidden="true">
 
@@ -2931,7 +2859,7 @@
 
                         <div class="modal-header">
                             <h5 class="modal-title" id="removeRegisteredUserModalLabel">
-                                Remove {{ $assignedRegisteredUser->fullName() }} from this project?
+                                Unlink {{ $assignedRegisteredUser->fullName() }} from this project?
                             </h5>
 
                             <button type="button" class="btn-close" data-bs-dismiss="modal"
@@ -2959,7 +2887,7 @@
 
                                 <button type="submit" class="btn btn-danger">
                                     <i class="bi bi-person-dash me-1" aria-hidden="true"></i>
-                                    Remove Registered User
+                                    Unlink Account
                                 </button>
                             </form>
                         </div>
@@ -2968,7 +2896,7 @@
                 </div>
 
             </div>
-            <!-- END OF REMOVE REGISTERED USER MODAL -->
+            <!-- END OF UNLINK ACCOUNT MODAL -->
         @endif
 
         @if ($accountEmailDiffers)

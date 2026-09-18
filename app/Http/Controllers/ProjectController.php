@@ -1053,7 +1053,7 @@ class ProjectController extends Controller
         $validated = Validator::make($request->all(), [
             'registered_user_id' => ['required', 'integer', 'exists:users,id'],
         ], [
-            'registered_user_id.required' => 'Choose a Registered User to assign.',
+            'registered_user_id.required' => 'Choose an account to link.',
             'registered_user_id.exists' => 'That account no longer exists.',
         ])->validate();
 
@@ -1064,12 +1064,12 @@ class ProjectController extends Controller
         } catch (RuntimeException $e) {
             return back()->with('error', $e->getMessage());
         } catch (Throwable $e) {
-            return back()->with('error', $this->safeErrorMessage($e, 'Unable to save the Registered User. Nothing was changed.'));
+            return back()->with('error', $this->safeErrorMessage($e, 'Unable to link the account. Nothing was changed.'));
         }
 
         return back()->with('success', $changed
-            ? sprintf('%s is now the Registered User on this project.', $account->fullName())
-            : sprintf('%s was already the Registered User on this project.', $account->fullName()));
+            ? sprintf('%s is now linked to this project.', $account->fullName())
+            : sprintf('%s was already linked to this project.', $account->fullName()));
     }
 
     /**
@@ -1088,12 +1088,12 @@ class ProjectController extends Controller
         try {
             $removed = DB::transaction(fn (): bool => $this->registeredUsers->remove($project));
         } catch (Throwable $e) {
-            return back()->with('error', $this->safeErrorMessage($e, 'Unable to remove the Registered User. Nothing was changed.'));
+            return back()->with('error', $this->safeErrorMessage($e, 'Unable to unlink the account. Nothing was changed.'));
         }
 
         return back()->with($removed ? 'success' : 'error', $removed
-            ? 'Registered User removed. The account and the project were both kept.'
-            : 'This project has no Registered User assigned.');
+            ? 'Account unlinked. The account and the project were both kept.'
+            : 'This project has no linked account.');
     }
 
     /**

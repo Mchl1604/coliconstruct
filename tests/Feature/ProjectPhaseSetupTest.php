@@ -325,7 +325,7 @@ class ProjectPhaseSetupTest extends TestCase
             // The record in the first half, how far it has got in the second.
             ->assertSeeInOrder([
                 'id="project-information"',
-                'Registered User Account',
+                'Linked account:',
                 'Assigned Team',
                 'id="project-progress"',
                 'Project Phases',

@@ -1,5 +1,6 @@
 @props([
-    // Projects that can actually take a new task.
+    // Projects that can take a new task, plus any greyed out until their
+    // phases are finalized.
     'projects',
     // Both carry an __ID__ placeholder the script swaps for the chosen project.
     'formDataUrl',
@@ -35,9 +36,18 @@
                     <select class="form-select" id="createTaskProject" data-task-create-project required>
                         <option value="" selected disabled>Select a project&hellip;</option>
                         @foreach ($projects as $project)
-                            <option value="{{ $project->project_id }}">
-                                {{ $project->reference_no }} &mdash; {{ $project->name }}
-                            </option>
+                            {{-- Listed so the dialog matches the board, but a
+                                 project with no finalized phases has nothing
+                                 to file a task under, so it cannot be picked. --}}
+                            @if ($project->phasesAreFinalized())
+                                <option value="{{ $project->project_id }}">
+                                    {{ $project->reference_no }} &mdash; {{ $project->name }}
+                                </option>
+                            @else
+                                <option value="{{ $project->project_id }}" class="text-secondary" disabled>
+                                    {{ $project->reference_no }} &mdash; {{ $project->name }} (phases not finalized)
+                                </option>
+                            @endif
                         @endforeach
                     </select>
                     <div class="form-text">

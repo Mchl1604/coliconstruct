@@ -110,7 +110,7 @@ class RegisteredUserAssignmentTest extends TestCase
         $this->actingAs($admin)
             ->get(route('super-admin.projects.show', $project->project_id))
             ->assertOk()
-            ->assertSee('Registered User Account')
+            ->assertSee('Linked account:')
             ->assertSee($client->fullName())
             ->assertSee('owner@example.test')
             // The project's own client details are still there, under their
@@ -127,7 +127,7 @@ class RegisteredUserAssignmentTest extends TestCase
         $this->actingAs($admin)
             ->get(route('super-admin.projects.show', $project->project_id))
             ->assertOk()
-            ->assertSee('No Registered User Assigned');
+            ->assertSeeInOrder(['Linked account:', 'None']);
     }
 
     // ------------------------------------------------------------------
@@ -213,7 +213,7 @@ class RegisteredUserAssignmentTest extends TestCase
         $this->actingAs($admin)
             ->get(route('super-admin.projects.show', $project->project_id))
             ->assertOk()
-            ->assertSee('No Registered User Assigned');
+            ->assertSeeInOrder(['Linked account:', 'None']);
     }
 
     /**
@@ -340,6 +340,11 @@ class RegisteredUserAssignmentTest extends TestCase
             array_column($rows, 'id')
         );
         $this->assertSame($client->fullName(), $response->json('account.full_name'));
+
+        // Each row carries the key the shared status colours are painted from.
+        foreach ($rows as $row) {
+            $this->assertSame(Project::find($row['id'])->statusKey(), $row['status_key']);
+        }
     }
 
     public function test_an_account_with_no_projects_comes_back_empty(): void

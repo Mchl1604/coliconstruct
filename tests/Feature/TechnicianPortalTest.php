@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Http\Controllers\TechnicianPortalController;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
 use App\Models\Schedule;
@@ -409,6 +410,9 @@ class TechnicianPortalTest extends TestCase
 
     public function test_project_details_returns_the_whole_board_and_the_leads_permissions(): void
     {
+        // Reports are only taken on one of the project's scheduled days.
+        $this->schedule($this->project, 0, 0);
+
         $this->task($this->mate, 'Mate task');
         $this->task($this->lead, 'Lead task');
 
@@ -962,6 +966,9 @@ class TechnicianPortalTest extends TestCase
 
     public function test_a_report_is_always_filed_under_the_signed_in_lead(): void
     {
+        // Reports are only taken on one of the project's scheduled days.
+        $this->schedule($this->project, 0, 0);
+
         Storage::fake('uploads');
 
         $this->actingAs($this->leadAccount);
@@ -994,6 +1001,9 @@ class TechnicianPortalTest extends TestCase
      */
     public function test_a_submitted_report_carries_the_tables_sort_key(): void
     {
+        // Reports are only taken on one of the project's scheduled days.
+        $this->schedule($this->project, 0, 0);
+
         Storage::fake('uploads');
 
         $this->actingAs($this->leadAccount);
@@ -1031,6 +1041,9 @@ class TechnicianPortalTest extends TestCase
      */
     public function test_a_report_files_when_the_technician_id_is_not_also_a_user_id(): void
     {
+        // Reports are only taken on one of the project's scheduled days.
+        $this->schedule($this->project, 0, 0);
+
         $account = $this->account('lead_technician', 'faraway@example.test');
 
         DB::table('tbl_technicians')->insert([
@@ -1051,6 +1064,49 @@ class TechnicianPortalTest extends TestCase
         ])->assertCreated();
 
         $this->assertSame(9999, (int) TechnicianReport::first()->technician_id);
+    }
+
+    /**
+     * A report describes that day's visit, so it is only taken on one of the
+     * project's scheduled days. The fixture books days 10 to 20 - today is
+     * not among them.
+     */
+    public function test_a_lead_cannot_file_a_report_on_a_day_the_project_is_not_scheduled(): void
+    {
+        $this->actingAs($this->leadAccount);
+
+        $this->postJson(route('technician.reports.store', $this->project), [
+            'report_type' => 'progress',
+            'report_title' => 'Not a site day',
+            'report_description' => 'Description',
+        ])->assertStatus(422)
+            ->assertJsonPath('error', TechnicianPortalController::REPORT_NOT_SCHEDULED_TODAY);
+
+        $this->assertSame(0, TechnicianReport::count());
+
+        // The button stays, disabled, saying why.
+        $details = $this->get(route('technician.projects.show', $this->project));
+        $details->assertOk();
+        $details->assertSee(TechnicianPortalController::REPORT_NOT_SCHEDULED_TODAY);
+        $this->assertFalse($details->viewData('canSubmitReport'));
+
+        $this->getJson(route('technician.projects.details', $this->project))
+            ->assertJsonPath('permissions.submit_report', false);
+    }
+
+    public function test_a_lead_can_file_a_report_on_a_scheduled_day(): void
+    {
+        $this->schedule($this->project, 0, 0);
+
+        $this->actingAs($this->leadAccount);
+
+        $this->postJson(route('technician.reports.store', $this->project), [
+            'report_type' => 'incident',
+            'report_title' => 'On site today',
+            'report_description' => 'Description',
+        ])->assertCreated();
+
+        $this->assertSame(1, TechnicianReport::count());
     }
 
     public function test_a_completed_project_can_no_longer_receive_reports(): void

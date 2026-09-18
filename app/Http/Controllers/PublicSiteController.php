@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Mail\ContactInquiryMail;
 use App\Models\Inquiry;
 use App\Models\Project;
+use App\Models\Schedule;
 use App\Services\ClientProjects;
 use App\Services\EmailService;
 use App\Services\InquiryService;
@@ -317,6 +318,7 @@ class PublicSiteController extends Controller
             'search_text' => $this->searchText($project, $clientName),
             'start_date' => $start,
             'end_date' => $end,
+            'date_range' => $this->cardDateRange($project),
             'lead_technician' => $this->clientProjects->leadTechnicianName($project),
             'technicians' => $project->projectTechnicians
                 ->map(fn ($projectTechnician) => $projectTechnician->technician?->name)
@@ -331,6 +333,38 @@ class PublicSiteController extends Controller
             'updated_at' => $project->updated_at,
             'url' => route('public.projects.show', $project->project_id),
         ];
+    }
+
+    /**
+     * The one booked range a card names: the range being worked today, or
+     * failing that the next one still to come. Null when neither exists, and
+     * for finished or cancelled work - a cancelled project keeps its schedule
+     * for the record, but nobody is coming.
+     *
+     * @return array{label: string, range: string}|null
+     */
+    private function cardDateRange(Project $project): ?array
+    {
+        if ($project->isWorkFinished() || $project->isCancelled()) {
+            return null;
+        }
+
+        $today = Schedule::businessToday();
+
+        $current = $project->schedules->first(fn (Schedule $schedule): bool => $schedule->covers($today->toDateString()));
+
+        if ($current !== null) {
+            return ['label' => 'Current', 'range' => $current->describe()];
+        }
+
+        $upcoming = $project->schedules
+            ->filter(fn (Schedule $schedule): bool => $schedule->startsOn()->gt($today))
+            ->sortBy(fn (Schedule $schedule): string => (string) $schedule->start_datetime)
+            ->first();
+
+        return $upcoming !== null
+            ? ['label' => 'Upcoming', 'range' => $upcoming->describe()]
+            : null;
     }
 
     /**

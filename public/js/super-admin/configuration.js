@@ -1786,6 +1786,11 @@ document.addEventListener("DOMContentLoaded", function () {
             const badge = document.createElement("span");
 
             badge.className = "badge " + (row.status_badge_class || "bg-secondary");
+            // The colour comes from data-status, the same as every other
+            // project status badge - see x-project-status-badge.
+            if (row.status_key) {
+                badge.dataset.status = row.status_key;
+            }
             badge.textContent = row.status_label || "—";
             statusCellEl.appendChild(badge);
             tr.appendChild(statusCellEl);

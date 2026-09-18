@@ -111,22 +111,16 @@ class TaskController extends Controller
         // never count a task the board does not show.
         $attentionSummary = app(TaskAssignmentGaps::class)->summarise(Task::query());
 
-        // Only projects that can actually receive new tasks are selectable in
-        // the Add Task modal: completed, cancelled and archived are excluded.
-        // An unscheduled project stays on the list and the form-data
-        // endpoint explains why it cannot take a task, which reads better than
-        // the project simply not being there.
+        // The Add Task modal lists the same pending and ongoing work the board
+        // does, minus anything on hold. A project whose phases are not
+        // finalized stays on the list but greyed out and unselectable, so the
+        // list matches the board and says why that one cannot take a task yet.
         $schedulableProjects = Project::query()
+            ->whereIn('status', Project::ACTIVE_PROJECT_STATUSES)
+            ->where('is_archived', false)
+            ->where('on_hold', false)
             ->orderBy('name')
-            ->get(['project_id', 'name', 'reference_no', 'status', 'on_hold', 'is_archived', 'phase_setup_status'])
-            // A project whose phases are not finalized is left off as well:
-            // there is nothing to file a task under, and the answer is to go
-            // and set the phases up rather than to open a dialog that can only
-            // refuse.
-            ->filter(fn (Project $project): bool => ! $project->isReadOnly()
-                && ! $project->isArchived()
-                && $project->phasesAreFinalized())
-            ->values();
+            ->get(['project_id', 'name', 'reference_no', 'status', 'on_hold', 'is_archived', 'phase_setup_status']);
 
         return view('super-admin.tasks', compact(
             'projects',

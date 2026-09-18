@@ -765,53 +765,6 @@
                                             What each kind of job starts with when a new project is set up.
                                         </p>
                                     </div>
-
-                                    <span class="phase-template-safe-badge">
-                                        <i class="bi bi-shield-check" aria-hidden="true"></i>
-                                        Projects already set up are never changed
-                                    </span>
-                                </div>
-
-                                {{-- The one idea nobody guesses from the controls:
-                                     stages are shared so that a project which is
-                                     two types at once gets ONE phase per stage
-                                     carrying both types' work. Shown as a worked
-                                     example, because the sentence alone has never
-                                     been enough. --}}
-                                <div class="phase-template-explainer">
-                                    <div class="phase-explainer-copy">
-                                        <h6 class="mb-1">
-                                            <i class="bi bi-info-circle-fill me-1" aria-hidden="true"></i>
-                                            Why there are two lists
-                                        </h6>
-                                        <p class="mb-0 small">
-                                            A project can be more than one type at once. <strong>Stages</strong>
-                                            are shared, so two types that both have a Site Preparation produce
-                                            <em>one</em> phase &mdash; carrying both of their tasks.
-                                            <strong>Tasks</strong> belong to a type, because that is the part
-                                            that actually differs.
-                                        </p>
-                                    </div>
-
-                                    <div class="phase-explainer-demo" aria-hidden="true">
-                                        <div class="phase-demo-side">
-                                            <span class="phase-demo-chip phase-demo-chip-a">Aircon</span>
-                                            <span class="phase-demo-line">Site Preparation</span>
-                                            <span class="phase-demo-task">Mark unit positions</span>
-                                        </div>
-                                        <div class="phase-demo-plus">+</div>
-                                        <div class="phase-demo-side">
-                                            <span class="phase-demo-chip phase-demo-chip-b">Ducting</span>
-                                            <span class="phase-demo-line">Site Preparation</span>
-                                            <span class="phase-demo-task">Survey duct routes</span>
-                                        </div>
-                                        <div class="phase-demo-arrow"><i class="bi bi-arrow-right"></i></div>
-                                        <div class="phase-demo-side phase-demo-result">
-                                            <span class="phase-demo-line">Phase 1 &mdash; Site Preparation</span>
-                                            <span class="phase-demo-task">Mark unit positions</span>
-                                            <span class="phase-demo-task">Survey duct routes</span>
-                                        </div>
-                                    </div>
                                 </div>
 
                                 <div class="text-secondary small py-3 px-1" data-phase-template-loading>

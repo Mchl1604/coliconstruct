@@ -75,10 +75,9 @@
 
             <div class="d-flex gap-2">
                 @if ($canCloseProject)
-                    <button type="button" class="btn btn-success" data-bs-toggle="modal"
-                        data-bs-target="#completeProjectModal">
-                        <i class="bi bi-check-circle me-1" aria-hidden="true"></i>
-                        Complete Project
+                    <button type="button" class="btn btn-success project-header-action" data-bs-toggle="modal"
+                        data-bs-target="#completeProjectModal" aria-label="Complete Project" title="Complete Project">
+                        <i class="bi bi-check-circle" aria-hidden="true"></i>
                     </button>
                 @endif
 
@@ -593,6 +592,17 @@
                                     <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
                                     Add Report
                                 </button>
+                            @elseif ($reportWaitsForScheduledDay)
+                                {{-- Not a scheduled day: left in place, disabled,
+                                     saying why. It comes back on its own on the
+                                     project's next booked day. --}}
+                                <span class="d-inline-block" tabindex="0"
+                                    title="{{ \App\Http\Controllers\TechnicianPortalController::REPORT_NOT_SCHEDULED_TODAY }}">
+                                    <button type="button" class="btn btn-primary" disabled>
+                                        <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
+                                        Add Report
+                                    </button>
+                                </span>
                             @endif
                         </div>
 

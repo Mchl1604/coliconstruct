@@ -125,9 +125,11 @@
     padding: .6rem 1.1rem;
 }
 
-/* The back arrow beside the heading: a square target rather than a button
+/* The back arrow beside the heading, and the icon-only Hold / Complete /
+   Archive actions opposite it: a square target rather than a button
    stretched around a single glyph. */
-.project-details-page .project-back {
+.project-details-page .project-back,
+.project-details-page .project-header-action {
     display: inline-flex;
     align-items: center;
     justify-content: center;
