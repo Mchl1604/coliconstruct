@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Exceptions\HistoricalConflictException;
+use App\Exceptions\StrandedTasksException;
 use App\Models\ActivityLog;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
@@ -751,7 +752,7 @@ class ScheduleController extends Controller
             throw new RuntimeException(sprintf(
                 '%s is %s and can no longer be scheduled.',
                 $project->name,
-                $project->status
+                strtolower($project->statusLabel())
             ));
         }
 
@@ -806,7 +807,7 @@ class ScheduleController extends Controller
         if ($project->isReadOnly()) {
             return redirect()
                 ->route('super-admin.schedules.index')
-                ->with('error', 'This project is '.$project->status.' and its schedule can no longer be changed.');
+                ->with('error', 'This project is '.strtolower($project->statusLabel()).' and its schedule can no longer be changed.');
         }
 
         $scheduleRules = app(ScheduleModeRules::class);
@@ -834,6 +835,9 @@ class ScheduleController extends Controller
             // refused - see the conflict check below - and with it the clash is
             // written into the audit rather than passed over.
             'historical_conflicts_confirmed' => ['nullable', 'boolean'],
+            // The person has been shown which open tasks this save leaves
+            // with no booked day, and agreed their dates may be cleared.
+            'stranded_tasks_confirmed' => ['nullable', 'boolean'],
             ...$scheduleRules->rules('ranges.*.'),
         ], $scheduleRules->messages('ranges.*.'));
 
@@ -858,6 +862,8 @@ class ScheduleController extends Controller
         $corrected = [];
         $confirmedConflicts = [];
         $releasedDaysOff = [];
+        $clearedTasks = collect();
+        $clearedLabel = '';
 
         try {
             DB::transaction(function () use (
@@ -871,7 +877,9 @@ class ScheduleController extends Controller
                 &$overrode,
                 &$corrected,
                 &$confirmedConflicts,
-                &$releasedDaysOff
+                &$releasedDaysOff,
+                &$clearedTasks,
+                &$clearedLabel
             ): void {
                 $ranges = $this->resolveSubmittedRanges(
                     $project,
@@ -949,7 +957,18 @@ class ScheduleController extends Controller
                             return;
                         }
 
-                        if ($schedule->isLocked()) {
+                        // A booking under way holds today's work. Taking it off
+                        // is a change to the record, not to a plan, so it is a
+                        // Super Admin's - and refused out loud, because unlike
+                        // an ended row the editor does submit this one.
+                        if ($schedule->isActive() && ! $mayOverrideLock) {
+                            throw new RuntimeException(sprintf(
+                                '%s is already under way. Only a Super Admin can remove a schedule that has started.',
+                                $schedule->describe()
+                            ));
+                        }
+
+                        if ($schedule->isLocked() || $schedule->isActive()) {
                             $overrode = true;
                         }
 
@@ -1053,7 +1072,25 @@ class ScheduleController extends Controller
                 // putting those dates back later cannot quietly bring them back.
                 $releasedDaysOff = app(ProjectTeamChange::class)->cancelDaysOffWithoutWork($project);
 
-                $this->syncTaskDatesWithSchedule($project);
+                // Open tasks this save leaves with no booked day lose their
+                // dates - but only once somebody has seen which ones. Completed
+                // tasks are never touched: see TaskScheduleRules.
+                $stranded = $this->taskScheduleRules->strandedOpenTasks(
+                    (int) $project->project_id,
+                    $this->taskScheduleRules->ranges((int) $project->project_id)
+                );
+
+                if ($stranded->isNotEmpty() && ! (bool) ($validated['stranded_tasks_confirmed'] ?? false)) {
+                    throw new StrandedTasksException($stranded, sprintf(
+                        'Nothing was saved. This change would clear the dates of %s. Reopen the schedule and confirm to save it.',
+                        $this->taskScheduleRules->describeTasks($stranded)
+                    ));
+                }
+
+                // Described now, while the tasks still carry the dates they
+                // are about to lose.
+                $clearedLabel = $stranded->isEmpty() ? '' : $this->taskScheduleRules->describeTasks($stranded);
+                $clearedTasks = $this->syncTaskDatesWithSchedule($project);
                 // Status follows the dates in every direction: given up
                 // entirely, moved forward, or moved into the past.
                 $this->syncStatusWithSchedule($project);
@@ -1093,9 +1130,19 @@ class ScheduleController extends Controller
                 $this->notifications->projectScheduleChanged($project, $rangesAfter);
             }
 
+            $this->notifications->taskDatesCleared($project, $clearedTasks);
+
             return redirect()
                 ->route('super-admin.schedules.index')
-                ->with('success', $this->saveMessage($project, $corrected, $historical));
+                ->with('success', $this->saveMessage($project, $corrected, $historical)
+                    .($clearedTasks->isNotEmpty() && $clearedLabel !== ''
+                        ? ' Dates cleared from '.$clearedLabel.'.'
+                        : ''));
+        } catch (StrandedTasksException $e) {
+            return redirect()
+                ->route('super-admin.schedules.index')
+                ->withInput()
+                ->with('warning', $e->getMessage());
         } catch (HistoricalConflictException $e) {
             // Not an error, and deliberately not worded as one: the record
             // disagrees with itself about a day that has gone, and the answer
@@ -1124,6 +1171,63 @@ class ScheduleController extends Controller
                 ->route('super-admin.schedules.index')
                 ->with('error', $this->safeErrorMessage($e, 'Unable to save schedule. Nothing was changed.'));
         }
+    }
+
+    /**
+     * Which open tasks a submission would leave with no booked day, before it
+     * is saved - so the editor can list them and ask, instead of the save
+     * clearing their dates unseen.
+     *
+     * Measured against what the save would keep: the rows submitted, plus the
+     * ended bookings the save keeps whatever the form says. Nothing is written.
+     * A row that does not parse is skipped; the save refuses it a moment later
+     * with its own complaint.
+     */
+    public function taskImpact(Request $request, int $id)
+    {
+        $project = Project::with('schedules')->findOrFail($id);
+        $mayOverrideLock = $request->boolean('override_past_lock') && (bool) $request->user()?->isSuperAdmin();
+
+        $submitted = collect((array) $request->input('ranges', []));
+        $keptIds = $submitted->pluck('schedule_id')->filter()->map(fn ($id): int => (int) $id)->all();
+
+        $ranges = $submitted
+            ->map(function ($entry): ?array {
+                $entry = (array) $entry;
+                $start = $entry['start_date'] ?? $entry['project_date'] ?? null;
+                $end = $entry['end_date'] ?? $entry['project_date'] ?? null;
+
+                try {
+                    return $start && $end
+                        ? ['start' => CarbonImmutable::parse($start)->toDateString(), 'end' => CarbonImmutable::parse($end)->toDateString()]
+                        : null;
+                } catch (Throwable) {
+                    return null;
+                }
+            })
+            ->filter()
+            ->merge($project->schedules
+                ->reject(fn (Schedule $schedule): bool => in_array((int) $schedule->schedule_id, $keptIds, true))
+                ->filter(fn (Schedule $schedule): bool => ($schedule->isLocked() && ! $mayOverrideLock) || ($schedule->isActive() && ! $mayOverrideLock))
+                ->map(fn (Schedule $schedule): array => [
+                    'start' => $schedule->startsOn()->toDateString(),
+                    'end' => $schedule->endsOn()->toDateString(),
+                ]))
+            ->values()
+            ->all();
+
+        $tasks = $this->taskScheduleRules->strandedOpenTasks((int) $project->project_id, $ranges);
+
+        return response()->json([
+            'tasks' => $tasks->map(fn (Task $task): array => [
+                'task_id' => (int) $task->task_id,
+                'title' => $task->task_title,
+                'technician' => $task->technician?->name,
+                'dates' => CarbonImmutable::parse($task->start_date)->format(BusinessTime::DATE)
+                    .' - '.CarbonImmutable::parse($task->due_date)->format(BusinessTime::DATE),
+            ])->all(),
+            'summary' => $tasks->isEmpty() ? '' : $this->taskScheduleRules->describeTasks($tasks),
+        ]);
     }
 
     /**
@@ -1497,7 +1601,7 @@ class ScheduleController extends Controller
         if ($project->isReadOnly()) {
             throw new RuntimeException(sprintf(
                 'This project is %s and its schedule can no longer be changed.',
-                $project->status
+                strtolower($project->statusLabel())
             ));
         }
 
@@ -1925,10 +2029,7 @@ class ScheduleController extends Controller
         // archived while it read Pending or Ongoing has to be named out rather
         // than left to its status alone.
         $schedules = Schedule::query()
-            ->whereHas('project', function ($query): void {
-                $query->whereIn('status', self::ACTIVE_PROJECT_STATUSES)
-                    ->where('is_archived', false);
-            })
+            ->occupying()
             ->with([
                 'scheduleTechnicians:schedule_technician_id,schedule_id,project_technician_id',
                 'scheduleTechnicians.projectTechnician:project_technician_id,technician_id',

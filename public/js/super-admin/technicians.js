@@ -898,12 +898,85 @@ document.addEventListener("DOMContentLoaded", function () {
                 detailsPanel.open(info.event.extendedProps.projectId);
                 highlightAssignmentRow(info.event.extendedProps.projectId);
             },
+            // A click on the day itself, rather than on a bar, opens the
+            // calendar day dialog: what they are booked on that day and
+            // taking them off it, or - on an empty day - putting them on a
+            // project booked that day, for that day only.
+            dateClick: function (info) {
+                if (!dayModal || !selectedTechnician) {
+                    return;
+                }
+
+                dayModal.open(info.dateStr);
+            },
+            // Every change of month asks which of its days have a project
+            // booked, for the small dot beside the date.
+            datesSet: function (info) {
+                loadBookedDays(info.startStr.slice(0, 10), info.endStr.slice(0, 10));
+            },
         });
 
         calendar.render();
         window.calendarHeader.attach(calendar, calendarEl);
 
         return calendar;
+    }
+
+    // Days any live project is booked on, from the last month asked about:
+    // date => the status colours of what is booked that day.
+    let bookedDays = {};
+
+    // Enough to say "more than one thing" without turning into a bar.
+    const BOOKED_DOT_LIMIT = 3;
+
+    /** Draw each booked day's dots beside its date; clear every other. */
+    function paintBookedDays() {
+        if (!calendarEl) {
+            return;
+        }
+
+        calendarEl
+            .querySelectorAll(".fc-daygrid-day[data-date]")
+            .forEach(function (cell) {
+                const top = cell.querySelector(".fc-daygrid-day-top");
+                const old = cell.querySelector("[data-booked-dots]");
+                const colours = bookedDays[cell.dataset.date] || [];
+
+                if (old) {
+                    old.remove();
+                }
+
+                if (!top || !colours.length) {
+                    return;
+                }
+
+                const dots = document.createElement("span");
+
+                dots.className = "day-booked-dots";
+                dots.setAttribute("data-booked-dots", "");
+                dots.setAttribute("aria-hidden", "true");
+
+                colours.slice(0, BOOKED_DOT_LIMIT).forEach(function (colour) {
+                    const dot = document.createElement("i");
+
+                    dot.style.background = colour;
+                    dots.appendChild(dot);
+                });
+
+                top.appendChild(dots);
+            });
+    }
+
+    function loadBookedDays(start, end) {
+        request(
+            "/super-admin/technicians/booked-days?start=" +
+                encodeURIComponent(start) +
+                "&end=" +
+                encodeURIComponent(end),
+        ).then(function (result) {
+            bookedDays = (result.ok && result.body.days) || {};
+            paintBookedDays();
+        });
     }
 
     /**
@@ -1045,6 +1118,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 // The card was hidden while the calendar rendered, so its
                 // measurements are stale until it becomes visible.
                 instance.updateSize();
+                paintBookedDays();
             }
         });
     }
@@ -1519,16 +1593,36 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         /**
-         * Whether a day is one the project is scheduled on. Only those can be
-         * taken away - the server refuses any other. A project with no
-         * schedule yet has no days to narrow to.
+         * The technician's own days on the project, now or still to come, as
+         * inclusive {start, end} pairs - null for an open end.
+         */
+        function technicianSpans() {
+            return (payload && payload.technician_spans) || [];
+        }
+
+        /** The span of theirs that covers a day, or null. */
+        function spanCovering(day) {
+            return (
+                technicianSpans().find(function (span) {
+                    return (!span.start || span.start <= day) && (!span.end || day <= span.end);
+                }) || null
+            );
+        }
+
+        /**
+         * Whether a day can be taken away: one the project is scheduled on
+         * AND the technician is on the project for. A project booked for a
+         * fortnight that they hold one day of offers that one day. A project
+         * with no schedule yet has no project days to narrow to.
          */
         function isScheduledDay(day) {
             const ranges = scheduleRanges();
 
-            return !ranges.length || ranges.some(function (range) {
+            const projectDay = !ranges.length || ranges.some(function (range) {
                 return range.start <= day && day <= range.end;
             });
+
+            return projectDay && spanCovering(day) !== null;
         }
 
         /** Grey out every day the project is not scheduled on. */
@@ -1555,29 +1649,45 @@ document.addEventListener("DOMContentLoaded", function () {
             const ranges = scheduleRanges();
             const after = shiftDay(day, 1);
 
-            if (!ranges.length) {
-                return after;
-            }
+            const next = !ranges.length
+                ? after
+                : ranges
+                      .filter(function (range) {
+                          return range.end >= after;
+                      })
+                      .map(function (range) {
+                          return range.start > after ? range.start : after;
+                      })
+                      .sort()[0] || null;
 
-            return (
-                ranges
-                    .filter(function (range) {
-                        return range.end >= after;
-                    })
-                    .map(function (range) {
-                        return range.start > after ? range.start : after;
-                    })
-                    .sort()[0] || null
-            );
+            // Back only while the span they are off stays open - a span that
+            // ends first leaves them nothing to come back to.
+            const span = spanCovering(day);
+
+            return next && span && (!span.end || next <= span.end) ? next : null;
         }
 
-        /** Whether any scheduled day is left from today onward. */
+        /**
+         * Whether any day is left from today onward that the project is
+         * scheduled on and the technician holds.
+         */
         function hasScheduledDaysLeft() {
             const ranges = scheduleRanges();
             const today = payload ? payload.min_date : "";
 
-            return !ranges.length || ranges.some(function (range) {
-                return range.end >= today;
+            return technicianSpans().some(function (span) {
+                const spanStart = span.start && span.start > today ? span.start : today;
+
+                if (span.end && span.end < spanStart) {
+                    return false;
+                }
+
+                return !ranges.length || ranges.some(function (range) {
+                    const start = range.start > spanStart ? range.start : spanStart;
+                    const end = span.end && span.end < range.end ? span.end : range.end;
+
+                    return start <= end;
+                });
             });
         }
 
@@ -1599,7 +1709,9 @@ document.addEventListener("DOMContentLoaded", function () {
                           : "from " + formatDay(from) + " to " + formatDay(until)) +
                       (nextScheduledDay(until)
                           ? " and back on it " + formatDay(nextScheduledDay(until)) + "."
-                          : ", to the end of its schedule.")
+                          : spanCovering(until) && spanCovering(until).end
+                            ? ". They have no later days on it."
+                            : ", to the end of its schedule.")
                     : "Choose the days they are off.";
 
                 return;
@@ -1990,9 +2102,41 @@ document.addEventListener("DOMContentLoaded", function () {
             window.bootstrap.Modal.getOrCreateInstance(removalModal).show();
         }
 
+        /**
+         * Their open tasks that run into the days being taken away. The
+         * removal still saves - the tasks stay theirs and are flagged on the
+         * task board - but the dialog names them before anybody confirms.
+         */
+        function renderAffectedTasks() {
+            let warningEl = removalModal.querySelector("[data-panel-affected-tasks]");
+
+            if (!warningEl) {
+                warningEl = document.createElement("div");
+                warningEl.className = "alert alert-warning small d-none";
+                warningEl.setAttribute("data-panel-affected-tasks", "");
+                warningEl.setAttribute("role", "status");
+                leadPanelEl.parentNode.insertBefore(warningEl, leadPanelEl);
+            }
+
+            const affected = (payload && payload.affected_tasks) || [];
+
+            warningEl.textContent = affected.length
+                ? (affected.length === 1
+                      ? "This task still belongs to them and runs into those days: "
+                      : "These tasks still belong to them and run into those days: ") +
+                  affected.join(", ") +
+                  ". " +
+                  (affected.length === 1 ? "It" : "They") +
+                  " will be flagged \u201cTechnician Not Assigned for Dates\u201d on the task board for you to reassign."
+                : "";
+            warningEl.classList.toggle("d-none", !affected.length);
+        }
+
         /** The dialog's contents for the mode and days currently chosen. */
         function renderRemoval() {
             removing = true;
+
+            renderAffectedTasks();
 
             // Nothing on the calendar from today on means nothing to take
             // away here, whichever mode is chosen.
@@ -2186,6 +2330,76 @@ document.addEventListener("DOMContentLoaded", function () {
                     }
 
                     render(result.body);
+                });
+            },
+            /**
+             * Show a project in the panel and go straight to taking the
+             * technician off it for one day - the Remove Schedule dialog,
+             * opened on "These days" with that day as both ends. Everything
+             * else is the Remove Schedule button's own path: the stand-in
+             * question for a lead, the last-technician rule, the tasks the
+             * day runs into.
+             */
+            removeOnDay: function (id, day) {
+                projectId = id;
+                payload = null;
+                resetRemovalUi();
+                setAlert(errorEl, "");
+                setAlert(successEl, "");
+
+                modeRadios.forEach(function (radio) {
+                    radio.checked = radio.value === "days";
+                });
+
+                request(
+                    "/super-admin/technicians/" +
+                        selectedTechnician.technician_id +
+                        "/projects/" +
+                        id +
+                        "?mode=days&from=" +
+                        encodeURIComponent(day) +
+                        "&until=" +
+                        encodeURIComponent(day),
+                ).then(function (result) {
+                    if (!result.ok) {
+                        showState("project");
+                        nameEl.textContent = "Unavailable";
+                        setAlert(
+                            errorEl,
+                            result.body.error || "Unable to load assignment.",
+                        );
+
+                        return;
+                    }
+
+                    render(result.body);
+                    highlightAssignmentRow(id);
+
+                    // render() has already said why for a finished project or
+                    // a former assignment.
+                    if (payload.read_only) {
+                        return;
+                    }
+
+                    if (payload.on_hold) {
+                        setAlert(
+                            errorEl,
+                            "This project is on hold. Resume it before changing its assigned technicians.",
+                        );
+
+                        return;
+                    }
+
+                    if (!payload.is_lead && payload.remaining_after_removal < 1) {
+                        setAlert(
+                            errorEl,
+                            "A project must keep at least one technician. Assign someone else first.",
+                        );
+
+                        return;
+                    }
+
+                    openRemoval();
                 });
             },
         };
@@ -2667,4 +2881,510 @@ document.addEventListener("DOMContentLoaded", function () {
             addProjectModal.open();
         });
     }
+
+    // ---------------------------------------------------------------
+    // Calendar day dialog
+    //
+    // A click on a day of the Schedules calendar. A booked day lists what
+    // the technician is on and offers to take them off it for that day; an
+    // empty day lists the projects booked on it, to put them on one for
+    // that day only.
+    // ---------------------------------------------------------------
+
+    function initDayModal(modal) {
+        const technicianEl = modal.querySelector("[data-day-technician]");
+        const titleEl = modal.querySelector("[data-day-title]");
+        const bookedEl = modal.querySelector("[data-day-booked]");
+        const bookedListEl = modal.querySelector("[data-day-booked-list]");
+        const bookedNoteEl = modal.querySelector("[data-day-booked-note]");
+        const showAddBtn = modal.querySelector("[data-day-show-add]");
+        const addEl = modal.querySelector("[data-day-add]");
+        const addIntroEl = modal.querySelector("[data-day-add-intro]");
+        const addCountEl = modal.querySelector("[data-day-add-count]");
+        const loadingEl = modal.querySelector("[data-day-add-loading]");
+        const noticeEl = modal.querySelector("[data-day-add-notice]");
+        const listEl = modal.querySelector("[data-day-add-list]");
+        const emptyEl = modal.querySelector("[data-day-add-empty]");
+        const blockedWrap = modal.querySelector("[data-day-blocked-wrap]");
+        const blockedToggle = modal.querySelector("[data-day-blocked-toggle]");
+        const blockedLabel = modal.querySelector("[data-day-blocked-label]");
+        const blockedList = modal.querySelector("[data-day-blocked-list]");
+        const errorEl = modal.querySelector("[data-day-error]");
+        const successEl = modal.querySelector("[data-day-success]");
+        const saveBtn = modal.querySelector("[data-day-save]");
+        const saveSpinner = modal.querySelector("[data-day-save-spinner]");
+        const saveLabel = modal.querySelector("[data-day-save-label]");
+
+        let day = null;
+        let selectedProjectId = null;
+        let dayProjects = [];
+        // What to do once the dialog has finished closing - opening the
+        // Remove Schedule dialog has to wait for this one to be gone.
+        let afterHide = null;
+
+        /** A Date as 'Y-m-d' on the local calendar - never UTC. */
+        function ymd(date) {
+            return (
+                date.getFullYear() +
+                "-" +
+                String(date.getMonth() + 1).padStart(2, "0") +
+                "-" +
+                String(date.getDate()).padStart(2, "0")
+            );
+        }
+
+        function longDay(value) {
+            return new Date(value + "T00:00:00").toLocaleDateString("en-US", {
+                weekday: "long",
+                month: "long",
+                day: "numeric",
+                year: "numeric",
+            });
+        }
+
+        function shortDay(value) {
+            return new Date(value + "T00:00:00").toLocaleDateString("en-US", {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+            });
+        }
+
+        /**
+         * The projects the calendar already shows on this day, one entry per
+         * project however many bars it has there. A whole-day bar's end is
+         * the day after its last; a partial day's end is on the day itself.
+         */
+        function bookingsOn(value) {
+            if (!calendar) {
+                return [];
+            }
+
+            const byProject = {};
+            const order = [];
+
+            calendar.getEvents().forEach(function (event) {
+                const first = ymd(event.start);
+                let last = first;
+
+                if (event.end) {
+                    const end = new Date(event.end.getTime());
+
+                    if (event.allDay) {
+                        end.setDate(end.getDate() - 1);
+                    }
+
+                    last = ymd(end);
+                }
+
+                if (value < first || value > last) {
+                    return;
+                }
+
+                const props = event.extendedProps;
+                const existing = byProject[props.projectId];
+
+                if (existing) {
+                    // Still on it that day through another span, so it can
+                    // still be taken away.
+                    existing.isFormer = existing.isFormer && Boolean(props.isFormer);
+
+                    return;
+                }
+
+                byProject[props.projectId] = {
+                    projectId: props.projectId,
+                    referenceNo: props.referenceNo,
+                    projectName: props.projectName,
+                    client: props.client,
+                    status: props.status,
+                    statusLabel: props.statusLabel,
+                    rangeLabel: props.rangeLabel,
+                    isFormer: Boolean(props.isFormer),
+                    removedOn: props.removedOn,
+                };
+                order.push(props.projectId);
+            });
+
+            return order.map(function (id) {
+                return byProject[id];
+            });
+        }
+
+        function isPast(value) {
+            return value < ymd(new Date());
+        }
+
+        function employable() {
+            return selectedTechnician && selectedTechnician.can_receive_work !== false;
+        }
+
+        function renderBookings(bookings) {
+            const past = isPast(day);
+
+            bookedListEl.innerHTML = bookings
+                .map(function (booking) {
+                    const meta = [booking.referenceNo, booking.client, booking.rangeLabel]
+                        .filter(Boolean)
+                        .map(escapeHtml);
+                    const canRemove = !past && !booking.isFormer;
+
+                    return (
+                        '<div class="schedule-pick day-booking">' +
+                        '<span class="schedule-pick-body">' +
+                        '<span class="schedule-pick-name">' +
+                        escapeHtml(booking.projectName || booking.referenceNo) +
+                        "</span>" +
+                        '<span class="schedule-pick-meta d-block">' +
+                        meta.join(" &middot; ") +
+                        "</span>" +
+                        '<span class="d-block mt-1">' +
+                        statusBadge(booking.status, booking.statusLabel) +
+                        "</span>" +
+                        (booking.isFormer
+                            ? '<span class="schedule-pick-reason">' +
+                              escapeHtml(
+                                  booking.removedOn
+                                      ? "Removed from this project on " +
+                                            booking.removedOn +
+                                            ". Kept as a record of when they were booked."
+                                      : "No longer on this project. Kept as a record of when they were booked.",
+                              ) +
+                              "</span>"
+                            : "") +
+                        "</span>" +
+                        '<span class="day-booking-actions">' +
+                        '<button type="button" class="btn btn-sm btn-outline-secondary" data-day-view="' +
+                        escapeHtml(String(booking.projectId)) +
+                        '">View Details</button>' +
+                        (canRemove
+                            ? '<button type="button" class="btn btn-sm btn-outline-danger" data-day-remove="' +
+                              escapeHtml(String(booking.projectId)) +
+                              '"><i class="bi bi-calendar-x me-1" aria-hidden="true"></i>Remove on This Day</button>'
+                            : "") +
+                        "</span>" +
+                        "</div>"
+                    );
+                })
+                .join("");
+
+            bookedNoteEl.textContent = past
+                ? "This day has already passed, so what they were booked on is a record and can no longer be changed."
+                : "";
+            bookedNoteEl.classList.toggle("d-none", !past);
+
+            showAddBtn.classList.toggle("d-none", past || !employable());
+            bookedEl.classList.remove("d-none");
+        }
+
+        function pickMarkup(project, selectable) {
+            const meta = [project.reference_no, project.client, project.range_label]
+                .filter(Boolean)
+                .map(escapeHtml);
+
+            return (
+                '<label class="schedule-pick' +
+                (selectable ? "" : " is-disabled") +
+                '" data-day-pick="' +
+                project.project_id +
+                '">' +
+                (selectable
+                    ? '<input type="radio" name="calendarDayProject" class="form-check-input" value="' +
+                      project.project_id +
+                      '">'
+                    : "") +
+                '<span class="schedule-pick-body">' +
+                '<span class="schedule-pick-name">' +
+                escapeHtml(project.name) +
+                '</span><span class="schedule-pick-meta d-block">' +
+                meta.join(" &middot; ") +
+                '</span><span class="schedule-pick-techs">' +
+                technicianChips(project.technicians) +
+                "</span>" +
+                (project.reason
+                    ? '<span class="schedule-pick-reason">' +
+                      escapeHtml(project.reason) +
+                      "</span>"
+                    : "") +
+                // A lead technician taking a day on a project that already
+                // has a lead that day takes the lead from them for it. Said
+                // before it is picked, so the save is never the first
+                // anybody hears of it.
+                (project.lead_replacement
+                    ? '<span class="day-lead-warning">' +
+                      '<i class="bi bi-exclamation-triangle-fill me-1" aria-hidden="true"></i>' +
+                      escapeHtml(
+                          selectedTechnician.name +
+                              " will replace " +
+                              project.lead_replacement.name +
+                              " as lead technician on " +
+                              shortDay(day) +
+                              ". " +
+                              project.lead_replacement.name +
+                              " will be off this project that day.",
+                      ) +
+                      "</span>"
+                    : "") +
+                "</span></label>"
+            );
+        }
+
+        function selectedProject() {
+            return (
+                dayProjects.find(function (project) {
+                    return project.project_id === selectedProjectId;
+                }) || null
+            );
+        }
+
+        /** The save button says when it replaces a lead, not only adds. */
+        function renderSaveLabel() {
+            const project = selectedProject();
+            const replacing = Boolean(project && project.lead_replacement);
+
+            saveLabel.textContent = replacing ? "Replace Lead for This Day" : "Assign for This Day";
+            saveBtn.classList.toggle("btn-success", !replacing);
+            saveBtn.classList.toggle("btn-danger", replacing);
+        }
+
+        function renderAddList(body) {
+            const projects = body.projects || [];
+
+            dayProjects = projects;
+            const blocked = body.blocked || [];
+
+            setAlert(noticeEl, body.notice || "");
+
+            listEl.innerHTML = projects
+                .map(function (project) {
+                    return pickMarkup(project, true);
+                })
+                .join("");
+
+            emptyEl.classList.toggle("d-none", Boolean(body.notice) || projects.length > 0);
+            addCountEl.textContent = projects.length + " available";
+            addCountEl.classList.toggle("d-none", projects.length === 0);
+
+            blockedList.innerHTML = blocked
+                .map(function (project) {
+                    return pickMarkup(project, false);
+                })
+                .join("");
+            blockedList.classList.add("d-none");
+            blockedToggle.classList.remove("is-open");
+            blockedWrap.classList.toggle("d-none", blocked.length === 0);
+            blockedLabel.textContent =
+                "Show unavailable projects (" + blocked.length + ")";
+
+            saveBtn.classList.toggle("d-none", projects.length === 0);
+            saveBtn.disabled = true;
+            renderSaveLabel();
+        }
+
+        function openAdd() {
+            selectedProjectId = null;
+            dayProjects = [];
+            addEl.classList.remove("d-none");
+            showAddBtn.classList.add("d-none");
+            addIntroEl.textContent =
+                "Projects scheduled on " +
+                shortDay(day) +
+                ". " +
+                selectedTechnician.name +
+                " will be on the one you pick for this day only.";
+            listEl.innerHTML = "";
+            blockedWrap.classList.add("d-none");
+            emptyEl.classList.add("d-none");
+            addCountEl.classList.add("d-none");
+            setAlert(noticeEl, "");
+            loadingEl.classList.remove("d-none");
+
+            const asked = day;
+
+            request(
+                "/super-admin/technicians/" +
+                    selectedTechnician.technician_id +
+                    "/day?date=" +
+                    encodeURIComponent(day),
+            ).then(function (result) {
+                // Another day was clicked while this one was loading.
+                if (asked !== day) {
+                    return;
+                }
+
+                loadingEl.classList.add("d-none");
+
+                if (!result.ok) {
+                    setAlert(
+                        errorEl,
+                        result.body.error || "Unable to load the projects booked on this day.",
+                    );
+
+                    return;
+                }
+
+                renderAddList(result.body);
+            });
+        }
+
+        function hideThen(callback) {
+            afterHide = callback;
+            window.bootstrap.Modal.getOrCreateInstance(modal).hide();
+        }
+
+        bookedListEl.addEventListener("click", function (event) {
+            const view = event.target.closest("[data-day-view]");
+            const remove = event.target.closest("[data-day-remove]");
+
+            if (view && detailsPanel) {
+                const id = parseInt(view.dataset.dayView, 10);
+
+                hideThen(function () {
+                    detailsPanel.open(id);
+                    highlightAssignmentRow(id);
+                });
+            }
+
+            if (remove && detailsPanel) {
+                const id = parseInt(remove.dataset.dayRemove, 10);
+                const chosenDay = day;
+
+                hideThen(function () {
+                    detailsPanel.removeOnDay(id, chosenDay);
+                });
+            }
+        });
+
+        showAddBtn.addEventListener("click", openAdd);
+
+        listEl.addEventListener("change", function (event) {
+            const radio = event.target.closest('input[type="radio"]');
+
+            if (!radio) {
+                return;
+            }
+
+            selectedProjectId = parseInt(radio.value, 10);
+
+            listEl.querySelectorAll("[data-day-pick]").forEach(function (row) {
+                row.classList.toggle(
+                    "is-selected",
+                    parseInt(row.dataset.dayPick, 10) === selectedProjectId,
+                );
+            });
+
+            saveBtn.disabled = false;
+            renderSaveLabel();
+            setAlert(errorEl, "");
+        });
+
+        blockedToggle.addEventListener("click", function () {
+            const isOpen = !blockedList.classList.contains("d-none");
+
+            blockedList.classList.toggle("d-none", isOpen);
+            blockedToggle.classList.toggle("is-open", !isOpen);
+            blockedLabel.textContent =
+                (isOpen ? "Show" : "Hide") +
+                " unavailable projects (" +
+                blockedList.children.length +
+                ")";
+        });
+
+        saveBtn.addEventListener("click", function () {
+            if (!selectedProjectId) {
+                return;
+            }
+
+            saveBtn.disabled = true;
+            saveSpinner.classList.remove("d-none");
+            setAlert(errorEl, "");
+
+            request(
+                "/super-admin/technicians/" +
+                    selectedTechnician.technician_id +
+                    "/projects/" +
+                    selectedProjectId +
+                    "/day",
+                {
+                    method: "POST",
+                    body: JSON.stringify({
+                        date: day,
+                        // The lead the warning named - the server refuses
+                        // the save if somebody else leads that day by now.
+                        replacing_technician_id:
+                            selectedProject() && selectedProject().lead_replacement
+                                ? selectedProject().lead_replacement.technician_id
+                                : null,
+                    }),
+                },
+            ).then(function (result) {
+                saveSpinner.classList.add("d-none");
+
+                if (!result.ok) {
+                    saveBtn.disabled = false;
+                    setAlert(errorEl, result.body.error || "Unable to save assignment.");
+
+                    return;
+                }
+
+                setAlert(successEl, result.body.message);
+
+                // The new day changes the calendar, and whatever the details
+                // panel was showing may no longer be the whole story.
+                loadCalendar().then(function () {
+                    if (detailsPanel) {
+                        detailsPanel.reset();
+                    }
+
+                    window.setTimeout(function () {
+                        window.bootstrap.Modal.getOrCreateInstance(modal).hide();
+                    }, 900);
+                });
+            });
+        });
+
+        modal.addEventListener("hidden.bs.modal", function () {
+            const callback = afterHide;
+
+            afterHide = null;
+
+            if (callback) {
+                callback();
+            }
+        });
+
+        return {
+            open: function (value) {
+                day = value;
+                selectedProjectId = null;
+                dayProjects = [];
+                afterHide = null;
+
+                technicianEl.textContent = selectedTechnician.name;
+                titleEl.textContent = longDay(value);
+
+                bookedEl.classList.add("d-none");
+                addEl.classList.add("d-none");
+                loadingEl.classList.add("d-none");
+                saveBtn.classList.add("d-none");
+                saveBtn.disabled = true;
+                saveSpinner.classList.add("d-none");
+                setAlert(errorEl, "");
+                setAlert(successEl, "");
+
+                const bookings = bookingsOn(value);
+
+                if (bookings.length) {
+                    renderBookings(bookings);
+                } else {
+                    openAdd();
+                }
+
+                window.bootstrap.Modal.getOrCreateInstance(modal).show();
+            },
+        };
+    }
+
+    const dayModalEl = document.querySelector("[data-day-modal]");
+    const dayModal = dayModalEl && window.bootstrap ? initDayModal(dayModalEl) : null;
 });

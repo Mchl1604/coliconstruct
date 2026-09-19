@@ -653,6 +653,92 @@
         </div>
     </div>
 
+    {{-- ============================ CALENDAR DAY MODAL ============================ --}}
+    {{-- Opened by clicking a day on the Schedules calendar. A booked day lists
+         what the technician is on and offers to take them off it for that
+         day - through the Remove Schedule dialog above, set to that one day.
+         An empty day offers the projects scheduled on it, to put them on for
+         that day only. --}}
+    <div class="modal fade" id="calendarDayModal" tabindex="-1" aria-hidden="true"
+        aria-labelledby="calendarDayTitle" data-day-modal>
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+
+                <div class="modal-header align-items-start">
+                    <div class="schedule-modal-heading">
+                        <span class="schedule-modal-eyebrow" data-day-technician>&nbsp;</span>
+                        <h5 class="modal-title mb-0" id="calendarDayTitle" data-day-title>&nbsp;</h5>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+
+                <div class="modal-body">
+                    {{-- The day has bookings --}}
+                    <div class="d-none" data-day-booked>
+                        <div class="schedule-section-heading">
+                            <span><i class="bi bi-calendar-check me-1" aria-hidden="true"></i> Booked on this day</span>
+                        </div>
+
+                        <div class="schedule-eligible-list" data-day-booked-list></div>
+
+                        <p class="text-muted small mt-2 mb-0 d-none" data-day-booked-note></p>
+
+                        <button type="button" class="btn btn-link btn-sm px-0 mt-2 d-none" data-day-show-add>
+                            <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
+                            Add to another project on this day
+                        </button>
+                    </div>
+
+                    {{-- Putting them on a project for this day only --}}
+                    <div class="d-none" data-day-add>
+                        <div class="schedule-section-heading">
+                            <span><i class="bi bi-plus-circle me-1" aria-hidden="true"></i> Add to a project on this day</span>
+                            <span class="schedule-count-pill d-none" data-day-add-count></span>
+                        </div>
+
+                        <p class="text-muted small mb-2" data-day-add-intro></p>
+
+                        <div class="text-secondary small py-3 d-none" data-day-add-loading>
+                            <span class="spinner-border spinner-border-sm me-2" role="status"
+                                aria-hidden="true"></span>
+                            Checking projects booked on this day&hellip;
+                        </div>
+
+                        <div class="alert alert-info small d-none" role="status" data-day-add-notice></div>
+
+                        <div class="schedule-eligible-list" data-day-add-list></div>
+
+                        <div class="schedule-empty-state d-none" data-day-add-empty>
+                            No project booked on this day can take this technician.
+                        </div>
+
+                        <div class="schedule-blocked-wrap d-none" data-day-blocked-wrap>
+                            <button type="button" class="schedule-blocked-toggle" data-day-blocked-toggle>
+                                <i class="bi bi-chevron-right" aria-hidden="true"></i>
+                                <span data-day-blocked-label>Show unavailable projects</span>
+                            </button>
+                            <div class="schedule-blocked-list d-none" data-day-blocked-list></div>
+                        </div>
+                    </div>
+
+                    <div class="alert alert-danger mt-3 mb-0 d-none" role="alert" data-day-error></div>
+                    <div class="alert alert-success mt-3 mb-0 d-none" role="alert" data-day-success></div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+
+                    <button type="button" class="btn btn-success d-none" data-day-save disabled>
+                        <span class="spinner-border spinner-border-sm me-1 d-none" role="status" aria-hidden="true"
+                            data-day-save-spinner></span>
+                        <span data-day-save-label>Assign for This Day</span>
+                    </button>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
     {{-- ============================ ADD TO PROJECT MODAL ============================ --}}
     <div class="modal fade" id="addToProjectModal" tabindex="-1" aria-hidden="true" data-add-project-modal>
         <div class="modal-dialog modal-lg modal-dialog-scrollable">

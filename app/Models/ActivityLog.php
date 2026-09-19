@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\BusinessTime;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -725,7 +726,10 @@ class ActivityLog extends Model
         ?string $from = null,
         ?string $to = null
     ): Builder {
-        $today = CarbonImmutable::today();
+        // Office days, not server days: "today" at 1 AM in Manila is not the
+        // UTC date. The window is worked out on the office clock and moved
+        // onto the stored one below, because created_at is UTC.
+        $today = BusinessTime::today();
 
         [$start, $end] = match ($range) {
             'today' => [$today, $today->endOfDay()],
@@ -746,6 +750,8 @@ class ActivityLog extends Model
         if ($start && $end && $start->gt($end)) {
             [$start, $end] = [$end->startOfDay(), $start->endOfDay()];
         }
+
+        [$start, $end] = BusinessTime::storedRange($start, $end);
 
         return $query
             ->when($start, fn (Builder $q): Builder => $q->where('created_at', '>=', $start))

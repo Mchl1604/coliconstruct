@@ -946,8 +946,8 @@ class ProjectClientConfirmationReachTest extends TestCase
         $details->assertOk();
         $listing->assertOk();
 
+        // No completion date: a project is always completed as of today.
         $fields = [
-            'name="completion_date"',
             'name="completion_summary"',
             'name="completion_remarks"',
             'name="completion_photos[]"',

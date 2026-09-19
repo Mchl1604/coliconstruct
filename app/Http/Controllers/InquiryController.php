@@ -271,7 +271,7 @@ class InquiryController extends Controller
             'status' => $inquiry->status,
             'status_label' => $inquiry->statusLabel(),
             'status_badge_class' => $inquiry->statusBadgeClass(),
-            'submitted_at' => $inquiry->created_at?->format(BusinessTime::DATE_TIME),
+            'submitted_at' => BusinessTime::at($inquiry->created_at)?->format(BusinessTime::DATE_TIME),
             'is_new' => $inquiry->status === Inquiry::STATUS_NEW,
         ];
     }
@@ -284,7 +284,7 @@ class InquiryController extends Controller
     private function archivedRow(Inquiry $inquiry): array
     {
         return $this->row($inquiry) + [
-            'archived_at' => $inquiry->archived_at?->format(BusinessTime::DATE_TIME) ?? '—',
+            'archived_at' => BusinessTime::at($inquiry->archived_at)?->format(BusinessTime::DATE_TIME) ?? '—',
             'archived_by' => $inquiry->archiver?->fullName() ?? '—',
         ];
     }
@@ -299,13 +299,13 @@ class InquiryController extends Controller
     {
         return $this->row($inquiry) + [
             'message' => $inquiry->message,
-            'updated_at' => $inquiry->updated_at?->format(BusinessTime::DATE_TIME),
+            'updated_at' => BusinessTime::at($inquiry->updated_at)?->format(BusinessTime::DATE_TIME),
             'is_archived' => $inquiry->is_archived,
             'has_reply' => $inquiry->hasReply(),
             'reply_message' => $inquiry->reply_message,
-            'replied_at' => $inquiry->replied_at?->format(BusinessTime::DATE_TIME),
+            'replied_at' => BusinessTime::at($inquiry->replied_at)?->format(BusinessTime::DATE_TIME),
             'replied_by' => $inquiry->replier?->fullName(),
-            'archived_at' => $inquiry->archived_at?->format(BusinessTime::DATE_TIME),
+            'archived_at' => BusinessTime::at($inquiry->archived_at)?->format(BusinessTime::DATE_TIME),
             'archived_by' => $inquiry->archiver?->fullName(),
         ];
     }

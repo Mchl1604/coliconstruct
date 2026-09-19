@@ -321,6 +321,9 @@ class PublicSiteController extends Controller
             'date_range' => $this->cardDateRange($project),
             'lead_technician' => $this->clientProjects->leadTechnicianName($project),
             'technicians' => $project->projectTechnicians
+                // Deactivated and archived accounts are left out, as on the
+                // project page: the client is told who is working on the job.
+                ->filter(fn ($projectTechnician): bool => (bool) $projectTechnician->technician?->isAssignable())
                 ->map(fn ($projectTechnician) => $projectTechnician->technician?->name)
                 ->filter()
                 ->values(),

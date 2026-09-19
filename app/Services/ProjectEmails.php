@@ -59,7 +59,9 @@ class ProjectEmails
                     ActivityLog::INVITATION_EMAIL_SENT,
                     null,
                     sprintf(
-                        'Emailed a project invitation for %s to %s.',
+                        // Handed to the mail queue, not yet delivered - the queue
+                        // worker sends it. Said so, rather than claiming it went.
+                        'Queued a project invitation email for %s to %s.',
                         $project->reference_no,
                         $contact->email_address
                     ),

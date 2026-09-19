@@ -138,9 +138,11 @@ class ProjectActivityLogTest extends TestCase
 
         $entry->forceFill(['created_at' => CarbonImmutable::parse('2026-03-04 09:30:00')])->save();
 
+        // Stored in UTC, read on the office clock: 09:30 UTC is 5:30 PM in
+        // Manila.
         $this->page($project)
             ->assertOk()
-            ->assertSee('Mar 4, 2026 9:30 AM')
+            ->assertSee('Mar 4, 2026 5:30 PM')
             ->assertSee('Andy Admin')
             ->assertSee(ActivityLog::PROJECT_PUT_ON_HOLD)
             ->assertSee('Put this project on hold.');

@@ -84,6 +84,11 @@ class UploadedFileController extends Controller
     {
         $task = $image->task;
 
+        // Task photographs are working records for the crew and the office;
+        // the client's page never shows one, so a client is not handed one by
+        // id either.
+        abort_if($request->user()?->isClient(), 403);
+
         $this->authorizeProject($request, $task?->project);
 
         // Only the technician roles are narrowed further; the office reads the

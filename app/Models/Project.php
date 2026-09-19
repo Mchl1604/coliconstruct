@@ -136,6 +136,15 @@ class Project extends Model
     public const ACTIVE_PROJECT_STATUSES = ['pending', 'ongoing'];
 
     /**
+     * The largest quotation the column holds: decimal(12,2). Stated here so
+     * both forms refuse a larger one with a message, instead of the database
+     * refusing it and the save failing with nothing useful to say.
+     */
+    public const MAX_QUOTATION = '9999999999.99';
+
+    public const MAX_QUOTATION_MESSAGE = 'The quotation amount cannot be more than ₱9,999,999,999.99.';
+
+    /**
      * The statuses a project is in while it is still live work.
      *
      * Wider than ACTIVE_PROJECT_STATUSES, which answers a different question:
@@ -276,6 +285,7 @@ class Project extends Model
         'address',
         'description',
         'on_hold',
+        'held_on',
         'is_archived',
         'completed_at',
         'completion_summary',
@@ -317,6 +327,7 @@ class Project extends Model
         'phase_setup_finalized_at' => 'datetime',
         'phase_structure_overridden_at' => 'datetime',
         'on_hold' => 'boolean',
+        'held_on' => 'date',
         'is_archived' => 'boolean',
         'completed_at' => 'datetime',
         'completion_requested_at' => 'datetime',

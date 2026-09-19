@@ -883,12 +883,7 @@ class TechnicianAvailabilityService
         bool $anyProjectStatus = false
     ) {
         return Schedule::query()
-            ->when(! $anyProjectStatus, function ($query): void {
-                $query->whereHas('project', function ($project): void {
-                    $project->whereIn('status', Project::ACTIVE_PROJECT_STATUSES)
-                        ->where('is_archived', false);
-                });
-            })
+            ->when(! $anyProjectStatus, fn ($query) => $query->occupying())
             ->when($excludeProjectId !== null, function ($query) use ($excludeProjectId): void {
                 $query->where('project_id', '!=', $excludeProjectId);
             })

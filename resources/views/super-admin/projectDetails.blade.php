@@ -363,9 +363,8 @@
 
                                 <div class="mb-3">
                                     <label class="form-label fw-semibold">Completion Date</label>
-                                    <input type="date" class="form-control" name="completion_date"
-                                        value="{{ \App\Support\BusinessTime::today()->format('Y-m-d') }}"
-                                        max="{{ \App\Support\BusinessTime::today()->format('Y-m-d') }}" required>
+                                    <input type="text" class="form-control" value="{{ \App\Support\BusinessTime::today()->format(\App\Support\BusinessTime::DATE) }} (today)" readonly>
+                                    <div class="form-text">A project is always completed as of today.</div>
                                 </div>
 
                                 <div class="mb-3">
@@ -2117,8 +2116,8 @@
 
                             <div class="mb-3">
                                 <label class="form-label fw-semibold">Cancellation Date</label>
-                                <input type="date" class="form-control" name="cancellation_date"
-                                    value="{{ \App\Support\BusinessTime::today()->format('Y-m-d') }}" required>
+                                <input type="text" class="form-control" value="{{ \App\Support\BusinessTime::today()->format(\App\Support\BusinessTime::DATE) }} (today)" readonly>
+                                <div class="form-text">A project is always cancelled as of today.</div>
                             </div>
 
                             <div class="mb-3">
@@ -2177,6 +2176,11 @@
                     enctype="multipart/form-data" data-edit-project-form>
                     @csrf
                     @method('PUT')
+                    {{-- The version of the project this form was drawn from. A save
+                         is refused if somebody else has changed it since, rather
+                         than quietly writing over what they did. --}}
+                    <input type="hidden" name="loaded_version"
+                        value="{{ old('loaded_version', $project->updated_at?->format('Y-m-d H:i:s')) }}">
 
                     {{-- What the person answered when asked about the other
                          half of the quotation. Filled in by quotationSync.js;

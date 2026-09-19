@@ -396,7 +396,7 @@ class UserAccountService
         $this->guardNotSelf($user, 'You cannot change the status of your own account.');
         $this->guardMayChangeAccess(
             $user,
-            "A Super Admin's account can only be activated or deactivated by another Super Admin."
+            'An Admin or Super Admin account can only be activated or deactivated by a Super Admin.'
         );
 
         // Read before the status changes: once the account cannot sign in, the
@@ -446,7 +446,7 @@ class UserAccountService
         // same rule stated where it cannot be routed around.
         $this->guardMayChangeAccess(
             $user,
-            "A Super Admin's account can only be archived by another Super Admin."
+            'An Admin or Super Admin account can only be archived by a Super Admin.'
         );
 
         if ($user->is_archived) {
@@ -752,8 +752,8 @@ class UserAccountService
 
     /**
      * Whether the signed-in administrator outranks the account they are acting
-     * on - which, with only two administrative tiers, means "a Super Admin's
-     * account is a Super Admin's to manage".
+     * on - which means "an administrator's account, Admin or Super Admin, is
+     * a Super Admin's to manage". An Admin may still act on their own row.
      *
      * The reason is account takeover rather than tidiness. An Admin who can
      * write to a Super Admin's row does not need that row's password: they can
@@ -761,7 +761,9 @@ class UserAccountService
      * page to email a code to an inbox they own. So protecting the password
      * alone protects nothing - every write has to be held to the same rule,
      * and switching the account off has to be as well, or the system's owner
-     * can simply be locked out by the tier they govern.
+     * can simply be locked out by the tier they govern. The same holds between
+     * two Admins: one could otherwise take, demote or switch off the other -
+     * and they cannot create an Admin, so they must not be able to undo one.
      *
      * A caller with nobody signed in - a console command, a seeder - is left
      * alone: there is no actor to rank, and those paths are the ones that
@@ -771,7 +773,10 @@ class UserAccountService
     {
         $actor = auth()->user();
 
-        return $actor === null || ! $user->isSuperAdmin() || $actor->isSuperAdmin();
+        return $actor === null
+            || $actor->isSuperAdmin()
+            || $actor->is($user)
+            || ! in_array($user->role, User::ADMINISTRATOR_ROLES, true);
     }
 
     /**
@@ -789,7 +794,7 @@ class UserAccountService
             return;
         }
 
-        throw new RuntimeException("A Super Admin's account can only be edited by another Super Admin.");
+        throw new RuntimeException('An Admin or Super Admin account can only be edited by a Super Admin.');
     }
 
     /**
@@ -824,7 +829,7 @@ class UserAccountService
             return;
         }
 
-        throw new RuntimeException("A Super Admin's password can only be reset by another Super Admin.");
+        throw new RuntimeException('An Admin or Super Admin password can only be reset by a Super Admin.');
     }
 
     /**

@@ -28,13 +28,16 @@
     function clean(value) {
         var text = String(value).replace(/[^\d.]/g, '');
         var parts = text.split('.');
+        // Ten whole digits at most: the amount is stored as decimal(12,2), so
+        // 9,999,999,999.99 is the largest the server will accept.
+        var whole = parts[0].slice(0, 10);
 
         if (parts.length === 1) {
-            return parts[0];
+            return whole;
         }
 
         // A second dot is dropped rather than the rest of the number with it.
-        return parts[0] + '.' + parts.slice(1).join('').slice(0, 2);
+        return whole + '.' + parts.slice(1).join('').slice(0, 2);
     }
 
     /** "1500000.5" -> "1,500,000.5". The decimals are never grouped. */

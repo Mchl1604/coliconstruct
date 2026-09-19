@@ -287,7 +287,10 @@ class ProjectHoldResumeRecoveryTest extends TestCase
         // And the crew is still free, because nothing put the project back
         // into an active status behind the administrator.
         $this->assertFalse($this->isBusy([$ana], 10, 12));
-        $this->assertFalse($this->isBusy([$ben], 0, 12));
+        // Ben's project was held today, so today - kept, and worked - still
+        // books him; the preserved days after it do not.
+        $this->assertTrue($this->isBusy([$ben], 0, 0));
+        $this->assertFalse($this->isBusy([$ben], 1, 12));
     }
 
     // ==================================================================

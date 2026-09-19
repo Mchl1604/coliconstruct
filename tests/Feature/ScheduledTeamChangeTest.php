@@ -528,7 +528,7 @@ class ScheduledTeamChangeTest extends TestCase
         $this->saveTeam($project, $lead, [])->assertSessionHas('success');
 
         $this->assertSame($tech->technician_id, $task->fresh()->technician_id);
-        $this->assertSame(Task::GAP_OFF_TEAM, $task->fresh()->assignmentGap());
+        $this->assertSame(Task::GAP_REMOVED_HOLDER, $task->fresh()->assignmentGap());
     }
 
     // ------------------------------------------------------------------
@@ -592,6 +592,56 @@ class ScheduledTeamChangeTest extends TestCase
         ])->assertSessionHasNoErrors();
 
         $this->assertSame('Renamed', $task->fresh()->task_title);
+    }
+
+    public function test_a_holder_removed_from_the_project_cannot_be_kept_on_their_task(): void
+    {
+        [$project, $lead, $tech] = $this->runningProject();
+
+        $task = $this->task($project, $tech, $this->day(2), $this->day(4));
+
+        // Off the project altogether, today.
+        $this->saveTeam($project, $lead, [])->assertSessionHas('success');
+
+        $edit = fn (Technician $holder) => $this->put(route('super-admin.tasks.update', $task->task_id), [
+            'task_title' => 'Renamed',
+            'task_description' => 'Work',
+            'phase_id' => $task->phase_id,
+            'technician_id' => $holder->technician_id,
+            'start_date' => $this->day(2),
+            'due_date' => $this->day(4),
+        ]);
+
+        // Nothing else changed, and still refused: they can no longer close it.
+        $edit($tech)->assertSessionHasErrors('technician_id');
+        $this->assertStringContainsString('was removed from this project', session('errors')->first('technician_id'));
+        $this->assertSame((int) $tech->technician_id, (int) $task->fresh()->technician_id);
+
+        // Handed to somebody on the team, it saves.
+        $edit($lead)->assertSessionHasNoErrors();
+        $this->assertSame((int) $lead->technician_id, (int) $task->fresh()->technician_id);
+    }
+
+    public function test_the_edit_dialog_shows_a_removed_holder_but_does_not_offer_them(): void
+    {
+        [$project, $lead, $tech] = $this->runningProject();
+
+        $task = $this->task($project, $tech, $this->day(2), $this->day(4));
+
+        $this->saveTeam($project, $lead, [])->assertSessionHas('success');
+
+        $html = $this->get(route('super-admin.projects.show', $project->project_id))->assertOk()->getContent();
+
+        $this->assertStringContainsString('was removed from this project. Assign this task', $html);
+        // The holder's card: present, switched off, and not the one ticked.
+        $this->assertMatchesRegularExpression(
+            '/name="technician_id"\s+value="'.$tech->technician_id.'"[^>]*disabled/s',
+            $html
+        );
+        $this->assertDoesNotMatchRegularExpression(
+            '/name="technician_id"\s+value="'.$tech->technician_id.'"[^>]*checked/s',
+            $html
+        );
     }
 
     // ------------------------------------------------------------------

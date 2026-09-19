@@ -213,14 +213,23 @@ class ProjectOnHoldTest extends TestCase
         // who the original row was booked to.
         $this->assertSame(4, ScheduleTechnician::query()->count());
 
-        // And neither half holds anybody, because the project is not active
-        // work while it is paused.
+        // The preserved half holds nobody while the project is paused...
         $this->assertTrue(
             app(TechnicianAvailabilityService::class)->findConflicts(
                 [$lead->technician_id, $ana->technician_id],
-                [['start' => $this->day(0), 'end' => $this->day(4)]]
+                [['start' => $this->day(1), 'end' => $this->day(4)]]
             )->isEmpty(),
-            'A held project must not hold its technicians, preserved dates or not.'
+            'The preserved dates of a held project must not hold its technicians.'
+        );
+
+        // ...but the day the hold kept was being worked, so the crew is still
+        // booked on it and cannot be put on another job the same day.
+        $this->assertTrue(
+            app(TechnicianAvailabilityService::class)->findConflicts(
+                [$ana->technician_id],
+                [['start' => $this->day(0), 'end' => $this->day(0)]]
+            )->isNotEmpty(),
+            'The day a project was held on still books its crew.'
         );
 
         // The team is not.
@@ -643,14 +652,20 @@ class ProjectOnHoldTest extends TestCase
         $this->assertTrue((bool) $held->on_hold);
         $this->assertSame('On Hold', $held->statusLabel());
 
-        // And the crew is still free on the days the hold kept, because a
-        // paused project is not one of the statuses that books anybody.
-        $conflicts = app(TechnicianAvailabilityService::class)->findConflicts(
+        // The day the hold kept still books the crew - it was being worked -
+        // while the preserved days after it book nobody. The page load must
+        // not have turned the hold back into active work either way.
+        $kept = app(TechnicianAvailabilityService::class)->findConflicts(
             [$ana->technician_id],
             [['start' => $this->day(0), 'end' => $this->day(0)]]
         );
+        $preserved = app(TechnicianAvailabilityService::class)->findConflicts(
+            [$ana->technician_id],
+            [['start' => $this->day(1), 'end' => $this->day(3)]]
+        );
 
-        $this->assertTrue($conflicts->isEmpty(), 'A held project must not hold its technicians.');
+        $this->assertTrue($kept->isNotEmpty(), 'The day a project was held on still books its crew.');
+        $this->assertTrue($preserved->isEmpty(), 'A held project must not hold its technicians on its preserved days.');
     }
 
     /**

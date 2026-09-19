@@ -873,7 +873,7 @@ class ConfigurationUserManagementTest extends TestCase
         $response = $this->putJson(route('super-admin.configuration.users.password.reset', $owner));
 
         $response->assertStatus(422);
-        $response->assertJsonPath('error', "A Super Admin's password can only be reset by another Super Admin.");
+        $response->assertJsonPath('error', 'An Admin or Super Admin password can only be reset by a Super Admin.');
 
         $this->assertTrue(Hash::check('the-old-password', $owner->refresh()->password));
     }
@@ -886,6 +886,49 @@ class ConfigurationUserManagementTest extends TestCase
             ->assertOk();
 
         $this->assertFalse(Hash::check('the-old-password', $owner->refresh()->password));
+    }
+
+    /**
+     * Between two Admins the takeover is the same one: an Admin who can reset,
+     * re-address, demote or switch off another Admin can take or lock out that
+     * account - and an Admin cannot create an Admin, so cannot undo one either.
+     */
+    public function test_an_admin_cannot_reset_edit_demote_or_deactivate_another_admin(): void
+    {
+        $admin = $this->makeEmployee('admin');
+        $peer = $this->makeEmployee('admin', ['password' => 'the-old-password', 'email' => 'peer@example.test']);
+
+        $this->actingAs($admin);
+
+        $this->putJson(route('super-admin.configuration.users.password.reset', $peer))
+            ->assertStatus(422)
+            ->assertJsonPath('error', 'An Admin or Super Admin password can only be reset by a Super Admin.');
+
+        $this->postJson(route('super-admin.configuration.users.employees.update', $peer), $this->employeePayload([
+            'email' => 'taken-over@example.test',
+            'role' => 'admin',
+        ]))->assertStatus(422);
+
+        $this->putJson(route('super-admin.configuration.users.status', $peer), ['status' => 'deactivated'])
+            ->assertStatus(422);
+
+        $peer->refresh();
+        $this->assertTrue(Hash::check('the-old-password', $peer->password));
+        $this->assertSame('peer@example.test', $peer->email);
+        $this->assertSame('admin', $peer->role);
+        $this->assertTrue($peer->isActive());
+
+        $this->getJson(route('super-admin.configuration.users.show', $peer))
+            ->assertJsonPath('account.manageable', false);
+    }
+
+    public function test_a_super_admin_may_still_reset_an_admins_password(): void
+    {
+        $admin = $this->makeEmployee('admin', ['password' => 'the-old-password']);
+
+        $this->putJson(route('super-admin.configuration.users.password.reset', $admin))->assertOk();
+
+        $this->assertFalse(Hash::check('the-old-password', $admin->refresh()->password));
     }
 
     /**

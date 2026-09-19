@@ -79,6 +79,41 @@ class BusinessTime
     }
 
     /**
+     * An office wall-clock moment, as the UTC instant a stored timestamp is
+     * compared with.
+     *
+     * The reverse of at(). A filter for "today" or "September" is written in
+     * office days, but created_at and friends are UTC: between midnight and
+     * 8 AM in Manila the two disagree about which day it is, so a window has
+     * to be moved onto the stored clock before it is used in a query - never
+     * the column moved onto the office clock.
+     */
+    public static function toStored(DateTimeInterface|string $wallClock): CarbonImmutable
+    {
+        $wall = $wallClock instanceof DateTimeInterface
+            ? $wallClock->format('Y-m-d H:i:s')
+            : $wallClock;
+
+        return CarbonImmutable::parse($wall, Schedule::BUSINESS_TIMEZONE)->utc();
+    }
+
+    /**
+     * A pair of office wall-clock bounds, moved onto the stored clock. Nulls
+     * pass through, so an open-ended window stays open-ended.
+     *
+     * @return array{0: ?CarbonImmutable, 1: ?CarbonImmutable}
+     */
+    public static function storedRange(
+        DateTimeInterface|string|null $start,
+        DateTimeInterface|string|null $end
+    ): array {
+        return [
+            $start === null ? null : self::toStored($start),
+            $end === null ? null : self::toStored($end),
+        ];
+    }
+
+    /**
      * The same, formatted - the form a template actually wants, with the
      * absent case handled rather than left to a null-safe operator and a
      * trailing `?? '—'` at every call site.

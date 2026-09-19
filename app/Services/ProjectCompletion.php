@@ -52,16 +52,8 @@ class ProjectCompletion
     public function rules(bool $photosRequired = false): array
     {
         return [
-            // Bounded at both ends. A completion date in the future would
-            // silently defeat releaseFutureSchedules() - every booked date
-            // would fall before the cutoff and nothing would be released -
-            // and a project cannot have been finished before it was created.
-            //
-            // Bounded at the office's today, not the server's. `today` here
-            // would resolve on UTC, and from 4 PM in Manila that is still
-            // yesterday: a lead closing out at the end of the working day
-            // would be told the date they are standing in is in the future.
-            'completion_date' => ['required', 'date', 'before_or_equal:'.BusinessTime::today()->toDateString()],
+            // No completion date: it is always the office's today - see
+            // requestCompletion().
             'completion_summary' => ['required', 'string'],
             'completion_remarks' => ['nullable', 'string'],
             'completion_photos' => $photosRequired
@@ -88,7 +80,6 @@ class ProjectCompletion
     public function messages(): array
     {
         return [
-            'completion_date.before_or_equal' => 'The completion date cannot be in the future.',
             'completion_photos.required' => 'At least one completion photo is required.',
             'completion_photos.min' => 'At least one completion photo is required.',
             'completion_photos.max' => 'Up to 20 completion photos can be uploaded at once.',
@@ -115,11 +106,15 @@ class ProjectCompletion
         ?User $actor = null,
         array $overriddenBlockers = []
     ): void {
-        $completedOn = CarbonImmutable::parse($validated['completion_date']);
+        // Always the office's today. A chosen date was how a project came to be
+        // "finished" years before it was created - and releaseFutureSchedules()
+        // then deleted every day actually worked, since they all fell after it.
+        $completedOn = BusinessTime::today();
 
         $project->update($this->overrideColumns($validated, $actor, $overriddenBlockers) + [
             'status' => Project::STATUS_AWAITING_CLIENT_CONFIRMATION,
             'on_hold' => false,
+            'held_on' => null,
             'completed_at' => $completedOn,
             'completion_summary' => $validated['completion_summary'],
             'completion_remarks' => $validated['completion_remarks'] ?? null,
@@ -265,6 +260,7 @@ class ProjectCompletion
         $project->update([
             'status' => 'completed',
             'on_hold' => false,
+            'held_on' => null,
             // When the confirmation became official. Now for a client pressing
             // the button and for the sweep closing the project; the date the
             // administrator was given when they are recording one that reached
@@ -313,7 +309,9 @@ class ProjectCompletion
                 'date',
                 'before_or_equal:'.BusinessTime::today()->toDateString(),
                 $project->completion_requested_at
-                    ? 'after_or_equal:'.CarbonImmutable::parse($project->completion_requested_at)->toDateString()
+                    // The request is a UTC instant; the day the client was
+                    // asked is the office's day, not the server's.
+                    ? 'after_or_equal:'.BusinessTime::at($project->completion_requested_at)->toDateString()
                     : null,
             ])),
             'client_confirmation_note' => ['required', 'string', 'min:10', 'max:500'],

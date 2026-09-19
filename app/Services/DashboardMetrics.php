@@ -9,6 +9,7 @@ use App\Models\SpecialtyRequest;
 use App\Models\Task;
 use App\Models\Technician;
 use App\Models\User;
+use App\Support\BusinessTime;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
@@ -187,6 +188,13 @@ class DashboardMetrics
             $overdue = Project::query()->overdue()->count();
             $overdueOngoing = Project::query()->overdue()->where('status', 'ongoing')->count();
 
+            // Live work that was never booked. The Projects page files it under
+            // Needs Rescheduling, not Pending (see Project::tabKey()), so it is
+            // counted there here too - otherwise the card and the tab it opens
+            // disagree. Disjoint from overdue(), which needs dates to exist.
+            $missing = Project::query()->missingSchedule()->count();
+            $missingOngoing = Project::query()->missingSchedule()->where('status', 'ongoing')->count();
+
             // Paused work is counted once, under On Hold, and taken back out of
             // whichever figure its stored status would otherwise land it in.
             // Putting a project on hold sets that status to Unscheduled, so
@@ -216,9 +224,9 @@ class DashboardMetrics
 
             return [
                 'total' => (int) $byStatus->sum(),
-                'pending' => max(0, $pending - ($overdue - $overdueOngoing)),
-                'ongoing' => max(0, $ongoing - $overdueOngoing),
-                'overdue' => $overdue,
+                'pending' => max(0, $pending - ($overdue - $overdueOngoing) - ($missing - $missingOngoing)),
+                'ongoing' => max(0, $ongoing - $overdueOngoing - $missingOngoing),
+                'overdue' => $overdue + $missing,
                 'on_hold' => $onHold,
                 // Finished work, counted as finished. Excluding it would make
                 // the Completed figure disagree with the Completed tab on the
@@ -601,7 +609,7 @@ class DashboardMetrics
      */
     public function upcomingSchedule(int $limit = 3): Collection
     {
-        $today = CarbonImmutable::today();
+        $today = BusinessTime::today();
 
         return Schedule::query()
             ->with(['project.clients', 'project.projectTypes', 'project.tasks', 'project.projectTechnicians.technician.account'])

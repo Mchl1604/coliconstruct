@@ -531,6 +531,187 @@ class TechnicianManagementTest extends TestCase
     // Removing a technician from a project
     // ------------------------------------------------------------------
 
+    // ------------------------------------------------------------------
+    // Schedules tab - a single calendar day
+    // ------------------------------------------------------------------
+
+    public function test_booked_days_are_the_days_a_live_project_is_scheduled_on(): void
+    {
+        $lead = $this->leadTechnician('Jose Garcia');
+
+        $live = $this->project('Live Project', [$lead]);
+        $this->schedule($live, $this->day(3), $this->day(4));
+
+        $done = $this->project('Done Project', [$lead], 'completed');
+        $this->schedule($done, $this->day(6), $this->day(6));
+
+        $colour = $live->fresh()->calendarInkColor();
+
+        // Each day carries the colours it is drawn in: the status ink of what
+        // is booked, the same as its bar and the legend.
+        $this->getJson(route('super-admin.technicians.booked-days').'?start='.$this->day(0).'&end='.$this->day(10))
+            ->assertOk()
+            ->assertExactJson(['days' => [
+                $this->day(3) => [$colour],
+                $this->day(4) => [$colour],
+            ]]);
+    }
+
+    public function test_the_day_lists_only_projects_booked_on_it(): void
+    {
+        $lead = $this->leadTechnician('Jose Garcia');
+        $ana = $this->technician('Ana Mendoza');
+
+        $booked = $this->project('Booked That Day', [$lead]);
+        $this->schedule($booked, $this->day(3), $this->day(5));
+
+        $elsewhere = $this->project('Booked Later', [$lead]);
+        $this->schedule($elsewhere, $this->day(10), $this->day(12));
+
+        $response = $this->getJson(route('super-admin.technicians.day', $ana->technician_id).'?date='.$this->day(4));
+
+        $response->assertOk()->assertJsonPath('is_past', false);
+        $this->assertSame(['Booked That Day'], collect($response->json('projects'))->pluck('name')->all());
+    }
+
+    public function test_a_technician_can_be_added_for_one_day_only(): void
+    {
+        $lead = $this->leadTechnician('Jose Garcia');
+        $ana = $this->technician('Ana Mendoza');
+        $project = $this->project('Some Project', [$lead]);
+        $this->schedule($project, $this->day(3), $this->day(6));
+
+        $this->postJson(route('super-admin.technicians.projects.day', [$ana->technician_id, $project->project_id]), [
+            'date' => $this->day(4),
+        ])->assertOk();
+
+        $span = ProjectTechnician::query()
+            ->where('project_id', $project->project_id)
+            ->where('technician_id', $ana->technician_id)
+            ->sole();
+
+        $this->assertSame($this->day(4), $span->startDate());
+        $this->assertSame($this->day(5), $span->endDate());
+        $this->assertTrue($span->isCurrent($this->day(4)));
+        $this->assertFalse($span->isCurrent($this->day(5)));
+
+        // Already on it that day: not offered again, and refused if sent.
+        $this->assertSame([], $this->getJson(route('super-admin.technicians.day', $ana->technician_id).'?date='.$this->day(4))->json('projects'));
+
+        $this->postJson(route('super-admin.technicians.projects.day', [$ana->technician_id, $project->project_id]), [
+            'date' => $this->day(4),
+        ])->assertStatus(422);
+    }
+
+    public function test_a_day_the_technician_is_busy_elsewhere_is_refused(): void
+    {
+        $lead = $this->leadTechnician('Jose Garcia');
+        $ana = $this->technician('Ana Mendoza');
+
+        $busy = $this->project('Busy Project', [$ana]);
+        $this->schedule($busy, $this->day(4), $this->day(4));
+
+        $project = $this->project('Some Project', [$lead]);
+        $this->schedule($project, $this->day(3), $this->day(6));
+
+        $response = $this->getJson(route('super-admin.technicians.day', $ana->technician_id).'?date='.$this->day(4));
+        $this->assertSame([], $response->json('projects'));
+        $this->assertSame(['Some Project'], collect($response->json('blocked'))->pluck('name')->all());
+
+        $this->postJson(route('super-admin.technicians.projects.day', [$ana->technician_id, $project->project_id]), [
+            'date' => $this->day(4),
+        ])->assertStatus(422);
+
+        $this->assertDatabaseMissing('tbl_project_technicians', [
+            'project_id' => $project->project_id,
+            'technician_id' => $ana->technician_id,
+        ]);
+    }
+
+    public function test_a_lead_is_offered_a_led_day_with_the_sitting_lead_named(): void
+    {
+        $lead = $this->leadTechnician('Jose Garcia');
+        $other = $this->leadTechnician('Pedro Cruz');
+        $project = $this->project('Some Project', [$lead]);
+        $this->schedule($project, $this->day(3), $this->day(6));
+
+        $response = $this->getJson(route('super-admin.technicians.day', $other->technician_id).'?date='.$this->day(4));
+
+        $response->assertOk()
+            ->assertJsonPath('projects.0.name', 'Some Project')
+            ->assertJsonPath('projects.0.lead_replacement.technician_id', $lead->technician_id);
+    }
+
+    public function test_a_lead_replaces_the_sitting_lead_for_that_day_only_once_confirmed(): void
+    {
+        $lead = $this->leadTechnician('Jose Garcia');
+        $other = $this->leadTechnician('Pedro Cruz');
+        $project = $this->project('Some Project', [$lead]);
+        $this->schedule($project, $this->day(3), $this->day(6));
+
+        $url = route('super-admin.technicians.projects.day', [$other->technician_id, $project->project_id]);
+
+        // Never without saying so.
+        $this->postJson($url, ['date' => $this->day(4)])->assertStatus(422);
+        // Nor in place of somebody who does not lead that day.
+        $this->postJson($url, ['date' => $this->day(4), 'replacing_technician_id' => $other->technician_id])->assertStatus(422);
+
+        $this->postJson($url, ['date' => $this->day(4), 'replacing_technician_id' => $lead->technician_id])->assertOk();
+
+        $spans = ProjectTechnician::query()->where('project_id', $project->project_id)->get();
+        $leadOn = fn (string $day) => $spans
+            ->filter(fn (ProjectTechnician $span): bool => $span->isCurrent($day))
+            ->pluck('technician_id')
+            ->map(fn ($id): int => (int) $id)
+            ->sort()
+            ->values()
+            ->all();
+
+        $this->assertSame([(int) $lead->technician_id], $leadOn($this->day(3)));
+        $this->assertSame([(int) $other->technician_id], $leadOn($this->day(4)));
+        $this->assertSame([(int) $lead->technician_id], $leadOn($this->day(5)));
+    }
+
+    public function test_a_past_day_or_an_unscheduled_day_cannot_be_added(): void
+    {
+        $lead = $this->leadTechnician('Jose Garcia');
+        $ana = $this->technician('Ana Mendoza');
+        $project = $this->project('Some Project', [$lead]);
+        $this->schedule($project, $this->day(-3), $this->day(6));
+
+        $this->getJson(route('super-admin.technicians.day', $ana->technician_id).'?date='.$this->day(-1))
+            ->assertOk()
+            ->assertJsonPath('is_past', true)
+            ->assertJsonPath('projects', []);
+
+        $this->postJson(route('super-admin.technicians.projects.day', [$ana->technician_id, $project->project_id]), [
+            'date' => $this->day(-1),
+        ])->assertStatus(422);
+
+        $this->postJson(route('super-admin.technicians.projects.day', [$ana->technician_id, $project->project_id]), [
+            'date' => $this->day(9),
+        ])->assertStatus(422);
+    }
+
+    public function test_the_removal_dialog_is_given_only_the_technicians_own_days(): void
+    {
+        $lead = $this->leadTechnician('Jose Garcia');
+        $ana = $this->technician('Ana Mendoza');
+        $project = $this->project('Some Project', [$lead]);
+        $this->schedule($project, $this->day(3), $this->day(8));
+
+        $this->postJson(route('super-admin.technicians.projects.day', [$ana->technician_id, $project->project_id]), [
+            'date' => $this->day(6),
+        ])->assertOk();
+
+        $response = $this->getJson(route('super-admin.technicians.assignment', [$ana->technician_id, $project->project_id]));
+
+        $response->assertOk()
+            ->assertJsonPath('technician_spans', [['start' => $this->day(6), 'end' => $this->day(6)]])
+            // Not the project's first day, which is not one of theirs.
+            ->assertJsonPath('from', $this->day(6));
+    }
+
     public function test_a_non_lead_can_be_removed_directly(): void
     {
         $lead = $this->leadTechnician('Jose Garcia');
@@ -561,6 +742,58 @@ class TechnicianManagementTest extends TestCase
         ]);
         // And their schedule rows went with them.
         $this->assertSame(1, ScheduleTechnician::count());
+    }
+
+    public function test_a_holder_removed_for_good_is_flagged_but_one_on_days_off_is_not(): void
+    {
+        $lead = $this->leadTechnician('Jose Garcia');
+        $ana = $this->technician('Ana Mendoza');
+        $ben = $this->technician('Ben Cruz');
+        $project = $this->project('Some Project', [$lead, $ana, $ben]);
+        $this->schedule($project, $this->day(0), $this->day(8));
+
+        $task = fn (Technician $technician, ?string $start, ?string $due): Task => Task::create([
+            'project_id' => $project->project_id,
+            'technician_id' => $technician->technician_id,
+            'task_title' => 'Work for '.$technician->name,
+            'task_description' => 'Work',
+            'status' => 'pending',
+            'start_date' => $start,
+            'due_date' => $due,
+        ]);
+
+        $anaDated = $task($ana, $this->day(2), $this->day(3));
+        $anaUndated = $task($ana, null, null);
+        $benDated = $task($ben, $this->day(2), $this->day(3));
+
+        $destroy = fn (Technician $technician, array $body) => $this->deleteJson(
+            route('super-admin.technicians.projects.destroy', [$technician->technician_id, $project->project_id]),
+            $body
+        )->assertOk();
+
+        // Ana off the project for good, today.
+        $destroy($ana, ['mode' => 'from', 'from' => $this->day(0)]);
+        // Ben off for two days only, and back after.
+        $destroy($ben, ['mode' => 'days', 'from' => $this->day(2), 'until' => $this->day(3)]);
+
+        $this->assertSame(Task::GAP_REMOVED_HOLDER, $anaDated->fresh()->assignmentGap());
+        // No dates yet, but the holder has gone - that is what needs fixing.
+        $this->assertSame(Task::GAP_REMOVED_HOLDER, $anaUndated->fresh()->assignmentGap());
+        $this->assertSame(Task::GAP_OFF_TEAM, $benDated->fresh()->assignmentGap());
+
+        // The attention chips and the board agree, one gap per task.
+        $summary = app(\App\Services\TaskAssignmentGaps::class)->summarise();
+
+        $this->assertSame(2, $summary['counts'][Task::GAP_REMOVED_HOLDER]);
+        $this->assertSame(1, $summary['counts'][Task::GAP_OFF_TEAM]);
+        $this->assertSame(0, $summary['counts'][Task::GAP_DATE]);
+        $this->assertSame(3, $summary['total']);
+
+        // Read off the board's bulk query, not only one row at a time.
+        $this->assertSame(
+            Task::GAP_REMOVED_HOLDER,
+            Task::query()->withHolderCoverage()->find($anaUndated->task_id)->assignmentGap()
+        );
     }
 
     public function test_the_last_remaining_technician_cannot_be_removed(): void

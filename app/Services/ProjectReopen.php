@@ -102,6 +102,7 @@ class ProjectReopen
             // the daily status pass will not touch it again either way.
             'status' => 'ongoing',
             'on_hold' => false,
+            'held_on' => null,
             'reopened_at' => CarbonImmutable::now(),
             'reopened_by' => $actor?->id,
             'reopen_reason' => $reason,

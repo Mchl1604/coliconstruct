@@ -94,7 +94,7 @@
                     <div class="client-type-grid mb-4">
                         <label class="client-type-option is-selected" data-client-type-option>
                             <input type="radio" name="client_type" value="Residential" class="visually-hidden"
-                                data-client-type-radio checked>
+                                data-client-type-radio @checked(old('client_type', 'Residential') !== 'Commercial')>
                             <span class="client-type-icon"><i class="bi bi-house-door" aria-hidden="true"></i></span>
                             <span>
                                 <strong>Residential</strong>
@@ -104,7 +104,7 @@
 
                         <label class="client-type-option" data-client-type-option>
                             <input type="radio" name="client_type" value="Commercial" class="visually-hidden"
-                                data-client-type-radio>
+                                data-client-type-radio @checked(old('client_type') === 'Commercial')>
                             <span class="client-type-icon"><i class="bi bi-building" aria-hidden="true"></i></span>
                             <span>
                                 <strong>Commercial</strong>
@@ -117,7 +117,7 @@
                         <div class="col-12">
                             <label for="companyName" class="form-label">Company Name</label>
                             <input type="text" name="company_name" id="companyName" class="form-control"
-                                placeholder="Enter company name" data-summary-input="company_name">
+                                placeholder="Enter company name" data-summary-input="company_name" value="{{ old('company_name') }}">
                         </div>
                     </div>
 
@@ -125,26 +125,26 @@
                         <div class="col-md-5">
                             <label for="surname" class="form-label">Surname</label>
                             <input type="text" name="surname" id="surname" class="form-control"
-                                placeholder="Enter surname" data-summary-input="surname" required>
+                                placeholder="Enter surname" data-summary-input="surname" value="{{ old('surname') }}" required>
                         </div>
 
                         <div class="col-md-5">
                             <label for="firstname" class="form-label">First Name</label>
                             <input type="text" name="firstname" id="firstname" class="form-control"
-                                placeholder="Enter first name" data-summary-input="firstname" required>
+                                placeholder="Enter first name" data-summary-input="firstname" value="{{ old('firstname') }}" required>
                         </div>
 
                         <div class="col-md-2">
                             <label for="middleName" class="form-label">Middle Initial</label>
                             <input type="text" name="middle_name" id="middleName" class="form-control text-center"
                                 maxlength="1" pattern="[A-Za-z]" placeholder="M.I"
-                                data-summary-input="middle_name">
+                                data-summary-input="middle_name" value="{{ old('middle_name') }}">
                         </div>
 
                         <div class="col-md-6">
                             <label for="clientEmail" class="form-label">Email Address</label>
                             <input type="email" name="client_email" id="clientEmail" class="form-control"
-                                placeholder="Enter email address" data-summary-input="client_email" required>
+                                placeholder="Enter email address" data-summary-input="client_email" value="{{ old('client_email') }}" required>
                         </div>
 
                         <div class="col-md-6">
@@ -152,7 +152,7 @@
                             <input type="tel" name="client_phone" id="clientPhone" class="form-control"
                                 placeholder="09XXXXXXXXX" maxlength="11" pattern="^09\d{9}$"
                                 oninput="this.value=this.value.replace(/[^0-9]/g,'')" data-summary-input="client_phone"
-                                required>
+                                value="{{ old('client_phone') }}" required>
                         </div>
                     </div>
                 </section>
@@ -169,7 +169,7 @@
                             <label for="projectAddress" class="form-label">Project Address</label>
                             <textarea name="project_address" id="projectAddress" rows="3" class="form-control"
                                 placeholder="House/Unit No., Street, Barangay, City/Municipality, Province" maxlength="500"
-                                data-summary-input="project_address" required></textarea>
+                                data-summary-input="project_address" required>{{ old('project_address') }}</textarea>
                         </div>
 
                         <div class="col-md-6">
@@ -204,7 +204,8 @@
                                     <label class="project-type-option" data-project-type-option>
                                         <input type="checkbox" name="project_types[]"
                                             value="{{ $projectType->type_name }}" class="visually-hidden"
-                                            data-project-type-checkbox data-label="{{ $projectType->type_name }}">
+                                            data-project-type-checkbox data-label="{{ $projectType->type_name }}"
+                                            @checked(in_array($projectType->type_name, (array) old('project_types', []), true))>
                                         <span class="project-type-name">{{ $projectType->type_name }}</span>
                                         <span class="project-type-check" aria-hidden="true"><i
                                                 class="bi bi-check-lg"></i></span>
@@ -269,7 +270,7 @@
                         <div class="col-12">
                             <label for="projectDescription" class="form-label">Project Description</label>
                             <textarea name="project_description" id="projectDescription" rows="4" class="form-control"
-                                placeholder="Describe the scope of work" data-summary-input="project_description" required></textarea>
+                                placeholder="Describe the scope of work" data-summary-input="project_description" required>{{ old('project_description') }}</textarea>
                         </div>
                     </div>
                 </section>
@@ -380,7 +381,13 @@
                                 </div>
 
                                 <div class="technician-selected-list mt-3" data-technician-selected-list></div>
-                                <div class="technician-hidden-inputs" data-technician-hidden-inputs></div>
+                                <div class="technician-hidden-inputs" data-technician-hidden-inputs>
+                                    {{-- Put back after a failed save, so the team does not have
+                                         to be picked again. The picker reads its state from these. --}}
+                                    @foreach ((array) old('technicians', []) as $oldTechnicianId)
+                                        <input type="hidden" name="technicians[]" value="{{ $oldTechnicianId }}">
+                                    @endforeach
+                                </div>
                             </div>
                         </div>
 
@@ -420,19 +427,19 @@
                         <div class="col-md-6" data-date-based-field>
                             <label for="startDate" class="form-label">Start Date</label>
                             <input type="date" name="start_date" id="startDate" class="form-control"
-                                data-summary-input="start_date" data-schedule-date-input disabled required>
+                                data-summary-input="start_date" data-schedule-date-input value="{{ old('start_date') }}" disabled required>
                         </div>
 
                         <div class="col-md-6" data-date-based-field>
                             <label for="endDate" class="form-label">End Date</label>
                             <input type="date" name="end_date" id="endDate" class="form-control"
-                                data-summary-input="end_date" data-schedule-date-input disabled required>
+                                data-summary-input="end_date" data-schedule-date-input value="{{ old('end_date') }}" disabled required>
                         </div>
 
                         <div class="col-md-4" data-partial-day-field hidden>
                             <label for="projectDate" class="form-label">Project Date</label>
                             <input type="date" name="project_date" id="projectDate" class="form-control"
-                                data-summary-input="project_date" data-schedule-date-input disabled required>
+                                data-summary-input="project_date" data-schedule-date-input value="{{ old('project_date') }}" disabled required>
                             <div class="form-text">Only dates where everyone has a free slot can be picked.</div>
                         </div>
 

@@ -8,8 +8,8 @@
 
 <div class="mb-3">
     <label class="form-label fw-semibold" for="completionDate{{ $suffix }}">Completion Date</label>
-    <input type="date" class="form-control" id="completionDate{{ $suffix }}" name="completion_date"
-        value="{{ \App\Support\BusinessTime::today()->format('Y-m-d') }}" max="{{ \App\Support\BusinessTime::today()->format('Y-m-d') }}" required>
+    <input type="text" class="form-control" id="completionDate{{ $suffix }}" value="{{ \App\Support\BusinessTime::today()->format(\App\Support\BusinessTime::DATE) }} (today)" readonly>
+    <div class="form-text">A project is always completed as of today.</div>
 </div>
 
 <div class="mb-3">

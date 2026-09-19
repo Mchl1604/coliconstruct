@@ -146,7 +146,10 @@
                  the form: the server keeps it whatever this page submits. The
                  control is absent rather than disabled so nothing invites a
                  click that cannot work. --}}
-            @unless ($isReadOnly)
+            {{-- Nor is a booking under way, unless the reader may correct the
+                 record: its first day is being worked, and the server refuses
+                 anybody else. --}}
+            @unless ($isReadOnly || ($lockState === \App\Models\Schedule::LOCK_ACTIVE && ! $mayOverrideLock))
                 <button type="button" class="schedule-range-remove" data-remove-range
                     title="Remove this schedule" aria-label="Remove this schedule">
                     <i class="bi bi-trash3" aria-hidden="true"></i>

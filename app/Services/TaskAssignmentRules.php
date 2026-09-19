@@ -247,6 +247,16 @@ class TaskAssignmentRules
                 && $technicianId === (int) $task->technician_id
                 && $start === $this->dateOrNull($task->start_date)
                 && $due === $this->dateOrNull($task->due_date)) {
+                // Keeping the holder is allowed only while they are still on
+                // the project. Somebody taken off it altogether can no longer
+                // close the task, so an edit hands it to somebody who can.
+                if ($task->holderRemovedFromProject()) {
+                    $validator->errors()->add($key, sprintf(
+                        '%s was removed from this project. Assign this task to a technician on the team.',
+                        $task->technician?->name ?? 'This technician'
+                    ));
+                }
+
                 return;
             }
 

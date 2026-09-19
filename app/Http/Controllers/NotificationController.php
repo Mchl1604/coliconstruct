@@ -133,7 +133,32 @@ class NotificationController extends Controller
 
         $notification->markAsRead();
 
-        return redirect()->to($notification->url ?: url()->previous());
+        return redirect()->to($this->localDestination($notification->url) ?? url()->previous());
+    }
+
+    /**
+     * Where a stored link points, on this site.
+     *
+     * Links are stored as paths now, but older rows carry a whole address -
+     * some from a development server that no longer exists - and a notification
+     * must never send anybody to another host. So only the path and query of
+     * whatever was stored are followed, on whatever host is serving this page.
+     */
+    private function localDestination(?string $url): ?string
+    {
+        if ($url === null || $url === '') {
+            return null;
+        }
+
+        $path = parse_url($url, PHP_URL_PATH);
+
+        if (! is_string($path) || $path === '' || ! str_starts_with($path, '/')) {
+            return null;
+        }
+
+        $query = parse_url($url, PHP_URL_QUERY);
+
+        return $path.(is_string($query) && $query !== '' ? '?'.$query : '');
     }
 
     public function markAsRead(Request $request, Notification $notification): JsonResponse
@@ -203,7 +228,7 @@ class NotificationController extends Controller
             'icon' => $notification->icon(),
             'is_read' => (bool) $notification->is_read,
             'relative_time' => $notification->relativeTime(),
-            'created_at' => $notification->created_at?->format(BusinessTime::DATE_TIME),
+            'created_at' => BusinessTime::at($notification->created_at)?->format(BusinessTime::DATE_TIME),
             'open_url' => route('notifications.open', $notification->notification_id),
         ];
     }

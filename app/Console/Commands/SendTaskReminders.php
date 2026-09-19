@@ -5,7 +5,7 @@ namespace App\Console\Commands;
 use App\Models\Project;
 use App\Models\Task;
 use App\Services\NotificationService;
-use Carbon\CarbonImmutable;
+use App\Support\BusinessTime;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Collection;
 
@@ -25,7 +25,7 @@ class SendTaskReminders extends Command
 
     public function handle(NotificationService $notifications): int
     {
-        $today = CarbonImmutable::today();
+        $today = BusinessTime::today();
         $tomorrow = $today->addDay();
 
         $dueTomorrow = $this->openTasksDue($tomorrow->toDateString());

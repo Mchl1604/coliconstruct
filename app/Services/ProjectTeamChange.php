@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\ActivityLog;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
 use App\Models\Schedule;
@@ -250,6 +251,32 @@ class ProjectTeamChange
             subjectId: $technicianId,
             resumesOn: $resumesOn,
             leadCoverId: $standInLeadId,
+        );
+    }
+
+    /**
+     * Put one technician on a project for a single day - on for $day, off
+     * again the day after.
+     *
+     * A span of its own, whatever else they hold on the project: the caller
+     * has already made sure none of theirs covers the day. A lead-role
+     * technician joining a day that already has a lead is refused by the lead
+     * rule in problems(), like any other second lead.
+     */
+    public function planDayOn(Project $project, int $technicianId, CarbonImmutable $day): ProjectTeamChangePlan
+    {
+        $day = $day->startOfDay();
+
+        return $this->build(
+            ProjectTeamChangePlan::KIND_DAY_ON,
+            $project,
+            $day,
+            $this->spansOf($project),
+            collect(),
+            collect(),
+            collect(),
+            collect([['technician_id' => $technicianId, 'from' => $day, 'until' => $day->addDay()]]),
+            subjectId: $technicianId,
         );
     }
 
@@ -602,6 +629,14 @@ class ProjectTeamChange
 
         $account = fn (?int $id) => $id ? Technician::query()->with('account')->find($id)?->account : null;
 
+        if ($plan->kind === ProjectTeamChangePlan::KIND_DAY_ON) {
+            if ($subject = $account($plan->subjectId)) {
+                $notifications->technicianDayScheduled($project, $subject, $plan->effective);
+            }
+
+            return;
+        }
+
         if ($plan->kind === ProjectTeamChangePlan::KIND_DAYS_OFF) {
             $subject = $account($plan->subjectId);
 
@@ -897,6 +932,24 @@ class ProjectTeamChange
             ->filter(fn (ProjectTechnician $span): bool => $project->isLeadCover($span))
             ->values();
 
+        // Written down before anything changes: once the spans are rewritten
+        // there is nothing left to say what was due to happen. The team
+        // history reads this entry, so a scheduled removal or handover that
+        // closing called off does not vanish from the record.
+        $calledOff = $removals
+            ->reject(fn (ProjectTechnician $span): bool => $coversUnderWay->contains(fn (ProjectTechnician $cover): bool => $cover->is($span)))
+            ->map(fn (ProjectTechnician $span): string => sprintf(
+                '%s leaving on %s',
+                $span->technician?->name ?? 'A technician',
+                BusinessTime::format($span->endDate())
+            ))
+            ->merge($starts->map(fn (ProjectTechnician $span): string => sprintf(
+                '%s starting on %s',
+                $span->technician?->name ?? 'A technician',
+                BusinessTime::format($span->startDate())
+            )))
+            ->values();
+
         foreach ($starts as $start) {
             $this->team->cancelStart($start);
         }
@@ -923,6 +976,19 @@ class ProjectTeamChange
         }
 
         $project->unsetRelation('teamHistory');
+
+        if ($calledOff->isNotEmpty()) {
+            app(ActivityLogger::class)->record(
+                ActivityLog::TECHNICIAN_ASSIGNED,
+                null,
+                sprintf(
+                    "On '%s': scheduled change cancelled because the project closed: %s.",
+                    $project->reference_no ?: $project->name,
+                    $calledOff->join('; ')
+                ),
+                $project
+            );
+        }
 
         return ['removals' => $removals, 'starts' => $starts];
     }

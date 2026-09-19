@@ -2,8 +2,6 @@
 
 namespace App\Support;
 
-use Carbon\CarbonImmutable;
-
 /**
  * The age an account holder has to be, and the rules that enforce it.
  *
@@ -32,12 +30,12 @@ class AccountAge
      */
     public static function latestAllowed(): string
     {
-        return CarbonImmutable::today()->subYears(self::MINIMUM_YEARS)->toDateString();
+        return BusinessTime::today()->subYears(self::MINIMUM_YEARS)->toDateString();
     }
 
     public static function earliestAllowed(): string
     {
-        return CarbonImmutable::today()->subYears(self::MAXIMUM_YEARS)->toDateString();
+        return BusinessTime::today()->subYears(self::MAXIMUM_YEARS)->toDateString();
     }
 
     /**

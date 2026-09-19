@@ -549,10 +549,7 @@ class ProjectController extends Controller
         // Pending or Ongoing would otherwise go on booking its crew from
         // inside the archive.
         $schedules = Schedule::query()
-            ->whereHas('project', function ($query): void {
-                $query->whereIn('status', Project::ACTIVE_PROJECT_STATUSES)
-                    ->where('is_archived', false);
-            })
+            ->occupying()
             ->with([
                 'scheduleTechnicians:schedule_technician_id,schedule_id,project_technician_id',
                 'scheduleTechnicians.projectTechnician:project_technician_id,technician_id',
@@ -622,7 +619,7 @@ class ProjectController extends Controller
 
     private function generateReferenceNumber(int $projectId): string
     {
-        return sprintf('PRJ-%s-%s', now()->format('Ymd'), str_pad((string) $projectId, 5, '0', STR_PAD_LEFT));
+        return sprintf('PRJ-%s-%s', BusinessTime::now()->format('Ymd'), str_pad((string) $projectId, 5, '0', STR_PAD_LEFT));
     }
 
     /**
@@ -870,8 +867,9 @@ class ProjectController extends Controller
                 'action' => $log->action,
                 'description' => $log->description,
                 'actor' => $log->actor_name ?: 'System',
-                'at' => CarbonImmutable::parse($log->created_at)->format(BusinessTime::DATE_TIME),
-                'at_iso' => CarbonImmutable::parse($log->created_at)->toIso8601String(),
+                // created_at is UTC; shown, and sorted, on the office clock.
+                'at' => BusinessTime::format($log->created_at, BusinessTime::DATE_TIME),
+                'at_iso' => BusinessTime::at($log->created_at)?->toIso8601String(),
             ])
             ->all();
     }
@@ -964,7 +962,10 @@ class ProjectController extends Controller
         ?string $actor,
         mixed $at
     ): array {
-        $moment = CarbonImmutable::parse($at);
+        // Membership times are stored as office wall-clock time, not UTC -
+        // read them as such, so they carry the right offset and sort in
+        // among the activity entries beside them.
+        $moment = CarbonImmutable::parse($at instanceof \DateTimeInterface ? $at->format('Y-m-d H:i:s') : $at, Schedule::BUSINESS_TIMEZONE);
 
         return [
             'kind' => $kind,
@@ -1587,7 +1588,21 @@ class ProjectController extends Controller
         if ($project->isReadOnly()) {
             return redirect()
                 ->route('super-admin.projects.show', $id)
-                ->with('error', 'This project is '.$project->status.' and can no longer be edited.');
+                ->with('error', 'This project is '.strtolower($project->statusLabel()).' and can no longer be edited.');
+        }
+
+        // Somebody else saved this project after this form was drawn. Their
+        // change is not overwritten unseen: the form comes back with what was
+        // typed, now measured against the current version, and says so.
+        $loadedVersion = $request->input('loaded_version');
+
+        if (is_string($loadedVersion) && $loadedVersion !== ''
+            && $project->updated_at?->format('Y-m-d H:i:s') !== $loadedVersion) {
+            return redirect()
+                ->route('super-admin.projects.show', $id)
+                ->withInput($request->except('loaded_version', 'assessmentDocument', 'quotationDocument', 'contractDocument'))
+                ->with('error', 'Nothing was saved. Someone else changed this project while you were editing it. '
+                    .'Check the details on the page, then save your changes again.');
         }
 
         $validated = $request->validate([
@@ -1602,7 +1617,7 @@ class ProjectController extends Controller
             // not be one of the staff, whose address is the key their
             // own portal is keyed on.
             'email_address' => ['required', 'email', 'max:255', new NotAnEmployeeEmail],
-            'quotation' => ['required', 'numeric', 'min:0'],
+            'quotation' => ['required', 'numeric', 'min:0', 'max:'.Project::MAX_QUOTATION],
             'project_description' => ['required', 'string'],
             'project_types' => ['required', 'array', 'min:1'],
             'project_types.*' => ['required', 'integer', 'exists:tbl_project_types,type_id'],
@@ -1622,6 +1637,7 @@ class ProjectController extends Controller
             'quotation_change' => ['nullable', 'string', 'in:'.implode(',', QuotationChange::CONFIRMATIONS)],
         ], [
             ...PersonName::middleInitialMessages('middle_initial'),
+            'quotation.max' => Project::MAX_QUOTATION_MESSAGE,
             'assessmentDocument.max' => 'Upload at most '.Document::MAX_FILES.' assessment files at a time.',
             'assessmentDocument.*.mimes' => Document::mimesMessage('assessment'),
             'assessmentDocument.*.max' => Document::maxMessage('assessment'),
@@ -1828,7 +1844,7 @@ class ProjectController extends Controller
 
         if ($project->isReadOnly() || $project->is_archived) {
             return response()->json([
-                'error' => 'This project is '.$project->status.' and its documents can no longer be changed.',
+                'error' => 'This project is '.strtolower($project->statusLabel()).' and its documents can no longer be changed.',
             ], 422);
         }
 
@@ -1902,7 +1918,7 @@ class ProjectController extends Controller
         if ($project->isReadOnly()) {
             return redirect()
                 ->to($this->projectActionReturn($request, $id, route('super-admin.projects', $id)))
-                ->with('error', 'This project is '.$project->status.' and cannot be put on hold.');
+                ->with('error', 'This project is '.strtolower($project->statusLabel()).' and cannot be put on hold.');
         }
 
         if ($project->status === 'unscheduled') {
@@ -1919,6 +1935,9 @@ class ProjectController extends Controller
             $summary = DB::transaction(function () use ($project): array {
                 $project->update([
                     'on_hold' => true,
+                    // The day the hold began: every booked day up to and
+                    // including it stays occupied - see Schedule::scopeOccupying().
+                    'held_on' => Schedule::businessToday()->toDateString(),
                     // Unscheduled is what releases the crew. It is not one of
                     // Project::ACTIVE_PROJECT_STATUSES, so none of this
                     // project's bookings count against anybody's availability
@@ -1989,7 +2008,7 @@ class ProjectController extends Controller
             return $this->resumeRefusal(
                 $request,
                 $id,
-                'This project is '.$project->status.' and cannot be resumed.'
+                'This project is '.strtolower($project->statusLabel()).' and cannot be resumed.'
             );
         }
 
@@ -2026,7 +2045,7 @@ class ProjectController extends Controller
             // The hold is lifted first, then the schedule is put back into
             // force, and only then is the status worked out - from the dates
             // that are actually there, never assumed.
-            $project->update(['on_hold' => false]);
+            $project->update(['on_hold' => false, 'held_on' => null]);
             $project->unsetRelation('schedules');
 
             // A booking the hold split at the day it was placed is one booking
@@ -2435,11 +2454,10 @@ class ProjectController extends Controller
         if ($project->isCancelled() || $project->isArchived()) {
             return redirect()
                 ->route('super-admin.projects.show', $id)
-                ->with('error', 'This project is already '.$project->status.'.');
+                ->with('error', 'This project is already '.strtolower($project->statusLabel()).'.');
         }
 
         $validated = $request->validate([
-            'cancellation_date' => ['required', 'date'],
             'cancellation_reason' => ['required', 'string', 'max:255'],
             'cancellation_remarks' => ['nullable', 'string'],
         ]);
@@ -2449,7 +2467,10 @@ class ProjectController extends Controller
                 $project->update([
                     'status' => 'cancelled',
                     'on_hold' => false,
-                    'cancelled_at' => CarbonImmutable::parse($validated['cancellation_date']),
+                    'held_on' => null,
+                    // Always the office's today: a chosen date let a project be
+                    // cancelled years before it existed.
+                    'cancelled_at' => BusinessTime::today(),
                     'cancellation_reason' => $validated['cancellation_reason'],
                     'cancellation_remarks' => $validated['cancellation_remarks'] ?? null,
                 ]);
@@ -3222,7 +3243,7 @@ class ProjectController extends Controller
     private function teamEditRefusal(Project $project): ?string
     {
         if ($project->isReadOnly()) {
-            return 'This project is '.$project->status.' and its team can no longer be edited.';
+            return 'This project is '.strtolower($project->statusLabel()).' and its team can no longer be edited.';
         }
 
         // A paused project takes no changes to who is on it. The crew is kept
@@ -3244,6 +3265,10 @@ class ProjectController extends Controller
             'technicians.*' => ['integer', 'exists:tbl_technicians,technician_id'],
         ], [
             'lead_tech.required' => 'A lead technician is required.',
+            'lead_tech.integer' => 'Choose the lead technician from the list.',
+            'lead_tech.exists' => 'The chosen lead technician no longer exists.',
+            'technicians.*.integer' => 'Choose technicians from the list.',
+            'technicians.*.exists' => 'One of the chosen technicians no longer exists.',
         ]);
     }
 

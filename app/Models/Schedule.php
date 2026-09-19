@@ -726,6 +726,46 @@ class Schedule extends Model
      */
     public function scopeUpcomingPartialDay(Builder $query): Builder
     {
+        return $this->upcomingPartialDayQuery($query);
+    }
+
+    /**
+     * Bookings that hold their crew: a live project's, and the days a held
+     * project kept.
+     *
+     * Pending and Ongoing work books its technicians; archived work never
+     * does. A project on hold keeps the days up to and including the day it
+     * was held - those were worked - and preserves the rest as a proposal that
+     * books nobody until it is resumed. Counting the kept days is what stops
+     * the same crew being booked elsewhere on the day they were still on site.
+     *
+     * The single statement of "who is busy", shared by the availability check
+     * and every screen that greys out a busy day, so the two cannot disagree.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeOccupying(Builder $query): Builder
+    {
+        return $query->whereHas('project', function (Builder $project): void {
+            $project->where('is_archived', false)
+                ->where(function (Builder $booked): void {
+                    $booked->whereIn('status', Project::ACTIVE_PROJECT_STATUSES)
+                        ->orWhere(function (Builder $held): void {
+                            $held->where('on_hold', true)
+                                ->whereNotNull('held_on')
+                                ->whereRaw('date(tbl_schedule.end_datetime) <= tbl_projects.held_on');
+                        });
+                });
+        });
+    }
+
+    /**
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    private function upcomingPartialDayQuery(Builder $query): Builder
+    {
         return $query
             ->where('scheduling_mode', self::MODE_PARTIAL_DAY)
             ->whereDate('start_datetime', '>=', self::businessToday()->toDateString());

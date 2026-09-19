@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Project;
 use App\Models\TechnicianReport;
 use App\Models\TechnicianReportImage;
+use App\Support\BusinessTime;
 use App\Support\UploadStore;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -72,7 +73,7 @@ class TechnicianReportController extends Controller
                 'report_type' => $request->report_type,
                 'report_title' => $request->report_title,
                 'report_description' => $request->report_description,
-                'report_date' => now()->toDateString(),
+                'report_date' => BusinessTime::today()->toDateString(),
             ]);
 
             if ($request->hasFile('images')) {

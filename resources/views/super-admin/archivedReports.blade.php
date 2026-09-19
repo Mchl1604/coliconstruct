@@ -74,7 +74,7 @@
                                     {{ $report->report_date?->format(\App\Support\BusinessTime::DATE) ?? '—' }}
                                 </td>
                                 <td data-order="{{ $report->archived_at?->timestamp ?? 0 }}">
-                                    {{ $report->archived_at?->format(\App\Support\BusinessTime::DATE) ?? '—' }}
+                                    {{ \App\Support\BusinessTime::format($report->archived_at) }}
                                 </td>
                                 <td>{{ $report->archiver?->fullName() ?? '—' }}</td>
                                 <td class="text-center">

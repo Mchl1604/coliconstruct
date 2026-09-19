@@ -682,9 +682,14 @@ class ProjectTeamScheduleLinkTest extends TestCase
             $this->assertNotSame('unassigned', $kept->fresh()->status);
         }
 
-        foreach ([$dueToday, $spanning, $future] as $flagged) {
-            $this->assertSame(Task::GAP_OFF_TEAM, $flagged->fresh()->assignmentGap(), $flagged->task_title.' should be flagged');
+        // Off the project for good, so every open task they still hold is
+        // flagged - undated and overdue work too: they can no longer close
+        // any of it (see TaskPolicy::complete()).
+        foreach ([$overdue, $dueToday, $spanning, $future, $undated] as $flagged) {
+            $this->assertSame(Task::GAP_REMOVED_HOLDER, $flagged->fresh()->assignmentGap(), $flagged->task_title.' should be flagged');
         }
+
+        $this->assertNull($cancelled->fresh()->assignmentGap());
 
         $this->assertSame($leaving->technician_id, $cancelled->fresh()->technician_id);
         $this->assertSame('cancelled', $cancelled->fresh()->status);

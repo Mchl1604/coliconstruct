@@ -1311,8 +1311,33 @@ document.addEventListener("DOMContentLoaded", function () {
          * read-only and carry no remove button, and the server keeps them
          * whatever is submitted.
          */
+        // Bookings under way when the page was drawn. Editing one is ordinary
+        // (its end can still move), but taking it off the form removes a day
+        // being worked - a change to the record, confirmed like the others.
+        const activeOnLoad = Array.from(
+            container.querySelectorAll('[data-range-row][data-lock-state="active"]'),
+        ).map(function (row) {
+            return {
+                id: rowScheduleId(row),
+                label: describeEntry(readRow(row)),
+            };
+        });
+
         function pendingOverrides() {
-            return endedOnLoad
+            const removedActive = activeOnLoad
+                .filter(function (original) {
+                    return (
+                        original.id &&
+                        !container.querySelector(
+                            '[data-range-row][data-schedule-id="' + original.id + '"]',
+                        )
+                    );
+                })
+                .map(function (original) {
+                    return original.label + " -> removed";
+                });
+
+            return removedActive.concat(endedOnLoad
                 .map(function (original) {
                     const row = original.id
                         ? container.querySelector(
@@ -1330,7 +1355,7 @@ document.addEventListener("DOMContentLoaded", function () {
                         ? null
                         : original.label + " -> " + now;
                 })
-                .filter(Boolean);
+                .filter(Boolean));
         }
 
         // ---------------------------------------------------------------
@@ -2072,6 +2097,83 @@ document.addEventListener("DOMContentLoaded", function () {
             return payload;
         }
 
+        /**
+         * Open tasks this save would leave with no booked day lose their dates.
+         * Asked of the server - the same measure the save applies - and put to
+         * the person before anything is sent. The save refuses an unconfirmed
+         * clearing on its own as well, so a check that cannot be reached costs
+         * a refusal, never a silent clearing.
+         */
+        function confirmStrandedTasks() {
+            const url = modal.dataset.taskImpactUrl || "";
+
+            if (!url || !form) {
+                return Promise.resolve(true);
+            }
+
+            const payload = historicalPayload();
+
+            if (overrideInput && overrideInput.value === "1") {
+                payload.append("override_past_lock", "1");
+            }
+
+            return fetch(url, {
+                method: "POST",
+                headers: {
+                    Accept: "application/json",
+                    "X-Requested-With": "XMLHttpRequest",
+                },
+                credentials: "same-origin",
+                body: payload,
+            })
+                .then(function (response) {
+                    return response.ok ? response.json() : null;
+                })
+                .then(function (answer) {
+                    if (!answer || !answer.tasks || !answer.tasks.length) {
+                        return true;
+                    }
+
+                    return window
+                        .confirmDialog({
+                            title: "Clear the dates of these tasks?",
+                            body:
+                                "This schedule leaves " +
+                                (answer.tasks.length === 1
+                                    ? "1 open task"
+                                    : answer.tasks.length + " open tasks") +
+                                " with no booked day: " +
+                                answer.summary +
+                                ".",
+                            detail:
+                                "Their start and due dates will be cleared and they will need new dates. " +
+                                "Completed tasks are never changed.",
+                            label: "Save and Clear Dates",
+                        })
+                        .then(function (confirmed) {
+                            if (!confirmed) {
+                                return false;
+                            }
+
+                            let flag = form.querySelector('input[name="stranded_tasks_confirmed"]');
+
+                            if (!flag) {
+                                flag = document.createElement("input");
+                                flag.type = "hidden";
+                                flag.name = "stranded_tasks_confirmed";
+                                form.appendChild(flag);
+                            }
+
+                            flag.value = "1";
+
+                            return true;
+                        });
+                })
+                .catch(function () {
+                    return true;
+                });
+        }
+
         function requestHistoricalCheck() {
             return fetch(historicalUrl, {
                 method: "POST",
@@ -2284,7 +2386,7 @@ document.addEventListener("DOMContentLoaded", function () {
                         .confirmDialog({
                             title: "Change dates that have already been worked?",
                             body:
-                                "These ranges have already ended: " +
+                                "These ranges have already started or ended: " +
                                 overrides.join("; ") +
                                 ".",
                             detail:
@@ -2306,8 +2408,14 @@ document.addEventListener("DOMContentLoaded", function () {
                 }
 
                 function submitNow() {
-                    form.dataset.historicalCleared = "1";
-                    form.submit();
+                    confirmStrandedTasks().then(function (proceed) {
+                        if (!proceed) {
+                            return;
+                        }
+
+                        form.dataset.historicalCleared = "1";
+                        form.submit();
+                    });
                 }
 
                 event.preventDefault();

@@ -98,7 +98,8 @@
 
 /* Missing both fields is further from workable than missing either, so it is
    drawn a shade heavier. */
-.task-gap-badge.gap-both {
+.task-gap-badge.gap-both,
+.task-gap-badge.gap-removed_holder {
     background: #fbe3e3;
     color: #a02020;
     border-color: #f2c4c4;

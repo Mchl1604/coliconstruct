@@ -248,7 +248,7 @@ class ReportController extends Controller
         return response()->json($this->reportRow($report, $request->user()) + [
             // An archived report is still read in full; the viewer says so
             // rather than pretending otherwise.
-            'archived_at_label' => $report->archived_at?->format(BusinessTime::DATE) ?? '—',
+            'archived_at_label' => BusinessTime::at($report->archived_at)?->format(BusinessTime::DATE) ?? '—',
             'archived_by' => $report->archiver?->fullName() ?? '—',
             'can_restore' => (bool) $request->user()?->can('restore', $report),
             'description' => $report->report_description,
@@ -426,7 +426,7 @@ class ReportController extends Controller
         $fileName = sprintf(
             '%s-%s.pdf',
             str_replace('_', '-', $reportType),
-            CarbonImmutable::now()->format('Ymd-His')
+            BusinessTime::now()->format('Ymd-His')
         );
 
         $this->activityLogger->record(
@@ -505,7 +505,7 @@ class ReportController extends Controller
      */
     private function reportYears(): array
     {
-        $thisYear = (int) CarbonImmutable::today()->format('Y');
+        $thisYear = (int) BusinessTime::today()->format('Y');
 
         return range($thisYear + 1, $thisYear - self::YEAR_RANGE);
     }
@@ -516,7 +516,7 @@ class ReportController extends Controller
      */
     private function yearBounds(): string
     {
-        $thisYear = (int) CarbonImmutable::today()->format('Y');
+        $thisYear = (int) BusinessTime::today()->format('Y');
 
         return ($thisYear - self::YEAR_RANGE).','.($thisYear + 1);
     }
@@ -529,7 +529,7 @@ class ReportController extends Controller
      */
     private function exportValidator(Request $request): \Illuminate\Validation\Validator
     {
-        $thisYear = (int) CarbonImmutable::today()->format('Y');
+        $thisYear = (int) BusinessTime::today()->format('Y');
 
         return Validator::make($request->all(), [
             'report_type' => ['required', 'string', 'in:'.implode(',', array_keys(self::EXPORT_TYPES))],
@@ -679,7 +679,7 @@ class ReportController extends Controller
         return $this->reportRow($report, $user) + [
             'description' => $report->report_description,
             'can_restore' => (bool) $user?->can('restore', $report),
-            'archived_at_label' => $report->archived_at?->format(BusinessTime::DATE) ?? '—',
+            'archived_at_label' => BusinessTime::at($report->archived_at)?->format(BusinessTime::DATE) ?? '—',
             'archived_by' => $report->archiver?->fullName() ?? '—',
             'project_url' => $report->project
                 ? route('super-admin.projects.show', $report->project->project_id)
@@ -718,7 +718,7 @@ class ReportController extends Controller
      */
     private function resolveDateFilter(string $filter, ?string $startDate, ?string $endDate): array
     {
-        $today = CarbonImmutable::today();
+        $today = BusinessTime::today();
 
         return match ($filter) {
             'today' => [$today, $today->endOfDay()],

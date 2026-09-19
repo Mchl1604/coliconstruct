@@ -31,7 +31,7 @@ class TaskAssignmentGaps
      *
      * @var array<int, string>
      */
-    public const ORDER = [Task::GAP_BOTH, Task::GAP_TECHNICIAN, Task::GAP_OFF_TEAM, Task::GAP_DATE];
+    public const ORDER = [Task::GAP_BOTH, Task::GAP_TECHNICIAN, Task::GAP_REMOVED_HOLDER, Task::GAP_INACTIVE_HOLDER, Task::GAP_OFF_TEAM, Task::GAP_DATE];
 
     /**
      * What the affected tasks in this query add up to.
@@ -115,6 +115,8 @@ class TaskAssignmentGaps
             Task::GAP_TECHNICIAN => 'missing technician',
             Task::GAP_DATE => 'missing date',
             Task::GAP_OFF_TEAM => 'held by a technician not assigned for its dates',
+            Task::GAP_INACTIVE_HOLDER => 'held by a deactivated technician',
+            Task::GAP_REMOVED_HOLDER => 'held by a technician removed from the project',
             default => 'missing technician and date',
         };
 

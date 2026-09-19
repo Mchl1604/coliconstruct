@@ -248,7 +248,10 @@ class ClientProjects
      */
     public function leadTechnicianName(Project $project): ?string
     {
-        return $project->leadAssignment()?->technician?->name;
+        $lead = $project->leadAssignment()?->technician;
+
+        // A deactivated or archived lead is not named to the client.
+        return $lead?->isAssignable() ? $lead->name : null;
     }
 
     /**

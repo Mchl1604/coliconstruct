@@ -233,7 +233,7 @@ class SystemReportService
      */
     public function resolveGranularity(?string $granularity): array
     {
-        $today = CarbonImmutable::today();
+        $today = BusinessTime::today();
 
         if ($granularity === self::GRANULARITY_YEARLY) {
             $start = $today->startOfYear()->subYears(self::YEARLY_SPAN - 1);
@@ -269,7 +269,7 @@ class SystemReportService
      */
     public function resolveMonthWindow(?string $month = null, ?int $year = null): array
     {
-        $today = CarbonImmutable::today();
+        $today = BusinessTime::today();
 
         $isCurrent = $month === null || $month === '' || $month === self::MONTH_CURRENT;
 
@@ -385,7 +385,7 @@ class SystemReportService
     private function projectBreakdown(array $window): array
     {
         $counts = $this->breakdownQuery()
-            ->whereBetween('created_at', [$window['start'], $window['end']])
+            ->whereBetween('created_at', BusinessTime::storedRange($window['start'], $window['end']))
             ->selectRaw($this->currentStatusExpression().' as bucket, count(*) as total')
             ->groupBy('bucket')
             ->pluck('total', 'bucket');
@@ -394,7 +394,7 @@ class SystemReportService
         // come out of the CASE above; those projects are moved here out of the
         // Pending and Ongoing slices they were counted in.
         $overdue = Project::overdue()
-            ->whereBetween('created_at', [$window['start'], $window['end']])
+            ->whereBetween('created_at', BusinessTime::storedRange($window['start'], $window['end']))
             ->selectRaw('status, count(*) as total')
             ->groupBy('status')
             ->pluck('total', 'status');
@@ -479,7 +479,7 @@ class SystemReportService
             ->join('tbl_projects', 'tbl_projects.project_id', '=', 'tbl_project_type_map.project_id')
             ->where('tbl_projects.is_archived', false)
             ->where('tbl_projects.status', '!=', 'archived')
-            ->whereBetween('tbl_projects.created_at', [$window['start'], $window['end']])
+            ->whereBetween('tbl_projects.created_at', BusinessTime::storedRange($window['start'], $window['end']))
             ->selectRaw('tbl_project_types.type_name as type, count(distinct tbl_projects.project_id) as total')
             ->groupBy('tbl_project_types.type_name')
             ->orderByDesc('total')
@@ -509,10 +509,10 @@ class SystemReportService
     {
         $rows = DB::table('tbl_projects')
             ->join('tbl_clients', 'tbl_clients.project_id', '=', 'tbl_projects.project_id')
-            ->whereBetween('tbl_projects.created_at', [$period['start'], $period['end']])
+            ->whereBetween('tbl_projects.created_at', BusinessTime::storedRange($period['start'], $period['end']))
             ->selectRaw(
                 'lower(tbl_clients.client_type) as series, '
-                .$this->bucketExpression('tbl_projects.created_at', $period['bucket']).' as bucket, '
+                .$this->bucketExpression($this->onOfficeClock('tbl_projects.created_at'), $period['bucket']).' as bucket, '
                 // A project carrying two client rows of the same type is still
                 // one project.
                 .'count(distinct tbl_projects.project_id) as total'
@@ -542,12 +542,12 @@ class SystemReportService
         $query = Project::query()
             ->whereNotNull('quotation')
             ->where('quotation', '>', 0)
-            ->whereBetween('created_at', [$period['start'], $period['end']]);
+            ->whereBetween('created_at', BusinessTime::storedRange($period['start'], $period['end']));
 
         $this->applyQuotationStatus($query, $status);
 
         $rows = $query
-            ->selectRaw($this->bucketExpression('created_at', $period['bucket']).' as bucket, sum(quotation) as total')
+            ->selectRaw($this->bucketExpression($this->onOfficeClock('created_at'), $period['bucket']).' as bucket, sum(quotation) as total')
             ->groupBy('bucket')
             ->pluck('total', 'bucket');
 
@@ -580,7 +580,7 @@ class SystemReportService
             ->join('tbl_clients', 'tbl_clients.project_id', '=', 'tbl_projects.project_id')
             ->whereNotNull('tbl_projects.quotation')
             ->where('tbl_projects.quotation', '>', 0)
-            ->whereBetween('tbl_projects.created_at', [$period['start'], $period['end']])
+            ->whereBetween('tbl_projects.created_at', BusinessTime::storedRange($period['start'], $period['end']))
             ->selectRaw("
                 coalesce(nullif(tbl_clients.company_name, ''), tbl_clients.fullname) as client,
                 sum(tbl_projects.quotation) as total
@@ -1059,7 +1059,7 @@ class SystemReportService
     private function createdProjectsReport(array $period): array
     {
         $projects = $this->excludeArchived(Project::query())
-            ->whereBetween('created_at', [$period['start'], $period['end']])
+            ->whereBetween('created_at', BusinessTime::storedRange($period['start'], $period['end']))
             ->with(['clients', 'projectTypes', 'schedules'])
             ->orderBy('created_at')
             ->orderBy('project_id')
@@ -1756,7 +1756,7 @@ class SystemReportService
     {
         return $query
             ->whereDoesntHave('schedules')
-            ->where('created_at', '<=', $period['end'])
+            ->where('created_at', '<=', BusinessTime::toStored($period['end']))
             ->where(function (Builder $open) use ($period): void {
                 $open
                     // Still live now, so it was live then.
@@ -1973,6 +1973,21 @@ class SystemReportService
     /**
      * Portable date grouping expression for the active connection.
      */
+    /**
+     * A UTC timestamp column, read on the office clock, for grouping by day
+     * or month. Without it a project opened at 1 AM on the 1st in Manila is
+     * counted in the previous month, because the server's date is still the
+     * 30th. Manila keeps no daylight saving, so one fixed offset is exact.
+     */
+    private function onOfficeClock(string $column): string
+    {
+        $minutes = CarbonImmutable::now(Schedule::BUSINESS_TIMEZONE)->utcOffset();
+
+        return DB::connection()->getDriverName() === 'sqlite'
+            ? "datetime({$column}, '{$minutes} minutes')"
+            : "date_add({$column}, interval {$minutes} minute)";
+    }
+
     private function bucketExpression(string $column, string $bucket): string
     {
         $driver = DB::connection()->getDriverName();

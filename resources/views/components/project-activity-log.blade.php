@@ -98,7 +98,7 @@
                         @foreach ($logs as $log)
                             <tr>
                                 <td class="text-nowrap">
-                                    {{ $log->created_at?->format(\App\Support\BusinessTime::DATE_TIME) ?? '—' }}
+                                    {{ \App\Support\BusinessTime::format($log->created_at, \App\Support\BusinessTime::DATE_TIME) }}
                                 </td>
                                 {{-- The snapshot columns, not the account they
                                      point at: an entry has to keep naming who

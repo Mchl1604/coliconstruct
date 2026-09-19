@@ -4,6 +4,7 @@ use App\Http\Middleware\EnsureAccountIsActive;
 use App\Http\Middleware\EnsurePasswordIsChanged;
 use App\Http\Middleware\EnsureTermsAreAccepted;
 use App\Http\Middleware\EnsureUserHasRole;
+use App\Http\Middleware\PreventCachingSignedInPages;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -37,7 +38,9 @@ return Application::configure(basePath: dirname(__DIR__))
         // active-account check so a disabled account is turned away before it
         // is asked to agree to anything, and it is a no-op for guests and for
         // every non-client role - see EnsureTermsAreAccepted.
-        $middleware->web(append: [EnsureAccountIsActive::class, EnsureTermsAreAccepted::class]);
+        // And a signed-in page is never stored by the browser, so Back after
+        // signing out cannot show it again - see PreventCachingSignedInPages.
+        $middleware->web(append: [EnsureAccountIsActive::class, EnsureTermsAreAccepted::class, PreventCachingSignedInPages::class]);
 
         $middleware->alias([
             'role' => EnsureUserHasRole::class,

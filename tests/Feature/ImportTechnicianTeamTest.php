@@ -685,7 +685,8 @@ class ImportTechnicianTeamTest extends TestCase
 
         $this->assertSame($leaving->technician_id, $open->fresh()->technician_id);
         $this->assertSame('pending', $open->fresh()->status);
-        $this->assertSame(Task::GAP_OFF_TEAM, $open->fresh()->assignmentGap());
+        // Off the project altogether, not only for some of its dates.
+        $this->assertSame(Task::GAP_REMOVED_HOLDER, $open->fresh()->assignmentGap());
         $this->assertSame($leaving->technician_id, $done->fresh()->technician_id);
 
         $this->assertDatabaseMissing('tbl_notifications', ['title' => 'Tasks Left Unassigned']);

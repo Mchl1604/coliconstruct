@@ -1076,7 +1076,11 @@ class ConfigurationController extends Controller
      */
     private function mayManage(User $user): bool
     {
-        return ! $user->isSuperAdmin() || (bool) request()->user()?->isSuperAdmin();
+        $actor = request()->user();
+
+        return (bool) $actor?->isSuperAdmin()
+            || (bool) $actor?->is($user)
+            || ! in_array($user->role, User::ADMINISTRATOR_ROLES, true);
     }
 
     /**
@@ -1116,7 +1120,7 @@ class ConfigurationController extends Controller
             'role_label' => $user->roleLabel(),
             'status_label' => $user->statusLabel(),
             'status_badge_class' => $user->statusBadgeClass(),
-            'archived_at' => $user->archived_at?->format(BusinessTime::DATE_TIME) ?? '—',
+            'archived_at' => BusinessTime::at($user->archived_at)?->format(BusinessTime::DATE_TIME) ?? '—',
             'archived_by' => $user->archiver?->fullName() ?? '—',
         ];
     }
@@ -1144,9 +1148,9 @@ class ConfigurationController extends Controller
             'is_archived' => $user->isArchivedAccount(),
             'skill_ids' => $user->technician?->skills->pluck('skill_id')->all() ?? [],
             'skill_names' => $user->technician?->skills->pluck('skill_name')->all() ?? [],
-            'registered_at' => $user->created_at?->format(BusinessTime::DATE_TIME),
+            'registered_at' => BusinessTime::at($user->created_at)?->format(BusinessTime::DATE_TIME),
             'created_by' => $user->creator?->fullName() ?? 'System',
-            'last_login_at' => $user->last_login_at?->format(BusinessTime::DATE_TIME) ?? 'Never',
+            'last_login_at' => BusinessTime::at($user->last_login_at)?->format(BusinessTime::DATE_TIME) ?? 'Never',
         ];
     }
 
@@ -1167,7 +1171,7 @@ class ConfigurationController extends Controller
     {
         return [
             'id' => $log->activity_log_id,
-            'logged_at' => $log->created_at?->format(BusinessTime::DATE_TIME),
+            'logged_at' => BusinessTime::at($log->created_at)?->format(BusinessTime::DATE_TIME),
             'logged_at_iso' => $log->created_at?->toIso8601String(),
             'actor_name' => $log->actor_name,
             'role_label' => $log->actorRoleLabel(),
@@ -1195,7 +1199,7 @@ class ConfigurationController extends Controller
     {
         return [
             (string) $log->activity_log_id,
-            $log->created_at?->format(BusinessTime::DATE_TIME) ?? '—',
+            BusinessTime::at($log->created_at)?->format(BusinessTime::DATE_TIME) ?? '—',
             $log->actor_name ?: '—',
             $log->actorRoleLabel(),
             $log->module ?: ActivityLog::moduleFor($log->action),

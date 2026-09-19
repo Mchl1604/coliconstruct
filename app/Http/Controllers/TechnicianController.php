@@ -359,11 +359,15 @@ class TechnicianController extends Controller
             'phases',
         ]);
 
-        [$mode, $from, $until] = $this->removalDays($request, $project);
-
         $spans = $project->teamHistory
             ->filter(fn (ProjectTechnician $span): bool => (int) $span->technician_id === (int) $technician->technician_id
                 && ! $span->isEmptySpan());
+
+        [$mode, $from, $until] = $this->removalDays(
+            $request,
+            $project,
+            $spans->reject(fn (ProjectTechnician $span): bool => $span->hasEnded())
+        );
 
         // On the team now, or due back on it - the current span first.
         $assignment = $spans
@@ -409,6 +413,25 @@ class TechnicianController extends Controller
             'from' => $from->toDateString(),
             'until' => $until?->toDateString(),
             'min_date' => Schedule::businessToday()->toDateString(),
+            // The days this technician holds on the project - now or still to
+            // come - inclusive at both ends, null for open. Only a day the
+            // project is scheduled on AND one of these covers can be taken
+            // away; the dialog's pickers offer nothing else.
+            'technician_spans' => $spans
+                ->reject(fn (ProjectTechnician $span): bool => $span->hasEnded())
+                ->map(fn (ProjectTechnician $span): array => [
+                    'start' => $span->startDate(),
+                    'end' => $span->lastDay()?->toDateString(),
+                ])
+                ->values()
+                ->all(),
+            // Their open tasks that run into the days being taken away. The
+            // change still saves - the tasks stay theirs, flagged on the task
+            // board - but the panel says which ones before anybody presses it.
+            'affected_tasks' => $this->tasksCrossingRemoval($project->tasks, $mode, $from, $until)
+                ->map(fn (Task $task): string => $this->describeAffectedTask($task))
+                ->values()
+                ->all(),
             'remaining_after_removal' => $project->teamHistory
                 ->filter(fn (ProjectTechnician $span): bool => $span->isCurrent($from->toDateString()))
                 ->count() - ($assignment?->isCurrent($from->toDateString()) ? 1 : 0),
@@ -433,6 +456,42 @@ class TechnicianController extends Controller
         }
 
         return response()->json($payload);
+    }
+
+    /**
+     * The open tasks in a list that run into the days a removal takes away:
+     * from `from` onward, or `from` to `until` for days off.
+     *
+     * @param  Collection<int, Task>  $tasks
+     * @return Collection<int, Task>
+     */
+    private function tasksCrossingRemoval(
+        Collection $tasks,
+        string $mode,
+        CarbonImmutable $from,
+        ?CarbonImmutable $until
+    ): Collection {
+        $first = $from->toDateString();
+        $last = $mode === 'days' ? $until?->toDateString() : null;
+
+        return $tasks
+            ->filter(fn (Task $task): bool => in_array($task->status, Task::OPEN_STATUSES, true)
+                && $task->start_date !== null
+                && $task->due_date !== null
+                && CarbonImmutable::parse($task->due_date)->toDateString() >= $first
+                && ($last === null || CarbonImmutable::parse($task->start_date)->toDateString() <= $last))
+            ->values();
+    }
+
+    /**
+     * `"Leak test" (Oct 31, 2026 - Nov 2, 2026)`.
+     */
+    private function describeAffectedTask(Task $task): string
+    {
+        $start = CarbonImmutable::parse($task->start_date)->format(BusinessTime::DATE);
+        $due = CarbonImmutable::parse($task->due_date)->format(BusinessTime::DATE);
+
+        return sprintf('"%s" (%s)', $task->task_title, $start === $due ? $start : $start.' - '.$due);
     }
 
     /**
@@ -474,7 +533,7 @@ class TechnicianController extends Controller
             if ($project->isReadOnly()) {
                 throw new RuntimeException(sprintf(
                     'This project is %s and its team can no longer be changed.',
-                    $project->status
+                    strtolower($project->statusLabel())
                 ));
             }
 
@@ -531,6 +590,14 @@ class TechnicianController extends Controller
                 ));
             }
 
+            // Asked before availability, so a plain technician is told why
+            // rather than being called busy.
+            $replacement = $replacementLeadId ? Technician::query()->with('account')->find($replacementLeadId) : null;
+
+            if ($replacement && ! $replacement->isLead()) {
+                throw new RuntimeException(sprintf('%s is not a Lead Technician. Choose a lead technician.', $replacement->name));
+            }
+
             if ($replacementLeadId
                 && ! $this->availableReplacementLeads($project, $from, $mode === 'days' ? $until->addDay() : null)
                     ->contains('technician_id', $replacementLeadId)) {
@@ -557,6 +624,13 @@ class TechnicianController extends Controller
                 'error' => $this->safeErrorMessage($e, 'Unable to save that change. Nothing was changed.'),
             ], 422);
         }
+
+        $affected = $this->tasksCrossingRemoval(
+            $project->tasks()->where('technician_id', $technician->technician_id)->get(),
+            $mode,
+            $from,
+            $until
+        );
 
         $cover = $replacementLeadId ? Technician::query()->with('account')->find($replacementLeadId)?->name : null;
         $days = $mode === 'days'
@@ -588,17 +662,29 @@ class TechnicianController extends Controller
 
         $change->notify($plan);
 
+        $message = match (true) {
+            $mode === 'days' => $this->sentence(sprintf('%s is off %s %s', $technician->name, $project->name, $days)),
+            $plan->isImmediate() => $this->sentence($technician->name.' was removed from '.$project->name),
+            default => $this->sentence(sprintf(
+                '%s will be removed from %s on %s',
+                $technician->name,
+                $project->name,
+                $from->format(BusinessTime::DATE)
+            )),
+        };
+
+        if ($affected->isNotEmpty()) {
+            $message .= sprintf(
+                ' %s: %s. %s flagged "Technician Not Assigned for Dates" on the task board.',
+                $affected->count() === 1 ? 'This task still belongs to them and runs into those days' : 'These tasks still belong to them and run into those days',
+                $affected->map(fn (Task $task): string => $this->describeAffectedTask($task))->join(', ', ' and '),
+                $affected->count() === 1 ? 'It is' : 'They are'
+            );
+        }
+
         return response()->json([
-            'message' => match (true) {
-                $mode === 'days' => $this->sentence(sprintf('%s is off %s %s', $technician->name, $project->name, $days)),
-                $plan->isImmediate() => $this->sentence($technician->name.' was removed from '.$project->name),
-                default => $this->sentence(sprintf(
-                    '%s will be removed from %s on %s',
-                    $technician->name,
-                    $project->name,
-                    $from->format(BusinessTime::DATE)
-                )),
-            },
+            'message' => $message,
+            'affected_tasks' => $affected->map(fn (Task $task): string => $this->describeAffectedTask($task))->values()->all(),
         ]);
     }
 
@@ -609,7 +695,7 @@ class TechnicianController extends Controller
      *
      * @return array{0: string, 1: CarbonImmutable, 2: ?CarbonImmutable}
      */
-    private function removalDays(Request $request, Project $project): array
+    private function removalDays(Request $request, Project $project, ?Collection $spans = null): array
     {
         $day = function (mixed $value): ?CarbonImmutable {
             return is_string($value) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)
@@ -618,15 +704,45 @@ class TechnicianController extends Controller
         };
 
         $mode = $request->input('mode') === 'days' ? 'days' : 'from';
-        // Asked of nothing, the first day that can be taken away: the
-        // project's next scheduled day from today, or today when it has none.
+        // Asked of nothing, the first day that can be taken away: the next
+        // day from today the project is scheduled on and the technician is on
+        // it, or today when there is none.
         $from = $day($request->input('from'))
             ?? $day($request->input('effective_date'))
+            ?? $this->firstDayOnFrom($project, $spans, Schedule::businessToday())
             ?? $project->firstScheduledDayFrom(Schedule::businessToday())
             ?? Schedule::businessToday();
         $until = $mode === 'days' ? ($day($request->input('until')) ?? $from) : null;
 
         return [$mode, $from, $until];
+    }
+
+    /**
+     * The first day from $from that the project is scheduled on and one of
+     * these spans covers, or null when there is none - or no spans to ask.
+     *
+     * @param  Collection<int, ProjectTechnician>|null  $spans
+     */
+    private function firstDayOnFrom(Project $project, ?Collection $spans, CarbonImmutable $from): ?CarbonImmutable
+    {
+        if ($spans === null || $spans->isEmpty()) {
+            return null;
+        }
+
+        $project->loadMissing('schedules');
+
+        $last = $project->schedules->map(fn (Schedule $schedule): CarbonImmutable => $schedule->endsOn())->max();
+
+        for ($day = $from->startOfDay(); $last !== null && $day->lte($last); $day = $day->addDay()) {
+            $date = $day->toDateString();
+
+            if ($project->isScheduledOn($date)
+                && $spans->contains(fn (ProjectTechnician $span): bool => $span->coveredOn($date))) {
+                return $day;
+            }
+        }
+
+        return null;
     }
 
     // ------------------------------------------------------------------
@@ -1028,6 +1144,369 @@ class TechnicianController extends Controller
     }
 
     // ------------------------------------------------------------------
+    // Schedules tab - a single day on the calendar
+    // ------------------------------------------------------------------
+
+    /**
+     * Every day from `start` to `end` (exclusive, as FullCalendar asks) that
+     * a live project is scheduled on - the small dot the calendar draws, so
+     * an empty day that has something to offer can be told from one that
+     * has nothing.
+     */
+    public function bookedDays(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'start' => ['required', 'date_format:Y-m-d'],
+            'end' => ['required', 'date_format:Y-m-d', 'after:start'],
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['error' => $validator->errors()->first()], 422);
+        }
+
+        $first = CarbonImmutable::parse($validator->validated()['start'])->startOfDay();
+        // A month view asks for six weeks; anything much longer is not a view.
+        $last = CarbonImmutable::parse($validator->validated()['end'])->startOfDay()->subDay();
+        $last = $last->gt($first->addDays(62)) ? $first->addDays(62) : $last;
+
+        // date => [colour => true], each colour the project's status ink -
+        // the same one its bar and the legend are drawn in.
+        $days = [];
+
+        Schedule::query()
+            ->with('project')
+            ->whereHas('project', fn ($query) => $query
+                ->whereIn('status', self::STAFFABLE_STATUSES)
+                ->where('is_archived', false))
+            ->where('start_datetime', '<', $last->addDay())
+            ->where('end_datetime', '>=', $first)
+            ->orderBy('start_datetime')
+            ->get()
+            ->each(function (Schedule $schedule) use ($first, $last, &$days): void {
+                $from = $schedule->startsOn()->lt($first) ? $first : $schedule->startsOn()->startOfDay();
+                $to = $schedule->endsOn()->gt($last) ? $last : $schedule->endsOn()->startOfDay();
+                $colour = $schedule->project->calendarInkColor();
+
+                for ($day = $from; $day->lte($to); $day = $day->addDay()) {
+                    $days[$day->toDateString()][$colour] = true;
+                }
+            });
+
+        ksort($days);
+
+        return response()->json([
+            'days' => array_map(fn (array $colours): array => array_keys($colours), $days),
+        ]);
+    }
+
+    /**
+     * Projects this technician could be put on for one day only: the ones
+     * scheduled on that day which they are not already on for it.
+     *
+     * Each is screened with the same plan the save runs - the lead rule and
+     * availability for that day alone - so a project the save would refuse is
+     * listed as unavailable with the save's own reason.
+     *
+     * A lead technician is offered a project that already has a lead that
+     * day, with the sitting lead named on it (`lead_replacement`): saving it
+     * makes them the lead for that day, and the sitting lead has that one day
+     * off - see dayPlan().
+     */
+    public function dayProjects(Request $request, Technician $technician)
+    {
+        $validator = Validator::make($request->all(), [
+            'date' => ['required', 'date_format:Y-m-d'],
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['error' => $validator->errors()->first()], 422);
+        }
+
+        $day = CarbonImmutable::parse($validator->validated()['date'])->startOfDay();
+        $date = $day->toDateString();
+
+        $payload = [
+            'date' => $date,
+            'date_label' => $day->format(BusinessTime::DATE),
+            'is_past' => $day->lt(Schedule::businessToday()),
+            'notice' => null,
+            'projects' => [],
+            'blocked' => [],
+        ];
+
+        if ($payload['is_past']) {
+            $payload['notice'] = 'This day has already passed. A technician can only be added to a day still to come.';
+
+            return response()->json($payload);
+        }
+
+        if (! $technician->isAssignable()) {
+            $payload['notice'] = $this->teamRules->unavailableMessage($technician);
+
+            return response()->json($payload);
+        }
+
+        $change = app(ProjectTeamChange::class);
+
+        $candidates = Project::query()
+            ->with(['clients', 'schedules', 'projectTechnicians.technician.account', 'teamHistory.technician.account', 'phases'])
+            ->whereIn('status', self::STAFFABLE_STATUSES)
+            ->where('is_archived', false)
+            ->whereHas('schedules')
+            ->orderBy('name')
+            ->get()
+            ->filter(fn (Project $project): bool => $project->isScheduledOn($date))
+            // Already on it that day: the day is theirs on the calendar, and
+            // is taken away from there rather than added again here.
+            ->reject(fn (Project $project): bool => $this->holdsDay($project, $technician, $day));
+
+        foreach ($candidates as $project) {
+            if ($project->on_hold) {
+                $payload['blocked'][] = $this->projectPayload($project, 'This project is on hold.');
+
+                continue;
+            }
+
+            try {
+                [$plan, $sittingLead] = $this->dayPlan($change, $project, $technician, $day);
+                $problem = collect($change->problems($plan))->first() ?? $change->availabilityConflict($plan);
+            } catch (RuntimeException $e) {
+                [$sittingLead, $problem] = [null, $e->getMessage()];
+            }
+
+            if ($problem !== null) {
+                $payload['blocked'][] = $this->projectPayload($project, $problem);
+
+                continue;
+            }
+
+            $payload['projects'][] = $this->projectPayload($project, null, $sittingLead);
+        }
+
+        return response()->json($payload);
+    }
+
+    /**
+     * Put the technician on a project for one day only - on that day, off
+     * again the day after. Every check dayProjects() made is made again, so a
+     * stale dialog cannot book somebody the list would no longer offer.
+     *
+     * `replacing_technician_id` is the lead the person was warned about and
+     * agreed to replace for that day. A lead technician is never put in
+     * another lead's place without it, and never in place of a different lead
+     * than the one they were shown.
+     */
+    public function assignForDay(Request $request, Technician $technician, Project $project)
+    {
+        $validator = Validator::make($request->all(), [
+            'date' => ['required', 'date_format:Y-m-d'],
+            'replacing_technician_id' => ['nullable', 'integer'],
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['error' => $validator->errors()->first()], 422);
+        }
+
+        $day = CarbonImmutable::parse($validator->validated()['date'])->startOfDay();
+        $confirmedLeadId = $validator->validated()['replacing_technician_id'] ?? null;
+        $change = app(ProjectTeamChange::class);
+        $actorId = $request->user()?->id;
+        $sittingLead = null;
+
+        $project->load(['schedules', 'teamHistory.technician.account']);
+
+        try {
+            if (! $technician->isAssignable()) {
+                throw new RuntimeException($this->teamRules->unavailableMessage($technician));
+            }
+
+            if ($day->lt(Schedule::businessToday())) {
+                throw new RuntimeException('A technician can only be added to a day still to come.');
+            }
+
+            $this->assertProjectAcceptsTechnicians($project);
+
+            if (! $project->isScheduledOn($day->toDateString())) {
+                throw new RuntimeException(sprintf(
+                    '%s is not a scheduled day on %s.',
+                    $day->format(BusinessTime::DATE),
+                    $project->name
+                ));
+            }
+
+            if ($this->holdsDay($project, $technician, $day)) {
+                throw new RuntimeException($this->sentence(sprintf(
+                    '%s is already on %s on %s',
+                    $technician->name,
+                    $project->name,
+                    $day->format(BusinessTime::DATE)
+                )));
+            }
+
+            [$plan, $sittingLead] = $this->dayPlan($change, $project, $technician, $day);
+            $sittingLeadName = $sittingLead?->technician?->name ?? 'another lead technician';
+
+            if ($sittingLead && $confirmedLeadId === null) {
+                throw new RuntimeException(sprintf(
+                    '%s leads %s on %s. Confirm replacing them for that day.',
+                    $sittingLeadName,
+                    $project->name,
+                    $day->format(BusinessTime::DATE)
+                ));
+            }
+
+            if ($sittingLead && (int) $confirmedLeadId !== (int) $sittingLead->technician_id) {
+                throw new RuntimeException(sprintf(
+                    '%s is now led by %s on %s rather than the lead you confirmed. Reopen the day and try again.',
+                    $project->name,
+                    $sittingLeadName,
+                    $day->format(BusinessTime::DATE)
+                ));
+            }
+
+            if (! $sittingLead && $confirmedLeadId !== null) {
+                throw new RuntimeException(sprintf(
+                    '%s no longer has a lead technician on %s to replace. Reopen the day and try again.',
+                    $project->name,
+                    $day->format(BusinessTime::DATE)
+                ));
+            }
+
+            if ($problem = collect($change->problems($plan))->first()) {
+                throw new RuntimeException($problem);
+            }
+
+            if ($conflict = $change->availabilityConflict($plan)) {
+                throw new RuntimeException($conflict);
+            }
+
+            DB::transaction(fn () => $change->apply($plan, $actorId));
+        } catch (Throwable $e) {
+            return response()->json([
+                'error' => $this->safeErrorMessage($e, 'Unable to save that change. Nothing was changed.'),
+            ], 422);
+        }
+
+        $dayLabel = $day->format(BusinessTime::DATE);
+
+        if ($sittingLead) {
+            $this->activityLogger->record(
+                ActivityLog::TECHNICIAN_REMOVED,
+                $sittingLead->technician?->account,
+                sprintf(
+                    "Took %s off '%s' on %s; %s leads in their place.",
+                    $sittingLead->technician?->name,
+                    $project->reference_no ?? $project->name,
+                    $dayLabel,
+                    $technician->name
+                ),
+                $project
+            );
+        }
+
+        $this->activityLogger->record(
+            $technician->isLead() ? ActivityLog::LEAD_TECHNICIAN_ASSIGNED : ActivityLog::TECHNICIAN_ASSIGNED,
+            $technician->account,
+            sprintf(
+                $sittingLead
+                    ? "Assigned %s as lead technician on '%s' for %s only, from the technician's schedule, in place of %s."
+                    : "Assigned %s to '%s' for %s only, from the technician's schedule.",
+                $technician->name,
+                $project->reference_no ?? $project->name,
+                $dayLabel,
+                $sittingLead?->technician?->name
+            ),
+            $project
+        );
+
+        $change->notify($plan);
+
+        if (! $sittingLead) {
+            return response()->json([
+                'message' => $this->sentence(sprintf(
+                    '%s was assigned to %s for %s only',
+                    $technician->name,
+                    $project->name,
+                    $dayLabel
+                )),
+            ]);
+        }
+
+        // The sitting lead's own work that day stays theirs, flagged on the
+        // task board - said here, as Remove on This Day says it.
+        $affected = $this->tasksCrossingRemoval(
+            $project->tasks()->where('technician_id', $sittingLead->technician_id)->get(),
+            'days',
+            $day,
+            $day
+        );
+
+        $message = $this->sentence(sprintf(
+            '%s will lead %s on %s in place of %s, who is off it that day',
+            $technician->name,
+            $project->name,
+            $dayLabel,
+            $sittingLead->technician?->name
+        ));
+
+        if ($affected->isNotEmpty()) {
+            $message .= sprintf(
+                ' %s: %s. %s flagged "Technician Not Assigned for Dates" on the task board.',
+                $affected->count() === 1
+                    ? 'This task of '.$sittingLead->technician?->name.' runs into that day'
+                    : 'These tasks of '.$sittingLead->technician?->name.' run into that day',
+                $affected->map(fn (Task $task): string => $this->describeAffectedTask($task))->join(', ', ' and '),
+                $affected->count() === 1 ? 'It is' : 'They are'
+            );
+        }
+
+        return response()->json(['message' => $message]);
+    }
+
+    /**
+     * The change that puts a technician on a project for one day, and the lead
+     * it puts them in place of - null when there is none.
+     *
+     * A lead technician joining a day that already has a lead takes the lead
+     * for that day: the sitting lead has the day off, with them standing in -
+     * the same change as Remove on This Day for a lead - and is back the day
+     * after. Anybody else simply joins for the day.
+     *
+     * @return array{0: ProjectTeamChangePlan, 1: ?ProjectTechnician}
+     *
+     * @throws RuntimeException
+     */
+    private function dayPlan(ProjectTeamChange $change, Project $project, Technician $technician, CarbonImmutable $day): array
+    {
+        $sittingLead = $technician->isLead()
+            ? $change->leadOnDay(
+                $project->teamHistory->reject(fn (ProjectTechnician $span): bool => $span->isEmptySpan()),
+                $day->toDateString()
+            )
+            : null;
+
+        if ($sittingLead === null) {
+            return [$change->planDayOn($project, (int) $technician->technician_id, $day), null];
+        }
+
+        return [
+            $change->planDaysOff($project, (int) $sittingLead->technician_id, $day, $day, (int) $technician->technician_id),
+            $sittingLead,
+        ];
+    }
+
+    /**
+     * Whether any span of this technician's on the project covers the day.
+     */
+    private function holdsDay(Project $project, Technician $technician, CarbonImmutable $day): bool
+    {
+        return $project->teamHistory->contains(
+            fn (ProjectTechnician $span): bool => (int) $span->technician_id === (int) $technician->technician_id
+                && $span->overlaps($day->toDateString(), $day->addDay()->toDateString())
+        );
+    }
+
+    // ------------------------------------------------------------------
     // Internals
     // ------------------------------------------------------------------
 
@@ -1229,7 +1708,7 @@ class TechnicianController extends Controller
             throw new RuntimeException(sprintf(
                 '%s is %s and can no longer take technicians.',
                 $project->name,
-                $project->status
+                strtolower($project->statusLabel())
             ));
         }
 
@@ -1468,7 +1947,7 @@ class TechnicianController extends Controller
 
         return [
             'id' => $request->specialty_request_id,
-            'submitted_at' => $request->created_at?->format(BusinessTime::DATE_TIME),
+            'submitted_at' => BusinessTime::at($request->created_at)?->format(BusinessTime::DATE_TIME),
             'additions' => $request->additions()->all(),
             'removals' => $request->removals()->all(),
             'resulting' => $request->requestedSkills()->pluck('skill_name')->all(),

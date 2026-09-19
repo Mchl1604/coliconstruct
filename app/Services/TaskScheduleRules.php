@@ -148,32 +148,61 @@ class TaskScheduleRules
      */
     public function unassignStrandedDates(int $projectId): Collection
     {
-        $ranges = $this->ranges($projectId);
+        return $this->strandedOpenTasks($projectId, $this->ranges($projectId))
+            ->each(fn (Task $task) => $task->update([
+                'start_date' => null,
+                'due_date' => null,
+            ]))
+            ->values();
+    }
 
+    /**
+     * The open tasks a set of ranges would leave without a booked day at
+     * either end - what unassignStrandedDates() would clear, asked without
+     * clearing anything, so a schedule editor can name them before it saves.
+     *
+     * Only open tasks. A completed task is the record of work that was done on
+     * the dates it carries; taking its dates away because the booking moved
+     * afterwards rewrites history, so no schedule change ever touches one.
+     *
+     * @param  array<int, array{start: string, end: string}>  $ranges
+     * @return Collection<int, Task>
+     */
+    public function strandedOpenTasks(int $projectId, array $ranges): Collection
+    {
         return Task::query()
             ->where('project_id', $projectId)
+            ->whereIn('status', Task::OPEN_STATUSES)
             ->whereNotNull('start_date')
             ->whereNotNull('due_date')
+            ->with('technician.account')
             ->get()
-            ->filter(function (Task $task) use ($ranges): bool {
-                $stillCovered = $this->windowCovers(
-                    $ranges,
-                    Carbon::parse($task->start_date)->toDateString(),
-                    Carbon::parse($task->due_date)->toDateString()
-                );
-
-                if ($stillCovered) {
-                    return false;
-                }
-
-                $task->update([
-                    'start_date' => null,
-                    'due_date' => null,
-                ]);
-
-                return true;
-            })
+            ->reject(fn (Task $task): bool => $this->windowCovers(
+                $ranges,
+                Carbon::parse($task->start_date)->toDateString(),
+                Carbon::parse($task->due_date)->toDateString()
+            ))
             ->values();
+    }
+
+    /**
+     * `"Pipe fitting" (Ana Mendoza, Oct 31 - Nov 2)` for each task, as one sentence.
+     *
+     * @param  Collection<int, Task>  $tasks
+     */
+    public function describeTasks(Collection $tasks): string
+    {
+        return $tasks->map(function (Task $task): string {
+            $holder = $task->technician?->name ?? 'unassigned';
+            if ($task->start_date === null || $task->due_date === null) {
+                return sprintf('"%s" (%s)', $task->task_title, $holder);
+            }
+
+            $start = Carbon::parse($task->start_date)->format(BusinessTime::DATE);
+            $due = Carbon::parse($task->due_date)->format(BusinessTime::DATE);
+
+            return sprintf('"%s" (%s, %s)', $task->task_title, $holder, $start === $due ? $start : $start.' - '.$due);
+        })->join(', ', ' and ');
     }
 
     /**

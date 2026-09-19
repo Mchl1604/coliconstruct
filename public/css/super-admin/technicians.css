@@ -795,3 +795,63 @@
     font-weight: 600;
     color: #1e293b;
 }
+
+/* Every day on the Schedules calendar opens the calendar day dialog. */
+#technicianCalendar .fc-daygrid-day {
+    cursor: pointer;
+}
+
+#technicianCalendar .fc-daygrid-day:hover {
+    background: #f5f9ff;
+}
+
+/* A booking in the calendar day dialog: what it is, then what can be done. */
+.day-booking {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    cursor: default;
+}
+
+.day-booking-actions {
+    display: flex;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+}
+
+.schedule-pick input[type="radio"] {
+    margin-top: 0.2rem;
+    flex-shrink: 0;
+}
+
+/* A lead technician taking a day will replace the sitting lead for it. */
+.day-lead-warning {
+    display: block;
+    margin-top: 0.45rem;
+    padding: 0.4rem 0.55rem;
+    border-radius: 0.4rem;
+    background: #fff7ed;
+    border: 1px solid #fed7aa;
+    color: #9a3412;
+    font-size: 0.78rem;
+    line-height: 1.35;
+}
+
+/* Small dots beside the date, in the status colours of the projects booked
+   that day - muted, so they sit under the bars rather than compete. */
+#technicianCalendar .day-booked-dots {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    margin-right: 3px;
+    opacity: 0.8;
+}
+
+#technicianCalendar .day-booked-dots i {
+    display: block;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+}

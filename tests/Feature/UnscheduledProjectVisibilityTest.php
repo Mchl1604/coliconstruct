@@ -299,7 +299,14 @@ class UnscheduledProjectVisibilityTest extends TestCase
             'due_date' => $this->day(6),
         ]);
 
+        // Not without being told which tasks lose their dates...
         $this->put(route('super-admin.schedules.update', $project->project_id))
+            ->assertSessionHas('warning');
+
+        $this->assertNotNull($task->fresh()->start_date);
+
+        // ...and once that is confirmed, they do.
+        $this->put(route('super-admin.schedules.update', $project->project_id), ['stranded_tasks_confirmed' => 1])
             ->assertSessionMissing('error');
 
         $task->refresh();

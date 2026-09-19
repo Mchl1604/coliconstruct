@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Models\Document;
+use App\Models\Project;
 use App\Models\ProjectType;
 use App\Models\Schedule;
 use App\Rules\NotAnEmployeeEmail;
@@ -60,7 +61,7 @@ class StoreProjectRequest extends FormRequest
             'client_email' => ['required', 'email:rfc', 'max:255', new NotAnEmployeeEmail],
             'client_phone' => ['required', 'regex:/^09\d{9}$/'],
             'project_address' => ['required', 'string', 'max:500'],
-            'quotation_amount' => ['required', 'numeric', 'min:0'],
+            'quotation_amount' => ['required', 'numeric', 'min:0', 'max:'.Project::MAX_QUOTATION],
             'project_types' => ['required', 'array', 'min:1'],
             'project_types.*' => ['required', 'string', Rule::in($projectTypes)],
             'assessment_report' => array_merge(['required'], $documentRules, ['min:1']),
@@ -86,6 +87,7 @@ class StoreProjectRequest extends FormRequest
             ...PersonName::middleInitialMessages(),
             'quotation_amount.numeric' => 'The quotation amount must be a valid number.',
             'quotation_amount.min' => 'The quotation amount must be at least zero.',
+            'quotation_amount.max' => Project::MAX_QUOTATION_MESSAGE,
             'assessment_report.required' => 'Upload at least one assessment report file.',
             'assessment_report.min' => 'Upload at least one assessment report file.',
             'assessment_report.max' => 'Upload at most '.Document::MAX_FILES.' assessment report files.',
@@ -103,6 +105,13 @@ class StoreProjectRequest extends FormRequest
             'contract.max' => 'Upload at most '.Document::MAX_FILES.' contract files.',
             'contract.*.mimes' => Document::mimesMessage('contract'),
             'contract.*.max' => Document::maxMessage('contract'),
+
+            'lead_tech.required' => 'Choose a lead technician.',
+            'lead_tech.exists' => 'The chosen lead technician no longer exists.',
+            'technicians.required' => 'Choose at least one technician.',
+            'technicians.min' => 'Choose at least one technician.',
+            'technicians.*.integer' => 'Choose technicians from the list.',
+            'technicians.*.exists' => 'One of the chosen technicians no longer exists.',
             ...app(ScheduleModeRules::class)->messages(),
         ];
     }

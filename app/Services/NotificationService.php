@@ -1043,6 +1043,45 @@ class NotificationService
     }
 
     /**
+     * A technician has been put on a project for one day only. The lead is
+     * told who is joining them that day, unless it is the lead who did it.
+     */
+    public function technicianDayScheduled(Project $project, User $technician, CarbonImmutable $day): void
+    {
+        $this->deliver(
+            $this->excludingActor([$technician]),
+            'New Project Assignment',
+            sprintf(
+                'You have been assigned to %s by %s for %s only.',
+                $this->projectLabel($project),
+                $this->actorName(),
+                $day->format(BusinessTime::DATE)
+            ),
+            Notification::MODULE_PROJECTS,
+            $project,
+            $this->projectLink($project)
+        );
+
+        $lead = $this->projectLead($project);
+
+        if ($lead && $lead->id !== $technician->id) {
+            $this->deliver(
+                $this->excludingActor([$lead]),
+                'Technician Joined Your Project',
+                sprintf(
+                    '%s will join %s on %s only.',
+                    $technician->fullName(),
+                    $this->projectLabel($project),
+                    $day->format(BusinessTime::DATE)
+                ),
+                Notification::MODULE_PROJECTS,
+                $project,
+                $this->projectLink($project)
+            );
+        }
+    }
+
+    /**
      * A lead technician leads a project for somebody's days off.
      */
     public function standInLeadScheduled(Project $project, User $lead, CarbonImmutable $from, CarbonImmutable $lastDay, string $forName): void

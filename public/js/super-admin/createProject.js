@@ -611,6 +611,9 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
+    // Why the dates were last emptied, kept until new ones are chosen.
+    let clearedDatesNotice = '';
+
     function refreshDatePickers() {
         const enabled = scheduleInputsReady();
         const partialDay = isPartialDay();
@@ -652,7 +655,13 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!enabled) {
             resetScheduleDates();
         } else if (scheduleConflicts().length) {
+            // Said, not just done: the range reached into days somebody on the
+            // team is booked, and silently emptying both fields left the
+            // person guessing why. The notice stays until new dates are in.
+            clearedDatesNotice = conflictMessage(scheduleConflicts()) +
+                ' The dates were cleared - choose them again.';
             resetScheduleDates();
+            showScheduleError(clearedDatesNotice);
         }
     }
 
@@ -1455,14 +1464,17 @@ document.addEventListener('DOMContentLoaded', function() {
             field.setCustomValidity('');
         });
 
-        // Nothing to say until the whole schedule has been filled in.
+        // Nothing to say until the whole schedule has been filled in - apart
+        // from why the dates were just emptied, if they were.
         if (fields.some(function(field) {
             return !field.value;
         })) {
-            showScheduleError('');
+            showScheduleError(clearedDatesNotice);
 
             return true;
         }
+
+        clearedDatesNotice = '';
 
         if (isPartialDay()) {
             const from = minutesFromTime(startTimeSelect.value);

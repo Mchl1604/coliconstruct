@@ -284,6 +284,7 @@
             @if ($mayOverrideLock)
                 data-historical-check-url="{{ route('super-admin.schedules.historical-check', $project->project_id) }}"
             @endif
+            data-task-impact-url="{{ route('super-admin.schedules.task-impact', $project->project_id) }}"
             data-technician-ids="{{ $project->projectTechnicians->pluck('technician_id')->implode(',') }}">
 
             <div class="modal-dialog modal-lg">

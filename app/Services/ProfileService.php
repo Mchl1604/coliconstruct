@@ -443,6 +443,12 @@ class ProfileService
             throw new RuntimeException('That request no longer has a technician.');
         }
 
+        // A technician must keep at least one specialty - the same rule the
+        // Technicians page applies when an administrator edits them directly.
+        if (empty($request->requested_skill_ids)) {
+            throw new RuntimeException('This request asks for no specialties. A technician must keep at least one, so reject it instead.');
+        }
+
         DB::transaction(function () use ($request, $reviewer, $technician): void {
             // sync() is what makes a duplicate impossible: the pivot ends up
             // holding exactly these ids, however many times one was sent.

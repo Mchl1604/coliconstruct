@@ -469,8 +469,13 @@ class ReportExportTest extends TestCase
     /** Both ends of the range count as inside it. */
     public function test_the_first_and_last_day_of_the_range_are_inside_it(): void
     {
-        $this->projectCreatedOn('2026-08-01');
-        $this->projectCreatedOn('2026-08-31 23:30:00');
+        // created_at is UTC; a month is the office's month. 16:30 UTC on Jul 31
+        // is 12:30 AM on Aug 1 in Manila, and 15:30 UTC on Aug 31 is 11:30 PM
+        // on Aug 31 - both inside August. 16:30 UTC on Aug 31 is already
+        // Sep 1 in Manila, so it is not.
+        $this->projectCreatedOn('2026-07-31 16:30:00');
+        $this->projectCreatedOn('2026-08-31 15:30:00');
+        $this->projectCreatedOn('2026-08-31 16:30:00');
 
         $this->assertCount(2, $this->createdProjects('2026-08'));
     }

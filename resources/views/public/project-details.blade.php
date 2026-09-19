@@ -308,7 +308,9 @@
                                 @forelse ($project->projectTechnicians as $projectTechnician)
                                     @php $technician = $projectTechnician->technician; @endphp
 
-                                    @if ($technician)
+                                    {{-- A deactivated or archived account is left out: the
+                                         client is being told who is working on their job. --}}
+                                    @if ($technician && $technician->isAssignable())
                                         <li class="list-group-item d-flex justify-content-between align-items-center gap-2">
                                             {{-- The person's own picture rather than a
                                                  generic icon: a client recognising who

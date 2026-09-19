@@ -298,21 +298,28 @@ class ProjectCompletionConfirmationTest extends TestCase
      * every booked day would fall before the cutoff. It is refused rather than
      * quietly defeating the whole mechanism.
      */
-    public function test_a_future_completion_date_is_refused(): void
+    /**
+     * The completion date is not chosen any more: a project is completed as
+     * of the office's today, whatever date a request carries. A chosen date is
+     * how a project came to be "finished" years before it was created.
+     */
+    public function test_a_sent_completion_date_is_ignored_and_today_is_recorded(): void
     {
         $this->actingAsSuperAdmin();
 
         $project = $this->project();
         $this->assign($project, $this->technician('Elle Tan'));
-        $future = $this->schedule($project, 5, 9);
+        $this->schedule($project, -2, 9);
 
         $this->post(
             route('super-admin.projects.complete', $project->project_id),
-            $this->completionPayload(CarbonImmutable::today()->addDays(3)->toDateString())
-        )->assertSessionHasErrors('completion_date');
+            $this->completionPayload('2020-01-01')
+        )->assertSessionHasNoErrors();
 
-        $this->assertSame('ongoing', $project->refresh()->status);
-        $this->assertDatabaseHas('tbl_schedule', ['schedule_id' => $future->schedule_id]);
+        $project->refresh();
+
+        $this->assertSame(Project::STATUS_AWAITING_CLIENT_CONFIRMATION, $project->status);
+        $this->assertSame(BusinessTime::today()->toDateString(), $project->completed_at->toDateString());
     }
 
     /**

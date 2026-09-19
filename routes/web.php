@@ -416,6 +416,11 @@ Route::prefix('super-admin')
             ->whereNumber('id')
             ->middleware('role:super_admin')
             ->name('schedules.historical-check');
+        // Which open tasks a schedule about to be saved would leave with no
+        // booked day, so the editor can list them and ask before saving.
+        Route::post('/schedules/{id}/task-impact', [ScheduleController::class, 'taskImpact'])
+            ->whereNumber('id')
+            ->name('schedules.task-impact');
         Route::put('/schedules/{id}', [ScheduleController::class, 'update'])->name('schedules.update');
 
         // ROUTE FOR SUPER ADMIN REPORTS PAGE
@@ -451,11 +456,19 @@ Route::prefix('super-admin')
         Route::put('/technicians/specialty-requests/{specialtyRequest}/reject', [TechnicianController::class, 'rejectSpecialtyRequest'])
             ->name('technicians.specialty-requests.reject');
 
+        // Days any live project is booked on, for the Schedules calendar's
+        // dots. Before /technicians/{technician} so the literal segment wins.
+        Route::get('/technicians/booked-days', [TechnicianController::class, 'bookedDays'])->name('technicians.booked-days');
+
         Route::get('/technicians/{technician}', [TechnicianController::class, 'show'])->name('technicians.show');
         Route::put('/technicians/{technician}/specialties', [TechnicianController::class, 'syncSpecialties'])->name('technicians.specialties.sync');
         Route::get('/technicians/{technician}/calendar', [TechnicianController::class, 'calendar'])->name('technicians.calendar');
         Route::get('/technicians/{technician}/assignable-projects', [TechnicianController::class, 'assignableProjects'])->name('technicians.assignable');
         Route::post('/technicians/{technician}/projects', [TechnicianController::class, 'assignToProjects'])->name('technicians.projects.store');
+        // One calendar day: what the technician could be put on for that day
+        // alone, and putting them on it.
+        Route::get('/technicians/{technician}/day', [TechnicianController::class, 'dayProjects'])->name('technicians.day');
+        Route::post('/technicians/{technician}/projects/{project}/day', [TechnicianController::class, 'assignForDay'])->name('technicians.projects.day');
         Route::get('/technicians/{technician}/projects/{project}', [TechnicianController::class, 'assignment'])->name('technicians.assignment');
         Route::delete('/technicians/{technician}/projects/{project}', [TechnicianController::class, 'removeFromProject'])->name('technicians.projects.destroy');
 

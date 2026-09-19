@@ -10,7 +10,7 @@ use Illuminate\Support\Collection;
 /**
  * One proposed change to a project's team, worked out and not yet written.
  *
- * Three kinds of change reach here, and they differ only in how they are
+ * Four kinds of change reach here, and they differ only in how they are
  * stated:
  *
  *   team      Project Details' Assigned Team, the master control: "the team is
@@ -20,6 +20,8 @@ use Illuminate\Support\Collection;
  *             this day onward".
  *   days_off  The Technicians page: "take this technician off the project for
  *             these days" - off from the first, back the day after the last.
+ *   day_on    The Technicians page: "put this technician on the project for
+ *             this one day" - on for that day, off again the day after.
  *
  * Each turns into the same four things that happen to spans - which come off
  * on the effective day, which spans still to come are called off, whose start
@@ -39,6 +41,8 @@ class ProjectTeamChangePlan
     public const KIND_REMOVAL = 'removal';
 
     public const KIND_DAYS_OFF = 'days_off';
+
+    public const KIND_DAY_ON = 'day_on';
 
     /**
      * @param  Collection<int, ProjectTechnician>  $before  every span as it is now

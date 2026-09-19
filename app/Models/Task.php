@@ -61,6 +61,24 @@ class Task extends Model
     public const GAP_OFF_TEAM = 'off_team';
 
     /**
+     * An owner whose account has been deactivated or archived. They cannot sign
+     * in to do the work, so the task needs somebody else - the same attention
+     * a task nobody holds gets. Derived, so it clears the moment the task is
+     * reassigned or the account is switched back on.
+     */
+    public const GAP_INACTIVE_HOLDER = 'inactive_holder';
+
+    /**
+     * An owner who is no longer on the project at all: every span of theirs
+     * has ended, and none is still to come. Asked with or without dates - a
+     * task nobody has dated yet is still held by somebody who has gone, and
+     * "Missing Date" alone would send the reader to fix the wrong field.
+     * Derived, so it clears the moment the task is reassigned or they are put
+     * back on the team.
+     */
+    public const GAP_REMOVED_HOLDER = 'removed_holder';
+
+    /**
      * How each gap reads wherever it is printed - the row badge, the alert
      * chips, the dashboard.
      *
@@ -75,6 +93,8 @@ class Task extends Model
         self::GAP_DATE => 'Missing Date',
         self::GAP_BOTH => 'Missing Technician & Date',
         self::GAP_OFF_TEAM => 'Technician Not Assigned for Dates',
+        self::GAP_INACTIVE_HOLDER => 'Technician Deactivated',
+        self::GAP_REMOVED_HOLDER => 'Technician Removed from Project',
     ];
 
     /**
@@ -210,7 +230,21 @@ class Task extends Model
                 ->whereNull('technician_id')
                 ->orWhereNull('start_date')
                 ->orWhereNull('due_date')
-                ->orWhere(fn (Builder $offTeam) => $this->holderHasDayOffInDatesScope($offTeam)));
+                ->orWhere(fn (Builder $offTeam) => $this->holderHasDayOffInDatesScope($offTeam))
+                ->orWhere(fn (Builder $inactive) => $this->holderInactiveScope($inactive))
+                ->orWhereRaw(self::holderRemovedSql()));
+    }
+
+    /**
+     * Held by a technician whose account can no longer sign in.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    private function holderInactiveScope(Builder $query): Builder
+    {
+        return $query->whereNotNull('technician_id')
+            ->whereDoesntHave('technician.account', fn (Builder $account): Builder => $account->loginable());
     }
 
     /**
@@ -273,6 +307,25 @@ class Task extends Model
     }
 
     /**
+     * The holder is no longer on the project: held, and no span of theirs on
+     * it is still running or still to come. An empty span - added and taken
+     * straight back off - is no place on the team.
+     *
+     * Today is the office's, written into the SQL as a date the code made, so
+     * the row badge, the chips and the dashboard all ask about the same day.
+     */
+    private static function holderRemovedSql(): string
+    {
+        $today = Schedule::businessToday()->toDateString();
+
+        return 'tbl_tasks.technician_id is not null and not exists (select 1 from tbl_project_technicians still '
+            .'where still.project_id = tbl_tasks.project_id '
+            .'and still.technician_id = tbl_tasks.technician_id '
+            ."and (still.removed_at is null or date(still.removed_at) > '{$today}') "
+            .'and (still.joined_at is null or still.removed_at is null or date(still.joined_at) < date(still.removed_at)))';
+    }
+
+    /**
      * Load, alongside each task, whether its holder has a day off inside its
      * dates - so a board of tasks can flag them without a query per row. See
      * holderHasDayOffInDates().
@@ -286,7 +339,30 @@ class Task extends Model
             $query->select('tbl_tasks.*');
         }
 
-        return $query->selectRaw('case when '.self::holderDayOffSql().' then 1 else 0 end as holder_has_day_off');
+        return $query
+            ->selectRaw('case when '.self::holderDayOffSql().' then 1 else 0 end as holder_has_day_off')
+            ->selectRaw('case when '.self::holderRemovedSql().' then 1 else 0 end as holder_removed');
+    }
+
+    /**
+     * Whether whoever holds this task is no longer on the project at all -
+     * see GAP_REMOVED_HOLDER. False when nobody holds it.
+     */
+    public function holderRemovedFromProject(): bool
+    {
+        if ($this->technician_id === null) {
+            return false;
+        }
+
+        if (array_key_exists('holder_removed', $this->attributes)) {
+            return (bool) $this->attributes['holder_removed'];
+        }
+
+        return ! ProjectTechnician::query()
+            ->where('project_id', $this->project_id)
+            ->where('technician_id', $this->technician_id)
+            ->get()
+            ->contains(fn (ProjectTechnician $span): bool => ! $span->hasEnded());
     }
 
     /**
@@ -351,13 +427,23 @@ class Task extends Model
                 ->whereNull('technician_id')
                 ->whereNotNull('start_date')
                 ->whereNotNull('due_date'),
+            self::GAP_REMOVED_HOLDER => $query->whereRaw(self::holderRemovedSql()),
             self::GAP_DATE => $query
                 ->whereNotNull('technician_id')
-                ->where($undated),
+                ->where($undated)
+                ->whereRaw('not ('.self::holderRemovedSql().')'),
             self::GAP_BOTH => $query
                 ->whereNull('technician_id')
                 ->where($undated),
-            self::GAP_OFF_TEAM => $this->holderHasDayOffInDatesScope($query),
+            // Exclusive of each other, in assignmentGap()'s order: a dated task
+            // held by a deactivated account is that, not a day-off gap.
+            self::GAP_OFF_TEAM => $this->holderHasDayOffInDatesScope($query)
+                ->whereHas('technician.account', fn (Builder $account): Builder => $account->loginable())
+                ->whereRaw('not ('.self::holderRemovedSql().')'),
+            self::GAP_INACTIVE_HOLDER => $this->holderInactiveScope($query)
+                ->whereNotNull('start_date')
+                ->whereNotNull('due_date')
+                ->whereRaw('not ('.self::holderRemovedSql().')'),
             default => $query,
         };
     }
@@ -396,7 +482,9 @@ class Task extends Model
         return match (true) {
             $this->missingTechnician() && $this->missingDate() => self::GAP_BOTH,
             $this->missingTechnician() => self::GAP_TECHNICIAN,
+            $this->holderRemovedFromProject() => self::GAP_REMOVED_HOLDER,
             $this->missingDate() => self::GAP_DATE,
+            $this->holderIsInactive() => self::GAP_INACTIVE_HOLDER,
             $this->holderHasDayOffInDates() => self::GAP_OFF_TEAM,
             default => null,
         };
@@ -409,6 +497,14 @@ class Task extends Model
     public function assignmentGapLabel(): ?string
     {
         return self::GAP_LABELS[$this->assignmentGap()] ?? null;
+    }
+
+    /**
+     * Whether the technician holding this task can no longer sign in.
+     */
+    public function holderIsInactive(): bool
+    {
+        return $this->technician_id !== null && ! $this->technician?->isAssignable();
     }
 
     public function isCompleted(): bool

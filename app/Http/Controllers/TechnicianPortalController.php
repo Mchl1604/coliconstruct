@@ -127,7 +127,7 @@ class TechnicianPortalController extends Controller
                 ->filter())
             ->values();
 
-        $today = CarbonImmutable::today();
+        $today = BusinessTime::today();
 
         return view('technician.schedule', [
             'events' => $events,
@@ -996,7 +996,7 @@ class TechnicianPortalController extends Controller
                     'report_type' => $validated['report_type'],
                     'report_title' => $validated['report_title'],
                     'report_description' => $validated['report_description'],
-                    'report_date' => now()->toDateString(),
+                    'report_date' => BusinessTime::today()->toDateString(),
                 ]);
 
                 foreach ($request->file('images') ?? [] as $image) {
@@ -1551,7 +1551,7 @@ class TechnicianPortalController extends Controller
                 'url' => $image->url(),
             ])->all(),
             'is_archived' => $report->isArchived(),
-            'archived_at_label' => $report->archived_at?->format(BusinessTime::DATE) ?? '—',
+            'archived_at_label' => BusinessTime::at($report->archived_at)?->format(BusinessTime::DATE) ?? '—',
             'archived_by' => $report->archiver?->fullName() ?? '—',
             // Whether this account may act on the report. The endpoint asks the
             // same policy again, so these only decide whether a button is

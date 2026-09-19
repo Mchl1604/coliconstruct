@@ -266,10 +266,11 @@ class ProfileController extends Controller
         }
 
         $validated = $request->validateWithBag('specialties', [
-            'skill_ids' => ['present', 'array'],
+            'skill_ids' => ['required', 'array', 'min:1'],
             'skill_ids.*' => ['integer', 'exists:tbl_skills,skill_id'],
         ], [
-            'skill_ids.present' => 'Select at least one specialty.',
+            'skill_ids.required' => 'Select at least one specialty.',
+            'skill_ids.min' => 'Select at least one specialty.',
         ]);
 
         return $this->attempt(

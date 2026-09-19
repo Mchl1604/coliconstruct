@@ -147,7 +147,7 @@ class TaskController extends Controller
 
         if ($project->isReadOnly()) {
             return response()->json([
-                'error' => 'This project is '.$project->status.' and no longer accepts new tasks.',
+                'error' => 'This project is '.strtolower($project->statusLabel()).' and no longer accepts new tasks.',
             ], 422);
         }
 
@@ -243,7 +243,7 @@ class TaskController extends Controller
         if ($project->isReadOnly()) {
             return redirect()
                 ->back()
-                ->with('error', 'This project is '.$project->status.' and no longer accepts new tasks.');
+                ->with('error', 'This project is '.strtolower($project->statusLabel()).' and no longer accepts new tasks.');
         }
 
         if ($project->on_hold) {
@@ -348,7 +348,7 @@ class TaskController extends Controller
         $project = Project::findOrFail($task->project_id);
 
         if ($project->isReadOnly()) {
-            return back()->with('error', 'This project is '.$project->status.' and its tasks can no longer be edited.');
+            return back()->with('error', 'This project is '.strtolower($project->statusLabel()).' and its tasks can no longer be edited.');
         }
 
         // Paused work is left exactly as it stands. Its tasks keep their dates
@@ -455,7 +455,7 @@ class TaskController extends Controller
         $project = Project::findOrFail($task->project_id);
 
         if ($project->isReadOnly()) {
-            return back()->with('error', 'This project is '.$project->status.' and its tasks can no longer be edited.');
+            return back()->with('error', 'This project is '.strtolower($project->statusLabel()).' and its tasks can no longer be edited.');
         }
 
         // Paused work is left exactly as it stands. Its tasks keep their dates
@@ -539,7 +539,7 @@ class TaskController extends Controller
         $project = Project::findOrFail($task->project_id);
 
         if ($project->isReadOnly()) {
-            return back()->with('error', 'This project is '.$project->status.' and its tasks can no longer be edited.');
+            return back()->with('error', 'This project is '.strtolower($project->statusLabel()).' and its tasks can no longer be edited.');
         }
 
         // Paused work is left exactly as it stands. Its tasks keep their dates

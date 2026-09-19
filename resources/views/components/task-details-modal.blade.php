@@ -48,6 +48,12 @@
         : null;
 
     $assignableTechnicians = $holder ? $technicians->concat([$holder]) : $technicians;
+
+    // A holder taken off the project altogether is shown - the reader has to
+    // see whose task it was - but cannot be kept: they can no longer close
+    // it, so saving asks for somebody on the team. See
+    // TaskAssignmentRules::attachPeriodRule(), which refuses the same.
+    $holderRemoved = $isEditable && $task->technician_id !== null && $task->holderRemovedFromProject();
 @endphp
 
 {{--
@@ -138,6 +144,14 @@
                 <label class="form-label fw-bold mb-3">Assigned Technician</label>
 
                 @if ($isEditable)
+                    @if ($holderRemoved)
+                        <div class="alert alert-danger small py-2" role="alert">
+                            <i class="bi bi-exclamation-triangle-fill me-1" aria-hidden="true"></i>
+                            {{ $task->technician->name }} was removed from this project. Assign this task
+                            to a technician on the team before saving.
+                        </div>
+                    @endif
+
                     <div class="task-assign-row">
                         @forelse ($assignableTechnicians as $technician)
                             @php
@@ -151,13 +165,16 @@
                                 // re-submits the owner and the handover off them
                                 // is the very thing this dialog is for.
                                 $cannotReceiveWork = ! $technician->isAssignable() && ! $holdsThisTask;
+                                // Off the project: shown, never kept.
+                                $removedHolder = $holdsThisTask && $holderRemoved;
                             @endphp
                             <label>
                                 <input type="radio" class="btn-check" name="technician_id"
                                     value="{{ $technician->technician_id }}"
                                     data-assignment-periods='@json($periods[$technician->technician_id] ?? [])'
-                                    @if ($holdsThisTask) data-holds-task="1" @endif
-                                    @checked($holdsThisTask) @disabled($cannotReceiveWork)>
+                                    @if ($holdsThisTask && ! $removedHolder) data-holds-task="1" @endif
+                                    @checked($holdsThisTask && ! $removedHolder)
+                                    @disabled($cannotReceiveWork || $removedHolder)>
 
                                 <div class="task-assign-card">
                                     <x-user-avatar :user="$technician->account" size="lg"
@@ -170,11 +187,15 @@
                                     @if (optional($technician->account)->role === 'lead_technician')
                                         <span class="badge bg-primary task-assign-lead">Lead</span>
                                     @endif
-                                    @unless ($technician->isAssignable())
+                                    @if ($removedHolder)
+                                        <span class="badge bg-danger task-assign-inactive">
+                                            Removed from project
+                                        </span>
+                                    @elseif (! $technician->isAssignable())
                                         <span class="badge bg-warning text-dark task-assign-inactive">
                                             Account inactive
                                         </span>
-                                    @endunless
+                                    @endif
                                 </div>
                             </label>
                         @empty
