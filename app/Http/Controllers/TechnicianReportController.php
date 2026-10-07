@@ -54,7 +54,7 @@ class TechnicianReportController extends Controller
         if ($project->on_hold) {
             return back()->with(
                 'error',
-                sprintf('%s is on hold. Resume it before filing a report.', $project->name)
+                sprintf('%s is on hold.', $project->name)
             );
         }
 

@@ -295,7 +295,7 @@
                             <div class="d-none" data-panel-no-project>
                                 <div class="technician-eyebrow mb-2">Selected Project</div>
                                 <div class="schedule-empty-state">
-                                    Select a scheduled project from the calendar to view its details.
+                                    Pick a project on the calendar.
                                 </div>
                             </div>
 
@@ -385,7 +385,7 @@
                                 <div class="panel-task-list" data-panel-tasks></div>
 
                                 <div class="schedule-empty-state d-none" data-panel-tasks-empty>
-                                    No tasks assigned to this technician on this project.
+                                    No tasks on this project.
                                 </div>
 
                                 <hr class="panel-divider">
@@ -631,8 +631,7 @@
                         <p class="text-muted small mb-2" data-panel-lead-intro></p>
                         <div class="technician-lead-options" data-panel-lead-options></div>
                         <div class="schedule-empty-state d-none" data-panel-lead-empty>
-                            No lead technician is free for these dates. Free one up or change the
-                            schedule first.
+                            No lead technician is free.
                         </div>
                     </div>
 
@@ -709,7 +708,7 @@
                         <div class="schedule-eligible-list" data-day-add-list></div>
 
                         <div class="schedule-empty-state d-none" data-day-add-empty>
-                            No project booked on this day can take this technician.
+                            No project can take them.
                         </div>
 
                         <div class="schedule-blocked-wrap d-none" data-day-blocked-wrap>
@@ -768,7 +767,7 @@
                         <div class="schedule-eligible-list" data-add-list></div>
 
                         <div class="schedule-empty-state d-none" data-add-empty>
-                            There are no projects this technician can join right now.
+                            No projects to join.
                         </div>
 
                         <div class="schedule-blocked-wrap d-none" data-add-blocked-wrap>

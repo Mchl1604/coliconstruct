@@ -38,20 +38,20 @@ class TaskPhaseRules
     public function blockReason(Project $project): ?string
     {
         if ($project->needsPhaseSetup()) {
-            return 'This project has not been configured with its project phases yet. Set up the project phases before adding tasks.';
+            return 'Set up project phases before adding tasks.';
         }
 
         if ($project->phases()->count() === 0) {
             // Belt and braces: finalize() will not write this state, and a
             // task created against it would have nowhere to go.
-            return 'This project has no phases to file a task under. Ask a Super Admin to review its phase structure.';
+            return 'No phases. Ask a Super Admin to review.';
         }
 
         if ($project->phases()->whereNull('completed_at')->count() === 0) {
             // Every stage of the job has been signed off, so there is no open
             // phase left to file work under. The project itself is what should
             // be closed out now, not extended with another task.
-            return 'Every phase of this project has been completed, so there is no open phase to add a task to.';
+            return 'All phases are complete.';
         }
 
         return null;
@@ -95,7 +95,7 @@ class TaskPhaseRules
             // this project's and a phase that has already been signed off are
             // the same thing to the person at the form: not one of the options
             // they were offered.
-            'phase_id.exists' => 'Pick a phase of this project that has not been completed yet.',
+            'phase_id.exists' => 'Pick an open phase.',
         ];
     }
 

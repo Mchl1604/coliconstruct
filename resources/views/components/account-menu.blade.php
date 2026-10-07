@@ -26,7 +26,7 @@
 
 <div class="dropdown">
     <button class="admin-user-menu admin-user-button" type="button" data-bs-toggle="dropdown" aria-expanded="false"
-        aria-label="Signed in as {{ $displayName }} - open the account menu">
+        aria-label="Account menu for {{ $displayName }}">
         <x-user-avatar :user="$user" size="md" alt="" />
 
         <span>

@@ -117,7 +117,7 @@ class TaskAssignmentRules
         if ($start === null || $due === null) {
             return $spans->contains(fn (ProjectTechnician $span): bool => $span->endDate() === null)
                 ? null
-                : sprintf('%s is not assigned to this project with no end date, so this task needs dates first.', $name);
+                : sprintf('%s leaves this project, so add task dates.', $name);
         }
 
         if ($spans->contains(fn (ProjectTechnician $span): bool => $span->coversPeriod($start, $due))) {
@@ -129,7 +129,7 @@ class TaskAssignmentRules
 
         if ($holdingStart && $holdingDue) {
             return sprintf(
-                '%s is off this project from %s to %s, which this task runs across.',
+                '%s is off from %s to %s.',
                 $name,
                 BusinessTime::format($holdingStart->endDate()),
                 BusinessTime::format(CarbonImmutable::parse($holdingDue->startDate())->subDay())
@@ -145,7 +145,7 @@ class TaskAssignmentRules
 
         if ($holdingStart && ($return = $offUntil($holdingStart))) {
             return sprintf(
-                '%s is off this project from %s to %s, and this task is due %s.',
+                '%s is off from %s to %s; task due %s.',
                 $name,
                 BusinessTime::format($holdingStart->endDate()),
                 BusinessTime::format(CarbonImmutable::parse($return->startDate())->subDay()),
@@ -162,7 +162,7 @@ class TaskAssignmentRules
 
         if ($holdingDue && $breakBefore) {
             return sprintf(
-                '%s is off this project from %s to %s, and this task starts %s.',
+                '%s is off from %s to %s; task starts %s.',
                 $name,
                 BusinessTime::format($breakBefore->endDate()),
                 BusinessTime::format(CarbonImmutable::parse($holdingDue->startDate())->subDay()),
@@ -172,7 +172,7 @@ class TaskAssignmentRules
 
         if ($holdingStart) {
             return sprintf(
-                '%s is assigned to this project until %s, and this task is due %s.',
+                '%s leaves after %s; task due %s.',
                 $name,
                 BusinessTime::format($holdingStart->lastDay()),
                 BusinessTime::format($due)
@@ -181,7 +181,7 @@ class TaskAssignmentRules
 
         if ($holdingDue) {
             return sprintf(
-                '%s joins this project on %s, and this task starts %s.',
+                '%s joins on %s; task starts %s.',
                 $name,
                 BusinessTime::format($holdingDue->startDate()),
                 BusinessTime::format($start)
@@ -195,7 +195,7 @@ class TaskAssignmentRules
 
         if ($ended) {
             return sprintf(
-                '%s is assigned to this project until %s, and this task starts %s.',
+                '%s leaves after %s; task starts %s.',
                 $name,
                 BusinessTime::format($ended->lastDay()),
                 BusinessTime::format($start)
@@ -203,7 +203,7 @@ class TaskAssignmentRules
         }
 
         return sprintf(
-            '%s is not assigned to this project between %s and %s.',
+            '%s is not on the team from %s to %s.',
             $name,
             BusinessTime::format($start),
             BusinessTime::format($due)
@@ -252,7 +252,7 @@ class TaskAssignmentRules
                 // close the task, so an edit hands it to somebody who can.
                 if ($task->holderRemovedFromProject()) {
                     $validator->errors()->add($key, sprintf(
-                        '%s was removed from this project. Assign this task to a technician on the team.',
+                        '%s left the project. Reassign this task.',
                         $task->technician?->name ?? 'This technician'
                     ));
                 }

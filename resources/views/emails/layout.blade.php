@@ -139,7 +139,7 @@
                             @endif
 
                             <div style="margin-top:14px; color:#8494a7;">
-                                This is an automated message from {{ $company['name'] }}. Please do not reply to it.
+                                Automated message. Please do not reply.
                             </div>
                         </td>
                     </tr>

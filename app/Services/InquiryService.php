@@ -145,7 +145,7 @@ class InquiryService
 
         if (! $sent) {
             throw new RuntimeException(
-                'Unable to send reply. Nothing was changed - try again.'
+                'Unable to send reply. Try again.'
             );
         }
 

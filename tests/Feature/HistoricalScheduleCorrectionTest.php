@@ -286,7 +286,7 @@ class HistoricalScheduleCorrectionTest extends TestCase
 
         $this->save($project, [$this->range(null, -5, -3)], override: true);
 
-        $this->assertStringContainsString('Say who worked them', (string) session('error'));
+        $this->assertStringContainsString('Name who worked them', (string) session('error'));
         $this->assertSame([], $this->rangesOf($project));
         $this->assertSame(0, ScheduleCorrection::count());
     }
@@ -393,7 +393,7 @@ class HistoricalScheduleCorrectionTest extends TestCase
 
         $this->save($project, [$this->range($existing, -10, -1)], override: true);
 
-        $this->assertStringContainsString('Say who worked them', (string) session('error'));
+        $this->assertStringContainsString('Name who worked them', (string) session('error'));
         $this->assertSame([['start' => $this->day(-7), 'end' => $this->day(-1)]], $this->rangesOf($project));
     }
 
@@ -515,7 +515,7 @@ class HistoricalScheduleCorrectionTest extends TestCase
         $past = $this->book($project, -8, -7);
 
         $this->save($project, [$this->range($past, -4, -3)], override: true);
-        $this->assertStringContainsString('Say who worked them', (string) session('error'));
+        $this->assertStringContainsString('Name who worked them', (string) session('error'));
 
         $this->save(
             $project,
@@ -674,7 +674,7 @@ class HistoricalScheduleCorrectionTest extends TestCase
             technicianIds: [$jose->technician_id, $ana->technician_id]
         );
 
-        $this->assertStringContainsString('both Lead Technicians', (string) session('error'));
+        $this->assertStringContainsString('both leads', (string) session('error'));
         $this->assertSame([], $this->rangesOf($project));
     }
 

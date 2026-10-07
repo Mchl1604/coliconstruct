@@ -412,7 +412,7 @@ class ScheduledTeamChangeTest extends TestCase
 
         $this->daysOff($project, $john, $this->day(5), $this->day(6))
             ->assertStatus(422)
-            ->assertJsonPath('error', 'John Lead leads this project. Choose a lead technician to stand in for those days.');
+            ->assertJsonPath('error', 'John Lead leads this project. Choose a stand-in.');
 
         $this->daysOff($project, $john, $this->day(5), $this->day(6), $mary)->assertOk();
 
@@ -553,7 +553,7 @@ class ScheduledTeamChangeTest extends TestCase
         $store($this->day(6), $this->day(9))->assertSessionHasNoErrors();
 
         $store($this->day(8), $this->day(11))->assertSessionHasErrors('technician_id');
-        $this->assertStringContainsString('assigned to this project until', session('errors')->first('technician_id'));
+        $this->assertStringContainsString('leaves after', session('errors')->first('technician_id'));
     }
 
     public function test_a_task_may_not_run_across_a_technicians_days_off(): void
@@ -571,7 +571,7 @@ class ScheduledTeamChangeTest extends TestCase
             'due_date' => $this->day(22),
         ])->assertSessionHasErrors('technician_id');
 
-        $this->assertStringContainsString('which this task runs across', session('errors')->first('technician_id'));
+        $this->assertStringContainsString('is off from', session('errors')->first('technician_id'));
     }
 
     public function test_a_task_whose_holder_left_stays_editable_while_nothing_about_it_changes(): void
@@ -614,7 +614,7 @@ class ScheduledTeamChangeTest extends TestCase
 
         // Nothing else changed, and still refused: they can no longer close it.
         $edit($tech)->assertSessionHasErrors('technician_id');
-        $this->assertStringContainsString('was removed from this project', session('errors')->first('technician_id'));
+        $this->assertStringContainsString('left the project', session('errors')->first('technician_id'));
         $this->assertSame((int) $tech->technician_id, (int) $task->fresh()->technician_id);
 
         // Handed to somebody on the team, it saves.
@@ -632,7 +632,7 @@ class ScheduledTeamChangeTest extends TestCase
 
         $html = $this->get(route('super-admin.projects.show', $project->project_id))->assertOk()->getContent();
 
-        $this->assertStringContainsString('was removed from this project. Assign this task', $html);
+        $this->assertStringContainsString('left the project. Reassign this task.', $html);
         // The holder's card: present, switched off, and not the one ticked.
         $this->assertMatchesRegularExpression(
             '/name="technician_id"\s+value="'.$tech->technician_id.'"[^>]*disabled/s',
@@ -720,19 +720,19 @@ class ScheduledTeamChangeTest extends TestCase
         $rules = app(TaskAssignmentRules::class);
 
         $this->assertSame(
-            sprintf('Ana Mendoza is off this project from %s to %s, and this task starts %s.', $this->label(5), $this->label(6), $this->label(5)),
+            sprintf('Ana Mendoza is off from %s to %s; task starts %s.', $this->label(5), $this->label(6), $this->label(5)),
             $rules->periodRefusal($tech, (int) $project->project_id, $this->day(5), $this->day(8))
         );
 
         $this->assertSame(
-            sprintf('Ana Mendoza is off this project from %s to %s, and this task is due %s.', $this->label(5), $this->label(6), $this->label(6)),
+            sprintf('Ana Mendoza is off from %s to %s; task due %s.', $this->label(5), $this->label(6), $this->label(6)),
             $rules->periodRefusal($tech, (int) $project->project_id, $this->day(3), $this->day(6))
         );
 
         $this->removeFrom($project, $tech, $this->day(10))->assertOk();
 
         $this->assertSame(
-            sprintf('Ana Mendoza is assigned to this project until %s, and this task starts %s.', $this->label(9), $this->label(12)),
+            sprintf('Ana Mendoza leaves after %s; task starts %s.', $this->label(9), $this->label(12)),
             $rules->periodRefusal($tech, (int) $project->project_id, $this->day(12), $this->day(14))
         );
     }
@@ -958,7 +958,7 @@ class ScheduledTeamChangeTest extends TestCase
 
         $this->assertNotContains($project->project_id, collect($listing->json('projects'))->pluck('project_id')->all());
         $this->assertStringContainsString(
-            'would both lead this project',
+            'would both lead from',
             (string) collect($listing->json('blocked'))->firstWhere('project_id', $project->project_id)['reason']
         );
 
@@ -1221,11 +1221,11 @@ class ScheduledTeamChangeTest extends TestCase
 
         $this->daysOff($project, $ana, $this->day(6), $this->day(12))
             ->assertStatus(422)
-            ->assertJsonPath('error', $this->label(6).' is not a scheduled day on Warehouse Fit-out. Choose one of its scheduled days.');
+            ->assertJsonPath('error', $this->label(6).' is not a scheduled day on Warehouse Fit-out.');
 
         $this->daysOff($project, $ana, $this->day(3), $this->day(7))
             ->assertStatus(422)
-            ->assertJsonPath('error', $this->label(7).' is not a scheduled day on Warehouse Fit-out. Choose one of its scheduled days.');
+            ->assertJsonPath('error', $this->label(7).' is not a scheduled day on Warehouse Fit-out.');
 
         $this->removeFrom($project, $ana, $this->day(31))->assertStatus(422);
 

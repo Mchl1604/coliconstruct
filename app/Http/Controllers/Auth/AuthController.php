@@ -52,7 +52,7 @@ class AuthController extends Controller
      * off and who to ask, which is everything the holder can act on and nothing
      * an attacker who does not already have the password could learn.
      */
-    public const DEACTIVATED_MESSAGE = 'Your account has been deactivated. Please contact an administrator for assistance.';
+    public const DEACTIVATED_MESSAGE = 'Account deactivated. Contact an administrator.';
 
     public function __construct(
         private readonly ActivityLogger $activityLogger,

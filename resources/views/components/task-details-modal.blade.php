@@ -147,8 +147,7 @@
                     @if ($holderRemoved)
                         <div class="alert alert-danger small py-2" role="alert">
                             <i class="bi bi-exclamation-triangle-fill me-1" aria-hidden="true"></i>
-                            {{ $task->technician->name }} was removed from this project. Assign this task
-                            to a technician on the team before saving.
+                            {{ $task->technician->name }} left the project. Reassign this task.
                         </div>
                     @endif
 
@@ -268,8 +267,7 @@
                                     ({{ $closer->roleLabel() }}) on behalf of
                                     <strong>{{ $task->technician?->name ?? 'the assigned technician' }}</strong>.
                                     @unless (filled($task->completion_notes) && $task->images->isNotEmpty())
-                                        The assigned technician did not submit completion details, so
-                                        they are not required here.
+                                        No completion details required.
                                     @endunless
                                 </div>
                             </div>
@@ -281,7 +279,7 @@
                                 <p class="mb-0">{{ $task->completion_notes }}</p>
                             @elseif ($closedOnBehalf)
                                 <p class="text-muted mb-0">
-                                    None submitted &mdash; the task was closed on the technician's behalf.
+                                    None submitted (closed by staff).
                                 </p>
                             @else
                                 <p class="text-muted mb-0">
@@ -319,8 +317,7 @@
                                      field reads as a page that forgot to draw something,
                                      where "not recorded" is a fact about the record. --}}
                                 <p class="text-muted mb-0">
-                                    Not recorded &mdash; this task was completed before the system
-                                    kept a completion date.
+                                    Not recorded.
                                 </p>
                             @endif
                         </div>
@@ -345,13 +342,13 @@
                             </div>
                         @elseif ($closedOnBehalf)
                             <p class="text-muted mb-0">
-                                None submitted &mdash; the task was closed on the technician's behalf.
+                                None submitted (closed by staff).
                             </p>
                         @else
                             <div class="alert alert-warning mb-0">
                                 <i class="bi bi-exclamation-circle me-2" aria-hidden="true"></i>
                                 <strong>No image available.</strong>
-                                This task was marked as completed without any uploaded completion images.
+                                No completion images.
                             </div>
                         @endif
                     </div>

@@ -50,14 +50,9 @@
                     <i class="bi bi-exclamation-circle-fill" aria-hidden="true"></i>
                     <div class="small mb-0">
                         @if ($isUpdate)
-                            We have updated our Terms and Conditions since you last agreed to them.
-                            Please read the current version below and accept it to carry on using
-                            your account. If you would rather not accept them now, you can log out
-                            and we will ask again next time you sign in.
+                            Please accept the updated terms to continue.
                         @else
-                            Please read the Terms and Conditions below and accept them to carry on
-                            using your account. If you would rather not accept them now, you can log
-                            out and we will ask again next time you sign in.
+                            Please accept the terms to continue.
                         @endif
                     </div>
                 </div>

@@ -147,7 +147,7 @@ class ProfileController extends Controller
                 // A new address is not applied until a code sent to it comes
                 // back, so the message must not claim the email has changed.
                 return $result['email_pending']
-                    ? 'Profile updated. Enter the code we sent to '.$user->pending_email.' to confirm your new email address.'
+                    ? 'Profile updated. Enter the code sent to '.$user->pending_email.'.'
                     : 'Profile updated.';
             },
             'Unable to update profile.'

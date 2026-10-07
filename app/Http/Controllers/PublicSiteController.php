@@ -11,6 +11,7 @@ use App\Services\EmailService;
 use App\Services\InquiryService;
 use App\Services\InquirySpamGuard;
 use App\Services\SystemContentService;
+use App\Services\TargetDateChange;
 use Illuminate\Http\Request;
 use RuntimeException;
 use Throwable;
@@ -128,7 +129,7 @@ class PublicSiteController extends Controller
 
             return back()
                 ->withInput()
-                ->with('error', 'Your message could not be sent just now. Please email or call us instead.');
+                ->with('error', 'Message not sent. Please email or call us.');
         }
 
         // Counted only now that a row exists. An enquiry this application
@@ -228,6 +229,8 @@ class PublicSiteController extends Controller
             // support never changes the project's status and never pauses the
             // seven days.
             'supportPhone' => $this->content->get('contact.phone'),
+            // The target date's history button appears once it has moved.
+            'targetDateChanged' => $record->targetDateHistory->contains(fn ($entry): bool => ! $entry->isInitial()),
             // The client's tracker, so it leads the page. Newest first, with
             // the most recently filed breaking a same-day tie - re-stated here
             // rather than trusting the order the relation arrived in.
@@ -319,6 +322,10 @@ class PublicSiteController extends Controller
             'start_date' => $start,
             'end_date' => $end,
             'date_range' => $this->cardDateRange($project),
+            'target_date' => $project->target_end_date
+                ? TargetDateChange::format($project->target_end_date)
+                : null,
+            'past_target_date' => $project->isPastTargetDate(),
             'lead_technician' => $this->clientProjects->leadTechnicianName($project),
             'technicians' => $project->projectTechnicians
                 // Deactivated and archived accounts are left out, as on the

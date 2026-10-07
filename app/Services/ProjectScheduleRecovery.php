@@ -321,7 +321,7 @@ class ProjectScheduleRecovery
 
         if ($schedule->isLocked()) {
             throw new RuntimeException(
-                'This schedule range has already ended. It is part of the project\'s history and cannot be changed.'
+                'This range has ended and is locked.'
             );
         }
 
@@ -439,11 +439,9 @@ class ProjectScheduleRecovery
                 'action_icon' => 'bi-play-circle',
                 'commit_url' => route('super-admin.projects.resume', $id),
                 'conflicts_url' => route('super-admin.projects.resume-conflicts', $id),
-                'blocked_summary' => 'This project\'s proposed schedule conflicts with the current availability '
-                    .'of its team. Review the affected schedule ranges before resuming the project.',
-                'clear_summary' => 'Every current and future schedule range is available. '
-                    .'This project can be resumed.',
-                'clear_note' => 'No conflicts remain - this project can be resumed.',
+                'blocked_summary' => 'Team unavailable for some dates.',
+                'clear_summary' => 'All dates are available.',
+                'clear_note' => 'No conflicts. Ready to resume.',
                 'blocked_note' => 'There are still schedule conflicts to resolve.',
                 'failure' => 'Unable to resume project. Nothing was changed.',
             ],
@@ -454,11 +452,9 @@ class ProjectScheduleRecovery
                 'action_icon' => 'bi-arrow-counterclockwise',
                 'commit_url' => route('super-admin.projects.restore', $id),
                 'conflicts_url' => route('super-admin.projects.restore-conflicts', $id),
-                'blocked_summary' => 'This project\'s schedule conflicts with the current availability of its '
-                    .'team. Review the affected schedule ranges before restoring the project.',
-                'clear_summary' => 'Every current and future schedule range is available. '
-                    .'This project can be restored.',
-                'clear_note' => 'No conflicts remain - this project can be restored.',
+                'blocked_summary' => 'Team unavailable for some dates.',
+                'clear_summary' => 'All dates are available.',
+                'clear_note' => 'No conflicts. Ready to restore.',
                 'blocked_note' => 'There are still schedule conflicts to resolve.',
                 'failure' => 'Unable to restore project. Nothing was changed.',
             ],
@@ -643,7 +639,7 @@ class ProjectScheduleRecovery
             ->all();
 
         return [
-            'summary' => 'This schedule conflicts with the current availability of one or more team members.',
+            'summary' => 'Some team members are unavailable.',
             'overlap_label' => $this->availability->describeDates($dates),
             'technicians' => $conflicts->pluck('technician_name')->unique()->values()->all(),
             'projects' => $conflicts
@@ -697,12 +693,12 @@ class ProjectScheduleRecovery
 
         [$opening, $closing] = $flow === self::FLOW_RESUME
             ? [
-                'Unable to resume - the days this project still holds are now booked elsewhere. ',
-                ' Reschedule that work or remove them from this team.',
+                'Unable to resume: dates booked elsewhere. ',
+                ' Reschedule or change the team.',
             ]
             : [
-                'Unable to restore - the dates this project still holds are now booked elsewhere. ',
-                ' Reschedule that work or remove them from this team, then restore it again.',
+                'Unable to restore: dates booked elsewhere. ',
+                ' Reschedule or change the team.',
             ];
 
         return $opening.$this->availability->conflictMessage($merged, $closing);

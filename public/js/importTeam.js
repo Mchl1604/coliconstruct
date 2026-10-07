@@ -141,7 +141,7 @@
 
             return (
                 '<div class="import-team-reasons">' +
-                "All technicians are not available for this project's future schedule." +
+                "No technicians are free for these dates." +
                 '</div>'
             );
         }
@@ -337,7 +337,7 @@
             if (!params) {
                 loadingEl.classList.add('d-none');
                 showError(
-                    'Set the schedule first so technicians can be checked.',
+                    'Set the schedule first.',
                 );
 
                 return;

@@ -15,7 +15,7 @@
     <div class="create-project-header">
         <div>
             <h4 class="fw-bold mb-1">Create New Project</h4>
-            <p class="text-secondary small mb-0">Fill all the necessary details to create a new project.
+            <p class="text-secondary small mb-0">Fill in the project details.
             </p>
         </div>
         <div class="create-project-step-counter text-secondary small">
@@ -160,8 +160,7 @@
                 <section class="wizard-step" data-wizard-step="2" hidden>
                     <div class="wizard-step-header">
                         <h5 class="mb-1">Project Details</h5>
-                        <p class="text-secondary small mb-0">Choose the project scope, attach the files, and add the
-                            address.</p>
+                        <p class="text-secondary small mb-0">Scope, files and address.</p>
                     </div>
 
                     <div class="row g-3">
@@ -190,6 +189,15 @@
                                 <input type="hidden" name="quotation_amount" value="{{ old('quotation_amount') }}"
                                     data-money-value>
                             </div>
+                        </div>
+
+                        {{-- The promised finish, not a booking. Checked against
+                             the schedule's last day once Step 3 is filled in. --}}
+                        <div class="col-md-6">
+                            <label for="targetEndDate" class="form-label">Target Completion Date</label>
+                            <input type="date" name="target_end_date" id="targetEndDate" class="form-control"
+                                min="{{ \App\Models\Schedule::businessToday()->toDateString() }}"
+                                value="{{ old('target_end_date') }}" data-summary-input="target_end_date" required>
                         </div>
 
                         <div class="col-12">
@@ -231,7 +239,7 @@
                                         <i class="bi bi-clipboard2-pulse" aria-hidden="true"></i>
                                         <div>
                                             <strong>Assessment Report</strong>
-                                            <p>{{ \App\Models\Document::ALLOWED_LABEL }}. You may select more than one.</p>
+                                            <p>{{ \App\Models\Document::ALLOWED_LABEL }}. Multiple files allowed.</p>
                                         </div>
                                     </div>
                                     <input type="file" name="assessment_report[]" class="form-control"
@@ -244,7 +252,7 @@
                                         <i class="bi bi-file-earmark-check" aria-hidden="true"></i>
                                         <div>
                                             <strong>Approved Quotation</strong>
-                                            <p>{{ \App\Models\Document::ALLOWED_LABEL }}. You may select more than one.</p>
+                                            <p>{{ \App\Models\Document::ALLOWED_LABEL }}. Multiple files allowed.</p>
                                         </div>
                                     </div>
                                     <input type="file" name="approved_quotation[]" class="form-control"
@@ -257,7 +265,7 @@
                                         <i class="bi bi-file-earmark-text" aria-hidden="true"></i>
                                         <div>
                                             <strong>Contract</strong>
-                                            <p>{{ \App\Models\Document::ALLOWED_LABEL }}. You may select more than one.</p>
+                                            <p>{{ \App\Models\Document::ALLOWED_LABEL }}. Multiple files allowed.</p>
                                         </div>
                                     </div>
                                     <input type="file" name="contract[]" class="form-control"
@@ -286,14 +294,12 @@
                          changes, only what it tells you it is asking for. --}}
                     <div class="wizard-step-header">
                         <h5 class="mb-1">Input Project Initial Schedule</h5>
-                        <p class="text-secondary small mb-2">Assign the lead tech, choose the technicians, then set the
-                            dates.</p>
+                        <p class="text-secondary small mb-2">Team and dates.</p>
 
                         <p class="wizard-step-note mb-0">
                             <i class="bi bi-info-circle" aria-hidden="true"></i>
                             <span>
-                                This is the initial schedule for the project.
-                                More schedule dates can be added later.
+                                Initial schedule only. Add more later.
                             </span>
                         </p>
                     </div>
@@ -351,10 +357,7 @@
                                     Import Team
                                 </button>
                             </div>
-                            <div class="form-text mb-2" data-import-team-hint>
-                                Copy a team from another project. Once you set the schedule below, anyone who is
-                                already booked over those dates is flagged here.
-                            </div>
+                            <div class="form-text mb-2 d-none" data-import-team-hint></div>
 
                             <div class="technician-picker" data-technician-picker>
                                 <div class="dropdown w-100">
@@ -406,7 +409,7 @@
                                             aria-hidden="true"></i></span>
                                     <span>
                                         <strong>Date-Based</strong>
-                                        <small>Books the whole of every day in the range</small>
+                                        <small>Books full days</small>
                                     </span>
                                 </label>
 
@@ -440,7 +443,7 @@
                             <label for="projectDate" class="form-label">Project Date</label>
                             <input type="date" name="project_date" id="projectDate" class="form-control"
                                 data-summary-input="project_date" data-schedule-date-input value="{{ old('project_date') }}" disabled required>
-                            <div class="form-text">Only dates where everyone has a free slot can be picked.</div>
+                            <div class="form-text">Only shared free dates can be picked.</div>
                         </div>
 
                         <div class="col-md-4" data-partial-day-field hidden>
@@ -528,6 +531,11 @@
                                 <div class="review-item">
                                     <span class="review-item-label">Quotation Amount</span>
                                     <span class="review-item-value" data-summary-target="quotation_amount">Not filled
+                                        yet</span>
+                                </div>
+                                <div class="review-item">
+                                    <span class="review-item-label">Target Completion Date</span>
+                                    <span class="review-item-value" data-summary-target="target_end_date">Not filled
                                         yet</span>
                                 </div>
                                 <div class="review-item">

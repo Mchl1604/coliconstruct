@@ -284,7 +284,7 @@ class TaskScheduleRules
             }
 
             if ($ranges === []) {
-                $message = 'This project has no scheduled dates, so a task cannot be given any.';
+                $message = 'No scheduled dates to choose from.';
 
                 $validator->errors()->add('start_date', $message);
                 $validator->errors()->add('due_date', $message);

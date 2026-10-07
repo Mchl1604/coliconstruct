@@ -172,7 +172,7 @@
                     @else
                         <div class="public-image-placeholder h-100">
                             <i class="bi bi-map fs-3" aria-hidden="true"></i>
-                            <span>A map appears here once its embed link is set.</span>
+                            <span>Map not set yet.</span>
                         </div>
                     @endif
                 </div>

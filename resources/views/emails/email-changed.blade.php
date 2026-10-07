@@ -12,8 +12,7 @@
     <p style="margin:0 0 16px 0;">Hello {{ $account->fullName() }},</p>
 
     <p style="margin:0 0 16px 0;">
-        The email address on your {{ $company['name'] }} account has been changed and confirmed. You will sign in
-        with the new address from now on, and this mailbox will stop receiving notifications about the account.
+        Sign in with your new address from now on.
     </p>
 
     <x-mail-details :rows="[
@@ -24,7 +23,6 @@
     ]" />
 
     <p style="margin:0; color:#b02a37; font-size:13px;">
-        <strong>If you did not make this change</strong>, contact your administrator immediately - somebody else
-        may have access to your account.
+        <strong>Not you?</strong> Contact your administrator now.
     </p>
 @endsection

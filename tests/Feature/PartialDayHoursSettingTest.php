@@ -186,7 +186,7 @@ class PartialDayHoursSettingTest extends TestCase
             Schedule::SETTING_PARTIAL_DAY_END => '09:00',
         ])
             ->assertStatus(422)
-            ->assertJsonPath('error', 'The partial day end hour must be later than the start hour.');
+            ->assertJsonPath('error', 'End must be after start.');
 
         $this->assertNull(SystemContent::query()
             ->where('content_key', Schedule::SETTING_PARTIAL_DAY_START)
@@ -202,7 +202,7 @@ class PartialDayHoursSettingTest extends TestCase
             Schedule::SETTING_PARTIAL_DAY_END => '10:00',
         ])
             ->assertStatus(422)
-            ->assertJsonPath('error', 'The partial day end hour must be later than the start hour.');
+            ->assertJsonPath('error', 'End must be after start.');
 
         $this->assertNull(SystemContent::query()
             ->where('content_key', Schedule::SETTING_PARTIAL_DAY_END)

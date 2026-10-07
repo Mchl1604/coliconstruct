@@ -15,7 +15,7 @@
         <div>
             <h4 class="fw-bold mb-1">Reports</h4>
             <p class="text-secondary small mb-0">
-                Reports you submitted. To read every report on a project, whoever filed it, open the project.
+                Reports you submitted.
             </p>
         </div>
 
@@ -42,8 +42,7 @@
     @if ($reportableProjects->isEmpty())
         <div class="alert alert-info">
             <i class="bi bi-info-circle me-1" aria-hidden="true"></i>
-            None of your projects can receive a report right now. Reports can only be submitted on
-            a project's scheduled days, and completed, cancelled and archived projects are closed records.
+            No projects open for reports today.
         </div>
     @endif
 
@@ -266,8 +265,7 @@
                     Archive <strong data-archive-report-label></strong>?
 
                     <p class="text-secondary small mb-0 mt-2">
-                        It comes off this list and off its project's report list. The report, its images and
-                        its attachments are kept, and it can be restored from View Archived Reports.
+                        It can be restored later.
                     </p>
 
                     <div class="alert alert-danger mt-3 mb-0 d-none" role="alert" data-archive-report-error></div>

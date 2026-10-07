@@ -36,8 +36,7 @@
                     Project Phases
                 </h4>
                 <p class="text-secondary small mb-0">
-                    The stages this project is monitored through. The structure was locked when it
-                    was finalized.
+                    Locked project stages.
                 </p>
             </div>
 
@@ -72,7 +71,7 @@
             <div class="alert alert-warning small d-flex gap-2 align-items-start py-2">
                 <i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i>
                 <div>
-                    <strong>This phase structure was changed after it was finalized.</strong>
+                    <strong>Changed after finalizing.</strong>
                     Overridden by
                     {{ $project->phaseStructureOverriddenByUser?->fullName() ?? 'a Super Admin' }}
                     on
@@ -177,11 +176,9 @@
                                 <p class="project-phase-blocked mb-0">
                                     <i class="bi bi-exclamation-circle me-1" aria-hidden="true"></i>
                                     @if ($row['totalTasks'] === 0)
-                                        This phase has no tasks yet, so there is nothing to complete.
+                                        No tasks to complete yet.
                                     @else
-                                        This phase cannot be completed because {{ $row['openTasks'] }}
-                                        {{ \Illuminate\Support\Str::plural('task', $row['openTasks']) }}
-                                        {{ $row['openTasks'] === 1 ? 'is' : 'are' }} still incomplete.
+                                        {{ $row['openTasks'] }} {{ \Illuminate\Support\Str::plural('task', $row['openTasks']) }} still open.
                                     @endif
                                 </p>
 
@@ -222,10 +219,7 @@
                                          phase and in the activity log with the
                                          name of whoever took it. --}}
                                     <p class="mb-0">
-                                        Completing {{ $phase->label() }} now leaves
-                                        {{ $row['openTasks'] }}
-                                        {{ \Illuminate\Support\Str::plural('task', $row['openTasks']) }}
-                                        open and moves the project on to the next phase.
+                                        Leaves {{ $row['openTasks'] }} {{ \Illuminate\Support\Str::plural('task', $row['openTasks']) }} open and moves to the next phase.
                                     </p>
 
                                     <input type="hidden" name="override" value="1">
@@ -271,10 +265,7 @@
                          the sentence that matters, so it names the count this
                          project's progress is currently measured against. --}}
                     <p class="mb-0">
-                        Unlocking sends this project back to phase setup and stops it accepting new
-                        tasks until you finalize it again, and changing its {{ $summary['total'] }}
-                        {{ \Illuminate\Support\Str::plural('phase', $summary['total']) }} changes what
-                        every progress figure on it is measured against.
+                        New tasks are blocked until you finalize again.
                     </p>
                 </div>
 

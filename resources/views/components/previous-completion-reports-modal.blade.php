@@ -32,8 +32,7 @@
             <div class="modal-body">
                 <div class="alert alert-secondary border-0 small" role="alert">
                     <i class="bi bi-info-circle me-1" aria-hidden="true"></i>
-                    These reports are historical. Each one was superseded when the project was reopened,
-                    and none of them is this project's current completion report.
+                    Past reports, replaced when reopened.
                 </div>
 
                 @foreach ($reports as $previousReport)

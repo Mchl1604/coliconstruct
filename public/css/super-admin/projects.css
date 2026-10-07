@@ -147,6 +147,26 @@
     box-shadow: inset 4px 0 0 0 #1a9e52;
 }
 
+/* ---- A project nobody has opened yet ----
+   Cleared the first time its details page is opened. Blue, so it reads as
+   news rather than as the green of work on site today. */
+
+.project-new-flag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    margin-top: 0.2rem;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    color: #0b4fa8;
+    background: #dbe9ff;
+    border-radius: 999px;
+    padding: 0.1rem 0.5rem;
+    white-space: nowrap;
+    cursor: help;
+}
+
 .project-active-today-flag {
     display: inline-flex;
     align-items: center;

@@ -1473,7 +1473,7 @@ document.addEventListener("DOMContentLoaded", function () {
             if (historicalHint) {
                 historicalHint.textContent =
                     problem ||
-                    "Everyone named here is recorded as having worked these dates.";
+                    "";
                 historicalHint.classList.toggle("is-blocking", problem !== "");
             }
 
@@ -1879,7 +1879,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 historicalWarning.textContent = overrides.length
                     ? "Also changing ranges that have already ended: " +
                       overrides.join("; ") +
-                      ". This is recorded against your account."
+                      "."
                     : "";
             }
 
@@ -2146,8 +2146,7 @@ document.addEventListener("DOMContentLoaded", function () {
                                 answer.summary +
                                 ".",
                             detail:
-                                "Their start and due dates will be cleared and they will need new dates. " +
-                                "Completed tasks are never changed.",
+                                "Their dates will be cleared.",
                             label: "Save and Clear Dates",
                         })
                         .then(function (confirmed) {
@@ -2390,8 +2389,7 @@ document.addEventListener("DOMContentLoaded", function () {
                                 overrides.join("; ") +
                                 ".",
                             detail:
-                                "Changing them alters the record of completed work, " +
-                                "and is logged against your account.",
+                                "This changes the work record.",
                             label: "Change the Record",
                         })
                         .then(function (confirmed) {
@@ -2714,8 +2712,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
             if (modeHint) {
                 modeHint.textContent = partialDay
-                    ? "Books set hours on the clicked date. Residential projects only."
-                    : "Books the whole of every day in the range.";
+                    ? "Set hours. Residential only."
+                    : "Books full days.";
             }
 
             if (dateInput) {
@@ -3493,8 +3491,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
             if (modeHint) {
                 modeHint.textContent = partialDay
-                    ? "Books set hours on one date, leaving the rest of that day free."
-                    : "Books the whole of every day in the range.";
+                    ? "Books set hours on one date."
+                    : "Books full days.";
             }
         }
 

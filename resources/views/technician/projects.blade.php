@@ -99,8 +99,8 @@
                                     @if ($needsRecrew)
                                         <span class="project-recrew-flag"
                                             title="{{ $project->hasLead()
-                                                ? $project->inactiveCrewNames().' can no longer sign in. Open the project to move their tasks, and ask an administrator to update the team.'
-                                                : 'This project has no lead technician. Ask an administrator to assign one.' }}">
+                                                ? $project->inactiveCrewNames().' cannot sign in. Move their tasks.'
+                                                : 'No lead technician assigned.' }}">
                                             <i class="bi bi-person-exclamation" aria-hidden="true"></i>
                                             {{ $project->recrewFlagLabel() }}
                                         </span>
@@ -191,7 +191,7 @@
 
                     <div class="d-none" data-complete-project-ready>
                         <p class="mb-3">
-                            All tasks are complete. Marking it complete makes the project view only.
+                            This makes the project view only.
                         </p>
 
                         @include('technician.partials.completion-fields', ['suffix' => 'List'])

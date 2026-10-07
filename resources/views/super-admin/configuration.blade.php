@@ -74,7 +74,7 @@
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
                 <div>
                     <h5 class="fw-bold mb-0">User Management</h5>
-                    <span class="text-secondary small">Every employee and Registered User account in the system.</span>
+                    <span class="text-secondary small">All employee and client accounts.</span>
                 </div>
 
                 <div class="d-flex flex-wrap gap-2">
@@ -227,9 +227,9 @@
                 <div>
                     <h5 class="fw-bold mb-0">Activity Logs</h5>
                     <span class="text-secondary small">
-                        Every recorded action across the system, newest first.
+                        All actions, newest first.
                         @if (! auth()->user()?->isSuperAdmin())
-                            Entries by a Super Admin or another Admin are not shown.
+                            Admin entries hidden.
                         @endif
                     </span>
                 </div>
@@ -720,7 +720,7 @@
                                     </div>
 
                                     <div class="schedule-empty-state mt-2 d-none" data-project-type-empty>
-                                        No project types yet. Add the first one above.
+                                        No project types yet.
                                     </div>
 
                                     <div class="alert alert-danger mt-3 mb-0 d-none" role="alert" data-project-type-error></div>
@@ -762,7 +762,7 @@
                                             Default Phases &amp; Tasks
                                         </h5>
                                         <p class="text-secondary small mb-0">
-                                            What each kind of job starts with when a new project is set up.
+                                            Default phases per project type.
                                         </p>
                                     </div>
                                 </div>
@@ -785,7 +785,7 @@
                                             <div>
                                                 <h6 class="mb-0">Phase Stages</h6>
                                                 <p class="phase-step-sub mb-0">
-                                                    Shared by every project type, in the order jobs run.
+                                                    Shared stages, in order.
                                                 </p>
                                             </div>
                                         </div>
@@ -847,8 +847,7 @@
                                             <div>
                                                 <h6 class="mb-0">Default work per project type</h6>
                                                 <p class="phase-step-sub mb-0">
-                                                    Pick a type, tick the stages its work goes through, then list
-                                                    what it starts with.
+                                                    Pick a type, then its stages and tasks.
                                                 </p>
                                             </div>
                                         </div>
@@ -864,7 +863,7 @@
 
                                         <div class="phase-empty-state d-none" data-phase-template-empty>
                                             <i class="bi bi-layers" aria-hidden="true"></i>
-                                            <p class="mb-0">Add a phase stage in step 1 before writing a template.</p>
+                                            <p class="mb-0">Add a stage first.</p>
                                         </div>
 
                                         {{-- Unlike step 1, nothing here is written until this bar is used.
@@ -925,7 +924,7 @@
                                     System Contents
                                 </h5>
                                 <p class="text-secondary small mb-0">
-                                    Everything the public website shows. Saved changes go live immediately.
+                                    Public website content. Changes go live.
                                 </p>
                             </div>
 
@@ -1078,7 +1077,7 @@
                                         data-account-type>
                                     <i class="bi bi-person-check" aria-hidden="true"></i>
                                     <strong>Registered User</strong>
-                                    <span>A public website account for a company or homeowner</span>
+                                    <span>Client website account</span>
                                 </label>
                             </div>
                         </div>
@@ -1154,7 +1153,7 @@
                                     <input type="email" id="userEmail" class="form-control" name="email"
                                         maxlength="255" autocomplete="off">
                                     <div class="form-text d-none" data-email-locked-note>
-                                        This is the Registered User's sign-in address.
+                                        Locked: used to sign in.
                                     </div>
                                 </div>
                             </div>
@@ -1182,7 +1181,7 @@
                                                 <option value="{{ $value }}">{{ $label }}</option>
                                             @endforeach
                                         </select>
-                                        <div class="form-text">Sets what this account may do across the system.</div>
+                                        <div class="form-text">Controls account access.</div>
                                     </div>
                                 </div>
 
@@ -1248,11 +1247,10 @@
                                         </button>
                                     </div>
                                     <div class="form-text">
-                                        A new password is required at first sign-in.
                                         @if ($mailEnabled)
-                                            A copy is emailed to them automatically.
+                                            Emailed; must change at first sign-in.
                                         @else
-                                            Email delivery is not configured, so hand this over directly.
+                                            Email is off; share it directly.
                                         @endif
                                     </div>
 
@@ -1353,7 +1351,7 @@
                         <div>
                             <h5 class="modal-title" id="archivedAccountsModalLabel">Archived Accounts</h5>
                             <p class="text-secondary small mb-0">
-                                Nothing was deleted. Restoring brings an account back as it was.
+                                Nothing was deleted.
                             </p>
                         </div>
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -1619,7 +1617,7 @@
                                 </label>
                                 <textarea class="form-control" id="inquiryReplyMessage" rows="6"
                                     maxlength="{{ \App\Models\Inquiry::MAX_REPLY }}"
-                                    placeholder="Write the reply that will be emailed to them&hellip;"
+                                    placeholder="Write your reply&hellip;"
                                     data-inquiry-reply-message></textarea>
                             </div>
 
@@ -1635,7 +1633,7 @@
                              back on the active list. --}}
                         <div class="alert alert-secondary mt-4 mb-0 d-none" data-inquiry-archived-note>
                             <i class="bi bi-archive me-1" aria-hidden="true"></i>
-                            This inquiry is archived. Restore it to change its status or reply.
+                            Archived. Restore to reply.
                         </div>
                     </div>
 
@@ -1666,7 +1664,7 @@
                         <div>
                             <h5 class="modal-title" id="archivedInquiriesModalLabel">Archived Inquiries</h5>
                             <p class="text-secondary small mb-0">
-                                Nothing was deleted. Restoring puts an inquiry back on the active list.
+                                Nothing was deleted.
                             </p>
                         </div>
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>

@@ -74,6 +74,7 @@ class PartialDayScheduleTest extends TestCase
             'assessment_report' => [UploadedFile::fake()->create('assessment.pdf', 12, 'application/pdf')],
             'approved_quotation' => [UploadedFile::fake()->create('quotation.jpg', 12, 'image/jpeg')],
             'project_description' => 'Test project description',
+            'target_end_date' => $this->day(60),
             'lead_tech' => $lead->technician_id,
             'technicians' => [$technician->technician_id],
         ];
@@ -848,7 +849,7 @@ class PartialDayScheduleTest extends TestCase
         ]);
 
         $response->assertSessionHas('error');
-        $this->assertStringContainsString('covers more than one day', session('error'));
+        $this->assertStringContainsString('spans several days', session('error'));
 
         $schedule = $schedule->fresh();
 
@@ -1186,7 +1187,7 @@ class PartialDayScheduleTest extends TestCase
             ->firstWhere('project_id', $commercial->project_id);
 
         $this->assertNotNull($blocked);
-        $this->assertStringContainsString('Residential projects only', $blocked['reason']);
+        $this->assertStringContainsString('Residential only', $blocked['reason']);
     }
 
     /**
@@ -1275,7 +1276,7 @@ class PartialDayScheduleTest extends TestCase
         ]);
 
         $response->assertStatus(422);
-        $this->assertStringContainsString('Residential projects only', $response->json('error'));
+        $this->assertStringContainsString('Residential only', $response->json('error'));
 
         // The whole batch rolls back, so the Residential one is unbooked too.
         $this->assertSame(0, Schedule::query()->count());

@@ -190,7 +190,7 @@
             <tr>
                 <td style="width: 40%;">{{ $company['name'] }}</td>
                 <td style="width: 35%; text-align: center;">
-                    Entries are shown only where the account exporting them may read them.
+                    Filtered by your access.
                 </td>
                 <td style="width: 25%; text-align: right;">
                     Page <span class="page-number"></span>
@@ -203,10 +203,8 @@
 
         @if ($matched > $rows->count())
             <div class="truncation-notice">
-                <strong>This document is not the whole match.</strong>
-                {{ number_format($matched) }} entries matched these filters and the
-                {{ number_format($limit) }} most recent are printed here. Narrow the date
-                range or choose a user to export the rest.
+                <strong>Partial export:</strong>
+                latest {{ number_format($limit) }} of {{ number_format($matched) }} entries.
             </div>
         @endif
 

@@ -58,7 +58,7 @@
                                 <div class="d-flex flex-wrap gap-2">
                                     <form method="POST"
                                         action="{{ route('public.projects.confirm', $project->project_id) }}"
-                                        onsubmit="return confirm('Confirm that the work on this project is complete? This closes the project and cannot be undone.');">
+                                        onsubmit="return confirm('Confirm completion? This cannot be undone.');">
                                         @csrf
                                         <button type="submit" class="btn btn-success px-4">
                                             <i class="bi bi-check-lg me-1" aria-hidden="true"></i>
@@ -81,12 +81,10 @@
                                 </div>
 
                                 <p class="text-secondary small mb-0 mt-3">
-                                    Something not right? Contact us instead of confirming and we will put it right.
+                                    Something wrong? Contact us first.
                                     @if ($supportPhone)
-                                        You can also call <strong>{{ $supportPhone }}</strong>.
+                                        Call <strong>{{ $supportPhone }}</strong>.
                                     @endif
-                                    Getting in touch does not pause the
-                                    {{ \App\Models\Project::completionConfirmationDays() }} day confirmation period.
                                 </p>
                             </div>
                         </div>
@@ -356,6 +354,25 @@
                                     <li class="text-muted">No schedule set yet.</li>
                                 @endforelse
                             </ul>
+
+                            @if ($project->target_end_date)
+                                <div class="d-flex flex-wrap align-items-center gap-2 mt-3" data-target-date>
+                                    <span class="fw-semibold">Target Completion:</span>
+                                    <span>{{ \App\Services\TargetDateChange::format($project->target_end_date) }}</span>
+
+                                    @if ($project->isPastTargetDate())
+                                        <span class="badge text-bg-danger" data-target-date-overdue>Overdue</span>
+                                    @endif
+
+                                    @if ($targetDateChanged)
+                                        <button type="button" class="btn btn-sm btn-outline-secondary target-date-history-icon"
+                                            data-bs-toggle="modal" data-bs-target="#targetDateHistoryModal"
+                                            title="View target date history" aria-label="View target date history">
+                                            <i class="bi bi-clock-history" aria-hidden="true"></i>
+                                        </button>
+                                    @endif
+                                </div>
+                            @endif
                         </div>
                     </div>
                 </div>
@@ -390,7 +407,7 @@
                             <div>
                                 <h3 class="h6 fw-bold mb-0">Technician Reports</h3>
                                 <p class="text-secondary small mb-0">
-                                    Updates filed from site by the technicians working on your project.
+                                    Updates from your technicians.
                                 </p>
                             </div>
                         </div>
@@ -436,8 +453,7 @@
                         @empty
                             <div class="client-tracker-empty">
                                 <i class="bi bi-clipboard fs-3 d-block mb-2" aria-hidden="true"></i>
-                                No reports yet. Updates appear here as
-                                work progresses.
+                                No reports yet.
                             </div>
                         @endforelse
                     </div>
@@ -471,4 +487,9 @@
 
         </div>
     </section>
+
+    {{-- The change, its date and its reason - never who on the staff made it. --}}
+    @if ($targetDateChanged)
+        <x-target-date-history-modal :project="$project" :show-actor="false" />
+    @endif
 @endsection

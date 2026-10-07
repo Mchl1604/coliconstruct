@@ -333,7 +333,7 @@ class RecoveryPartialDayTest extends TestCase
             'end_time' => '12:00',
         ])
             ->assertStatus(422)
-            ->assertJsonPath('error', 'Partial Day scheduling is for Residential projects only.');
+            ->assertJsonPath('error', 'Partial Day is Residential only.');
 
         // And nothing was written on the way to saying so.
         $clashing->refresh();
@@ -927,7 +927,7 @@ class RecoveryPartialDayTest extends TestCase
         $response = $this->get(route('super-admin.projects.show', $project->project_id))->assertOk();
 
         $response->assertSee('reopenStartTime', false);
-        $response->assertSee('Partial Day books only these hours on the one date, between', false);
+        $response->assertSee('Hours between', false);
         $response->assertSee('7:00 AM', false);
         $response->assertSee('3:00 PM', false);
         // Neither bound of the old window is offered any more.

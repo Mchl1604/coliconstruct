@@ -206,7 +206,7 @@ class PhaseSetupTaskRules
         }
 
         if ($ranges === []) {
-            $errors['start_date'] = 'This project has no schedule yet, so its tasks cannot be given dates.';
+            $errors['start_date'] = 'No schedule yet, so tasks cannot have dates.';
 
             return $errors;
         }

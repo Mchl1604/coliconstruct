@@ -67,9 +67,6 @@
                         <label class="form-label fw-semibold" for="createTaskPhase">Phase</label>
                         <select class="form-select" id="createTaskPhase" name="phase_id"
                             data-task-create-phase required></select>
-                        <div class="form-text">
-                            Which stage of the project this work belongs to.
-                        </div>
                     </div>
 
                     <div class="mb-3">

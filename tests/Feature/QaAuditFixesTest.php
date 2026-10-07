@@ -235,7 +235,7 @@ class QaAuditFixesTest extends TestCase
         $this->actingAs($admin);
 
         $this->put(route('super-admin.schedules.update', $project->project_id), ['ranges' => []])
-            ->assertSessionHas('error', fn (string $message): bool => str_contains($message, 'already under way'));
+            ->assertSessionHas('error', fn (string $message): bool => str_contains($message, 'has started'));
 
         $this->assertSame(1, $project->schedules()->count());
     }
@@ -342,7 +342,7 @@ class QaAuditFixesTest extends TestCase
         $project->update(['address' => 'Their change']);
 
         $this->put(route('super-admin.projects.update', $project->project_id), $stale)
-            ->assertSessionHas('error', fn (string $message): bool => str_contains($message, 'Someone else changed this project'));
+            ->assertSessionHas('error', fn (string $message): bool => str_contains($message, 'someone else just edited this project'));
 
         $this->assertSame('Their change', $project->fresh()->address);
     }
@@ -413,6 +413,6 @@ class QaAuditFixesTest extends TestCase
         ])
             ->assertOk()
             ->assertJsonPath('affected_tasks.0', fn (string $label): bool => str_contains($label, 'Leak test'))
-            ->assertJsonPath('message', fn (string $message): bool => str_contains($message, 'Technician Not Assigned for Dates'));
+            ->assertJsonPath('message', fn (string $message): bool => str_contains($message, 'flagged on the task board'));
     }
 }

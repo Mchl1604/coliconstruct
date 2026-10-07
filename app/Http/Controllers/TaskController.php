@@ -155,7 +155,7 @@ class TaskController extends Controller
         // booked day, and a hold has released every day still to come.
         if ($project->on_hold) {
             return response()->json([
-                'error' => 'This project is on hold. Resume it before adding tasks.',
+                'error' => 'On hold. Resume it first.',
             ], 422);
         }
 
@@ -170,7 +170,7 @@ class TaskController extends Controller
 
         if ($ranges === []) {
             return response()->json([
-                'error' => 'This project has no schedule yet. Set a schedule before adding tasks.',
+                'error' => 'Set a schedule before adding tasks.',
             ], 422);
         }
 
@@ -249,7 +249,7 @@ class TaskController extends Controller
         if ($project->on_hold) {
             return redirect()
                 ->back()
-                ->with('error', 'This project is on hold. Resume it before adding tasks.');
+                ->with('error', 'On hold. Resume it first.');
         }
 
         if ($blocked = $this->phaseRules->blockReason($project)) {
@@ -261,7 +261,7 @@ class TaskController extends Controller
         if ($ranges === []) {
             return redirect()
                 ->back()
-                ->with('error', 'This project has no schedule yet. Set a schedule before adding tasks.');
+                ->with('error', 'Set a schedule before adding tasks.');
         }
 
         $validator = Validator::make($request->all(), [
@@ -356,7 +356,7 @@ class TaskController extends Controller
         // editing them while nobody is working is a change that belongs after
         // the resume.
         if ($project->on_hold) {
-            return back()->with('error', 'This project is on hold. Resume it before editing its tasks.');
+            return back()->with('error', 'On hold. Resume it first.');
         }
 
         if ($task->status == 'completed') {
@@ -463,7 +463,7 @@ class TaskController extends Controller
         // editing them while nobody is working is a change that belongs after
         // the resume.
         if ($project->on_hold) {
-            return back()->with('error', 'This project is on hold. Resume it before editing its tasks.');
+            return back()->with('error', 'On hold. Resume it first.');
         }
 
         if ($task->status === 'completed') {
@@ -547,7 +547,7 @@ class TaskController extends Controller
         // editing them while nobody is working is a change that belongs after
         // the resume.
         if ($project->on_hold) {
-            return back()->with('error', 'This project is on hold. Resume it before editing its tasks.');
+            return back()->with('error', 'On hold. Resume it first.');
         }
 
         DB::beginTransaction();

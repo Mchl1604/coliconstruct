@@ -25,8 +25,7 @@
     ])" />
 
     <p style="margin:0; color:#63748a; font-size:13px;">
-        Sign in and open <em>My Projects</em> to see the full history of this project. If you do not have an
-        account yet, register with this email address and the project will appear automatically.
+        Sign in or register with this email to view it.
     </p>
 @endsection
 

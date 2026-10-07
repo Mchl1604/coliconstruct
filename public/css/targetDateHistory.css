@@ -1,0 +1,83 @@
+/* ---- Target Date History dialog ----
+ *
+ * Drawn on both the staff project page and the client's, so it carries its
+ * own copy of the history dialog look rather than relying on
+ * super-admin/projectDetails.css, which the client page does not load. The
+ * values match the Quotation and file history dialogs exactly.
+ */
+
+.target-date-history-current {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    margin-bottom: 1rem;
+}
+
+.target-date-history-eyebrow {
+    display: block;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #94a3b8;
+}
+
+.target-date-history-heading {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #64748b;
+    margin: 0.35rem 0 0.6rem;
+}
+
+.target-date-history-table th {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #64748b;
+}
+
+.target-date-history-reason {
+    max-width: 18rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+/* Set and Changed - the same pill, and the same green and amber, the file
+   history uses for Uploaded and Replaced. */
+.target-date-history-badge {
+    display: inline-block;
+    padding: 0.15rem 0.55rem;
+    border-radius: 999px;
+    border: 1px solid;
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+.target-date-history-badge.is-set {
+    color: #146c43;
+    border-color: #a3cfbb;
+    background: #e8f5ee;
+}
+
+.target-date-history-badge.is-changed {
+    color: #8a5a00;
+    border-color: #f2d58a;
+    background: #fff7e0;
+}
+
+/* The icon-only button beside the date, sized as the other history buttons. */
+.target-date-history-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.9rem;
+    height: 1.9rem;
+    padding: 0;
+    line-height: 1;
+}

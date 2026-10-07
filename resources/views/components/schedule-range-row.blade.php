@@ -161,12 +161,12 @@
     @if ($isReadOnly)
         <p class="schedule-range-locked-note">
             <i class="bi bi-info-circle" aria-hidden="true"></i>
-            This date range has already ended. Super Admin access is required to make changes.
+            Ended. Super Admin only.
         </p>
     @elseif ($startFrozen && $schedule)
         <p class="schedule-range-locked-note">
             <i class="bi bi-info-circle" aria-hidden="true"></i>
-            This schedule is under way. Its start date is fixed; the end date can still be moved.
+            Under way: only the end date can change.
         </p>
     @endif
 
@@ -178,8 +178,7 @@
                 {{ \App\Models\Schedule::hourLabel((int) explode(':', $startTime)[0]) }} to
                 {{ \App\Models\Schedule::hourLabel((int) explode(':', $endTime)[0]) }}, outside the
                 {{ $partialDayWindow['start_label'] }} to {{ $partialDayWindow['end_label'] }}
-                partial-day hours. It was booked before those hours were set and has not been
-                changed - pick times inside them to bring it back in, or leave it as it is.
+                partial-day hours.
             </span>
         </p>
     @endif

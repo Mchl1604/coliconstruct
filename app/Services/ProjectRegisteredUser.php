@@ -287,7 +287,7 @@ class ProjectRegisteredUser
         }
 
         if ($account->isArchivedAccount()) {
-            throw new RuntimeException('That account is archived. Restore it before assigning it to a project.');
+            throw new RuntimeException('That account is archived. Restore it first.');
         }
     }
 

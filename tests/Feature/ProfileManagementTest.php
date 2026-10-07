@@ -479,7 +479,7 @@ class ProfileManagementTest extends TestCase
                 'email' => 'tech@example.test',
             ])
             ->assertSessionHasErrors(
-                ['contact_number' => 'Enter an 11-digit contact number, digits only (e.g. 09171234567).'],
+                ['contact_number' => 'Enter 11 digits, e.g. 09171234567.'],
                 null,
                 'information'
             );

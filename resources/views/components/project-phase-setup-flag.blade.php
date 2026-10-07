@@ -17,7 +17,7 @@
 --}}
 @if ($project->needsPhaseSetup())
     <span {{ $attributes->merge(['class' => 'project-phase-setup-flag']) }}
-        title="This project has not been configured with its project phases, so it cannot take tasks yet.">
+        title="Set up phases to add tasks.">
         <i class="bi bi-diagram-3" aria-hidden="true"></i>
         PHASE SETUP REQUIRED
     </span>

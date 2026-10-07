@@ -446,7 +446,7 @@ class ProfileService
         // A technician must keep at least one specialty - the same rule the
         // Technicians page applies when an administrator edits them directly.
         if (empty($request->requested_skill_ids)) {
-            throw new RuntimeException('This request asks for no specialties. A technician must keep at least one, so reject it instead.');
+            throw new RuntimeException('A technician needs one specialty. Reject it instead.');
         }
 
         DB::transaction(function () use ($request, $reviewer, $technician): void {

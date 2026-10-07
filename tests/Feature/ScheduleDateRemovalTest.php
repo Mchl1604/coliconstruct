@@ -510,7 +510,7 @@ class ScheduleDateRemovalTest extends TestCase
 
         $this->removeDate($schedule, $this->day(-7))
             ->assertStatus(422)
-            ->assertJsonPath('error', 'This project is completed and its schedule can no longer be changed.');
+            ->assertJsonPath('error', 'Project is completed; schedule is locked.');
 
         $this->assertSame(
             [['start' => $this->day(-10), 'end' => $this->day(-5)]],
@@ -588,7 +588,7 @@ class ScheduleDateRemovalTest extends TestCase
 
         $response = $this->removeDate($schedule, $this->day(-3))->assertStatus(422);
 
-        $this->assertStringContainsString('already passed', $response->json('error'));
+        $this->assertStringContainsString('has passed', $response->json('error'));
         $this->assertStringContainsString('Super Admin', $response->json('error'));
 
         // Nothing moved.
@@ -656,7 +656,7 @@ class ScheduleDateRemovalTest extends TestCase
             $response = $this->removeDate($schedule, $this->day(0), override: $override)
                 ->assertStatus(422);
 
-            $this->assertStringContainsString('under way', $response->json('error'));
+            $this->assertStringContainsString('Today cannot be removed', $response->json('error'));
         }
 
         $this->assertSame(

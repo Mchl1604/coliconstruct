@@ -367,7 +367,7 @@ class ReadOnlyProjectVisibilityTest extends TestCase
 
         $this->assertContains($project->project_id, $response->viewData('schedulableProjects')->pluck('project_id')->all());
         $response->assertSee('value="'.$project->project_id.'" class="text-secondary" disabled', false);
-        $response->assertSee("Finalize this project's phases first before adding new tasks.", false);
+        $response->assertSee('Finalize phases to add tasks.', false);
         $response->assertSee(route('super-admin.projects.show', $project->project_id), false);
     }
 

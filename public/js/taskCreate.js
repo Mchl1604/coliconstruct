@@ -96,7 +96,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 // options would silently block the form, so it says so.
                 if (!phases.length) {
                     setError(
-                        "This project has no phases to file a task under. Set up its project phases first.",
+                        "Set up project phases first.",
                     );
 
                     return;
@@ -141,7 +141,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     })
                 ) {
                     setError(
-                        "Every technician on this project is inactive. Ask an administrator to update the team.",
+                        "All technicians are inactive.",
                     );
 
                     return;

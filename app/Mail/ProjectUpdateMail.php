@@ -3,6 +3,7 @@
 namespace App\Mail;
 
 use App\Models\Project;
+use App\Services\TargetDateChange;
 use App\Support\BusinessTime;
 
 /**
@@ -46,6 +47,8 @@ class ProjectUpdateMail extends SystemMail
 
     public const CONTRACT_UPLOADED = 'contract_uploaded';
 
+    public const TARGET_DATE_CHANGED = 'target_date_changed';
+
     /**
      * @param  string  $event  One of the constants above.
      * @param  string|null  $detail  The reason, remark or summary the event
@@ -75,6 +78,7 @@ class ProjectUpdateMail extends SystemMail
             self::ASSESSMENT_UPLOADED => sprintf('An assessment report is available for %s', $reference),
             self::QUOTATION_UPLOADED => sprintf('A quotation is available for %s', $reference),
             self::CONTRACT_UPLOADED => sprintf('A contract is available for %s', $reference),
+            self::TARGET_DATE_CHANGED => sprintf('Target date changed for %s', $reference),
             default => sprintf('An update on your project %s', $reference),
         };
     }
@@ -108,7 +112,7 @@ class ProjectUpdateMail extends SystemMail
         return match ($this->event) {
             self::COMPLETED => 'Your project is complete',
             self::AWAITING_CONFIRMATION => 'Please confirm your completed project',
-            self::CONFIRMATION_REMINDER => 'Your project is still waiting for confirmation',
+            self::CONFIRMATION_REMINDER => 'Please confirm your project',
             self::CONFIRMED => 'Thank you for confirming',
             self::AUTO_COMPLETED => 'Your project has been completed',
             self::REOPENED => 'Your project has been reopened',
@@ -118,6 +122,7 @@ class ProjectUpdateMail extends SystemMail
             self::ASSESSMENT_UPLOADED => 'Your assessment report is ready',
             self::QUOTATION_UPLOADED => 'Your quotation is ready',
             self::CONTRACT_UPLOADED => 'Your contract is ready',
+            self::TARGET_DATE_CHANGED => 'Target date changed',
             default => 'An update on your project',
         };
     }
@@ -128,44 +133,26 @@ class ProjectUpdateMail extends SystemMail
         $window = Project::completionConfirmationDays();
 
         return match ($this->event) {
-            self::COMPLETED => 'The work on this project has been completed and signed off. Thank you for choosing '
-                .$company.'. You can review the completion details, including any photographs, on the project page.',
+            self::COMPLETED => 'Your project is complete. Thank you for choosing '.$company.'.',
 
-            self::AWAITING_CONFIRMATION => 'Our team has finished the work on this project. Please open the project '
-                .'page to review what was done, including the completion photographs, and confirm that you are happy '
-                .'with it. If we do not hear from you within '.$window.' days the project will be marked complete '
-                .'automatically. If anything needs attention, contact us and we will put it right.',
+            self::AWAITING_CONFIRMATION => 'Work is done. Please review and confirm within '.$window.' days.',
 
-            self::CONFIRMATION_REMINDER => 'This project is still waiting for your confirmation. Please review the '
-                .'completion details on the project page and confirm when you are ready. It will be marked complete '
-                .'automatically once the '.$window.' day confirmation period ends. If something is not right, '
-                .'contact us rather than confirming.',
+            self::CONFIRMATION_REMINDER => 'Please confirm before the '.$window.'-day window ends.',
 
-            self::CONFIRMED => 'Thank you for confirming that the work is complete. This project is now closed, and '
-                .'its full record - the schedule, the reports and the completion photographs - stays available to '
-                .'you online. It has been a pleasure working with you.',
+            self::CONFIRMED => 'Thanks for confirming. Your project is now closed.',
 
-            self::AUTO_COMPLETED => 'The '.$window.' day confirmation period for this project has passed, so it has '
-                .'been marked complete. Its full record remains available to you online. If anything about the work '
-                .'still needs attention, please get in touch and we will help.',
+            self::AUTO_COMPLETED => 'Auto-completed after '.$window.' days. Contact us if needed.',
 
-            self::REOPENED => 'Further work has been scheduled on this project, so it is active again rather than '
-                .'waiting for your confirmation. The new dates are below, and you will be asked to confirm the '
-                .'project once that work is finished.',
+            self::REOPENED => 'More work is scheduled. New dates are below.',
 
-            self::CANCELLED => 'This project has been cancelled and no further work will be carried out on it. '
-                .'Its full record remains available to you online.',
-            self::ON_HOLD => 'Work on this project has been paused. Its schedule has been released, and we will let '
-                .'you know as soon as it resumes.',
-            self::RESUMED => 'This project is active again. It will be scheduled shortly, and you will be notified '
-                .'once the new dates are set.',
-            self::ASSESSMENT_UPLOADED => 'The assessment report for this project has been uploaded and is now '
-                .'available to view on the project page.',
-            self::QUOTATION_UPLOADED => 'The quotation for this project has been uploaded and is now available to '
-                .'view on the project page.',
-            self::CONTRACT_UPLOADED => 'The contract for this project has been uploaded and is now available to '
-                .'view on the project page.',
-            default => 'There has been an update on this project. Open the project page for the full details.',
+            self::CANCELLED => 'This project has been cancelled.',
+            self::ON_HOLD => 'Work is paused. We will tell you when it resumes.',
+            self::RESUMED => 'Work has resumed. New dates coming soon.',
+            self::ASSESSMENT_UPLOADED => 'Your assessment report is ready to view.',
+            self::QUOTATION_UPLOADED => 'Your quotation is ready to view.',
+            self::CONTRACT_UPLOADED => 'Your contract is ready to view.',
+            self::TARGET_DATE_CHANGED => 'Your target date has changed.',
+            default => 'Your project has an update.',
         };
     }
 
@@ -176,6 +163,7 @@ class ProjectUpdateMail extends SystemMail
             self::CONFIRMATION_REMINDER, self::CONFIRMED, self::AUTO_COMPLETED => 'Summary',
             self::REOPENED => 'Reason for reopening',
             self::CANCELLED => 'Reason',
+            self::TARGET_DATE_CHANGED => 'Reason for change',
             default => 'Details',
         };
     }
@@ -221,8 +209,26 @@ class ProjectUpdateMail extends SystemMail
             self::REOPENED => [
                 'New schedule' => $this->scheduleSummary(),
             ],
+            // Read from the history row the change just wrote, so the email
+            // states the same before and after the project page does.
+            self::TARGET_DATE_CHANGED => $this->targetDateRows(),
             default => [],
         };
+    }
+
+    /**
+     * @return array<string, string|null>
+     */
+    private function targetDateRows(): array
+    {
+        $latest = $this->project->targetDateHistory()->first();
+
+        return [
+            'Previous target date' => $latest?->previous_date
+                ? TargetDateChange::format($latest->previous_date)
+                : null,
+            'New target date' => TargetDateChange::format($this->project->target_end_date),
+        ];
     }
 
     /**

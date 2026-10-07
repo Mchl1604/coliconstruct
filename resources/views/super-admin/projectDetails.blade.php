@@ -89,6 +89,10 @@
         // file changes, so either one is enough to draw it.
         $quotationHistoryCount = $project->quotationHistory->count()
             + $documentHistoryByType->get('quotation', collect())->count();
+
+        // Drawn once the target has actually moved - the creation entry alone
+        // is not a history worth opening.
+        $targetDateChanged = $project->targetDateHistory->contains(fn($entry) => ! $entry->isInitial());
     @endphp
     {{-- The workspace: everything a save on this page can change, dialogs
          included. A save is sent with fetch and only this is redrawn from the
@@ -255,9 +259,7 @@
                              not already know: that nothing is lost, and that the
                              calendar is given back. --}}
                         <div class="modal-body">
-                            <strong>Nothing is deleted.</strong> Its schedule, team, tasks, reports,
-                            documents and history stay with it on the Archived Projects page, and its
-                            technicians are freed for those dates.
+                            <strong>Nothing is deleted.</strong> Its technicians are freed.
                         </div>
 
                         <div class="modal-footer">
@@ -324,13 +326,7 @@
                                                 No registered client can currently confirm this project.
                                             </p>
                                             <p class="mb-0 small">
-                                                It will go to Awaiting Client Confirmation as usual and
-                                                complete automatically after
-                                                {{ \App\Models\Project::completionConfirmationDays() }} days
-                                                if no confirmation is received. If the client registers
-                                                before then they can confirm it themselves, and an
-                                                administrator can record a confirmation given by phone,
-                                                in person or on paper at any time.
+                                                Auto-completes after {{ \App\Models\Project::completionConfirmationDays() }} days.
                                             </p>
                                         </div>
                                     </div>
@@ -357,7 +353,7 @@
                                         <textarea class="form-control" id="completionOverrideReason"
                                             name="completion_override_reason" rows="2" minlength="10" maxlength="500"
                                             required
-                                            placeholder="Why is this being completed with the above outstanding?"></textarea>
+                                            placeholder="Why complete it now?"></textarea>
                                     </div>
                                 @endif
 
@@ -383,7 +379,7 @@
                                     <label class="form-label fw-semibold">Upload Completion Photos</label>
                                     <input type="file" class="form-control" name="completion_photos[]"
                                         accept=".jpg,.jpeg,.png" multiple>
-                                    <div class="form-text">JPG, JPEG, or PNG. You can select multiple photos.</div>
+                                    <div class="form-text">JPG or PNG. Multiple allowed.</div>
                                 </div>
                             </div>
 
@@ -414,7 +410,7 @@
                     <div class="flex-grow-1">
                         <h5 class="alert-heading mb-1">This project is on hold</h5>
                         <p class="mb-1">
-                            Resume it to add schedules, reports, tasks or technicians.
+                            Resume it to make changes.
                         </p>
                         {{-- The hold preserves the days still to come rather
                              than deleting them, and releases the crew from
@@ -423,9 +419,7 @@
                              is resumed, and resuming is what asks whether the
                              team is still free for it. --}}
                         <p class="mb-0 small text-secondary">
-                            The dates still ahead of it are kept as its proposed schedule. Its team is
-                            free for other work in the meantime, so resuming checks those dates again
-                            before putting them back into force.
+                            Future dates are kept for resuming.
                         </p>
 
                         <div class="alert alert-danger mt-3 mb-0 d-none" role="alert"
@@ -503,8 +497,7 @@
                             <div class="alert alert-warning border-0 py-2 px-3 mb-2" role="status">
                                 <i class="bi bi-person-slash me-1" aria-hidden="true"></i>
                                 <strong>No registered client can confirm this online.</strong>
-                                It will complete automatically unless the client registers, or an
-                                administrator records a confirmation given another way.
+                                It will auto-complete.
                             </div>
                         @endif
 
@@ -566,7 +559,7 @@
                         @endphp
 
                         <p class="mb-2">
-                            This project was previously completed and has been reopened{{ $reopenedOn ? ' on ' . $reopenedOn : '' }}{{ $reopenedBy ? ' by ' . $reopenedBy : '' }}.
+                            Reopened{{ $reopenedOn ? ' on ' . $reopenedOn : '' }}{{ $reopenedBy ? ' by ' . $reopenedBy : '' }}.
                         </p>
 
                         @if ($project->reopen_reason)
@@ -744,11 +737,7 @@
 
                                         <div class="col-12">
                                             <div class="form-text">
-                                                Partial Day books only these hours on the one date, between
-                                                {{ $partialDayWindow['start_label'] }} and
-                                                {{ $partialDayWindow['end_label'] }} (Project Settings). A
-                                                technician booked for the whole of a day is still unavailable
-                                                for part of it.
+                                                Hours between {{ $partialDayWindow['start_label'] }} and {{ $partialDayWindow['end_label'] }}.
                                             </div>
                                         </div>
                                     </div>
@@ -756,11 +745,7 @@
 
                                 @if ($project->projectTechnicians->isNotEmpty())
                                     <div class="form-text mt-2">
-                                        The team
-                                        ({{ $project->projectTechnicians->map(fn($assignment) => $assignment->technician?->name)->filter()->join(', ') }})
-                                        is booked onto these dates. Days any of them are already
-                                        spoken for are greyed out, and a clash will still refuse
-                                        the reopen.
+                                        Busy days are greyed out.
                                     </div>
                                 @endif
 
@@ -773,7 +758,7 @@
                                     <textarea class="form-control" id="reopenReason" name="reopen_reason" rows="3" minlength="10"
                                         maxlength="500" required placeholder="e.g. Additional installation work is required."></textarea>
                                     <div class="form-text">
-                                        Recorded in the activity log and shown to the client. At least 10 characters.
+                                        Shown to the client. Min 10 characters.
                                     </div>
                                 </div>
                             </div>
@@ -806,7 +791,7 @@
                 @if ($project->client_confirmed_at)
                     on {{ \App\Support\BusinessTime::format($project->client_confirmed_at) }}
                 @endif
-                . A completed project is a historical record and cannot be reopened.
+                . Cannot be reopened.
 
                 {{-- A confirmation with no click behind it rests on somebody's
                      word, so the word is shown with it: how it arrived, who
@@ -855,7 +840,7 @@
                             Its last booked day was
                             <strong>{{ $project->scheduleEndsOn()->format(\App\Support\BusinessTime::DATE) }}</strong>
                             and nothing is booked ahead of it.
-                            Add a new schedule or mark it complete.
+                            Add dates or complete it.
                         </p>
 
                         <div class="d-flex flex-wrap gap-2">
@@ -1212,8 +1197,7 @@
                     <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
                         <span class="text-muted">
                             <i class="bi bi-clock-history me-1" aria-hidden="true"></i>
-                            This project has been completed and reopened before. It has no current
-                            completion report.
+                            No current completion report.
                         </span>
 
                         <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal"
@@ -1348,6 +1332,26 @@
                         </button>
                     @endif
                 </div>
+                <div class="mt-2 d-flex flex-wrap align-items-center gap-2" data-target-date>
+                    <span class="fw-bold">
+                        Target Completion Date:
+                    </span>
+                    <span class="fw-semibold">
+                        {{ \App\Services\TargetDateChange::format($project->target_end_date) }}
+                    </span>
+
+                    @if ($project->isPastTargetDate())
+                        <span class="badge text-bg-danger" data-target-date-overdue>Overdue</span>
+                    @endif
+
+                    @if ($targetDateChanged)
+                        <button type="button" class="btn btn-sm btn-outline-secondary project-history-icon"
+                            data-bs-toggle="modal" data-bs-target="#targetDateHistoryModal"
+                            title="View target date history" aria-label="View target date history">
+                            <i class="bi bi-clock-history" aria-hidden="true"></i>
+                        </button>
+                    @endif
+                </div>
                 <div class="mt-3">
                     <span class="fw-bold me-2">
                         Project Description:
@@ -1413,7 +1417,7 @@
                                 @endunless
                                 @if ($project->inactiveCrew()->isNotEmpty())
                                     {{ $project->inactiveCrewNames() }}
-                                    can no longer sign in but are still booked. Reassign or remove them.
+                                    cannot sign in. Reassign them.
                                 @endif
                             </div>
                         @endif
@@ -1562,7 +1566,7 @@
                             @unless ($isReadOnly)
                                 @if ($isOnHold)
                                     <button type="button" class="btn btn-outline-primary btn-sm" disabled
-                                        title="This project is on hold. Resume it before adding schedules.">
+                                        title="On hold. Resume first.">
                                         <i class="bi bi-calendar-week me-1"></i>
                                         Update Schedule
                                     </button>
@@ -1859,10 +1863,7 @@
                                                     {{ $report->report_title }}</strong>?
 
                                                 <p class="text-secondary small mb-0 mt-2">
-                                                    It comes off this project's report list and off the active
-                                                    Reports page. The report, its images and its attachments are
-                                                    kept, and it can be restored from Archived Reports. The
-                                                    project, its schedule and its team are not affected.
+                                                    It can be restored later.
                                                 </p>
                                             </div>
 
@@ -1917,14 +1918,14 @@
                                     </a>
                                 @else
                                     <button class="btn btn-primary" disabled
-                                        title="This project's phases have not been set up yet.">
+                                        title="Phases not set up.">
                                         <i class="bi bi-plus-lg me-1"></i>
                                         Add Task
                                     </button>
                                 @endif
                             @elseif ($isOnHold)
                                 <button class="btn btn-primary" disabled
-                                    title="This project is on hold. Resume it before editing tasks.">
+                                    title="On hold. Resume first.">
                                     <i class="bi bi-plus-lg me-1"></i>
                                     Add Task
                                 </button>
@@ -2110,8 +2111,7 @@
 
                         <div class="modal-body">
                             <p class="mb-3">
-                                Cancel <strong>{{ $project->reference_no }}</strong>? Its schedule and
-                                technicians are released. This cannot be undone.
+                                Cancel <strong>{{ $project->reference_no }}</strong>? This cannot be undone.
                             </p>
 
                             <div class="mb-3">
@@ -2362,9 +2362,25 @@
                             </div>
 
                             <div class="form-text">
-                                Changing the amount asks whether the quotation file should be replaced as well.
+                                You will be asked about the file.
                             </div>
 
+                        </div>
+
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-5">
+                                <label class="form-label" for="editTargetEndDate">Target Completion Date</label>
+                                <input type="date" class="form-control" id="editTargetEndDate" name="target_end_date"
+                                    value="{{ old('target_end_date', $project->target_end_date?->toDateString()) }}"
+                                    @if ($project->target_end_date) required @endif>
+                            </div>
+
+                            <div class="col-md-7">
+                                <label class="form-label" for="editTargetDateReason">Reason for change</label>
+                                <input type="text" class="form-control" id="editTargetDateReason"
+                                    name="target_date_reason" maxlength="{{ \App\Services\TargetDateChange::MAX_REASON }}"
+                                    value="{{ old('target_date_reason') }}" placeholder="Required if date changes">
+                            </div>
                         </div>
 
                         <div class="mb-3">
@@ -2391,9 +2407,7 @@
                             <i class="bi bi-info-circle" aria-hidden="true"></i>
                             <span>
                                 {{ \App\Models\Document::ALLOWED_LABEL }}, up to
-                                {{ \App\Models\Document::MAX_LABEL }} each. Assessment and contract uploads are
-                                added to the files already on record; a quotation upload replaces the current
-                                quotation, which is kept in its history.
+                                {{ \App\Models\Document::MAX_LABEL }} each.
                             </span>
                         </p>
 
@@ -2527,8 +2541,7 @@
                                     data-quotation-sync-file>
                                 <div class="form-text">
                                     {{ \App\Models\Document::ALLOWED_LABEL }}, up to
-                                    {{ \App\Models\Document::MAX_LABEL }} each. The current quotation file is kept
-                                    in the quotation history.
+                                    {{ \App\Models\Document::MAX_LABEL }} each.
                                 </div>
                                 <ul class="edit-document-picked mt-2 d-none" data-quotation-sync-picked></ul>
                             </div>
@@ -2546,9 +2559,7 @@
                                         inputmode="decimal" autocomplete="off" data-money-input>
                                     <input type="hidden" data-money-value>
                                 </div>
-                                <div class="form-text">
-                                    Enter the amount on the new quotation file, or confirm the current one.
-                                </div>
+                                
                                 <div class="invalid-feedback d-block d-none" data-quotation-sync-amount-error>
                                     Enter a quotation amount of zero or more.
                                 </div>
@@ -2556,7 +2567,7 @@
 
                             <p class="quotation-sync-note mb-0" data-quotation-sync-note>
                                 <i class="bi bi-info-circle" aria-hidden="true"></i>
-                                Cancel goes back to the form. Nothing is saved until you choose.
+                                Nothing is saved yet.
                             </p>
                         </section>
                     </div>
@@ -2637,8 +2648,7 @@
                              Days off, and removals from a later date, are made on
                              the Technicians page. --}}
                         <p class="text-secondary small mb-3">
-                            Changes take effect today. Anybody removed here comes off this project completely.
-                            To take a technician off for some days, or from a later date, use the Technicians page.
+                            Changes take effect today.
                         </p>
 
                         <div class="mb-4">
@@ -2774,8 +2784,7 @@
                         <div class="modal-body">
 
                             <p class="text-muted small">
-                                Choose the account on the public website to link to this project. The
-                                project's own client details are not changed by this.
+                                Pick an account to link.
                             </p>
 
                             {{-- Searched rather than chosen from a list, for the
@@ -2826,8 +2835,7 @@
 
                             @if ($registeredUserOptions->isEmpty())
                                 <div class="form-text text-danger">
-                                    There are no accounts to link yet. Open one in Configuration, under
-                                    User Management, first.
+                                    No accounts to link yet.
                                 </div>
                             @endif
 
@@ -2874,10 +2882,7 @@
                              already know: nothing is deleted, and what actually
                              stops. --}}
                         <div class="modal-body">
-                            <strong>Nothing is deleted.</strong> The account keeps its details and its other
-                            projects, and this project keeps its client information, team, schedule, tasks and
-                            reports. Only the connection ends - the project stops appearing on their My Projects
-                            page.
+                            <strong>Nothing is deleted.</strong> Only the link is removed.
                         </div>
 
                         <div class="modal-footer">
@@ -2985,11 +2990,7 @@
                         <div class="modal-body">
 
                             <p class="mb-3">
-                                Use this when the client has already confirmed that the work is finished,
-                                but did so somewhere other than the website. This completes
-                                <strong>{{ $project->reference_no }}</strong> straight away rather than
-                                waiting out the remaining
-                                {{ \App\Models\Project::completionConfirmationDays() }}-day window.
+                                Completes <strong>{{ $project->reference_no }}</strong> now.
                             </p>
 
                             <div class="mb-3">
@@ -3023,9 +3024,7 @@
                                         min="{{ $project->completion_requested_at->format('Y-m-d') }}"
                                     @endif
                                     max="{{ \App\Support\BusinessTime::today()->format('Y-m-d') }}" required>
-                                <div class="form-text">
-                                    The day the client confirmed, which may be before today.
-                                </div>
+                                
                             </div>
 
                             <div class="mb-1">
@@ -3034,10 +3033,9 @@
                                 </label>
                                 <textarea class="form-control" id="clientConfirmationNote"
                                     name="client_confirmation_note" rows="3" minlength="10" maxlength="500" required
-                                    placeholder="e.g. Client confirmed completion by call to Ana Mendoza.">{{ old('client_confirmation_note') }}</textarea>
+                                    placeholder="e.g. Confirmed by call.">{{ old('client_confirmation_note') }}</textarea>
                                 <div class="form-text">
-                                    Say who received the confirmation and from whom. This is kept with the
-                                    project and in the activity log.
+                                    Who confirmed, and to whom.
                                 </div>
                             </div>
 
@@ -3431,6 +3429,10 @@
     @if ($quotationHistoryCount > 0)
         <x-quotation-history-modal :project="$project"
             :file-events="$documentHistoryByType->get('quotation', collect())" />
+    @endif
+
+    @if ($targetDateChanged)
+        <x-target-date-history-modal :project="$project" />
     @endif
 
     {{-- The other document types' histories. The quotation's lives in the

@@ -377,7 +377,7 @@ class ProjectTeam
 
         if ($this->overlapsAny($span, $memberships)) {
             throw new RuntimeException(
-                'These dates overlap a period this technician already has on the project. Record them in smaller parts.'
+                'Overlaps their existing dates. Split it up.'
             );
         }
 

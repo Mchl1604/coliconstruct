@@ -26,7 +26,7 @@
 
 @if ($report['is_empty'])
     <div class="empty-notice">
-        No records found for the selected reporting period and filters.
+        No records found.
     </div>
 @endif
 

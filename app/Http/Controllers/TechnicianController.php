@@ -532,13 +532,13 @@ class TechnicianController extends Controller
         try {
             if ($project->isReadOnly()) {
                 throw new RuntimeException(sprintf(
-                    'This project is %s and its team can no longer be changed.',
+                    'Project is %s; team is locked.',
                     strtolower($project->statusLabel())
                 ));
             }
 
             if ($project->on_hold) {
-                throw new RuntimeException('This project is on hold. Resume it before changing its assigned technicians.');
+                throw new RuntimeException('On hold. Resume it first.');
             }
 
             if ($from->lt(Schedule::businessToday())) {
@@ -556,7 +556,7 @@ class TechnicianController extends Controller
                 foreach (array_filter([$from, $until]) as $chosen) {
                     if (! $project->isScheduledOn($chosen->toDateString())) {
                         throw new RuntimeException(sprintf(
-                            '%s is not a scheduled day on %s. Choose one of its scheduled days.',
+                            '%s is not a scheduled day on %s.',
                             $chosen->format(BusinessTime::DATE),
                             $project->name
                         ));
@@ -576,7 +576,7 @@ class TechnicianController extends Controller
             if ($technician->isLead() && ! $replacementLeadId) {
                 throw new RuntimeException(sprintf(
                     $mode === 'days'
-                        ? '%s leads this project. Choose a lead technician to stand in for those days.'
+                        ? '%s leads this project. Choose a stand-in.'
                         : '%s leads this project. Choose a replacement first.',
                     $technician->name
                 ));
@@ -586,7 +586,7 @@ class TechnicianController extends Controller
                 && $project->teamHistory->filter(fn (ProjectTechnician $span): bool => $span->isCurrent($from->toDateString()))->count() <= 1
                 && $theirs->contains(fn (ProjectTechnician $span): bool => $span->isCurrent($from->toDateString()))) {
                 throw new RuntimeException($this->sentence(
-                    'A project must keep at least one technician. Assign someone else first.'
+                    'A project needs at least one technician.'
                 ));
             }
 
@@ -602,7 +602,7 @@ class TechnicianController extends Controller
                 && ! $this->availableReplacementLeads($project, $from, $mode === 'days' ? $until->addDay() : null)
                     ->contains('technician_id', $replacementLeadId)) {
                 throw new RuntimeException(
-                    'That lead technician is no longer free for those days. Choose another.'
+                    'That lead is no longer free.'
                 );
             }
 
@@ -675,8 +675,8 @@ class TechnicianController extends Controller
 
         if ($affected->isNotEmpty()) {
             $message .= sprintf(
-                ' %s: %s. %s flagged "Technician Not Assigned for Dates" on the task board.',
-                $affected->count() === 1 ? 'This task still belongs to them and runs into those days' : 'These tasks still belong to them and run into those days',
+                ' %s: %s. %s flagged on the task board.',
+                $affected->count() === 1 ? 'Task to reassign' : 'Tasks to reassign',
                 $affected->map(fn (Task $task): string => $this->describeAffectedTask($task))->join(', ', ' and '),
                 $affected->count() === 1 ? 'It is' : 'They are'
             );
@@ -984,7 +984,7 @@ class TechnicianController extends Controller
 
                         if ($existingLead && $confirmedLeadId !== (int) $existingLead->technician_id) {
                             throw new RuntimeException(sprintf(
-                                '%s is now led by %s rather than the lead you confirmed. Reopen the list and try again.',
+                                '%s is now led by %s. Reload and try again.',
                                 $project->name,
                                 $existingLead->technician?->name ?? 'another lead technician'
                             ));
@@ -999,7 +999,7 @@ class TechnicianController extends Controller
                     // to something that is no longer what would happen.
                     if ($confirmedLeadId !== null && ! $outgoingLead) {
                         throw new RuntimeException(sprintf(
-                            '%s no longer has a lead technician to replace. Reopen the list and try again.',
+                            '%s has no lead to replace. Reload and try again.',
                             $project->name
                         ));
                     }
@@ -1235,7 +1235,7 @@ class TechnicianController extends Controller
         ];
 
         if ($payload['is_past']) {
-            $payload['notice'] = 'This day has already passed. A technician can only be added to a day still to come.';
+            $payload['notice'] = 'This day has passed.';
 
             return response()->json($payload);
         }
@@ -1357,7 +1357,7 @@ class TechnicianController extends Controller
 
             if ($sittingLead && (int) $confirmedLeadId !== (int) $sittingLead->technician_id) {
                 throw new RuntimeException(sprintf(
-                    '%s is now led by %s on %s rather than the lead you confirmed. Reopen the day and try again.',
+                    '%s is now led by %s on %s. Reload and try again.',
                     $project->name,
                     $sittingLeadName,
                     $day->format(BusinessTime::DATE)
@@ -1366,7 +1366,7 @@ class TechnicianController extends Controller
 
             if (! $sittingLead && $confirmedLeadId !== null) {
                 throw new RuntimeException(sprintf(
-                    '%s no longer has a lead technician on %s to replace. Reopen the day and try again.',
+                    '%s has no lead on %s to replace.',
                     $project->name,
                     $day->format(BusinessTime::DATE)
                 ));
@@ -1451,10 +1451,10 @@ class TechnicianController extends Controller
 
         if ($affected->isNotEmpty()) {
             $message .= sprintf(
-                ' %s: %s. %s flagged "Technician Not Assigned for Dates" on the task board.',
+                ' %s: %s. %s flagged on the task board.',
                 $affected->count() === 1
-                    ? 'This task of '.$sittingLead->technician?->name.' runs into that day'
-                    : 'These tasks of '.$sittingLead->technician?->name.' run into that day',
+                    ? 'Task to reassign'
+                    : 'Tasks to reassign',
                 $affected->map(fn (Task $task): string => $this->describeAffectedTask($task))->join(', ', ' and '),
                 $affected->count() === 1 ? 'It is' : 'They are'
             );

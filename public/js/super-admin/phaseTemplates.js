@@ -394,11 +394,8 @@ document.addEventListener("DOMContentLoaded", function () {
                 stage.type_count > 0
                     ? "It is used by " +
                       plural(stage.type_count, "project type") +
-                      ". Untick it there first - removing it would take " +
-                      plural(stage.task_count, "default task") +
-                      " with it."
-                    : "New projects will no longer be offered this phase. " +
-                      "Projects already set up keep the phases they have.",
+                      ". Untick it there first."
+                    : "Existing projects keep it.",
             label: "Remove Stage",
             variant: "btn-danger",
             onConfirm: function () {
@@ -513,10 +510,7 @@ document.addEventListener("DOMContentLoaded", function () {
         window.configurationConfirm({
             title: "Discard unsaved changes?",
             body:
-                "The default phases for " +
-                currentTypeName() +
-                " have been changed and not saved. Switching to another type " +
-                "will lose those changes.",
+                "Unsaved changes will be lost.",
             label: "Discard and Switch",
             variant: "btn-danger",
             onConfirm: function () {
@@ -554,7 +548,7 @@ document.addEventListener("DOMContentLoaded", function () {
                                 })
                                 .join("")
                           : '<p class="phase-template-notasks mb-2">' +
-                            "No default tasks yet. Projects will get this phase with no work in it." +
+                            "No default tasks yet." +
                             "</p>") +
                       '<button type="button" class="phase-add-task" data-template-task-add' +
                       (count >= maxTasks ? " disabled" : "") +

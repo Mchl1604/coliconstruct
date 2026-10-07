@@ -14,11 +14,11 @@
                     <h1 class="public-page-title-heading">My Projects</h1>
                     <p class="public-page-title-text mb-0">
                         @if ($isClient)
-                            Work {{ $content->get('branding.short_name') }} is carrying out for you, newest first.
+                            Your projects, newest first.
                         @elseif ($isGuest)
                             Sign in to view your projects.
                         @else
-                            This page shows a Registered User's own projects.
+                            For Registered Users only.
                         @endif
                     </p>
                 </div>
@@ -43,8 +43,7 @@
                         <i class="bi bi-lock fs-1 d-block mb-3 text-secondary" aria-hidden="true"></i>
                         <h2 class="h5 fw-bold text-dark mb-2">Sign in to view your projects.</h2>
                         <p class="mb-4">
-                            Your projects appear once you sign in with the email address they were booked
-                            under.
+                            Sign in with your booking email.
                         </p>
                         <a class="btn btn-brand-blue btn-pill px-4" href="{{ route('auth.login') }}">Sign In</a>
                     @else
@@ -53,7 +52,7 @@
                         <i class="bi bi-person-badge fs-1 d-block mb-3 text-secondary" aria-hidden="true"></i>
                         <h2 class="h5 fw-bold text-dark mb-2">This page is for Registered User accounts.</h2>
                         <p class="mb-4">
-                            You are signed in as {{ auth()->user()->roleLabel() }} - open your portal instead.
+                            Use your {{ auth()->user()->roleLabel() }} portal instead.
                         </p>
                         <a class="btn btn-brand-blue btn-pill px-4"
                             href="{{ \App\Support\PortalHome::url(auth()->user()) }}">Go to My Portal</a>
@@ -184,6 +183,16 @@
                                             <i class="bi bi-calendar-event text-primary" aria-hidden="true"></i>
                                             <strong>{{ $card['date_range']['label'] }}:</strong>
                                             {{ $card['date_range']['range'] }}
+                                        </p>
+                                    @endif
+
+                                    @if ($card['target_date'])
+                                        <p class="project-card-meta" data-target-date>
+                                            <i class="bi bi-flag text-primary" aria-hidden="true"></i>
+                                            <strong>Target:</strong> {{ $card['target_date'] }}
+                                            @if ($card['past_target_date'])
+                                                <span class="badge text-bg-danger ms-1">Overdue</span>
+                                            @endif
                                         </p>
                                     @endif
 

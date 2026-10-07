@@ -28,7 +28,7 @@
          project phases existed were placed by a backfill, and one whose phase
          went missing should be visible so somebody can file it - see the
          phase() relation on Task. --}}
-    <span class="task-phase is-unset" title="This task is not filed under a project phase.">
+    <span class="task-phase is-unset" title="No phase assigned.">
         <span class="task-phase-number">&mdash;</span>
         <span class="task-phase-title">No phase</span>
     </span>

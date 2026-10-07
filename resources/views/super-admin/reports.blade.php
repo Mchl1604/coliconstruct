@@ -13,7 +13,7 @@
     <div class="d-flex justify-content-between align-items-center mb-3">
         <div>
             <h4 class="fw-bold mb-1">Reports</h4>
-            <p class="text-secondary small mb-0">Every technician report in one place, plus system-wide analytics.</p>
+            <p class="text-secondary small mb-0">All reports and analytics.</p>
         </div>
     </div>
 
@@ -482,7 +482,7 @@
                                 @endforeach
                             </select>
                             <div class="form-text">
-                                Completed, cancelled and archived projects can no longer receive reports.
+                                Closed projects take no reports.
                             </div>
                             @if ($reportableProjects->isEmpty())
                                 <div class="alert alert-warning mt-2 mb-0">
@@ -521,7 +521,7 @@
                                 <label class="form-label fw-semibold">Upload Images</label>
                                 <input type="file" class="form-control" name="images[]" accept="image/*" multiple
                                     data-create-images>
-                                <small class="text-muted">Optional. JPG, PNG or JPEG, up to 5 MB each.</small>
+                                <small class="text-muted">Optional. JPG or PNG, max 5 MB.</small>
                             </div>
 
                             <div class="row g-2" data-create-preview></div>
@@ -721,8 +721,7 @@
                          is committed to anything, and Print or PDF is chosen
                          from the preview once there is something to look at. --}}
                     <div class="form-text mb-0">
-                        Opens a print-ready preview you can print or save as PDF.
-                        Archived projects are excluded from every report.
+                        Print or save as PDF.
                     </div>
 
                     <div class="alert alert-danger mt-3 mb-0 d-none" role="alert" data-export-error></div>
@@ -809,9 +808,7 @@
                     Archive <strong data-archive-report-label></strong>?
 
                     <p class="text-secondary small mb-0 mt-2">
-                        It comes off the active reports list and off its project's report list. The report,
-                        its images and its attachments are kept, and it can be restored from View Archived
-                        Reports.
+                        It can be restored later.
                     </p>
 
                     <div class="alert alert-danger mt-3 mb-0 d-none" role="alert" data-archive-report-error></div>

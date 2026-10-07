@@ -153,14 +153,14 @@ class ProjectPhaseProgress
 
         if ($openTasks > 0) {
             $blockers[] = sprintf(
-                'This phase cannot be completed because %d %s still incomplete.',
+                '%d %s still open.',
                 $openTasks,
                 $openTasks === 1 ? 'task is' : 'tasks are'
             );
         }
 
         if ($phase->tasks()->count() === 0) {
-            $blockers[] = 'This phase has no tasks yet, so there is nothing to complete.';
+            $blockers[] = 'No tasks to complete yet.';
         }
 
         return $blockers;

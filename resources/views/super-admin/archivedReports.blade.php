@@ -12,8 +12,7 @@
         <div>
             <h4 class="fw-bold mb-1">Archived Reports</h4>
             <p class="text-secondary small mb-0">
-                Archived technician reports are preserved in full - images and attachments included - and
-                removed from the active reports list.
+                Kept in full, hidden from active reports.
             </p>
         </div>
 
@@ -118,9 +117,7 @@
                                                     {{ $report->report_title }}</strong>?
 
                                                 <p class="text-secondary small mb-0 mt-2">
-                                                    It returns to the active reports list and to its project's
-                                                    report list, with the same submitter, images and attachments
-                                                    it was archived with.
+                                                    It returns to the active reports.
                                                 </p>
                                             </div>
 

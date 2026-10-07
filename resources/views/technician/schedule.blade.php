@@ -16,7 +16,7 @@
         <div>
             <h4 class="fw-bold mb-1">My Schedule</h4>
             <p class="text-secondary small mb-0">
-                Every project you are booked on. Pick one to see its details and your tasks on it.
+                Your booked projects.
             </p>
         </div>
 
@@ -70,7 +70,7 @@
                     <div data-panel-empty>
                         <div class="technician-eyebrow mb-2">Project Information</div>
                         <div class="schedule-empty-state">
-                            Select a project from the calendar to view its details.
+                            Pick a project on the calendar.
                         </div>
                     </div>
 

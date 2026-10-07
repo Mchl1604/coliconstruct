@@ -319,7 +319,7 @@ class UnassignedTaskAlertsTest extends TestCase
             ->assertOk();
 
         $response->assertSee('1 task needs attention');
-        $response->assertSee('an administrator will need to fill in what is missing');
+        $response->assertSee('An administrator must fix these.');
     }
 
     public function test_a_plain_technician_gets_no_alert(): void

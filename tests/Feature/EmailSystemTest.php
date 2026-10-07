@@ -83,7 +83,7 @@ class EmailSystemTest extends TestCase
         }
 
         $this->assertNotNull($thrown, 'A refused code was reported as sent.');
-        $this->assertStringContainsString('could not send', $thrown->getMessage());
+        $this->assertStringContainsString('Could not send', $thrown->getMessage());
 
         // And no code is left behind pretending to be live: it would hold the
         // resend cooldown and show a countdown for a message nobody has.
@@ -252,7 +252,7 @@ class EmailSystemTest extends TestCase
 
         // The same digits a second time find a spent row, not a live one.
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('No verification code is waiting');
+        $this->expectExceptionMessage('No code found');
 
         $this->otp()->verify('someone@example.test', OtpVerification::PURPOSE_REGISTRATION, $code);
     }
@@ -325,7 +325,7 @@ class EmailSystemTest extends TestCase
         $code = $this->issuedCode();
 
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('No verification code is waiting');
+        $this->expectExceptionMessage('No code found');
 
         $this->otp()->verify('someone@example.test', OtpVerification::PURPOSE_EMAIL_CHANGE, $code);
     }

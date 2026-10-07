@@ -396,7 +396,7 @@ class RegisteredUserAssignmentTest extends TestCase
             ->get(route('super-admin.configuration.index'))
             ->assertOk()
             ->assertSee('Registered Users')
-            ->assertSee('Every employee and Registered User account in the system.');
+            ->assertSee('All employee and client accounts.');
     }
 
     public function test_creating_one_reports_it_as_a_registered_user_account(): void

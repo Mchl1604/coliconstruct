@@ -545,7 +545,7 @@ class ProjectPhaseSetupTest extends TestCase
             ->getJson(route('super-admin.projects.task-form-data', $this->project->project_id))
             ->assertStatus(422)
             ->assertJsonFragment([
-                'error' => 'This project has not been configured with its project phases yet. Set up the project phases before adding tasks.',
+                'error' => 'Set up project phases before adding tasks.',
             ]);
     }
 
@@ -925,7 +925,7 @@ class ProjectPhaseSetupTest extends TestCase
             ->getJson(route('super-admin.projects.task-form-data', $this->project->project_id))
             ->assertStatus(422)
             ->assertJsonFragment([
-                'error' => 'Every phase of this project has been completed, so there is no open phase to add a task to.',
+                'error' => 'All phases are complete.',
             ]);
     }
 

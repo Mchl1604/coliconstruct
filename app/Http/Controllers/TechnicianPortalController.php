@@ -73,7 +73,7 @@ class TechnicianPortalController extends Controller
      * and the note the pages show in place of the button - see
      * ProjectPolicy::submitReport().
      */
-    public const REPORT_NOT_SCHEDULED_TODAY = 'Reports can only be submitted on one of the project\'s scheduled days.';
+    public const REPORT_NOT_SCHEDULED_TODAY = 'Reports only on scheduled days.';
 
     public function __construct(
         private TaskScheduleRules $scheduleRules,
@@ -428,7 +428,7 @@ class TechnicianPortalController extends Controller
             );
 
             if ($attentionSummary['total'] > 0 && ! $canResolveAny) {
-                $attentionReadOnly = 'These tasks are on projects you cannot edit, so an administrator will need to fill in what is missing.';
+                $attentionReadOnly = 'An administrator must fix these.';
             }
         }
 
@@ -1112,7 +1112,7 @@ class TechnicianPortalController extends Controller
         app(ProjectEmails::class)->projectAwaitingConfirmation($project->refresh());
 
         $message = sprintf(
-            'Completion recorded. Completes automatically in %d days unless the client replies.',
+            'Sent. Auto-completes in %d days.',
             Project::completionConfirmationDays()
         );
 

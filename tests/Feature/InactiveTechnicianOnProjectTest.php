@@ -203,7 +203,7 @@ class InactiveTechnicianOnProjectTest extends TestCase
         $page->assertOk();
         $page->assertSee('Inactive technician');
         $page->assertSee('project-row-needs-recrew', false);
-        $page->assertSee('Ana Mendoza can no longer sign in', false);
+        $page->assertSee('Ana Mendoza cannot sign in', false);
     }
 
     public function test_the_lead_sees_the_warning_on_project_details(): void

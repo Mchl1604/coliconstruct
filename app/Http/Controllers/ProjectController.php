@@ -40,6 +40,7 @@ use App\Services\QuotationChange;
 use App\Services\ScheduleConsolidation;
 use App\Services\ScheduleHoldCutoff;
 use App\Services\ScheduleModeRules;
+use App\Services\TargetDateChange;
 use App\Services\TaskAssignmentRules;
 use App\Services\TaskScheduleRules;
 use App\Services\TechnicianAvailabilityService;
@@ -54,6 +55,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\ValidationException;
 use PDOException;
 use RuntimeException;
 use Throwable;
@@ -93,7 +95,8 @@ class ProjectController extends Controller
         private readonly ProjectRegisteredUser $registeredUsers,
         private readonly CompletionConfirmability $confirmability,
         private readonly QuotationChange $quotations,
-        private readonly DocumentHistoryLog $documentHistory
+        private readonly DocumentHistoryLog $documentHistory,
+        private readonly TargetDateChange $targetDates
     ) {}
 
     public function index(Request $request)
@@ -312,6 +315,7 @@ class ProjectController extends Controller
                     'name' => $this->resolveProjectName($validated),
                     'status' => 'unscheduled',
                     'quotation' => $validated['quotation_amount'],
+                    'target_end_date' => $validated['target_end_date'],
                     'address' => $validated['project_address'],
                     'description' => $validated['project_description'],
                 ]);
@@ -319,6 +323,11 @@ class ProjectController extends Controller
                 $project->forceFill([
                     'reference_no' => $this->generateReferenceNumber($project->project_id),
                 ])->save();
+
+                // The date the client is first promised, as the opening entry
+                // of its history - so a later change has something to read as
+                // "was".
+                $this->targetDates->recordInitial($project, $request->user());
 
                 Client::create([
                     'project_id' => $project->project_id,
@@ -1093,7 +1102,7 @@ class ProjectController extends Controller
         }
 
         return back()->with($removed ? 'success' : 'error', $removed
-            ? 'Account unlinked. The account and the project were both kept.'
+            ? 'Account unlinked.'
             : 'This project has no linked account.');
     }
 
@@ -1155,7 +1164,7 @@ class ProjectController extends Controller
         if (! $project->isAwaitingClientConfirmation()) {
             return $back->with('error', $project->isCompleted()
                 ? 'This project is already complete.'
-                : sprintf('Only a project awaiting client confirmation can be confirmed. This one is %s.', $project->statusLabel()));
+                : sprintf('Cannot confirm: project is %s.', $project->statusLabel()));
         }
 
         $completion = app(ProjectCompletion::class);
@@ -1244,7 +1253,7 @@ class ProjectController extends Controller
         } catch (RuntimeException $e) {
             return back()->with('error', $e->getMessage());
         } catch (Throwable $e) {
-            return back()->with('error', $this->safeErrorMessage($e, 'Unable to update the contact email. Nothing was changed.'));
+            return back()->with('error', $this->safeErrorMessage($e, 'Unable to update the contact email.'));
         }
 
         if ($changed === null) {
@@ -1252,7 +1261,7 @@ class ProjectController extends Controller
         }
 
         return back()->with('success', sprintf(
-            'Project contact email changed from %s to %s. The account was not changed.',
+            'Contact email changed from %s to %s.',
             $changed['previous'],
             $changed['current']
         ));
@@ -1269,6 +1278,7 @@ class ProjectController extends Controller
             // file uploaded, replaced or removed - with the file itself where
             // it still exists, so an entry can open it.
             'quotationHistory',
+            'targetDateHistory',
             'documentHistory.document',
             'schedule',
             'schedules',
@@ -1299,6 +1309,10 @@ class ProjectController extends Controller
             'completionReports.supersededByUser',
 
         ])->findOrFail($id);
+
+        // Opened by the office, so the projects list stops marking it NEW.
+        $project->markViewed();
+
         $sortedProjectTechnicians = $project->projectTechnicians
             ->sortByDesc(fn (ProjectTechnician $projectTechnician): int => $project->isLeadMember($projectTechnician) ? 1 : 0)
             ->values();
@@ -1601,8 +1615,7 @@ class ProjectController extends Controller
             return redirect()
                 ->route('super-admin.projects.show', $id)
                 ->withInput($request->except('loaded_version', 'assessmentDocument', 'quotationDocument', 'contractDocument'))
-                ->with('error', 'Nothing was saved. Someone else changed this project while you were editing it. '
-                    .'Check the details on the page, then save your changes again.');
+                ->with('error', 'Not saved: someone else just edited this project.');
         }
 
         $validated = $request->validate([
@@ -1635,7 +1648,18 @@ class ProjectController extends Controller
             // What the person answered when the edit dialog asked about the
             // other half of the quotation - see QuotationChange.
             'quotation_change' => ['nullable', 'string', 'in:'.implode(',', QuotationChange::CONFIRMATIONS)],
+
+            // Only when the form carries it: a save that does not mention the
+            // target leaves it alone. Measured against the schedule below,
+            // and only if it actually changed.
+            // Once a project has a target it keeps one; an older project
+            // without one may still be saved without setting it.
+            'target_end_date' => ['sometimes', $project->target_end_date ? 'required' : 'nullable', 'date_format:Y-m-d'],
+            'target_date_reason' => ['nullable', 'string', 'max:'.TargetDateChange::MAX_REASON],
         ], [
+            'target_end_date.required' => 'Target date is required.',
+            'target_end_date.date_format' => 'Enter a valid target date.',
+            'target_date_reason.max' => 'Keep the reason under '.TargetDateChange::MAX_REASON.' characters.',
             ...PersonName::middleInitialMessages('middle_initial'),
             'quotation.max' => Project::MAX_QUOTATION_MESSAGE,
             'assessmentDocument.max' => 'Upload at most '.Document::MAX_FILES.' assessment files at a time.',
@@ -1648,6 +1672,8 @@ class ProjectController extends Controller
             'contractDocument.*.mimes' => Document::mimesMessage('contract'),
             'contractDocument.*.max' => Document::maxMessage('contract'),
         ]);
+
+        $this->assertTargetDateChange($project, $validated);
 
         // A quotation upload replaces the quotation on record, and changing
         // the amount or the file on its own is only allowed when the person
@@ -1679,6 +1705,12 @@ class ProjectController extends Controller
             'replaced_files' => [],
         ];
 
+        // The same for the target date.
+        $targetDate = [
+            'previous' => $project->target_end_date,
+            'changed' => false,
+        ];
+
         try {
 
             DB::transaction(function () use (
@@ -1689,7 +1721,8 @@ class ProjectController extends Controller
                 $replacesQuotationFile,
                 &$uploadedDocuments,
                 &$writtenUploads,
-                &$quotation
+                &$quotation,
+                &$targetDate
             ) {
 
                 // Locked, so the amount read as "previous" is the one this
@@ -1700,11 +1733,33 @@ class ProjectController extends Controller
                 $previousAmount = $project->quotation;
                 $amountChanged = ! QuotationChange::sameAmount($previousAmount, $validated['quotation']);
 
+                $previousTarget = $project->target_end_date;
+                $targetChanged = array_key_exists('target_end_date', $validated)
+                    && ! TargetDateChange::sameDate($previousTarget, $validated['target_end_date']);
+
                 $project->update([
                     'quotation' => $validated['quotation'],
                     'address' => $validated['address'],
                     'description' => $validated['project_description'],
+                    ...($targetChanged ? ['target_end_date' => $validated['target_end_date']] : []),
                 ]);
+
+                // Beside the date it describes, inside the same transaction,
+                // exactly as the quotation history is.
+                if ($targetChanged) {
+                    $this->targetDates->recordChange(
+                        $project,
+                        $previousTarget,
+                        $validated['target_end_date'],
+                        $this->targetDateReason($validated),
+                        $actor
+                    );
+                }
+
+                $targetDate = [
+                    'previous' => $previousTarget,
+                    'changed' => $targetChanged,
+                ];
 
                 // Written beside the amount it describes, inside the same
                 // transaction: if anything later in this save fails - a file
@@ -1799,14 +1854,22 @@ class ProjectController extends Controller
                 $this->clientEmails->documentUploaded($project, $documentType);
             }
 
+            $flash = $this->quotations->flashMessage(
+                $quotation['previous'],
+                $validated['quotation'],
+                $quotation['amount_changed'],
+                $replacesQuotationFile
+            );
+
+            if ($targetDate['changed']) {
+                $this->announceTargetDateChange($project, $targetDate['previous'], $validated);
+
+                $flash .= ' Target date is now '.TargetDateChange::format($validated['target_end_date']).'.';
+            }
+
             return redirect()
                 ->route('super-admin.projects.show', $id)
-                ->with('success', $this->quotations->flashMessage(
-                    $quotation['previous'],
-                    $validated['quotation'],
-                    $quotation['amount_changed'],
-                    $replacesQuotationFile
-                ));
+                ->with('success', $flash);
         } catch (Throwable $e) {
 
             // The rollback took the rows back out; these are the bytes they
@@ -1824,6 +1887,79 @@ class ProjectController extends Controller
             return redirect()
                 ->route('super-admin.projects.show', $id)
                 ->with('error', $this->safeErrorMessage($e, 'Unable to update project. Nothing was saved.'));
+        }
+    }
+
+    /**
+     * Refuse a target date change that cannot stand, before anything is written.
+     *
+     * Only a date that actually changed is measured: saving the form with the
+     * date it already had - even one now in the past - is not a change. A
+     * project that had no target yet is setting one rather than moving it,
+     * so it is not asked for a reason.
+     *
+     * @param  array<string, mixed>  $validated
+     *
+     * @throws ValidationException
+     */
+    private function assertTargetDateChange(Project $project, array $validated): void
+    {
+        if (! array_key_exists('target_end_date', $validated)
+            || TargetDateChange::sameDate($project->target_end_date, $validated['target_end_date'])) {
+            return;
+        }
+
+        $project->loadMissing('schedules');
+
+        $problem = $this->targetDates->problemWith(
+            CarbonImmutable::createFromFormat('Y-m-d', $validated['target_end_date'])->startOfDay(),
+            $project->scheduleEndsOn()
+        );
+
+        if ($problem !== null) {
+            throw ValidationException::withMessages(['target_end_date' => $problem]);
+        }
+
+        if ($project->target_end_date !== null && $this->targetDateReason($validated) === null) {
+            throw ValidationException::withMessages(['target_date_reason' => 'Reason for change is required.']);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     */
+    private function targetDateReason(array $validated): ?string
+    {
+        $reason = trim((string) ($validated['target_date_reason'] ?? ''));
+
+        return $reason === '' ? null : $reason;
+    }
+
+    /**
+     * Everything that follows a target date change once it has committed: the
+     * audit trail, the bells, and the client's email.
+     *
+     * @param  array<string, mixed>  $validated
+     */
+    private function announceTargetDateChange(Project $project, mixed $previousDate, array $validated): void
+    {
+        try {
+            $project->refresh();
+            $reason = $this->targetDateReason($validated);
+
+            $this->activityLogger->record(
+                ActivityLog::PROJECT_TARGET_DATE_CHANGED,
+                null,
+                $this->targetDates->describe($project, $previousDate, $validated['target_end_date'], $reason ?? 'Not given'),
+                $project
+            );
+
+            $this->notifications->projectTargetDateChanged($project, $previousDate, $reason);
+            $this->clientEmails->targetDateChanged($project, $reason);
+        } catch (Throwable $exception) {
+            // The date is saved. Failing to tell somebody about it is worth
+            // knowing, not worth reporting the save as failed.
+            report($exception);
         }
     }
 
@@ -1972,7 +2108,7 @@ class ProjectController extends Controller
         } catch (Throwable $e) {
             return redirect()
                 ->to($this->projectActionReturn($request, $id, route('super-admin.projects', $id)))
-                ->with('error', $this->safeErrorMessage($e, 'Unable to put project on hold. Nothing was changed.'));
+                ->with('error', $this->safeErrorMessage($e, 'Unable to put project on hold.'));
         }
     }
 
@@ -2204,7 +2340,7 @@ class ProjectController extends Controller
                 ->route('super-admin.projects.show', $id)
                 ->withInput()
                 ->with('error', sprintf(
-                    'This project is not ready to be completed. %s Give a reason to complete it anyway.',
+                    'Not ready to complete. %s Add a reason to override.',
                     implode(' ', $blockers)
                 ));
         }
@@ -2231,7 +2367,7 @@ class ProjectController extends Controller
             return redirect()
                 ->route('super-admin.projects')
                 ->with('success', sprintf(
-                    'Completion recorded. %s completes automatically in %d days unless the client replies.',
+                    '%s auto-completes in %d days.',
                     $project->reference_no ?? $project->name,
                     Project::completionConfirmationDays()
                 ));
@@ -2264,8 +2400,8 @@ class ProjectController extends Controller
 
         if (! $project->canBeReopened()) {
             return $back->with('error', $project->isCompleted()
-                ? 'Completed projects cannot be reopened - create a new project instead.'
-                : sprintf('Only a project awaiting client confirmation can be reopened. This one is %s.', $project->statusLabel()));
+                ? 'Completed projects cannot be reopened.'
+                : sprintf('Cannot reopen: project is %s.', $project->statusLabel()));
         }
 
         $scheduleRules = app(ScheduleModeRules::class);
@@ -2292,7 +2428,7 @@ class ProjectController extends Controller
 
         if (! $entry) {
             return $back->withInput()->with('error', $validator->errors()->first()
-                ?: 'Unable to read that schedule. The project was not reopened.');
+                ?: 'Invalid schedule. Not reopened.');
         }
 
         $reopen = app(ProjectReopen::class);
@@ -2448,7 +2584,7 @@ class ProjectController extends Controller
                 ->route('super-admin.projects.show', $id)
                 ->with('error', $project->isCompleted()
                     ? 'A completed project cannot be cancelled.'
-                    : 'This project is awaiting client confirmation. Reopen it first if the work is not finished.');
+                    : 'Awaiting client confirmation. Reopen it first.');
         }
 
         if ($project->isCancelled() || $project->isArchived()) {
@@ -2856,7 +2992,7 @@ class ProjectController extends Controller
 
         if ($project->isReadOnly()) {
             return response()->json([
-                'error' => 'This project is '.$project->statusLabel().' and its schedule cannot be changed.',
+                'error' => 'Project is '.$project->statusLabel().'; schedule is locked.',
             ], 422);
         }
 
@@ -2931,7 +3067,7 @@ class ProjectController extends Controller
             });
         } catch (Throwable $e) {
             return response()->json([
-                'error' => $this->safeErrorMessage($e, 'Unable to change that schedule range. Nothing was changed.'),
+                'error' => $this->safeErrorMessage($e, 'Unable to change that schedule range.'),
             ], 422);
         }
 
@@ -3251,7 +3387,7 @@ class ProjectController extends Controller
         // rebuilt, and rearranging it while nobody is working is a decision
         // that belongs after the resume, not before it.
         if ($project->on_hold) {
-            return 'This project is on hold. Resume it before changing its assigned technicians.';
+            return 'On hold. Resume it first.';
         }
 
         return null;

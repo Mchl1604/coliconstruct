@@ -3,7 +3,7 @@
 @section('subject', 'Your project has been created')
 
 @section('preview')
-    Project {{ $project->reference_no }} is now open. Follow its progress online.
+    Project {{ $project->reference_no }} is now open.
 @endsection
 
 @section('heading')Welcome to {{ $company['name'] }}@endsection
@@ -12,9 +12,7 @@
     <p style="margin:0 0 16px 0;">Hello {{ $clientName }},</p>
 
     <p style="margin:0 0 16px 0;">
-        Thank you for choosing {{ $company['name'] }}. Your project has been created and our team is now working
-        on it. You can follow its progress online at any time - the schedule, the assigned technicians, the
-        documents and every status change as it happens.
+        Your project is created. Follow it online anytime.
     </p>
 
     <x-mail-details :rows="[
@@ -26,22 +24,20 @@
 
     @if ($hasAccount)
         <p style="margin:0 0 16px 0;">
-            You already have a {{ $company['name'] }} account under <strong>{{ $contactEmail }}</strong>.
-            Simply sign in and open <em>My Projects</em> to see this project.
+            Sign in with <strong>{{ $contactEmail }}</strong> and open <em>My Projects</em>.
         </p>
     @else
         <p style="margin:0 0 8px 0;">
-            To follow this project, create a free account using <strong>this same email address</strong>:
+            Create a free account to follow it:
         </p>
         <p
             style="margin:0 0 16px 0; padding:12px 16px; background-color:#fff8e6; border-left:3px solid #f0ad4e; font-size:14px;">
-            Register with <strong>{{ $contactEmail }}</strong> &mdash; a different address will not show this project.
+            Register with <strong>{{ $contactEmail }}</strong>.
         </p>
     @endif
 
     <p style="margin:0; color:#63748a; font-size:13px;">
-        If anything about the details above looks wrong, please contact us using the details at the bottom of this
-        email.
+        Something wrong? Contact us.
     </p>
 @endsection
 

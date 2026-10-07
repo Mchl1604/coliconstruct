@@ -99,15 +99,13 @@ class QuotationChange
 
         if ($amountChanged && ! in_array($confirmation, [self::CONFIRMED_AMOUNT, self::CONFIRMED_BOTH], true)) {
             throw ValidationException::withMessages([
-                'quotation_change' => 'The quotation amount was changed without confirming whether the quotation file '
-                    .'should be replaced too. Nothing was saved.',
+                'quotation_change' => 'Confirm whether to replace the quotation file.',
             ]);
         }
 
         if ($fileUploaded && ! in_array($confirmation, [self::CONFIRMED_FILE, self::CONFIRMED_BOTH], true)) {
             throw ValidationException::withMessages([
-                'quotation_change' => 'A new quotation file was chosen without confirming whether the quotation amount '
-                    .'should change too. Nothing was saved.',
+                'quotation_change' => 'Confirm whether to change the amount.',
             ]);
         }
 
@@ -117,8 +115,7 @@ class QuotationChange
         // half-done change the person said they did not want.
         if (! $fileUploaded && in_array($confirmation, [self::CONFIRMED_FILE, self::CONFIRMED_BOTH], true)) {
             throw ValidationException::withMessages([
-                'quotation_change' => 'The replacement quotation file did not arrive. Nothing was saved - choose the '
-                    .'file and save again.',
+                'quotation_change' => 'File did not upload. Try again.',
             ]);
         }
     }
@@ -235,7 +232,7 @@ class QuotationChange
     {
         if ($amountChanged && $fileReplaced) {
             return sprintf(
-                'Project updated. The quotation amount is now %s (was %s) and the quotation file was replaced.',
+                'Saved. Quotation is now %s (was %s), file replaced.',
                 self::peso($newAmount),
                 self::peso($previousAmount)
             );
@@ -243,7 +240,7 @@ class QuotationChange
 
         if ($amountChanged) {
             return sprintf(
-                'Project updated. The quotation amount is now %s (was %s). The uploaded quotation file was not replaced.',
+                'Saved. Quotation is now %s (was %s).',
                 self::peso($newAmount),
                 self::peso($previousAmount)
             );
@@ -251,7 +248,7 @@ class QuotationChange
 
         if ($fileReplaced) {
             return sprintf(
-                'Project updated. The quotation file was replaced. The quotation amount stayed at %s.',
+                'Saved. File replaced; amount stays %s.',
                 self::peso($previousAmount)
             );
         }

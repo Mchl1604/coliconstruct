@@ -271,6 +271,9 @@ class ActivityLog extends Model
 
     public const PROJECT_RESCHEDULED = 'Project Rescheduled';
 
+    /** The promised completion date moved. Kept apart from the booked schedule. */
+    public const PROJECT_TARGET_DATE_CHANGED = 'Project Target Date Changed';
+
     /**
      * The phase structure, which is settled once and then locked.
      *
@@ -497,6 +500,7 @@ class ActivityLog extends Model
         self::PROJECT_PUT_ON_HOLD => self::MODULE_PROJECTS,
         self::PROJECT_RESUMED => self::MODULE_PROJECTS,
         self::PROJECT_RESCHEDULED => self::MODULE_PROJECTS,
+        self::PROJECT_TARGET_DATE_CHANGED => self::MODULE_PROJECTS,
         self::PROJECT_PHASES_FINALIZED => self::MODULE_PROJECTS,
         self::PROJECT_PHASE_STRUCTURE_OVERRIDDEN => self::MODULE_PROJECTS,
         self::PROJECT_PHASE_COMPLETED => self::MODULE_PROJECTS,

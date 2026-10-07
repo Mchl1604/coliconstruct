@@ -48,7 +48,7 @@
                     </div>
                 @else
                     <div class="alert alert-warning mb-0">
-                        This file type cannot be previewed in the browser. Use the open original file button instead.
+                        No preview. Open the original file.
                     </div>
                 @endif
             </div>

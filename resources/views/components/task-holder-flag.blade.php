@@ -12,12 +12,12 @@
 @props(['task'])
 
 @if ($task->isOpen() && $task->technician && $task->holderRemovedFromProject())
-    <span class="task-holder-flag" title="{{ $task->technician->name }} is no longer on this project. Reassign this task.">
+    <span class="task-holder-flag" title="{{ $task->technician->name }} left. Reassign this task.">
         <i class="bi bi-flag-fill" aria-hidden="true"></i>
         Removed from project
     </span>
 @elseif ($task->isOpen() && $task->technician && $task->holderHasDayOffInDates())
-    <span class="task-holder-flag" title="{{ $task->technician->name }} has a day off on this project within this task's dates.">
+    <span class="task-holder-flag" title="{{ $task->technician->name }} is off during this task.">
         <i class="bi bi-flag-fill" aria-hidden="true"></i>
         Day off in task dates
     </span>

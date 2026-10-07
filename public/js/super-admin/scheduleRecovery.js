@@ -354,10 +354,10 @@
                 ? '<div class="conflict-panel-line text-secondary">'
                     + escapeHtml(project.client_type) + ' client &mdash; '
                     + (project.partial_day_allowed
-                        ? 'a clash may be resolved with a Partial Day booking of '
+                        ? 'Partial Day available, '
                             + escapeHtml(project.partial_day_window.start_label) + ' to '
                             + escapeHtml(project.partial_day_window.end_label) + '.'
-                        : 'Partial Day scheduling is for Residential projects only.')
+                        : 'Partial Day is Residential only.')
                     + '</div>'
                 : '')
             + '</div>';
@@ -502,15 +502,12 @@
             + (fresh
                 ? 'Pick a new period for this range. Currently <strong>'
                     + escapeHtml(range.label) + '</strong>. '
-                : 'Move this range to a period the whole team is free for. ')
-            + 'Past days, days the team is already booked on, and days this project’s other '
-            + 'ranges hold are greyed out.'
+                : 'Pick dates the whole team is free.')
             + '</p>'
             + (range.partial_day_allowed
-                ? '<p class="conflict-editor-note">Partial Day books only the hours you choose on a '
-                    + 'single date, between ' + escapeHtml(range.partial_day_start_label) + ' and '
-                    + escapeHtml(range.partial_day_end_label) + '. A technician who is booked for the '
-                    + 'whole of a day is still unavailable for part of it.</p>'
+                ? '<p class="conflict-editor-note">Partial Day: '
+                    + escapeHtml(range.partial_day_start_label) + ' to '
+                    + escapeHtml(range.partial_day_end_label) + '.</p>'
                 : '')
             + (range.start_frozen
                 ? '<p class="conflict-editor-note">This range is under way, so its start is fixed.</p>'
@@ -1026,7 +1023,7 @@
                 if (result.status === 409 && result.payload.conflicts) {
                     state.report = result.payload.conflicts;
                     render();
-                    feedback('danger', 'The calendar changed while this was open. The schedule below is current.');
+                    feedback('danger', 'Calendar updated.');
 
                     return;
                 }

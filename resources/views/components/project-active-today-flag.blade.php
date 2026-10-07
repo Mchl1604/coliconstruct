@@ -18,7 +18,7 @@
 --}}
 @if ($project->isActiveToday())
     <span {{ $attributes->merge(['class' => 'project-active-today-flag']) }}
-        title="This project has a booked schedule range covering today.">
+        title="Work scheduled today.">
         <i class="bi bi-broadcast" aria-hidden="true"></i>
         ACTIVE TODAY
     </span>

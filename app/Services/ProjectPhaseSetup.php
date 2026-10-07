@@ -66,7 +66,7 @@ class ProjectPhaseSetup
     {
         if ($project->phasesAreFinalized()) {
             throw new RuntimeException(
-                'This project\'s phase structure has been finalized and can no longer be changed.'
+                'Phases are finalized and locked.'
             );
         }
 
@@ -97,7 +97,7 @@ class ProjectPhaseSetup
         // whatever tasks the real phase held.
         foreach ($keptIds as $id) {
             if (! $existing->has($id)) {
-                throw new RuntimeException('That phase is no longer part of this project. Reload the page and try again.');
+                throw new RuntimeException('That phase was removed. Reload the page.');
             }
         }
 
@@ -428,7 +428,7 @@ class ProjectPhaseSetup
 
             if ($target === null) {
                 throw new RuntimeException(sprintf(
-                    '%s still has %d %s on it. Move that work to another phase before removing it.',
+                    '%s still has %d %s. Move them first.',
                     $phase->label(),
                     $taskCount,
                     $taskCount === 1 ? 'task' : 'tasks'

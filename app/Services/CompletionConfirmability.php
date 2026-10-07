@@ -129,10 +129,10 @@ class CompletionConfirmability
 
         return $deadline
             ? sprintf(
-                'No registered client can confirm this project online. It completes automatically on %s.',
+                'No client can confirm online. Auto-completes %s.',
                 $deadline->format(BusinessTime::DATE)
             )
-            : 'No registered client can confirm this project online.';
+            : 'No client can confirm online.';
     }
 
     // ------------------------------------------------------------------

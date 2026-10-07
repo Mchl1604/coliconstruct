@@ -414,7 +414,7 @@ class ConfigurationUserManagementTest extends TestCase
             );
 
             $response->assertStatus(422);
-            $this->assertStringContainsString('11-digit contact number', $response->json('error'));
+            $this->assertStringContainsString('Enter 11 digits', $response->json('error'));
         }
     }
 

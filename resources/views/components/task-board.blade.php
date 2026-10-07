@@ -81,7 +81,7 @@
                         @unless ($project->phasesAreFinalized())
                             <div class="text-secondary small mt-2">
                                 <i class="bi bi-info-circle me-1" aria-hidden="true"></i>
-                                Finalize this project's phases first before adding new tasks.
+                                Finalize phases to add tasks.
                             </div>
                         @endunless
                     </div>

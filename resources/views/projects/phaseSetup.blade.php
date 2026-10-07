@@ -80,7 +80,7 @@
             <i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i>
             <span>
                 <strong>Phase Setup Required.</strong>
-                This project is not monitored and cannot take tasks until its phases are finalized.
+                Finalize phases to start adding tasks.
             </span>
         </div>
 
@@ -95,8 +95,7 @@
                     <p class="mb-1 small">
                         It was finalized with {{ $project->phase_count }}
                         {{ \Illuminate\Support\Str::plural('phase', (int) $project->phase_count) }}.
-                        Changing the count changes what every progress figure on this project is read
-                        against.
+                        Changing it affects progress figures.
                     </p>
                     <p class="mb-0 small fst-italic">
                         &ldquo;{{ $project->phase_structure_override_reason }}&rdquo;
@@ -111,8 +110,7 @@
                 <div>
                     <h6 class="alert-heading mb-1">Some phases already have work on them</h6>
                     <p class="mb-1 small">
-                        Removing one of these will ask you where its tasks should go. Tasks are never
-                        deleted with a phase.
+                        Removed phases keep their tasks.
                     </p>
                     <ul class="small mb-0">
                         @foreach ($phasesHoldingTasks as $entry)
@@ -140,8 +138,7 @@
                 <div class="phase-structure-head">
                     <h5 class="fw-bold mb-1">Phase Structure</h5>
                     <p class="text-secondary small mb-0">
-                        Give each phase a title and one-sentence description, then list the work it
-                        needs &mdash; a technician and dates are optional.
+                        Add a title, description and tasks.
                     </p>
                 </div>
 
@@ -239,9 +236,7 @@
 
                         <div class="modal-body">
                             <p class="mb-3">
-                                Once phases are finalized, the phase structure will be locked. Admins and
-                                Lead Technicians will no longer be able to add, remove, or reorder phases.
-                                Make sure all project phases have been entered correctly before continuing.
+                                Phases will be locked after this.
                             </p>
 
                             <div class="alert alert-light border small mb-0" data-phase-summary></div>
@@ -282,7 +277,7 @@
                         <select class="form-select" id="reassignPhaseTarget" data-reassign-target>
                         </select>
                         <div class="form-text">
-                            The tasks are moved, never deleted. Only phases you are keeping are listed.
+                            Tasks are moved, not deleted.
                         </div>
                     </div>
 

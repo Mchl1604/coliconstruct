@@ -618,7 +618,7 @@ class ProjectArchiveRestoreTest extends TestCase
 
         $response->assertSee('with its original schedule and team', false);
         // And the honest answer for a row archived before any of this existed.
-        $response->assertSee('archived before archiving kept schedules', false);
+        $response->assertSee('set dates and team again', false);
     }
 
     /**

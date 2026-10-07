@@ -64,6 +64,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const leadTechInput = form.querySelector('[data-lead-tech-input]');
     const startDateInput = form.querySelector('[data-summary-input="start_date"]');
     const endDateInput = form.querySelector('[data-summary-input="end_date"]');
+    const targetDateInput = form.querySelector('[data-summary-input="target_end_date"]');
     const projectDateInput = form.querySelector('[data-summary-input="project_date"]');
     const startTimeSelect = form.querySelector('[data-summary-input="start_time"]');
     const endTimeSelect = form.querySelector('[data-summary-input="end_time"]');
@@ -477,12 +478,12 @@ document.addEventListener('DOMContentLoaded', function() {
             return conflicts.map(function(conflict) {
                 return 'Technician ' + conflict.name + ' is already booked ' +
                     conflict.labels.join(' and ') + ' on ' + formatDateList([conflict.date]) + '.';
-            }).join(' ') + ' Please choose a time when every selected technician is free.';
+            }).join(' ') + ' Pick a time the whole team is free.';
         }
 
         return conflicts.map(function(conflict) {
             return 'Technician ' + conflict.name + ' is unavailable on ' + formatDateList(conflict.dates) + '.';
-        }).join(' ') + ' Please select a continuous date range where all selected technicians are available.';
+        }).join(' ') + ' Pick dates the whole team is free.';
     }
 
     // -----------------------------------------------------------------
@@ -1500,6 +1501,23 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
 
+        // The target is a promise about the finish, so it may not fall before
+        // the last day the work is booked for. Said on the schedule step,
+        // where the dates that decide it are being chosen.
+        const lastWorkDay = isPartialDay() ? projectDateInput.value : endDateInput.value;
+
+        if (targetDateInput && targetDateInput.value && lastWorkDay && targetDateInput.value < lastWorkDay) {
+            const message = 'Target date is before the last work day (' + friendlyDate(lastWorkDay) + ').';
+
+            fields.forEach(function(field) {
+                field.setCustomValidity(message);
+            });
+
+            showScheduleError(message);
+
+            return false;
+        }
+
         const conflicts = scheduleConflicts();
 
         if (conflicts.length) {
@@ -1599,6 +1617,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
                 return amount === 'Not filled yet' ? amount : '₱ ' + amount;
             })(),
+            target_end_date: formatFieldValue(targetDateInput),
             project_types: selectedProjectTypes().join(', '),
             project_documents: selectedFiles().join(', '),
             project_description: formatFieldValue(form.querySelector(
@@ -1862,10 +1881,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
 
-            importHint.textContent = scheduleChosen()
-                ? 'Copy a team from another project. Anyone already booked over these dates is flagged.'
-                : 'Copy a team from another project. Once you set the schedule below, anyone who is '
-                    + 'already booked over those dates is flagged here.';
+            importHint.textContent = scheduleChosen() ? 'Booked technicians are flagged.' : '';
+            importHint.classList.toggle('d-none', !scheduleChosen());
         };
     }
 

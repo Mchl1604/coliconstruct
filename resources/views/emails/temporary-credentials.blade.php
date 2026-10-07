@@ -3,7 +3,7 @@
 @section('subject', $isReset ? 'Your password has been reset' : 'Your account is ready')
 
 @section('preview')
-    {{ $isReset ? 'A temporary password has been issued for your account.' : 'Your account has been created. Here are your sign-in details.' }}
+    {{ $isReset ? 'A temporary password has been issued for your account.' : 'Here are your sign-in details.' }}
 @endsection
 
 @section('heading')
@@ -15,13 +15,11 @@
 
     @if ($isReset)
         <p style="margin:0 0 16px 0;">
-            An administrator has reset the password on your {{ $company['name'] }} account. Use the temporary
-            password below to sign in.
+            Sign in with this temporary password.
         </p>
     @else
         <p style="margin:0 0 16px 0;">
-            An account has been created for you on the {{ $company['name'] }} {{ $company['tagline'] }}.
-            Use the details below to sign in for the first time.
+            Your account is ready. Sign in below.
         </p>
     @endif
 
@@ -33,12 +31,11 @@
     ]" />
 
     <p style="margin:0 0 16px 0;">
-        You will be asked to choose a new password the first time you sign in. This temporary password stops
-        working at that point, so there is no need to keep it.
+        You'll choose a new password at first sign-in.
     </p>
 
     <p style="margin:0; color:#63748a; font-size:13px;">
-        If you were not expecting this message, please contact your administrator.
+        Not expecting this? Contact your administrator.
     </p>
 @endsection
 

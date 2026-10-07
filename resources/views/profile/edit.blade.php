@@ -28,7 +28,7 @@
         <div class="mb-4">
             <h1 class="h4 fw-bold mb-1">My Profile</h1>
             <p class="text-secondary small mb-0">
-                Your details, and the only place they can be changed.
+                Manage your details.
             </p>
         </div>
 
@@ -60,7 +60,7 @@
                                 name="profile_photo" accept="image/*" required>
 
                             <div class="form-text text-start mb-2">
-                                JPG, PNG or WEBP, up to 5 MB. Square images work best.
+                                JPG, PNG or WEBP, max 5 MB.
                             </div>
 
                             @error('profile_photo', 'photo')
@@ -113,7 +113,7 @@
                         </dl>
 
                         <p class="text-secondary small mb-0 mt-3 text-start">
-                            Role, status and date of birth can only be changed by an administrator.
+                            Only an administrator can change these.
                         </p>
                     </div>
                 </div>
@@ -205,7 +205,7 @@
                                         id="emailAddress" name="email" maxlength="255" required
                                         value="{{ old('email', $account->email) }}">
                                     <div class="form-text">
-                                        Your sign-in address. Changing it requires a code sent to the new address.
+                                        Changing it needs a code.
                                     </div>
                                     @error('email', 'information')
                                         <div class="invalid-feedback">{{ $message }}</div>
@@ -302,7 +302,7 @@
                                     data-bs-toggle="modal" data-bs-target="#specialtiesModal"
                                     @disabled($pendingRequest || $allSkills->isEmpty())
                                     title="{{ $pendingRequest
-                                        ? 'A change is already waiting for an administrator to decide.'
+                                        ? 'A request is already pending.'
                                         : ($allSkills->isEmpty()
                                             ? 'No specialties have been set up yet.'
                                             : 'Request a change to your specialties') }}">
@@ -349,8 +349,7 @@
 
                                     <p class="text-secondary small mb-0">
                                         Submitted
-                                        {{ $pendingRequest->created_at?->diffForHumans() }}. Your current
-                                        specialties stay active until it is decided.
+                                        {{ $pendingRequest->created_at?->diffForHumans() }}. Current specialties stay active.
                                     </p>
                                 </div>
                             @endif
@@ -376,8 +375,7 @@
 
                                         <div class="modal-body">
                                             <p class="text-secondary small">
-                                                Select the specialties you should hold. Nothing changes until an
-                                                administrator approves it.
+                                                Needs administrator approval.
                                             </p>
 
                                             @error('skill_ids', 'specialties')

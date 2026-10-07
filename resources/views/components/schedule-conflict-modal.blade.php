@@ -28,8 +28,7 @@
                 {{-- The verdict on the schedule as a whole, rewritten by the
                      script every time it is rechecked. --}}
                 <div class="alert alert-danger" role="alert" data-conflict-summary>
-                    This project's schedule conflicts with the current availability of its team.
-                    Review the affected schedule ranges before continuing.
+                    Team unavailable for some dates.
                 </div>
 
                 <div class="conflict-restoring" data-conflict-restoring></div>

@@ -444,7 +444,7 @@ class ProjectActivityLogTest extends TestCase
         $this->get(route('super-admin.projects.show', $project->project_id).'?activity_page=9')
             ->assertOk()
             ->assertDontSee('No activity recorded for this project.')
-            ->assertSee('There is nothing on this page of the activity log.')
+            ->assertSee('No entries on this page.')
             // The way back, rather than a misleading "Page 9 of 1".
             ->assertSee('Back to the latest entries')
             ->assertDontSee('Page 9 of', false);

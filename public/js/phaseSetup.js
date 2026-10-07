@@ -667,7 +667,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
         if (!survivors.length) {
             setError(
-                "There is no other saved phase to move this work to. Save the new phases first, then remove this one.",
+                "Save another phase first.",
             );
 
             return;

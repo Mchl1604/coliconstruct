@@ -49,7 +49,7 @@ class NotAnEmployeeEmail implements ValidationRule
             ->exists();
 
         if ($taken) {
-            $fail('This email address belongs to an employee account. Use the client\'s own email address.');
+            $fail('This is an employee email. Use the client\'s.');
         }
     }
 }

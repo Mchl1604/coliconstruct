@@ -101,7 +101,7 @@ class PasswordResetTest extends TestCase
         $response = $this->get(route('auth.password.request'));
 
         $response->assertOk();
-        $response->assertSee('Verification codes cannot be sent right now');
+        $response->assertSee('Codes unavailable. Ask an administrator.');
     }
 
     public function test_no_code_is_sent_when_email_is_not_configured(): void

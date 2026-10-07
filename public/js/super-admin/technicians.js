@@ -1641,33 +1641,6 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         /**
-         * The first scheduled day after $day - when somebody off until then is
-         * next on site. The day after, for a project with no schedule; null
-         * when the schedule has no day left after it.
-         */
-        function nextScheduledDay(day) {
-            const ranges = scheduleRanges();
-            const after = shiftDay(day, 1);
-
-            const next = !ranges.length
-                ? after
-                : ranges
-                      .filter(function (range) {
-                          return range.end >= after;
-                      })
-                      .map(function (range) {
-                          return range.start > after ? range.start : after;
-                      })
-                      .sort()[0] || null;
-
-            // Back only while the span they are off stays open - a span that
-            // ends first leaves them nothing to come back to.
-            const span = spanCovering(day);
-
-            return next && span && (!span.end || next <= span.end) ? next : null;
-        }
-
-        /**
          * Whether any day is left from today onward that the project is
          * scheduled on and the technician holds.
          */
@@ -1694,25 +1667,14 @@ document.addEventListener("DOMContentLoaded", function () {
         function renderConfirmLabel() {
             const lead = payload && payload.is_lead;
             const from = effectiveInput.value;
-            const until = untilInput.value || from;
             const today = payload ? payload.min_date : "";
 
             untilWrap.classList.toggle("d-none", mode() !== "days");
 
             if (mode() === "days") {
                 confirmLabel.textContent = lead ? "Assign Stand-in & Remove Days" : "Remove These Days";
-                effectiveHint.textContent = from
-                    ? selectedTechnician.name +
-                      " is off this project " +
-                      (until === from
-                          ? "on " + formatDay(from)
-                          : "from " + formatDay(from) + " to " + formatDay(until)) +
-                      (nextScheduledDay(until)
-                          ? " and back on it " + formatDay(nextScheduledDay(until)) + "."
-                          : spanCovering(until) && spanCovering(until).end
-                            ? ". They have no later days on it."
-                            : ", to the end of its schedule.")
-                    : "Choose the days they are off.";
+                // The fields already show the dates; only ask for them.
+                setHint(from ? "" : "Choose the days off.");
 
                 return;
             }
@@ -1727,14 +1689,12 @@ document.addEventListener("DOMContentLoaded", function () {
                   ? "Reassign Lead & Remove"
                   : "Remove";
 
-            effectiveHint.textContent = later
-                ? selectedTechnician.name +
-                  " stays on this project until " +
-                  formatDay(shiftDay(from, -1)) +
-                  " and comes off it for good on " +
-                  formatDay(from) +
-                  "."
-                : selectedTechnician.name + " comes off this project for good today.";
+            setHint(later ? "Last day: " + formatDay(shiftDay(from, -1)) + "." : "");
+        }
+
+        function setHint(text) {
+            effectiveHint.textContent = text;
+            effectiveHint.classList.toggle("d-none", !text);
         }
 
         function showState(state) {
@@ -1851,9 +1811,8 @@ document.addEventListener("DOMContentLoaded", function () {
             tasksEmptyEl.classList.toggle("d-none", count > 0);
             taskCountEl.textContent = count + (count === 1 ? " task" : " tasks");
             taskCountEl.classList.toggle("d-none", count === 0);
-            taskNoteEl.textContent =
-                "Assigned to " + selectedTechnician.name + " on this project.";
-            taskNoteEl.classList.toggle("d-none", count === 0);
+            taskNoteEl.textContent = "";
+            taskNoteEl.classList.add("d-none");
         }
 
         function renderLeadOptions() {
@@ -1861,21 +1820,10 @@ document.addEventListener("DOMContentLoaded", function () {
 
             leadPanelEl.classList.remove("d-none");
 
-            const until = untilInput.value || effectiveInput.value;
-
             leadHeadingEl.textContent = mode() === "days" ? "Choose a Stand-in Lead" : "Assign New Lead Technician";
-            leadIntroEl.textContent =
-                mode() === "days"
-                    ? selectedTechnician.name +
-                      " leads this project. Choose a lead technician to stand in " +
-                      (until === effectiveInput.value
-                          ? "on " + formatDay(effectiveInput.value)
-                          : "from " + formatDay(effectiveInput.value) + " to " + formatDay(until)) +
-                      "."
-                    : selectedTechnician.name +
-                      " leads this project. Choose who takes over from " +
-                      formatDay(effectiveInput.value) +
-                      " - they must be free for the rest of its schedule from that day.";
+            // The heading says what to do; only the rule that is not obvious stays.
+            leadIntroEl.textContent = mode() === "days" ? "" : "Must be free for the rest of the schedule.";
+            leadIntroEl.classList.toggle("d-none", mode() === "days");
 
             if (!candidates.length) {
                 leadOptionsEl.innerHTML = "";
@@ -2070,10 +2018,8 @@ document.addEventListener("DOMContentLoaded", function () {
                 setAlert(
                     errorEl,
                     data.removed_on
-                        ? "This technician was removed from this project on " +
-                              data.removed_on +
-                              ". These dates are kept as a record of when they were booked."
-                        : "This technician is no longer assigned to this project. These dates are kept as a record of when they were booked.",
+                        ? "Removed on " + data.removed_on + ". Kept as a record."
+                        : "No longer assigned. Kept as a record.",
                 );
             } else if (data.read_only) {
                 setAlert(
@@ -2121,13 +2067,7 @@ document.addEventListener("DOMContentLoaded", function () {
             const affected = (payload && payload.affected_tasks) || [];
 
             warningEl.textContent = affected.length
-                ? (affected.length === 1
-                      ? "This task still belongs to them and runs into those days: "
-                      : "These tasks still belong to them and run into those days: ") +
-                  affected.join(", ") +
-                  ". " +
-                  (affected.length === 1 ? "It" : "They") +
-                  " will be flagged \u201cTechnician Not Assigned for Dates\u201d on the task board for you to reassign."
+                ? "Reassign later: " + affected.join(", ") + "."
                 : "";
             warningEl.classList.toggle("d-none", !affected.length);
         }
@@ -2146,9 +2086,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 renderConfirmLabel();
                 setAlert(
                     removalErrorEl,
-                    "This project has no scheduled days left to remove. To take " +
-                        selectedTechnician.name +
-                        " off it, use Assigned Team on the project.",
+                    "No days left. Use Assigned Team instead.",
                 );
 
                 return;
@@ -2173,7 +2111,7 @@ document.addEventListener("DOMContentLoaded", function () {
             if (!payload.is_lead && payload.remaining_after_removal < 1) {
                 setAlert(
                     errorEl,
-                    "A project must keep at least one technician. Assign someone else first.",
+                    "Assign someone else first.",
                 );
 
                 return;
@@ -2384,7 +2322,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     if (payload.on_hold) {
                         setAlert(
                             errorEl,
-                            "This project is on hold. Resume it before changing its assigned technicians.",
+                            "On hold. Resume first.",
                         );
 
                         return;
@@ -2393,7 +2331,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     if (!payload.is_lead && payload.remaining_after_removal < 1) {
                         setAlert(
                             errorEl,
-                            "A project must keep at least one technician. Assign someone else first.",
+                            "Assign someone else first.",
                         );
 
                         return;
@@ -3045,10 +2983,8 @@ document.addEventListener("DOMContentLoaded", function () {
                             ? '<span class="schedule-pick-reason">' +
                               escapeHtml(
                                   booking.removedOn
-                                      ? "Removed from this project on " +
-                                            booking.removedOn +
-                                            ". Kept as a record of when they were booked."
-                                      : "No longer on this project. Kept as a record of when they were booked.",
+                                      ? "Removed on " + booking.removedOn + ". Kept as a record."
+                                      : "No longer assigned. Kept as a record.",
                               ) +
                               "</span>"
                             : "") +
@@ -3069,7 +3005,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 .join("");
 
             bookedNoteEl.textContent = past
-                ? "This day has already passed, so what they were booked on is a record and can no longer be changed."
+                ? "Past day. Cannot be changed."
                 : "";
             bookedNoteEl.classList.toggle("d-none", !past);
 

@@ -590,7 +590,7 @@ class RestoreScheduleConflictTest extends TestCase
         );
 
         $this->assertStringContainsString(
-            'Review the affected schedule ranges before restoring the project.',
+            'Team unavailable for some dates.',
             $this->report($archived)['flow']['blocked_summary']
         );
     }

@@ -192,7 +192,7 @@ class SystemContent extends Model
             'label' => 'Short Name',
             'type' => self::TYPE_TEXT,
             'section' => self::SECTION_BRANDING,
-            'help' => 'Shown beside the logo in the header, where there is less room.',
+            'help' => 'Shown next to the logo.',
             'default' => 'Coliconstruct',
         ],
         'branding.website_title' => [
@@ -228,7 +228,7 @@ class SystemContent extends Model
             'label' => 'Hero Badge',
             'type' => self::TYPE_TEXT,
             'section' => self::SECTION_HOME,
-            'help' => 'The small yellow pill above the headline. Leave empty to hide it.',
+            'help' => 'Yellow pill above the headline. Optional.',
             'default' => 'HVAC specialists since 2012',
         ],
         'home.hero_heading' => [
@@ -247,13 +247,13 @@ class SystemContent extends Model
             'label' => 'Hero Image',
             'type' => self::TYPE_IMAGE,
             'section' => self::SECTION_HOME,
-            'help' => 'The framed photograph beneath the hero text. A wide shot works best.',
+            'help' => 'Photo under the hero text. Wide works best.',
         ],
         'home.services_eyebrow' => [
             'label' => 'Services Eyebrow',
             'type' => self::TYPE_TEXT,
             'section' => self::SECTION_HOME,
-            'help' => 'The small blue line above the services heading.',
+            'help' => 'Blue line above the heading.',
             'default' => 'What we offer',
         ],
         'home.services_heading' => [
@@ -266,14 +266,14 @@ class SystemContent extends Model
             'label' => 'Services Intro',
             'type' => self::TYPE_TEXTAREA,
             'section' => self::SECTION_HOME,
-            'help' => 'Optional. Sits under the heading; leave empty to hide it.',
+            'help' => 'Optional. Shown under the heading.',
             'default' => 'Complete HVAC work, from a single unit to a whole building.',
         ],
         'home.services' => [
             'label' => 'Services',
             'type' => self::TYPE_SERVICE_LIST,
             'section' => self::SECTION_HOME,
-            'help' => 'Add, edit, remove, and order the services shown on the website. Each service can have its own image.',
+            'help' => 'Services shown on the website.',
             'default' => "HVAC Installation | Heating, ventilation and air-conditioning systems sized, mounted, ducted and commissioned for homes and businesses.\nHVAC Cleaning | Scheduled cleaning of units, coils and ductwork that keeps a system efficient and the air in your building clean.\nHVAC Maintenance | Planned servicing and repair that keeps heating, ventilation and cooling running through the year.",
         ],
         'home.service_ids' => [
@@ -380,7 +380,7 @@ class SystemContent extends Model
             'label' => 'Team Members',
             'type' => self::TYPE_TEXTAREA,
             'section' => self::SECTION_ABOUT,
-            'help' => 'One person per line, as "Name | Role". Their photographs are the four fields below, in the same order. Leave empty to hide the section.',
+            'help' => 'One per line: "Name | Role".',
             'default' => '',
             'hidden' => true,
         ],
@@ -404,7 +404,7 @@ class SystemContent extends Model
             'label' => 'Owners',
             'type' => self::TYPE_OWNER_LIST,
             'section' => self::SECTION_ABOUT,
-            'help' => 'Add each owner with their name, contact details, and optional profile image. Owners appear in this order on the About page.',
+            'help' => 'Owners shown on the About page, in order.',
         ],
         'about.cta_heading' => [
             'label' => 'Call to Action Heading',
@@ -453,7 +453,7 @@ class SystemContent extends Model
             // in Configuration > Inquiries - so this line is no longer an
             // apology for a disabled form. It is whatever the company wants a
             // visitor to know before they write.
-            'help' => 'Shown under the Send button - for example, how soon somebody replies. Leave it empty to show nothing.',
+            'help' => 'Shown under the Send button. Optional.',
             'default' => 'We usually reply within one business day.',
         ],
         'contact.info_heading' => [
@@ -489,7 +489,7 @@ class SystemContent extends Model
             'label' => 'Google Maps Embed URL',
             'type' => self::TYPE_URL,
             'section' => self::SECTION_CONTACT,
-            'help' => 'The src URL from the Google Maps "Embed a map" share option.',
+            'help' => 'Google Maps "Embed a map" src URL.',
         ],
         // The four the footer shows, in the order it shows them. A link left
         // empty simply drops out of the row.
@@ -515,7 +515,7 @@ class SystemContent extends Model
             'label' => 'Navigation Links',
             'type' => self::TYPE_TEXTAREA,
             'section' => self::SECTION_FOOTER,
-            'help' => 'One link per line, as "Label | /path". A link to /my-projects is hidden from visitors who are not signed in.',
+            'help' => 'One per line: "Label | /path".',
             'default' => "Home | /\nMy Projects | /my-projects\nAbout | /about\nContact Us | /contact",
         ],
         'footer.contact_heading' => [
@@ -553,7 +553,7 @@ class SystemContent extends Model
             'label' => 'Automatic Project Completion (days)',
             'type' => self::TYPE_NUMBER,
             'section' => self::SECTION_PROJECT_SETTINGS,
-            'help' => 'Automatically complete a project after it remains awaiting client confirmation for this many days. The client is reminded shortly before the deadline.',
+            'help' => 'Days before a project auto-completes.',
             // Concatenated rather than cast: this is a constant expression,
             // where a cast is not allowed and `. ''` is. Written from the
             // constant either way, so the shipped default and the runtime
@@ -561,10 +561,10 @@ class SystemContent extends Model
             'default' => Project::DEFAULT_COMPLETION_CONFIRMATION_DAYS.'',
             'rules' => ['required', 'integer', 'min:1', 'max:365'],
             'messages' => [
-                'required' => 'Enter the number of days before a project completes automatically.',
-                'integer' => 'The number of days must be a whole number.',
+                'required' => 'Enter the number of days.',
+                'integer' => 'Use a whole number.',
                 'min' => 'The number of days must be at least 1.',
-                'max' => 'The number of days cannot be more than 365.',
+                'max' => 'Maximum is 365 days.',
             ],
         ],
 
@@ -584,28 +584,28 @@ class SystemContent extends Model
             'label' => 'Partial Day Start Hour',
             'type' => self::TYPE_HOUR,
             'section' => self::SECTION_PROJECT_SETTINGS,
-            'help' => 'The earliest a partial-day schedule may start. Whole hours only - it feeds the time pickers, the availability checks and the validation behind them.',
+            'help' => 'Earliest partial-day start. Whole hours.',
             // Read from the model so the shipped default and the runtime
             // fallback cannot drift apart.
             'default' => Schedule::DEFAULT_PARTIAL_DAY_START,
             'rules' => ['required', 'string', 'regex:/^([01]\d|2[0-3]):00$/'],
             'before' => 'project_settings.partial_day_end_hour',
             'messages' => [
-                'required' => 'Enter the hour a partial day may start at.',
-                'regex' => 'Choose a start time on the hour, such as 08:00.',
-                'before' => 'The partial day end hour must be later than the start hour.',
+                'required' => 'Enter a start hour.',
+                'regex' => 'Use a whole hour, e.g. 08:00.',
+                'before' => 'End must be after start.',
             ],
         ],
         'project_settings.partial_day_end_hour' => [
             'label' => 'Partial Day End Hour',
             'type' => self::TYPE_HOUR,
             'section' => self::SECTION_PROJECT_SETTINGS,
-            'help' => 'The latest a partial-day schedule may end. Whole hours only, and later than the start hour.',
+            'help' => 'Latest partial-day end. Whole hours.',
             'default' => Schedule::DEFAULT_PARTIAL_DAY_END,
             'rules' => ['required', 'string', 'regex:/^([01]\d|2[0-3]):00$/'],
             'messages' => [
-                'required' => 'Enter the hour a partial day may end at.',
-                'regex' => 'Choose an end time on the hour, such as 17:00.',
+                'required' => 'Enter an end hour.',
+                'regex' => 'Use a whole hour, e.g. 17:00.',
             ],
         ],
 
@@ -614,14 +614,14 @@ class SystemContent extends Model
             'label' => 'Inquiry Submission Limit (minutes)',
             'type' => self::TYPE_NUMBER,
             'section' => self::SECTION_INQUIRY_SETTINGS,
-            'help' => 'How long a visitor must wait before sending another message from the public Contact form. The form never mentions it - somebody who writes in too soon simply sees a notice asking them to try again later.',
+            'help' => 'Minutes between Contact form messages.',
             'default' => InquirySpamGuard::DEFAULT_SUBMISSION_LIMIT_MINUTES.'',
             'rules' => ['required', 'integer', 'min:1', 'max:1440'],
             'messages' => [
-                'required' => 'Enter the number of minutes between inquiry submissions.',
-                'integer' => 'The limit must be a whole number of minutes.',
+                'required' => 'Enter the minutes.',
+                'integer' => 'Use a whole number.',
                 'min' => 'The limit must be at least 1 minute.',
-                'max' => 'The limit cannot be more than 1440 minutes (24 hours).',
+                'max' => 'Maximum is 1440 minutes.',
             ],
         ],
 
@@ -641,7 +641,7 @@ class SystemContent extends Model
             'label' => 'Terms and Conditions',
             'type' => self::TYPE_TEXTAREA,
             'section' => self::SECTION_LEGAL,
-            'help' => 'Shown wherever the system asks somebody to accept the terms, exactly as written here.',
+            'help' => 'Shown exactly as written.',
             'default' => self::DEFAULT_TERMS,
             'rules' => ['required', 'string', 'max:50000'],
             'messages' => [

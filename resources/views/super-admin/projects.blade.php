@@ -128,6 +128,8 @@
                                 <td>
                                     {{ $project->displayCode() }}
 
+                                    <x-project-new-flag :project="$project" />
+
                                     <x-project-phase-setup-flag :project="$project" />
 
                                     <x-project-active-today-flag :project="$project" />
@@ -135,8 +137,8 @@
                                     @if ($needsRecrew)
                                         <span class="project-recrew-flag"
                                             title="{{ $project->hasLead()
-                                                ? $project->inactiveCrewNames().' can no longer sign in. Open the project to reassign the work.'
-                                                : 'This project has no lead technician. Open the project and choose one in Assigned Team.' }}">
+                                                ? $project->inactiveCrewNames().' cannot sign in. Reassign the work.'
+                                                : 'No lead technician assigned.' }}">
                                             <i class="bi bi-person-exclamation" aria-hidden="true"></i>
                                             {{ $project->recrewFlagLabel() }}
                                         </span>
@@ -176,7 +178,7 @@
                                     @if ($project->isAwaitingClientConfirmation()
                                         && ($confirmability[$project->project_id] ?? null) === \App\Services\CompletionConfirmability::UNREACHABLE)
                                         <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle d-inline-flex align-items-center gap-1 mt-1"
-                                            title="No registered client can confirm this project online. It completes automatically when the window ends, unless an administrator records a confirmation given another way.">
+                                            title="It will auto-complete.">
                                             <i class="bi bi-person-slash" aria-hidden="true"></i>
                                             No client to confirm
                                         </span>
@@ -324,8 +326,7 @@
 
                                         <div class="modal-body">
                                             Resume <strong>{{ $project->reference_no }}</strong>?
-                                            The dates it kept come back into force, so its team has to
-                                            still be free for them.
+                                            Its kept dates are rechecked.
 
                                             <div class="alert alert-danger mt-3 mb-0 d-none" role="alert"
                                                 data-recovery-error></div>
@@ -401,10 +402,7 @@
                                                                 No registered client can currently confirm this project.
                                                             </p>
                                                             <p class="mb-0 small">
-                                                                It will go to Awaiting Client Confirmation as usual and
-                                                                complete automatically after
-                                                                {{ \App\Models\Project::completionConfirmationDays() }}
-                                                                days if no confirmation is received.
+                                                                Auto-completes after {{ \App\Models\Project::completionConfirmationDays() }} days.
                                                             </p>
                                                         </div>
                                                     </div>
@@ -435,7 +433,7 @@
                                                             id="overrideReason{{ $project->project_id }}"
                                                             name="completion_override_reason" rows="2" minlength="10"
                                                             maxlength="500" required
-                                                            placeholder="Why is this being completed with the above outstanding?"></textarea>
+                                                            placeholder="Why complete it now?"></textarea>
                                                     </div>
                                                 @endif
 
@@ -461,7 +459,7 @@
                                                     <label class="form-label fw-semibold">Upload Completion Photos</label>
                                                     <input type="file" class="form-control" name="completion_photos[]"
                                                         accept=".jpg,.jpeg,.png" multiple>
-                                                    <div class="form-text">JPG, JPEG, or PNG. You can select multiple photos.</div>
+                                                    <div class="form-text">JPG or PNG. Multiple allowed.</div>
                                                 </div>
                                             </div>
 
@@ -500,9 +498,7 @@
                                              Details page asks, so archiving reads the
                                              same wherever it is started from. --}}
                                         <div class="modal-body">
-                                            <strong>Nothing is deleted.</strong> Its schedule, team, tasks,
-                                            reports, documents and history stay with it on the Archived
-                                            Projects page, and its technicians are freed for those dates.
+                                            <strong>Nothing is deleted.</strong> Its technicians are freed.
                                         </div>
 
                                         <div class="modal-footer">

@@ -25,15 +25,14 @@
         amount: {
             title: 'The quotation amount has been changed.',
             question:
-                'Do you also want to replace the uploaded quotation file with a new quotation file ' +
-                'that reflects this updated amount?',
+                'Replace the quotation file too?',
             yes: 'Yes, replace quotation file',
             no: 'No, keep existing quotation file',
             save: 'Save amount and file',
         },
         file: {
             title: 'The quotation file has been changed.',
-            question: 'Do you also want to update the quotation amount to match the new quotation file?',
+            question: 'Update the amount too?',
             yes: 'Yes, update quotation amount',
             no: 'No, keep existing quotation amount',
             save: 'Save file and amount',

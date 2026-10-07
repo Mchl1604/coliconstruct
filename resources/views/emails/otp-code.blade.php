@@ -33,11 +33,10 @@
     </table>
 
     <p style="margin:0 0 16px 0;">
-        This code expires in <strong>{{ $minutesValid }} minutes</strong> and can only be used once.
+        Expires in <strong>{{ $minutesValid }} minutes</strong>. Single use.
     </p>
 
     <p style="margin:0; color:#63748a; font-size:13px;">
-        If you did not request this code, you can safely ignore this email - nothing on your account has changed.
-        Never share this code with anyone, including {{ $company['name'] }} staff.
+        Not you? Ignore this. Never share this code.
     </p>
 @endsection

@@ -9,6 +9,7 @@ use App\Models\Schedule;
 use App\Rules\NotAnEmployeeEmail;
 use App\Services\ProjectTeamRules;
 use App\Services\ScheduleModeRules;
+use App\Services\TargetDateChange;
 use App\Services\TechnicianAvailabilityService;
 use App\Support\PersonName;
 use Carbon\CarbonImmutable;
@@ -71,6 +72,9 @@ class StoreProjectRequest extends FormRequest
             'contract' => $contractRules,
             'contract.*' => $fileRules,
             'project_description' => ['required', 'string'],
+            // A promise, not a booking. Measured against the schedule in
+            // after(), once the schedule itself has been read.
+            'target_end_date' => ['required', 'date_format:Y-m-d'],
             'lead_tech' => ['required', 'integer', Rule::exists('tbl_technicians', 'technician_id')],
             'technicians' => ['required', 'array', 'min:1'],
             'technicians.*' => ['required', 'integer', Rule::exists('tbl_technicians', 'technician_id')],
@@ -105,6 +109,9 @@ class StoreProjectRequest extends FormRequest
             'contract.max' => 'Upload at most '.Document::MAX_FILES.' contract files.',
             'contract.*.mimes' => Document::mimesMessage('contract'),
             'contract.*.max' => Document::maxMessage('contract'),
+
+            'target_end_date.required' => 'Target date is required.',
+            'target_end_date.date_format' => 'Enter a valid target date.',
 
             'lead_tech.required' => 'Choose a lead technician.',
             'lead_tech.exists' => 'The chosen lead technician no longer exists.',
@@ -206,6 +213,20 @@ class StoreProjectRequest extends FormRequest
 
                 foreach ($fields as $field) {
                     $validator->errors()->add($field, $message);
+                }
+            },
+            function ($validator): void {
+                // After the schedule check above, so the last work day is
+                // known whenever the schedule itself was valid.
+                if ($validator->errors()->has('target_end_date')) {
+                    return;
+                }
+
+                $target = CarbonImmutable::createFromFormat('Y-m-d', (string) $this->input('target_end_date'))->startOfDay();
+                $problem = app(TargetDateChange::class)->problemWith($target, $this->scheduleEntry['end'] ?? null);
+
+                if ($problem !== null) {
+                    $validator->errors()->add('target_end_date', $problem);
                 }
             },
         ];

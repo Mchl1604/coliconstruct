@@ -126,6 +126,14 @@ class ProjectEmails
         $this->update($project, ProjectUpdateMail::CANCELLED, $project->cancellation_reason);
     }
 
+    /**
+     * The date the client was promised has moved, and why.
+     */
+    public function targetDateChanged(Project $project, ?string $reason): void
+    {
+        $this->update($project, ProjectUpdateMail::TARGET_DATE_CHANGED, $reason);
+    }
+
     public function projectPutOnHold(Project $project): void
     {
         $this->update($project, ProjectUpdateMail::ON_HOLD);

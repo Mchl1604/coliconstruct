@@ -198,13 +198,13 @@ class ProjectReopen
     {
         if ($project->isCompleted()) {
             throw new RuntimeException(
-                'Completed projects cannot be reopened - create a new project instead.'
+                'Completed projects cannot be reopened.'
             );
         }
 
         if (! $project->canBeReopened()) {
             throw new RuntimeException(sprintf(
-                'Only a project awaiting client confirmation can be reopened. This one is %s.',
+                'Cannot reopen: project is %s.',
                 $project->statusLabel()
             ));
         }
@@ -225,7 +225,7 @@ class ProjectReopen
         }
 
         throw new RuntimeException(
-            'This is a Commercial project. Partial Day scheduling is for Residential projects only.'
+            'Partial Day is Residential only.'
         );
     }
 

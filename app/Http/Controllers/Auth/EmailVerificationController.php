@@ -82,7 +82,7 @@ class EmailVerificationController extends Controller
 
         if (! $subject) {
             return redirect()->route('auth.login')
-                ->with('error', 'That verification session has expired. Sign in to start again.');
+                ->with('error', 'Session expired. Sign in again.');
         }
 
         $request->validate(
@@ -147,7 +147,7 @@ class EmailVerificationController extends Controller
 
         if (! $subject) {
             return redirect()->route('auth.login')
-                ->with('error', 'That verification session has expired. Sign in to start again.');
+                ->with('error', 'Session expired. Sign in again.');
         }
 
         try {

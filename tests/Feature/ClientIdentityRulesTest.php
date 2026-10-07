@@ -103,6 +103,7 @@ class ClientIdentityRulesTest extends TestCase
             'assessment_report' => [UploadedFile::fake()->create('assessment.pdf', 12, 'application/pdf')],
             'approved_quotation' => [UploadedFile::fake()->create('quotation.jpg', 12, 'image/jpeg')],
             'project_description' => 'Install two split-type units.',
+            'target_end_date' => CarbonImmutable::today()->addDays(30)->toDateString(),
             'lead_tech' => $lead->technician_id,
             'technicians' => [$technician->technician_id],
             'start_date' => CarbonImmutable::today()->addDays(10)->toDateString(),

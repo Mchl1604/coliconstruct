@@ -206,7 +206,7 @@ class PhaseTemplateCatalog
         $submitted = collect($stageIds)->map(fn ($id): int => (int) $id)->unique()->values();
 
         if ($submitted->count() !== count($known) || $submitted->diff($known)->isNotEmpty()) {
-            throw new RuntimeException('The stage list is out of date. Reload the page and try again.');
+            throw new RuntimeException('Out of date. Reload and try again.');
         }
 
         DB::transaction(function () use ($submitted): void {
@@ -244,7 +244,7 @@ class PhaseTemplateCatalog
             $stageId = (int) ($stage['stage_id'] ?? 0);
 
             if (! in_array($stageId, $known, true)) {
-                throw new RuntimeException('That stage is no longer in the vocabulary. Reload the page and try again.');
+                throw new RuntimeException('Stage no longer exists. Reload the page.');
             }
 
             $tasks = array_values($stage['tasks'] ?? []);

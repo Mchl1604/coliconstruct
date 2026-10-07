@@ -41,8 +41,7 @@
                         <div>
                             Assigned to
                             <strong>{{ $task->technician?->name ?? 'someone else' }}</strong>.
-                            You can close it on their behalf; details are optional and the closure is
-                            recorded against you.
+                            Closing is recorded under your name.
                         </div>
                     </div>
                 @endunless
@@ -70,7 +69,7 @@
                     <input type="file" class="form-control" id="completionImages{{ $task->task_id }}"
                         name="images[]" accept=".jpg,.jpeg,.png" multiple data-image-input
                         data-image-preview-target="#completionPreview{{ $task->task_id }}">
-                    <div class="form-text">JPG, JPEG or PNG, up to 5 MB each.</div>
+                    <div class="form-text">JPG or PNG, max 5 MB each.</div>
                 </div>
 
                 <div class="row g-2" id="completionPreview{{ $task->task_id }}"></div>

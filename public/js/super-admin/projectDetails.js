@@ -1067,7 +1067,7 @@
                     'Cancel removal': name + ' will stay on this project.',
                     'Cancel days off': name + ' will no longer take those days off.',
                     'Cancel return': name + ' will not come back to this project.',
-                    'Cancel cover': name + ' will no longer lead in their place, and the days off they were covering are cancelled.',
+                    'Cancel cover': name + ' will no longer stand in.',
                     'Cancel start': name + ' will no longer join this project.',
                 }[label] || name + "'s scheduled change will be cancelled.";
 
@@ -1075,7 +1075,7 @@
                     title: label + '?',
                     body: body,
                     detail: isLead && label !== 'Cancel return'
-                        ? 'A lead technician is involved, so whoever leads in their place is cancelled too.'
+                        ? 'Their stand-in lead is cancelled too.'
                         : '',
                     label: label.replace(/\b\w/g, function (letter) {
                         return letter.toUpperCase();

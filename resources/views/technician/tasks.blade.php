@@ -21,7 +21,7 @@
         <div>
             <h4 class="fw-bold mb-1">Tasks</h4>
             <p class="text-secondary small mb-0">
-                The whole task board for every project you are on, grouped by project.
+                Tasks, grouped by project.
             </p>
         </div>
 

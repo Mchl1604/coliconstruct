@@ -12,7 +12,7 @@
     so rather than offering a link to nothing.
 --}}
 @if ($events->isEmpty())
-    <p class="text-muted small mb-0">No {{ strtolower($label) }} file has been uploaded, replaced or removed yet.</p>
+    <p class="text-muted small mb-0">No {{ strtolower($label) }} file changes yet.</p>
 @else
     <div class="table-responsive">
         <table class="table table-sm align-middle document-history-table mb-0">

@@ -137,8 +137,8 @@ class TaskCompletionRecordTest extends TestCase
         $response->assertOk();
         $response->assertSee('Marked complete by');
         $response->assertSee('Test Administrator');
-        $response->assertSee('The assigned technician did not submit completion details');
-        $response->assertSee("None submitted &mdash; the task was closed on the technician's behalf.", false);
+        $response->assertSee('No completion details required.');
+        $response->assertSee('None submitted (closed by staff).', false);
     }
 
     /**

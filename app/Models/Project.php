@@ -282,6 +282,7 @@ class Project extends Model
         'name',
         'status',
         'quotation',
+        'target_end_date',
         'address',
         'description',
         'on_hold',
@@ -323,6 +324,8 @@ class Project extends Model
 
     protected $casts = [
         'quotation' => 'decimal:2',
+        'target_end_date' => 'date',
+        'first_viewed_at' => 'datetime',
         'phase_count' => 'integer',
         'phase_setup_finalized_at' => 'datetime',
         'phase_structure_overridden_at' => 'datetime',
@@ -392,6 +395,17 @@ class Project extends Model
         return $this->hasMany(QuotationHistory::class, 'project_id', 'project_id')
             ->orderByDesc('created_at')
             ->orderByDesc('quotation_history_id');
+    }
+
+    /**
+     * Every value the target completion date has held, newest first. The
+     * oldest is the date the project was created with.
+     */
+    public function targetDateHistory(): HasMany
+    {
+        return $this->hasMany(TargetDateHistory::class, 'project_id', 'project_id')
+            ->orderByDesc('created_at')
+            ->orderByDesc('target_date_history_id');
     }
 
     public function schedule(): HasOne
@@ -1608,6 +1622,60 @@ class Project extends Model
         return $this->completion_method === self::METHOD_ADMIN_CONFIRMED;
     }
 
+    /**
+     * Whether the promised completion date has gone by with the work unfinished.
+     *
+     * Only once today is after the target - on the day itself the promise can
+     * still be kept. Not the same thing as isOverdue(), which is about booked
+     * dates running out and reads as Needs Rescheduling: this one is about the
+     * date the client was promised, and reads as Overdue.
+     */
+    public function isPastTargetDate(): bool
+    {
+        if ($this->target_end_date === null) {
+            return false;
+        }
+
+        if ($this->isWorkFinished() || $this->isCancelled() || $this->isArchived()) {
+            return false;
+        }
+
+        return $this->target_end_date->toDateString() < Schedule::businessToday()->toDateString();
+    }
+
+    /**
+     * Created, and not yet opened by anybody in the office.
+     */
+    public function isNew(): bool
+    {
+        return $this->first_viewed_at === null;
+    }
+
+    /**
+     * Record that the office has now seen this project.
+     *
+     * Written straight to the table, without touching updated_at: the edit
+     * dialog measures concurrent saves by updated_at, and opening a page is
+     * not a save.
+     */
+    public function markViewed(): void
+    {
+        if (! $this->isNew()) {
+            return;
+        }
+
+        $now = now();
+
+        static::query()
+            ->whereKey($this->getKey())
+            ->whereNull('first_viewed_at')
+            ->toBase()
+            ->update(['first_viewed_at' => $now]);
+
+        $this->first_viewed_at = $now;
+        $this->syncOriginalAttribute('first_viewed_at');
+    }
+
     public function isCancelled(): bool
     {
         return $this->status === 'cancelled';
@@ -1902,10 +1970,10 @@ class Project extends Model
      * The project has run out of booked dates: every day it was scheduled for
      * is in the past, and it is still open. It reads as "Needs Rescheduling".
      *
-     * Deliberately NOT a statement that the work is late. There is no contract
-     * deadline anywhere in this model to be late against - only the dates the
-     * office has booked - so this says the calendar is empty ahead of a live
-     * project, and nothing about whether a promise has been missed. The fix is
+     * Deliberately NOT a statement that the work is late. The promised date is
+     * target_end_date, and isPastTargetDate() is what measures against it -
+     * this says the calendar is empty ahead of a live project, and nothing
+     * about whether that promise has been missed. The fix is
      * either more dates or a completion; both clear it.
      *
      * Derived, never stored - a project stops needing rescheduling the moment

@@ -128,7 +128,7 @@ class ScheduleModeRules
         if ($mode === Schedule::MODE_PARTIAL_DAY && ! $partialDayAllowed) {
             $validator->errors()->add(
                 $keyPrefix.'scheduling_mode',
-                'Partial Day scheduling is for Residential projects only.'
+                'Partial Day is Residential only.'
             );
 
             return null;
@@ -145,7 +145,7 @@ class ScheduleModeRules
      */
     public function lockedMessage(): string
     {
-        return 'This date range has already ended. Super Admin access is required to make changes.';
+        return 'Ended. Super Admin only.';
     }
 
     /**
@@ -295,7 +295,7 @@ class ScheduleModeRules
             if ($limits['startFrozen'] && ! $startDate->equalTo($existing->startsOn())) {
                 $validator->errors()->add(
                     $keyPrefix.'start_date',
-                    'This schedule has started. Super Admin access is required to move its start date.'
+                    'Started. Only a Super Admin can move the start.'
                 );
 
                 return null;
@@ -574,7 +574,7 @@ class ScheduleModeRules
 
         if (! $replacingDates && ! $schedule->spansSingleDay()) {
             throw new RuntimeException(sprintf(
-                'The schedule for %s covers more than one day. Split it into single days first.',
+                '%s spans several days. Split it first.',
                 $schedule->describe()
             ));
         }

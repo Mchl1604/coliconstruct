@@ -48,7 +48,7 @@ class InquirySpamGuard
     public const IP_MESSAGE = 'Please wait before submitting another inquiry.';
 
     /** What somebody held back by either per-address window is told. */
-    public const EMAIL_MESSAGE = 'You have submitted too many inquiries. Please try again later.';
+    public const EMAIL_MESSAGE = 'Too many inquiries. Try again later.';
 
     /**
      * How long one sender waits between enquiries, when nobody has configured

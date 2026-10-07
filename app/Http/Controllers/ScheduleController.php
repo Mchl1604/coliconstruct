@@ -419,7 +419,7 @@ class ScheduleController extends Controller
             if ($isPartialDay && ! $project->isResidential()) {
                 $blocked[] = $this->projectPayload(
                     $project,
-                    'Partial Day scheduling is for Residential projects only.'
+                    'Partial Day is Residential only.'
                 );
 
                 continue;
@@ -781,7 +781,7 @@ class ScheduleController extends Controller
         }
 
         throw new RuntimeException(sprintf(
-            '%s is a Commercial project. Partial Day scheduling is for Residential projects only.',
+            '%s is Commercial. Partial Day is Residential only.',
             $project->name
         ));
     }
@@ -963,7 +963,7 @@ class ScheduleController extends Controller
                         // an ended row the editor does submit this one.
                         if ($schedule->isActive() && ! $mayOverrideLock) {
                             throw new RuntimeException(sprintf(
-                                '%s is already under way. Only a Super Admin can remove a schedule that has started.',
+                                '%s has started. Only a Super Admin can remove it.',
                                 $schedule->describe()
                             ));
                         }
@@ -1082,7 +1082,7 @@ class ScheduleController extends Controller
 
                 if ($stranded->isNotEmpty() && ! (bool) ($validated['stranded_tasks_confirmed'] ?? false)) {
                     throw new StrandedTasksException($stranded, sprintf(
-                        'Nothing was saved. This change would clear the dates of %s. Reopen the schedule and confirm to save it.',
+                        'Not saved: this clears dates on %s. Confirm to save.',
                         $this->taskScheduleRules->describeTasks($stranded)
                     ));
                 }
@@ -1163,7 +1163,7 @@ class ScheduleController extends Controller
                 // and a redirect that silently changed nothing would look like
                 // a save that worked.
                 ->with('warning', sprintf(
-                    'Nothing was saved. The record already places %s. Reopen the schedule and confirm the correction to save it.',
+                    'Not saved: the record already places %s.',
                     $historical->describeConflictSummary($e->conflicts())
                 ));
         } catch (Throwable $e) {
@@ -1377,7 +1377,7 @@ class ScheduleController extends Controller
 
         if (! $mayOverrideLock) {
             throw new RuntimeException(sprintf(
-                '%s %s already passed. Recording work already done takes a Super Admin who has confirmed the correction.',
+                '%s %s already passed. Super Admin confirmation needed.',
                 $historical->describeDates($added),
                 count($added) === 1 ? 'has' : 'have'
             ));
@@ -1473,7 +1473,7 @@ class ScheduleController extends Controller
 
         if ($removed !== []) {
             return sprintf(
-                'Schedule updated. %s is no longer on this project\'s record.',
+                'Schedule updated. %s removed.',
                 $historical->describeDates($removed)
             );
         }
@@ -1600,17 +1600,17 @@ class ScheduleController extends Controller
     {
         if ($project->isReadOnly()) {
             throw new RuntimeException(sprintf(
-                'This project is %s and its schedule can no longer be changed.',
+                'Project is %s; schedule is locked.',
                 strtolower($project->statusLabel())
             ));
         }
 
         if ($project->is_archived) {
-            throw new RuntimeException('This project is archived and its schedule can no longer be changed.');
+            throw new RuntimeException('Archived; schedule is locked.');
         }
 
         if ($project->on_hold) {
-            throw new RuntimeException('This project is on hold and its schedule can no longer be changed.');
+            throw new RuntimeException('On hold; schedule is locked.');
         }
     }
 
@@ -1634,13 +1634,13 @@ class ScheduleController extends Controller
 
         if ($day->equalTo(Schedule::businessToday())) {
             throw new RuntimeException(
-                'Today is already under way, so it cannot be removed from the schedule.'
+                'Today cannot be removed.'
             );
         }
 
         if (! $mayOverrideLock) {
             throw new RuntimeException(sprintf(
-                '%s has already passed and cannot be removed. Super Admin access is required to change it.',
+                '%s has passed. Super Admin only.',
                 $day->format(BusinessTime::DATE)
             ));
         }

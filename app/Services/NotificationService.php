@@ -444,6 +444,38 @@ class NotificationService
         );
     }
 
+    /**
+     * The promised completion date moved.
+     *
+     * The office and the crew read the old and new dates; the client reads the
+     * new date and the reason, which is what they were promised and why it
+     * changed. Nobody's name is put in front of the client.
+     */
+    public function projectTargetDateChanged(Project $project, mixed $previousDate, ?string $reason): void
+    {
+        $from = TargetDateChange::format($previousDate);
+        $to = TargetDateChange::format($project->target_end_date);
+        $why = $reason !== null ? ' Reason: '.$reason : '';
+
+        $this->deliver(
+            $this->oversight()->merge($this->excludingActor($this->projectTeam($project))),
+            'Target Date Changed',
+            sprintf('%s target date moved from %s to %s.%s', $this->projectLabel($project), $from, $to, $why),
+            Notification::MODULE_PROJECTS,
+            $project,
+            $this->projectLink($project)
+        );
+
+        $this->deliver(
+            $this->projectClients($project),
+            'Target Date Changed',
+            sprintf('%s is now targeted for %s.%s', $this->clientProjectLabel($project), $to, $why),
+            Notification::MODULE_PROJECTS,
+            $project,
+            $this->projectLink($project)
+        );
+    }
+
     public function projectCompleted(Project $project): void
     {
         $this->deliver(
@@ -458,7 +490,7 @@ class NotificationService
         $this->deliver(
             $this->projectClients($project),
             'Your Project Is Complete',
-            sprintf('%s has been completed. Thank you for your business.', $this->clientProjectLabel($project)),
+            sprintf('%s is complete. Thank you!', $this->clientProjectLabel($project)),
             Notification::MODULE_PROJECTS,
             $project,
             $this->projectLink($project)
@@ -479,7 +511,7 @@ class NotificationService
             $this->oversight()->merge($this->excludingActor($this->projectTeam($project))),
             'Project Awaiting Client Confirmation',
             sprintf(
-                '%s marked complete by %s. Completes automatically in %d days.',
+                '%s marked complete by %s. Auto-completes in %d days.',
                 $this->projectLabel($project),
                 $this->actorName(),
                 Project::completionConfirmationDays()
@@ -493,7 +525,7 @@ class NotificationService
             $this->projectClients($project),
             'Please Confirm Your Completed Project',
             sprintf(
-                'Work on %s is complete. Review and confirm within %d days, or it completes automatically.',
+                '%s is done. Please confirm within %d days.',
                 $this->clientProjectLabel($project),
                 Project::completionConfirmationDays()
             ),
@@ -525,7 +557,7 @@ class NotificationService
             $this->excludingActor($this->administrators()),
             $this->overrideTitle($summaries),
             sprintf(
-                '%s was marked complete by %s even though it was not ready. %s Reason given: %s',
+                '%s completed early by %s. %s Reason: %s',
                 $this->projectLabel($project),
                 $this->actorName(),
                 implode(' ', $blockers),
@@ -648,7 +680,7 @@ class NotificationService
             $this->projectClients($project),
             'Reminder: Confirm Your Completed Project',
             sprintf(
-                '%s is still waiting for your confirmation. It will be marked complete automatically in %d %s.',
+                '%s needs your confirmation. Auto-completes in %d %s.',
                 $this->clientProjectLabel($project),
                 $remaining,
                 $remaining === 1 ? 'day' : 'days'
@@ -677,7 +709,7 @@ class NotificationService
             $this->projectClients($project),
             'Your Project Is Complete',
             sprintf(
-                'Thank you for confirming. %s is now complete, and its full record stays available to you here.',
+                'Thanks! %s is now complete.',
                 $this->clientProjectLabel($project)
             ),
             Notification::MODULE_PROJECTS,
@@ -696,7 +728,7 @@ class NotificationService
             $this->oversight()->merge($this->projectTeam($project)),
             'Project Completed Automatically',
             sprintf(
-                '%s was marked complete automatically after %d days without a reply from the client.',
+                '%s auto-completed after %d days.',
                 $this->projectLabel($project),
                 Project::completionConfirmationDays()
             ),
@@ -709,8 +741,7 @@ class NotificationService
             $this->projectClients($project),
             'Your Project Has Been Completed',
             sprintf(
-                '%s has been marked complete, as the %d day confirmation period has passed. '
-                    .'Please contact us if anything about the work still needs attention.',
+                '%s auto-completed after %d days.',
                 $this->clientProjectLabel($project),
                 Project::completionConfirmationDays()
             ),
@@ -745,8 +776,7 @@ class NotificationService
             $this->projectClients($project),
             'Your Project Has Been Reopened',
             sprintf(
-                'Further work has been scheduled on %s, so it is active again. '
-                    .'You will be asked to confirm it once the work is finished.',
+                '%s is active again with new work.',
                 $this->clientProjectLabel($project)
             ),
             Notification::MODULE_PROJECTS,
@@ -838,7 +868,7 @@ class NotificationService
         $this->deliver(
             $this->oversight()->merge($this->excludingActor($team ?? $this->projectTeam($project))),
             'Project Put On Hold',
-            sprintf('%s has been put on hold. Work is paused until it resumes.', $this->projectLabel($project)),
+            sprintf('%s is on hold.', $this->projectLabel($project)),
             Notification::MODULE_PROJECTS,
             $project,
             $this->projectLink($project)
@@ -1135,8 +1165,8 @@ class NotificationService
             $asCover ? 'Stand-in Lead Cancelled' : 'Days Off Cancelled',
             sprintf(
                 $asCover
-                    ? 'You no longer stand in as lead on %s %s: those dates were removed from its schedule.'
-                    : 'Your days off on %s %s were cancelled: those dates were removed from its schedule.',
+                    ? 'Stand-in on %s %s cancelled (dates removed).'
+                    : 'Days off on %s %s cancelled (dates removed).',
                 $this->projectLabel($project),
                 $this->dayRange($from, $lastDay)
             ),
@@ -1714,10 +1744,10 @@ class NotificationService
             'Specialty Update Rejected',
             $request
                 ? sprintf(
-                    'Your specialty request (%s) has been rejected. Your current specialties are unchanged.',
+                    'Specialty request (%s) rejected.',
                     $request->changeSummary()
                 )
-                : 'Your specialty update request has been rejected. Your current specialties are unchanged.',
+                : 'Specialty request rejected.',
             Notification::MODULE_USER_MANAGEMENT,
             $request ?? $technicianAccount,
             route('profile.edit', [], false)

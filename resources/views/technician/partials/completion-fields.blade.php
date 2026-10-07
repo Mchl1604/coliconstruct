@@ -35,7 +35,7 @@
         accept=".jpg,.jpeg,.png" multiple required data-image-input
         data-image-preview-target="#completionPhotoPreview{{ $suffix }}">
     <div class="form-text">
-        JPG, JPEG or PNG, up to 5 MB each. At least one photo is required.
+        At least one JPG or PNG.
     </div>
 </div>
 

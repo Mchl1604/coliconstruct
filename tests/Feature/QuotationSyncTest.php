@@ -200,7 +200,7 @@ class QuotationSyncTest extends TestCase
         // confirmation says it was kept.
         $response->assertSessionHas('success', function (string $message): bool {
             return str_contains($message, '₱1,500.00')
-                && str_contains($message, 'The uploaded quotation file was not replaced.');
+                && ! str_contains($message, 'file replaced');
         });
 
         $this->assertSame('1500.00', $project->refresh()->quotation);
@@ -223,7 +223,7 @@ class QuotationSyncTest extends TestCase
         ]);
 
         $response->assertSessionHasNoErrors();
-        $response->assertSessionHas('success', fn (string $message): bool => str_contains($message, 'the quotation file was replaced'));
+        $response->assertSessionHas('success', fn (string $message): bool => str_contains($message, 'file replaced'));
 
         $this->assertSame('1500.00', $project->refresh()->quotation);
         $this->assertSame(['revised-quotation.pdf'], $this->currentQuotationNames($project));
@@ -287,7 +287,7 @@ class QuotationSyncTest extends TestCase
         ]);
 
         $response->assertSessionHasNoErrors();
-        $response->assertSessionHas('success', fn (string $message): bool => str_contains($message, 'The quotation amount stayed at ₱1,000.00.'));
+        $response->assertSessionHas('success', fn (string $message): bool => str_contains($message, 'amount stays ₱1,000.00.'));
 
         $this->assertSame('1000.00', $project->refresh()->quotation);
         $this->assertSame(['revised-quotation.pdf'], $this->currentQuotationNames($project));

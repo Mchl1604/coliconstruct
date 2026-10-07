@@ -286,9 +286,7 @@ document.addEventListener('DOMContentLoaded', function() {
             window.configurationConfirm({
                 title: 'Remove "' + label + '"?',
                 body:
-                    'It will no longer be offered as a project type or as a ' +
-                    'technician specialty. Projects and technicians that already ' +
-                    'carry it are unaffected.',
+                    'Existing projects keep it.',
                 label: 'Remove Project Type',
                 variant: 'btn-danger',
                 // request() already answers in the { ok, body } shape the

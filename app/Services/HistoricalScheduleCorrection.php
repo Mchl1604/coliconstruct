@@ -558,7 +558,7 @@ class HistoricalScheduleCorrection
 
         if ($wanted->isEmpty()) {
             throw new RuntimeException(sprintf(
-                '%s %s in the past and %s not scheduled for this project. Say who worked %s before saving.',
+                '%s %s past and %s unscheduled. Name who worked %s.',
                 $this->describeDates($dates),
                 count($dates) === 1 ? 'is' : 'are',
                 count($dates) === 1 ? 'was' : 'were',
@@ -590,7 +590,7 @@ class HistoricalScheduleCorrection
             }
 
             throw new RuntimeException(sprintf(
-                '%s was not on this project for %s. Add them through the historical correction to record it.',
+                '%s was not on this project for %s.',
                 $technicians->get($technicianId)->name,
                 $this->describeDates($dates)
             ));
@@ -668,13 +668,13 @@ class HistoricalScheduleCorrection
 
         if ($leads->isEmpty()) {
             throw new RuntimeException(sprintf(
-                'Name the Lead Technician who worked %s. A day on the record has one.',
+                'Name the Lead Technician who worked %s.',
                 $this->describeDates($dates)
             ));
         }
 
         throw new RuntimeException(sprintf(
-            '%s are both Lead Technicians. Only one of them can have led %s.',
+            '%s are both leads. Only one can lead %s.',
             $leads->map(fn (Technician $technician): string => $technician->name)->join(', ', ' and '),
             $this->describeDates($dates)
         ));

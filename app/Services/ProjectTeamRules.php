@@ -154,7 +154,7 @@ class ProjectTeamRules
                 $validator->errors()->add(
                     $techniciansKey,
                     sprintf(
-                        '%s is a Lead Technician - choose them in the Lead Technician field, or pick someone else here.',
+                        '%s is a Lead Technician. Use the Lead field.',
                         $technician->name
                     )
                 );

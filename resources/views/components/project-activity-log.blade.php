@@ -32,9 +32,9 @@
                 Activity Logs
             </h4>
             <span class="text-secondary small">
-                What has been recorded against this project, newest first.
+                Newest first.
                 @unless (auth()->user()?->isSuperAdmin())
-                    Entries by a Super Admin or another Admin are not shown.
+                    Admin entries hidden.
                 @endunless
             </span>
         </div>
@@ -77,7 +77,7 @@
                  untrue, and so would "Page 9 of 1", so this says what is
                  actually the case and offers the way back. --}}
             <div class="project-history-empty">
-                <p class="mb-2">There is nothing on this page of the activity log.</p>
+                <p class="mb-2">No entries on this page.</p>
                 <a href="{{ $logs->url(1) }}" data-workspace-link>Back to the latest entries</a>
             </div>
 

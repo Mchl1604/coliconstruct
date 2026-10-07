@@ -49,7 +49,7 @@
                 </h6>
 
                 @if ($amountChanges->isEmpty())
-                    <p class="text-muted small">The quotation amount has not been changed since the project was created.</p>
+                    <p class="text-muted small">Amount never changed.</p>
                 @else
                     <div class="table-responsive mb-4">
                         <table class="table table-sm align-middle quotation-history-table mb-0">

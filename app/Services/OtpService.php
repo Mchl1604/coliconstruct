@@ -131,7 +131,7 @@ class OtpService
             $record->delete();
 
             throw new RuntimeException(
-                'We could not send a code to that address. Check it is correct and try again.'
+                'Could not send a code. Check the address.'
             );
         }
 
@@ -167,7 +167,7 @@ class OtpService
         $record = $this->latest($email, $purpose);
 
         if (! $record) {
-            throw new RuntimeException('No verification code is waiting for that address. Ask for a new one.');
+            throw new RuntimeException('No code found. Ask for a new one.');
         }
 
         if ($record->isExpired()) {
@@ -206,7 +206,7 @@ class OtpService
             $remaining = max(0, self::MAX_ATTEMPTS - $record->attempts);
 
             throw new RuntimeException($remaining === 0
-                ? 'That code is incorrect, and no attempts remain. Ask for a new code.'
+                ? 'Incorrect code. Ask for a new one.'
                 : sprintf('That code is incorrect. %d attempt%s remaining.', $remaining, $remaining === 1 ? '' : 's'));
         }
 

@@ -80,6 +80,7 @@ class CreateProjectTest extends TestCase
             'assessment_report' => [UploadedFile::fake()->create('assessment.pdf', 12, 'application/pdf')],
             'approved_quotation' => [UploadedFile::fake()->create('quotation.jpg', 12, 'image/jpeg')],
             'project_description' => 'Test project description',
+            'target_end_date' => CarbonImmutable::today()->addDays(30)->toDateString(),
             'lead_tech' => $leadTechnician->technician_id,
             'technicians' => [$technician->technician_id],
             'start_date' => $this->scheduleStart(),
@@ -108,8 +109,7 @@ class CreateProjectTest extends TestCase
         $page = $this->get(route('super-admin.projects.create'))->assertOk();
 
         $page->assertSee('Input Project Initial Schedule');
-        $page->assertSee('This is the initial schedule for the project.');
-        $page->assertSee('More schedule dates can be added later.');
+        $page->assertSee('Initial schedule only. Add more later.');
 
         // The note has to be read BEFORE the dates are filled in, so it must
         // come above the date inputs in the document rather than sitting under
@@ -118,7 +118,7 @@ class CreateProjectTest extends TestCase
 
         $this->assertLessThan(
             strpos($body, 'id="startDate"'),
-            strpos($body, 'More schedule dates can be added later.'),
+            strpos($body, 'Initial schedule only. Add more later.'),
             'The explanatory note must appear before the date inputs.'
         );
 

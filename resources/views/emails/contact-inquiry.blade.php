@@ -3,7 +3,7 @@
 @section('subject', 'Website inquiry from ' . $senderName)
 
 @section('preview')
-    {{ $senderName }} wrote in through the Contact page about {{ $inquirySubject }}.
+    {{ $senderName }}: {{ $inquirySubject }}
 @endsection
 
 @section('heading')
@@ -12,7 +12,7 @@
 
 @section('content')
     <p style="margin:0 0 16px 0;">
-        Somebody has written in through the Contact page. Replying to this email answers them directly.
+        Reply to this email to answer them.
     </p>
 
     <x-mail-details :rows="[

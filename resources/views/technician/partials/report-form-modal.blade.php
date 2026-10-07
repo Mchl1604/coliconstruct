@@ -35,7 +35,7 @@
                     </select>
                     @if ($projects->isEmpty())
                         <div class="form-text text-danger">
-                            None of your projects can receive a report right now.
+                            No projects open for reports.
                         </div>
                     @endif
                 </div>
@@ -68,7 +68,7 @@
                     <label class="form-label fw-semibold" for="reportFormImages">Attachment</label>
                     <input type="file" class="form-control" id="reportFormImages" name="images[]"
                         accept=".jpg,.jpeg,.png" multiple data-report-form-images>
-                    <div class="form-text">JPG, JPEG or PNG, up to 5 MB each. Optional.</div>
+                    <div class="form-text">Optional. JPG or PNG, max 5 MB.</div>
                 </div>
 
                 <div class="row g-2" data-report-form-preview></div>

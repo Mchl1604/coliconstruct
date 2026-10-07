@@ -80,8 +80,7 @@ class PasswordResetController extends Controller
         if (! $this->email->isDeliverable()) {
             return back()->with(
                 'error',
-                'Verification codes cannot be sent right now. '
-                    .'Ask an administrator to reset your password from Configuration.'
+                'Codes unavailable. Ask an administrator.'
             );
         }
 

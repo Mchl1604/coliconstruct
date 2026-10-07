@@ -54,7 +54,7 @@
             <div class="alert alert-secondary border-0 shadow-sm" role="alert">
                 <i class="bi bi-pause-circle me-1" aria-hidden="true"></i>
                 <strong>This project is on hold.</strong>
-                Reports and task edits resume when an administrator lifts the hold.
+                Changes resume when the hold ends.
             </div>
         @endif
 
@@ -105,7 +105,7 @@
                             Its last booked day was
                             <strong>{{ $project->scheduleEndsOn()->format(\App\Support\BusinessTime::DATE) }}</strong>
                             and nothing is booked ahead of it.
-                            Close it off, or ask an administrator to add a new schedule.
+                            Complete it or ask for dates.
                         </p>
                     </div>
                 </div>
@@ -348,8 +348,7 @@
                                 @endunless
                                 @if ($project->inactiveCrew()->isNotEmpty())
                                     {{ $project->inactiveCrewNames() }}
-                                    can no longer sign in. Move their tasks and ask an administrator
-                                    to update the team.
+                                    cannot sign in. Move their tasks.
                                 @endif
                             </div>
                         @endif
@@ -484,7 +483,7 @@
                                 @endif
                             </div>
                         @empty
-                            <p class="text-muted mb-0">You have no days booked on this project yet.</p>
+                            <p class="text-muted mb-0">No days booked yet.</p>
                         @endforelse
 
                         @if ($myChanges !== [])
@@ -691,9 +690,7 @@
                                                     {{ $report->report_title }}</strong>?
 
                                                 <p class="text-secondary small mb-0 mt-2">
-                                                    It comes off this project's report list and off your Reports
-                                                    page. The report, its images and its attachments are kept, and
-                                                    it can be restored from Archived Reports.
+                                                    It can be restored later.
                                                 </p>
                                             </div>
 
@@ -1063,7 +1060,7 @@
                             <input type="file" class="form-control" id="newReportImages" name="images[]"
                                 accept=".jpg,.jpeg,.png" multiple data-image-input
                                 data-image-preview-target="#newReportPreview">
-                            <div class="form-text">JPG, JPEG or PNG, up to 5 MB each. Optional.</div>
+                            <div class="form-text">Optional. JPG or PNG, max 5 MB.</div>
                         </div>
 
                         <div class="row g-2" id="newReportPreview"></div>
@@ -1105,8 +1102,7 @@
 
                         @if ($canComplete)
                             <p class="mb-3">
-                                All tasks are complete. Submitting this sends the project to the client and
-                                makes it view only.
+                                Sends it to the client for confirmation.
                             </p>
 
                             @include('technician.partials.completion-fields', ['suffix' => 'Details'])

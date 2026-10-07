@@ -233,7 +233,7 @@ class ScheduleLockTest extends TestCase
 
         $this->save($project, [$this->range($locked, -9, -6)]);
 
-        $this->assertStringContainsString('already ended', (string) session('error'));
+        $this->assertStringContainsString('Ended. Super Admin only.', (string) session('error'));
         $this->assertSame(
             [['start' => $this->day(-8), 'end' => $this->day(-6)]],
             $this->rangesOf($project)
@@ -316,7 +316,7 @@ class ScheduleLockTest extends TestCase
 
         $this->save($project, [$this->range($active, 0, 4)]);
 
-        $this->assertStringContainsString('Super Admin access is required to move its start date', (string) session('error'));
+        $this->assertStringContainsString('Only a Super Admin can move the start', (string) session('error'));
         $this->assertSame(
             [['start' => $this->day(-3), 'end' => $this->day(4)]],
             $this->rangesOf($project)
@@ -460,7 +460,7 @@ class ScheduleLockTest extends TestCase
 
         $this->save($project, [$this->range($locked, -9, -7)], override: true);
 
-        $this->assertStringContainsString('already ended', (string) session('error'));
+        $this->assertStringContainsString('Ended. Super Admin only.', (string) session('error'));
         $this->assertSame(
             [['start' => $this->day(-8), 'end' => $this->day(-6)]],
             $this->rangesOf($project)
@@ -480,7 +480,7 @@ class ScheduleLockTest extends TestCase
 
         $this->save($project, [$this->range($locked, -9, -7)]);
 
-        $this->assertStringContainsString('already ended', (string) session('error'));
+        $this->assertStringContainsString('Ended. Super Admin only.', (string) session('error'));
         $this->assertSame(
             [['start' => $this->day(-8), 'end' => $this->day(-6)]],
             $this->rangesOf($project)
@@ -503,7 +503,7 @@ class ScheduleLockTest extends TestCase
 
         $this->save($project, [$this->range($active, -6, 4)], override: true);
 
-        $this->assertStringContainsString('Say who worked them', (string) session('error'));
+        $this->assertStringContainsString('Name who worked them', (string) session('error'));
         $this->assertSame(
             [['start' => $this->day(-3), 'end' => $this->day(4)]],
             $this->rangesOf($project)
@@ -737,7 +737,7 @@ class ScheduleLockTest extends TestCase
             ->assertOk()
             ->assertSee('data-lock-state="locked"', false)
             ->assertSee('data-locked="1"', false)
-            ->assertSee('Super Admin access is required to make changes.', false)
+            ->assertSee('Ended. Super Admin only.', false)
             // A locked row gets no date picker, so nothing would otherwise turn
             // its stored value into the format every other row shows. The same
             // booking must not read two different ways depending on who opened
@@ -760,7 +760,7 @@ class ScheduleLockTest extends TestCase
             ->assertOk()
             ->assertSee('data-lock-state="locked"', false)
             ->assertSee('data-locked="0"', false)
-            ->assertDontSee('Super Admin access is required to make changes.', false);
+            ->assertDontSee('Ended. Super Admin only.', false);
     }
 
     public function test_the_editor_freezes_the_start_of_a_started_row(): void
@@ -776,7 +776,7 @@ class ScheduleLockTest extends TestCase
             ->assertSee('data-start-frozen="1"', false)
             // The end may still move, but not back past today.
             ->assertSee('data-earliest-end="'.$this->day(0).'"', false)
-            ->assertSee('Its start date is fixed', false);
+            ->assertSee('only the end date can change', false);
     }
 
     /**

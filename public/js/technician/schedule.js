@@ -63,10 +63,8 @@ document.addEventListener("DOMContentLoaded", function () {
         setFormer(
             "[data-former-message]",
             props.removedOn
-                ? "You were removed from this project on " +
-                      props.removedOn +
-                      ". These dates stay on your schedule as a record of when you were booked, but the project is no longer assigned to you."
-                : "You are no longer assigned to this project. These dates stay on your schedule as a record of when you were booked.",
+                ? "Removed on " + props.removedOn + ". Kept as a record."
+                : "No longer assigned. Kept as a record.",
         );
 
         errorEl.classList.add("d-none");

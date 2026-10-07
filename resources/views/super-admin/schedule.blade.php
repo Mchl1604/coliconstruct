@@ -12,7 +12,7 @@
     <div class="d-flex justify-content-between align-items-center mb-3">
         <div>
             <h4 class="fw-bold mb-1">Schedules</h4>
-            <p class="text-secondary small mb-0">Every scheduled project. Click one to edit its dates.</p>
+            <p class="text-secondary small mb-0">Click a project to edit dates.</p>
         </div>
     </div>
 
@@ -228,8 +228,7 @@
 
                             <div class="modal-body">
                                 Resume <strong>{{ $project->reference_no }}</strong>?
-                                The dates it kept come back into force, so its team has to
-                                still be free for them.
+                                Its kept dates are rechecked.
 
                                 <div class="alert alert-danger mt-3 mb-0 d-none" role="alert"
                                     data-recovery-error></div>
@@ -387,7 +386,7 @@
 
                             <div class="schedule-empty-state {{ $project->schedules->isEmpty() ? '' : 'd-none' }}"
                                 data-ranges-empty>
-                                No dates set. Add a schedule to put this project on the calendar.
+                                No dates set yet.
                             </div>
 
                             <button type="button" class="schedule-add-range" data-add-range>
@@ -400,15 +399,7 @@
                             <p class="schedule-modal-note">
                                 <i class="bi bi-info-circle" aria-hidden="true"></i>
                                 <span>
-                                    Removing every schedule leaves this project Unscheduled.
-                                    @if ($project->isResidential())
-                                        A Partial Day schedule books set hours on one date, leaving the rest of
-                                        that day free.
-                                    @endif
-                                    @if ($mayOverrideLock)
-                                        Dates that have already passed can be booked here to record work that was
-                                        done but never scheduled; you will be asked who worked them.
-                                    @endif
+                                    No dates means Unscheduled.
                                 </span>
                             </p>
                             </div>
@@ -427,8 +418,7 @@
                                         <div>
                                             <h6 class="schedule-historical-title">Who worked these dates?</h6>
                                             <p class="schedule-historical-lead">
-                                                These dates are in the past and were not previously scheduled for
-                                                this project:
+                                                Past, unscheduled dates:
                                             </p>
                                             <p class="schedule-historical-dates" data-historical-dates></p>
                                         </div>
@@ -468,7 +458,7 @@
                                             </span>
                                             <input type="text" class="form-control"
                                                 id="historicalSearch{{ $project->project_id }}"
-                                                placeholder="Type a name to find who worked these dates"
+                                                placeholder="Search technician name"
                                                 autocomplete="off" role="combobox" aria-expanded="false"
                                                 aria-controls="historicalResults{{ $project->project_id }}"
                                                 data-historical-input>
@@ -522,9 +512,7 @@
                                             <div>
                                                 <h6 class="schedule-historical-title">Historical Schedule Conflict</h6>
                                                 <p class="schedule-historical-lead mb-0">
-                                                    The record already places these people on another project on
-                                                    these dates. You can continue if what you are recording here is
-                                                    accurate.
+                                                    Already booked elsewhere on these dates.
                                                 </p>
                                             </div>
                                         </div>
@@ -535,7 +523,7 @@
                                         <label class="schedule-historical-acknowledge">
                                             <input type="checkbox" data-historical-conflict-acknowledge>
                                             <span>
-                                                I have checked these and the work recorded here is accurate.
+                                                I confirm this is accurate.
                                             </span>
                                         </label>
                                     </div>
@@ -549,9 +537,7 @@
                                     <p class="schedule-modal-note">
                                         <i class="bi bi-info-circle" aria-hidden="true"></i>
                                         <span>
-                                            This is recorded against your account, with the dates, the range
-                                            before and after, the names you choose here, and any conflict you
-                                            confirm.
+                                            Recorded under your account.
                                         </span>
                                     </p>
 
@@ -701,10 +687,9 @@
                             <i class="bi bi-lock" aria-hidden="true"></i>
                             <span>
                                 @if ($project->on_hold)
-                                    On hold. Only worked days remain - resume the project to schedule it again.
+                                    On hold. Resume to reschedule.
                                 @else
-                                    This project is {{ strtolower($project->statusLabel()) }}. Its schedule is now
-                                    read-only.
+                                    {{ $project->statusLabel() }}. Read-only.
                                 @endif
                             </span>
                         </p>
@@ -772,8 +757,7 @@
                     {{-- Panel one: everything waiting for dates. --}}
                     <div data-unscheduled-list-panel>
                         <p class="text-secondary small">
-                            Projects with no dates yet, and projects whose dates have
-                            all passed while the work is still open.
+                            Projects needing dates.
                         </p>
 
                         <div class="schedule-date-list">
@@ -843,8 +827,7 @@
                                 </div>
                             @empty
                                 <div class="schedule-empty-state">
-                                    Every project has dates it has not yet run past. Nothing is
-                                    waiting to be scheduled.
+                                    Nothing waiting to be scheduled.
                                 </div>
                             @endforelse
                         </div>
@@ -865,7 +848,7 @@
                                     <option value="{{ \App\Models\Schedule::MODE_PARTIAL_DAY }}">Partial Day</option>
                                 </select>
                                 <div class="form-text" data-unscheduled-mode-hint>
-                                    Books the whole of every day in the range.
+                                    Books full days.
                                 </div>
                             </div>
 
@@ -912,7 +895,7 @@
                             <p class="schedule-modal-note mb-0">
                                 <i class="bi bi-info-circle" aria-hidden="true"></i>
                                 <span data-unscheduled-note>
-                                    Dates where a technician is booked elsewhere cannot be picked.
+                                    Booked dates are disabled.
                                 </span>
                             </p>
                         </div>
@@ -995,7 +978,7 @@
                                 <option value="{{ \App\Models\Schedule::MODE_PARTIAL_DAY }}">Partial Day</option>
                             </select>
                             <div class="form-text" data-add-mode-hint>
-                                Books the whole of every day in the range.
+                                Books full days.
                             </div>
                         </div>
 

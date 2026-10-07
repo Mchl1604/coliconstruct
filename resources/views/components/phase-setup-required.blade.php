@@ -24,16 +24,13 @@
         <div class="flex-grow-1">
             <h4 class="fw-bold mb-1">Phase Setup Required</h4>
             <p class="text-secondary mb-2">
-                This project has not been configured with its project phases.
+                Phases not set up yet.
             </p>
             <p class="text-secondary small mb-0">
                 @if ($canSetUp)
-                    Define the complete phase structure before work is booked against it. Until the
-                    phases are finalized this project is not monitored by phase and cannot take new
-                    tasks.
+                    Finalize phases to start adding tasks.
                 @else
-                    An Admin or the project's Lead Technician has to set the phases up before tasks
-                    can be created on this project.
+                    An Admin or Lead Technician must set up phases.
                 @endif
             </p>
         </div>

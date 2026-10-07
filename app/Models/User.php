@@ -76,7 +76,7 @@ class User extends Authenticatable
      * What a form says when the number is not eleven digits. Stated here so
      * every validator reports the rule in the same words.
      */
-    public const CONTACT_NUMBER_MESSAGE = 'Enter an 11-digit contact number, digits only (e.g. 09171234567).';
+    public const CONTACT_NUMBER_MESSAGE = 'Enter 11 digits, e.g. 09171234567.';
 
     /**
      * Every role the RBAC enum accepts, with the label the interface shows.

@@ -51,7 +51,7 @@ class UploadStore
         // so a write that did not happen fails here, and the save around it
         // rolls back.
         if (self::disk()->putFileAs($folder, $file, $name) === false) {
-            throw new \RuntimeException('The file could not be stored. Nothing was saved.');
+            throw new \RuntimeException('File could not be saved.');
         }
 
         return $folder.'/'.$name;

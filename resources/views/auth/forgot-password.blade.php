@@ -6,7 +6,7 @@
     <i class="bi bi-key text-primary" style="font-size: 2.6rem;" aria-hidden="true"></i>
     <h3 class="mb-1 mt-2">Forgot Password</h3>
     <p class="text-muted mb-4">
-        Enter your account email and we will send a 6-digit code.
+        We'll email you a 6-digit code.
     </p>
 
     @if ($errors->any())
@@ -20,8 +20,7 @@
              rather than letting somebody wait for a link that never arrives. --}}
         <div class="alert alert-warning text-start" role="alert">
             <i class="bi bi-exclamation-triangle me-1" aria-hidden="true"></i>
-            Verification codes cannot be sent right now.
-            Ask an administrator to reset your password.
+            Codes unavailable. Ask an administrator.
         </div>
     @endunless
 

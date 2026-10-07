@@ -9,7 +9,7 @@
     <div class="d-flex justify-content-between align-items-center mb-3">
         <div>
             <h4 class="fw-bold mb-1">Archived Projects</h4>
-            <p class="text-secondary small mb-0">Archived projects are preserved but removed from the active list.</p>
+            <p class="text-secondary small mb-0">Kept, but hidden from active projects.</p>
         </div>
 
         <button type="button" class="btn btn-sm btn-outline-secondary"
@@ -144,9 +144,7 @@
                             <strong>{{ \App\Models\Project::statusLabelFor($returnsAs) }}</strong>
                             with its original schedule and team.
                         @else
-                            It returns as <strong>Unscheduled</strong> - this project was
-                            archived before archiving kept schedules, so its dates and team
-                            must be set again.
+                            It returns as <strong>Unscheduled</strong>; set dates and team again.
                         @endif
 
                         <div class="alert alert-danger mt-3 mb-0 d-none" role="alert"

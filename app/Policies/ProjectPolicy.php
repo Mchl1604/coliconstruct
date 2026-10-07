@@ -349,8 +349,8 @@ class ProjectPolicy
     private function statusBlocker(Project $project, string $projectUrl): array
     {
         [$message, $summary] = match ($project->status) {
-            'unscheduled' => ['Not scheduled yet. An administrator has to schedule it first.', 'no schedule'],
-            'pending' => ['Not started yet. It can be completed once its first scheduled day arrives.', 'work not started'],
+            'unscheduled' => ['Not scheduled yet.', 'no schedule'],
+            'pending' => ['Not started yet.', 'work not started'],
             default => [
                 sprintf('A %s project cannot be completed.', $project->statusLabel()),
                 sprintf('a %s project', mb_strtolower($project->statusLabel())),

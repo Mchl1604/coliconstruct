@@ -3,7 +3,7 @@
 @section('subject', 'Re: ' . $inquirySubject)
 
 @section('preview')
-    A reply to the message you sent us about {{ $inquirySubject }}.
+    Our reply about {{ $inquirySubject }}.
 @endsection
 
 @section('heading')
@@ -12,8 +12,7 @@
 
 @section('content')
     <p style="margin:0 0 16px 0;">
-        Hello {{ $recipientName }}, thank you for getting in touch. Here is our reply to the message
-        you sent us.
+        Hello {{ $recipientName }}, thanks for writing in.
     </p>
 
     <x-mail-details :rows="[

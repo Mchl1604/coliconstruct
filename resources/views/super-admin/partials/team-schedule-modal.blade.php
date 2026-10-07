@@ -58,7 +58,7 @@
                     </div>
                 @empty
                     <p class="text-muted mb-0">
-                        Nothing scheduled - no days off, start or end date for {{ $technician->name }}.
+                        Nothing scheduled for {{ $technician->name }}.
                     </p>
                 @endforelse
             </div>

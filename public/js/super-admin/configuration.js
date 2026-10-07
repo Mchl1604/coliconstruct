@@ -1611,7 +1611,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
         document.querySelector("[data-credentials-note]").textContent = emailed
             ? "Emailed to the account. Shown only once."
-            : "Email is not configured - hand this over directly. Shown only once.";
+            : "Shown once. Share it directly.";
 
         bootstrapModal(credentialsModalEl)?.show();
     }
@@ -1899,7 +1899,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     body:
                         "Issue a new temporary password for " +
                         account.full_name +
-                        "? Their current password stops working immediately, and they will have to choose a new one at next sign-in.",
+                        "? Their current password stops working.",
                     label: "Reset Password",
                     variant: "btn-warning",
                     onConfirm: function () {
@@ -1928,7 +1928,7 @@ document.addEventListener("DOMContentLoaded", function () {
                         ? "Allow " + account.full_name + " to sign in again?"
                         : "Deactivate " +
                           account.full_name +
-                          "? They can no longer sign in. Nothing is deleted.",
+                          "? They can no longer sign in.",
                     label: activating ? "Activate" : "Deactivate",
                     variant: activating ? "btn-success" : "btn-warning",
                     onConfirm: function () {
@@ -1945,7 +1945,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     body:
                         "Archive " +
                         account.full_name +
-                        "? They can no longer sign in. Nothing is deleted, and the account can be restored.",
+                        "? They can no longer sign in.",
                     label: "Archive",
                     variant: "btn-danger",
                     onConfirm: function () {

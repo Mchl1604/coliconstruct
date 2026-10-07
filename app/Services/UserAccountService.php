@@ -396,7 +396,7 @@ class UserAccountService
         $this->guardNotSelf($user, 'You cannot change the status of your own account.');
         $this->guardMayChangeAccess(
             $user,
-            'An Admin or Super Admin account can only be activated or deactivated by a Super Admin.'
+            'Only a Super Admin can change admin accounts.'
         );
 
         // Read before the status changes: once the account cannot sign in, the
@@ -446,7 +446,7 @@ class UserAccountService
         // same rule stated where it cannot be routed around.
         $this->guardMayChangeAccess(
             $user,
-            'An Admin or Super Admin account can only be archived by a Super Admin.'
+            'Only a Super Admin can archive admin accounts.'
         );
 
         if ($user->is_archived) {
@@ -524,7 +524,7 @@ class UserAccountService
         $this->guardEditable($user);
         $this->guardNotSelf(
             $user,
-            'You cannot reset your own password here. Use the password change page instead.'
+            'Use Change Password for your own account.'
         );
         $this->guardMayResetPassword($user);
 

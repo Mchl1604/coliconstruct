@@ -23,7 +23,7 @@
     {{-- No agreed structure, so no denominator. The row's own setup flag says
          what to do about it; this only avoids an empty cell. --}}
     <span {{ $attributes->merge(['class' => 'project-phase-chip is-unset']) }}
-        title="This project has not been configured with its project phases yet.">
+        title="Phases not set up.">
         <i class="bi bi-diagram-3" aria-hidden="true"></i>
         Not set up
     </span>

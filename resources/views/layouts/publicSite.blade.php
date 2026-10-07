@@ -130,7 +130,7 @@
                         <div class="dropdown">
                             <button class="btn btn-outline-brand-blue public-profile-link" type="button"
                                 data-bs-toggle="dropdown" aria-expanded="false"
-                                aria-label="Signed in as {{ $viewer->fullName() }} - open the account menu">
+                                aria-label="Account menu for {{ $viewer->fullName() }}">
                                 <x-user-avatar :user="$viewer" size="sm" />
                                 <span class="public-profile-name">{{ $viewer->fullName() }}</span>
                                 <i class="bi bi-caret-down-fill" aria-hidden="true"></i>

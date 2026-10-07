@@ -90,7 +90,7 @@
             case 403:
                 return 'You are not allowed to do that.';
             case 404:
-                return 'That record could not be found. It may have been removed.';
+                return 'Record not found.';
             case 413:
                 return 'The files are too large to upload.';
             case 419:
@@ -98,7 +98,7 @@
             case 429:
                 return 'Too many attempts. Wait a moment and try again.';
             default:
-                return 'Something went wrong on the server. Reload the page to see what was saved.';
+                return 'Server error. Reload the page.';
         }
     }
 
@@ -541,7 +541,7 @@
         const type = response.headers.get('Content-Type') || '';
 
         if (type.indexOf('text/html') === -1) {
-            return refused(form, ['The server answered with something this page cannot show. Reload the page to see what was saved.'], null, []);
+            return refused(form, ['Unexpected response. Reload the page.'], null, []);
         }
 
         const doc = new DOMParser().parseFromString(html, 'text/html');

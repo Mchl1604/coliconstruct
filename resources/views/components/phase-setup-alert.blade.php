@@ -29,12 +29,9 @@
                     <h6 class="fw-bold mb-1">Project Phase Setup Required</h6>
                     <p class="text-secondary small mb-0">
                         @if ($projects->count() === 1)
-                            This project has not been configured with its project phases. It cannot
-                            take tasks until the structure is finalized.
+                            Set up phases before adding tasks.
                         @else
-                            {{ $projects->count() }} of your projects have not been configured with
-                            their project phases. They cannot take tasks until their structures are
-                            finalized.
+                            {{ $projects->count() }} projects need phase setup.
                         @endif
                     </p>
                 </div>

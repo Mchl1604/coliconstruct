@@ -29,7 +29,7 @@
                 <div data-import-browser>
                     <p class="text-secondary small">
                         <i class="bi bi-info-circle me-1" aria-hidden="true"></i>
-                        Only technicians are copied. You can add or remove people afterwards.
+                        Copies technicians only.
                     </p>
 
                     <div class="input-group mb-3">
@@ -51,7 +51,7 @@
                     <div data-import-sections></div>
 
                     <div class="import-team-empty d-none" data-import-empty>
-                        No other project has a technician team to copy.
+                        No teams to copy.
                     </div>
 
                     <div class="import-team-empty d-none" data-import-no-matches>
@@ -73,7 +73,7 @@
                                     Keep <span data-import-current-lead></span>
                                 </span>
                                 <span class="import-lead-option-detail">
-                                    The rest of the imported team is added; the lead does not change.
+                                    Adds the team, keeps your lead.
                                 </span>
                             </span>
                             <i class="bi bi-chevron-right" aria-hidden="true"></i>
@@ -85,7 +85,7 @@
                                     Use <span data-import-imported-lead></span>
                                 </span>
                                 <span class="import-lead-option-detail">
-                                    The imported lead takes over, and the current lead comes off the team.
+                                    Imported lead replaces current lead.
                                 </span>
                             </span>
                             <i class="bi bi-chevron-right" aria-hidden="true"></i>

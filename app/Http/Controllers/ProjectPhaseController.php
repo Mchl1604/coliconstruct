@@ -138,7 +138,7 @@ class ProjectPhaseController extends Controller
         if ($this->setup->phasesHoldingTasks($project)->isNotEmpty()) {
             return back()->with(
                 'error',
-                'This project already has tasks on it, so its phases cannot be reset. Edit the rows instead.'
+                'It has tasks. Edit the rows instead.'
             );
         }
 
@@ -169,7 +169,7 @@ class ProjectPhaseController extends Controller
 
         return redirect()
             ->to($this->actionUrl($request, $project, 'setup'))
-            ->with('success', 'Phase setup saved. The structure is not locked yet.');
+            ->with('success', 'Phase setup saved.');
     }
 
     /**
@@ -188,7 +188,7 @@ class ProjectPhaseController extends Controller
         return redirect()
             ->to($this->projectUrl($request, $project))
             ->with('success', sprintf(
-                'Phases finalized. This project is now monitored across %d %s.',
+                'Phases finalized (%d %s).',
                 (int) $project->fresh()->phase_count,
                 (int) $project->fresh()->phase_count === 1 ? 'phase' : 'phases'
             ));
@@ -214,7 +214,7 @@ class ProjectPhaseController extends Controller
 
         return redirect()
             ->to($this->actionUrl($request, $project, 'setup'))
-            ->with('success', 'Phase structure unlocked. Make your changes, then finalize it again.');
+            ->with('success', 'Unlocked. Finalize again when done.');
     }
 
     /**

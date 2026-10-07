@@ -433,7 +433,7 @@ class ProjectTeamChange
         $teamOnTheDay = $plan->after->filter(fn (ProjectTechnician $span): bool => $span->isCurrent($plan->effectiveDate()));
 
         if ($teamOnTheDay->isEmpty()) {
-            return ['technicians' => 'A project must keep at least one technician. Assign someone else first.'];
+            return ['technicians' => 'A project needs at least one technician.'];
         }
 
         // Only a problem this change CREATES is a reason to refuse it. A
@@ -1164,12 +1164,12 @@ class ProjectTeamChange
                     'key' => 'none|'.$day,
                     'message' => $outgoing
                         ? sprintf(
-                            '%s stops leading this project on %s. Choose a lead technician who takes over that day.',
+                            '%s stops leading on %s. Choose a new lead.',
                             $outgoing->technician?->name ?? 'The lead technician',
                             BusinessTime::format($day)
                         )
                         : sprintf(
-                            'This project would have no lead technician from %s. Choose one who takes over that day.',
+                            'No lead from %s. Choose one.',
                             BusinessTime::format($day)
                         ),
                 ];
@@ -1182,7 +1182,7 @@ class ProjectTeamChange
             $problems[] = [
                 'key' => 'many|'.$day,
                 'message' => sprintf(
-                    '%s would both lead this project from %s. A project has one lead technician%s.',
+                    '%s would both lead from %s. Only one lead allowed%s.',
                     $leads->map(fn (ProjectTechnician $span): string => $span->technician?->name ?? 'A lead technician')->join(', ', ' and '),
                     BusinessTime::format($day),
                     $scheduled ? ' - cancel '.($scheduled->technician?->name ?? 'the other lead')."'s scheduled start first" : ''
@@ -1287,7 +1287,7 @@ class ProjectTeamChange
         }
 
         throw new RuntimeException(sprintf(
-            '%s already holds %s dated to their time on this project (%s). Reassign %s before cancelling.',
+            '%s has %s in this period (%s). Reassign %s first.',
             $start->technician?->name ?? 'This technician',
             $stranded->count() === 1 ? 'a task' : $stranded->count().' tasks',
             $this->quotedList($stranded->pluck('task_title')->all()),

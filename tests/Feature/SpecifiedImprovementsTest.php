@@ -319,8 +319,7 @@ class SpecifiedImprovementsTest extends TestCase
         $response->assertSee('This project is on hold');
         $response->assertSee('Resume it before changing its assigned technicians.');
         $response->assertSee('Resume it before adding reports.');
-        $response->assertSee('Resume it before editing tasks.');
-        $response->assertSee('Resume it before adding schedules.');
+        $response->assertSee('On hold. Resume first.');
 
         // The history is still there to read - that is the whole point of
         // keeping it.

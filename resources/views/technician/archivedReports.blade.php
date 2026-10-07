@@ -15,8 +15,7 @@
         <div>
             <h4 class="fw-bold mb-1">Archived Reports</h4>
             <p class="text-secondary small mb-0">
-                Reports you filed away. Nothing was deleted - each one keeps its project, its images and its
-                attachments, and can be restored to your active list.
+                Archived reports. Nothing was deleted.
             </p>
         </div>
 
@@ -107,9 +106,7 @@
                                                     {{ $report->report_title }}</strong>?
 
                                                 <p class="text-secondary small mb-0 mt-2">
-                                                    It returns to your Reports page and to its project's report
-                                                    list, with the same images and attachments it was archived
-                                                    with.
+                                                    It returns to your Reports page.
                                                 </p>
                                             </div>
 
