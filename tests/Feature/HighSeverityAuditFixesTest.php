@@ -640,7 +640,7 @@ class HighSeverityAuditFixesTest extends TestCase
         // worked.
         $summary = collect($section['summary'])->pluck('value', 'label');
         $this->assertSame('1', $summary['Total Scheduled Projects']);
-        $this->assertSame('3', $summary['Total Scheduled Days']);
+        $this->assertSame(3, collect($section['rows'])->sum('duration'));
     }
 
     /**

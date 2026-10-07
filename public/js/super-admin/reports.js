@@ -829,12 +829,14 @@ document.addEventListener("DOMContentLoaded", function () {
             return isMoney ? pesos.format(value) : numbers.format(value);
         };
 
+        // The value sits on whichever axis is not the category axis. On a
+        // horizontal bar the y axis holds each bar's position in the list, so
+        // reading y there printed 0, 1, 2... instead of the amount.
         const tooltipLabel = function (context) {
-            const raw = context.parsed.y !== undefined && context.parsed.y !== null
-                ? context.parsed.y
-                : context.parsed.x !== undefined && context.parsed.x !== null
-                  ? context.parsed.x
-                  : context.parsed;
+            const raw =
+                context.chart.options.indexAxis === "y"
+                    ? context.parsed.x
+                    : context.parsed.y;
 
             return (
                 " " +
@@ -1336,6 +1338,12 @@ document.addEventListener("DOMContentLoaded", function () {
         const monthSelect = exportModalEl.querySelector("[data-export-month]");
         const yearSelect = exportModalEl.querySelector("[data-export-year]");
         const statusSelect = exportModalEl.querySelector("[data-export-status]");
+        const quotationStatusSelect = exportModalEl.querySelector(
+            "[data-export-quotation-status]",
+        );
+        const quotationGroupSelect = exportModalEl.querySelector(
+            "[data-export-quotation-group]",
+        );
         const scopeSelect = exportModalEl.querySelector(
             "[data-export-technician-scope]",
         );
@@ -1429,6 +1437,11 @@ document.addEventListener("DOMContentLoaded", function () {
             // the rest rather than ignoring them.
             if (type === "project") {
                 payload.set("project_status", statusSelect.value);
+            }
+
+            if (type === "quotation") {
+                payload.set("quotation_status", quotationStatusSelect.value);
+                payload.set("quotation_group", quotationGroupSelect.value);
             }
 
             if (type === "technician") {

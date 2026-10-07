@@ -309,13 +309,13 @@ class TechnicianTaskVisibilityTest extends TestCase
         $theirImage = TaskImage::create(['task_id' => $theirs->task_id, 'image_path' => 'task-images/theirs.jpg']);
 
         $this->actingAs($this->alexAccount)
-            ->get(route('media.task-image', $theirImage))
+            ->withHeader('Sec-Fetch-Dest', 'image')->get(route('media.task-image', $theirImage))
             ->assertForbidden();
 
         // Their own is refused only by the file being absent from the fake
         // disk, which is a 404 rather than a 403 - the authorization passed.
         $this->actingAs($this->alexAccount)
-            ->get(route('media.task-image', $myImage))
+            ->withHeader('Sec-Fetch-Dest', 'image')->get(route('media.task-image', $myImage))
             ->assertNotFound();
     }
 
@@ -348,7 +348,7 @@ class TechnicianTaskVisibilityTest extends TestCase
 
         $this->actingAs($outsider)
             ->get(route('technician.projects.show', $other))
-            ->assertForbidden();
+            ->assertRedirect(route('technician.schedule'))->assertSessionHas('error');
 
         $this->actingAs($outsider)
             ->getJson(route('technician.projects.details', $other))
@@ -417,7 +417,7 @@ class TechnicianTaskVisibilityTest extends TestCase
         // Not a 403: the authorization passes and only the missing file on the
         // fake disk stops it.
         $this->actingAs($this->leadAccount)
-            ->get(route('media.task-image', $image))
+            ->withHeader('Sec-Fetch-Dest', 'image')->get(route('media.task-image', $image))
             ->assertNotFound();
     }
 

@@ -343,7 +343,7 @@ class TechnicianPortalTest extends TestCase
 
         $this->actingAs($this->leadAccount);
 
-        $this->get(route('technician.projects.show', $other))->assertForbidden();
+        $this->get(route('technician.projects.show', $other))->assertRedirect(route('technician.schedule'))->assertSessionHas('error');
     }
 
     /**

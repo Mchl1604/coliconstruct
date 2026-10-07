@@ -483,6 +483,6 @@ class ProjectTargetDateTest extends TestCase
 
         $this->actingAs($this->account('client', 'someone.else@example.test'))
             ->get(route('public.projects.show', $project->project_id))
-            ->assertNotFound();
+            ->assertRedirect(route('landing.home'))->assertSessionHas('error');
     }
 }

@@ -2197,6 +2197,18 @@ class Project extends Model
     }
 
     /**
+     * Where this project sorts in a projects table: the position of its tab
+     * in STATUS_TABS, so the table opens in the order the tabs are read -
+     * Pending first, Cancelled last - and follows them if they are reordered.
+     */
+    public function tabRank(): int
+    {
+        $rank = array_search($this->tabKey(), array_keys(self::STATUS_TABS), true);
+
+        return $rank === false ? count(self::STATUS_TABS) : $rank;
+    }
+
+    /**
      * Which tab of a projects table this project files under.
      *
      * Not the same thing as statusKey(): a tab is a question somebody is

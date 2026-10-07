@@ -691,6 +691,28 @@
                         </select>
                     </div>
 
+                    {{-- One table either way: a row per project, or a row per
+                         client with their projects summed. --}}
+                    <div class="mb-3 d-none" data-export-field="quotation">
+                        <label class="form-label fw-semibold" for="exportQuotationGroup">Group By</label>
+                        <select id="exportQuotationGroup" class="form-select" data-export-quotation-group>
+                            @foreach ($quotationGroups as $value => $label)
+                                <option value="{{ $value }}">{{ $label }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+
+                    {{-- The Total Quotation chart's own options, so the report
+                         can be run for exactly what that chart shows. --}}
+                    <div class="mb-3 d-none" data-export-field="quotation">
+                        <label class="form-label fw-semibold" for="exportQuotationStatus">Project Status</label>
+                        <select id="exportQuotationStatus" class="form-select" data-export-quotation-status>
+                            @foreach ($quotationStatuses as $value => $label)
+                                <option value="{{ $value }}">{{ $label }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+
                     <div class="mb-3 d-none" data-export-field="technician">
                         <label class="form-label fw-semibold" for="exportTechnicianScope">Technician</label>
                         <select id="exportTechnicianScope" class="form-select" data-export-technician-scope>

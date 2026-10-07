@@ -531,7 +531,7 @@ class ProjectCompletionConfirmationTest extends TestCase
         // A perfectly valid client account, just not this project's.
         $this->actingAs($this->clientAccount('someone.else@example.test'));
 
-        $this->post(route('public.projects.confirm', $project->project_id))->assertNotFound();
+        $this->post(route('public.projects.confirm', $project->project_id))->assertRedirect()->assertSessionHas('error');
 
         $this->assertSame(
             Project::STATUS_AWAITING_CLIENT_CONFIRMATION,

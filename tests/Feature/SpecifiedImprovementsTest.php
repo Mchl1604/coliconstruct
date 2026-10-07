@@ -486,6 +486,47 @@ class SpecifiedImprovementsTest extends TestCase
         );
     }
 
+    /**
+     * The table opens in the order the tabs are read - Pending, Ongoing,
+     * Needs Rescheduling, On Hold, Completed, Cancelled - and newest first
+     * within a tab, whatever order the projects were created in.
+     */
+    public function test_the_projects_table_opens_in_the_order_of_its_tabs(): void
+    {
+        $this->actingAsSuperAdmin();
+
+        $cancelled = $this->project('cancelled');
+        $completed = $this->project('completed');
+        $ongoing = $this->project('ongoing');
+        $this->book($ongoing, -2, 5);
+        $overdue = $this->project('ongoing');
+        $this->book($overdue, -10, -5);
+        $olderPending = $this->project('pending');
+        $this->book($olderPending, 3, 6);
+        $newerPending = $this->project('pending');
+        $this->book($newerPending, 4, 8);
+
+        $order = $this->get(route('super-admin.projects'))
+            ->viewData('projects')
+            ->pluck('project_id')
+            ->all();
+
+        $this->assertSame([
+            $newerPending->project_id,
+            $olderPending->project_id,
+            $ongoing->project_id,
+            $overdue->project_id,
+            $completed->project_id,
+            $cancelled->project_id,
+        ], $order);
+
+        // The rank the Status cell sorts by is the tab's position.
+        $this->assertSame(
+            array_search('cancelled', array_keys(Project::STATUS_TABS), true),
+            $cancelled->fresh()->tabRank()
+        );
+    }
+
     // ==================================================================
     // Reports
     // ==================================================================

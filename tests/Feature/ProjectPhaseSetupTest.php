@@ -165,7 +165,7 @@ class ProjectPhaseSetupTest extends TestCase
 
         $this->actingAs($this->leadAccount)
             ->get(route('technician.projects.phases.setup', $other->project_id))
-            ->assertForbidden();
+            ->assertRedirect(route('technician.schedule'))->assertSessionHas('error');
     }
 
     // ------------------------------------------------------------------
@@ -259,7 +259,7 @@ class ProjectPhaseSetupTest extends TestCase
             ->post(route('super-admin.projects.phases.finalize', $this->project->project_id), [
                 'phases' => $this->structure(5),
             ])
-            ->assertForbidden();
+            ->assertRedirect()->assertSessionHas('error');
 
         $this->assertSame(4, $this->project->fresh()->phase_count);
         $this->assertCount(4, $this->project->phases()->get());
@@ -273,7 +273,7 @@ class ProjectPhaseSetupTest extends TestCase
             ->post(route('technician.projects.phases.finalize', $this->project->project_id), [
                 'phases' => $this->structure(5),
             ])
-            ->assertForbidden();
+            ->assertRedirect()->assertSessionHas('error');
 
         $this->assertSame(4, $this->project->fresh()->phase_count);
     }
@@ -706,7 +706,7 @@ class ProjectPhaseSetupTest extends TestCase
                 'project' => $this->project->project_id,
                 'phase' => $phase->phase_id,
             ]), ['override' => 1])
-            ->assertForbidden();
+            ->assertRedirect()->assertSessionHas('error');
 
         $this->assertNull($phase->fresh()->completed_at);
     }

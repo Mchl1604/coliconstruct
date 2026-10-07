@@ -10,6 +10,7 @@ use App\Models\Skill;
 use App\Models\Task;
 use App\Models\Technician;
 use App\Models\User;
+use App\Services\TaskAssignmentGaps;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -124,6 +125,22 @@ class TechnicianManagementTest extends TestCase
      * The table and the picker print a code, not the bare key, so a
      * technician can be quoted out loud.
      */
+    /**
+     * Lead Technicians open at the top, each group by name - whatever order
+     * the records were created in.
+     */
+    public function test_the_page_lists_lead_technicians_first_then_by_name(): void
+    {
+        $this->technician('Carlo Reyes');
+        $this->leadTechnician('Pedro Santos');
+        $this->technician('Ana Mendoza');
+        $this->leadTechnician('Jose Garcia');
+
+        $this->get(route('super-admin.technicians.index'))
+            ->assertOk()
+            ->assertSeeInOrder(['Jose Garcia', 'Pedro Santos', 'Ana Mendoza', 'Carlo Reyes']);
+    }
+
     public function test_the_page_prints_technicians_by_their_code(): void
     {
         $technician = $this->technician('Ana Mendoza');
@@ -782,7 +799,7 @@ class TechnicianManagementTest extends TestCase
         $this->assertSame(Task::GAP_OFF_TEAM, $benDated->fresh()->assignmentGap());
 
         // The attention chips and the board agree, one gap per task.
-        $summary = app(\App\Services\TaskAssignmentGaps::class)->summarise();
+        $summary = app(TaskAssignmentGaps::class)->summarise();
 
         $this->assertSame(2, $summary['counts'][Task::GAP_REMOVED_HOLDER]);
         $this->assertSame(1, $summary['counts'][Task::GAP_OFF_TEAM]);

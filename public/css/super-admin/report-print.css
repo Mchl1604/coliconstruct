@@ -212,6 +212,13 @@
     white-space: nowrap;
 }
 
+/* Money lines up on its last digit. Specific enough to beat the left
+   alignment every other cell takes. */
+.report-doc table.data .amount {
+    text-align: right;
+    white-space: nowrap;
+}
+
 /* One stacked value per line, with room between them. */
 .report-doc .stacked {
     padding: 1px 0;

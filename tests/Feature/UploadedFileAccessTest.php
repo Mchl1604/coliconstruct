@@ -171,7 +171,7 @@ class UploadedFileAccessTest extends TestCase
 
         $this->actingAs($this->client('somebody.else@example.test'))
             ->get($document->url())
-            ->assertForbidden();
+            ->assertRedirect(route('landing.home'))->assertSessionHas('error');
     }
 
     public function test_a_technician_who_is_not_on_the_project_may_not_read_it(): void
@@ -181,7 +181,7 @@ class UploadedFileAccessTest extends TestCase
 
         $this->actingAs($this->technician('stranger@example.test'))
             ->get($document->url())
-            ->assertForbidden();
+            ->assertRedirect(route('technician.schedule'))->assertSessionHas('error');
     }
 
     public function test_a_technician_on_the_project_may(): void
@@ -218,7 +218,7 @@ class UploadedFileAccessTest extends TestCase
 
         $this->actingAsSuperAdmin();
 
-        $this->get($document->url())->assertNotFound();
+        $this->withHeader('Sec-Fetch-Dest', 'image')->get($document->url())->assertNotFound();
     }
 
     /**
@@ -261,7 +261,7 @@ class UploadedFileAccessTest extends TestCase
         $image = $this->reportImage($project);
 
         $this->actingAs($this->client('somebody.else@example.test'))
-            ->get($image->url())
+            ->withHeader('Sec-Fetch-Dest', 'image')->get($image->url())
             ->assertForbidden();
     }
 
@@ -271,7 +271,7 @@ class UploadedFileAccessTest extends TestCase
         $image = $this->reportImage($project);
 
         $this->actingAs($this->technician('stranger@example.test'))
-            ->get($image->url())
+            ->withHeader('Sec-Fetch-Dest', 'image')->get($image->url())
             ->assertForbidden();
     }
 

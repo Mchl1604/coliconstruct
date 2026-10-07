@@ -15,6 +15,7 @@ use App\Models\TechnicianReport;
 use App\Models\TechnicianReportImage;
 use App\Models\User;
 use App\Services\SystemReportService;
+use App\Support\CompanyBranding;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -1207,6 +1208,168 @@ class ReportsPageTest extends TestCase
         $response->assertJsonPath('data.labels.1', 'Solo Corp');
     }
 
+    /**
+     * A client is the company for a commercial client and the person for a
+     * residential one, however the name was spaced or capitalised - and work
+     * carrying no committed money is not counted, the way Total Quotation
+     * does not count it.
+     */
+    public function test_top_clients_group_by_the_client_details_and_skip_uncommitted_money(): void
+    {
+        $first = $this->project('First Home', 'ongoing', [], 300000);
+        $first->clients()->update(['client_type' => 'Residential', 'company_name' => 'Ignored Co', 'fullname' => 'Juan Dela Cruz']);
+
+        $second = $this->project('Second Home', 'completed', [], 200000);
+        $second->clients()->update(['client_type' => 'Residential', 'company_name' => '', 'fullname' => '  juan  dela cruz ']);
+
+        $office = $this->project('Office Fit-out', 'ongoing', [], 400000);
+        $office->clients()->update(['client_type' => 'Commercial', 'company_name' => 'Acme Holdings']);
+
+        $dead = $this->project('Called Off', 'cancelled', [], 9000000);
+        $dead->clients()->update(['client_type' => 'Commercial', 'company_name' => 'Ghost Corp']);
+
+        $data = $this->chartData('topClients');
+
+        $this->assertSame(['Juan Dela Cruz', 'Acme Holdings'], $data['labels']);
+        $this->assertEquals([500000, 400000], $data['values']);
+    }
+
+    // ------------------------------------------------------------------
+    // Export - Quotation Report
+    // ------------------------------------------------------------------
+
+    /**
+     * By Project, the default: each project created in the period with its
+     * quotation - and the same figure the Total Quotation chart shows for the
+     * same status. One table, never the By Client one beside it.
+     */
+    public function test_the_quotation_report_lists_projects_by_default(): void
+    {
+        $ongoing = $this->project('Ongoing Project', 'ongoing', [], 100000);
+        $this->schedule($ongoing, $this->day(-1), $this->day(5));
+
+        $repeat = $this->project('Repeat Project', 'completed', [], 300000);
+        $repeat->clients()->update(['company_name' => 'Ongoing Project Holdings']);
+
+        $this->project('Dead Project', 'cancelled', [], 1000000);
+        $this->project('Filed Project', 'archived', [], 2000000, true);
+
+        $year = (int) CarbonImmutable::today()->format('Y');
+        $report = $this->exportReport('quotation', [], app(SystemReportService::class)->resolveExportPeriod('yearly', null, $year));
+
+        $this->assertSame('Quotation Report', $report['title']);
+
+        $projects = collect($report['sections'])->firstWhere('key', 'quotation_projects');
+        $this->assertSame(
+            [$ongoing->reference_no, $repeat->reference_no],
+            $projects['rows']->pluck('reference_no')->all()
+        );
+        $this->assertSame('Total Quotation: ₱400,000.00', $this->summaryLine($projects, 'Total Quotation'));
+        $this->assertSame('Average Quotation: ₱200,000.00', $this->summaryLine($projects, 'Average Quotation'));
+        $this->assertSame('Ongoing: ₱100,000.00', $this->summaryLine($projects, 'Ongoing'));
+        $this->assertSame('Completed: ₱300,000.00', $this->summaryLine($projects, 'Completed'));
+        $this->assertSame(['quotation_projects'], collect($report['sections'])->pluck('key')->all());
+
+        $chart = $this->chartData('totalQuotation', ['quotation_status' => 'all']);
+        $this->assertEquals(400000, array_sum($chart['values']));
+    }
+
+    /**
+     * By Client: one row per client, their projects summed - and only that
+     * table.
+     */
+    public function test_the_quotation_report_can_be_grouped_by_client(): void
+    {
+        $ongoing = $this->project('Ongoing Project', 'ongoing', [], 100000);
+        $this->schedule($ongoing, $this->day(-1), $this->day(5));
+
+        $repeat = $this->project('Repeat Project', 'completed', [], 300000);
+        $repeat->clients()->update(['company_name' => 'Ongoing Project Holdings']);
+
+        $this->project('Other Project', 'ongoing', [], 100000);
+
+        $year = (int) CarbonImmutable::today()->format('Y');
+        $report = $this->exportReport(
+            'quotation',
+            ['quotation_group' => 'client'],
+            app(SystemReportService::class)->resolveExportPeriod('yearly', null, $year)
+        );
+
+        $this->assertSame(['quotation_clients'], collect($report['sections'])->pluck('key')->all());
+
+        $clients = $report['sections'][0];
+        $this->assertSame(['Ongoing Project Holdings', 'Other Project Holdings'], $clients['rows']->pluck('client')->all());
+        $this->assertSame(2, $clients['rows'][0]['projects']);
+        $this->assertSame(80.0, $clients['rows'][0]['share']);
+        // Each status the client's work is in, with how many projects.
+        $this->assertSame(['Ongoing (1)', 'Completed (1)'], $clients['rows'][0]['statuses']);
+        $this->assertSame('Clients: 2', $this->summaryLine($clients, 'Clients'));
+        $this->assertSame('Total Quotation: ₱500,000.00', $this->summaryLine($clients, 'Total Quotation'));
+    }
+
+    public function test_the_quotation_report_narrows_to_one_status(): void
+    {
+        $this->project('Ongoing Project', 'ongoing', [], 100000);
+        $done = $this->project('Done Project', 'completed', [], 800000);
+
+        $year = (int) CarbonImmutable::today()->format('Y');
+        $report = $this->exportReport(
+            'quotation',
+            ['quotation_status' => 'completed'],
+            app(SystemReportService::class)->resolveExportPeriod('yearly', null, $year)
+        );
+
+        $rows = collect($report['sections'])->firstWhere('key', 'quotation_projects')['rows'];
+
+        $this->assertSame([$done->reference_no], $rows->pluck('reference_no')->all());
+    }
+
+    public function test_the_quotation_status_filter_belongs_to_the_quotation_report_only(): void
+    {
+        $this->postJson(route('super-admin.reports.preview'), $this->exportPayload([
+            'report_type' => 'project',
+            'quotation_status' => 'completed',
+        ]))->assertStatus(422);
+
+        $this->postJson(route('super-admin.reports.preview'), $this->exportPayload([
+            'report_type' => 'quotation',
+            'quotation_status' => 'completed',
+        ]))
+            ->assertOk()
+            ->assertJsonPath('title', 'Quotation Report');
+
+        $this->postJson(route('super-admin.reports.preview'), $this->exportPayload([
+            'report_type' => 'quotation',
+            'quotation_status' => 'cancelled',
+        ]))->assertStatus(422);
+
+        // Group By is the Quotation Report's too, and only its two options.
+        $this->postJson(route('super-admin.reports.preview'), $this->exportPayload([
+            'report_type' => 'project',
+            'quotation_group' => 'client',
+        ]))->assertStatus(422);
+
+        $this->postJson(route('super-admin.reports.preview'), $this->exportPayload([
+            'report_type' => 'quotation',
+            'quotation_group' => 'technician',
+        ]))->assertStatus(422);
+
+        $this->project('Done Project', 'completed', [], 800000);
+
+        $html = $this->postJson(route('super-admin.reports.preview'), $this->exportPayload([
+            'report_type' => 'quotation',
+            'quotation_group' => 'client',
+        ]))
+            ->assertOk()
+            ->json('html');
+
+        $this->assertStringContainsString('Quotations by Client', $html);
+        $this->assertStringContainsString('<th style="width:22%">Status</th>', $html);
+        $this->assertStringContainsString('Completed (1)', $html);
+        $this->assertStringContainsString('By Client', $html);
+        $this->assertStringNotContainsString('Quotations by Project', $html);
+    }
+
     public function test_the_chart_endpoint_rejects_an_unknown_chart(): void
     {
         $this->getJson(route('super-admin.reports.system.chart', ['chart' => 'everything']))
@@ -1336,7 +1499,7 @@ class ReportsPageTest extends TestCase
             'generatedBy' => 'Test Super Admin',
             'generatedAt' => CarbonImmutable::now(),
             'logoData' => null,
-            'company' => \App\Support\CompanyBranding::letterhead(),
+            'company' => CompanyBranding::letterhead(),
         ])->render();
 
         $this->assertStringContainsString('Generated By:', $html);
@@ -1690,7 +1853,6 @@ class ReportsPageTest extends TestCase
 
         // Aug 1 is one day; Aug 30-31 is two.
         $this->assertSame(3, $row['duration']);
-        $this->assertSame('Total Scheduled Days: 3', $this->summaryLine($section, 'Total Scheduled Days'));
     }
 
     /**
@@ -1728,7 +1890,8 @@ class ReportsPageTest extends TestCase
         $this->assertSame(11, $section['rows'][0]['duration']);
         $this->assertSame('Total Schedule Entries: 4', $this->summaryLine($section, 'Total Schedule Entries'));
         $this->assertSame('Total Scheduled Projects: 1', $this->summaryLine($section, 'Total Scheduled Projects'));
-        $this->assertSame('Total Scheduled Days: 11', $this->summaryLine($section, 'Total Scheduled Days'));
+        // The days are printed per row; the summary carries no day total.
+        $this->assertNull($this->summaryLine($section, 'Total Scheduled Days'));
     }
 
     /**
@@ -1794,7 +1957,6 @@ class ReportsPageTest extends TestCase
 
         $this->assertSame(1, $section['rows'][0]['duration']);
         $this->assertStringContainsString('8:00 AM', $section['rows'][0]['schedules'][0]);
-        $this->assertSame('Total Scheduled Days: 1', $this->summaryLine($section, 'Total Scheduled Days'));
     }
 
     /**
@@ -1823,7 +1985,7 @@ class ReportsPageTest extends TestCase
         $report = $this->exportReport('schedule', [], $this->monthOf($this->dateThisYear('08-01')));
 
         $this->assertTrue($report['is_empty']);
-        $this->assertSame('Total Scheduled Days: 0', $this->summaryLine($report['sections'][0], 'Total Scheduled Days'));
+        $this->assertSame('Total Scheduled Projects: 0', $this->summaryLine($report['sections'][0], 'Total Scheduled Projects'));
     }
 
     // ------------------------------------------------------------------

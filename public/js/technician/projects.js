@@ -9,7 +9,12 @@ document.addEventListener("DOMContentLoaded", function () {
     const portal = window.portal;
 
     portal.dataTable("#portalProjectsTable", "projects", {
-        order: [[0, "desc"]],
+        // In the order the tabs are read: the Status cell carries its tab's
+        // rank (Project::tabRank()).
+        order: [
+            [4, "asc"],
+            [0, "desc"],
+        ],
         columnDefs: [{ targets: -1, orderable: false }],
     });
 

@@ -137,6 +137,12 @@ document.addEventListener("DOMContentLoaded", function () {
             pageLength: 10,
             lengthMenu: [10, 25, 50, 100],
             info: false,
+            // Lead Technicians first, then by name: the Position cell carries
+            // a rank rather than its label (see the view).
+            order: [
+                [4, "asc"],
+                [2, "asc"],
+            ],
             // DataTables types this column as numeric, which right-aligns it
             // and reverses the header so the sort arrow lands on the left. A
             // technician ID is a label, not a quantity, so it is put back with

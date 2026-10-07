@@ -73,7 +73,14 @@ class TechnicianController extends Controller
                 $query->whereIn('role', ['technician', self::LEAD_ROLE]);
             })
             ->orderBy('technician_id')
-            ->get();
+            ->get()
+            // Leads first, then by name - the order the table opens in, so
+            // the page reads the same before and after DataTables draws it.
+            ->sortBy([
+                fn (Technician $a, Technician $b): int => ($a->account?->role !== self::LEAD_ROLE) <=> ($b->account?->role !== self::LEAD_ROLE),
+                fn (Technician $a, Technician $b): int => strcasecmp($a->name, $b->name),
+            ])
+            ->values();
 
         $skills = Skill::query()->orderBy('skill_name')->get();
 

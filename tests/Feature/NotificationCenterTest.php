@@ -264,7 +264,7 @@ class NotificationCenterTest extends TestCase
 
         $this->actingAs($mine)
             ->get(route('notifications.open', $notification->notification_id))
-            ->assertNotFound();
+            ->assertRedirect(route('super-admin.dashboard'))->assertSessionHas('error');
 
         $this->assertFalse($notification->fresh()->is_read);
     }

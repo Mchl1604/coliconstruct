@@ -125,7 +125,7 @@
                                      status. See Project::attentionTabKeys(). --}}
                                 data-tab-extra="{{ implode(' ', $project->attentionTabKeys()) }}"
                                 class="{{ $needsPhaseSetup ? 'project-row-needs-phase-setup' : '' }} {{ $isActiveToday ? 'project-row-active-today' : '' }} {{ $needsRecrew ? 'project-row-needs-recrew' : '' }}">
-                                <td>
+                                <td data-order="{{ $project->project_id }}">
                                     {{ $project->displayCode() }}
 
                                     <x-project-new-flag :project="$project" />
@@ -160,7 +160,9 @@
                                     @endforelse
                                 </td>
                                 <td class="text-success fw-semibold">₱ {{ number_format($project->quotation, 2) }}</td>
-                                <td>
+                                {{-- Sorted by tab, not by the badge's wording -
+                                     see Project::tabRank(). --}}
+                                <td data-order="{{ $project->tabRank() }}">
                                     <x-project-status-badge :project="$project" />
 
                                     {{-- A project waiting on a reply that cannot arrive
@@ -545,6 +547,12 @@
                     pageLength: 10,
                     lengthMenu: [10, 25, 50, 100],
                     info: false,
+                    // In the order the tabs are read, newest first within
+                    // each: the Status cell carries its tab's rank.
+                    order: [
+                        [6, 'asc'],
+                        [0, 'desc']
+                    ],
                     // DataTables types a column of bare numbers as numeric and
                     // right-aligns it. A project ID is a label, not a
                     // quantity, so it is put back with every other column.

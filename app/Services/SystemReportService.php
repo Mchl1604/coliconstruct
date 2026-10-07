@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Support\BusinessTime;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -45,6 +46,7 @@ class SystemReportService
         'created_projects' => 'Created Projects Report',
         'schedule' => 'Schedule Report',
         'technician' => 'Technician Report',
+        'quotation' => 'Quotation Report',
     ];
 
     /**
@@ -141,6 +143,25 @@ class SystemReportService
      * beside it is for.
      */
     private const WORKLOAD_SERIES_LIMIT = 5;
+
+    /**
+     * How the Quotation Report is laid out: a row per project, or a row per
+     * client with their projects summed.
+     */
+    public const QUOTATION_GROUP_PROJECT = 'project';
+
+    public const QUOTATION_GROUP_CLIENT = 'client';
+
+    /**
+     * The Quotation Report's Group By options, keyed by what the dialog
+     * submits.
+     *
+     * @var array<string, string>
+     */
+    public const QUOTATION_GROUPS = [
+        self::QUOTATION_GROUP_PROJECT => 'By Project',
+        self::QUOTATION_GROUP_CLIENT => 'By Client',
+    ];
 
     /**
      * The status filter on the Total Quotation chart. "all" is the union of
@@ -567,34 +588,109 @@ class SystemReportService
 
     /**
      * The ten biggest clients in the window, by the summed quotation of every
-     * project they hold. Clients live on the project rather than in a table of
-     * their own, so the company name - or the person's name for a residential
-     * client - is what ties a client's projects together.
+     * project they hold. Read from the same projects and grouped by the same
+     * rule as the Quotation Report's By Client section, so the chart and the
+     * report cannot name different clients or different totals.
      *
      * @param  array{start: CarbonImmutable, end: CarbonImmutable}  $period
      * @return array<string, mixed>
      */
     private function topClients(array $period): array
     {
-        $rows = DB::table('tbl_projects')
-            ->join('tbl_clients', 'tbl_clients.project_id', '=', 'tbl_projects.project_id')
-            ->whereNotNull('tbl_projects.quotation')
-            ->where('tbl_projects.quotation', '>', 0)
-            ->whereBetween('tbl_projects.created_at', BusinessTime::storedRange($period['start'], $period['end']))
-            ->selectRaw("
-                coalesce(nullif(tbl_clients.company_name, ''), tbl_clients.fullname) as client,
-                sum(tbl_projects.quotation) as total
-            ")
-            ->groupBy('client')
-            ->orderByDesc('total')
-            ->limit(10)
-            ->get();
+        $clients = $this->clientTotals($this->quotationProjects($period, 'all'))->take(10);
 
         return [
-            'labels' => $rows->pluck('client')->map(fn ($name) => $name ?: 'Unnamed client')->all(),
-            'values' => $rows->pluck('total')->map(fn ($total) => (float) $total)->all(),
+            'labels' => $clients->pluck('client')->all(),
+            'values' => $clients->pluck('total')->all(),
             'label' => 'Total Quotation',
         ];
+    }
+
+    /**
+     * The projects carrying committed money that were created in the window,
+     * narrowed to one quotation status - the one population the Total
+     * Quotation chart, the Top Clients chart and the Quotation Report all
+     * count from.
+     *
+     * @param  array{start: CarbonImmutable, end: CarbonImmutable}  $period
+     * @return EloquentCollection<int, Project>
+     */
+    private function quotationProjects(array $period, string $status): EloquentCollection
+    {
+        $query = Project::query()
+            ->whereNotNull('quotation')
+            ->where('quotation', '>', 0)
+            ->whereBetween('created_at', BusinessTime::storedRange($period['start'], $period['end']));
+
+        $this->applyQuotationStatus($query, $status);
+
+        return $query
+            ->with(['clients', 'projectTypes', 'schedules'])
+            ->orderBy('created_at')
+            ->orderBy('project_id')
+            ->get();
+    }
+
+    /**
+     * Each client's summed quotation, biggest first.
+     *
+     * Clients live on the project rather than in a table of their own, and
+     * only some have a registered account, so a client is identified by the
+     * name on the project's client details - the company for a commercial
+     * client, the person for a residential one (see Client::primaryName()).
+     * Case and spacing are ignored, so "Juan Dela Cruz" typed twice slightly
+     * differently is still one client.
+     *
+     * @param  Collection<int, Project>  $projects
+     * @return Collection<int, array{client: string, projects: int, total: float, statuses: array<int, string>}>
+     */
+    private function clientTotals(Collection $projects): Collection
+    {
+        return $projects
+            ->groupBy(fn (Project $project): string => mb_strtolower($this->quotationClientName($project)))
+            ->map(fn (Collection $held): array => [
+                'client' => $this->quotationClientName($held->first()),
+                'projects' => $held->count(),
+                'total' => (float) $held->sum('quotation'),
+                'statuses' => $this->statusTally($held),
+            ])
+            ->sortBy([['total', 'desc'], ['client', 'asc']])
+            ->values();
+    }
+
+    /**
+     * A client's projects counted under each status, in reporting order -
+     * "Ongoing (1)", "Completed (2)" - since one client can hold work in
+     * several states at once.
+     *
+     * @param  Collection<int, Project>  $projects
+     * @return array<int, string>
+     */
+    private function statusTally(Collection $projects): array
+    {
+        $counts = $projects->countBy(fn (Project $project): string => $project->statusKey());
+
+        return collect(Project::REPORT_STATUS_ORDER)
+            ->filter(fn (string $status): bool => $counts->has($status))
+            ->map(fn (string $status): string => sprintf(
+                '%s (%d)',
+                self::REPORT_STATUSES[$status] ?? ucfirst($status),
+                $counts[$status]
+            ))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * The name a project's client is grouped and printed under in the
+     * quotation figures, with its spacing tidied.
+     */
+    private function quotationClientName(Project $project): string
+    {
+        $name = (string) $project->clients->first()?->primaryName();
+        $name = trim((string) preg_replace('/\s+/u', ' ', $name));
+
+        return $name === '' || $name === 'N/A' ? 'Unnamed client' : $name;
     }
 
     /**
@@ -958,6 +1054,11 @@ class SystemReportService
             'schedule' => $this->scheduleReport($period),
             'technician' => $this->technicianReport($period, $filters),
             'created_projects' => $this->createdProjectsReport($period),
+            'quotation' => $this->quotationReport(
+                $period,
+                $filters['quotation_status'] ?? 'all',
+                $filters['quotation_group'] ?? self::QUOTATION_GROUP_PROJECT
+            ),
             default => $this->projectReport($period, $filters['project_status'] ?? 'all'),
         };
 
@@ -1093,6 +1194,96 @@ class SystemReportService
                 ],
             ]],
         ];
+    }
+
+    /**
+     * The money quoted on the projects created in the period, in the one
+     * table the dialog asked for: a row per project, or a row per client
+     * with their projects summed.
+     *
+     * The same population as the Total Quotation and Top Clients charts - see
+     * quotationProjects() - so for the same period and status the report and
+     * the dashboard print the same figures. Cancelled and archived work
+     * carries no committed money and is left out rather than listed at zero.
+     *
+     * @param  array{start: CarbonImmutable, end: CarbonImmutable}  $period
+     * @return array<string, mixed>
+     */
+    private function quotationReport(array $period, string $status, string $groupBy): array
+    {
+        $projects = $this->quotationProjects($period, $status);
+
+        $rows = $projects
+            ->map(fn (Project $project): array => [
+                'reference_no' => $project->reference_no ?: '—',
+                'created_on' => $this->formatDate($project->created_at),
+                'client' => $this->quotationClientName($project),
+                'client_type' => $project->clientType() ? ucfirst(mb_strtolower($project->clientType())) : '—',
+                'project_types' => $project->projectTypes->pluck('type_name')->all(),
+                'status_key' => $project->statusKey(),
+                'status_label' => $project->shortStatusLabel(),
+                'quotation' => (float) $project->quotation,
+                'quotation_label' => $this->money((float) $project->quotation),
+            ])
+            ->values();
+
+        $total = (float) $rows->sum('quotation');
+
+        if ($groupBy === self::QUOTATION_GROUP_CLIENT) {
+            $clients = $this->clientTotals($projects)
+                ->map(fn (array $client): array => $client + [
+                    'total_label' => $this->money($client['total']),
+                    'share' => $total > 0 ? round($client['total'] / $total * 100, 1) : 0.0,
+                ]);
+
+            return [
+                'sections' => [[
+                    'key' => 'quotation_clients',
+                    'title' => 'Quotations by Client',
+                    'rows' => $clients,
+                    'summary' => [
+                        ['label' => 'Clients', 'value' => number_format($clients->count())],
+                        ['label' => 'Projects', 'value' => number_format($rows->count())],
+                        ['label' => 'Total Quotation', 'value' => $this->money($total)],
+                    ],
+                ]],
+            ];
+        }
+
+        return [
+            'sections' => [[
+                'key' => 'quotation_projects',
+                'title' => 'Quotations by Project',
+                'rows' => $rows,
+                'summary' => [
+                    ['label' => 'Projects', 'value' => number_format($rows->count())],
+                    ['label' => 'Total Quotation', 'value' => $this->money($total)],
+                    ['label' => 'Average Quotation', 'value' => $this->money($rows->isEmpty() ? 0.0 : $total / $rows->count())],
+                    ...$this->statusTotals($rows),
+                ],
+            ]],
+        ];
+    }
+
+    /**
+     * The quoted money under each status the table shows, in reporting
+     * order. Summed from the rows, so it cannot disagree with them.
+     *
+     * @param  Collection<int, array<string, mixed>>  $rows
+     * @return array<int, array{label: string, value: string}>
+     */
+    private function statusTotals(Collection $rows): array
+    {
+        $byStatus = $rows->groupBy('status_key');
+
+        return collect(Project::REPORT_STATUS_ORDER)
+            ->filter(fn (string $status): bool => $byStatus->has($status))
+            ->map(fn (string $status): array => [
+                'label' => self::REPORT_STATUSES[$status] ?? ucfirst($status),
+                'value' => $this->money((float) $byStatus[$status]->sum('quotation')),
+            ])
+            ->values()
+            ->all();
     }
 
     /**
@@ -1711,7 +1902,9 @@ class SystemReportService
             ['label' => 'Total Scheduled Projects', 'value' => number_format($rows->pluck('project_id')->unique()->count())],
             // Bookings, not rows: each row now carries several.
             ['label' => 'Total Schedule Entries', 'value' => number_format($rows->sum('entries'))],
-            ['label' => 'Total Scheduled Days', 'value' => number_format($rows->sum('duration'))],
+            // No day total: each row already prints its own days, and a sum
+            // across projects worked in parallel reads as calendar time it
+            // is not.
         ];
     }
 

@@ -154,6 +154,12 @@
             white-space: nowrap;
         }
 
+        /* Money lines up on its last digit. */
+        table.data .amount {
+            text-align: right;
+            white-space: nowrap;
+        }
+
         /* One stacked value per line, with room between them. */
         .stacked {
             padding: 1px 0;

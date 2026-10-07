@@ -106,7 +106,7 @@
                                              which is how they are referred to
                                              everywhere outside this page. --}}
                                         <td>{{ $technician->account?->user_code ?? '—' }}</td>
-                                        <td>
+                                        <td data-order="{{ $technician->name }}">
                                             {{-- Picture beside the name, the
                                                  same one they set on their own
                                                  profile page. --}}
@@ -137,7 +137,10 @@
                                                 <span class="text-muted small">No specialties assigned.</span>
                                             @endforelse
                                         </td>
-                                        <td>
+                                        {{-- Ranked rather than spelled: "Lead
+                                             Technician" sorts after
+                                             "Technician" alphabetically. --}}
+                                        <td data-order="{{ $isLead ? 0 : 1 }}">
                                             <span class="badge {{ $isLead ? 'bg-primary' : 'bg-secondary' }}">
                                                 {{ $isLead ? 'Lead Technician' : 'Technician' }}
                                             </span>

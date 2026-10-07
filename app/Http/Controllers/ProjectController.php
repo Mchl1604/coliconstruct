@@ -133,7 +133,11 @@ class ProjectController extends Controller
             ->where('is_archived', false)
             ->where('status', '!=', 'archived')
             ->orderBy('project_id', 'desc')
-            ->get();
+            ->get()
+            // The order the table opens in - by tab, newest first within one -
+            // so the page reads the same before DataTables redraws it.
+            ->sortBy(fn (Project $project): int => $project->tabRank())
+            ->values();
 
         // Every tab carries its count, in the pattern Overdue and On Hold
         // already used. Grouped by the same method each row is labelled with,

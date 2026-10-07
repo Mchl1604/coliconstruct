@@ -347,7 +347,7 @@ class AuditDecisionsTest extends TestCase
 
         $this->actingAs($mine)
             ->get('/my-projects/'.$project->project_id)
-            ->assertNotFound();
+            ->assertRedirect(route('landing.home'))->assertSessionHas('error');
     }
 
     // ==================================================================

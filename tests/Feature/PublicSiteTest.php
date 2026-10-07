@@ -313,9 +313,9 @@ class PublicSiteTest extends TestCase
         $superAdmin = $this->account('super_admin', 'owner@example.test');
 
         $this->content()->saveText('footer', [
-            'footer.quick_links' => "Home | /
+            'footer.quick_links' => 'Home | /
 My Own Work | /my-projects
-About | /about",
+About | /about',
         ], $superAdmin);
 
         $guestFooter = $this->footerLinks($this->get(route('landing.home'))->assertOk()->getContent());
@@ -780,7 +780,7 @@ About | /about",
 
         $this->actingAs($client)
             ->get(route('public.projects.show', $project->project_id))
-            ->assertNotFound();
+            ->assertRedirect(route('landing.home'))->assertSessionHas('error');
     }
 
     public function test_a_guest_cannot_open_a_project(): void

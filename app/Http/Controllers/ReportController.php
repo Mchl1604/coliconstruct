@@ -95,6 +95,7 @@ class ReportController extends Controller
             'reportTypes' => TechnicianReport::TYPES,
             'exportTypes' => self::EXPORT_TYPES,
             'quotationStatuses' => SystemReportService::QUOTATION_STATUSES,
+            'quotationGroups' => SystemReportService::QUOTATION_GROUPS,
             'exportStatuses' => SystemReportService::REPORT_STATUSES,
             'exportTechnicianKinds' => SystemReportService::TECHNICIAN_REPORT_KINDS,
             'exportTechnicians' => Technician::query()
@@ -558,6 +559,19 @@ class ReportController extends Controller
                 'string',
                 'in:'.implode(',', array_keys(SystemReportService::TECHNICIAN_REPORT_KINDS)),
             ],
+
+            // Quotation Report only. The Total Quotation chart's own options,
+            // so the report can be run for exactly what the chart shows.
+            'quotation_status' => [
+                'nullable',
+                'string',
+                'in:'.implode(',', array_keys(SystemReportService::QUOTATION_STATUSES)),
+            ],
+            'quotation_group' => [
+                'nullable',
+                'string',
+                'in:'.implode(',', array_keys(SystemReportService::QUOTATION_GROUPS)),
+            ],
         ], [
             'month.required_if' => 'Choose a month for a monthly report.',
             'year.required' => 'Choose a year.',
@@ -565,6 +579,8 @@ class ReportController extends Controller
             'project_status.in' => 'That project status cannot be reported on.',
             'technician_id.required_if' => 'Choose which technician to report on.',
             'technician_id.exists' => 'That technician no longer exists.',
+            'quotation_status.in' => 'That project status cannot be reported on.',
+            'quotation_group.in' => 'Choose By Project or By Client.',
         ]);
     }
 
@@ -580,13 +596,14 @@ class ReportController extends Controller
         $allowed = match ($reportType) {
             'project' => ['project_status'],
             'technician' => ['technician_scope', 'technician_id', 'technician_kind'],
+            'quotation' => ['quotation_status', 'quotation_group'],
             // The Created Projects Report counts what was created in the
             // period, whatever became of it since - so there is nothing to
             // narrow it by.
             default => [],
         };
 
-        foreach (['project_status', 'technician_scope', 'technician_id', 'technician_kind'] as $filter) {
+        foreach (['project_status', 'technician_scope', 'technician_id', 'technician_kind', 'quotation_status', 'quotation_group'] as $filter) {
             if (! in_array($filter, $allowed, true) && filled($input[$filter] ?? null)) {
                 return sprintf(
                     'The %s filter does not apply to the %s.',
@@ -612,6 +629,17 @@ class ReportController extends Controller
             $status = $input['project_status'] ?? 'all';
 
             return ['Project Status' => SystemReportService::REPORT_STATUSES[$status] ?? 'All Statuses'];
+        }
+
+        if ($reportType === 'quotation') {
+            $status = $input['quotation_status'] ?? 'all';
+
+            $group = $input['quotation_group'] ?? SystemReportService::QUOTATION_GROUP_PROJECT;
+
+            return [
+                'Group By' => SystemReportService::QUOTATION_GROUPS[$group] ?? 'By Project',
+                'Project Status' => SystemReportService::QUOTATION_STATUSES[$status] ?? 'All Projects',
+            ];
         }
 
         if ($reportType !== 'technician') {

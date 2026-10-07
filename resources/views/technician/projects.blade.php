@@ -119,7 +119,7 @@
                                         <span class="text-muted small">N/A</span>
                                     @endforelse
                                 </td>
-                                <td><x-project-status-badge :project="$project" /></td>
+                                <td data-order="{{ $project->tabRank() }}"><x-project-status-badge :project="$project" /></td>
                                 <td><x-project-phase-progress :project="$project" /></td>
                                 <td class="text-center">
                                     <div class="projects-action-buttons">

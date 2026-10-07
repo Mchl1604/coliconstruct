@@ -5,6 +5,7 @@ use App\Http\Middleware\EnsurePasswordIsChanged;
 use App\Http\Middleware\EnsureTermsAreAccepted;
 use App\Http\Middleware\EnsureUserHasRole;
 use App\Http\Middleware\PreventCachingSignedInPages;
+use App\Support\PortalErrorRedirect;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -76,4 +77,11 @@ return Application::configure(basePath: dirname(__DIR__))
 
             return back()->withInput($request->except(['_token', 'password']))->with('error', $message);
         });
+
+        // A signed-in reader whose page fails is sent back to their own
+        // portal with a toast; the error page is the last resort. See
+        // PortalErrorRedirect for which failures, and when it stands aside.
+        $exceptions->render(
+            fn (Throwable $exception, Request $request) => PortalErrorRedirect::respond($exception, $request)
+        );
     })->create();

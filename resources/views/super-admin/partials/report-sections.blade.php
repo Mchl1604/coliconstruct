@@ -112,6 +112,65 @@
             </table>
         @endif
 
+        {{-- ---------------- Quotation Report ---------------- --}}
+        @if ($section['key'] === 'quotation_projects')
+            <table class="data">
+                <thead>
+                    <tr>
+                        <th style="width:12%">Reference No.</th>
+                        <th style="width:11%">Created</th>
+                        <th style="width:21%">Client</th>
+                        <th style="width:10%">Client Type</th>
+                        <th style="width:18%">Project Type</th>
+                        <th style="width:13%">Status</th>
+                        <th class="amount">Quotation</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach ($rows as $row)
+                        <tr>
+                            <td class="nowrap">{{ $row['reference_no'] }}</td>
+                            <td class="nowrap">{{ $row['created_on'] }}</td>
+                            <td>{{ $row['client'] }}</td>
+                            <td>{{ $row['client_type'] }}</td>
+                            <td>{!! $stack($row['project_types'], 'No Project Type') !!}</td>
+                            <td>{{ $row['status_label'] ?: '—' }}</td>
+                            <td class="amount">{{ $row['quotation_label'] }}</td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </table>
+        @endif
+
+        {{-- Each client's projects summed together, grouped by the name on
+             the project's client details - see SystemReportService::clientTotals(). --}}
+        @if ($section['key'] === 'quotation_clients')
+            <table class="data">
+                <thead>
+                    <tr>
+                        <th style="width:34%">Client</th>
+                        <th style="width:10%">Projects</th>
+                        {{-- A client can hold work in several states, so each
+                             status is listed with how many projects are in it. --}}
+                        <th style="width:22%">Status</th>
+                        <th style="width:12%">Share</th>
+                        <th class="amount">Total Quotation</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach ($rows as $row)
+                        <tr>
+                            <td>{{ $row['client'] }}</td>
+                            <td>{{ number_format($row['projects']) }}</td>
+                            <td>{!! $stack($row['statuses']) !!}</td>
+                            <td>{{ number_format($row['share'], 1) }}%</td>
+                            <td class="amount">{{ $row['total_label'] }}</td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </table>
+        @endif
+
         {{-- ---------------- Schedule Report ---------------- --}}
         @if ($section['key'] === 'schedules')
             <table class="data">
