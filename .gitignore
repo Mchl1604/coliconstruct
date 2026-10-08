@@ -28,3 +28,6 @@ Homestead.yaml
 Thumbs.db
 /public/uploads/*
 !/public/uploads/.gitignore
+
+# Demo account credentials (DemoDataSeeder) - never commit
+/demo-accounts.md
