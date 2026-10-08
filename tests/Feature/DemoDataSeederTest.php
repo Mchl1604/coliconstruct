@@ -243,6 +243,45 @@ class DemoDataSeederTest extends TestCase
         $this->assertNotEmpty($bookings);
     }
 
+    public function test_no_calendar_day_shows_more_than_three_projects(): void
+    {
+        $this->runSeeder();
+
+        // Drawn by the calendar's own rules: archived work is left off and a
+        // cancelled job stops on the day it was called off.
+        $projectsByDay = [];
+
+        foreach (Project::query()->with('schedules')->get() as $project) {
+            if (! $project->showsOnCalendar()) {
+                continue;
+            }
+
+            $cutoff = $project->calendarCutoff();
+
+            foreach ($project->schedules as $schedule) {
+                if (! $schedule->startsOnOrBefore($cutoff)) {
+                    continue;
+                }
+
+                $last = $cutoff !== null && $schedule->endsOn()->gt($cutoff) ? $cutoff : $schedule->endsOn();
+
+                for ($day = $schedule->startsOn(); $day->lte($last); $day = $day->addDay()) {
+                    $projectsByDay[$day->toDateString()][$project->project_id] = true;
+                }
+            }
+        }
+
+        $counts = collect($projectsByDay)->map(fn (array $projects): int => count($projects));
+
+        $this->assertLessThanOrEqual(3, $counts->max(), 'A calendar day shows more than three projects.');
+
+        // Three is the exception: a full day is rare, two is the busy norm.
+        $this->assertGreaterThan(
+            $counts->filter(fn (int $count): bool => $count === 3)->count() * 10,
+            $counts->filter(fn (int $count): bool => $count === 2)->count()
+        );
+    }
+
     public function test_the_statuses_still_hold_fourteen_days_later(): void
     {
         $this->runSeeder();
