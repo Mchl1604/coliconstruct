@@ -1025,100 +1025,18 @@ class ReportsPageTest extends TestCase
     // ------------------------------------------------------------------
 
     /**
-     * Booked days are counted range by range, and the days between two
-     * separate bookings were never booked: Aug 10-15 and Aug 25-30 is twelve
-     * days, not the twenty-one the two ends span.
+     * A project booked in two separate ranges is still one scheduled project.
      */
-    public function test_booked_days_skip_the_gaps_between_ranges(): void
+    public function test_a_project_booked_in_several_ranges_is_one_scheduled_project(): void
     {
         $project = $this->project('Split Job', 'ongoing');
         $this->schedule($project, $this->dateThisYear('08-10'), $this->dateThisYear('08-15'));
         $this->schedule($project, $this->dateThisYear('08-25'), $this->dateThisYear('08-30'));
 
-        // One project, so its average duration is its own booked days.
-        $data = $this->chartData('averageProjectDuration');
-        $august = array_combine($data['labels'], $data['values'])[
-            CarbonImmutable::parse($this->dateThisYear('08-01'))->format('M Y')
-        ];
-
-        $this->assertEquals(12, $august);
-        $this->assertSame('Average: 12.0 days', $data['summary']);
-
-        // And the project itself is one project, however it was booked.
         $trend = $this->chartData('scheduledProjectsTrend');
 
         $this->assertSame(1, array_sum($trend['values']));
         $this->assertCount(12, $trend['labels']);
-    }
-
-    /**
-     * A partial day books hours on one date, so it is one scheduled day - not
-     * a fraction, and not four days because it ran four hours.
-     */
-    public function test_a_partial_day_counts_as_a_single_scheduled_day(): void
-    {
-        $project = $this->project('Morning Call', 'ongoing');
-
-        Schedule::create([
-            'project_id' => $project->project_id,
-            'start_datetime' => $this->dateThisYear('08-20').' 08:00:00',
-            'end_datetime' => $this->dateThisYear('08-20').' 12:00:00',
-            'scheduling_mode' => Schedule::MODE_PARTIAL_DAY,
-            'status' => 'scheduled',
-        ]);
-
-        $this->assertSame('Average: 1.0 days', $this->chartData('averageProjectDuration')['summary']);
-
-        $types = $this->chartData('scheduleTypeDistribution');
-
-        $this->assertSame(['Date Based', 'Partial Day'], $types['labels']);
-        $this->assertSame([0, 1], $types['values']);
-    }
-
-    /**
-     * The mode is read from the column, never inferred from the times.
-     */
-    public function test_the_schedule_type_distribution_reads_the_stored_mode(): void
-    {
-        $project = $this->project('Mixed Job', 'ongoing');
-        $this->schedule($project, $this->dateThisYear('08-10'), $this->dateThisYear('08-12'));
-
-        Schedule::create([
-            'project_id' => $project->project_id,
-            'start_datetime' => $this->dateThisYear('08-20').' 08:00:00',
-            'end_datetime' => $this->dateThisYear('08-20').' 12:00:00',
-            'scheduling_mode' => Schedule::MODE_PARTIAL_DAY,
-            'status' => 'scheduled',
-        ]);
-
-        $data = $this->chartData('scheduleTypeDistribution');
-
-        $this->assertSame([1, 1], $data['values']);
-        $this->assertSame('Bookings: 2', $data['summary']);
-    }
-
-    /**
-     * Each project's duration is the sum of its own ranges, and the chart
-     * averages those across the projects starting in the bucket.
-     */
-    public function test_average_duration_averages_the_booked_days_per_project(): void
-    {
-        $split = $this->project('Split Job', 'ongoing');
-        $this->schedule($split, $this->dateThisYear('08-10'), $this->dateThisYear('08-15'));
-        $this->schedule($split, $this->dateThisYear('08-25'), $this->dateThisYear('08-30'));
-
-        $short = $this->project('Short Job', 'ongoing');
-        $this->schedule($short, $this->dateThisYear('08-04'), $this->dateThisYear('08-07'));
-
-        $data = $this->chartData('averageProjectDuration');
-        $august = array_combine($data['labels'], $data['values'])[
-            CarbonImmutable::parse($this->dateThisYear('08-01'))->format('M Y')
-        ];
-
-        // Twelve booked days and four, over two projects.
-        $this->assertEquals(8, $august);
-        $this->assertSame('Average: 8.0 days', $data['summary']);
-        $this->assertCount(12, $data['labels']);
     }
 
     /**
@@ -1133,7 +1051,6 @@ class ReportsPageTest extends TestCase
             'totalQuotation',
             'leadTechnicianWorkload',
             'scheduledProjectsTrend',
-            'averageProjectDuration',
         ];
 
         foreach ($timeBased as $chart) {

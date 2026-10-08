@@ -129,8 +129,6 @@ class SystemReportService
         'leadTechnicianAvailability',
         // Schedules
         'scheduledProjectsTrend',
-        'scheduleTypeDistribution',
-        'averageProjectDuration',
     ];
 
     /**
@@ -365,7 +363,6 @@ class SystemReportService
             // and ignore the granularity entirely.
             'leadTechnicianProjects' => $this->leadTechnicianProjects(),
             'leadTechnicianAvailability' => $this->leadTechnicianAvailability(),
-            'scheduleTypeDistribution' => $this->scheduleTypeDistribution(),
 
             // Read against one named month rather than a year of buckets.
             'projectBreakdown' => $this->projectBreakdown($this->resolveMonthWindow($month, $year)),
@@ -377,7 +374,6 @@ class SystemReportService
             'topClients' => $this->topClients($period),
             'leadTechnicianWorkload' => $this->leadTechnicianWorkload($period),
             'scheduledProjectsTrend' => $this->scheduledProjectsTrend($period),
-            'averageProjectDuration' => $this->averageProjectDuration($period),
             default => throw new InvalidArgumentException("Unknown chart [{$key}]."),
         };
     }
@@ -929,91 +925,6 @@ class SystemReportService
             ->pluck('total', 'bucket');
 
         return $this->bucketedSeries($period, $rows, 'Scheduled Projects');
-    }
-
-    /**
-     * Whole-day bookings against hours-on-a-date ones, as they stand today.
-     *
-     * Read from the stored mode rather than guessed from the times: a
-     * whole-day range carries midnight-to-midnight padding, which is not the
-     * same fact as somebody booking 8 AM to noon, and only the column knows
-     * which was meant. Rows written before modes existed are whole-day, which
-     * is what the model's own isDateBased() says.
-     *
-     * @return array<string, mixed>
-     */
-    private function scheduleTypeDistribution(): array
-    {
-        $rows = $this->scheduleQuery()
-            ->selectRaw(
-                "case when s.scheduling_mode = ? then 'partial_day' else 'date_based' end as mode, count(*) as total",
-                [Schedule::MODE_PARTIAL_DAY]
-            )
-            ->groupBy('mode')
-            ->pluck('total', 'mode');
-
-        $values = [
-            (int) ($rows['date_based'] ?? 0),
-            (int) ($rows['partial_day'] ?? 0),
-        ];
-
-        return [
-            'labels' => ['Date Based', 'Partial Day'],
-            'values' => $values,
-            'colors' => ['#2563eb', '#f0ad4e'],
-            'label' => 'Schedules',
-            'summary' => 'Bookings: '.number_format(array_sum($values)),
-        ];
-    }
-
-    /**
-     * The average number of booked days a project runs to, per bucket.
-     *
-     * Each project is totalled from its own ranges first and then placed in the
-     * bucket its work starts in, so a project appears once however it was
-     * booked and its duration is never split across two columns.
-     *
-     * @param  array{start: CarbonImmutable, end: CarbonImmutable, bucket: string}  $period
-     * @return array<string, mixed>
-     */
-    private function averageProjectDuration(array $period): array
-    {
-        $perProject = DB::query()
-            ->fromSub($this->projectScheduleDays(), 'per_project')
-            ->whereBetween('first_start', [$period['start'], $period['end']]);
-
-        $rows = (clone $perProject)
-            ->selectRaw(
-                $this->bucketExpression('first_start', $period['bucket']).' as bucket, '
-                .'avg(days) as total'
-            )
-            ->groupBy('bucket')
-            ->pluck('total', 'bucket')
-            ->map(fn ($average): float => round((float) $average, 1));
-
-        $overall = (float) ((clone $perProject)->avg('days') ?? 0);
-
-        $series = $this->bucketedSeries($period, $rows, 'Average Scheduled Days', 'decimal');
-
-        return $series + [
-            'summary' => 'Average: '.number_format(round($overall, 1), 1).' days',
-        ];
-    }
-
-    /**
-     * Each scheduled project with its total booked days and the day its work
-     * first starts, as a subquery the duration figures aggregate over.
-     *
-     * @return \Illuminate\Database\Query\Builder
-     */
-    private function projectScheduleDays()
-    {
-        return $this->scheduleQuery()
-            ->selectRaw(
-                's.project_id, min(s.start_datetime) as first_start, '
-                .'sum('.$this->scheduleDaysExpression('s').') as days'
-            )
-            ->groupBy('s.project_id');
     }
 
     /**
@@ -2112,19 +2023,6 @@ class SystemReportService
     }
 
     /**
-     * The calendar days one schedule row books, both ends inclusive: Aug 20 to
-     * Aug 22 is three days, and a single date - which is every partial day - is
-     * one. A row with no end date is a single day, hence the coalesce.
-     */
-    private function scheduleDaysExpression(string $table = 'tbl_schedule'): string
-    {
-        return '('.$this->dayDiffExpression(
-            "coalesce({$table}.end_datetime, {$table}.start_datetime)",
-            "{$table}.start_datetime"
-        ).' + 1)';
-    }
-
-    /**
      * Money the way the rest of the app writes it.
      */
     private function money(float $amount): string
@@ -2146,21 +2044,6 @@ class SystemReportService
             when on_hold = 1 then 'on_hold'
             else status
         end";
-    }
-
-    /**
-     * Whole-day difference between two columns, for the active driver.
-     *
-     * MySQL has datediff(); sqlite - which the test suite uses - does not,
-     * so julianday() stands in.
-     */
-    private function dayDiffExpression(string $later, string $earlier): string
-    {
-        if (DB::connection()->getDriverName() === 'sqlite') {
-            return "cast(julianday(date({$later})) - julianday(date({$earlier})) as integer)";
-        }
-
-        return "datediff({$later}, {$earlier})";
     }
 
     /**
@@ -2206,7 +2089,7 @@ class SystemReportService
      *
      * @param  array{start: CarbonImmutable, end: CarbonImmutable, bucket: string}  $period
      * @param  Collection<string, mixed>  $rows
-     * @param  string  $cast  int|money|decimal
+     * @param  string  $cast  int|money
      * @return array<string, mixed>
      */
     private function bucketedSeries(array $period, Collection $rows, string $label, string $cast = 'int'): array
@@ -2219,7 +2102,6 @@ class SystemReportService
 
             $values[] = match ($cast) {
                 'money' => (float) $raw,
-                'decimal' => round((float) $raw, 1),
                 default => (int) $raw,
             };
         }

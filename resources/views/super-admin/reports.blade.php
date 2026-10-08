@@ -299,28 +299,13 @@
                     ],
                     [
                         'title' => 'Schedule Reports',
-                        'subtitle' => 'What is on the calendar, and how long it runs',
+                        'subtitle' => 'What is on the calendar',
                         'icon' => 'bi-calendar-week',
                         'charts' => [
                             [
                                 'id' => 'scheduledProjectsTrend',
                                 'title' => 'Scheduled Projects Trend',
                                 'subtitle' => 'Projects with work booked, counted once each',
-                                'type' => 'bar',
-                                'col' => 'col-12 col-xl-7',
-                                'granularity' => true,
-                            ],
-                            [
-                                'id' => 'scheduleTypeDistribution',
-                                'title' => 'Schedule Type Distribution',
-                                'subtitle' => 'As recorded on each booking',
-                                'type' => 'doughnut',
-                                'col' => 'col-12 col-xl-5',
-                            ],
-                            [
-                                'id' => 'averageProjectDuration',
-                                'title' => 'Average Scheduled Project Duration',
-                                'subtitle' => 'Booked days per project, gaps excluded',
                                 'type' => 'bar',
                                 'col' => 'col-12',
                                 'granularity' => true,
