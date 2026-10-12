@@ -398,8 +398,8 @@ class DashboardMetrics
                 // outside today's window is the record of a day that happened.
                 'key' => 'partial_days_outside_hours',
                 'count' => $outsideHours->count(),
-                'singular' => 'Partial Day Outside Working Hours',
-                'plural' => 'Partial Days Outside Working Hours',
+                'singular' => 'Hourly Booking Outside Hours',
+                'plural' => 'Hourly Bookings Outside Hours',
                 'icon' => 'bi-clock-history',
                 // Straight to the booking: the schedules page with that
                 // project's editor already open, where the row flags itself.

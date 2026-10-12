@@ -404,11 +404,12 @@
                                 <label class="schedule-mode-option is-selected" data-scheduling-mode-option>
                                     <input type="radio" name="scheduling_mode"
                                         value="{{ \App\Models\Schedule::MODE_DATE_BASED }}" class="visually-hidden"
+                                        data-mode-label="{{ \App\Models\Schedule::MODE_LABELS[\App\Models\Schedule::MODE_DATE_BASED] }}"
                                         data-scheduling-mode-radio checked>
                                     <span class="schedule-mode-icon"><i class="bi bi-calendar-range"
                                             aria-hidden="true"></i></span>
                                     <span>
-                                        <strong>Date-Based</strong>
+                                        <strong>{{ \App\Models\Schedule::MODE_LABELS[\App\Models\Schedule::MODE_DATE_BASED] }}</strong>
                                         <small>Books full days</small>
                                     </span>
                                 </label>
@@ -416,11 +417,12 @@
                                 <label class="schedule-mode-option" data-scheduling-mode-option>
                                     <input type="radio" name="scheduling_mode"
                                         value="{{ \App\Models\Schedule::MODE_PARTIAL_DAY }}" class="visually-hidden"
+                                        data-mode-label="{{ \App\Models\Schedule::MODE_LABELS[\App\Models\Schedule::MODE_PARTIAL_DAY] }}"
                                         data-scheduling-mode-radio>
                                     <span class="schedule-mode-icon"><i class="bi bi-clock-history"
                                             aria-hidden="true"></i></span>
                                     <span>
-                                        <strong>Partial Day</strong>
+                                        <strong>{{ \App\Models\Schedule::MODE_LABELS[\App\Models\Schedule::MODE_PARTIAL_DAY] }}</strong>
                                         <small>Books set hours on a single date</small>
                                     </span>
                                 </label>
@@ -568,7 +570,7 @@
                                 </div>
                                 <div class="review-item">
                                     <span class="review-item-label">Scheduling Mode</span>
-                                    <span class="review-item-value" data-summary-target="scheduling_mode">Date-Based</span>
+                                    <span class="review-item-value" data-summary-target="scheduling_mode">{{ \App\Models\Schedule::MODE_LABELS[\App\Models\Schedule::MODE_DATE_BASED] }}</span>
                                 </div>
                                 <div class="review-item">
                                     {{-- The review is the last thing read

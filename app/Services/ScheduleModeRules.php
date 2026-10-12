@@ -72,7 +72,7 @@ class ScheduleModeRules
     public function messages(string $prefix = ''): array
     {
         return [
-            $prefix.'scheduling_mode.in' => 'Choose either Date-Based or Partial Day scheduling.',
+            $prefix.'scheduling_mode.in' => 'Choose either Full Day or Hourly scheduling.',
         ];
     }
 
@@ -128,7 +128,7 @@ class ScheduleModeRules
         if ($mode === Schedule::MODE_PARTIAL_DAY && ! $partialDayAllowed) {
             $validator->errors()->add(
                 $keyPrefix.'scheduling_mode',
-                'Partial Day is Residential only.'
+                'Hourly is Residential only.'
             );
 
             return null;

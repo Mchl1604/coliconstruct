@@ -134,10 +134,10 @@
                     @if ($named) name="{{ $field('scheduling_mode') }}" @endif data-range-mode
                     @disabled($isReadOnly)>
                     <option value="{{ \App\Models\Schedule::MODE_DATE_BASED }}" @selected(! $isPartialDay)>
-                        Date-Based
+                        {{ \App\Models\Schedule::MODE_LABELS[\App\Models\Schedule::MODE_DATE_BASED] }}
                     </option>
                     <option value="{{ \App\Models\Schedule::MODE_PARTIAL_DAY }}" @selected($isPartialDay)>
-                        Partial Day
+                        {{ \App\Models\Schedule::MODE_LABELS[\App\Models\Schedule::MODE_PARTIAL_DAY] }}
                     </option>
                 </select>
             @endif
@@ -178,7 +178,7 @@
                 {{ \App\Models\Schedule::hourLabel((int) explode(':', $startTime)[0]) }} to
                 {{ \App\Models\Schedule::hourLabel((int) explode(':', $endTime)[0]) }}, outside the
                 {{ $partialDayWindow['start_label'] }} to {{ $partialDayWindow['end_label'] }}
-                partial-day hours.
+                hourly window.
             </span>
         </p>
     @endif

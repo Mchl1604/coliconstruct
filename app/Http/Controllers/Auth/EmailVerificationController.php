@@ -30,8 +30,9 @@ use RuntimeException;
  *
  *   - a PendingRegistration, which is every registration made since
  *     tbl_pending_registrations existed; verifying it creates the account.
- *   - an unverified User, which can only be an account registered before
- *     that - deployed databases still hold them. Verifying one marks the
+ *   - an unverified User: a client registered before that - deployed
+ *     databases still hold them - or an account an administrator opened or
+ *     moved to a new address, on its next sign-in. Verifying one marks the
  *     account it already has.
  *
  * Either way the address is never taken from the request. It is read from the
@@ -103,15 +104,11 @@ class EmailVerificationController extends Controller
             return back()->with('error', $exception->getMessage());
         }
 
-        if ($subject instanceof PendingRegistration) {
-            $account = $this->accounts->completeRegistration($subject);
-        } else {
-            $account = $subject;
-            $account->forceFill([
-                'email_verified_at' => now(),
-                'status' => User::STATUS_ACTIVE,
-            ])->save();
+        if ($subject instanceof User) {
+            return $this->verifyExistingAccount($request, $subject);
         }
+
+        $account = $this->accounts->completeRegistration($subject);
 
         $this->activityLogger->recordAnonymous(
             ActivityLog::REGISTRATION_VERIFIED,
@@ -167,6 +164,62 @@ class EmailVerificationController extends Controller
     // ------------------------------------------------------------------
     // Internals
     // ------------------------------------------------------------------
+
+    /**
+     * An account that already exists proving its address: one an
+     * administrator opened, on its first sign-in or after its address was
+     * changed, or a client registered before tbl_pending_registrations.
+     *
+     * Only the address is marked. Whether the account is switched on is an
+     * administrator's decision, so it is read here rather than set: one
+     * switched off between the sign-in and the code is verified and still
+     * turned away.
+     *
+     * Only the old self-registration is welcomed - it is the moment that
+     * registration completes. An account an administrator opened was never
+     * inactive, and its owner already has the email that carried their
+     * credentials.
+     */
+    private function verifyExistingAccount(Request $request, User $account): RedirectResponse
+    {
+        $account->forceFill(['email_verified_at' => now()])->save();
+
+        $completesRegistration = $account->isClient() && $account->created_by === null;
+
+        $this->activityLogger->recordAnonymous(
+            $completesRegistration ? ActivityLog::REGISTRATION_VERIFIED : ActivityLog::EMAIL_VERIFIED,
+            $account->fullName(),
+            $account,
+            $completesRegistration
+                ? sprintf('%s verified %s and activated their account.', $account->fullName(), $account->email)
+                : sprintf('%s verified %s.', $account->fullName(), $account->email)
+        );
+
+        if ($completesRegistration) {
+            $this->email->sendTo($account, new AccountStatusMail($account, AccountStatusMail::ACTIVATED));
+        }
+
+        $request->session()->forget(self::SESSION_KEY);
+
+        if (! $account->canLogin()) {
+            return redirect()->route('auth.login')
+                ->with('error', 'Email verified, but this account cannot sign in.');
+        }
+
+        Auth::login($account);
+        $request->session()->regenerate();
+
+        $account->forceFill(['last_login_at' => now()])->save();
+
+        // Straight on to the next first-sign-in step: the issued password
+        // still has to be replaced before anything else opens.
+        if ($account->must_change_password) {
+            return redirect()->route('auth.password.change')
+                ->with('success', 'Email verified. Choose a new password.');
+        }
+
+        return redirect(PortalHome::url($account))->with('success', 'Email verified.');
+    }
 
     /**
      * Whatever is waiting on a code for the address in the session.

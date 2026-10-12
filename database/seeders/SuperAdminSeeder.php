@@ -64,6 +64,10 @@ class SuperAdminSeeder extends Seeder
             // The owner chose this password deliberately, so it is not
             // treated as a temporary one that has to be replaced.
             'must_change_password' => false,
+            // Nor is the address one an administrator typed for somebody
+            // else: there is nobody to prove it to. Left unset, the owner
+            // could not sign in without a working mailer.
+            'email_verified_at' => now(),
         ]);
 
         $this->command?->info("Super admin created: {$user->user_code}.");

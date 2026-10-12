@@ -204,6 +204,22 @@ Route::middleware(['auth', 'password.changed'])
         Route::post('/specialties', [ProfileController::class, 'requestSpecialties'])
             ->middleware('role:technician,lead_technician')
             ->name('specialties.request');
+
+        // The Super Admin handing their role to an Admin. Still an action on
+        // the signed-in account - it is their role that goes - and the Admin
+        // named is only who it goes to. There is only ever one Super Admin,
+        // so the reader steps down to Admin in the same move - see
+        // UserAccountService::transferSuperAdmin().
+        //
+        // Two steps: a code emailed to the Super Admin's own address, then
+        // that code back, which is what actually moves the role. Throttled
+        // like the change-of-email pair above.
+        Route::post('/super-admin/code', [ProfileController::class, 'sendSuperAdminTransferCode'])
+            ->middleware(['role:super_admin', 'throttle:6,1'])
+            ->name('super-admin.code');
+        Route::put('/super-admin', [ProfileController::class, 'transferSuperAdmin'])
+            ->middleware(['role:super_admin', 'throttle:10,1'])
+            ->name('super-admin.transfer');
     });
 
 // Notifications. Shared by every portal rather than duplicated per role: a

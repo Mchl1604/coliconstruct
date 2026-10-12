@@ -565,6 +565,55 @@ class ConfigurationUserManagementTest extends TestCase
         ]);
     }
 
+    /**
+     * A new address is one an administrator typed, so the account proves it
+     * on its next sign-in exactly as a new account does.
+     */
+    public function test_changing_an_employees_email_asks_them_to_verify_it_again(): void
+    {
+        $employee = $this->makeEmployee('admin', ['email_verified_at' => now()]);
+
+        $this->post(
+            route('super-admin.configuration.users.employees.update', $employee),
+            $this->employeePayload(['email' => 'ana.new@example.test'])
+        )->assertOk();
+
+        $employee->refresh();
+
+        $this->assertSame('ana.new@example.test', $employee->email);
+        $this->assertFalse($employee->hasVerifiedEmail());
+        $this->assertTrue($employee->requiresEmailVerification());
+    }
+
+    public function test_an_edit_that_keeps_the_email_keeps_it_verified(): void
+    {
+        $employee = $this->makeEmployee('admin', ['email_verified_at' => now()]);
+
+        // The same address in different case is the same address.
+        $this->post(
+            route('super-admin.configuration.users.employees.update', $employee),
+            $this->employeePayload(['email' => strtoupper($employee->email)])
+        )->assertOk();
+
+        $this->assertTrue($employee->refresh()->hasVerifiedEmail());
+    }
+
+    public function test_an_account_opened_here_starts_unverified(): void
+    {
+        $this->postJson(
+            route('super-admin.configuration.users.employees.store'),
+            $this->employeePayload()
+        )->assertCreated();
+
+        $this->postJson(
+            route('super-admin.configuration.users.clients.store'),
+            $this->clientPayload()
+        )->assertCreated();
+
+        $this->assertFalse(User::where('email', 'ana.mendoza@example.test')->firstOrFail()->hasVerifiedEmail());
+        $this->assertFalse(User::where('email', 'jose.garcia@example.test')->firstOrFail()->hasVerifiedEmail());
+    }
+
     public function test_a_client_edit_cannot_move_the_login_email(): void
     {
         $client = $this->makeClient(['email' => 'original@example.test']);

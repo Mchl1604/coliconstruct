@@ -333,7 +333,7 @@ class RecoveryPartialDayTest extends TestCase
             'end_time' => '12:00',
         ])
             ->assertStatus(422)
-            ->assertJsonPath('error', 'Partial Day is Residential only.');
+            ->assertJsonPath('error', 'Hourly is Residential only.');
 
         // And nothing was written on the way to saying so.
         $clashing->refresh();

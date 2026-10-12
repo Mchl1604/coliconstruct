@@ -515,7 +515,7 @@
                                 <li class="list-group-item">
                                     <strong>{{ $schedule->describe() }}</strong>
                                     @if ($schedule->isPartialDay())
-                                        <span class="badge bg-info text-dark ms-1">Partial Day</span>
+                                        <span class="badge bg-info text-dark ms-1">{{ \App\Models\Schedule::MODE_LABELS[\App\Models\Schedule::MODE_PARTIAL_DAY] }}</span>
                                     @endif
                                 </li>
                             @empty

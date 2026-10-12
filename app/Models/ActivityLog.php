@@ -141,6 +141,12 @@ class ActivityLog extends Model
 
     public const REGISTRATION_VERIFIED = 'Registration Verified';
 
+    /**
+     * An employee proving, on their first sign-in, the address an
+     * administrator opened their account with.
+     */
+    public const EMAIL_VERIFIED = 'Email Verified';
+
     public const EMAIL_CHANGE_REQUESTED = 'Email Change Requested';
 
     public const EMAIL_CHANGED = 'Email Changed';
@@ -176,6 +182,12 @@ class ActivityLog extends Model
     public const EMPLOYEE_ARCHIVED = 'Employee Archived';
 
     public const EMPLOYEE_RESTORED = 'Employee Restored';
+
+    /**
+     * The system's ownership changing hands: an Admin became the Super Admin
+     * and the Super Admin who handed it over became an Admin.
+     */
+    public const SUPER_ADMIN_TRANSFERRED = 'Super Admin Transferred';
 
     /**
      * The Registered User account type - the `client` role. The constant names
@@ -474,6 +486,7 @@ class ActivityLog extends Model
         self::OTP_FAILED => self::MODULE_AUTHENTICATION,
         self::REGISTRATION_OTP_SENT => self::MODULE_AUTHENTICATION,
         self::REGISTRATION_VERIFIED => self::MODULE_AUTHENTICATION,
+        self::EMAIL_VERIFIED => self::MODULE_AUTHENTICATION,
         self::EMAIL_CHANGE_REQUESTED => self::MODULE_AUTHENTICATION,
         self::EMAIL_CHANGED => self::MODULE_AUTHENTICATION,
         self::TERMS_ACCEPTED => self::MODULE_AUTHENTICATION,
@@ -485,6 +498,7 @@ class ActivityLog extends Model
         self::EMPLOYEE_DEACTIVATED => self::MODULE_USER_MANAGEMENT,
         self::EMPLOYEE_ARCHIVED => self::MODULE_USER_MANAGEMENT,
         self::EMPLOYEE_RESTORED => self::MODULE_USER_MANAGEMENT,
+        self::SUPER_ADMIN_TRANSFERRED => self::MODULE_USER_MANAGEMENT,
         self::CLIENT_CREATED => self::MODULE_USER_MANAGEMENT,
         self::CLIENT_UPDATED => self::MODULE_USER_MANAGEMENT,
         self::CLIENT_PASSWORD_RESET => self::MODULE_USER_MANAGEMENT,

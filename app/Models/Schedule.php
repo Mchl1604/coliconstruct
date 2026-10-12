@@ -34,6 +34,17 @@ class Schedule extends Model
     ];
 
     /**
+     * What each scheduling mode is called on screen. The stored values keep
+     * their original names; only the wording the interface shows lives here.
+     *
+     * @var array<string, string>
+     */
+    public const MODE_LABELS = [
+        self::MODE_DATE_BASED => 'Full Day',
+        self::MODE_PARTIAL_DAY => 'Hourly',
+    ];
+
+    /**
      * A range whose last day has gone by. History, not a promise.
      */
     public const LOCK_LOCKED = 'locked';

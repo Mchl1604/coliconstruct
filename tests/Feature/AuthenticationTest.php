@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Http\Controllers\Auth\AuthController;
+use App\Mail\AccountStatusMail;
 use App\Mail\OtpCodeMail;
 use App\Models\ActivityLog;
 use App\Models\OtpVerification;
@@ -529,6 +531,195 @@ class AuthenticationTest extends TestCase
         // No second account, and nothing parked in the pending table for it.
         $this->assertSame(1, User::where('email', 'legacy@example.test')->count());
         $this->assertSame(0, PendingRegistration::count());
+    }
+
+    // ------------------------------------------------------------------
+    // An employee's first sign-in
+    // ------------------------------------------------------------------
+
+    /**
+     * An administrator types the address, so its owner proves it before
+     * anything else - and then goes straight on to replacing the issued
+     * password.
+     */
+    public function test_a_new_employee_verifies_their_email_on_their_first_sign_in(): void
+    {
+        Mail::fake();
+
+        $created = app(UserAccountService::class)->createEmployee([
+            'first_name' => 'Ana',
+            'last_name' => 'Mendoza',
+            'contact_number' => '09175551234',
+            'birthdate' => '1990-05-04',
+            'email' => 'ana@example.test',
+            'role' => 'technician',
+        ]);
+
+        $employee = $created['user'];
+
+        $this->assertFalse($employee->hasVerifiedEmail());
+
+        $this->post(route('auth.login.attempt'), [
+            'email' => 'ana@example.test',
+            'password' => $created['password'],
+        ])->assertRedirect(route('auth.verify'));
+
+        $this->assertGuest();
+
+        Mail::assertSent(OtpCodeMail::class, fn (OtpCodeMail $mail): bool => $mail->hasTo('ana@example.test'));
+
+        $this->get(route('auth.verify'))->assertOk()->assertSee('ana@example.test');
+
+        $this->post(route('auth.verify.store'), ['code' => $this->issuedCode()])
+            ->assertRedirect(route('auth.password.change'));
+
+        $employee->refresh();
+
+        $this->assertTrue($employee->hasVerifiedEmail());
+        $this->assertTrue($employee->isActive());
+        $this->assertAuthenticatedAs($employee);
+        $this->assertDatabaseHas('tbl_activity_logs', [
+            'action' => ActivityLog::EMAIL_VERIFIED,
+            'subject_id' => $employee->id,
+        ]);
+    }
+
+    /**
+     * A Registered User an administrator opened goes the same way: code, then
+     * the issued password replaced. Not welcomed as a registration - the
+     * account was never inactive.
+     */
+    public function test_a_registered_user_opened_by_an_administrator_verifies_on_first_sign_in(): void
+    {
+        Mail::fake();
+
+        $this->actingAs($this->account('admin', ['email' => 'admin@example.test']));
+
+        $created = app(UserAccountService::class)->createClient([
+            'first_name' => 'Jose',
+            'last_name' => 'Garcia',
+            'contact_number' => '09175551234',
+            'birthdate' => '1988-11-20',
+            'email' => 'jose@example.test',
+        ]);
+
+        auth()->logout();
+
+        $client = $created['user'];
+
+        $this->assertFalse($client->hasVerifiedEmail());
+
+        $this->post(route('auth.login.attempt'), [
+            'email' => 'jose@example.test',
+            'password' => $created['password'],
+        ])->assertRedirect(route('auth.verify'));
+
+        $this->assertGuest();
+
+        $this->post(route('auth.verify.store'), ['code' => $this->issuedCode()])
+            ->assertRedirect(route('auth.password.change'));
+
+        $client->refresh();
+
+        $this->assertTrue($client->hasVerifiedEmail());
+        $this->assertAuthenticatedAs($client);
+        $this->assertDatabaseHas('tbl_activity_logs', [
+            'action' => ActivityLog::EMAIL_VERIFIED,
+            'subject_id' => $client->id,
+        ]);
+        Mail::assertNotQueued(AccountStatusMail::class);
+        Mail::assertNotSent(AccountStatusMail::class);
+    }
+
+    /**
+     * An address an administrator moved the account to is proved on the next
+     * sign-in, and from then on the account signs in as before.
+     */
+    public function test_an_employee_whose_email_was_changed_verifies_the_new_one(): void
+    {
+        Mail::fake();
+
+        $employee = $this->account('technician', [
+            'email' => 'moved@example.test',
+            'email_verified_at' => null,
+        ]);
+
+        $this->post(route('auth.login.attempt'), [
+            'email' => 'moved@example.test',
+            'password' => 'correct-password',
+        ])->assertRedirect(route('auth.verify'));
+
+        Mail::assertSent(OtpCodeMail::class, fn (OtpCodeMail $mail): bool => $mail->hasTo('moved@example.test'));
+
+        $this->post(route('auth.verify.store'), ['code' => $this->issuedCode()])
+            ->assertRedirect(route('technician.schedule'));
+
+        $this->assertTrue($employee->refresh()->hasVerifiedEmail());
+        $this->assertAuthenticatedAs($employee);
+    }
+
+    public function test_a_wrong_password_never_reaches_verification(): void
+    {
+        Mail::fake();
+
+        $this->account('admin', ['email_verified_at' => null]);
+
+        $this->post(route('auth.login.attempt'), [
+            'email' => 'user@example.test',
+            'password' => 'the-wrong-password',
+        ])
+            ->assertSessionHasErrors(['email' => 'Those credentials do not match our records.']);
+
+        $this->assertGuest();
+        Mail::assertNotSent(OtpCodeMail::class);
+    }
+
+    /**
+     * A switched-off account is turned away as any other is. Proving its
+     * address is never a way back in.
+     */
+    public function test_a_deactivated_employee_is_not_offered_verification(): void
+    {
+        Mail::fake();
+
+        $this->account('admin', [
+            'email_verified_at' => null,
+            'status' => User::STATUS_DEACTIVATED,
+        ]);
+
+        $this->post(route('auth.login.attempt'), [
+            'email' => 'user@example.test',
+            'password' => 'correct-password',
+        ])
+            ->assertSessionHasErrors(['email' => AuthController::DEACTIVATED_MESSAGE]);
+
+        $this->assertGuest();
+        Mail::assertNotSent(OtpCodeMail::class);
+    }
+
+    public function test_verifying_never_switches_an_employee_back_on(): void
+    {
+        Mail::fake();
+
+        $employee = $this->account('admin', ['email_verified_at' => null]);
+
+        $this->post(route('auth.login.attempt'), [
+            'email' => 'user@example.test',
+            'password' => 'correct-password',
+        ])->assertRedirect(route('auth.verify'));
+
+        // Switched off by an administrator while the code was on its way.
+        $employee->forceFill(['status' => User::STATUS_DEACTIVATED])->save();
+
+        $this->post(route('auth.verify.store'), ['code' => $this->issuedCode()])
+            ->assertRedirect(route('auth.login'))
+            ->assertSessionHas('error', 'Email verified, but this account cannot sign in.');
+
+        $employee->refresh();
+
+        $this->assertTrue($employee->hasVerifiedEmail());
+        $this->assertSame(User::STATUS_DEACTIVATED, $employee->status);
+        $this->assertGuest();
     }
 
     /**

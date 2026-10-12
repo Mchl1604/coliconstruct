@@ -35,6 +35,12 @@ class OtpVerification extends Model
     public const PURPOSE_PASSWORD_RESET = 'password_reset';
 
     /**
+     * The Super Admin confirming, from their own inbox, that their role is
+     * to be handed to an Admin.
+     */
+    public const PURPOSE_SUPER_ADMIN_TRANSFER = 'super_admin_transfer';
+
+    /**
      * Every purpose a code may be issued for, with the wording the email uses.
      *
      * @var array<string, string>
@@ -44,6 +50,7 @@ class OtpVerification extends Model
         self::PURPOSE_FORGOT_PASSWORD => 'reset your password',
         self::PURPOSE_EMAIL_CHANGE => 'confirm your new email address',
         self::PURPOSE_PASSWORD_RESET => 'confirm your password reset',
+        self::PURPOSE_SUPER_ADMIN_TRANSFER => 'confirm the Super Admin transfer',
     ];
 
     protected $fillable = [

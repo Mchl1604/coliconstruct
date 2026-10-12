@@ -581,10 +581,10 @@ class SystemContent extends Model
         // Partial days only. A whole-day range runs midnight to midnight and
         // has no hours to bound, so nothing here reaches one.
         'project_settings.partial_day_start_hour' => [
-            'label' => 'Partial Day Start Hour',
+            'label' => 'Hourly Booking Start',
             'type' => self::TYPE_HOUR,
             'section' => self::SECTION_PROJECT_SETTINGS,
-            'help' => 'Earliest partial-day start. Whole hours.',
+            'help' => 'Earliest hourly start. Whole hours.',
             // Read from the model so the shipped default and the runtime
             // fallback cannot drift apart.
             'default' => Schedule::DEFAULT_PARTIAL_DAY_START,
@@ -597,10 +597,10 @@ class SystemContent extends Model
             ],
         ],
         'project_settings.partial_day_end_hour' => [
-            'label' => 'Partial Day End Hour',
+            'label' => 'Hourly Booking End',
             'type' => self::TYPE_HOUR,
             'section' => self::SECTION_PROJECT_SETTINGS,
-            'help' => 'Latest partial-day end. Whole hours.',
+            'help' => 'Latest hourly end. Whole hours.',
             'default' => Schedule::DEFAULT_PARTIAL_DAY_END,
             'rules' => ['required', 'string', 'regex:/^([01]\d|2[0-3]):00$/'],
             'messages' => [

@@ -217,7 +217,7 @@ class PartialDayScheduleTest extends TestCase
             CarbonImmutable::parse($this->day(10))->format('M j, Y').' · 8:00 AM - 12:00 PM',
             false
         );
-        $response->assertSee('Partial Day');
+        $response->assertSee('Hourly');
     }
 
     public function test_the_project_details_page_still_shows_a_whole_day_range_as_dates(): void

@@ -102,7 +102,7 @@ class ProjectScheduleRecovery
     }
 
     /**
-     * The configured Partial Day Start Hour and End Hour, as Project Settings
+     * The configured Hourly Booking Start and End, as Project Settings
      * holds them.
      *
      * @return array{start: int, end: int, start_label: string, end_label: string}
@@ -571,7 +571,7 @@ class ProjectScheduleRecovery
             'project_date' => $schedule->startsOn()->toDateString(),
             'start_time' => $schedule->isPartialDay() ? $startTime : null,
             'end_time' => $schedule->isPartialDay() ? $endTime : null,
-            // The configured Partial Day Start Hour and End Hour, offered on
+            // The configured Hourly Booking Start and End, offered on
             // every range rather than only on one that already holds hours:
             // turning a whole-day range into a partial day is exactly what
             // this dialog is for, and the hours have to be there to pick.

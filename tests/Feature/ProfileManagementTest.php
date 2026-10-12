@@ -12,6 +12,7 @@ use App\Models\Technician;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Routing\Middleware\ThrottleRequests;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
@@ -551,6 +552,287 @@ class ProfileManagementTest extends TestCase
 
         // The value itself never reaches the trail.
         $this->assertDatabaseMissing('tbl_activity_logs', ['description' => 'A-brand-new-one1']);
+    }
+
+    // ------------------------------------------------------------------
+    // Transferring Super Admin
+    // ------------------------------------------------------------------
+
+    /**
+     * The newest transfer code sent to an address, read back from the message
+     * that carried it - the only place it exists after being generated.
+     */
+    private function transferCode(string $email): string
+    {
+        $code = null;
+
+        Mail::assertSent(OtpCodeMail::class, function (OtpCodeMail $mail) use (&$code, $email): bool {
+            if ($mail->hasTo($email) && $mail->purpose === OtpVerification::PURPOSE_SUPER_ADMIN_TRANSFER) {
+                $code = $mail->code;
+            }
+
+            return true;
+        });
+
+        return (string) $code;
+    }
+
+    public function test_the_role_moves_only_once_the_code_emailed_to_the_super_admin_is_confirmed(): void
+    {
+        Mail::fake();
+
+        $owner = $this->account('super_admin', 'owner@example.test');
+        $admin = $this->account('admin', 'admin@example.test');
+
+        // Opening the dialog emails the code to the Super Admin's own
+        // address. Nothing has moved yet.
+        $this->actingAs($owner)
+            ->postJson(route('profile.super-admin.code'), ['new_owner_id' => $admin->id])
+            ->assertOk()
+            ->assertJsonPath('email', 'owner@example.test');
+
+        Mail::assertSent(OtpCodeMail::class, fn (OtpCodeMail $mail): bool => $mail->hasTo('owner@example.test')
+            && $mail->purpose === OtpVerification::PURPOSE_SUPER_ADMIN_TRANSFER);
+        Mail::assertNotSent(OtpCodeMail::class, fn (OtpCodeMail $mail): bool => $mail->hasTo('admin@example.test'));
+
+        $this->assertSame(User::ROLE_SUPER_ADMIN, $owner->refresh()->role);
+        $this->assertSame(User::ROLE_ADMIN, $admin->refresh()->role);
+
+        $this->actingAs($owner)
+            ->putJson(route('profile.super-admin.transfer'), ['code' => $this->transferCode('owner@example.test')])
+            ->assertOk()
+            ->assertJsonPath('redirect', route('profile.edit'))
+            ->assertSessionHas('success', 'Super Admin transferred. You are now an Admin.');
+
+        $this->assertSame(User::ROLE_SUPER_ADMIN, $admin->refresh()->role);
+        $this->assertSame(User::ROLE_ADMIN, $owner->refresh()->role);
+
+        // One owner, never two and never none.
+        $this->assertSame(1, User::where('role', User::ROLE_SUPER_ADMIN)->count());
+
+        $this->assertDatabaseHas('tbl_activity_logs', [
+            'action' => ActivityLog::SUPER_ADMIN_TRANSFERRED,
+            'actor_id' => $owner->id,
+            'actor_role' => User::ROLE_SUPER_ADMIN,
+            'subject_id' => $admin->id,
+            'subject_role' => User::ROLE_SUPER_ADMIN,
+        ]);
+
+        // The new owner is told; the one who handed it over is not.
+        $this->assertDatabaseHas('tbl_notifications', [
+            'user_id' => $admin->id,
+            'title' => 'Super Admin Transferred',
+        ]);
+        $this->assertDatabaseMissing('tbl_notifications', [
+            'user_id' => $owner->id,
+            'title' => 'Super Admin Transferred',
+        ]);
+
+        // Nothing of the workflow is left standing to be replayed.
+        $this->assertSame(0, OtpVerification::where('purpose', OtpVerification::PURPOSE_SUPER_ADMIN_TRANSFER)->count());
+
+        // The card follows the role: gone from the old owner's profile, on
+        // the new one's.
+        $this->actingAs($owner)->get(route('profile.edit'))->assertDontSee('Transfer Super Admin');
+        $this->actingAs($admin)->get(route('profile.edit'))->assertSee('Transfer Super Admin');
+    }
+
+    public function test_a_wrong_code_moves_nothing(): void
+    {
+        Mail::fake();
+
+        $owner = $this->account('super_admin', 'owner@example.test');
+        $admin = $this->account('admin', 'admin@example.test');
+
+        $this->actingAs($owner)
+            ->postJson(route('profile.super-admin.code'), ['new_owner_id' => $admin->id])
+            ->assertOk();
+
+        $this->actingAs($owner)
+            ->putJson(route('profile.super-admin.transfer'), ['code' => '000000'])
+            ->assertStatus(422)
+            ->assertJsonPath('error', 'That code is incorrect. 4 attempts remaining.');
+
+        $this->actingAs($owner)
+            ->putJson(route('profile.super-admin.transfer'), [])
+            ->assertStatus(422)
+            ->assertJsonPath('error', 'Enter the emailed code.');
+
+        $this->assertSame(User::ROLE_SUPER_ADMIN, $owner->refresh()->role);
+        $this->assertSame(User::ROLE_ADMIN, $admin->refresh()->role);
+    }
+
+    public function test_nothing_can_be_confirmed_before_a_code_is_sent(): void
+    {
+        $owner = $this->account('super_admin', 'owner@example.test');
+        $this->account('admin', 'admin@example.test');
+
+        $this->actingAs($owner)
+            ->putJson(route('profile.super-admin.transfer'), ['code' => '123456'])
+            ->assertStatus(422)
+            ->assertJsonPath('error', 'Send a code first.');
+
+        $this->assertSame(User::ROLE_SUPER_ADMIN, $owner->refresh()->role);
+    }
+
+    /**
+     * Reopening the dialog for the same Admin inside the resend wait keeps
+     * the code already sent; switching to another Admin inside it is refused,
+     * so the code stays bound to the Admin it was asked for.
+     */
+    public function test_a_code_stays_bound_to_the_admin_it_was_sent_for(): void
+    {
+        Mail::fake();
+
+        $owner = $this->account('super_admin', 'owner@example.test');
+        $admin = $this->account('admin', 'admin@example.test');
+        $otherAdmin = $this->account('admin', 'other@example.test');
+
+        $this->actingAs($owner)
+            ->postJson(route('profile.super-admin.code'), ['new_owner_id' => $admin->id])
+            ->assertOk();
+
+        $this->actingAs($owner)
+            ->postJson(route('profile.super-admin.code'), ['new_owner_id' => $admin->id])
+            ->assertOk()
+            ->assertJsonPath('email', 'owner@example.test');
+
+        Mail::assertSent(OtpCodeMail::class, 1);
+
+        $this->actingAs($owner)
+            ->postJson(route('profile.super-admin.code'), ['new_owner_id' => $otherAdmin->id])
+            ->assertStatus(422);
+
+        $this->actingAs($owner)
+            ->putJson(route('profile.super-admin.transfer'), ['code' => $this->transferCode('owner@example.test')])
+            ->assertOk();
+
+        $this->assertSame(User::ROLE_SUPER_ADMIN, $admin->refresh()->role);
+        $this->assertSame(User::ROLE_ADMIN, $otherAdmin->refresh()->role);
+    }
+
+    public function test_only_the_super_admin_sees_the_transfer_and_only_verified_active_admins_are_offered(): void
+    {
+        $owner = $this->account('super_admin', 'owner@example.test');
+        $admin = $this->account('admin', 'admin@example.test', ['user_code' => 'EMP-0101']);
+        $this->account('admin', 'off@example.test', [
+            'user_code' => 'EMP-0102',
+            'status' => User::STATUS_DEACTIVATED,
+        ]);
+        $this->account('admin', 'gone@example.test', [
+            'user_code' => 'EMP-0103',
+            'is_archived' => true,
+        ]);
+        $this->account('technician', 'tech@example.test', ['user_code' => 'EMP-0104']);
+        $this->account('admin', 'new@example.test', [
+            'user_code' => 'EMP-0105',
+            'email_verified_at' => null,
+        ]);
+
+        $this->actingAs($owner)
+            ->get(route('profile.edit'))
+            ->assertOk()
+            ->assertSee('Transfer Super Admin')
+            ->assertSee('EMP-0101')
+            ->assertDontSee('EMP-0102')
+            ->assertDontSee('EMP-0103')
+            ->assertDontSee('EMP-0104')
+            ->assertDontSee('EMP-0105');
+
+        $this->actingAs($admin)
+            ->get(route('profile.edit'))
+            ->assertOk()
+            ->assertDontSee('Transfer Super Admin');
+    }
+
+    /**
+     * Refused before any code is sent, so a code is never spent on a
+     * transfer that could not happen.
+     */
+    public function test_only_an_active_verified_admin_is_sent_a_code_for(): void
+    {
+        Mail::fake();
+
+        // More refusals than the route's per-minute limit allows; the limit
+        // is not what is under test here.
+        $this->withoutMiddleware(ThrottleRequests::class);
+
+        $owner = $this->account('super_admin', 'owner@example.test');
+
+        $refusals = [
+            [$this->account('technician', 'tech@example.test')->id, 'Only an active Admin can become Super Admin.'],
+            [$this->account('lead_technician', 'lead@example.test')->id, 'Only an active Admin can become Super Admin.'],
+            [$this->account('client', 'client@example.test')->id, 'Only an active Admin can become Super Admin.'],
+            [$this->account('admin', 'off@example.test', ['status' => User::STATUS_DEACTIVATED])->id, 'Only an active Admin can become Super Admin.'],
+            [$this->account('admin', 'gone@example.test', ['is_archived' => true])->id, 'Only an active Admin can become Super Admin.'],
+            // Every password reset code for the system's owner goes to this
+            // address, so it has to be proved.
+            [$this->account('admin', 'new@example.test', ['email_verified_at' => null])->id, 'That Admin has not verified their email.'],
+            [$owner->id, 'You are already the Super Admin.'],
+            [999999, 'Only an active Admin can become Super Admin.'],
+            [null, 'Choose an Admin.'],
+        ];
+
+        foreach ($refusals as [$id, $message]) {
+            $this->actingAs($owner)
+                ->postJson(route('profile.super-admin.code'), ['new_owner_id' => $id])
+                ->assertStatus(422)
+                ->assertJsonPath('error', $message);
+        }
+
+        Mail::assertNotSent(OtpCodeMail::class);
+
+        $this->assertSame(User::ROLE_SUPER_ADMIN, $owner->refresh()->role);
+        $this->assertSame(1, User::where('role', User::ROLE_SUPER_ADMIN)->count());
+    }
+
+    /**
+     * The transfer asks again when the code comes back, so an Admin switched
+     * off after the code was sent does not receive the role.
+     */
+    public function test_an_admin_switched_off_after_the_code_was_sent_is_still_refused(): void
+    {
+        Mail::fake();
+
+        $owner = $this->account('super_admin', 'owner@example.test');
+        $admin = $this->account('admin', 'admin@example.test');
+
+        $this->actingAs($owner)
+            ->postJson(route('profile.super-admin.code'), ['new_owner_id' => $admin->id])
+            ->assertOk();
+
+        $admin->forceFill(['status' => User::STATUS_DEACTIVATED])->save();
+
+        $this->actingAs($owner)
+            ->putJson(route('profile.super-admin.transfer'), ['code' => $this->transferCode('owner@example.test')])
+            ->assertStatus(422)
+            ->assertJsonPath('error', 'Only an active Admin can become Super Admin.');
+
+        $this->assertSame(User::ROLE_SUPER_ADMIN, $owner->refresh()->role);
+        $this->assertSame(User::ROLE_ADMIN, $admin->refresh()->role);
+    }
+
+    public function test_an_admin_cannot_transfer_the_role(): void
+    {
+        Mail::fake();
+
+        $owner = $this->account('super_admin', 'owner@example.test');
+        $admin = $this->account('admin', 'admin@example.test');
+        $otherAdmin = $this->account('admin', 'other@example.test');
+
+        $this->actingAs($admin)
+            ->postJson(route('profile.super-admin.code'), ['new_owner_id' => $otherAdmin->id])
+            ->assertForbidden();
+
+        $this->actingAs($admin)
+            ->putJson(route('profile.super-admin.transfer'), ['code' => '123456'])
+            ->assertForbidden();
+
+        Mail::assertNotSent(OtpCodeMail::class);
+
+        $this->assertSame(User::ROLE_SUPER_ADMIN, $owner->refresh()->role);
+        $this->assertSame(User::ROLE_ADMIN, $admin->refresh()->role);
+        $this->assertSame(User::ROLE_ADMIN, $otherAdmin->refresh()->role);
     }
 
     // ------------------------------------------------------------------

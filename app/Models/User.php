@@ -112,9 +112,10 @@ class User extends Authenticatable
     /**
      * The roles the create and edit forms may actually assign.
      *
-     * Super Admin is deliberately absent: it is the system owner's role and is
-     * granted directly in the database, never handed out from the interface.
-     * An account that already holds it keeps it - see ROLE_SUPER_ADMIN below.
+     * Super Admin is deliberately absent: it is the system owner's role, and
+     * there is only ever one. It changes hands through a transfer, never the
+     * edit form - see UserAccountService::transferSuperAdmin(). An account that
+     * already holds it keeps it - see ROLE_SUPER_ADMIN below.
      *
      * @var array<int, string>
      */
@@ -312,11 +313,21 @@ class User extends Authenticatable
     /**
      * Whether this account must confirm its address before it may sign in.
      *
-     * Only self-registration produces an unproved address. Public registration
-     * is client-only by construction - see AuthController::register - and
-     * every employee account is opened by an administrator who already knows
-     * the person and hands them their credentials, so an employee has nothing
-     * left to prove.
+     * Three kinds of account have an unproved address:
+     *
+     *   - a client registered before tbl_pending_registrations existed;
+     *   - any account an administrator has just opened, employee or
+     *     Registered User, which proves its address on its first sign-in -
+     *     see UserAccountService::createEmployee() and createClient();
+     *   - an employee whose address an administrator has changed, which
+     *     proves the new one on its next sign-in - see updateEmployee().
+     *
+     * An administrator typed the last two addresses, and a typo would
+     * otherwise send every code and reset link for the account to a stranger.
+     *
+     * Only an account that may sign in at all is turned towards verification:
+     * a switched-off one is turned away as any other is, and proving its
+     * address must never be a way back in.
      *
      * Deliberately separate from canLogin(): a deactivated account is turned
      * away with nothing to do about it, while this one is turned towards the
@@ -324,7 +335,7 @@ class User extends Authenticatable
      */
     public function requiresEmailVerification(): bool
     {
-        return $this->isClient() && ! $this->hasVerifiedEmail();
+        return ! $this->hasVerifiedEmail() && $this->canLogin();
     }
 
     /**

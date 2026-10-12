@@ -33,6 +33,8 @@ class ActivityLogsTest extends TestCase
             'email' => $email,
             'role' => $role,
             'status' => User::STATUS_ACTIVE,
+            // An account that has been signing in already proved its address.
+            'email_verified_at' => now(),
             'password' => 'correct-password',
         ]);
     }

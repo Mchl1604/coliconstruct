@@ -225,7 +225,7 @@ class ProjectReopen
         }
 
         throw new RuntimeException(
-            'Partial Day is Residential only.'
+            'Hourly is Residential only.'
         );
     }
 

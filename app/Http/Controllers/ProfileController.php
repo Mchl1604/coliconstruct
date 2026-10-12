@@ -7,11 +7,14 @@ use App\Models\Skill;
 use App\Models\User;
 use App\Services\OtpService;
 use App\Services\ProfileService;
+use App\Services\UserAccountService;
 use App\Support\PasswordPolicy;
 use App\Support\PersonName;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use RuntimeException;
 use Throwable;
@@ -26,11 +29,19 @@ use Throwable;
  * What a profile offers depends on who is reading it. A client gets their name,
  * their email and their password. Everyone who runs the work also gets a
  * profile picture, and the two technician roles additionally get specialties -
- * which they may ask to change, but not change.
+ * which they may ask to change, but not change. The Super Admin also gets the
+ * one way their role changes hands.
  */
 class ProfileController extends Controller
 {
-    public function __construct(private readonly ProfileService $profile) {}
+    /** The Admin a Super Admin transfer is waiting to go to, between its code and its confirmation. */
+    public const TRANSFER_SESSION_KEY = 'super_admin_transfer.new_owner_id';
+
+    public function __construct(
+        private readonly ProfileService $profile,
+        private readonly UserAccountService $accounts,
+        private readonly OtpService $otp
+    ) {}
 
     public function edit(Request $request)
     {
@@ -66,6 +77,18 @@ class ProfileController extends Controller
                     OtpVerification::PURPOSE_EMAIL_CHANGE
                 )
                 : 0,
+            // Who the Super Admin could hand their role to: an active Admin
+            // who has verified their email, the only kind
+            // UserAccountService::transferSuperAdmin() accepts.
+            'superAdminCandidates' => $user->isSuperAdmin()
+                ? User::query()
+                    ->loginable()
+                    ->where('role', User::ROLE_ADMIN)
+                    ->whereNotNull('email_verified_at')
+                    ->orderBy('last_name')
+                    ->orderBy('first_name')
+                    ->get()
+                : collect(),
         ]);
     }
 
@@ -244,6 +267,119 @@ class ProfileController extends Controller
             },
             'Unable to update password.'
         );
+    }
+
+    // ------------------------------------------------------------------
+    // Super Admin
+    // ------------------------------------------------------------------
+
+    /**
+     * Email the Super Admin the code that confirms handing their role over.
+     *
+     * The first half of the transfer, sent when the dialog opens. The Admin is
+     * checked before anything is sent, so a code is never spent on a transfer
+     * that would be refused. Who the role goes to is then held in the session
+     * rather than read again from the confirmation, so a code asked for one
+     * Admin cannot confirm a transfer to another.
+     */
+    public function sendSuperAdminTransferCode(Request $request): JsonResponse
+    {
+        $owner = $request->user();
+
+        $validator = Validator::make($request->all(), [
+            'new_owner_id' => ['required', 'integer'],
+        ], [
+            'new_owner_id.required' => 'Choose an Admin.',
+            'new_owner_id.integer' => 'Choose an Admin.',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['error' => $validator->errors()->first()], 422);
+        }
+
+        $newOwner = User::find($validator->validated()['new_owner_id']);
+
+        try {
+            $this->accounts->guardSuperAdminSuccessor($newOwner);
+        } catch (RuntimeException $exception) {
+            return response()->json(['error' => $exception->getMessage()], 422);
+        }
+
+        $purpose = OtpVerification::PURPOSE_SUPER_ADMIN_TRANSFER;
+        $wait = $this->otp->secondsUntilResend($owner->email, $purpose);
+
+        // The dialog opened again for the same Admin while the last code is
+        // still within its resend wait: that code stands, and is not
+        // replaced by one the wait would refuse.
+        if ($wait > 0 && (int) $request->session()->get(self::TRANSFER_SESSION_KEY) === $newOwner->id) {
+            return response()->json([
+                'email' => $owner->email,
+                'retry_after' => $wait,
+            ]);
+        }
+
+        try {
+            $this->otp->issue($owner->email, $purpose, $owner);
+        } catch (RuntimeException $exception) {
+            return response()->json(['error' => $exception->getMessage()], 422);
+        }
+
+        $request->session()->put(self::TRANSFER_SESSION_KEY, $newOwner->id);
+
+        return response()->json([
+            'email' => $owner->email,
+            'retry_after' => OtpService::RESEND_COOLDOWN_SECONDS,
+        ]);
+    }
+
+    /**
+     * Check the emailed code and, only then, hand the Super Admin role to the
+     * Admin it was sent for - stepping down to Admin in the same move. See
+     * UserAccountService::transferSuperAdmin().
+     */
+    public function transferSuperAdmin(Request $request): JsonResponse
+    {
+        $owner = $request->user();
+        $newOwner = User::find($request->session()->get(self::TRANSFER_SESSION_KEY));
+
+        if (! $newOwner) {
+            return response()->json(['error' => 'Send a code first.'], 422);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'code' => ['required', 'string', 'max:12'],
+        ], [
+            'code.required' => 'Enter the emailed code.',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['error' => $validator->errors()->first()], 422);
+        }
+
+        try {
+            $this->otp->verify(
+                $owner->email,
+                OtpVerification::PURPOSE_SUPER_ADMIN_TRANSFER,
+                (string) $validator->validated()['code']
+            );
+
+            $this->accounts->transferSuperAdmin($newOwner);
+        } catch (RuntimeException $exception) {
+            return response()->json(['error' => $exception->getMessage()], 422);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return response()->json(['error' => 'Unable to transfer the role.'], 500);
+        }
+
+        // Nothing of the workflow is left standing to be replayed.
+        $this->otp->clear($owner->email, OtpVerification::PURPOSE_SUPER_ADMIN_TRANSFER);
+        $request->session()->forget(self::TRANSFER_SESSION_KEY);
+
+        // The page reloads: it is now an Admin's profile.
+        $request->session()->flash('success', 'Super Admin transferred. You are now an Admin.');
+
+        return response()->json(['redirect' => route('profile.edit')]);
     }
 
     // ------------------------------------------------------------------

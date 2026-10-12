@@ -177,6 +177,17 @@ document.addEventListener('DOMContentLoaded', function() {
         return schedulingMode() === MODE_PARTIAL_DAY;
     }
 
+    // What the mode in use is called on screen, read off its own radio so the
+    // wording stays in one place - Schedule::MODE_LABELS.
+    function schedulingModeLabel() {
+        const mode = schedulingMode();
+        const radio = schedulingModeRadios.find(function(item) {
+            return item.value === mode;
+        });
+
+        return radio ? radio.dataset.modeLabel : '';
+    }
+
     // Fields belonging to the mode that is not in use are disabled as well as
     // hidden, so the browser neither validates them nor submits them.
     function setFieldGroupActive(wrappers, inputs, active) {
@@ -1624,7 +1635,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 '[data-summary-input="project_description"]')),
             lead_tech: leadTechnician ? leadTechnician.name : 'Not filled yet',
             technicians: technicianNames.length ? technicianNames.join(', ') : 'Not filled yet',
-            scheduling_mode: isPartialDay() ? 'Partial Day' : 'Date-Based',
+            scheduling_mode: schedulingModeLabel(),
             schedule_range: scheduleSummary(),
         };
 

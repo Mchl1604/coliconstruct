@@ -598,7 +598,7 @@ class PartialDayHoursSettingTest extends TestCase
         $response = $this->actingAs($this->account('super_admin'))
             ->get(route('super-admin.dashboard'))
             ->assertOk()
-            ->assertSee('1 Partial Day Outside Working Hours');
+            ->assertSee('1 Hourly Booking Outside Hours');
 
         // The link goes straight to the booking: the schedules page with that
         // project's editor already open.
@@ -617,7 +617,7 @@ class PartialDayHoursSettingTest extends TestCase
         $this->actingAs($this->account('super_admin'))
             ->get(route('super-admin.dashboard'))
             ->assertOk()
-            ->assertDontSee('Outside Working Hours');
+            ->assertDontSee('Outside Hours');
     }
 
     public function test_a_finished_project_is_not_raised(): void

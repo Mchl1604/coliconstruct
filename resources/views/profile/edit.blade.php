@@ -521,6 +521,111 @@
                     </div>
                 </div>
 
+                {{-- ------------------------- Transfer Super Admin ---- --}}
+                {{-- The Super Admin's only. There is only ever one, so handing
+                     the role to an Admin makes the reader an Admin. Transfer
+                     opens a dialog and emails a code to the reader's own
+                     address; the role moves only once that code comes back -
+                     see transferSuperAdmin.js. --}}
+                @if ($account->isSuperAdmin())
+                    <div class="card shadow-sm border-0 rounded-3 mt-4">
+                        <div class="card-header bg-white">
+                            <h2 class="h6 fw-bold mb-0">
+                                <i class="bi bi-shield-check me-1 text-primary" aria-hidden="true"></i>
+                                Transfer Super Admin
+                            </h2>
+                        </div>
+
+                        <div class="card-body">
+                            <div class="alert alert-warning small py-2 mb-3" role="alert">
+                                <i class="bi bi-exclamation-triangle me-1" aria-hidden="true"></i>
+                                You become an Admin.
+                            </div>
+
+                            @if ($superAdminCandidates->isEmpty())
+                                <p class="text-secondary small mb-0">No verified Admins yet.</p>
+                            @else
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label small fw-semibold mb-1" for="newSuperAdmin">
+                                            New Super Admin <span class="text-danger">*</span>
+                                        </label>
+                                        <select class="form-select" id="newSuperAdmin" required
+                                            data-transfer-select>
+                                            <option value="">Choose an Admin</option>
+                                            @foreach ($superAdminCandidates as $candidate)
+                                                <option value="{{ $candidate->id }}">
+                                                    {{ $candidate->fullName() }} ({{ $candidate->user_code }})
+                                                </option>
+                                            @endforeach
+                                        </select>
+                                        <div class="form-text">Only verified Admins are listed.</div>
+                                        <div class="text-danger small mt-1 d-none" data-transfer-select-error></div>
+                                    </div>
+                                </div>
+
+                                <div class="mt-3">
+                                    <button type="button" class="btn btn-danger px-4" data-transfer-open>
+                                        Transfer
+                                    </button>
+                                </div>
+                            @endif
+                        </div>
+                    </div>
+
+                    {{-- The confirmation. Opening it emails the code; the role
+                         moves only when the code is confirmed here. Who it
+                         goes to is held by the server from the moment the code
+                         is sent, so the confirmation carries the code alone. --}}
+                    <div class="modal fade" id="transferSuperAdminModal" tabindex="-1"
+                        aria-labelledby="transferSuperAdminTitle" aria-hidden="true" data-transfer-modal
+                        data-send-url="{{ route('profile.super-admin.code') }}"
+                        data-confirm-url="{{ route('profile.super-admin.transfer') }}">
+                        <div class="modal-dialog modal-dialog-centered">
+                            <form class="modal-content" data-transfer-form novalidate>
+                                <div class="modal-header">
+                                    <h5 class="modal-title" id="transferSuperAdminTitle">Confirm Transfer</h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal"
+                                        aria-label="Close"></button>
+                                </div>
+
+                                <div class="modal-body">
+                                    <p class="mb-1">Make <strong data-transfer-name></strong> the Super Admin?</p>
+                                    <p class="text-secondary small mb-3" data-transfer-status></p>
+
+                                    <label class="form-label small fw-semibold mb-1" for="transferCode">
+                                        Verification Code
+                                    </label>
+                                    <input type="text" id="transferCode" class="form-control text-center"
+                                        style="letter-spacing:.4rem; font-weight:600;" inputmode="numeric"
+                                        autocomplete="one-time-code"
+                                        maxlength="{{ \App\Services\OtpService::CODE_LENGTH }}" placeholder="000000"
+                                        disabled data-transfer-code>
+                                    <div class="form-text">
+                                        Code expires in {{ \App\Services\OtpService::VALID_MINUTES }} minutes.
+                                    </div>
+
+                                    <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none mt-2"
+                                        disabled data-transfer-resend>Resend code</button>
+
+                                    <div class="alert alert-danger mt-3 mb-0 d-none" role="alert"
+                                        data-transfer-error></div>
+                                </div>
+
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-secondary"
+                                        data-bs-dismiss="modal">Cancel</button>
+                                    <button type="submit" class="btn btn-danger" disabled data-transfer-submit>
+                                        <span class="spinner-border spinner-border-sm me-1 d-none" role="status"
+                                            aria-hidden="true" data-transfer-spinner></span>
+                                        Confirm Transfer
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                @endif
+
             </div>
         </div>
     </div>
@@ -532,5 +637,10 @@
         <script src="/js/passwordField.js"></script>
         {{-- Keeps the contact number to digits only. --}}
         <script src="/js/registerForm.js"></script>
+        @if ($account->isSuperAdmin())
+            {{-- The Transfer Super Admin dialog: the emailed code and its
+                 confirmation. --}}
+            <script src="/js/transferSuperAdmin.js"></script>
+        @endif
     @endpush
 @endsection

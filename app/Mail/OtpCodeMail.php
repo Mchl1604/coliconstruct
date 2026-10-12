@@ -32,6 +32,7 @@ class OtpCodeMail extends SystemMail
             OtpVerification::PURPOSE_REGISTRATION => $this->code.' is your '.config('company.name').' verification code',
             OtpVerification::PURPOSE_FORGOT_PASSWORD => $this->code.' is your password reset code',
             OtpVerification::PURPOSE_EMAIL_CHANGE => $this->code.' is your email change code',
+            OtpVerification::PURPOSE_SUPER_ADMIN_TRANSFER => $this->code.' is your Super Admin transfer code',
             default => $this->code.' is your '.config('company.name').' security code',
         };
     }
@@ -56,6 +57,7 @@ class OtpCodeMail extends SystemMail
                 OtpVerification::PURPOSE_REGISTRATION => 'Verify your email address',
                 OtpVerification::PURPOSE_FORGOT_PASSWORD => 'Reset your password',
                 OtpVerification::PURPOSE_EMAIL_CHANGE => 'Confirm your new email address',
+                OtpVerification::PURPOSE_SUPER_ADMIN_TRANSFER => 'Confirm the Super Admin transfer',
                 default => 'Your verification code',
             },
         ];

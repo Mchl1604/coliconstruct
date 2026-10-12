@@ -66,10 +66,11 @@ class UserAccountService
                 'role' => $data['role'],
                 'status' => User::STATUS_ACTIVE,
                 'is_archived' => false,
-                // An administrator opened this account and hands over the
-                // credentials directly, so the address has nothing left to
-                // prove - the verification workflow is for self-registration.
-                'email_verified_at' => now(),
+                // Unproved until the first sign-in. The address was typed by
+                // an administrator, so the account's owner confirms it with an
+                // emailed code before anything else - see
+                // User::requiresEmailVerification().
+                'email_verified_at' => null,
                 // The generated password is temporary by definition.
                 'must_change_password' => true,
                 'created_by' => auth()->id(),
@@ -116,9 +117,10 @@ class UserAccountService
                 'role' => User::ROLE_CLIENT,
                 'status' => User::STATUS_ACTIVE,
                 'is_archived' => false,
-                // Opened by an administrator who hands the credentials over
-                // directly, so there is no address left to prove.
-                'email_verified_at' => now(),
+                // Unproved until the first sign-in, as an employee's is: an
+                // administrator typed this address - see
+                // User::requiresEmailVerification().
+                'email_verified_at' => null,
                 'must_change_password' => true,
                 'created_by' => auth()->id(),
                 'password' => $password,
@@ -321,7 +323,10 @@ class UserAccountService
             $user->isSuperAdmin() ? User::ROLE_SUPER_ADMIN : (string) $data['role']
         );
 
-        DB::transaction(function () use ($user, $data, $skillIds): void {
+        // Read before the fill below overwrites it.
+        $addressChanged = strcasecmp(trim((string) $user->email), trim((string) $data['email'])) !== 0;
+
+        DB::transaction(function () use ($user, $data, $skillIds, $addressChanged): void {
             $user->fill([
                 'name' => $this->displayName($data),
                 'first_name' => $data['first_name'],
@@ -338,6 +343,13 @@ class UserAccountService
                 // Admin keeps theirs - the form cannot assign or remove it.
                 'role' => $user->isSuperAdmin() ? User::ROLE_SUPER_ADMIN : $data['role'],
             ]);
+
+            // A new address is one an administrator typed, so it is proved on
+            // the account's next sign-in exactly as a new account's is - see
+            // User::requiresEmailVerification().
+            if ($addressChanged) {
+                $user->email_verified_at = null;
+            }
 
             $user->save();
 
@@ -513,6 +525,101 @@ class UserAccountService
         $this->email->sendTo($user, new AccountStatusMail($user, AccountStatusMail::ACTIVATED));
 
         return $user;
+    }
+
+    // ------------------------------------------------------------------
+    // Ownership
+    // ------------------------------------------------------------------
+
+    /**
+     * Hand the Super Admin role to an Admin.
+     *
+     * There is only ever one Super Admin, so this is a swap rather than a
+     * grant: the Admin named becomes the Super Admin and the one handing it
+     * over becomes an Admin, in one transaction. Both rows are locked and the
+     * owner's role is read again under the lock, so two transfers started at
+     * once cannot leave two owners, or none.
+     *
+     * Only an active, verified Admin can take it. A technician's role is tied
+     * to the projects they lead, and a switched-off or archived account could
+     * not sign in to use what it was given. The address has to be proved
+     * because it is how the system's owner gets back in: every password reset
+     * code for the most powerful account goes to it.
+     */
+    public function transferSuperAdmin(User $newOwner): User
+    {
+        $actor = auth()->user();
+
+        if (! $actor?->isSuperAdmin()) {
+            throw new RuntimeException('Only the Super Admin can transfer the role.');
+        }
+
+        DB::transaction(function () use ($actor, $newOwner): void {
+            $rows = User::query()
+                ->whereKey([$actor->id, $newOwner->id])
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('id');
+
+            $previousOwner = $rows->get($actor->id);
+            $successor = $rows->get($newOwner->id);
+
+            if (! $previousOwner?->isSuperAdmin()) {
+                throw new RuntimeException('Only the Super Admin can transfer the role.');
+            }
+
+            $this->guardSuperAdminSuccessor($successor);
+
+            $successor->role = User::ROLE_SUPER_ADMIN;
+            $successor->save();
+
+            $previousOwner->role = User::ROLE_ADMIN;
+            $previousOwner->save();
+
+            $this->activityLogger->record(
+                ActivityLog::SUPER_ADMIN_TRANSFERRED,
+                $successor,
+                sprintf(
+                    '%s - %s (%s) is now Super Admin; %s (%s) is now Admin',
+                    ActivityLog::SUPER_ADMIN_TRANSFERRED,
+                    $successor->fullName(),
+                    $successor->user_code,
+                    $previousOwner->fullName(),
+                    $previousOwner->user_code
+                )
+            );
+
+            $this->notifications->superAdminTransferred($previousOwner, $successor);
+        });
+
+        // The signed-in account is the one that just stepped down. Refreshed
+        // only now, so the audit entry above still names the role it acted
+        // with.
+        $actor->refresh();
+
+        return $newOwner->refresh();
+    }
+
+    /**
+     * Refuse anybody the signed-in Super Admin could not hand their role to.
+     *
+     * Public so the confirmation code is never sent for a transfer that would
+     * be refused - the transfer itself asks again, under its lock, so a code
+     * that was sent cannot outlive the reason it was allowed.
+     */
+    public function guardSuperAdminSuccessor(?User $successor): void
+    {
+        if ($successor) {
+            $this->guardNotSelf($successor, 'You are already the Super Admin.');
+        }
+
+        if (! $successor || $successor->role !== User::ROLE_ADMIN || ! $successor->canLogin()) {
+            throw new RuntimeException('Only an active Admin can become Super Admin.');
+        }
+
+        if (! $successor->hasVerifiedEmail()) {
+            throw new RuntimeException('That Admin has not verified their email.');
+        }
     }
 
     /**

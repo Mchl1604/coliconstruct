@@ -654,9 +654,11 @@
                                         </label>
                                         <select class="form-select" id="reopenSchedulingMode" name="scheduling_mode"
                                             data-reopen-mode>
-                                            <option value="{{ \App\Models\Schedule::MODE_DATE_BASED }}">Date-Based
+                                            <option value="{{ \App\Models\Schedule::MODE_DATE_BASED }}">
+                                                {{ \App\Models\Schedule::MODE_LABELS[\App\Models\Schedule::MODE_DATE_BASED] }}
                                             </option>
-                                            <option value="{{ \App\Models\Schedule::MODE_PARTIAL_DAY }}">Partial Day
+                                            <option value="{{ \App\Models\Schedule::MODE_PARTIAL_DAY }}">
+                                                {{ \App\Models\Schedule::MODE_LABELS[\App\Models\Schedule::MODE_PARTIAL_DAY] }}
                                             </option>
                                         </select>
                                     </div>
@@ -692,8 +694,8 @@
 
                                 @if ($partialDayAllowed)
                                     {{-- The hours a partial day may be booked in, and the two it
-                                         starts on: the configured Partial Day Start Hour and End
-                                         Hour, read from Project Settings by
+                                         starts on: the configured Hourly Booking Start and End,
+                                         read from Project Settings by
                                          Schedule::partialDayHourBounds() and nowhere else. They are
                                          shown filled in rather than as "Select" so the window in
                                          force is visible the moment the mode is chosen, and either
@@ -1595,7 +1597,7 @@
                                 <li class="list-group-item">
                                     <strong>{{ $schedule->describe() }}</strong>
                                     @if ($schedule->isPartialDay())
-                                        <span class="badge bg-info text-dark ms-1">Partial Day</span>
+                                        <span class="badge bg-info text-dark ms-1">{{ \App\Models\Schedule::MODE_LABELS[\App\Models\Schedule::MODE_PARTIAL_DAY] }}</span>
                                     @endif
                                 </li>
                             @empty

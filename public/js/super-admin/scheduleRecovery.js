@@ -25,7 +25,7 @@
  * offers. Whether it appears at all is the server's answer about the project's
  * stored client record, carried on the range as partial_day_allowed - never a
  * guess made here from a label on the page. The hours it offers are the
- * configured Partial Day Start Hour and End Hour, sent with the range, so this
+ * configured Hourly Booking Start and End, sent with the range, so this
  * dialog holds no copy of the working day and cannot offer an hour the save
  * would refuse.
  *
@@ -42,6 +42,12 @@
 
     const MODE_DATE_BASED = 'date_based';
     const MODE_PARTIAL_DAY = 'partial_day';
+
+    // What the two modes are called on screen - Schedule::MODE_LABELS.
+    const MODE_LABELS = {
+        [MODE_DATE_BASED]: 'Full Day',
+        [MODE_PARTIAL_DAY]: 'Hourly',
+    };
 
     const token = document.querySelector('meta[name="csrf-token"]');
     const CSRF = token ? token.getAttribute('content') : '';
@@ -354,10 +360,10 @@
                 ? '<div class="conflict-panel-line text-secondary">'
                     + escapeHtml(project.client_type) + ' client &mdash; '
                     + (project.partial_day_allowed
-                        ? 'Partial Day available, '
+                        ? MODE_LABELS[MODE_PARTIAL_DAY] + ' available, '
                             + escapeHtml(project.partial_day_window.start_label) + ' to '
                             + escapeHtml(project.partial_day_window.end_label) + '.'
-                        : 'Partial Day is Residential only.')
+                        : MODE_LABELS[MODE_PARTIAL_DAY] + ' is Residential only.')
                     + '</div>'
                 : '')
             + '</div>';
@@ -489,9 +495,9 @@
                 + '<span>Scheduling mode</span>'
                 + '<select class="form-select form-select-sm" data-range-mode>'
                 + '<option value="' + MODE_DATE_BASED + '"'
-                + (partialDay ? '' : ' selected') + '>Date-Based</option>'
+                + (partialDay ? '' : ' selected') + '>' + MODE_LABELS[MODE_DATE_BASED] + '</option>'
                 + '<option value="' + MODE_PARTIAL_DAY + '"'
-                + (partialDay ? ' selected' : '') + '>Partial Day</option>'
+                + (partialDay ? ' selected' : '') + '>' + MODE_LABELS[MODE_PARTIAL_DAY] + '</option>'
                 + '</select>'
                 + '</label>'
             : '';
@@ -505,7 +511,7 @@
                 : 'Pick dates the whole team is free.')
             + '</p>'
             + (range.partial_day_allowed
-                ? '<p class="conflict-editor-note">Partial Day: '
+                ? '<p class="conflict-editor-note">' + MODE_LABELS[MODE_PARTIAL_DAY] + ': '
                     + escapeHtml(range.partial_day_start_label) + ' to '
                     + escapeHtml(range.partial_day_end_label) + '.</p>'
                 : '')

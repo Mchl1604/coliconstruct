@@ -764,8 +764,8 @@
                             <div class="mb-3 d-none" data-unscheduled-mode-wrap>
                                 <label class="form-label small mb-1" for="unscheduledMode">Scheduling Mode</label>
                                 <select class="form-select" id="unscheduledMode" data-unscheduled-mode>
-                                    <option value="{{ \App\Models\Schedule::MODE_DATE_BASED }}">Date-Based</option>
-                                    <option value="{{ \App\Models\Schedule::MODE_PARTIAL_DAY }}">Partial Day</option>
+                                    <option value="{{ \App\Models\Schedule::MODE_DATE_BASED }}">{{ \App\Models\Schedule::MODE_LABELS[\App\Models\Schedule::MODE_DATE_BASED] }}</option>
+                                    <option value="{{ \App\Models\Schedule::MODE_PARTIAL_DAY }}">{{ \App\Models\Schedule::MODE_LABELS[\App\Models\Schedule::MODE_PARTIAL_DAY] }}</option>
                                 </select>
                                 <div class="form-text" data-unscheduled-mode-hint>
                                     Books full days.
@@ -894,8 +894,8 @@
                         <div class="mb-3">
                             <label class="form-label small mb-1" for="scheduleAddMode">Scheduling Mode</label>
                             <select class="form-select" id="scheduleAddMode" data-add-mode>
-                                <option value="{{ \App\Models\Schedule::MODE_DATE_BASED }}">Date-Based</option>
-                                <option value="{{ \App\Models\Schedule::MODE_PARTIAL_DAY }}">Partial Day</option>
+                                <option value="{{ \App\Models\Schedule::MODE_DATE_BASED }}">{{ \App\Models\Schedule::MODE_LABELS[\App\Models\Schedule::MODE_DATE_BASED] }}</option>
+                                <option value="{{ \App\Models\Schedule::MODE_PARTIAL_DAY }}">{{ \App\Models\Schedule::MODE_LABELS[\App\Models\Schedule::MODE_PARTIAL_DAY] }}</option>
                             </select>
                             <div class="form-text" data-add-mode-hint>
                                 Books full days.

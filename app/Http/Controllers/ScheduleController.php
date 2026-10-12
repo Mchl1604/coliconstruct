@@ -472,7 +472,7 @@ class ScheduleController extends Controller
             if ($isPartialDay && ! $project->isResidential()) {
                 $blocked[] = $this->projectPayload(
                     $project,
-                    'Partial Day is Residential only.'
+                    'Hourly is Residential only.'
                 );
 
                 continue;
@@ -834,7 +834,7 @@ class ScheduleController extends Controller
         }
 
         throw new RuntimeException(sprintf(
-            '%s is Commercial. Partial Day is Residential only.',
+            '%s is Commercial. Hourly is Residential only.',
             $project->name
         ));
     }

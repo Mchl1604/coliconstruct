@@ -1674,6 +1674,23 @@ class NotificationService
         );
     }
 
+    /**
+     * The Super Admin role has changed hands. Every administrator is told -
+     * who owns the system is something the whole tier needs to know - except
+     * the one who handed it over, who has just done it.
+     */
+    public function superAdminTransferred(User $previousOwner, User $newOwner): void
+    {
+        $this->deliver(
+            $this->excludingActor($this->administrators()),
+            'Super Admin Transferred',
+            sprintf('%s made %s the Super Admin.', $previousOwner->fullName(), $newOwner->fullName()),
+            Notification::MODULE_USER_MANAGEMENT,
+            $newOwner,
+            $this->accountLink()
+        );
+    }
+
     public function accountRestored(User $account): void
     {
         $this->deliver(
