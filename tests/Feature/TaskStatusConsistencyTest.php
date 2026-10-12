@@ -268,7 +268,7 @@ class TaskStatusConsistencyTest extends TestCase
 
         foreach (self::PORTAL_PAGES as $where => [$role, $routeName]) {
             $response = $this->actingAs($this->accountFor($role))
-                ->get($this->url($routeName));
+                ->getWithTables($this->url($routeName));
 
             $response->assertOk();
             $this->assertStringContainsString('Overdue', $response->getContent(), $where.' does not say Overdue.');
@@ -286,7 +286,7 @@ class TaskStatusConsistencyTest extends TestCase
 
         foreach (self::PORTAL_PAGES as $where => [$role, $routeName]) {
             $response = $this->actingAs($this->accountFor($role))
-                ->get($this->url($routeName));
+                ->getWithTables($this->url($routeName));
 
             $response->assertOk();
             $this->assertStringContainsString(
@@ -319,7 +319,7 @@ class TaskStatusConsistencyTest extends TestCase
         // on the status column and printed "Pending".
         $this->task(['due_date' => $this->businessDate(-30)]);
 
-        $this->get(route('super-admin.projects.show', $this->project->project_id))
+        $this->getWithTables(route('super-admin.projects.show', $this->project->project_id))
             ->assertOk()
             ->assertSee('badge-overdue', false)
             ->assertDontSee('bg-secondary">Pending', false);
@@ -393,7 +393,7 @@ class TaskStatusConsistencyTest extends TestCase
         // Due tomorrow. Today it is Pending on the page.
         $task = $this->task(['due_date' => BusinessTime::today()->addDay()->toDateString()]);
 
-        $this->get(route('super-admin.projects.show', $this->project->project_id))
+        $this->getWithTables(route('super-admin.projects.show', $this->project->project_id))
             ->assertOk()
             ->assertSee('Pending');
 
@@ -403,7 +403,7 @@ class TaskStatusConsistencyTest extends TestCase
         // changed is the date - and the very next page load says Overdue.
         CarbonImmutable::setTestNow(BusinessTime::now()->addDays(2));
 
-        $this->get(route('super-admin.projects.show', $this->project->project_id))
+        $this->getWithTables(route('super-admin.projects.show', $this->project->project_id))
             ->assertOk()
             ->assertSee('Overdue');
 

@@ -1691,10 +1691,12 @@ class TechnicianManagementTest extends TestCase
         $this->technician('Gone Away', 'technician', ['status' => User::STATUS_DEACTIVATED]);
         $this->technician('Long Gone', 'technician', ['is_archived' => true]);
 
-        $response = $this->get(route('super-admin.technicians.index'));
+        $this->get(route('super-admin.technicians.index'))
+            ->assertOk()
+            ->assertSee('<th>Status</th>', false);
 
-        $response->assertOk();
-        $response->assertSee('<th>Status</th>', false);
+        $response = $this->getTablePage(route('super-admin.technicians.table'));
+
         $response->assertSee('badge bg-success', false);
         $response->assertSee('Active');
         $response->assertSee('badge bg-danger', false);

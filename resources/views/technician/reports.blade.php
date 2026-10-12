@@ -21,7 +21,7 @@
 
         <div class="d-flex align-items-center gap-2">
             <span class="badge bg-secondary">
-                {{ $reports->count() }} {{ \Illuminate\Support\Str::plural('report', $reports->count()) }}
+                {{ $reportCount }} {{ \Illuminate\Support\Str::plural('report', $reportCount) }}
             </span>
 
             {{-- The other half of the list: archiving a report moves it there
@@ -47,8 +47,7 @@
     @endif
 
     {{-- Filters, matching the Super Admin Reports page: the same narrowings,
-         applied to the rows already on the page rather than over the wire,
-         because a lead's own reports are a short list. --}}
+         applied on the server to every request the table makes. --}}
     <div class="card shadow-sm border-0 rounded-2 mb-3">
         <div class="card-body p-3">
             <div class="row g-3">
@@ -128,64 +127,10 @@
                         </tr>
                     </thead>
 
-                    <tbody data-reports-body>
-                        {{-- No blade fallback row here: a single colspan cell has fewer
-                             cells than the header, which DataTables cannot parse. Its
-                             own emptyTable message covers it. --}}
-                        @foreach ($reports as $report)
-                            @php
-                                $reportClient = $report->project?->clients->first();
-                            @endphp
-
-                            {{-- Everything the filter bar matches on travels
-                                 with the row, so narrowing costs no request. --}}
-                            <tr data-report-date="{{ $report->report_date?->toDateString() }}"
-                                data-project-id="{{ $report->project_id }}"
-                                data-report-type="{{ $report->report_type }}">
-                                <td>{{ $report->displayCode() }}</td>
-                                <td>{{ $report->project?->reference_no ?? '—' }}</td>
-                                <td class="fw-semibold">
-                                    {{ $reportClient?->company_name ?: ($reportClient?->fullname ?: '—') }}
-                                    <div class="small text-muted fw-normal">{{ $report->report_title }}</div>
-                                </td>
-                                <td>
-                                    <span class="badge {{ $report->typeBadgeClass() }}">{{ $report->typeLabel() }}</span>
-                                </td>
-                                <td>
-                                    <div class="d-flex align-items-center gap-2">
-                                        @if ($report->submitterAvatarUrl())
-                                            <img class="user-avatar user-avatar-xs"
-                                                src="{{ $report->submitterAvatarUrl() }}" alt="" loading="lazy">
-                                        @endif
-                                        <span>{{ $report->submitterName() }}</span>
-                                    </div>
-                                </td>
-                                <td data-order="{{ $report->report_date?->timestamp ?? 0 }}">
-                                    {{ $report->report_date?->format(\App\Support\BusinessTime::DATE) ?? '—' }}
-                                </td>
-                                <td class="text-center">
-                                    <div class="d-inline-flex gap-1">
-                                        <button type="button" class="btn btn-sm btn-primary py-1 px-2"
-                                            data-view-report="{{ $report->id }}" title="View report">
-                                            <i class="bi bi-eye" aria-hidden="true"></i>
-                                        </button>
-
-                                        {{-- Only the reports this lead filed
-                                             themselves, decided by the same policy
-                                             the endpoint enforces. --}}
-                                        @can('archive', $report)
-                                            <button type="button" class="btn btn-sm btn-dark py-1 px-2"
-                                                data-archive-report="{{ $report->id }}"
-                                                data-report-label="{{ $report->displayCode() }} - {{ $report->report_title }}"
-                                                title="Archive report">
-                                                <i class="bi bi-archive" aria-hidden="true"></i>
-                                            </button>
-                                        @endcan
-                                    </div>
-                                </td>
-                            </tr>
-                        @endforeach
-                    </tbody>
+                    {{-- Filled a page at a time by serverTable.js from
+                         TechnicianPortalController::reportsTable(), with the
+                         filters above applied on the server. --}}
+                    <tbody data-reports-body></tbody>
                 </table>
             </div>
         </div>
@@ -292,9 +237,8 @@
 
     @push('scripts')
         <script>
-            window.portalReports = @json($reportPayloads);
-
             window.portalRoutes = {
+                reportsTable: @json(route('technician.reports.table')),
                 storeReport: @json(route('technician.reports.store', ['project' => '__ID__'])),
                 archiveReport: @json(route('technician-reports.archive', ['report' => '__ID__'])),
             };

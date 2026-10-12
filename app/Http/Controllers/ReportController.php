@@ -13,6 +13,7 @@ use App\Support\BusinessTime;
 use App\Support\CompanyBranding;
 use App\Support\DisplayCode;
 use App\Support\ReportPdf;
+use App\Support\ServerTable;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -113,37 +114,84 @@ class ReportController extends Controller
     }
 
     /**
-     * The archive: every technician report that has been filed away.
-     *
-     * Server-rendered rather than fetched, the same way Archived Projects and
-     * Archived Accounts are - an archive is read, not worked, so a DataTable
-     * over the whole list is both simpler and enough.
+     * The archive: every technician report that has been filed away. Its
+     * rows arrive a page at a time from archivedTable().
+     */
+    public function archivedIndex()
+    {
+        return view('super-admin.archivedReports');
+    }
+
+    /**
+     * One page of the archive, searched, sorted and sliced in SQL.
      *
      * Every report here stays whole: its pictures are still served, its
      * submitter is still named, and its project is still linked. Restoring is
      * offered per row and only to whoever the policy says may do it, which for
      * a lead technician is their own reports and nobody else's.
+     *
+     * The viewer reads each report from `meta.payloads` - the page of reports
+     * on screen, in full - rather than asking again for one it was handed.
      */
-    public function archivedIndex(Request $request)
+    public function archivedTable(Request $request)
     {
-        $reports = TechnicianReport::query()
-            ->archived()
-            ->with(['project.clients', 'technician.account', 'submitter', 'images', 'archiver'])
-            // Rows archived before the timestamp existed sort last rather than
-            // first, which is what a null would otherwise do on some engines.
-            ->orderByRaw('archived_at is null')
-            ->orderByDesc('archived_at')
-            ->orderByDesc('id')
-            ->get();
+        $table = ServerTable::fromRequest($request);
 
+        $page = $table->paginate(
+            TechnicianReport::query()->archived(),
+            sortable: self::reportColumns(),
+            search: fn ($query, string $word) => $query
+                ->matchingListingWord($word)
+                ->orWhereHas('archiver', fn ($users) => $users
+                    ->where('name', 'like', '%'.$word.'%')
+                    ->orWhere('first_name', 'like', '%'.$word.'%')
+                    ->orWhere('last_name', 'like', '%'.$word.'%')),
+            defaultOrder: [[6, 'desc']],
+        );
+
+        $reports = $page->items->load(['project.clients', 'technician.account', 'submitter', 'images', 'archiver']);
         $user = $request->user();
 
-        return view('super-admin.archivedReports', [
-            'reports' => $reports,
-            'reportPayloads' => $reports->mapWithKeys(fn (TechnicianReport $report): array => [
-                $report->id => $this->archivedPayload($report, $user),
-            ]),
-        ]);
+        return $table->respond(
+            $page,
+            fn (TechnicianReport $report): string => view('super-admin.partials.archived-report-row', [
+                'report' => $report,
+            ])->render(),
+            view('super-admin.partials.archived-report-dialogs', [
+                'reports' => $reports,
+            ])->render(),
+            [
+                'payloads' => $reports->mapWithKeys(fn (TechnicianReport $report): array => [
+                    $report->id => $this->archivedPayload($report, $user),
+                ])->all(),
+            ],
+        );
+    }
+
+    /**
+     * How the archive's columns sort, by position: Report ID, Reference No.,
+     * Client, Report Type, Submitted By, Date Submitted, Archived Date and
+     * Archived By.
+     *
+     * @return array<int, string|\Closure>
+     */
+    private static function reportColumns(): array
+    {
+        return [
+            0 => 'id',
+            1 => fn ($query, string $dir) => $query->orderByProjectReference($dir),
+            2 => fn ($query, string $dir) => $query->orderByClientName($dir),
+            3 => 'report_type',
+            4 => fn ($query, string $dir) => $query->orderBySubmitter($dir),
+            5 => 'report_date',
+            6 => fn ($query, string $dir) => $query->orderByArchivedAt($dir),
+            7 => fn ($query, string $dir) => $query->orderBy(
+                User::query()
+                    ->selectRaw('coalesce(first_name, name)')
+                    ->whereColumn('users.id', 'tbl_technician_reports.archived_by'),
+                $dir
+            ),
+        ];
     }
 
     // ------------------------------------------------------------------

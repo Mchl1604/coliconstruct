@@ -14,7 +14,7 @@
 
 @section('content')
     @php
-        $totalTasks = $tasksByProject->flatten()->count();
+        $totalTasks = array_sum($taskCounts);
     @endphp
 
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
@@ -57,12 +57,9 @@
         </div>
     </div>
 
-    <x-task-board :projects="$projects" :tasks-by-project="$tasksByProject"
-        :technicians-by-project="$techniciansByProject" :ranges-by-project="$rangesByProject" :phases-by-project="$phasesByProject" :periods-by-project="$periodsByProject"
-        :active-task-counts-by-project="$technicianActiveTaskCounts" :manageable="$manageable"
+    <x-task-board :projects="$projects" :task-counts="$taskCounts" :gap-counts="$gapCounts"
+        table-route="super-admin.tasks.board-table" :linked-task-dialogs="$linkedTaskDialogs"
         project-route="super-admin.projects.show"
-        update-route="super-admin.tasks.update" complete-route="super-admin.tasks.complete"
-        delete-route="super-admin.tasks.destroy"
         empty-message="No active projects to show." />
 
     <x-task-create-modal :projects="$schedulableProjects"

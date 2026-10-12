@@ -237,6 +237,9 @@ Route::prefix('super-admin')
 
         // ROUTE FOR SUPER ADMIN PROJECTS PAGE
         Route::get('/projects', [ProjectController::class, 'index'])->name('projects');
+        // One page of the table at a time - see serverTable.js. Before
+        // /projects/{id} so the literal segment wins.
+        Route::get('/projects/table', [ProjectController::class, 'table'])->name('projects.table');
 
         // Archiving is a Super Admin privilege. An Admin creates, reads,
         // edits, activates and deactivates; taking a record out of the active
@@ -247,6 +250,9 @@ Route::prefix('super-admin')
         Route::get('/projects/archived', [ProjectController::class, 'archivedIndex'])
             ->middleware('role:super_admin')
             ->name('projects.archived');
+        Route::get('/projects/archived/table', [ProjectController::class, 'archivedTable'])
+            ->middleware('role:super_admin')
+            ->name('projects.archived.table');
         Route::get('/projects/create', [ProjectController::class, 'create'])->name('projects.create');
         Route::post('/projects/create', [ProjectController::class, 'store'])->name('projects.create.store');
 
@@ -256,6 +262,8 @@ Route::prefix('super-admin')
         Route::get('/projects/importable-teams', [ProjectController::class, 'importableTeams'])
             ->name('projects.importable-teams');
         Route::get('/projects/{id}', [ProjectController::class, 'show'])->name('projects.show');
+        // The Tasks tab's table, one page at a time - see serverTable.js.
+        Route::get('/projects/{id}/tasks/table', [ProjectController::class, 'tasksTable'])->name('projects.tasks.table');
 
         // ---------------------------------------------------------------
         // Project phases
@@ -398,6 +406,8 @@ Route::prefix('super-admin')
 
         // ROUTE FOR SUPER ADMIN SCHEDULES PAGE
         Route::get('/schedules', [ScheduleController::class, 'index'])->name('schedules.index');
+        // The table under the calendar, one page at a time - see serverTable.js.
+        Route::get('/schedules/table', [ScheduleController::class, 'table'])->name('schedules.table');
         Route::get('/schedules/assignable', [ScheduleController::class, 'assignableProjects'])->name('schedules.assignable');
         Route::post('/schedules/assign', [ScheduleController::class, 'assign'])->name('schedules.assign');
         Route::get('/schedules/date/{date}', [ScheduleController::class, 'dateDetails'])->name('schedules.date');
@@ -437,6 +447,7 @@ Route::prefix('super-admin')
         // half of a feature. Who may put one back is decided per report by
         // TechnicianReportPolicy, not by the door.
         Route::get('/reports/archived', [ReportController::class, 'archivedIndex'])->name('reports.archived');
+        Route::get('/reports/archived/table', [ReportController::class, 'archivedTable'])->name('reports.archived.table');
         Route::get('/reports/technician-reports', [ReportController::class, 'technicianReports'])->name('reports.technician');
         Route::get('/reports/technician-reports/{report}', [ReportController::class, 'showTechnicianReport'])->name('reports.technician.show');
         Route::get('/reports/reportable-projects', [ReportController::class, 'reportableProjects'])->name('reports.reportable');
@@ -450,6 +461,9 @@ Route::prefix('super-admin')
 
         // ROUTE FOR SUPER ADMIN TECHNICIANS PAGE
         Route::get('/technicians', [TechnicianController::class, 'index'])->name('technicians.index');
+        // One page of the Details table at a time - see serverTable.js.
+        // Before /technicians/{technician} so the literal segment wins.
+        Route::get('/technicians/table', [TechnicianController::class, 'table'])->name('technicians.table');
         // The specialty approval queue. Declared before /technicians/{technician}
         // so the literal segment wins.
         Route::put('/technicians/specialty-requests/{specialtyRequest}/approve', [TechnicianController::class, 'approveSpecialtyRequest'])
@@ -475,6 +489,8 @@ Route::prefix('super-admin')
 
         // ROUTE FOR SUPER ADMIN TASKS PAGE
         Route::get('/tasks', [TaskController::class, 'index'])->name('tasks.index');
+        // One page of one project's board at a time - see taskBoard.js.
+        Route::get('/tasks/projects/{projectId}/table', [TaskController::class, 'boardTable'])->name('tasks.board-table');
         Route::get('/projects/{id}/task-form-data', [TaskController::class, 'projectFormData'])->name('projects.task-form-data');
 
         // ROUTE FOR SUPER ADMIN CONFIGURATION PAGE
@@ -633,7 +649,12 @@ Route::prefix('technician')
     ->group(function () {
         Route::get('/schedule', [TechnicianPortalController::class, 'schedule'])->name('schedule');
         Route::get('/projects', [TechnicianPortalController::class, 'projects'])->name('projects');
+        // One page of My Projects at a time - see serverTable.js. Before
+        // /projects/{project} so the literal segment wins.
+        Route::get('/projects/table', [TechnicianPortalController::class, 'projectsTable'])->name('projects.table');
         Route::get('/tasks', [TechnicianPortalController::class, 'tasks'])->name('tasks');
+        // One page of one project's board at a time - see taskBoard.js.
+        Route::get('/tasks/projects/{project}/table', [TechnicianPortalController::class, 'taskBoardTable'])->name('tasks.board-table');
 
         // Reading a project, and closing your own task. Each is gated by a
         // policy: you only ever see a project you are assigned to, and you
@@ -641,6 +662,9 @@ Route::prefix('technician')
         // they run).
         Route::get('/projects/{project}', [TechnicianPortalController::class, 'showProject'])
             ->name('projects.show');
+        // The Tasks tab's table, one page at a time - see serverTable.js.
+        Route::get('/projects/{project}/tasks/table', [TechnicianPortalController::class, 'projectTasksTable'])
+            ->name('projects.tasks.table');
         Route::get('/projects/{project}/details', [TechnicianPortalController::class, 'projectDetails'])
             ->name('projects.details');
         Route::post('/tasks/{task}/complete', [TechnicianPortalController::class, 'completeTask'])
@@ -651,11 +675,14 @@ Route::prefix('technician')
         // permission model.
         Route::middleware('role:lead_technician')->group(function () {
             Route::get('/reports', [TechnicianPortalController::class, 'reports'])->name('reports');
+            Route::get('/reports/table', [TechnicianPortalController::class, 'reportsTable'])->name('reports.table');
 
             // A lead's own archive. Declared beside the log it belongs to, and
             // narrowed the same way: what a lead filed away themselves.
             Route::get('/reports/archived', [TechnicianPortalController::class, 'archivedReports'])
                 ->name('reports.archived');
+            Route::get('/reports/archived/table', [TechnicianPortalController::class, 'archivedReportsTable'])
+                ->name('reports.archived.table');
 
             Route::post('/projects/{project}/complete', [TechnicianPortalController::class, 'completeProject'])
                 ->name('projects.complete');

@@ -3,37 +3,35 @@
  * Cancelled tabs above a projects table.
  *
  * Opt in from the markup: put `data-project-status-tabs="<tableId>"` on the tab
- * list, `data-status-filter="<status>"` on each button, and `data-tab` on every
- * row - the value Project::tabKey() gives that project.
+ * list and `data-status-filter="<status>"` on each button. The table pages on
+ * the server (see serverTable.js), and the chosen tab is sent with every
+ * request as `tab`:
  *
- * A tab is not always one stored status, which is why the row carries the
- * answer rather than this file working it out. Paused work files under On Hold
- * and nowhere else; work with no dates ahead of it - whether it ran out of them
- * or never had any - is taken out of Pending and Ongoing so it is not counted
- * twice; and work awaiting client confirmation reads as Completed. All of that
- * is decided once, on the model, so the counts beside the tabs and the rows the
- * tabs reveal can never disagree.
+ *     window.serverTable("#projectsTable", {
+ *         params: function () {
+ *             return { tab: window.projectStatusTabs.current("projectsTable") };
+ *         },
+ *     });
  *
- * `data-status` / `data-overdue` / `data-unscheduled` are still honoured for
- * any table that has not been given `data-tab`.
+ * Which tab a project files under is decided on the server, by
+ * Project::tabKey() and Project::attentionTabKeys() - the same methods the
+ * counts beside the tabs are taken from - so a badge and the rows its tab
+ * shows can never disagree. Nothing about it is worked out here.
  *
- * A row may also carry `data-tab-extra` - a space separated list of the
- * attention tabs it falls under, from Project::attentionTabKeys(). Those tabs
- * ask what needs doing rather than what state something is in, so unlike the
- * status tabs they overlap: one project can appear under No Technicians and
- * Inactive Crew both. The dashboard's Urgent Actions link straight at them
- * with `?status=`, which is what opens the list already filtered.
+ * The attention tabs (No Technicians, Inactive Crew) overlap the status tabs:
+ * one project can appear under both. The dashboard's Urgent Actions link
+ * straight at them with `?status=`, which is what opens the list already
+ * filtered.
  *
  * The chosen tab is remembered per table for the rest of the browsing session,
  * so opening a project from Ongoing and coming back lands on Ongoing rather
  * than resetting to All.
  */
-document.addEventListener("DOMContentLoaded", function () {
-    if (!window.jQuery || !window.jQuery.fn.DataTable) {
-        return;
-    }
+(function (global) {
+    "use strict";
 
-    const $ = window.jQuery;
+    // tableId => the tab it is showing.
+    const chosen = {};
 
     function storageKey(tableId) {
         return "projectStatusTab:" + tableId;
@@ -41,7 +39,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function remember(tableId, status) {
         try {
-            window.sessionStorage.setItem(storageKey(tableId), status);
+            global.sessionStorage.setItem(storageKey(tableId), status);
         } catch (error) {
             // Private browsing, or storage that is full. Losing the memory of
             // which tab was open is not worth breaking the page over.
@@ -50,188 +48,121 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function recall(tableId) {
         try {
-            return window.sessionStorage.getItem(storageKey(tableId));
+            return global.sessionStorage.getItem(storageKey(tableId));
         } catch (error) {
             return null;
         }
     }
 
-    /**
-     * The tab a row belongs under. The server's answer when the row carries
-     * one; otherwise derived here, as it always was.
-     */
-    function tabOf(rowNode) {
-        if (!rowNode) {
-            return null;
-        }
-
-        const given = rowNode.getAttribute("data-tab");
-
-        if (given) {
-            return given;
-        }
-
-        const rowStatus = rowNode.getAttribute("data-status");
-
-        if (rowNode.getAttribute("data-on-hold") === "1") {
-            return "on_hold";
-        }
-
-        // The Needs Rescheduling tab, which holds both kinds of project
-        // with no dates ahead of it - see Project::needsScheduling().
-        if (
-            rowNode.getAttribute("data-overdue") === "1" ||
-            rowNode.getAttribute("data-unscheduled") === "1"
-        ) {
-            return "overdue";
-        }
-
-        if (rowStatus === "unscheduled" || rowStatus === "pending") {
-            return "pending";
-        }
-
-        if (
-            rowStatus === "completed" ||
-            rowStatus === "awaiting_client_confirmation"
-        ) {
-            return "completed";
-        }
-
-        return rowStatus;
-    }
-
-    /**
-     * The attention tabs a row also belongs under, if any - the value
-     * Project::attentionTabKeys() gave it, space separated.
-     *
-     * A row has exactly one tabOf(), but it can need booking AND have nobody
-     * on it, so these are a list rather than a second status.
-     */
-    function extrasOf(rowNode) {
-        const given = rowNode ? rowNode.getAttribute("data-tab-extra") : null;
-
-        return given ? given.split(/\s+/).filter(Boolean) : [];
-    }
-
-    function matches(rowNode, status) {
-        return (
-            status === "all" ||
-            tabOf(rowNode) === status ||
-            extrasOf(rowNode).indexOf(status) !== -1
+    function tabListFor(tableId) {
+        return document.querySelector(
+            '[data-project-status-tabs="' + tableId + '"]',
         );
     }
 
-    function wire(tabList, tableId, table) {
-        const buttons = tabList.querySelectorAll("[data-status-filter]");
-        const flag = "_statusFilter_" + tableId;
-
-        function apply(status, save) {
-            buttons.forEach(function (item) {
-                item.classList.toggle(
-                    "active",
-                    item.getAttribute("data-status-filter") === status,
-                );
-            });
-
-            // Drop this table's previous filter, leaving any other
-            // table's alone.
-            $.fn.dataTable.ext.search = $.fn.dataTable.ext.search.filter(
-                function (filterFn) {
-                    return !filterFn[flag];
-                },
-            );
-
-            const filterFn = function (settings, data, dataIndex) {
-                if (settings.nTable.id !== tableId) {
-                    return true;
-                }
-
-                return matches(table.row(dataIndex).node(), status);
-            };
-
-            filterFn[flag] = true;
-            $.fn.dataTable.ext.search.push(filterFn);
-            table.draw();
-
-            if (save) {
-                remember(tableId, status);
-            }
-        }
-
-        buttons.forEach(function (button) {
-            button.addEventListener("click", function () {
-                apply(button.getAttribute("data-status-filter"), true);
-            });
-        });
-
-        /**
-         * Which tab to open on.
-         *
-         * A `?status=` in the address wins - the dashboard and the summary
-         * cards link here asking for one particular tab, and that is a
-         * deliberate request rather than a return to where somebody was. Next
-         * comes the tab they last chose on this table, which is what makes
-         * coming back from a project land where they left. Failing both, All.
-         */
-        function initialStatus() {
-            const requested = new URLSearchParams(window.location.search).get(
-                "status",
-            );
-            const remembered = recall(tableId);
-
-            return [requested, remembered].find(function (candidate) {
-                return (
-                    candidate &&
-                    tabList.querySelector(
-                        '[data-status-filter="' + candidate + '"]',
-                    )
-                );
-            });
-        }
-
-        const opening = initialStatus();
-
-        if (opening) {
-            // Saved as well as applied: a tab arrived at by link becomes the
-            // one this table returns to, which is what somebody following a
-            // dashboard figure into a project expects on the way back.
-            apply(opening, true);
-        }
+    function hasTab(tabList, status) {
+        return Boolean(
+            status &&
+                tabList &&
+                Array.prototype.some.call(
+                    tabList.querySelectorAll("[data-status-filter]"),
+                    function (button) {
+                        return button.getAttribute("data-status-filter") === status;
+                    },
+                ),
+        );
     }
 
     /**
-     * Hand back the table's DataTable once it exists.
+     * Which tab to open on.
      *
-     * The page builds its own table with its own options, and whether that has
-     * happened by the time this file runs depends on script order. Calling
-     * `.DataTable()` too early would quietly build one with default options,
-     * and the page's real init would then fail with "Cannot reinitialise
-     * DataTable" - so wait for its init event rather than racing it.
+     * A `?status=` in the address wins - the dashboard and the summary cards
+     * link here asking for one particular tab, and that is a deliberate
+     * request rather than a return to where somebody was. Next comes the tab
+     * they last chose on this table, which is what makes coming back from a
+     * project land where they left. Failing both, All.
      */
-    function whenTableReady(tableEl, callback) {
-        if ($.fn.dataTable.isDataTable(tableEl)) {
-            callback($(tableEl).DataTable());
+    function initialStatus(tableId) {
+        const tabList = tabListFor(tableId);
+        const requested = new URLSearchParams(global.location.search).get("status");
+        const remembered = recall(tableId);
 
+        return (
+            [requested, remembered].find(function (candidate) {
+                return hasTab(tabList, candidate);
+            }) || "all"
+        );
+    }
+
+    function markActive(tableId, status) {
+        const tabList = tabListFor(tableId);
+
+        if (!tabList) {
             return;
         }
 
-        $(tableEl).one("init.dt", function () {
-            callback($(tableEl).DataTable());
+        tabList.querySelectorAll("[data-status-filter]").forEach(function (item) {
+            item.classList.toggle(
+                "active",
+                item.getAttribute("data-status-filter") === status,
+            );
         });
     }
 
-    document
-        .querySelectorAll("[data-project-status-tabs]")
-        .forEach(function (tabList) {
-            const tableId = tabList.getAttribute("data-project-status-tabs");
-            const tableEl = document.getElementById(tableId);
+    /**
+     * The tab a table is showing - resolved the first time it is asked, which
+     * is the table's own first request, so the very first page fetched is
+     * already the right tab's.
+     */
+    function current(tableId) {
+        if (!chosen[tableId]) {
+            chosen[tableId] = initialStatus(tableId);
 
-            if (!tableEl) {
-                return;
-            }
+            // Saved as well as applied: a tab arrived at by link becomes the
+            // one this table returns to, which is what somebody following a
+            // dashboard figure into a project expects on the way back.
+            remember(tableId, chosen[tableId]);
+            markActive(tableId, chosen[tableId]);
+        }
 
-            whenTableReady(tableEl, function (table) {
-                wire(tabList, tableId, table);
+        return chosen[tableId];
+    }
+
+    global.projectStatusTabs = { current: current };
+
+    document.addEventListener("DOMContentLoaded", function () {
+        document
+            .querySelectorAll("[data-project-status-tabs]")
+            .forEach(function (tabList) {
+                const tableId = tabList.getAttribute("data-project-status-tabs");
+                const tableEl = document.getElementById(tableId);
+
+                markActive(tableId, current(tableId));
+
+                tabList
+                    .querySelectorAll("[data-status-filter]")
+                    .forEach(function (button) {
+                        button.addEventListener("click", function () {
+                            const status = button.getAttribute("data-status-filter");
+
+                            chosen[tableId] = status;
+                            remember(tableId, status);
+                            markActive(tableId, status);
+
+                            const $ = global.jQuery;
+
+                            if (
+                                tableEl &&
+                                $ &&
+                                $.fn.dataTable &&
+                                $.fn.dataTable.isDataTable(tableEl)
+                            ) {
+                                // A full draw: back to page one, fetched again
+                                // with the new tab.
+                                $(tableEl).DataTable().draw();
+                            }
+                        });
+                    });
             });
-        });
-});
+    });
+})(window);

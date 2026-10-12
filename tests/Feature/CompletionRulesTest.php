@@ -215,7 +215,7 @@ class CompletionRulesTest extends TestCase
 
         $this->actingAs($this->mate->account);
 
-        $page = $this->get(route('technician.projects.show', $this->project));
+        $page = $this->getWithTables(route('technician.projects.show', $this->project));
 
         $page->assertOk();
         $page->assertSee(Task::NOT_STARTED_REFUSAL);
@@ -228,7 +228,7 @@ class CompletionRulesTest extends TestCase
 
         $this->actingAs($this->mate->account);
 
-        $page = $this->get(route('technician.tasks'));
+        $page = $this->getWithTables(route('technician.tasks'));
 
         $page->assertOk();
         $page->assertSee(Task::NOT_STARTED_REFUSAL);

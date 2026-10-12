@@ -41,101 +41,17 @@
                         </tr>
                     </thead>
 
-                    <tbody>
-                        {{-- No blade fallback row here: a single colspan cell has fewer
-                             cells than the header, which DataTables cannot parse. Its
-                             own emptyTable message covers it. --}}
-                        @foreach ($reports as $report)
-                            @php
-                                $reportClient = $report->project?->clients->first();
-                            @endphp
-
-                            <tr>
-                                <td>{{ $report->displayCode() }}</td>
-                                <td>{{ $report->project?->reference_no ?? '—' }}</td>
-                                <td class="fw-semibold">
-                                    {{ $reportClient?->company_name ?: ($reportClient?->fullname ?: '—') }}
-                                    <div class="small text-muted fw-normal">{{ $report->report_title }}</div>
-                                </td>
-                                <td>
-                                    <span class="badge {{ $report->typeBadgeClass() }}">{{ $report->typeLabel() }}</span>
-                                </td>
-                                <td data-order="{{ $report->report_date?->timestamp ?? 0 }}">
-                                    {{ $report->report_date?->format(\App\Support\BusinessTime::DATE) ?? '—' }}
-                                </td>
-                                <td data-order="{{ $report->archived_at?->timestamp ?? 0 }}">
-                                    {{ \App\Support\BusinessTime::format($report->archived_at) }}
-                                </td>
-                                <td class="text-center">
-                                    <div class="d-inline-flex gap-1">
-                                        <button type="button" class="btn btn-sm btn-primary py-1 px-2"
-                                            data-view-report="{{ $report->id }}" title="View report">
-                                            <i class="bi bi-eye" aria-hidden="true"></i>
-                                        </button>
-
-                                        {{-- The same policy the endpoint enforces: a
-                                             lead restores what they filed away and
-                                             nothing else. --}}
-                                        @can('restore', $report)
-                                            <button type="button" class="btn btn-sm btn-success py-1 px-2"
-                                                data-bs-toggle="modal"
-                                                data-bs-target="#restoreReportModal{{ $report->id }}"
-                                                title="Restore report">
-                                                <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>
-                                            </button>
-                                        @endcan
-                                    </div>
-                                </td>
-                            </tr>
-
-                            @can('restore', $report)
-                                {{-- ==================== RESTORE REPORT ==================== --}}
-                                <div class="modal fade" id="restoreReportModal{{ $report->id }}" tabindex="-1"
-                                    aria-hidden="true">
-                                    <div class="modal-dialog">
-                                        <div class="modal-content">
-
-                                            <div class="modal-header">
-                                                <h5 class="modal-title">Restore Report</h5>
-                                                <button type="button" class="btn-close" data-bs-dismiss="modal"
-                                                    aria-label="Close"></button>
-                                            </div>
-
-                                            <div class="modal-body">
-                                                Restore <strong>{{ $report->displayCode() }} &mdash;
-                                                    {{ $report->report_title }}</strong>?
-
-                                                <p class="text-secondary small mb-0 mt-2">
-                                                    It returns to your Reports page.
-                                                </p>
-                                            </div>
-
-                                            <div class="modal-footer">
-                                                <button type="button" class="btn btn-secondary"
-                                                    data-bs-dismiss="modal">Cancel</button>
-
-                                                <form method="POST"
-                                                    action="{{ route('technician-reports.restore', $report->id) }}">
-                                                    @csrf
-                                                    @method('PUT')
-                                                    <button type="submit" class="btn btn-success">
-                                                        <i class="bi bi-arrow-counterclockwise me-1"
-                                                            aria-hidden="true"></i>
-                                                        Restore Report
-                                                    </button>
-                                                </form>
-                                            </div>
-
-                                        </div>
-                                    </div>
-                                </div>
-                            @endcan
-                        @endforeach
-                    </tbody>
+                    {{-- Filled a page at a time by serverTable.js from
+                         TechnicianPortalController::archivedReportsTable(). --}}
+                    <tbody></tbody>
                 </table>
             </div>
         </div>
     </div>
+
+    {{-- The Restore dialogs for the rows on screen, swapped in with every
+         page. Outside the table: a <div> is not valid inside a <tbody>. --}}
+    <div data-archived-report-dialogs></div>
 
     {{-- ============================ VIEW REPORT MODAL ============================ --}}
     {{-- The Reports page viewer, cell for cell, plus the banner saying what this
@@ -207,9 +123,9 @@
 
     @push('scripts')
         <script>
-            // Every archived report in full, so the viewer reads from the page
-            // rather than asking again for a report it was already handed.
-            window.portalReports = @json($reportPayloads);
+            window.portalRoutes = Object.assign(window.portalRoutes || {}, {
+                archivedReportsTable: @json(route('technician.reports.archived.table')),
+            });
         </script>
         <script src="/js/technician/archivedReports.js"></script>
     @endpush

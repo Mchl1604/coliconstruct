@@ -71,6 +71,123 @@ class TechnicianReport extends Model
         return $query->where('is_archived', true);
     }
 
+    /**
+     * The places one word of a report table's search box may match, as
+     * `orWhere`s for App\Support\ServerTable::paginate() to group.
+     *
+     * The columns those tables print: the code (RPT-0007), the title and its
+     * text, the project's reference and name, its client, the report type as
+     * it reads, and whoever filed it - the account that pressed Submit, or for
+     * older reports the technician it is filed under.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeMatchingListingWord(Builder $query, string $word): Builder
+    {
+        $like = '%'.$word.'%';
+        $reportId = DisplayCode::toId(DisplayCode::REPORT, $word);
+
+        $types = collect(self::TYPES)
+            ->filter(fn (string $label): bool => str_contains(mb_strtolower($label), mb_strtolower($word)))
+            ->keys()
+            ->all();
+
+        $named = fn (Builder $users) => $users
+            ->where('name', 'like', $like)
+            ->orWhere('first_name', 'like', $like)
+            ->orWhere('last_name', 'like', $like);
+
+        return $query
+            ->where('report_title', 'like', $like)
+            ->orWhere('report_description', 'like', $like)
+            ->orWhereHas('project', fn (Builder $projects) => $projects
+                ->where('reference_no', 'like', $like)
+                ->orWhere('name', 'like', $like)
+                ->orWhereHas('clients', fn (Builder $clients) => $clients
+                    ->where('fullname', 'like', $like)
+                    ->orWhere('company_name', 'like', $like)))
+            ->orWhereHas('submitter', $named)
+            ->orWhereHas('technician.account', $named)
+            ->when($types !== [], fn (Builder $query) => $query->orWhereIn('report_type', $types))
+            ->when($reportId !== null, fn (Builder $query) => $query->orWhere($this->getQualifiedKeyName(), $reportId));
+    }
+
+    /**
+     * Sort by the reference number of the report's project.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeOrderByProjectReference(Builder $query, string $direction = 'asc'): Builder
+    {
+        return $query->orderBy(
+            Project::query()
+                ->select('reference_no')
+                ->whereColumn('tbl_projects.project_id', 'tbl_technician_reports.project_id')
+                ->limit(1),
+            $direction
+        );
+    }
+
+    /**
+     * Sort by the project's client, the company where there is one - the
+     * name the report tables print.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeOrderByClientName(Builder $query, string $direction = 'asc'): Builder
+    {
+        return $query->orderBy(
+            Client::query()
+                ->selectRaw("case when company_name is not null and company_name <> '' then company_name else fullname end")
+                ->whereColumn('tbl_clients.project_id', 'tbl_technician_reports.project_id')
+                ->orderBy('client_id')
+                ->limit(1),
+            $direction
+        );
+    }
+
+    /**
+     * Sort by who filed the report: the submitting account, or for older
+     * reports the technician it is filed under - see submitterName().
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeOrderBySubmitter(Builder $query, string $direction = 'asc'): Builder
+    {
+        $submitter = User::query()
+            ->selectRaw('coalesce(first_name, name)')
+            ->whereColumn('users.id', 'tbl_technician_reports.submitted_by')
+            ->limit(1);
+
+        $technician = User::query()
+            ->selectRaw('coalesce(users.first_name, users.name)')
+            ->join('tbl_technicians', 'tbl_technicians.account_id', '=', 'users.id')
+            ->whereColumn('tbl_technicians.technician_id', 'tbl_technician_reports.technician_id')
+            ->limit(1);
+
+        return $query->orderByRaw(
+            'coalesce(('.$submitter->toSql().'), ('.$technician->toSql().')) '.($direction === 'desc' ? 'desc' : 'asc'),
+            array_merge($submitter->getBindings(), $technician->getBindings())
+        );
+    }
+
+    /**
+     * Sort by when the report was archived, with reports archived before the
+     * timestamp existed last whichever way round - which is what a null
+     * would otherwise not be on some engines.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeOrderByArchivedAt(Builder $query, string $direction = 'desc'): Builder
+    {
+        return $query->orderByRaw('archived_at is null')->orderBy('archived_at', $direction);
+    }
+
     public function isArchived(): bool
     {
         return (bool) $this->is_archived;

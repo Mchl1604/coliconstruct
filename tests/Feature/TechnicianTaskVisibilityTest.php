@@ -168,7 +168,7 @@ class TechnicianTaskVisibilityTest extends TestCase
         $this->task($this->betty, 'Betty task');
         $this->task($this->lead, 'Lead task');
 
-        $response = $this->actingAs($this->alexAccount)->get(route('technician.tasks'));
+        $response = $this->actingAs($this->alexAccount)->getWithTables(route('technician.tasks'));
 
         $response->assertOk();
         $response->assertSee('Alex task');
@@ -186,7 +186,7 @@ class TechnicianTaskVisibilityTest extends TestCase
         $this->task($this->alex, 'Alex task');
         $this->task(null, 'Nobody has this yet');
 
-        $response = $this->actingAs($this->alexAccount)->get(route('technician.tasks'));
+        $response = $this->actingAs($this->alexAccount)->getWithTables(route('technician.tasks'));
 
         $response->assertOk();
         $response->assertSee('Alex task');
@@ -204,11 +204,11 @@ class TechnicianTaskVisibilityTest extends TestCase
         $this->task($this->lead, 'Lead task');
 
         $this->actingAs($this->alexAccount)
-            ->get(route('technician.tasks'))
+            ->getWithTables(route('technician.tasks'))
             ->assertSee('1 task');
 
         $this->actingAs($this->leadAccount)
-            ->get(route('technician.tasks'))
+            ->getWithTables(route('technician.tasks'))
             ->assertSee('3 tasks');
     }
 
@@ -222,7 +222,7 @@ class TechnicianTaskVisibilityTest extends TestCase
         $this->task($this->betty, 'Betty task');
 
         $response = $this->actingAs($this->alexAccount)
-            ->get(route('technician.projects.show', $this->project));
+            ->getWithTables(route('technician.projects.show', $this->project));
 
         $response->assertOk();
         $response->assertSee('Alex task');
@@ -245,7 +245,7 @@ class TechnicianTaskVisibilityTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->alexAccount)
-            ->get(route('technician.projects.show', $this->project));
+            ->getWithTables(route('technician.projects.show', $this->project));
 
         $response->assertOk();
         $response->assertSee('taskModal'.$mine->task_id, false);
@@ -366,7 +366,7 @@ class TechnicianTaskVisibilityTest extends TestCase
         $this->task($this->lead, 'Lead task');
         $this->task(null, 'Nobody has this yet');
 
-        $tasks = $this->actingAs($this->leadAccount)->get(route('technician.tasks'));
+        $tasks = $this->actingAs($this->leadAccount)->getWithTables(route('technician.tasks'));
         $tasks->assertOk();
         $tasks->assertSee('Alex task');
         $tasks->assertSee('Betty task');
@@ -374,7 +374,7 @@ class TechnicianTaskVisibilityTest extends TestCase
         $tasks->assertSee('Nobody has this yet');
 
         $details = $this->actingAs($this->leadAccount)
-            ->get(route('technician.projects.show', $this->project));
+            ->getWithTables(route('technician.projects.show', $this->project));
         $details->assertOk();
         $details->assertSee('Alex task');
         $details->assertSee('Betty task');
@@ -460,7 +460,7 @@ class TechnicianTaskVisibilityTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->alexAccount)
-            ->get(route('technician.projects.show', $overdue));
+            ->getWithTables(route('technician.projects.show', $overdue));
 
         $response->assertOk();
         $response->assertSee('Still to do');

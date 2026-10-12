@@ -1,91 +1,130 @@
 /**
- * The task board: a DataTable inside every project card, the project filter
- * above them, and the Urgent Actions chips that narrow the board to the tasks
- * that cannot proceed.
+ * The task board: a server-paged table inside every project card, the project
+ * filter above them, and the Urgent Actions chips that narrow the board to the
+ * tasks that cannot proceed.
+ *
+ * Each card's table asks for its first page only when the card comes near the
+ * screen - see App\Services\TaskBoard - so a board of fifty projects costs the
+ * requests for the two or three anybody is looking at. The dialogs a row opens
+ * come back with its page and replace the previous page's.
  *
  * Two filters run at once and they are different shapes:
  *
  *   - The project filter hides whole cards, so picking one project leaves that
  *     project's card and nothing else. The card format survives.
- *   - The attention chips hide ROWS, because a project's board usually has
- *     both good tasks and stuck ones, and the question the chip asks is "which
- *     tasks", not "which projects". A card left with no matching rows then
- *     drops out too, so pressing "Missing Date" does not leave a column of
- *     empty cards behind.
- *
- * Row filtering goes through DataTables' own search pipeline rather than
- * setting `display: none` on the rows: hidden rows would still be counted,
- * paginated and searched, so page 1 of 3 could legitimately come back empty.
+ *   - The attention chips narrow ROWS, on the server, because a project's
+ *     board usually has both good tasks and stuck ones, and the question the
+ *     chip asks is "which tasks", not "which projects". A card the chip would
+ *     leave empty drops out too - known from the counts each card carries, so
+ *     pressing "Missing Date" does not leave a column of empty cards behind
+ *     or fetch them to find out.
  */
 document.addEventListener("DOMContentLoaded", function () {
     const board = document.querySelector("[data-task-board]");
 
-    if (!board || !window.jQuery || !window.jQuery.fn.DataTable) {
+    if (!board || !window.serverTable) {
         return;
     }
 
-    const $ = window.jQuery;
-
     // Which gap the board is narrowed to: "" for no narrowing, "all" for every
-    // affected task, or one of the three gap keys.
+    // affected task, or one of the gap keys.
     let activeGap = "";
 
-    /**
-     * The row-level filter. Registered once and scoped to this board, so a
-     * DataTable elsewhere on the page is never touched by it.
-     */
-    $.fn.dataTable.ext.search.push(function (settings, data, dataIndex) {
-        if (!activeGap || !settings.nTable.closest("[data-task-board]")) {
-            return true;
+    // A task a notification linked to has its dialogs on the page already -
+    // see openTaskFromQuery.js - so no card writes them a second time.
+    const linkedTask = new URLSearchParams(window.location.search).get("task");
+
+    function gapCountsOf(card) {
+        try {
+            return JSON.parse(card.dataset.gapCounts || "{}") || {};
+        } catch (error) {
+            return {};
         }
+    }
 
-        const row = settings.aoData[dataIndex].nTr;
-        const gap = row ? row.dataset.taskGap || "" : "";
-
-        // A task with nothing wrong with it has no data-task-gap at all, so it
-        // fails every narrowing - which is the point.
-        return activeGap === "all" ? gap !== "" : gap === activeGap;
-    });
-
-    // Each project card with its own table, so a card can be asked whether it
-    // still has anything to show.
     const cards = Array.prototype.slice
         .call(board.querySelectorAll("[data-project-card]"))
         .map(function (card) {
-            const table = card.querySelector("[data-project-tasks-table]");
-
             return {
                 card: card,
                 projectId: card.dataset.projectId,
-                api: table
-                    ? $(table).DataTable({
-                          responsive: true,
-                          autoWidth: false,
-                          pageLength: 10,
-                          lengthMenu: [10, 25, 50, 100],
-                          info: false,
-                          // Due Date.
-                          order: [[4, "asc"]],
-                          columnDefs: [
-                              // Phase, Start Date and Due Date all carry a
-                              // `data-order` number - the phase sequence and
-                              // two timestamps - which DataTables reads as
-                              // numeric and then right-aligns on its own. Only
-                              // those three need saying; every other column is
-                              // left by default.
-                              { targets: [1, 3, 4], className: "text-start" },
-                              { targets: -1, orderable: false },
-                          ],
-                          language: {
-                              search: "",
-                              searchPlaceholder: "Search tasks...",
-                              emptyTable: "No tasks on this project yet.",
-                              zeroRecords: "No tasks match your search.",
-                          },
-                      })
-                    : null,
+                gapCounts: gapCountsOf(card),
+                table: card.querySelector("[data-project-tasks-table]"),
+                dialogs: board.querySelector(
+                    '[data-task-dialogs="' + card.dataset.projectId + '"]',
+                ),
+                api: null,
             };
         });
+
+    /** Build a card's table - which fetches its first page - once. */
+    function load(entry) {
+        if (entry.api || !entry.table) {
+            return;
+        }
+
+        entry.api = window.serverTable(entry.table, {
+            extras: entry.dialogs,
+            params: function () {
+                return { gap: activeGap, linked_task: linkedTask || "" };
+            },
+            onLoad: function () {
+                // The edit dialogs' date pickers, for the dialogs just put in.
+                if (window.taskDatePickers && entry.dialogs) {
+                    window.taskDatePickers.initInlineRows(entry.dialogs);
+                }
+            },
+            autoWidth: false,
+            pageLength: 10,
+            lengthMenu: [10, 25, 50, 100],
+            info: false,
+            // Due Date.
+            order: [[4, "asc"]],
+            columnDefs: [
+                { targets: [1, 3, 4], className: "text-start" },
+                { targets: -1, orderable: false },
+            ],
+            language: {
+                search: "",
+                searchPlaceholder: "Search tasks...",
+                emptyTable: "No tasks on this project yet.",
+                zeroRecords: "No tasks match your search.",
+            },
+        });
+    }
+
+    // Load a card when it comes within a screen's reach of being seen. A
+    // hidden card never intersects, so a filtered-out card costs nothing.
+    const observer =
+        "IntersectionObserver" in window
+            ? new IntersectionObserver(
+                  function (records) {
+                      records.forEach(function (record) {
+                          if (!record.isIntersecting) {
+                              return;
+                          }
+
+                          const entry = cards.find(function (item) {
+                              return item.card === record.target;
+                          });
+
+                          if (entry) {
+                              load(entry);
+                              observer.unobserve(entry.card);
+                          }
+                      });
+                  },
+                  { rootMargin: "400px 0px" },
+              )
+            : null;
+
+    cards.forEach(function (entry) {
+        if (observer) {
+            observer.observe(entry.card);
+        } else {
+            load(entry);
+        }
+    });
 
     const projectFilter = document.querySelector("[data-project-filter]");
     const noMatch = board.querySelector("[data-board-no-match]");
@@ -95,28 +134,19 @@ document.addEventListener("DOMContentLoaded", function () {
     const clearButton = document.querySelector("[data-task-gap-clear]");
 
     /**
-     * Redraw every table under the current chip, then decide which cards are
-     * on screen: it has to match the project filter, and - when a chip is on -
-     * still have a row left after the narrowing.
+     * Decide which cards are on screen - matching the project filter and,
+     * when a chip is on, holding something the chip keeps - and redraw the
+     * tables already built under the current chip.
      */
-    function apply() {
+    function apply(gapChanged) {
         const projectId = projectFilter ? projectFilter.value : "all";
         let shown = 0;
 
         cards.forEach(function (entry) {
-            if (entry.api) {
-                // `false` keeps the current page and ordering; only the rows
-                // on screen change.
-                entry.api.draw(false);
-            }
-
             const matchesProject =
                 projectId === "all" || entry.projectId === projectId;
 
-            const hasRows =
-                !activeGap ||
-                !entry.api ||
-                entry.api.rows({ search: "applied" }).count() > 0;
+            const hasRows = !activeGap || (entry.gapCounts[activeGap] || 0) > 0;
 
             const visible = matchesProject && hasRows;
 
@@ -124,6 +154,12 @@ document.addEventListener("DOMContentLoaded", function () {
 
             if (visible) {
                 shown += 1;
+            }
+
+            // A full draw: back to page one under the new chip. A table not
+            // built yet picks the chip up when it is.
+            if (gapChanged && entry.api) {
+                entry.api.draw();
             }
         });
 
@@ -144,7 +180,11 @@ document.addEventListener("DOMContentLoaded", function () {
 
         // A table drawn inside a hidden card measures its columns at zero, so
         // the ones now on screen are re-measured.
-        $(".dataTable").DataTable().columns.adjust();
+        cards.forEach(function (entry) {
+            if (entry.api && !entry.card.classList.contains("d-none")) {
+                entry.api.columns.adjust();
+            }
+        });
     }
 
     /**
@@ -153,7 +193,7 @@ document.addEventListener("DOMContentLoaded", function () {
      */
     function setGap(gap) {
         activeGap = activeGap === gap ? "" : gap || "";
-        apply();
+        apply(true);
     }
 
     chips.forEach(function (chip) {
@@ -165,24 +205,27 @@ document.addEventListener("DOMContentLoaded", function () {
     if (clearButton) {
         clearButton.addEventListener("click", function () {
             activeGap = "";
-            apply();
+            apply(true);
         });
     }
 
     if (projectFilter) {
-        projectFilter.addEventListener("change", apply);
+        projectFilter.addEventListener("change", function () {
+            apply(false);
+        });
     }
 
     // Arriving from the dashboard's Urgent Actions, or from a chip's own link:
     // ?attention=all narrows to every affected task, ?attention=date to one
-    // kind. An unknown value is ignored rather than emptying the board.
+    // kind. An unknown value is ignored rather than emptying the board. Set
+    // before any card has fetched, so the first page is already narrowed.
     const requested = new URLSearchParams(window.location.search).get(
         "attention",
     );
 
     if (requested && chips.some((chip) => chip.dataset.taskGapChip === requested)) {
         activeGap = requested;
-        apply();
+        apply(false);
 
         document
             .querySelector("[data-task-attention]")

@@ -1,61 +1,41 @@
 @props([
     'projects',
-    'tasksByProject',
-    'techniciansByProject' => collect(),
-    'rangesByProject' => collect(),
-    // project_id => that project's finalized phases, for the Phase select on
-    // each task's edit dialog. Keyed by project for the same reason the
-    // technicians are: this board shows several projects at once and a phase
-    // belongs to exactly one of them.
-    'phasesByProject' => collect(),
-    // project_id => (technician_id => their spans on it), for greying out the
-    // days a chosen technician is not assigned for.
-    'periodsByProject' => collect(),
-    // project_id => (technician_id => open task count). Keyed by project
-    // because the same technician can hold different amounts of two projects
-    // shown side by side on this page, and "N Active Tasks" in a project's own
-    // dialog means N on THAT project - see TechnicianTaskLoad.
-    'activeTaskCountsByProject' => collect(),
-    // Per project: may the viewer edit and delete tasks on it?
-    'manageable' => collect(),
-    // The viewer's own technician record, for the "You" badge. Null for an
-    // administrator, who holds no tasks of their own.
-    'viewerTechnicianId' => null,
-    // Route names, so each portal points the dialogs at its own endpoints.
-    'updateRoute',
-    'completeRoute',
-    'deleteRoute',
+    // project_id => how many tasks the reader can see on it, for each card's
+    // header.
+    'taskCounts' => [],
+    // project_id => (attention chip => how many of its tasks the chip leaves),
+    // so a chip drops the cards it empties without asking every card first.
+    // See App\Services\TaskBoard::gapCounts().
+    'gapCounts' => [],
+    // Route name for one page of one project's board, taking the project.
+    'tableRoute',
     // Route name for a project's own page; the card's reference number
     // links to it. Null leaves it as plain text.
     'projectRoute' => null,
-    'updateMethod' => 'PUT',
-    'completeMethod' => 'PATCH',
+    // The dialogs of a task a notification links to (?task=), rendered up
+    // front so it opens before its card has loaded. See TaskBoard::dialogs().
+    'linkedTaskDialogs' => '',
     'emptyMessage' => 'There are no projects to show.',
 ])
 
 {{--
-    The task board: one card per project, each holding its own DataTable.
+    The task board: one card per project, each holding its own table.
 
     Shared by the Super Admin Tasks page and the lead technician Tasks page so
-    the two read identically. The filter above it is the page's own, and works
-    by hiding cards - see taskBoard.js.
+    the two read identically. Each card's table is paged on the server and
+    asks for its first page when the card comes into view - see taskBoard.js
+    and App\Services\TaskBoard - so the page itself carries no tasks at all,
+    and nothing about a project nobody scrolls to is ever drawn.
 --}}
 <div data-task-board>
     @forelse ($projects as $project)
         @php
-            $projectTasks = $tasksByProject[$project->project_id] ?? collect();
-            $projectTechnicians = $techniciansByProject[$project->project_id] ?? collect();
-            $projectRanges = $rangesByProject[$project->project_id] ?? collect();
-            $projectPhases = $phasesByProject[$project->project_id] ?? collect();
-            $projectPeriods = $periodsByProject[$project->project_id] ?? [];
-            $canManage = (bool) ($manageable[$project->project_id] ?? false);
-            // This project's slice of the load map, so a technician's count is
-            // what they hold HERE rather than across every job they are on.
-            $projectTaskCounts = $activeTaskCountsByProject[$project->project_id] ?? collect();
+            $taskCount = (int) ($taskCounts[$project->project_id] ?? 0);
         @endphp
 
         <div class="card shadow-sm border-0 rounded-2 mb-3" data-project-card
-            data-project-id="{{ $project->project_id }}">
+            data-project-id="{{ $project->project_id }}"
+            data-gap-counts='@json((object) ($gapCounts[$project->project_id] ?? []))'>
             <div class="card-body p-3">
 
                 <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
@@ -72,8 +52,8 @@
                         <div class="d-flex align-items-center gap-2 flex-wrap">
                             <x-project-status-badge :project="$project" />
                             <span class="text-muted small">
-                                {{ $projectTasks->count() }}
-                                {{ \Illuminate\Support\Str::plural('task', $projectTasks->count()) }}
+                                {{ $taskCount }}
+                                {{ \Illuminate\Support\Str::plural('task', $taskCount) }}
                             </span>
                         </div>
                         {{-- Why this project is greyed out in the Add Task
@@ -88,7 +68,8 @@
                 </div>
 
                 <div class="table-responsive">
-                    <table class="table table-hover table-striped align-middle mb-0" data-project-tasks-table>
+                    <table class="table table-hover table-striped align-middle mb-0" data-project-tasks-table
+                        data-server-table-url="{{ route($tableRoute, $project->project_id) }}">
                         <thead class="table-info">
                             <tr>
                                 <th>Task Name</th>
@@ -101,171 +82,17 @@
                             </tr>
                         </thead>
 
-                        <tbody>
-                            {{-- No blade fallback row here: a single colspan cell has
-                                 fewer cells than the header, which DataTables cannot
-                                 parse. Its own emptyTable message covers it. --}}
-                            @foreach ($projectTasks as $task)
-                                @php
-                                    $isMine = $viewerTechnicianId !== null
-                                        && (int) $task->technician_id === (int) $viewerTechnicianId;
-                                    $canComplete = $task->isOpen()
-                                        && $task->status !== 'unassigned'
-                                        && ($canManage || $isMine);
-                                    // Work that has not been due to start yet
-                                    // cannot be ticked off - see TaskPolicy,
-                                    // which refuses the request as well. The
-                                    // crew's rule, not the office's: this board
-                                    // is shared, and $viewerTechnicianId is
-                                    // null for an administrator, who may still
-                                    // close a task on the crew's behalf.
-                                    $startsLater = $canComplete
-                                        && $viewerTechnicianId !== null
-                                        && $task->startsInFuture();
-                                    $canComplete = $canComplete && ! $startsLater;
-                                    // What, if anything, is stopping this task
-                                    // proceeding. One rule decides it - see
-                                    // Task::assignmentGap() - and the attention
-                                    // chips above the board filter on this
-                                    // attribute.
-                                    $gap = $task->assignmentGap();
-                                @endphp
-                                <tr @if ($gap) data-task-gap="{{ $gap }}" @endif>
-                                    <td>
-                                        <div class="fw-semibold">{{ $task->task_title }}</div>
-                                        <small class="text-muted">
-                                            {{ \Illuminate\Support\Str::limit($task->task_description, 60) }}
-                                        </small>
-                                    </td>
-                                    {{-- Which stage of the project this task
-                                         belongs to. The `data-order` is the
-                                         sequence, so the column sorts by phase
-                                         number rather than alphabetically by
-                                         phase title. --}}
-                                    <td data-order="{{ $task->phase?->sequence ?? 0 }}">
-                                        <x-task-phase-cell :task="$task" />
-                                    </td>
-                                    <td>
-                                        {{-- The assignee's own picture beside
-                                             their name; an unassigned task has
-                                             nobody to show. --}}
-                                        <div class="d-flex align-items-center gap-2">
-                                            @if ($task->technician?->account)
-                                                <x-technician-link :technician="$task->technician">
-                                                    <x-user-avatar :user="$task->technician->account" size="xs" />
-                                                </x-technician-link>
-                                            @endif
-
-                                            <span>
-                                                {{-- A link for an administrator,
-                                                     plain text in the portal. --}}
-                                                <x-technician-link :technician="$task->technician" />
-                                                @if ($isMine)
-                                                    <span class="badge bg-info text-dark ms-1">You</span>
-                                                @endif
-                                                <x-task-holder-flag :task="$task" />
-                                            </span>
-                                        </div>
-                                    </td>
-                                    <td data-order="{{ $task->start_date ? \Carbon\CarbonImmutable::parse($task->start_date)->timestamp : 0 }}">
-                                        {{ $task->start_date ? \Carbon\CarbonImmutable::parse($task->start_date)->format(\App\Support\BusinessTime::DATE) : '—' }}
-                                    </td>
-                                    <td data-order="{{ $task->due_date ? \Carbon\CarbonImmutable::parse($task->due_date)->timestamp : 0 }}">
-                                        {{ $task->due_date ? \Carbon\CarbonImmutable::parse($task->due_date)->format(\App\Support\BusinessTime::DATE) : '—' }}
-                                    </td>
-                                    <td>
-                                        <span class="badge {{ $task->statusBadgeClass() }}">
-                                            {{ $task->statusLabel() }}
-                                        </span>
-
-                                        {{-- What is actually missing, said in
-                                             as many words. The status badge
-                                             alone cannot: a task with an owner
-                                             and no due date reads "Pending",
-                                             and one with dates and no owner
-                                             reads "Unassigned" whether or not
-                                             the dates are the problem. --}}
-                                        @if ($gap)
-                                            <span class="badge task-gap-badge gap-{{ $gap }} mt-1 d-block">
-                                                <i class="bi bi-exclamation-triangle-fill me-1"
-                                                    aria-hidden="true"></i>
-                                                {{ $task->assignmentGapLabel() }}
-                                            </span>
-                                        @endif
-                                    </td>
-                                    <td class="text-center">
-                                        <div class="d-flex justify-content-center gap-2">
-                                            {{-- A completed task keeps the eye but opens
-                                                 view only, showing what was submitted on
-                                                 completion. --}}
-                                            <button type="button" class="btn btn-sm btn-primary py-1 px-2"
-                                                data-bs-toggle="modal"
-                                                data-bs-target="#taskModal{{ $task->task_id }}"
-                                                title="{{ $task->isCompleted() || ! $canManage ? 'View task' : 'View / edit task' }}">
-                                                <i class="bi bi-eye" aria-hidden="true"></i>
-                                            </button>
-
-                                            @if ($canComplete)
-                                                <button type="button" class="btn btn-sm btn-success py-1 px-2"
-                                                    data-bs-toggle="modal"
-                                                    data-bs-target="#completeTaskModal{{ $task->task_id }}"
-                                                    title="{{ $isMine ? 'Mark as completed' : 'Mark as completed on their behalf' }}">
-                                                    <i class="bi bi-check-lg" aria-hidden="true"></i>
-                                                </button>
-                                            @elseif ($startsLater)
-                                                {{-- Left in place, disabled, saying why. It
-                                                     becomes live on its own the day the task
-                                                     starts, with nobody to change anything. --}}
-                                                <button type="button" class="btn btn-sm btn-success py-1 px-2" disabled
-                                                    title="{{ \App\Models\Task::NOT_STARTED_REFUSAL }}">
-                                                    <i class="bi bi-check-lg" aria-hidden="true"></i>
-                                                </button>
-                                            @endif
-
-                                            @if ($canManage)
-                                                <button type="button" class="btn btn-sm btn-danger py-1 px-2"
-                                                    data-bs-toggle="modal"
-                                                    data-bs-target="#deleteTaskModal{{ $task->task_id }}"
-                                                    title="Delete task">
-                                                    <i class="bi bi-trash" aria-hidden="true"></i>
-                                                </button>
-                                            @endif
-                                        </div>
-                                    </td>
-                                </tr>
-                            @endforeach
-                        </tbody>
+                        {{-- Filled a page at a time by serverTable.js. --}}
+                        <tbody></tbody>
                     </table>
                 </div>
             </div>
         </div>
 
-        {{-- Per-task dialogs, shared by both portals. --}}
-        @foreach ($projectTasks as $task)
-            @php
-                $isMine = $viewerTechnicianId !== null
-                    && (int) $task->technician_id === (int) $viewerTechnicianId;
-            @endphp
-
-            <x-task-details-modal :task="$task"
-                :technicians="$canManage ? $projectTechnicians : collect()"
-                :active-task-counts="$projectTaskCounts" :schedule-ranges="$projectRanges" :periods="$projectPeriods"
-                :phases="$projectPhases"
-                :update-action="$canManage ? route($updateRoute, $task->task_id) : null"
-                :update-method="$updateMethod" />
-
-            @if ($task->isOpen()
-                && $task->status !== 'unassigned'
-                && ($canManage || $isMine)
-                && ! ($viewerTechnicianId !== null && $task->startsInFuture()))
-                <x-task-complete-modal :task="$task"
-                    :action="route($completeRoute, $task->task_id)" :method="$completeMethod" />
-            @endif
-
-            @if ($canManage)
-                <x-task-delete-modal :task="$task" :action="route($deleteRoute, $task->task_id)" />
-            @endif
-        @endforeach
+        {{-- The dialogs behind this card's rows on screen, swapped in with
+             every page. Outside the card's table: a <div> is not valid inside
+             a <tbody>. --}}
+        <div data-task-dialogs="{{ $project->project_id }}"></div>
     @empty
         <div class="card shadow-sm border-0 rounded-2">
             <div class="card-body">
@@ -280,4 +107,7 @@
             <div class="schedule-empty-state">No project matches that filter.</div>
         </div>
     </div>
+
+    {{-- The task a notification links to, if any - see openTaskFromQuery.js. --}}
+    <div data-linked-task-dialogs>{!! $linkedTaskDialogs !!}</div>
 </div>

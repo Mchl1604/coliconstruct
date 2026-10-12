@@ -120,7 +120,18 @@
             return;
         }
 
-        $(table).DataTable({
+        // One page of tasks per request, with the dialogs behind them - see
+        // ProjectController::tasksTable().
+        const dialogs = document.querySelector('[data-project-task-dialogs]');
+
+        window.serverTable(table, {
+            extras: dialogs,
+            onLoad: function () {
+                // The edit dialogs' date pickers, for the dialogs just put in.
+                if (window.taskDatePickers && dialogs) {
+                    window.taskDatePickers.initInlineRows(dialogs);
+                }
+            },
             autoWidth: false,
             pageLength: 5,
             lengthMenu: [5, 10, 25, 50],
@@ -128,8 +139,6 @@
             stateSave: true,
             stateDuration: -1,
             columnDefs: [
-                // Phase carries a `data-order` sequence, which DataTables reads as
-                // numeric and then right-aligns on its own.
                 { targets: 1, className: "text-start" },
                 // Sorting a column of buttons means nothing, and the header
                 // offering it invites a click that does nothing.

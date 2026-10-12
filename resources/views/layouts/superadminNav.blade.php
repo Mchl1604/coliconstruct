@@ -146,6 +146,9 @@ href="https://cdn.datatables.net/2.3.8/css/dataTables.dataTables.css">
        <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 
 <script src="https://cdn.datatables.net/2.3.8/js/dataTables.js"></script>
+    {{-- Every list pages on the server - one page of rows per request rather
+         than the whole table up front. See the file. --}}
+    <script src="/js/serverTable.js"></script>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     {{-- Before the page's own scripts, so every picker they build inherits

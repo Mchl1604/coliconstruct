@@ -214,8 +214,7 @@ class ProjectCompletionHistoryTest extends TestCase
 
         $this->actingAs($admin);
 
-        $this->get(route('super-admin.projects'))
-            ->assertOk()
+        $this->getTablePage(route('super-admin.projects.table'))
             ->assertSee('archiveProjectModal'.$project->project_id);
     }
 
@@ -230,8 +229,7 @@ class ProjectCompletionHistoryTest extends TestCase
 
         $this->assertSame('cancelled', $project->status);
 
-        $this->get(route('super-admin.projects'))
-            ->assertOk()
+        $this->getTablePage(route('super-admin.projects.table'))
             ->assertSee('archiveProjectModal'.$project->project_id);
     }
 
@@ -325,12 +323,10 @@ class ProjectCompletionHistoryTest extends TestCase
         $this->assertTrue($project->isArchived());
         $this->assertSame('cancelled', $project->pre_archive_status);
 
-        $this->get(route('super-admin.projects'))
-            ->assertOk()
+        $this->getTablePage(route('super-admin.projects.table'))
             ->assertDontSee($project->reference_no);
 
-        $this->get(route('super-admin.projects.archived'))
-            ->assertOk()
+        $this->getTablePage(route('super-admin.projects.archived.table'))
             ->assertSee($project->reference_no);
     }
 
@@ -383,8 +379,7 @@ class ProjectCompletionHistoryTest extends TestCase
 
         $this->post(route('super-admin.projects.archive', $project->project_id))->assertRedirect();
 
-        $this->get(route('super-admin.projects.archived'))
-            ->assertOk()
+        $this->getTablePage(route('super-admin.projects.archived.table'))
             ->assertSee(route('super-admin.projects.show', $project->project_id));
     }
 
@@ -411,8 +406,8 @@ class ProjectCompletionHistoryTest extends TestCase
         $this->assertEquals($archivedAt, $project->archived_at);
 
         // And it is still on the archive page, not back in the active list.
-        $this->get(route('super-admin.projects.archived'))->assertOk()->assertSee($project->reference_no);
-        $this->get(route('super-admin.projects'))->assertOk()->assertDontSee($project->reference_no);
+        $this->getTablePage(route('super-admin.projects.archived.table'))->assertSee($project->reference_no);
+        $this->getTablePage(route('super-admin.projects.table'))->assertDontSee($project->reference_no);
     }
 
     /**

@@ -198,9 +198,8 @@ class InactiveTechnicianOnProjectTest extends TestCase
         $this->deactivate($this->mate);
         $this->actingAs($this->leadAccount);
 
-        $page = $this->get(route('technician.projects'));
+        $page = $this->getTablePage(route('technician.projects.table'));
 
-        $page->assertOk();
         $page->assertSee('Inactive technician');
         $page->assertSee('project-row-needs-recrew', false);
         $page->assertSee('Ana Mendoza cannot sign in', false);
@@ -463,7 +462,7 @@ class InactiveTechnicianOnProjectTest extends TestCase
         $this->deactivate($this->mate);
         $this->actingAs($this->leadAccount);
 
-        $page = $this->get(route('technician.projects.show', $this->project->project_id));
+        $page = $this->getWithTables(route('technician.projects.show', $this->project->project_id));
         $page->assertOk();
 
         $checked = array_filter(

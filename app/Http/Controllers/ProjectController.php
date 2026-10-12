@@ -42,11 +42,13 @@ use App\Services\ScheduleHoldCutoff;
 use App\Services\ScheduleModeRules;
 use App\Services\TargetDateChange;
 use App\Services\TaskAssignmentRules;
+use App\Services\TaskBoard;
 use App\Services\TaskScheduleRules;
 use App\Services\TechnicianAvailabilityService;
 use App\Services\TechnicianTaskLoad;
 use App\Support\BusinessTime;
 use App\Support\PersonName;
+use App\Support\ServerTable;
 use App\Support\UploadStore;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
@@ -99,46 +101,12 @@ class ProjectController extends Controller
         private readonly TargetDateChange $targetDates
     ) {}
 
+    /**
+     * The Projects page: the tabs and their counts. The rows arrive a page at
+     * a time from table().
+     */
     public function index(Request $request)
     {
-        $this->updateStatus(); // Call the function to update project statuses
-
-        // `schedules` is eager loaded because isOverdue() reads every range;
-        // without it the status column would fire a query per row.
-        $projects = Project::query()
-            // `technician.account` is loaded because every row now asks
-            // needsRecrew(), which reads each assigned technician's account to
-            // decide whether they can still sign in. Without it that is two
-            // queries per row on the busiest page in the portal.
-            // `clients.account` so the confirmability of a project awaiting its
-            // client is read off a loaded relation rather than queried per row
-            // - see CompletionConfirmability, which the awaiting rows below ask.
-            ->with(['clients.account', 'documents', 'schedule', 'schedules', 'projectTypes', 'projectTechnicians.technician.account'])
-            // What the completion rules will object to, per project, as two
-            // subqueries rather than two queries per row - see
-            // ProjectPolicy::blockersFor(), which reads these when they are
-            // here. The completion dialog on this page needs them: an
-            // administrator may complete a project the rules refuse, but only
-            // by saying why, and the dialog has to show what it is asking
-            // about before it asks.
-            ->withCount([
-                'tasks',
-                'tasks as open_tasks_count' => fn ($query) => $query->whereIn('status', Task::OPEN_STATUSES),
-                // How far through its phases each project is, for the row's
-                // own "3/4" chip - see Project::phaseProgress(), which reads
-                // these rather than asking per row.
-                'phases',
-                'phases as completed_phases_count' => fn ($query) => $query->whereNotNull('completed_at'),
-            ])
-            ->where('is_archived', false)
-            ->where('status', '!=', 'archived')
-            ->orderBy('project_id', 'desc')
-            ->get()
-            // The order the table opens in - by tab, newest first within one -
-            // so the page reads the same before DataTables redraws it.
-            ->sortBy(fn (Project $project): int => $project->tabRank())
-            ->values();
-
         // Every tab carries its count, in the pattern Overdue and On Hold
         // already used. Grouped by the same method each row is labelled with,
         // so a badge cannot promise more rows than its tab shows.
@@ -146,11 +114,88 @@ class ProjectController extends Controller
         // With the attention tabs on the end - Unscheduled, No Technicians,
         // Inactive Crew - which appear only while they hold something and are
         // where the dashboard's Urgent Actions land.
-        $statusTabs = Project::statusTabs($projects, null, withAttention: true);
+        $statusTabs = Project::statusTabs($this->listedProjects(), null, withAttention: true);
+
+        return view('super-admin.projects', compact('statusTabs'));
+    }
+
+    /**
+     * One page of the Projects table, for serverTable.js.
+     *
+     * Paged as a collection rather than in SQL, and that is deliberate: which
+     * tab a project files under, and where the Status column sorts it, are
+     * Project::tabKey() and attentionTabKeys() - model methods reading the
+     * schedule and the crew, with no SQL twin that is promised to agree. The
+     * tab counts above the table are counted by those same methods, so the
+     * rows are filtered by them too, and a badge can never promise rows its
+     * tab does not show.
+     *
+     * What made this page slow was never that classification. It was drawing
+     * every row, and the four dialogs behind each row, and asking the
+     * completion rules about every project on the list. All of that now
+     * happens for the page on screen and nothing else.
+     */
+    public function table(Request $request)
+    {
+        $table = ServerTable::fromRequest($request);
+        $tab = (string) $request->query('tab', 'all');
+
+        $projects = $this->listedProjects()
+            ->when($tab !== 'all', fn (Collection $projects): Collection => $projects->filter(
+                fn (Project $project): bool => $project->tabKey() === $tab
+                    || in_array($tab, $project->attentionTabKeys(), true)
+            ));
+
+        $page = $table->paginateCollection(
+            $projects,
+            sortable: [
+                0 => fn (Project $project): int => (int) $project->project_id,
+                1 => fn (Project $project): ?string => $project->reference_no,
+                2 => fn (Project $project): ?string => $project->clients->first()?->primaryName(),
+                3 => fn (Project $project): ?string => $project->clients->first()?->client_type,
+                4 => fn (Project $project): string => $project->projectTypes->pluck('type_name')->implode(', '),
+                5 => fn (Project $project): float => (float) $project->quotation,
+                // By tab, in the order the tabs are read - see tabRank().
+                6 => fn (Project $project): int => $project->tabRank(),
+            ],
+            search: fn (Project $project, string $word): bool => ServerTable::matchesAny(
+                $word,
+                $project->displayCode(),
+                $project->reference_no,
+                $project->name,
+                $project->clients->first()?->primaryName(),
+                $project->clients->first()?->client_type,
+                $project->projectTypes->pluck('type_name')->implode(' '),
+                number_format((float) $project->quotation, 2),
+                $project->statusLabel(),
+            ),
+            defaultOrder: [[6, 'asc'], [0, 'desc']],
+        );
+
+        $rows = $page->items;
+
+        // What only a drawn row needs, for the rows being drawn.
+        $rows->load(['clients.account', 'documents', 'schedule'])
+            // What the completion rules will object to, per project, as two
+            // subqueries rather than two queries per row - see
+            // ProjectPolicy::blockersFor(), which reads these when they are
+            // here. The completion dialog needs them: an administrator may
+            // complete a project the rules refuse, but only by saying why,
+            // and the dialog has to show what it is asking about before it
+            // asks.
+            ->loadCount([
+                'tasks',
+                'tasks as open_tasks_count' => fn ($query) => $query->whereIn('status', Task::OPEN_STATUSES),
+                // How far through its phases each project is, for the row's
+                // own "3/4" chip - see Project::phaseProgress(), which reads
+                // these rather than asking per row.
+                'phases',
+                'phases as completed_phases_count' => fn ($query) => $query->whereNotNull('completed_at'),
+            ]);
 
         $policy = app(ProjectPolicy::class);
 
-        $completionBlockers = $projects
+        $completionBlockers = $rows
             ->mapWithKeys(fn (Project $project): array => [
                 $project->project_id => $project->isReadOnly() ? [] : $policy->blockersFor($project, $request->user()),
             ])
@@ -161,26 +206,115 @@ class ProjectController extends Controller
         // client, and the notice in the completion dialog of one about to be.
         // Asked of every row rather than of the awaiting ones alone, because
         // the dialog has to say so BEFORE the project starts waiting.
-        $confirmability = $this->confirmability->statesFor($projects);
+        $confirmability = $this->confirmability->statesFor($rows);
 
-        return view('super-admin.projects', compact('projects', 'statusTabs', 'completionBlockers', 'confirmability'));
+        // Archiving a project belongs to the Super Admin.
+        $canArchive = (bool) $request->user()?->isSuperAdmin();
+
+        return $table->respond(
+            $page,
+            fn (Project $project): string => view('super-admin.partials.project-row', [
+                'project' => $project,
+                'confirmability' => $confirmability,
+                'canArchive' => $canArchive,
+            ])->render(),
+            view('super-admin.partials.project-dialogs', [
+                'projects' => $rows,
+                'confirmability' => $confirmability,
+                'completionBlockers' => $completionBlockers,
+                'canArchive' => $canArchive,
+            ])->render(),
+        );
     }
 
-    public function archivedIndex()
+    /**
+     * Every project on the active list, carrying exactly what deciding its tab
+     * reads: the schedules (isOverdue(), needsScheduling()), the crew and
+     * their accounts (attentionTabKeys(), needsRecrew()), and the two columns
+     * the search box and the sort read beyond the project's own row.
+     *
+     * Each one's status is brought into line with its dates first, as the
+     * listing always has - see updateStatus(). Done on this collection rather
+     * than on a second load of every project: archived work is the only thing
+     * left out of it, and ProjectStatusRules never touches archived work.
+     *
+     * Newest first, which is the tiebreaker the table falls back to within a
+     * tab.
+     *
+     * @return Collection<int, Project>
+     */
+    private function listedProjects(): Collection
     {
-        // projectTypes and archivedByUser are the two columns the table gained
-        // beyond the project's own row; loading them here is what keeps the
-        // page to a fixed number of queries however long the archive gets.
         $projects = Project::query()
-            ->with(['clients', 'documents', 'projectTypes', 'archivedByUser'])
-            ->where(function ($query): void {
-                $query->where('is_archived', true)
-                    ->orWhere('status', 'archived');
-            })
-            ->orderBy('archived_at', 'desc')
+            ->with(['clients', 'schedules', 'projectTypes', 'rosterTechnicians', 'projectTechnicians.technician.account'])
+            ->where('is_archived', false)
+            ->where('status', '!=', 'archived')
+            ->orderBy('project_id', 'desc')
             ->get();
 
-        return view('super-admin.archivedProjects', compact('projects'));
+        $this->updateStatus($projects);
+
+        return $projects;
+    }
+
+    /**
+     * The archive page. Its rows arrive a page at a time from archivedTable().
+     */
+    public function archivedIndex()
+    {
+        return view('super-admin.archivedProjects');
+    }
+
+    /**
+     * One page of the archive, searched, sorted and sliced in SQL.
+     */
+    public function archivedTable(Request $request)
+    {
+        $table = ServerTable::fromRequest($request);
+
+        $page = $table->paginate(
+            Project::query()
+                ->where(function ($query): void {
+                    $query->where('is_archived', true)
+                        ->orWhere('status', 'archived');
+                }),
+            sortable: [
+                0 => 'project_id',
+                1 => 'reference_no',
+                2 => fn ($query, string $dir) => $query->orderByClientName($dir),
+                3 => fn ($query, string $dir) => $query->orderByClientType($dir),
+                4 => fn ($query, string $dir) => $query->orderByProjectTypes($dir),
+                5 => 'quotation',
+                6 => 'archived_at',
+                7 => fn ($query, string $dir) => $query->orderBy(
+                    User::query()
+                        ->selectRaw('coalesce(first_name, name)')
+                        ->whereColumn('users.id', 'tbl_projects.archived_by'),
+                    $dir
+                ),
+            ],
+            search: fn ($query, string $word) => $query
+                ->matchingListingWord($word)
+                ->orWhereHas('archivedByUser', fn ($users) => $users
+                    ->where('name', 'like', '%'.$word.'%')
+                    ->orWhere('first_name', 'like', '%'.$word.'%')
+                    ->orWhere('last_name', 'like', '%'.$word.'%')),
+            defaultOrder: [[6, 'desc']],
+        );
+
+        // projectTypes and archivedByUser are the two columns the table gained
+        // beyond the project's own row - loaded for the page on screen.
+        $page->items->load(['clients', 'projectTypes', 'archivedByUser']);
+
+        return $table->respond(
+            $page,
+            fn (Project $project): string => view('super-admin.partials.archived-project-row', [
+                'project' => $project,
+            ])->render(),
+            view('super-admin.partials.archived-project-dialogs', [
+                'projects' => $page->items,
+            ])->render(),
+        );
     }
 
     public function create()
@@ -1358,12 +1492,6 @@ class ProjectController extends Controller
             ->active()
             ->where('project_id', $id);
 
-        $tasks = Task::with(['technician', 'images', 'completedBy', 'phase'])
-            ->withHolderCoverage()
-            ->where('project_id', $id)
-            ->latest()
-            ->get();
-
         // Filter by report type
         if ($request->filled('report_type')) {
             $reports->where('report_type', $request->report_type);
@@ -1472,18 +1600,7 @@ class ProjectController extends Controller
 
         // Who a task can be given to: today's team and anybody due to join it,
         // with the days each is assigned for - see TaskAssignmentRules.
-        $taskTechnicians = $project->rosterTechnicians()
-            ->with('technician.account')
-            ->get()
-            ->pluck('technician')
-            ->filter()
-            ->unique('technician_id')
-            ->sortBy(fn (Technician $technician): string => sprintf(
-                '%d %s',
-                $technician->isLead() ? 0 : 1,
-                mb_strtolower($technician->name)
-            ))
-            ->values();
+        $taskTechnicians = $this->taskTechnicians($project);
 
         $technicianPeriods = app(TaskAssignmentRules::class)->periodsFor(
             (int) $project->project_id,
@@ -1526,7 +1643,6 @@ class ProjectController extends Controller
             'project',
             'projectTypes',
             'reports',
-            'tasks',
             'leadTechnicianOptions',
             'currentLeadTechnicianId',
             'currentTeamTechnicianIds',
@@ -1559,6 +1675,71 @@ class ProjectController extends Controller
             'technicianPeriods'
         ));
 
+    }
+
+    /**
+     * One page of the Tasks tab on Project Details, for serverTable.js - the
+     * rows, and the view, complete and delete dialogs behind them.
+     */
+    public function tasksTable(Request $request, int $id, TaskBoard $board)
+    {
+        $project = Project::query()->with('schedules')->findOrFail($id);
+
+        [$table, $page] = $board->paginate(
+            $request,
+            Task::query()->where('project_id', $project->project_id),
+            defaultOrder: [[0, 'asc']],
+        );
+
+        $isReadOnly = $project->isReadOnly();
+        // A locked project's task history is a record, and a paused one takes
+        // no work until it is resumed - see show().
+        $canTakeWork = ! $isReadOnly && ! $project->on_hold;
+        $taskTechnicians = $this->taskTechnicians($project);
+
+        return $table->respond(
+            $page,
+            fn (Task $task): string => view('super-admin.partials.project-task-row', [
+                'task' => $task,
+                'isReadOnly' => $isReadOnly,
+                'canTakeWork' => $canTakeWork,
+            ])->render(),
+            view('super-admin.partials.project-task-dialogs', [
+                'tasks' => $page->items,
+                'canTakeWork' => $canTakeWork,
+                'taskTechnicians' => $taskTechnicians,
+                'technicianPeriods' => app(TaskAssignmentRules::class)->periodsFor(
+                    (int) $project->project_id,
+                    $taskTechnicians->pluck('technician_id')
+                ),
+                // Scoped to this project - see show().
+                'technicianActiveTaskCounts' => app(TechnicianTaskLoad::class)->forProject($project->project_id),
+                'scheduleRanges' => collect(app(TaskScheduleRules::class)->ranges((int) $project->project_id)),
+                'selectablePhases' => app(ProjectPhaseProgress::class)->selectablePhases($project),
+            ])->render(),
+        );
+    }
+
+    /**
+     * Who a task on this project can be given to: today's team and anybody
+     * due to join it, the lead first.
+     *
+     * @return Collection<int, Technician>
+     */
+    private function taskTechnicians(Project $project): Collection
+    {
+        return $project->rosterTechnicians()
+            ->with('technician.account')
+            ->get()
+            ->pluck('technician')
+            ->filter()
+            ->unique('technician_id')
+            ->sortBy(fn (Technician $technician): string => sprintf(
+                '%d %s',
+                $technician->isLead() ? 0 : 1,
+                mb_strtolower($technician->name)
+            ))
+            ->values();
     }
 
     /**

@@ -156,9 +156,9 @@ class ProjectHoldEntryPointsTest extends TestCase
         $id = $project->project_id;
 
         // The Projects page, unchanged: it posts to the bare route, which is
-        // the default this endpoint has always answered.
-        $this->get(route('super-admin.projects'))
-            ->assertOk()
+        // the default this endpoint has always answered. Its dialogs arrive
+        // with the page of rows they belong to.
+        $this->getTablePage(route('super-admin.projects.table'))
             ->assertSee(route('super-admin.projects.hold', $id), false);
 
         // The Schedules page and the project's own page post to the same
@@ -186,13 +186,11 @@ class ProjectHoldEntryPointsTest extends TestCase
         $project = $this->scheduledProject();
 
         foreach ([
-            route('super-admin.projects'),
-            route('super-admin.schedules.index'),
-            route('super-admin.projects.show', $project->project_id),
+            $this->getTablePage(route('super-admin.projects.table')),
+            $this->get(route('super-admin.schedules.index'))->assertOk(),
+            $this->get(route('super-admin.projects.show', $project->project_id))->assertOk(),
         ] as $page) {
-            $this->get($page)
-                ->assertOk()
-                ->assertSee('Dates from tomorrow are released.', false)
+            $page->assertSee('Dates from tomorrow are released.', false)
                 ->assertSee('Put on Hold', false);
         }
     }
@@ -587,7 +585,9 @@ class ProjectHoldEntryPointsTest extends TestCase
         $held = $this->scheduledProject('REF-3002');
         $this->put(route('super-admin.projects.hold', $held->project_id));
 
-        $page = $this->get(route('super-admin.schedules.index'))->assertOk();
+        $this->get(route('super-admin.schedules.index'))->assertOk();
+
+        $page = $this->getTablePage(route('super-admin.schedules.table'));
 
         // Every one of the four says what it is, for a hover and for a reader.
         foreach (['Edit Schedule', 'Put on Hold', 'View Schedule', 'Resume Project'] as $label) {

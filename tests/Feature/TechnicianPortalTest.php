@@ -235,7 +235,7 @@ class TechnicianPortalTest extends TestCase
         $this->task($this->lead, 'Lead task');
 
         $this->actingAs($this->leadAccount);
-        $response = $this->get(route('technician.tasks'));
+        $response = $this->getWithTables(route('technician.tasks'));
 
         $response->assertOk();
         $response->assertSee('Mate task');
@@ -273,7 +273,7 @@ class TechnicianPortalTest extends TestCase
 
         $this->actingAs($this->leadAccount);
 
-        $tasksPage = $this->get(route('technician.tasks'));
+        $tasksPage = $this->getWithTables(route('technician.tasks'));
         $tasksPage->assertOk();
         $tasksPage->assertSee('Task on the live project');
         $tasksPage->assertDontSee('REF-DONE');
@@ -282,8 +282,9 @@ class TechnicianPortalTest extends TestCase
         // My Projects still lists it, and offers the tab to find it by.
         $projectsPage = $this->get(route('technician.projects'));
         $projectsPage->assertOk();
-        $projectsPage->assertSee('REF-DONE');
         $projectsPage->assertSee('data-status-filter="completed"', false);
+        $this->getTablePage(route('technician.projects.table'), ['tab' => 'completed'])
+            ->assertSee('REF-DONE');
     }
 
     /**
@@ -299,15 +300,16 @@ class TechnicianPortalTest extends TestCase
         $response = $this->get(route('technician.projects'));
 
         $response->assertOk();
-        $response->assertSee('REF-CANCELLED');
 
         foreach (['all', 'pending', 'ongoing', 'overdue', 'completed', 'cancelled'] as $tab) {
             $response->assertSee('data-status-filter="'.$tab.'"', false);
         }
 
-        // Rows carry what the tabs filter on.
-        $response->assertSee('data-status="cancelled"', false);
-        $response->assertSee('data-overdue=', false);
+        // The Cancelled tab lists it - filtered on the server.
+        $rows = $this->getTablePage(route('technician.projects.table'), ['tab' => 'cancelled']);
+        $rows->assertSee('REF-CANCELLED');
+        $rows->assertSee('data-status="cancelled"', false);
+        $rows->assertSee('data-overdue=', false);
     }
 
     /**
@@ -319,7 +321,7 @@ class TechnicianPortalTest extends TestCase
         $this->task($this->mate, 'Mate task');
 
         $this->actingAs($this->leadAccount);
-        $response = $this->get(route('technician.projects.show', $this->project));
+        $response = $this->getWithTables(route('technician.projects.show', $this->project));
 
         $response->assertOk();
         $response->assertSee('Project Details');
@@ -365,7 +367,7 @@ class TechnicianPortalTest extends TestCase
             route('technician.tasks'),
             route('technician.projects.show', $this->project),
         ] as $url) {
-            $response = $this->get($url);
+            $response = $this->getWithTables($url);
 
             $response->assertOk();
             $response->assertSee('Completion Details');
@@ -397,9 +399,10 @@ class TechnicianPortalTest extends TestCase
         ]);
 
         $this->actingAs($this->leadAccount);
-        $response = $this->get(route('technician.reports'));
+        $this->get(route('technician.reports'))->assertOk();
 
-        $response->assertOk();
+        $response = $this->getTablePage(route('technician.reports.table'));
+
         $response->assertSee('Mine');
         $response->assertDontSee('Someone elses');
     }
@@ -613,7 +616,7 @@ class TechnicianPortalTest extends TestCase
 
         $this->actingAs($this->mate->account);
 
-        $tasks = $this->get(route('technician.tasks'));
+        $tasks = $this->getWithTables(route('technician.tasks'));
         $tasks->assertOk();
         $tasks->assertSee('Mate task');
         $tasks->assertSee('data-project-card', false);
@@ -1349,8 +1352,7 @@ class TechnicianPortalTest extends TestCase
         $details = $this->get(route('technician.projects.show', $this->project));
         $details->assertOk();
 
-        $list = $this->get(route('technician.projects'));
-        $list->assertOk();
+        $list = $this->getTablePage(route('technician.projects.table'));
 
         if ($offered) {
             $details->assertSee('data-bs-target="#completeProjectModal"', false);

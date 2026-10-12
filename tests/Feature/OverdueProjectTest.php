@@ -373,9 +373,16 @@ class OverdueProjectTest extends TestCase
         $this->assertSame(1, $tabs['ongoing']['count']);
         $this->assertSame(0, $tabs['cancelled']['count']);
 
-        $response->assertSee('data-overdue="1"', false);
-        $response->assertSee('data-overdue="0"', false);
-        $response->assertSee('data-tab="overdue"', false);
+        $rows = $this->getTablePage(route('super-admin.projects.table'));
+
+        $rows->assertSee('data-overdue="1"', false);
+        $rows->assertSee('data-overdue="0"', false);
+        $rows->assertSee('data-tab="overdue"', false);
+
+        // The tab lists the late project and nothing else.
+        $this->getTablePage(route('super-admin.projects.table'), ['tab' => 'overdue'])
+            ->assertSee('data-overdue="1"', false)
+            ->assertDontSee('data-overdue="0"', false);
     }
 
     public function test_the_details_page_warns_and_offers_both_ways_out(): void

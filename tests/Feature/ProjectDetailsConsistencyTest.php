@@ -138,14 +138,14 @@ class ProjectDetailsConsistencyTest extends TestCase
     {
         $this->actingAsSuperAdmin();
 
-        return $this->get(route('super-admin.projects.show', $this->project->project_id));
+        return $this->getWithTables(route('super-admin.projects.show', $this->project->project_id));
     }
 
     private function portalPage()
     {
         $this->actingAs($this->leadAccount);
 
-        return $this->get(route('technician.projects.show', $this->project->project_id));
+        return $this->getWithTables(route('technician.projects.show', $this->project->project_id));
     }
 
     // ------------------------------------------------------------------
@@ -264,18 +264,21 @@ class ProjectDetailsConsistencyTest extends TestCase
     }
 
     /**
-     * Both task lists are searchable, paged tables rather than one of each.
+     * Both task lists are searchable tables paged on the server rather than
+     * one of each - each pointed at its own page of rows.
      */
     public function test_both_task_tables_are_data_tables(): void
     {
         $this->administrativePage()
             ->assertOk()
-            ->assertSee('id="tasksTable"', false);
+            ->assertSee('id="tasksTable"', false)
+            ->assertSee('data-server-table-url="'.route('super-admin.projects.tasks.table', $this->project->project_id).'"', false);
 
         $this->portalPage()
             ->assertOk()
             ->assertSee('id="portalTasksTable"', false)
-            ->assertSee("portal.dataTable('#portalTasksTable'", false);
+            ->assertSee("portal.serverTable('#portalTasksTable'", false)
+            ->assertSee('data-server-table-url="'.route('technician.projects.tasks.table', $this->project->project_id).'"', false);
     }
 
     /**

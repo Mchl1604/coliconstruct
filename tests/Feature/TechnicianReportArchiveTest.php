@@ -502,7 +502,9 @@ class TechnicianReportArchiveTest extends TestCase
 
         $this->actingAs($this->superAdmin)
             ->get(route('super-admin.reports.archived'))
-            ->assertOk()
+            ->assertOk();
+
+        $this->getTablePage(route('super-admin.reports.archived.table'))
             ->assertSee('Filed away')
             ->assertDontSee('Still open');
     }
@@ -572,14 +574,12 @@ class TechnicianReportArchiveTest extends TestCase
         $this->archive($this->leadAccount, $archived)->assertOk();
 
         $this->actingAs($this->leadAccount)
-            ->get(route('technician.reports'))
-            ->assertOk()
+            ->getTablePage(route('technician.reports.table'))
             ->assertSee('Lead still open')
             ->assertDontSee('Lead filed away');
 
         $this->actingAs($this->leadAccount)
-            ->get(route('technician.reports.archived'))
-            ->assertOk()
+            ->getTablePage(route('technician.reports.archived.table'))
             ->assertSee('Lead filed away')
             ->assertDontSee('Lead still open');
     }

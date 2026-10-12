@@ -614,7 +614,7 @@ class ProjectArchiveRestoreTest extends TestCase
         $legacy = $this->project([], 'ongoing', 'PRJ-OLD-1');
         $legacy->update(['status' => 'archived', 'is_archived' => true, 'archived_at' => now()]);
 
-        $response = $this->get(route('super-admin.projects.archived'))->assertOk();
+        $response = $this->getTablePage(route('super-admin.projects.archived.table'));
 
         $response->assertSee('with its original schedule and team', false);
         // And the honest answer for a row archived before any of this existed.

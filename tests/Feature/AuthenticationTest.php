@@ -270,7 +270,7 @@ class AuthenticationTest extends TestCase
         $pending = PendingRegistration::where('email', 'maria@example.test')->firstOrFail();
         $this->assertSame('D', $pending->middle_name);
 
-        $user = app(\App\Services\UserAccountService::class)->completeRegistration($pending);
+        $user = app(UserAccountService::class)->completeRegistration($pending);
 
         $this->assertSame('Maria Clara', $user->first_name);
         $this->assertSame('D', $user->middle_name);
@@ -877,16 +877,17 @@ class AuthenticationTest extends TestCase
 
         $this->actingAs($mine);
 
-        $projects = $this->get(route('technician.projects'));
-        $projects->assertOk();
-        $projects->assertSee('My Project');
-        $projects->assertDontSee('Their Project');
+        $this->get(route('technician.projects'))->assertOk();
+
+        $projects = $this->getTablePage(route('technician.projects.table'));
+        $projects->assertSee($myProject->reference_no);
+        $projects->assertDontSee($theirProject->reference_no);
 
         $schedule = $this->get(route('technician.schedule'));
         $schedule->assertOk();
         $schedule->assertSee('My Project');
 
-        $tasks = $this->get(route('technician.tasks'));
+        $tasks = $this->getWithTables(route('technician.tasks'));
         $tasks->assertOk();
         $tasks->assertSee('My Task');
         $tasks->assertDontSee('Their Task');
@@ -922,9 +923,10 @@ class AuthenticationTest extends TestCase
 
         $this->actingAs($lead);
 
-        $response = $this->get(route('technician.reports'));
+        $this->get(route('technician.reports'))->assertOk();
 
-        $response->assertOk();
+        $response = $this->getTablePage(route('technician.reports.table'));
+
         $response->assertSee('My Own Report');
         $response->assertDontSee('Someone Elses Report');
     }

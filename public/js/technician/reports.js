@@ -2,36 +2,24 @@
  * Reports: the lead's own report log, its viewer, and the Submit Report
  * dialog.
  *
- * A newly submitted report is added straight into the DataTable rather than
- * costing a page load - the server hands back the finished row.
+ * The log pages on the server - see TechnicianPortalController::reportsTable()
+ * - and the filter bar's four narrowings travel with every request, so a long
+ * log costs the same to open as a short one. A report submitted or archived
+ * here simply refetches the page somebody is on.
  */
 document.addEventListener("DOMContentLoaded", function () {
     const portal = window.portal;
-    const reports = window.portalReports || {};
 
-    const table = portal.dataTable("#portalReportsTable", "reports", {
-        // Date Submitted, now the sixth column.
-        order: [[5, "desc"]],
-        // "Showing 1 to 10 of 25" under the pages, which the portal's tables
-        // otherwise leave off. A report log is the one place the count is the
-        // point, and it is what the Super Admin Reports page says above its
-        // own pages - so both read the same.
-        info: true,
-        columnDefs: [
-            // Date Submitted carries a `data-order` timestamp, which
-            // DataTables reads as numeric and then right-aligns on its own.
-            { targets: 5, className: "text-start" },
-            { targets: -1, orderable: false },
-        ],
-    });
+    // The reports on the page on screen, keyed by id - replaced with every
+    // page the table fetches.
+    let reports = {};
 
     // ------------------------------------------------------------------
     // Filters
     //
     // The same four narrowings the Super Admin Reports page offers - project,
-    // report type, date and a search box - applied to the rows already on the
-    // page: a lead's own log is short, so a round trip per keystroke would buy
-    // nothing. All four combine, and all four survive paging.
+    // report type, date and a search box - sent with every request and
+    // applied in SQL. All four combine, and all four survive paging.
     // ------------------------------------------------------------------
 
     const filters = {
@@ -42,94 +30,32 @@ document.addEventListener("DOMContentLoaded", function () {
         to: "",
     };
 
-    function isoDate(date) {
-        const month = String(date.getMonth() + 1).padStart(2, "0");
-        const day = String(date.getDate()).padStart(2, "0");
-
-        return date.getFullYear() + "-" + month + "-" + day;
-    }
-
-    /**
-     * The [from, to] the Date select stands for, as ISO strings, or null when
-     * every date qualifies. Weeks run Monday to Sunday and months are calendar
-     * months, matching how the server reads the same options.
-     */
-    function dateBounds() {
-        const today = new Date();
-
-        if (filters.date === "today") {
-            return [isoDate(today), isoDate(today)];
-        }
-
-        if (filters.date === "week") {
-            const start = new Date(today);
-            // getDay() is 0 on Sunday, which belongs to the week that started
-            // six days earlier rather than to the one starting tomorrow.
-            start.setDate(today.getDate() - ((today.getDay() + 6) % 7));
-
-            const end = new Date(start);
-            end.setDate(start.getDate() + 6);
-
-            return [isoDate(start), isoDate(end)];
-        }
-
-        if (filters.date === "month") {
-            const start = new Date(today.getFullYear(), today.getMonth(), 1);
-            const end = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-
-            return [isoDate(start), isoDate(end)];
-        }
-
-        if (filters.date === "custom" && (filters.from || filters.to)) {
-            return [filters.from || "0000-01-01", filters.to || "9999-12-31"];
-        }
-
-        return null;
-    }
-
-    function matchesRow(row) {
-        if (!row) {
-            return true;
-        }
-
-        const bounds = dateBounds();
-
-        if (bounds) {
-            const reportDate = row.getAttribute("data-report-date") || "";
-
-            if (!reportDate || reportDate < bounds[0] || reportDate > bounds[1]) {
-                return false;
-            }
-        }
-
-        if (
-            filters.project !== "all" &&
-            row.getAttribute("data-project-id") !== filters.project
-        ) {
-            return false;
-        }
-
-        if (
-            filters.type !== "all" &&
-            row.getAttribute("data-report-type") !== filters.type
-        ) {
-            return false;
-        }
-
-        return true;
-    }
-
-    if (table && window.jQuery) {
-        const search = window.jQuery.fn.dataTable.ext.search;
-
-        search.push(function (settings, data, dataIndex) {
-            if (settings.nTable.id !== "portalReportsTable") {
-                return true;
-            }
-
-            return matchesRow(table.row(dataIndex).node());
-        });
-    }
+    const table = portal.serverTable("#portalReportsTable", "reports", {
+        url: window.portalRoutes.reportsTable,
+        params: function () {
+            return {
+                project_id: filters.project === "all" ? "" : filters.project,
+                report_type: filters.type,
+                date_filter: filters.date,
+                start_date: filters.date === "custom" ? filters.from : "",
+                end_date: filters.date === "custom" ? filters.to : "",
+            };
+        },
+        onLoad: function (json) {
+            reports = (json.meta && json.meta.payloads) || {};
+        },
+        // Date Submitted, newest first.
+        order: [[5, "desc"]],
+        // "Showing 1 to 10 of 25" under the pages, which the portal's tables
+        // otherwise leave off. A report log is the one place the count is the
+        // point, and it is what the Super Admin Reports page says above its
+        // own pages - so both read the same.
+        info: true,
+        columnDefs: [
+            { targets: 5, className: "text-start" },
+            { targets: -1, orderable: false },
+        ],
+    });
 
     const customRange = document.querySelectorAll("[data-custom-range]");
     const startInput = document.querySelector("[data-filter-start]");
@@ -137,6 +63,7 @@ document.addEventListener("DOMContentLoaded", function () {
     const searchInput = document.querySelector("[data-filter-search]");
     const resetButton = document.querySelector("[data-filter-reset]");
 
+    /** A new filter makes the page somebody was on meaningless: page one. */
     function redraw() {
         if (table) {
             table.draw();
@@ -183,9 +110,8 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     });
 
-    // The search box drives DataTables' own search, so it matches on every
-    // visible column - project, title, technician - rather than on a list of
-    // fields this file would have to keep in step with the table.
+    // The search box drives DataTables' own search, which the server matches
+    // against every column the table prints - project, title, technician.
     if (searchInput && table) {
         let searchTimer = null;
 
@@ -193,7 +119,7 @@ document.addEventListener("DOMContentLoaded", function () {
             window.clearTimeout(searchTimer);
             searchTimer = window.setTimeout(function () {
                 table.search(searchInput.value).draw();
-            }, 250);
+            }, 300);
         });
     }
 
@@ -315,9 +241,9 @@ document.addEventListener("DOMContentLoaded", function () {
     // ------------------------------------------------------------------
     // Archiving
     //
-    // The confirmation dialog first, then one request. The row is dropped from
-    // the table on success rather than the page being reloaded - it is off the
-    // active list now, here and on the project it belongs to.
+    // The confirmation dialog first, then one request. The table refetches the
+    // page on success rather than the page being reloaded - the report is off
+    // the active list now, here and on the project it belongs to.
     // ------------------------------------------------------------------
 
     const archiveEl = document.querySelector("[data-archive-report-modal]");
@@ -345,7 +271,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
             pending = {
                 id: button.getAttribute("data-archive-report"),
-                row: button.closest("tr"),
             };
 
             labelEl.textContent =
@@ -375,11 +300,12 @@ document.addEventListener("DOMContentLoaded", function () {
                 .then(function (body) {
                     window.bootstrap.Modal.getOrCreateInstance(archiveEl).hide();
 
-                    if (table && target.row) {
-                        table.row(target.row).remove().draw(false);
+                    // Off the active list now: the page somebody is on is
+                    // fetched again without it.
+                    if (table) {
+                        table.draw(false);
                     }
 
-                    delete reports[target.id];
                     pending = null;
 
                     portal.toast(
@@ -400,77 +326,6 @@ document.addEventListener("DOMContentLoaded", function () {
     // Submitting
     // ------------------------------------------------------------------
 
-    /**
-     * A real <tr>, matching the Blade-rendered rows cell for cell - including
-     * the data-order on the date.
-     *
-     * Deliberately not an array of cell strings. The Blade rows carry
-     * data-order, which makes DataTables treat that column as an orthogonal
-     * source ({_: "3.display", sort: "3.@data-order"}); a flat array has no
-     * such shape, so adding one raises "Requested unknown parameter
-     * '[object Object]'" and the new row sorts by nothing. Handing DataTables
-     * a node lets it read the attribute exactly as it does for the rest.
-     */
-    function rowFor(report) {
-        const row = document.createElement("tr");
-
-        // The same attributes the Blade rows carry, so a report submitted
-        // without a reload is filterable the moment it lands.
-        row.setAttribute("data-report-date", report.date || "");
-        row.setAttribute("data-project-id", report.project_id || "");
-        row.setAttribute("data-report-type", report.type || "");
-
-        row.innerHTML =
-            "<td>" +
-            portal.escapeHtml(report.display_code) +
-            "</td>" +
-            "<td>" +
-            portal.escapeHtml(report.reference_no) +
-            "</td>" +
-            '<td class="fw-semibold">' +
-            portal.escapeHtml(report.client) +
-            '<div class="small text-muted fw-normal">' +
-            portal.escapeHtml(report.title) +
-            "</div></td>" +
-            '<td><span class="badge ' +
-            report.type_badge_class +
-            '">' +
-            portal.escapeHtml(report.type_label) +
-            "</span></td>" +
-            '<td><div class="d-flex align-items-center gap-2">' +
-            (report.submitted_by_avatar
-                ? '<img class="user-avatar user-avatar-xs" src="' +
-                  portal.escapeHtml(report.submitted_by_avatar) +
-                  '" alt="" loading="lazy">'
-                : "") +
-            "<span>" +
-            portal.escapeHtml(report.submitted_by) +
-            "</span></div></td>" +
-            '<td data-order="' +
-            portal.escapeHtml(report.date_order) +
-            '">' +
-            portal.escapeHtml(report.date_label) +
-            "</td>" +
-            '<td class="text-center">' +
-            '<div class="d-inline-flex gap-1">' +
-            '<button type="button" class="btn btn-sm btn-primary py-1 px-2" data-view-report="' +
-            portal.escapeHtml(report.id) +
-            '" title="View report"><i class="bi bi-eye"></i></button>' +
-            // Drawn from the server's own answer, so a row added without a
-            // reload offers exactly what a reloaded one would.
-            (report.can_archive
-                ? '<button type="button" class="btn btn-sm btn-dark py-1 px-2" data-archive-report="' +
-                  portal.escapeHtml(report.id) +
-                  '" data-report-label="' +
-                  portal.escapeHtml(report.display_code + " - " + report.title) +
-                  '" title="Archive report"><i class="bi bi-archive"></i></button>'
-                : "") +
-            "</div>" +
-            "</td>";
-
-        return row;
-    }
-
     const submitButton = document.querySelector("[data-submit-report]");
 
     if (!submitButton) {
@@ -479,11 +334,11 @@ document.addEventListener("DOMContentLoaded", function () {
 
     submitButton.addEventListener("click", function () {
         window.portalModals.reportForm.open({
-            onSuccess: function (report) {
-                reports[report.id] = report;
-
+            onSuccess: function () {
+                // The server draws the new row where it belongs - the page
+                // somebody is on is simply fetched again.
                 if (table) {
-                    table.row.add(rowFor(report)).draw(false);
+                    table.draw(false);
                 }
             },
         });

@@ -1,17 +1,20 @@
 /**
  * Archived Reports: the table, and the viewer that reads one in full.
  *
- * The rows are rendered by Blade and sorted by DataTables, exactly as Archived
- * Projects does it. Restoring is an ordinary form post inside a confirmation
- * dialog, so the outcome arrives as the flashed toast every other archive
- * action in the portal uses - there is nothing to do for it here.
+ * The rows arrive a page at a time from ReportController::archivedTable(),
+ * with each report on the page in full beside them. Restoring is an ordinary
+ * form post inside a confirmation dialog, so the outcome arrives as the
+ * flashed toast every other archive action in the portal uses - there is
+ * nothing to do for it here.
  *
- * What is left is reading a report, and that is served from the payload the
- * page was handed rather than fetched: the server already sent every archived
- * report in full, images included.
+ * What is left is reading a report, and that is served from the page of
+ * reports the server already sent, images included, rather than fetched
+ * again.
  */
 document.addEventListener("DOMContentLoaded", function () {
-    const reports = window.archivedReports || {};
+    // The reports on the page on screen, in full, keyed by id - replaced with
+    // every page the table fetches.
+    let reports = {};
 
     function escapeHtml(value) {
         return String(value == null ? "" : value).replace(
@@ -28,31 +31,31 @@ document.addEventListener("DOMContentLoaded", function () {
         );
     }
 
-    if (window.jQuery && window.jQuery.fn.DataTable) {
-        window.jQuery("#archivedReportsTable").DataTable({
-            responsive: true,
-            autoWidth: false,
-            pageLength: 10,
-            lengthMenu: [10, 25, 50, 100],
-            info: false,
-            // Most recently archived first, read from the timestamp on the
-            // cell rather than from the formatted date.
-            order: [[6, "desc"]],
-            columnDefs: [
-                { targets: -1, orderable: false },
-                // A report ID is a label, not a quantity: without this
-                // DataTables types it as numeric and right-aligns it.
-                { targets: 0, className: "dt-left" },
-                { targets: [5, 6], className: "text-start" },
-            ],
-            language: {
-                search: "",
-                searchPlaceholder: "Search archived reports...",
-                emptyTable: "No archived reports.",
-                zeroRecords: "No archived reports match your search.",
-            },
-        });
-    }
+    window.serverTable("#archivedReportsTable", {
+        url: window.archivedReportsTable,
+        extras: "[data-archived-report-dialogs]",
+        onLoad: function (json) {
+            reports = (json.meta && json.meta.payloads) || {};
+        },
+        autoWidth: false,
+        pageLength: 10,
+        lengthMenu: [10, 25, 50, 100],
+        info: false,
+        // Most recently archived first.
+        order: [[6, "desc"]],
+        columnDefs: [
+            { targets: -1, orderable: false },
+            // A report ID is a label, not a quantity.
+            { targets: 0, className: "dt-left" },
+            { targets: [5, 6], className: "text-start" },
+        ],
+        language: {
+            search: "",
+            searchPlaceholder: "Search archived reports...",
+            emptyTable: "No archived reports.",
+            zeroRecords: "No archived reports match your search.",
+        },
+    });
 
     // ------------------------------------------------------------------
     // Viewer

@@ -425,13 +425,12 @@ class SpecifiedImprovementsTest extends TestCase
         $this->assign($project, $technician);
         $this->book($project, -2, 5);
 
-        $this->get(route('super-admin.projects'))
-            ->assertOk()
+        $this->getTablePage(route('super-admin.projects.table'))
             ->assertDontSee('project-row-needs-recrew', false);
 
         $account->forceFill(['status' => User::STATUS_DEACTIVATED])->save();
 
-        $response = $this->get(route('super-admin.projects'))->assertOk();
+        $response = $this->getTablePage(route('super-admin.projects.table'));
 
         $response->assertSee('project-row-needs-recrew', false);
         $response->assertSee('Inactive technician');
@@ -506,9 +505,9 @@ class SpecifiedImprovementsTest extends TestCase
         $newerPending = $this->project('pending');
         $this->book($newerPending, 4, 8);
 
-        $order = $this->get(route('super-admin.projects'))
-            ->viewData('projects')
-            ->pluck('project_id')
+        // No order asked for, so the table's own: by tab, newest first.
+        $order = collect($this->getJson(route('super-admin.projects.table'))->assertOk()->json('rows'))
+            ->map(fn (string $row): int => preg_match('/PROJ-0*(\d+)/', $row, $code) === 1 ? (int) $code[1] : 0)
             ->all();
 
         $this->assertSame([
@@ -569,11 +568,13 @@ class SpecifiedImprovementsTest extends TestCase
             'report_date' => now()->toDateString(),
         ]);
 
-        $response = $this->actingAs($leadAccount)
+        $this->actingAs($leadAccount)
             ->get(route('technician.reports'))
             ->assertOk();
 
-        $ids = collect($response->viewData('reports'))->pluck('id')->all();
+        // The log's rows arrive from its table endpoint, each with its report
+        // in full for the viewer.
+        $ids = array_keys($this->getJson(route('technician.reports.table'))->assertOk()->json('meta.payloads'));
 
         $this->assertSame([$mine->id], $ids);
 
@@ -614,9 +615,9 @@ class SpecifiedImprovementsTest extends TestCase
             'report_date' => now()->toDateString(),
         ]);
 
-        $ids = collect(
-            $this->actingAs($leadAccount)->get(route('technician.reports'))->viewData('reports')
-        )->pluck('id')->all();
+        $ids = array_keys(
+            $this->actingAs($leadAccount)->getJson(route('technician.reports.table'))->assertOk()->json('meta.payloads')
+        );
 
         $this->assertSame([$legacy->id], $ids);
     }

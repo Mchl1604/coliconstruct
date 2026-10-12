@@ -11,6 +11,7 @@ use App\Models\Skill;
 use App\Models\SpecialtyRequest;
 use App\Models\Task;
 use App\Models\Technician;
+use App\Models\User;
 use App\Services\ActivityLogger;
 use App\Services\NotificationService;
 use App\Services\ProfileService;
@@ -20,6 +21,8 @@ use App\Services\ProjectTeamChangePlan;
 use App\Services\ProjectTeamRules;
 use App\Services\TechnicianAvailabilityService;
 use App\Support\BusinessTime;
+use App\Support\DisplayCode;
+use App\Support\ServerTable;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -65,17 +68,21 @@ class TechnicianController extends Controller
         private readonly ProjectTeamRules $teamRules
     ) {}
 
+    /**
+     * The Technicians page. The Details table's rows arrive a page at a time
+     * from table(); what is loaded here is the directory the Schedules tab's
+     * picker searches, which is a name per technician and nothing more.
+     */
     public function index()
     {
         $technicians = Technician::query()
-            ->with(['account', 'skills'])
+            ->with('account')
             ->whereHas('account', function ($query): void {
                 $query->whereIn('role', ['technician', self::LEAD_ROLE]);
             })
             ->orderBy('technician_id')
             ->get()
-            // Leads first, then by name - the order the table opens in, so
-            // the page reads the same before and after DataTables draws it.
+            // Leads first, then by name - the order the picker lists them in.
             ->sortBy([
                 fn (Technician $a, Technician $b): int => ($a->account?->role !== self::LEAD_ROLE) <=> ($b->account?->role !== self::LEAD_ROLE),
                 fn (Technician $a, Technician $b): int => strcasecmp($a->name, $b->name),
@@ -84,16 +91,102 @@ class TechnicianController extends Controller
 
         $skills = Skill::query()->orderBy('skill_name')->get();
 
-        // Which technicians are waiting on a decision. The table highlights
-        // their row; the decision itself is taken in their details dialog,
-        // where the reviewer can see what they already hold.
-        $pendingTechnicianIds = SpecialtyRequest::query()
+        return view('super-admin.technicians', [
+            'technicians' => $technicians,
+            'skills' => $skills,
+            'pendingTechnicianIds' => $this->pendingSpecialtyTechnicianIds(),
+        ]);
+    }
+
+    /**
+     * One page of the Details table, searched, sorted and sliced in SQL.
+     *
+     * `specialty=pending` narrows it to the technicians waiting on a specialty
+     * decision - where the dashboard's Specialty Change Requests figure lands.
+     */
+    public function table(Request $request)
+    {
+        $table = ServerTable::fromRequest($request);
+        $pending = $this->pendingSpecialtyTechnicianIds();
+
+        $query = Technician::query()
+            ->whereHas('account', fn ($query) => $query->whereIn('role', ['technician', self::LEAD_ROLE]))
+            ->when($request->query('specialty') === 'pending', fn ($query) => $query->whereIn('technician_id', $pending));
+
+        $account = fn (string $column) => User::query()
+            ->select($column)
+            ->whereColumn('users.id', 'tbl_technicians.account_id')
+            ->limit(1);
+
+        $page = $table->paginate(
+            $query,
+            sortable: [
+                0 => 'technician_id',
+                1 => fn ($query, string $dir) => $query->orderBy($account('user_code'), $dir),
+                2 => fn ($query, string $dir) => $query->orderBy($account('name'), $dir),
+                3 => fn ($query, string $dir) => $query->orderBy(
+                    Skill::query()
+                        ->selectRaw('min(skill_name)')
+                        ->join('tbl_skill_map', 'tbl_skill_map.skill_id', '=', 'tbl_skills.skill_id')
+                        ->whereColumn('tbl_skill_map.technician_id', 'tbl_technicians.technician_id'),
+                    $dir
+                ),
+                // Ranked rather than spelled: "Lead Technician" sorts after
+                // "Technician" alphabetically.
+                4 => fn ($query, string $dir) => $query->orderBy(
+                    User::query()
+                        ->selectRaw("case when role = '".self::LEAD_ROLE."' then 0 else 1 end")
+                        ->whereColumn('users.id', 'tbl_technicians.account_id')
+                        ->limit(1),
+                    $dir
+                ),
+                5 => fn ($query, string $dir) => $query->orderBy($account('status'), $dir),
+            ],
+            search: function ($query, string $word): void {
+                $like = '%'.$word.'%';
+                $technicianId = DisplayCode::toId(DisplayCode::TECHNICIAN, $word);
+
+                $query->whereHas('account', fn ($accounts) => $accounts
+                    ->where('name', 'like', $like)
+                    ->orWhere('first_name', 'like', $like)
+                    ->orWhere('last_name', 'like', $like)
+                    ->orWhere('email', 'like', $like)
+                    ->orWhere('user_code', 'like', $like)
+                    ->orWhere('status', 'like', $like)
+                    ->when(str_contains('lead technician', mb_strtolower($word)), fn ($accounts) => $accounts->orWhere('role', self::LEAD_ROLE)))
+                    ->orWhereHas('skills', fn ($skills) => $skills->where('skill_name', 'like', $like))
+                    ->when($technicianId !== null, fn ($query) => $query->orWhere('tbl_technicians.technician_id', $technicianId));
+            },
+            defaultOrder: [[4, 'asc'], [2, 'asc']],
+        );
+
+        $page->items->load(['account', 'skills']);
+
+        return $table->respond(
+            $page,
+            fn (Technician $technician): string => view('super-admin.partials.technician-row', [
+                'technician' => $technician,
+                'awaitingDecision' => in_array((int) $technician->technician_id, $pending, true),
+            ])->render(),
+        );
+    }
+
+    /**
+     * Which technicians are waiting on a specialty decision. The table
+     * highlights their row; the decision itself is taken in their details
+     * dialog, where the reviewer can see what they already hold.
+     *
+     * @return array<int, int>
+     */
+    private function pendingSpecialtyTechnicianIds(): array
+    {
+        return SpecialtyRequest::query()
             ->pending()
             ->pluck('technician_id')
             ->map(fn ($id): int => (int) $id)
+            ->unique()
+            ->values()
             ->all();
-
-        return view('super-admin.technicians', compact('technicians', 'skills', 'pendingTechnicianIds'));
     }
 
     // ------------------------------------------------------------------

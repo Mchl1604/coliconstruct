@@ -126,27 +126,35 @@ document.addEventListener("DOMContentLoaded", function () {
     // Tab 1 - technician table + details / specialty management
     // ---------------------------------------------------------------
 
-    // Kept so the specialty deep link below can narrow it - see
-    // showPendingSpecialtyRequests().
-    let techniciansTable = null;
+    /**
+     * Arriving from the dashboard's "N Specialty Change Requests" narrows the
+     * table to the people waiting on one - decided before the table's first
+     * request, so the first page fetched is already the narrowed one. See
+     * showPendingSpecialtyRequests().
+     */
+    const pendingIds = window.pendingSpecialtyTechnicianIds || [];
+    let onlyPending =
+        new URLSearchParams(window.location.search).get("specialty") ===
+            "pending" && pendingIds.length > 0;
 
-    if (window.jQuery && window.jQuery.fn && window.jQuery.fn.DataTable) {
-        techniciansTable = window.jQuery("#techniciansTable").DataTable({
-            responsive: true,
+    // One page of rows per request - see TechnicianController::table().
+    const techniciansTable = window.serverTable
+        ? window.serverTable("#techniciansTable", {
+            url: window.techniciansTableUrl,
+            params: function () {
+                return { specialty: onlyPending ? "pending" : "" };
+            },
             autoWidth: false,
             pageLength: 10,
             lengthMenu: [10, 25, 50, 100],
             info: false,
-            // Lead Technicians first, then by name: the Position cell carries
-            // a rank rather than its label (see the view).
+            // Lead Technicians first, then by name - ranked on the server, so
+            // "Lead Technician" does not sort after "Technician".
             order: [
                 [4, "asc"],
                 [2, "asc"],
             ],
-            // DataTables types this column as numeric, which right-aligns it
-            // and reverses the header so the sort arrow lands on the left. A
-            // technician ID is a label, not a quantity, so it is put back with
-            // every other column. Ordering stays numeric.
+            // A technician ID is a label, not a quantity.
             columnDefs: [
                 { targets: 0, className: "dt-left" },
                 // A column of buttons has no order, and a sortable header
@@ -159,8 +167,8 @@ document.addEventListener("DOMContentLoaded", function () {
                 emptyTable: "No technicians found.",
                 zeroRecords: "No technicians match your search.",
             },
-        });
-    }
+        })
+        : null;
 
     const detailsModalEl = document.querySelector(
         "[data-technician-details-modal]",
@@ -648,24 +656,13 @@ document.addEventListener("DOMContentLoaded", function () {
                   .join("")
             : '<span class="text-muted small">No specialties assigned.</span>';
 
-        // Go through DataTables when it owns the cell so searching and
-        // sorting see the new value too.
-        if (
-            window.jQuery &&
-            window.jQuery.fn.dataTable &&
-            window.jQuery.fn.dataTable.isDataTable("#techniciansTable")
-        ) {
-            window
-                .jQuery("#techniciansTable")
-                .DataTable()
-                .cell(cell)
-                .data(html)
-                .draw(false);
-
-            return;
-        }
-
+        // Shown at once, then the page is fetched again in the background so
+        // the search and the sort see the new specialties too.
         cell.innerHTML = html;
+
+        if (techniciansTable) {
+            techniciansTable.draw(false);
+        }
     }
 
     const detailsModal = detailsModalEl
@@ -695,56 +692,24 @@ document.addEventListener("DOMContentLoaded", function () {
      * a link is never a table somebody has to reload to escape.
      */
     function showPendingSpecialtyRequests() {
-        const asked =
-            new URLSearchParams(window.location.search).get("specialty") ===
-            "pending";
-
-        const waiting = document.querySelectorAll(
-            "[data-technician-row].technician-row-pending",
-        );
-
-        if (!asked || !waiting.length) {
+        if (!onlyPending) {
             return;
         }
 
         const clear = document.querySelector("[data-specialty-filter-clear]");
 
-        if (techniciansTable && window.jQuery) {
-            const $ = window.jQuery;
+        if (clear && techniciansTable) {
+            clear.classList.remove("d-none");
 
-            const filterFn = function (settings, data, dataIndex) {
-                if (settings.nTable.id !== "techniciansTable") {
-                    return true;
-                }
-
-                const node = techniciansTable.row(dataIndex).node();
-
-                return node
-                    ? node.classList.contains("technician-row-pending")
-                    : true;
-            };
-
-            filterFn._specialtyPending = true;
-            $.fn.dataTable.ext.search.push(filterFn);
-            techniciansTable.draw();
-
-            if (clear) {
-                clear.classList.remove("d-none");
-
-                clear.addEventListener("click", function () {
-                    $.fn.dataTable.ext.search =
-                        $.fn.dataTable.ext.search.filter(function (fn) {
-                            return !fn._specialtyPending;
-                        });
-
-                    techniciansTable.draw();
-                    clear.classList.add("d-none");
-                });
-            }
+            clear.addEventListener("click", function () {
+                onlyPending = false;
+                techniciansTable.draw();
+                clear.classList.add("d-none");
+            });
         }
 
-        if (waiting.length === 1 && detailsModal) {
-            detailsModal.open(waiting[0].getAttribute("data-technician-row"));
+        if (pendingIds.length === 1 && detailsModal) {
+            detailsModal.open(String(pendingIds[0]));
         }
     }
 

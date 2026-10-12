@@ -132,7 +132,7 @@ class TaskCompletionRecordTest extends TestCase
 
         $this->patch(route('super-admin.tasks.complete', $task->task_id), []);
 
-        $response = $this->get(route('super-admin.tasks.index'));
+        $response = $this->getWithTables(route('super-admin.tasks.index'));
 
         $response->assertOk();
         $response->assertSee('Marked complete by');
@@ -158,7 +158,7 @@ class TaskCompletionRecordTest extends TestCase
             route('super-admin.tasks.index'),
             route('super-admin.projects.show', $this->project->project_id),
         ] as $url) {
-            $response = $this->get($url);
+            $response = $this->getWithTables($url);
 
             $response->assertOk();
             $response->assertSee('Completion Details');
@@ -177,7 +177,7 @@ class TaskCompletionRecordTest extends TestCase
     {
         $task = $this->task('completed');
 
-        $response = $this->get(route('super-admin.tasks.index'));
+        $response = $this->getWithTables(route('super-admin.tasks.index'));
 
         $response->assertOk();
         $response->assertSee('No completion description was recorded for this task.');
@@ -195,7 +195,7 @@ class TaskCompletionRecordTest extends TestCase
     {
         $task = $this->task('completed');
 
-        $response = $this->get(route('super-admin.tasks.index'));
+        $response = $this->getWithTables(route('super-admin.tasks.index'));
         $response->assertOk();
 
         // Just this dialog: the page carries other modals with a shape of
@@ -238,7 +238,7 @@ class TaskCompletionRecordTest extends TestCase
 
         $this->task('completed');
 
-        $response = $this->get(route('super-admin.tasks.index'));
+        $response = $this->getWithTables(route('super-admin.tasks.index'));
 
         $response->assertOk();
         $response->assertSee('task-assign-static', false);
@@ -253,7 +253,7 @@ class TaskCompletionRecordTest extends TestCase
     {
         $this->task();
 
-        $response = $this->get(route('super-admin.tasks.index'));
+        $response = $this->getWithTables(route('super-admin.tasks.index'));
 
         $response->assertOk();
         $response->assertSee('task-assign-row', false);
@@ -276,7 +276,7 @@ class TaskCompletionRecordTest extends TestCase
 
         $this->actingAs($this->technician->account);
 
-        $response = $this->get(route('technician.tasks'));
+        $response = $this->getWithTables(route('technician.tasks'));
 
         $response->assertOk();
         $response->assertSee('Completion Details');

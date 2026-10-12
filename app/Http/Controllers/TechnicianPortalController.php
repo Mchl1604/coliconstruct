@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Models\ActivityLog;
 use App\Models\Project;
-use App\Models\ProjectPhase;
 use App\Models\ProjectTechnician;
 use App\Models\Schedule;
 use App\Models\ScheduleTechnician;
@@ -24,10 +23,12 @@ use App\Services\ProjectPhaseProgress;
 use App\Services\ProjectPhaseRules;
 use App\Services\TaskAssignmentGaps;
 use App\Services\TaskAssignmentRules;
+use App\Services\TaskBoard;
 use App\Services\TaskPhaseRules;
 use App\Services\TaskScheduleRules;
 use App\Services\TechnicianTaskLoad;
 use App\Support\BusinessTime;
+use App\Support\ServerTable;
 use App\Support\UploadStore;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
@@ -151,28 +152,18 @@ class TechnicianPortalController extends Controller
         // Cancelled work is included here and nowhere else in the portal: the
         // status tabs offer it, and a lead should be able to look back at a
         // job that was called off.
-        $projects = $this->assignedProjects($this->technician($request), ['archived'])
-            ->each(fn (Project $project) => $project->loadMissing('projectTypes'));
+        $projects = $this->assignedProjects($this->technician($request), ['archived']);
 
-        // Completion blockers are deliberately not rendered here: the view
+        // The rows themselves arrive a page at a time from projectsTable().
+        // Completion blockers are deliberately not rendered at all: the view
         // modal can complete a task, which changes them, so the confirmation
         // dialog fetches them when it opens instead.
         return view('technician.projects', [
-            'projects' => $projects,
+            'assignedCount' => $projects->count(),
             // The same tabs and the same counts the administrative projects
             // table draws, from the same method - so "3 Ongoing" here means
             // exactly what it means there.
             'statusTabs' => Project::statusTabs($projects),
-            // Closing a project is a lead's call; a technician only reads.
-            'canCloseProjects' => $request->user()->isLeadTechnician(),
-            // A deactivated account keeps whatever it was booked on - see
-            // Project::inactiveCrew() - so the crew it leaves short has to be
-            // told rather than left to find out on the day. The administrative
-            // projects table already flags this; the lead running the job is
-            // the other person who needs to know, and the flag is theirs
-            // alone: a technician cannot act on somebody else's account and
-            // has no tasks to move.
-            'flagsInactiveCrew' => $request->user()->isLeadTechnician(),
 
             // Urgent Actions, for the one role in this portal that can do
             // something about it. A lead has no dashboard, so the projects
@@ -185,6 +176,66 @@ class TechnicianPortalController extends Controller
                     && ! $project->isArchived())->values()
                 : collect(),
         ]);
+    }
+
+    /**
+     * One page of My Projects, for serverTable.js.
+     *
+     * Paged as a collection for the reason the administrative table is - see
+     * ProjectController::table(): the tabs are Project::tabKey(), a model
+     * method, and the counts above the table are taken from it too.
+     */
+    public function projectsTable(Request $request)
+    {
+        $table = ServerTable::fromRequest($request);
+        $tab = (string) $request->query('tab', 'all');
+
+        $projects = $this->assignedProjects($this->technician($request), ['archived'])
+            ->load('projectTypes')
+            ->when($tab !== 'all', fn (Collection $projects): Collection => $projects->filter(
+                fn (Project $project): bool => $project->tabKey() === $tab
+            ));
+
+        $page = $table->paginateCollection(
+            $projects,
+            sortable: [
+                0 => fn (Project $project): ?string => $project->reference_no,
+                1 => fn (Project $project): ?string => $project->clients->first()?->primaryName(),
+                2 => fn (Project $project): ?string => $project->clients->first()?->client_type,
+                3 => fn (Project $project): string => $project->projectTypes->pluck('type_name')->implode(', '),
+                // By tab, in the order the tabs are read - see tabRank().
+                4 => fn (Project $project): int => $project->tabRank(),
+            ],
+            search: fn (Project $project, string $word): bool => ServerTable::matchesAny(
+                $word,
+                $project->reference_no,
+                $project->name,
+                $project->clients->first()?->primaryName(),
+                $project->clients->first()?->client_type,
+                $project->projectTypes->pluck('type_name')->implode(' '),
+                $project->statusLabel(),
+            ),
+            defaultOrder: [[4, 'asc'], [0, 'desc']],
+        );
+
+        $user = $request->user();
+
+        return $table->respond(
+            $page,
+            fn (Project $project): string => view('technician.partials.project-row', [
+                'project' => $project,
+                // Closing a project is a lead's call; a technician only reads.
+                'canCloseProjects' => $user->isLeadTechnician(),
+                // A deactivated account keeps whatever it was booked on - see
+                // Project::inactiveCrew() - so the crew it leaves short has to
+                // be told rather than left to find out on the day. The
+                // administrative projects table already flags this; the lead
+                // running the job is the other person who needs to know, and
+                // the flag is theirs alone: a technician cannot act on
+                // somebody else's account and has no tasks to move.
+                'flagsInactiveCrew' => $user->isLeadTechnician(),
+            ])->render(),
+        );
     }
 
     /**
@@ -224,20 +275,6 @@ class TechnicianPortalController extends Controller
                 ->values()
         );
 
-        // Narrowed to what the reader is allowed to see: a lead runs the whole
-        // board, a technician reads their own work and nothing else. Done in
-        // SQL rather than in the view so a colleague's task never reaches the
-        // page to be hidden - see Task::scopeVisibleTo.
-        $tasks = Task::query()
-            ->visibleTo($request->user())
-            ->withHolderCoverage()
-            ->with(['technician.account', 'images', 'completedBy', 'phase'])
-            ->where('project_id', $project->project_id)
-            ->orderByRaw("case when status = 'ongoing' then 0 when status = 'pending' then 1 when status = 'unassigned' then 2 else 3 end")
-            ->orderByRaw('due_date is null')
-            ->orderBy('due_date')
-            ->get();
-
         // Archived reports are off this list, exactly as they are off the
         // administrator's copy of the page: archiving one from either portal
         // takes it out of both.
@@ -274,7 +311,6 @@ class TechnicianPortalController extends Controller
 
         return view('technician.projectDetails', [
             'project' => $project,
-            'tasks' => $tasks,
             'reports' => $reports,
             'technicians' => $technicians,
             // Every span each of them holds here, so the task dialogs can grey
@@ -327,67 +363,98 @@ class TechnicianPortalController extends Controller
     }
 
     /**
+     * One page of the Tasks tab on a project, for serverTable.js - the rows
+     * and the dialogs behind them.
+     *
+     * Narrowed to what the reader is allowed to see: a lead runs the whole
+     * board, a technician reads their own work and nothing else. Done in SQL
+     * so a colleague's task never reaches the page to be hidden - see
+     * Task::scopeVisibleTo.
+     */
+    public function projectTasksTable(Request $request, Project $project, TaskBoard $board)
+    {
+        $this->authorize('viewAssigned', $project);
+
+        $user = $request->user();
+
+        [$table, $page] = $board->paginate(
+            $request,
+            Task::query()->visibleTo($user)->where('project_id', $project->project_id),
+            defaultOrder: [[4, 'asc']],
+        );
+
+        $project->load('rosterTechnicians.technician.account');
+
+        // The lead leads the Assign To picker, matching the administrator's
+        // copy of this page and the Create Task dialog.
+        $technicians = $project->rosterTechnicians
+            ->pluck('technician')
+            ->filter()
+            ->unique('technician_id')
+            ->sortBy(fn ($technician): string => sprintf(
+                '%d %s',
+                optional($technician->account)->role === 'lead_technician' ? 0 : 1,
+                mb_strtolower((string) $technician->name)
+            ))
+            ->values();
+
+        $canManageTasks = $this->projectPolicy->manageTasks($user, $project);
+        $technicianId = $this->technician($request)->technician_id;
+
+        return $table->respond(
+            $page,
+            fn (Task $task): string => view('technician.partials.project-task-row', [
+                'task' => $task,
+                'canManageTasks' => $canManageTasks,
+                'technicianId' => $technicianId,
+            ])->render(),
+            view('technician.partials.project-task-dialogs', [
+                'tasks' => $page->items,
+                'canManageTasks' => $canManageTasks,
+                'technicians' => $technicians,
+                'technicianPeriods' => $this->assignmentRules->periodsFor(
+                    (int) $project->project_id,
+                    $technicians->pluck('technician_id')
+                ),
+                // This project's load, not the whole system's - see
+                // TechnicianTaskLoad.
+                'technicianActiveTaskCounts' => app(TechnicianTaskLoad::class)->forProject($project->project_id),
+                'scheduleRanges' => collect($this->scheduleRules->ranges((int) $project->project_id)),
+                'selectablePhases' => app(ProjectPhaseProgress::class)->selectablePhases($project),
+            ])->render(),
+        );
+    }
+
+    /**
      * Tasks: the whole board for every assigned project, grouped by project
      * rather than flattened into one undifferentiated list.
      */
-    public function tasks(Request $request)
+    public function tasks(Request $request, TaskBoard $board)
     {
         $technician = $this->technician($request);
-
-        // A finished project has no board left to run, so it drops off this
-        // page entirely - unlike My Projects, which keeps it for the record.
-        $projects = $this->assignedProjects($technician, ['cancelled', 'archived', 'completed']);
-
-        $tasks = Task::query()
-            ->visibleTo($request->user())
-            ->withHolderCoverage()
-            ->with(['technician.account', 'images', 'completedBy', 'phase'])
-            ->whereIn('project_id', $projects->pluck('project_id'))
-            ->orderByRaw("case when status = 'ongoing' then 0 when status = 'pending' then 1 when status = 'unassigned' then 2 else 3 end")
-            ->orderByRaw('due_date is null')
-            ->orderBy('due_date')
-            ->get()
-            ->groupBy('project_id');
-
-        // The per-task dialogs are the Super Admin ones, and they need each
-        // project's own team and date ranges to render.
-        // Today's team and anybody due to join it: work can be dated for a
-        // technician's first week before that week arrives.
-        $techniciansByProject = $projects->mapWithKeys(fn (Project $project): array => [
-            $project->project_id => $project->rosterTechnicians->pluck('technician')->filter()->unique('technician_id')->values(),
-        ]);
-
-        // Every span each of those technicians holds on the project, so the
-        // edit dialogs can grey out the days a chosen technician is not
-        // assigned for - see TaskAssignmentRules::periodsFor().
-        $periodsByProject = $projects->mapWithKeys(fn (Project $project): array => [
-            $project->project_id => $this->assignmentRules->periodsFor(
-                (int) $project->project_id,
-                $project->rosterTechnicians->pluck('technician_id')
-            ),
-        ]);
-
-        $rangesByProject = $projects->mapWithKeys(fn (Project $project): array => [
-            $project->project_id => collect($this->scheduleRules->ranges($project->project_id)),
-        ]);
-
-        // Each project's finalized phases, for the Phase select on every
-        // task's edit dialog. One query for the whole page.
-        $phasesByProject = ProjectPhase::query()
-            ->whereIn('project_id', $projects->pluck('project_id'))
-            ->inOrder()
-            ->get()
-            ->groupBy('project_id');
-
-        // Keyed by project too: this page shows several boards at once.
-        $technicianActiveTaskCounts = app(TechnicianTaskLoad::class)
-            ->forProjects($projects->pluck('project_id'));
-
         $user = $request->user();
+
+        $projects = $this->boardProjects($technician);
+        $projectIds = $projects->pluck('project_id');
+
+        // Narrowed to what the reader is allowed to see: a lead runs the whole
+        // board, a technician reads their own work and nothing else - see
+        // Task::scopeVisibleTo.
+        $visible = fn (): Builder => Task::query()->visibleTo($user);
 
         $manageable = $projects->mapWithKeys(fn (Project $project): array => [
             $project->project_id => $this->projectPolicy->manageTasks($user, $project),
         ]);
+
+        // A task notification links here with ?task=, and that task's dialog
+        // has to be on the page before its card has loaded to open it.
+        $linkedTask = $visible()
+            ->withHolderCoverage()
+            ->with(['technician.account', 'images', 'completedBy', 'phase'])
+            ->whereIn('project_id', $projectIds)
+            ->find((int) $request->query('task'));
+
+        $linkedProject = $linkedTask ? $projects->firstWhere('project_id', $linkedTask->project_id) : null;
 
         // Work on this board that cannot proceed: nobody holds it, it has no
         // dates, or neither.
@@ -408,9 +475,7 @@ class TechnicianPortalController extends Controller
         $attentionReadOnly = null;
 
         if ($user->isLeadTechnician()) {
-            $mine = fn (): Builder => Task::query()
-                ->visibleTo($user)
-                ->whereIn('project_id', $projects->pluck('project_id'));
+            $mine = fn (): Builder => $visible()->whereIn('project_id', $projectIds);
 
             $attentionSummary = app(TaskAssignmentGaps::class)->summarise($mine());
 
@@ -432,18 +497,17 @@ class TechnicianPortalController extends Controller
             }
         }
 
+        // The cards and their figures. The tasks themselves arrive a page at
+        // a time, per card, from taskBoardTable().
         return view('technician.tasks', [
             'projects' => $projects,
-            'tasksByProject' => $tasks,
+            'taskCounts' => $board->taskCounts($visible(), $projectIds),
+            'gapCounts' => $board->gapCounts($visible(), $projectIds),
+            'linkedTaskDialogs' => $linkedProject
+                ? $board->dialogs($linkedProject, collect([$linkedTask]), $this->boardOptions($request, $linkedProject))
+                : '',
             'attentionSummary' => $attentionSummary,
             'attentionReadOnly' => $attentionReadOnly,
-            'techniciansByProject' => $techniciansByProject,
-            'rangesByProject' => $rangesByProject,
-            'phasesByProject' => $phasesByProject,
-            'periodsByProject' => $periodsByProject,
-            'technicianActiveTaskCounts' => $technicianActiveTaskCounts,
-            'technicianId' => $technician->technician_id,
-            'manageable' => $manageable,
             // Only projects that can actually take a new task are offered in
             // the Add Task dialog.
             // A project whose phases are not finalized is left off as well:
@@ -453,6 +517,56 @@ class TechnicianPortalController extends Controller
                     && $project->phasesAreFinalized()
             )->values(),
         ]);
+    }
+
+    /**
+     * One page of one project's board, for serverTable.js - only a project
+     * on this reader's board, and only the tasks they may see on it.
+     */
+    public function taskBoardTable(Request $request, Project $project, TaskBoard $board)
+    {
+        $project = $this->boardProjects($this->technician($request))
+            ->firstWhere('project_id', $project->project_id);
+
+        abort_if($project === null, 404);
+
+        return $board->respond(
+            $request,
+            $project,
+            Task::query()->visibleTo($request->user())->where('project_id', $project->project_id),
+            $this->boardOptions($request, $project)
+        );
+    }
+
+    /**
+     * The projects on this technician's task board. A finished project has
+     * no board left to run, so it drops off entirely - unlike My Projects,
+     * which keeps it for the record.
+     *
+     * @return Collection<int, Project>
+     */
+    private function boardProjects(Technician $technician): Collection
+    {
+        return $this->assignedProjects($technician, ['cancelled', 'archived', 'completed']);
+    }
+
+    /**
+     * How a project's board is drawn for this reader: whether they run it -
+     * see ProjectPolicy::manageTasks() - and the portal's own endpoints.
+     *
+     * @return array{canManage: bool, viewerTechnicianId: int, updateRoute: string, completeRoute: string, deleteRoute: string, updateMethod: string, completeMethod: string}
+     */
+    private function boardOptions(Request $request, Project $project): array
+    {
+        return [
+            'canManage' => $this->projectPolicy->manageTasks($request->user(), $project),
+            'viewerTechnicianId' => (int) $this->technician($request)->technician_id,
+            'updateRoute' => 'technician.tasks.update',
+            'completeRoute' => 'technician.tasks.complete',
+            'deleteRoute' => 'technician.tasks.destroy',
+            'updateMethod' => 'POST',
+            'completeMethod' => 'POST',
+        ];
     }
 
     /**
@@ -477,37 +591,19 @@ class TechnicianPortalController extends Controller
     public function reports(Request $request)
     {
         $technician = $this->technician($request);
-        $accountId = $request->user()->id;
 
-        $reports = TechnicianReport::query()
-            ->active()
-            ->with([
-                'project.clients',
-                'images',
-                'technician.account',
-                'submitter',
-            ])
-            ->where(fn ($mine) => $this->scopeToOwnReports($mine, $accountId, $technician->technician_id))
-            ->orderByDesc('report_date')
-            ->orderByDesc('id')
+        // Which projects this lead has filed on, for the Project filter - so it
+        // can never offer a filter that matches nothing. One query for the ids,
+        // one for the projects, however long the log is.
+        $filterProjects = Project::query()
+            ->whereIn('project_id', $this->ownReports($request)->active()->select('project_id'))
+            ->orderBy('reference_no')
             ->get();
 
+        // The rows themselves arrive a page at a time from reportsTable().
         return view('technician.reports', [
-            'reports' => $reports,
-            // The Project list is built from the rows actually on the page, so
-            // it can never offer a filter that matches nothing.
-            'filterProjects' => $reports
-                ->map(fn (TechnicianReport $report): ?Project => $report->project)
-                ->filter()
-                ->unique('project_id')
-                ->sortBy('reference_no')
-                ->values(),
-            // The viewer reads from this rather than re-fetching a report it
-            // has already been handed.
-            'reportPayloads' => $reports
-                ->mapWithKeys(fn (TechnicianReport $report): array => [
-                    $report->id => $this->reportPayload($report, $request->user()),
-                ]),
+            'reportCount' => $this->ownReports($request)->active()->count(),
+            'filterProjects' => $filterProjects,
             'reportableProjects' => $this->assignedProjects($technician)
                 ->filter(fn (Project $project): bool => $this->projectPolicy->submitReport($request->user(), $project))
                 ->values(),
@@ -516,8 +612,91 @@ class TechnicianPortalController extends Controller
     }
 
     /**
+     * One page of the lead's report log, for serverTable.js.
+     *
+     * The four narrowings the filter bar offers - project, report type, date
+     * and the search box - are applied here, in SQL, the same way the Super
+     * Admin Reports page applies its own. The viewer reads each report from
+     * `meta.payloads`, the page of reports on screen in full.
+     */
+    public function reportsTable(Request $request)
+    {
+        $validator = Validator::make($request->query(), [
+            'project_id' => ['nullable', 'integer'],
+            'report_type' => ['nullable', 'string'],
+            'date_filter' => ['nullable', Rule::in(['all', 'today', 'week', 'month', 'custom'])],
+            'start_date' => ['nullable', 'date'],
+            'end_date' => ['nullable', 'date'],
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['error' => $validator->errors()->first()], 422);
+        }
+
+        $filters = $validator->validated();
+        $table = ServerTable::fromRequest($request);
+
+        $query = $this->ownReports($request)
+            ->active()
+            ->when(! empty($filters['project_id']), fn ($q) => $q->where('project_id', $filters['project_id']))
+            ->when(
+                ! empty($filters['report_type']) && $filters['report_type'] !== 'all',
+                fn ($q) => $q->where('report_type', $filters['report_type'])
+            );
+
+        [$from, $to] = $this->reportDateWindow(
+            $filters['date_filter'] ?? 'all',
+            $filters['start_date'] ?? null,
+            $filters['end_date'] ?? null
+        );
+
+        // whereDate, not whereBetween: report_date is written with a midnight
+        // time component, which a bare string range would miss.
+        $query->when($from, fn ($q) => $q->whereDate('report_date', '>=', $from))
+            ->when($to, fn ($q) => $q->whereDate('report_date', '<=', $to));
+
+        $page = $table->paginate(
+            $query,
+            sortable: [
+                0 => 'id',
+                1 => fn ($query, string $dir) => $query->orderByProjectReference($dir),
+                2 => fn ($query, string $dir) => $query->orderByClientName($dir),
+                3 => 'report_type',
+                4 => fn ($query, string $dir) => $query->orderBySubmitter($dir),
+                5 => 'report_date',
+            ],
+            search: fn ($query, string $word) => $query->matchingListingWord($word),
+            defaultOrder: [[5, 'desc']],
+        );
+
+        $reports = $page->items->load(['project.clients', 'images', 'technician.account', 'submitter']);
+        $user = $request->user();
+
+        return $table->respond(
+            $page,
+            fn (TechnicianReport $report): string => view('technician.partials.report-row', [
+                'report' => $report,
+            ])->render(),
+            meta: [
+                'payloads' => $reports->mapWithKeys(fn (TechnicianReport $report): array => [
+                    $report->id => $this->reportPayload($report, $user),
+                ])->all(),
+            ],
+        );
+    }
+
+    /**
      * The archive behind the Reports page: the reports this lead filed away
-     * themselves.
+     * themselves. Its rows arrive a page at a time from
+     * archivedReportsTable().
+     */
+    public function archivedReports()
+    {
+        return view('technician.archivedReports');
+    }
+
+    /**
+     * One page of the lead's archive, for serverTable.js.
      *
      * Narrowed exactly as the active log is, and for the same reason - a lead
      * reads what they wrote, not what the office archived on some other
@@ -528,36 +707,80 @@ class TechnicianPortalController extends Controller
      * Nothing here is a stub: an archived report keeps its pictures, its
      * project and the day it was filed, and the viewer shows all of it.
      */
-    public function archivedReports(Request $request)
+    public function archivedReportsTable(Request $request)
     {
-        $technician = $this->technician($request);
-        $accountId = $request->user()->id;
+        $table = ServerTable::fromRequest($request);
 
-        $reports = TechnicianReport::query()
-            ->archived()
-            ->with([
-                'project.clients',
-                'images',
-                'technician.account',
-                'submitter',
-                'archiver',
-            ])
-            ->where(fn ($mine) => $this->scopeToOwnReports($mine, $accountId, $technician->technician_id))
-            // Rows archived before the timestamp existed sort last rather than
-            // first, which is what a null would otherwise do on some engines.
-            ->orderByRaw('archived_at is null')
-            ->orderByDesc('archived_at')
-            ->orderByDesc('id')
-            ->get();
+        $page = $table->paginate(
+            $this->ownReports($request)->archived(),
+            sortable: [
+                0 => 'id',
+                1 => fn ($query, string $dir) => $query->orderByProjectReference($dir),
+                2 => fn ($query, string $dir) => $query->orderByClientName($dir),
+                3 => 'report_type',
+                4 => 'report_date',
+                5 => fn ($query, string $dir) => $query->orderByArchivedAt($dir),
+            ],
+            search: fn ($query, string $word) => $query->matchingListingWord($word),
+            defaultOrder: [[5, 'desc']],
+        );
 
+        $reports = $page->items->load(['project.clients', 'images', 'technician.account', 'submitter', 'archiver']);
         $user = $request->user();
 
-        return view('technician.archivedReports', [
-            'reports' => $reports,
-            'reportPayloads' => $reports->mapWithKeys(fn (TechnicianReport $report): array => [
-                $report->id => $this->reportPayload($report, $user),
-            ]),
-        ]);
+        return $table->respond(
+            $page,
+            fn (TechnicianReport $report): string => view('technician.partials.archived-report-row', [
+                'report' => $report,
+            ])->render(),
+            view('technician.partials.archived-report-dialogs', [
+                'reports' => $reports,
+            ])->render(),
+            [
+                'payloads' => $reports->mapWithKeys(fn (TechnicianReport $report): array => [
+                    $report->id => $this->reportPayload($report, $user),
+                ])->all(),
+            ],
+        );
+    }
+
+    /**
+     * The reports this account filed, active and archived alike - see
+     * scopeToOwnReports().
+     *
+     * @return Builder<TechnicianReport>
+     */
+    private function ownReports(Request $request): Builder
+    {
+        $technicianId = $this->technician($request)->technician_id;
+        $accountId = $request->user()->id;
+
+        return TechnicianReport::query()
+            ->where(fn ($mine) => $this->scopeToOwnReports($mine, $accountId, $technicianId));
+    }
+
+    /**
+     * The [from, to] dates the Date filter stands for, either of which may be
+     * open. Weeks run Monday to Sunday and months are calendar months, in the
+     * office's own today - the same reading the Super Admin Reports page
+     * gives the same options.
+     *
+     * @return array{0: ?string, 1: ?string}
+     */
+    private function reportDateWindow(string $filter, ?string $start, ?string $end): array
+    {
+        $today = BusinessTime::today();
+
+        return match ($filter) {
+            'today' => [$today->toDateString(), $today->toDateString()],
+            'week' => [$today->startOfWeek()->toDateString(), $today->endOfWeek()->toDateString()],
+            'month' => [$today->startOfMonth()->toDateString(), $today->endOfMonth()->toDateString()],
+            'custom' => [
+                $start ? CarbonImmutable::parse($start)->toDateString() : null,
+                $end ? CarbonImmutable::parse($end)->toDateString() : null,
+            ],
+            default => [null, null],
+        };
     }
 
     /**

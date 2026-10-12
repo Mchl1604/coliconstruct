@@ -477,11 +477,10 @@ class DashboardTest extends TestCase
             $this->assertContains($key, $tabs);
         }
 
-        // And the rows say which of those tabs they answer, which is what the
-        // browser-side filter reads.
+        // And the tab the entry links at actually lists the rows it counts -
+        // filtered on the server by the same method the count was taken from.
         $this->actingAs($owner)
-            ->get(route('super-admin.projects'))
-            ->assertOk()
+            ->getTablePage(route('super-admin.projects.table'), ['tab' => 'no_technicians'])
             ->assertSee('data-tab-extra="no_technicians"', false);
     }
 

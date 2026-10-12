@@ -600,9 +600,8 @@ class HighSeverityAuditFixesTest extends TestCase
             'status' => 'pending',
         ]);
 
-        $response = $this->get(route('super-admin.projects'));
+        $response = $this->getTablePage(route('super-admin.projects.table'));
 
-        $response->assertOk();
         $response->assertSee('This project is not ready to be completed');
         $response->assertSee('1 task is still open. Every task has to be completed first.');
         $response->assertSee('completion_override_reason', false);

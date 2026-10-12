@@ -211,7 +211,7 @@ class UnassignedTaskAlertsTest extends TestCase
         $this->task(['due_date' => null]);
         $this->task(['technician_id' => null, 'start_date' => null, 'due_date' => null, 'status' => 'unassigned']);
 
-        $response = $this->get(route('super-admin.tasks.index'))->assertOk();
+        $response = $this->getWithTables(route('super-admin.tasks.index'))->assertOk();
 
         $response->assertSee('3 tasks need attention');
         $response->assertSee('Missing Technician');
@@ -226,7 +226,7 @@ class UnassignedTaskAlertsTest extends TestCase
     {
         $this->task();
 
-        $this->get(route('super-admin.tasks.index'))
+        $this->getWithTables(route('super-admin.tasks.index'))
             ->assertOk()
             ->assertDontSee('need attention')
             ->assertDontSee('data-task-attention', false);
@@ -250,7 +250,7 @@ class UnassignedTaskAlertsTest extends TestCase
         $this->task(['due_date' => null]);
 
         $response = $this->actingAs($lead->account)
-            ->get(route('technician.tasks'))
+            ->getWithTables(route('technician.tasks'))
             ->assertOk();
 
         $response->assertSee('3 tasks need attention');
@@ -287,7 +287,7 @@ class UnassignedTaskAlertsTest extends TestCase
         $this->assertSame(4, $this->urgentAction('unassigned_tasks')['count']);
 
         $this->actingAs($lead->account)
-            ->get(route('technician.tasks'))
+            ->getWithTables(route('technician.tasks'))
             ->assertOk()
             ->assertSee('1 task needs attention')
             ->assertDontSee('Not theirs 0');
@@ -315,7 +315,7 @@ class UnassignedTaskAlertsTest extends TestCase
         ]);
 
         $response = $this->actingAs($lead->account)
-            ->get(route('technician.tasks'))
+            ->getWithTables(route('technician.tasks'))
             ->assertOk();
 
         $response->assertSee('1 task needs attention');
@@ -329,7 +329,7 @@ class UnassignedTaskAlertsTest extends TestCase
         $this->task(['technician_id' => $this->technician->technician_id, 'due_date' => null]);
 
         $this->actingAs($this->technician->account)
-            ->get(route('technician.tasks'))
+            ->getWithTables(route('technician.tasks'))
             ->assertOk()
             ->assertDontSee('need attention')
             ->assertDontSee('data-task-attention', false);
@@ -393,7 +393,7 @@ class UnassignedTaskAlertsTest extends TestCase
     {
         $task = $this->task(['technician_id' => null, 'status' => 'unassigned']);
 
-        $this->get(route('super-admin.tasks.index'))
+        $this->getWithTables(route('super-admin.tasks.index'))
             ->assertOk()
             ->assertSee('1 task needs attention');
 
@@ -408,7 +408,7 @@ class UnassignedTaskAlertsTest extends TestCase
             'due_date' => $task->due_date,
         ])->assertRedirect();
 
-        $this->get(route('super-admin.tasks.index'))
+        $this->getWithTables(route('super-admin.tasks.index'))
             ->assertOk()
             ->assertDontSee('need attention');
 

@@ -15,7 +15,7 @@
             <p class="text-secondary small mb-0">The projects you are assigned to.</p>
         </div>
 
-        <span class="badge bg-secondary">{{ $projects->count() }} assigned</span>
+        <span class="badge bg-secondary">{{ $assignedCount }} assigned</span>
     </div>
 
     {{-- A lead has no dashboard, so what needs arranging is said here. Empty
@@ -59,95 +59,9 @@
                         </tr>
                     </thead>
 
-                    <tbody>
-                        {{-- No blade fallback row here: a single colspan cell has fewer
-                             cells than the header, which DataTables cannot parse. Its
-                             own emptyTable message covers it. --}}
-                        @foreach ($projects as $project)
-                            @php
-                                $client = $project->clients->first();
-                                // Somebody on this crew can no longer sign in.
-                                // Flagged on the row itself, exactly as the
-                                // administrative table flags it, so the lead
-                                // does not have to open every project to find
-                                // the one that is short-handed.
-                                $needsRecrew = $flagsInactiveCrew && $project->needsRecrew();
-                                // Exactly as the administrative table decides
-                                // it - Project::isActiveToday() - so a lead and
-                                // an administrator looking at the same project
-                                // see the same flag.
-                                $isActiveToday = $project->isActiveToday();
-                                // Nobody has settled this project's phases,
-                                // so it takes no tasks. Flagged on the row
-                                // rather than behind a tab, the way ACTIVE
-                                // TODAY is - see Project::needsPhaseSetup().
-                                $needsPhaseSetup = $project->needsPhaseSetup();
-                            @endphp
-                            <tr data-tab="{{ $project->tabKey() }}"
-                                data-status="{{ $project->status }}"
-                                data-overdue="{{ $project->isOverdue() ? '1' : '0' }}"
-                                data-on-hold="{{ $project->on_hold ? '1' : '0' }}"
-                                data-active-today="{{ $isActiveToday ? '1' : '0' }}"
-                                class="{{ $needsPhaseSetup ? 'project-row-needs-phase-setup' : '' }} {{ $isActiveToday ? 'project-row-active-today' : '' }} {{ $needsRecrew ? 'project-row-needs-recrew' : '' }}">
-                                <td>
-                                    {{ $project->reference_no }}
-
-                                    <x-project-phase-setup-flag :project="$project" />
-
-                                    <x-project-active-today-flag :project="$project" />
-
-                                    @if ($needsRecrew)
-                                        <span class="project-recrew-flag"
-                                            title="{{ $project->hasLead()
-                                                ? $project->inactiveCrewNames().' cannot sign in. Move their tasks.'
-                                                : 'No lead technician assigned.' }}">
-                                            <i class="bi bi-person-exclamation" aria-hidden="true"></i>
-                                            {{ $project->recrewFlagLabel() }}
-                                        </span>
-                                    @endif
-                                </td>
-                                <td>
-                                    {{ $client?->client_type === 'Commercial'
-                                        ? ($client->company_name ?? $client->fullname)
-                                        : ($client?->fullname ?? 'N/A') }}
-                                </td>
-                                <td>{{ $client?->client_type ?? 'N/A' }}</td>
-                                <td>
-                                    @forelse ($project->projectTypes as $projectType)
-                                        <span class="project-type-chip">{{ $projectType->type_name }}</span>
-                                    @empty
-                                        <span class="text-muted small">N/A</span>
-                                    @endforelse
-                                </td>
-                                <td data-order="{{ $project->tabRank() }}"><x-project-status-badge :project="$project" /></td>
-                                <td><x-project-phase-progress :project="$project" /></td>
-                                <td class="text-center">
-                                    <div class="projects-action-buttons">
-                                        <a class="btn btn-sm btn-primary py-1 px-2"
-                                            href="{{ route('technician.projects.show', $project->project_id) }}"
-                                            title="View project">
-                                            <i class="bi bi-eye" aria-hidden="true"></i>
-                                        </a>
-
-                                        {{-- Only work that is actually under
-                                             way. A Pending, Unscheduled or
-                                             paused project has had nobody on
-                                             site yet, so there is nothing to
-                                             close out and no button offered -
-                                             see Project::isCompletable(). --}}
-                                        @if ($canCloseProjects && $project->isCompletable())
-                                            <button type="button" class="btn btn-sm btn-success py-1 px-2"
-                                                data-complete-project="{{ $project->project_id }}"
-                                                data-project-reference="{{ $project->reference_no }}"
-                                                title="Complete project">
-                                                <i class="bi bi-check-lg" aria-hidden="true"></i>
-                                            </button>
-                                        @endif
-                                    </div>
-                                </td>
-                            </tr>
-                        @endforeach
-                    </tbody>
+                    {{-- Filled a page at a time by serverTable.js from
+                         TechnicianPortalController::projectsTable(). --}}
+                    <tbody></tbody>
                 </table>
             </div>
         </div>
@@ -219,6 +133,9 @@
                 projectDetails: @json(route('technician.projects.details', ['project' => '__ID__'])),
                 completeProject: @json(route('technician.projects.complete', ['project' => '__ID__'])),
             };
+        </script>
+        <script>
+            window.portalRoutes.projectsTable = @json(route('technician.projects.table'));
         </script>
         <script src="/js/imagePreview.js"></script>
         <script src="/js/projectStatusTabs.js"></script>

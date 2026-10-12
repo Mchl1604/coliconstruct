@@ -2329,6 +2329,101 @@ class Project extends Model
     }
 
     /**
+     * The places one word of a projects table's search box may match, as
+     * `orWhere`s for App\Support\ServerTable::paginate() to group.
+     *
+     * The columns those tables print: the code (PROJ-0007, typed or pasted),
+     * the reference number, the project's name, its client - the company or
+     * the person - and client type, its project types, its quotation and the
+     * stored status as it reads. A quotation is printed with thousands
+     * separators, so they are dropped from the word before it is compared
+     * with the stored figure.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeMatchingListingWord(Builder $query, string $word): Builder
+    {
+        $like = '%'.$word.'%';
+        $projectId = DisplayCode::toId(DisplayCode::PROJECT, $word);
+        $amount = str_replace([',', '₱'], '', $word);
+
+        $statuses = collect(['unscheduled', 'pending', 'ongoing', self::STATUS_AWAITING_CLIENT_CONFIRMATION, 'completed', 'cancelled'])
+            ->filter(fn (string $status): bool => str_contains(mb_strtolower(self::statusLabelFor($status)), mb_strtolower($word)))
+            ->values()
+            ->all();
+
+        return $query
+            ->where('reference_no', 'like', $like)
+            ->orWhere('name', 'like', $like)
+            ->orWhereHas('clients', fn (Builder $clients) => $clients
+                ->where('fullname', 'like', $like)
+                ->orWhere('company_name', 'like', $like)
+                ->orWhere('client_type', 'like', $like))
+            ->orWhereHas('projectTypes', fn (Builder $types) => $types->where('type_name', 'like', $like))
+            ->when($amount !== '' && is_numeric($amount), fn (Builder $query) => $query->orWhere('quotation', 'like', '%'.$amount.'%'))
+            ->when($statuses !== [], fn (Builder $query) => $query->orWhereIn('status', $statuses))
+            ->when(str_contains('on hold', mb_strtolower($word)), fn (Builder $query) => $query->orWhere('on_hold', true))
+            ->when($projectId !== null, fn (Builder $query) => $query->orWhere($this->getQualifiedKeyName(), $projectId));
+    }
+
+    /**
+     * Sort by the client a projects table names - the company for a
+     * commercial client, the person otherwise - read from the first client
+     * on the project, as the tables print it.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeOrderByClientName(Builder $query, string $direction = 'asc'): Builder
+    {
+        return $query->orderBy(
+            Client::query()
+                ->selectRaw("case when client_type = 'Commercial' and company_name is not null and company_name <> '' then company_name else fullname end")
+                ->whereColumn('tbl_clients.project_id', $this->getQualifiedKeyName())
+                ->orderBy('client_id')
+                ->limit(1),
+            $direction
+        );
+    }
+
+    /**
+     * Sort by the first client's type, Commercial or Residential.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeOrderByClientType(Builder $query, string $direction = 'asc'): Builder
+    {
+        return $query->orderBy(
+            Client::query()
+                ->select('client_type')
+                ->whereColumn('tbl_clients.project_id', $this->getQualifiedKeyName())
+                ->orderBy('client_id')
+                ->limit(1),
+            $direction
+        );
+    }
+
+    /**
+     * Sort by project type - alphabetically by the first of a project's types,
+     * which is the chip a reader's eye lands on.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeOrderByProjectTypes(Builder $query, string $direction = 'asc'): Builder
+    {
+        return $query->orderBy(
+            ProjectType::query()
+                ->selectRaw('min(type_name)')
+                ->join('tbl_project_type_map', 'tbl_project_type_map.type_id', '=', 'tbl_project_types.type_id')
+                ->whereColumn('tbl_project_type_map.project_id', $this->getQualifiedKeyName()),
+            $direction
+        );
+    }
+
+    /**
      * Which attention tabs this project falls under, if any.
      *
      * Unlike tabKey() this returns a list: the questions overlap, and a

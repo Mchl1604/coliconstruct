@@ -1,18 +1,24 @@
 document.addEventListener("DOMContentLoaded", function () {
-    if (window.jQuery && window.jQuery.fn && window.jQuery.fn.DataTable) {
-        window.jQuery("#schedulesTable").DataTable({
-            responsive: true,
+    // One page of rows per request - see ScheduleController::table().
+    if (window.serverTable) {
+        window.serverTable("#schedulesTable", {
+            url: window.schedulesTableUrl,
             autoWidth: false,
             pageLength: 10,
             lengthMenu: [10, 25, 50, 100],
             info: false,
-            // A project ID is a label, not a quantity: without this
-            // DataTables types the column as numeric and right-aligns it.
-            // Ordering stays numeric.
-            columnDefs: [{ targets: 0, className: "dt-left" }],
+            order: [[0, "asc"]],
+            columnDefs: [
+                // A project ID is a label, not a quantity.
+                { targets: 0, className: "dt-left" },
+                // Today's team and the buttons have no order of their own.
+                { targets: [3, -1], orderable: false },
+            ],
             language: {
                 search: "",
                 searchPlaceholder: "Search schedules...",
+                emptyTable: "No scheduled projects.",
+                zeroRecords: "No schedules match your search.",
             },
         });
     }

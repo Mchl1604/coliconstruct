@@ -8,14 +8,22 @@
 document.addEventListener("DOMContentLoaded", function () {
     const portal = window.portal;
 
-    portal.dataTable("#portalProjectsTable", "projects", {
-        // In the order the tabs are read: the Status cell carries its tab's
-        // rank (Project::tabRank()).
+    // One page of rows per request, filtered by the open tab on the server -
+    // see TechnicianPortalController::projectsTable().
+    portal.serverTable("#portalProjectsTable", "projects", {
+        url: window.portalRoutes.projectsTable,
+        params: function () {
+            return {
+                tab: window.projectStatusTabs.current("portalProjectsTable"),
+            };
+        },
+        // In the order the tabs are read - see Project::tabRank().
         order: [
             [4, "asc"],
             [0, "desc"],
         ],
-        columnDefs: [{ targets: -1, orderable: false }],
+        // Phases and the button have no order of their own.
+        columnDefs: [{ targets: [5, -1], orderable: false }],
     });
 
     const completeEl = document.querySelector("[data-complete-project-modal]");

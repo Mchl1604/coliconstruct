@@ -531,8 +531,7 @@ class ProjectClientConfirmationReachTest extends TestCase
         // completion dialog for it.
         $this->schedule($this->project(), -2, 2);
 
-        $this->get(route('super-admin.projects'))
-            ->assertOk()
+        $this->getTablePage(route('super-admin.projects.table'))
             ->assertSee('No registered client can currently confirm this project.', false);
     }
 
@@ -565,8 +564,7 @@ class ProjectClientConfirmationReachTest extends TestCase
 
         $this->requestCompletion($this->project());
 
-        $this->get(route('super-admin.projects'))
-            ->assertOk()
+        $this->getTablePage(route('super-admin.projects.table'))
             ->assertSee('No client to confirm', false);
     }
 
@@ -941,10 +939,9 @@ class ProjectClientConfirmationReachTest extends TestCase
         $this->schedule($project, -2, 5);
 
         $details = $this->get(route('super-admin.projects.show', $project->project_id));
-        $listing = $this->get(route('super-admin.projects'));
+        $listing = $this->getTablePage(route('super-admin.projects.table'));
 
         $details->assertOk();
-        $listing->assertOk();
 
         // No completion date: a project is always completed as of today.
         $fields = [

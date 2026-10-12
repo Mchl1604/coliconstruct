@@ -885,8 +885,7 @@ class ProjectPhaseSetupTest extends TestCase
 
         foreach ($pages as [$account, $url]) {
             $this->actingAs($account)
-                ->get($url)
-                ->assertOk()
+                ->getWithTables($url)
                 ->assertSee('<th>Phase</th>', false)
                 // The number is what the column is for, and the title is the
                 // line under it - see x-task-phase-cell.
@@ -907,7 +906,7 @@ class ProjectPhaseSetupTest extends TestCase
         $task->forceFill(['phase_id' => null])->save();
 
         $this->actingAs($this->superAdmin)
-            ->get(route('super-admin.projects.show', $this->project->project_id))
+            ->getWithTables(route('super-admin.projects.show', $this->project->project_id))
             ->assertOk()
             ->assertSee('task-phase is-unset', false)
             ->assertSee('No phase');
@@ -1205,16 +1204,14 @@ class ProjectPhaseSetupTest extends TestCase
         $this->assertNotContains('phase_setup', $this->project->attentionTabKeys());
 
         $this->actingAs($this->superAdmin)
-            ->get(route('super-admin.projects'))
-            ->assertOk()
+            ->getTablePage(route('super-admin.projects.table'))
             ->assertSee('project-row-needs-phase-setup')
             ->assertSee('PHASE SETUP REQUIRED');
 
         $this->finalize();
 
         $this->actingAs($this->superAdmin)
-            ->get(route('super-admin.projects'))
-            ->assertOk()
+            ->getTablePage(route('super-admin.projects.table'))
             ->assertDontSee('project-row-needs-phase-setup')
             ->assertDontSee('PHASE SETUP REQUIRED');
     }
@@ -1225,8 +1222,7 @@ class ProjectPhaseSetupTest extends TestCase
     public function test_the_technician_table_highlights_the_row_too(): void
     {
         $this->actingAs($this->leadAccount)
-            ->get(route('technician.projects'))
-            ->assertOk()
+            ->getTablePage(route('technician.projects.table'))
             ->assertSee('project-row-needs-phase-setup')
             ->assertSee('PHASE SETUP REQUIRED');
     }
@@ -1247,14 +1243,13 @@ class ProjectPhaseSetupTest extends TestCase
         $phases[2]->forceFill(['completed_at' => now()])->save();
 
         foreach ([
-            [$this->superAdmin, 'super-admin.projects'],
-            [$this->admin, 'super-admin.projects'],
-            [$this->leadAccount, 'technician.projects'],
-            [$this->mate->account, 'technician.projects'],
+            [$this->superAdmin, 'super-admin.projects.table'],
+            [$this->admin, 'super-admin.projects.table'],
+            [$this->leadAccount, 'technician.projects.table'],
+            [$this->mate->account, 'technician.projects.table'],
         ] as [$viewer, $route]) {
             $this->actingAs($viewer)
-                ->get(route($route))
-                ->assertOk()
+                ->getTablePage(route($route))
                 ->assertSee('project-phase-chip')
                 ->assertSee('3/4');
         }

@@ -6,8 +6,11 @@ use App\Models\Project;
 use App\Models\ProjectPhase;
 use App\Models\User;
 use App\Services\SystemContentService;
+use App\Support\ServerTable;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
+use Illuminate\Http\Response;
 use Illuminate\Support\Collection;
+use Illuminate\Testing\TestResponse;
 
 abstract class TestCase extends BaseTestCase
 {
@@ -102,6 +105,59 @@ abstract class TestCase extends BaseTestCase
             ?? $this->finalizePhases($project)->first();
 
         return (int) $phase->phase_id;
+    }
+
+    /**
+     * One page of a server-paged table, as markup a test can assertSee()
+     * against: the rows in a table body, then the dialogs that came with
+     * them.
+     *
+     * The tables used to arrive whole inside their page, so a test read a
+     * row off the page itself. They now arrive a page at a time from a JSON
+     * endpoint - see App\Support\ServerTable - and this puts them back into
+     * the shape those assertions were written against. Asks for the largest
+     * page by default, so a fixture's row is never on page two.
+     *
+     * @param  array<string, mixed>  $query  extra parameters - a tab, a filter
+     */
+    protected function getTablePage(string $uri, array $query = []): TestResponse
+    {
+        $json = $this->getJson($uri.(str_contains($uri, '?') ? '&' : '?').http_build_query(
+            $query + ['draw' => 1, 'start' => 0, 'length' => ServerTable::MAX_LENGTH]
+        ))->assertOk()->json();
+
+        return TestResponse::fromBaseResponse(new Response(
+            "<table><tbody>\n".implode("\n", $json['rows'] ?? [])."\n</tbody></table>\n".($json['extras'] ?? '')
+        ));
+    }
+
+    /**
+     * A page as the browser ends up showing it: the page itself, followed by
+     * the first page of every server-paged table on it - each table's rows and
+     * the dialogs that came with them.
+     *
+     * For the pages that hold several tables, like the task boards, where a
+     * test is about what the reader can reach rather than which request
+     * carried it. The page's own view data is kept.
+     */
+    protected function getWithTables(string $uri): TestResponse
+    {
+        $response = $this->get($uri)->assertOk();
+        $html = (string) $response->getContent();
+
+        preg_match_all('/data-server-table-url="([^"]+)"/', $html, $matches);
+
+        foreach (array_unique($matches[1]) as $tableUrl) {
+            $html .= $this->getTablePage(html_entity_decode($tableUrl))->getContent();
+        }
+
+        // setContent() replaces the view the response was made from, which
+        // viewData() reads - so it is put back.
+        $view = $response->baseResponse->original;
+        $response->baseResponse->setContent($html);
+        $response->baseResponse->original = $view;
+
+        return $response;
     }
 
     /**

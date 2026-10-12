@@ -630,7 +630,7 @@ class ScheduledTeamChangeTest extends TestCase
 
         $this->saveTeam($project, $lead, [])->assertSessionHas('success');
 
-        $html = $this->get(route('super-admin.projects.show', $project->project_id))->assertOk()->getContent();
+        $html = $this->getWithTables(route('super-admin.projects.show', $project->project_id))->assertOk()->getContent();
 
         $this->assertStringContainsString('left the project. Reassign this task.', $html);
         // The holder's card: present, switched off, and not the one ticked.
@@ -811,7 +811,7 @@ class ScheduledTeamChangeTest extends TestCase
 
         $this->task($project, $tech, $this->day(2), $this->day(5));
 
-        $this->get(route('super-admin.tasks.index'))
+        $this->getWithTables(route('super-admin.tasks.index'))
             ->assertOk()
             ->assertSee('data-assignment-periods', false);
 

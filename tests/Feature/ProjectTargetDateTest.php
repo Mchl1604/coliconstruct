@@ -463,7 +463,7 @@ class ProjectTargetDateTest extends TestCase
         $project = Project::sole();
         $this->assertTrue($project->isNew());
 
-        $this->get(route('super-admin.projects'))->assertSee('data-project-new-flag', false);
+        $this->getTablePage(route('super-admin.projects.table'))->assertSee('data-project-new-flag', false);
 
         $updatedAt = $project->updated_at;
 
@@ -474,7 +474,7 @@ class ProjectTargetDateTest extends TestCase
         // Opening a page is not a save: the edit dialog's version check reads updated_at.
         $this->assertEquals($updatedAt, $project->updated_at);
 
-        $this->get(route('super-admin.projects'))->assertDontSee('data-project-new-flag', false);
+        $this->getTablePage(route('super-admin.projects.table'))->assertDontSee('data-project-new-flag', false);
     }
 
     public function test_a_client_cannot_read_another_clients_project(): void

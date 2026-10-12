@@ -189,8 +189,7 @@ class PortalImprovementsTest extends TestCase
 
         foreach (['admin' => 'a@example.test', 'super_admin' => 'o@example.test'] as $role => $email) {
             $this->actingAs($this->account($role, $email))
-                ->get(route('super-admin.projects'))
-                ->assertOk()
+                ->getTablePage(route('super-admin.projects.table'))
                 ->assertSee('data-bs-target="#completeProjectModal'.$project->project_id.'"', escape: false);
         }
     }
@@ -225,8 +224,7 @@ class PortalImprovementsTest extends TestCase
 
         foreach (['admin' => 'a@example.test', 'super_admin' => 'o@example.test'] as $role => $email) {
             $this->actingAs($this->account($role, $email))
-                ->get(route('super-admin.projects'))
-                ->assertOk()
+                ->getTablePage(route('super-admin.projects.table'))
                 ->assertDontSee(
                     'data-bs-target="#completeProjectModal'.$project->project_id.'"',
                     escape: false
@@ -253,13 +251,11 @@ class PortalImprovementsTest extends TestCase
         $target = 'data-bs-target="#completeProjectModal'.$project->project_id.'"';
 
         $this->actingAs($this->account('super_admin', 'o@example.test'))
-            ->get(route('super-admin.projects'))
-            ->assertOk()
+            ->getTablePage(route('super-admin.projects.table'))
             ->assertSee($target, escape: false);
 
         $this->actingAs($this->account('admin', 'a@example.test'))
-            ->get(route('super-admin.projects'))
-            ->assertOk()
+            ->getTablePage(route('super-admin.projects.table'))
             ->assertDontSee($target, escape: false);
     }
 
@@ -274,7 +270,10 @@ class PortalImprovementsTest extends TestCase
             ->assertOk()
             ->assertSee('Reference No.')
             ->assertSee('Client Type')
-            ->assertSee('Archived By')
+            ->assertSee('Archived By');
+
+        $this->actingAs($owner)
+            ->getTablePage(route('super-admin.projects.archived.table'))
             ->assertSee('Aircon Installation')
             ->assertSee($owner->fullName());
 

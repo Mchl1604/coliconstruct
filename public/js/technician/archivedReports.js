@@ -4,20 +4,28 @@
  * Restoring is an ordinary form post inside a confirmation dialog, so its
  * outcome arrives as the flashed toast the layout already raises - there is
  * nothing for this file to do about it. What is left is reading a report, and
- * that comes from the payload the page was handed rather than from a request:
- * the server already sent every archived report in full, images included.
+ * that comes from the page of reports the table was handed rather than from a
+ * request: each page arrives with its reports in full, images included.
  */
 document.addEventListener("DOMContentLoaded", function () {
     const portal = window.portal;
-    const reports = window.portalReports || {};
 
-    portal.dataTable("#portalArchivedReportsTable", "archived reports", {
+    // The reports on the page on screen, keyed by id - replaced with every
+    // page the table fetches.
+    let reports = {};
+
+    // One page per request - see
+    // TechnicianPortalController::archivedReportsTable().
+    portal.serverTable("#portalArchivedReportsTable", "archived reports", {
+        url: window.portalRoutes.archivedReportsTable,
+        extras: "[data-archived-report-dialogs]",
+        onLoad: function (json) {
+            reports = (json.meta && json.meta.payloads) || {};
+        },
         // Archived Date, most recent first.
         order: [[5, "desc"]],
         info: true,
         columnDefs: [
-            // Both date columns carry a `data-order` timestamp, which
-            // DataTables reads as numeric and then right-aligns on its own.
             { targets: [4, 5], className: "text-start" },
             { targets: -1, orderable: false },
         ],

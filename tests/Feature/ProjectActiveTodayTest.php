@@ -261,9 +261,7 @@ class ProjectActiveTodayTest extends TestCase
         $idle = $this->project('Nobody Here', [[5, 9]], assignCrew: true);
 
         foreach (self::PORTALS as $where => [$role, $routeName]) {
-            $response = $this->actingAs($this->accountFor($role))->get(route($routeName));
-
-            $response->assertOk();
+            $response = $this->actingAs($this->accountFor($role))->getTablePage(route($routeName));
 
             $body = $response->getContent();
 
@@ -295,9 +293,7 @@ class ProjectActiveTodayTest extends TestCase
         $this->project('Finished Yesterday', [[-6, -1]], assignCrew: true);
 
         foreach (self::PORTALS as $where => [$role, $routeName]) {
-            $response = $this->actingAs($this->accountFor($role))->get(route($routeName));
-
-            $response->assertOk();
+            $response = $this->actingAs($this->accountFor($role))->getTablePage(route($routeName));
             $this->assertStringNotContainsString(
                 'ACTIVE TODAY',
                 $response->getContent(),
@@ -317,7 +313,7 @@ class ProjectActiveTodayTest extends TestCase
                 .'/'.$schedule->endsOn()->toDateString()
         )->all();
 
-        $before = $this->get(route('super-admin.projects'))->getContent();
+        $before = $this->getTablePage(route('super-admin.projects.table'))->getContent();
 
         $this->assertStringNotContainsString('ACTIVE TODAY', $before);
         $this->assertSame(['0'], $this->activeAttributesFor($before, $project->reference_no));
@@ -325,7 +321,7 @@ class ProjectActiveTodayTest extends TestCase
         CarbonImmutable::setTestNow(CarbonImmutable::now()->addDays(2));
         DashboardMetrics::flush();
 
-        $after = $this->get(route('super-admin.projects'))->getContent();
+        $after = $this->getTablePage(route('super-admin.projects.table'))->getContent();
 
         $this->assertStringContainsString('ACTIVE TODAY', $after);
         $this->assertSame(['1'], $this->activeAttributesFor($after, $project->reference_no));
@@ -346,15 +342,16 @@ class ProjectActiveTodayTest extends TestCase
     }
 
     /**
-     * Every portal's projects table, with a role entitled to open it.
+     * Every portal's projects table - the endpoint its rows are paged from -
+     * with a role entitled to open it.
      *
      * @var array<string, array{0: string, 1: string}>
      */
     private const PORTALS = [
-        'Super Admin' => ['super_admin', 'super-admin.projects'],
-        'Admin' => ['admin', 'super-admin.projects'],
-        'Lead Technician' => ['lead_technician', 'technician.projects'],
-        'Technician' => ['technician', 'technician.projects'],
+        'Super Admin' => ['super_admin', 'super-admin.projects.table'],
+        'Admin' => ['admin', 'super-admin.projects.table'],
+        'Lead Technician' => ['lead_technician', 'technician.projects.table'],
+        'Technician' => ['technician', 'technician.projects.table'],
     ];
 
     // ------------------------------------------------------------------

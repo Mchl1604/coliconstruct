@@ -14,7 +14,7 @@
 
 @section('content')
     @php
-        $totalTasks = $tasksByProject->flatten()->count();
+        $totalTasks = array_sum($taskCounts);
     @endphp
 
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
@@ -62,13 +62,9 @@
         </div>
     </div>
 
-    <x-task-board :projects="$projects" :tasks-by-project="$tasksByProject"
-        :technicians-by-project="$techniciansByProject" :ranges-by-project="$rangesByProject" :phases-by-project="$phasesByProject" :periods-by-project="$periodsByProject"
-        :active-task-counts-by-project="$technicianActiveTaskCounts" :manageable="$manageable"
+    <x-task-board :projects="$projects" :task-counts="$taskCounts" :gap-counts="$gapCounts"
+        table-route="technician.tasks.board-table" :linked-task-dialogs="$linkedTaskDialogs"
         project-route="technician.projects.show"
-        :viewer-technician-id="$technicianId" update-route="technician.tasks.update"
-        complete-route="technician.tasks.complete" delete-route="technician.tasks.destroy"
-        update-method="POST" complete-method="POST"
         empty-message="You are not assigned to any projects yet, so there is no task board to show." />
 
     @if ($creatableProjects->isNotEmpty())

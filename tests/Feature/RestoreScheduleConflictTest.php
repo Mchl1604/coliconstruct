@@ -573,8 +573,9 @@ class RestoreScheduleConflictTest extends TestCase
         [$archived] = $this->clashingPair();
 
         $response = $this->get(route('super-admin.projects.archived'))->assertOk();
+        $dialogs = $this->getTablePage(route('super-admin.projects.archived.table'));
 
-        $response->assertSee('Restore PRJ-20260716-00013?', false);
+        $dialogs->assertSee('Restore PRJ-20260716-00013?', false);
         $response->assertSee('Schedule Conflict', false);
         $response->assertSee('Recheck availability', false);
         // The dialog is shared with Resume now, so what it calls itself and
@@ -584,7 +585,7 @@ class RestoreScheduleConflictTest extends TestCase
         // that fill it.
         $response->assertSee('data-conflict-modal', false);
         $response->assertSee('data-conflict-commit', false);
-        $response->assertSee(
+        $dialogs->assertSee(
             route('super-admin.projects.restore-conflicts', $archived->project_id),
             false
         );
@@ -601,8 +602,7 @@ class RestoreScheduleConflictTest extends TestCase
 
         $this->project([$this->technician('Ana Mendoza')], 'ongoing', 'PRJ-20260731-00016');
 
-        $this->get(route('super-admin.projects'))
-            ->assertOk()
+        $this->getTablePage(route('super-admin.projects.table'))
             ->assertSee('Archive PRJ-20260731-00016?', false);
     }
 

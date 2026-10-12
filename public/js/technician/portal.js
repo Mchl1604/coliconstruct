@@ -2,9 +2,9 @@
  * Shared helpers for the technician portal.
  *
  * The three things every page here needs and would otherwise each reinvent: a
- * DataTable configured the way the Super Admin portal configures its own, a
- * toast, and a JSON request that speaks the same error shape the controllers
- * answer with.
+ * server-paged table configured the way the Super Admin portal configures its
+ * own, a toast, and a JSON request that speaks the same error shape the
+ * controllers answer with.
  */
 (function (global) {
     "use strict";
@@ -35,35 +35,32 @@
      * search placeholder and the two empty-state messages so every table
      * reads in its own terms without repeating the whole config.
      */
-    function dataTable(selector, noun, options) {
-        if (!global.jQuery || !global.jQuery.fn || !global.jQuery.fn.DataTable) {
+    function defaults(noun) {
+        return {
+            autoWidth: false,
+            pageLength: 10,
+            lengthMenu: [10, 25, 50, 100],
+            info: false,
+            language: {
+                search: "",
+                searchPlaceholder: "Search " + noun + "...",
+                emptyTable: "No " + noun + " found.",
+                zeroRecords: "No " + noun + " match your search.",
+            },
+        };
+    }
+
+    /**
+     * The same table, paged on the server: one page of rows per request
+     * rather than the whole list up front. See serverTable.js for the
+     * options it adds - `url`, `params`, `extras`, `onLoad`.
+     */
+    function serverTable(selector, noun, options) {
+        if (!global.serverTable) {
             return null;
         }
 
-        const target = global.jQuery(selector);
-
-        if (!target.length) {
-            return null;
-        }
-
-        return target.DataTable(
-            Object.assign(
-                {
-                    responsive: true,
-                    autoWidth: false,
-                    pageLength: 10,
-                    lengthMenu: [10, 25, 50, 100],
-                    info: false,
-                    language: {
-                        search: "",
-                        searchPlaceholder: "Search " + noun + "...",
-                        emptyTable: "No " + noun + " found.",
-                        zeroRecords: "No " + noun + " match your search.",
-                    },
-                },
-                options || {},
-            ),
-        );
+        return global.serverTable(selector, Object.assign(defaults(noun), options || {}));
     }
 
     /**
@@ -230,7 +227,7 @@
 
     global.portal = {
         escapeHtml: escapeHtml,
-        dataTable: dataTable,
+        serverTable: serverTable,
         toast: toast,
         request: request,
         setBusy: setBusy,

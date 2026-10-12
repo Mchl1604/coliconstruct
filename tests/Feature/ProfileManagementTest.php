@@ -729,11 +729,17 @@ class ProfileManagementTest extends TestCase
         $this->actingAs($owner)
             ->get(route('super-admin.technicians.index'))
             ->assertOk()
-            ->assertSee('Michael Santos')
-            ->assertSee('technician-row-pending', escape: false)
             ->assertSee('waiting on a specialty decision')
             // The tab it used to live on is gone.
             ->assertDontSee('specialtyRequestsPane', escape: false);
+
+        $this->getTablePage(route('super-admin.technicians.table'))
+            ->assertSee('Michael Santos')
+            ->assertSee('technician-row-pending', escape: false);
+
+        // And the dashboard's figure narrows the table to them alone.
+        $this->getTablePage(route('super-admin.technicians.table'), ['specialty' => 'pending'])
+            ->assertSee('Michael Santos');
 
         // And the dialog behind the eye button carries the request itself.
         $this->actingAs($owner)
@@ -752,8 +758,10 @@ class ProfileManagementTest extends TestCase
         $this->actingAs($owner)
             ->get(route('super-admin.technicians.index'))
             ->assertOk()
-            ->assertDontSee('technician-row-pending', escape: false)
             ->assertDontSee('waiting on a specialty decision');
+
+        $this->getTablePage(route('super-admin.technicians.table'))
+            ->assertDontSee('technician-row-pending', escape: false);
 
         $this->actingAs($owner)
             ->getJson(route('super-admin.technicians.show', $technician))

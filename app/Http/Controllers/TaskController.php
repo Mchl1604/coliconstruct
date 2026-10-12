@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Models\ActivityLog;
 use App\Models\Project;
-use App\Models\ProjectPhase;
 use App\Models\Task;
 use App\Models\TaskImage;
 use App\Services\ActivityLogger;
@@ -12,11 +11,13 @@ use App\Services\NotificationService;
 use App\Services\ProjectPhaseProgress;
 use App\Services\TaskAssignmentGaps;
 use App\Services\TaskAssignmentRules;
+use App\Services\TaskBoard;
 use App\Services\TaskPhaseRules;
 use App\Services\TaskScheduleRules;
 use App\Services\TechnicianTaskLoad;
 use App\Support\UploadStore;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -37,69 +38,29 @@ class TaskController extends Controller
      * with a filter above them and a single Add Task dialog that picks the
      * project first. Same layout the technician portal uses.
      */
-    public function index(Request $request)
+    public function index(Request $request, TaskBoard $board)
     {
-        // Only live work belongs on this page: a project is listed when it is
-        // pending or ongoing. Not-yet-scheduled, on-hold, completed, cancelled
-        // and archived projects are all left out.
-        $projects = Project::query()
-            ->with(['schedules', 'rosterTechnicians.technician.account'])
-            ->whereIn('status', Project::ACTIVE_PROJECT_STATUSES)
-            ->where('is_archived', false)
-            ->orderBy('name')
-            ->get();
+        $projects = $this->boardProjects()->get();
+        $projectIds = $projects->pluck('project_id');
 
-        $tasksByProject = Task::query()
+        // The cards and their figures. The tasks themselves arrive a page at
+        // a time, per card, from boardTable().
+        $taskCounts = $board->taskCounts(Task::query(), $projectIds);
+        $gapCounts = $board->gapCounts(Task::query(), $projectIds);
+
+        // A task notification links here with ?task=, and that task's dialog
+        // has to be on the page before its card has loaded to open it.
+        $linkedTask = Task::query()
             ->withHolderCoverage()
-            ->with(['technician', 'images', 'completedBy', 'phase'])
-            ->whereIn('project_id', $projects->pluck('project_id'))
-            ->orderByRaw("case when status = 'ongoing' then 0 when status = 'pending' then 1 when status = 'unassigned' then 2 else 3 end")
-            ->orderByRaw('due_date is null')
-            ->orderBy('due_date')
-            ->get()
-            ->groupBy('project_id');
+            ->with(['technician.account', 'images', 'completedBy', 'phase'])
+            ->whereIn('project_id', $projectIds)
+            ->find((int) $request->query('task'));
 
-        // Today's team and anybody due to join it: work can be dated for a
-        // technician's first week before that week arrives.
-        $techniciansByProject = $projects->mapWithKeys(fn (Project $project): array => [
-            $project->project_id => $project->rosterTechnicians->pluck('technician')->filter()->unique('technician_id')->values(),
-        ]);
+        $linkedProject = $linkedTask ? $projects->firstWhere('project_id', $linkedTask->project_id) : null;
 
-        // Every span each of those technicians holds on the project, so the
-        // edit dialogs can grey out the days a chosen technician is not
-        // assigned for - see TaskAssignmentRules::periodsFor().
-        $periodsByProject = $projects->mapWithKeys(fn (Project $project): array => [
-            $project->project_id => $this->assignmentRules->periodsFor(
-                (int) $project->project_id,
-                $project->rosterTechnicians->pluck('technician_id')
-            ),
-        ]);
-
-        $rangesByProject = $projects->mapWithKeys(fn (Project $project): array => [
-            $project->project_id => collect($this->scheduleRules->ranges($project->project_id)),
-        ]);
-
-        // Each project's finalized phases, for the Phase select on every task's
-        // edit dialog. Loaded in one query for the whole page rather than one
-        // per task - see the phasesByProject prop on x-task-board.
-        $phasesByProject = ProjectPhase::query()
-            ->whereIn('project_id', $projects->pluck('project_id'))
-            ->inOrder()
-            ->get()
-            ->groupBy('project_id');
-
-        // An administrator runs every board; only a locked project is off
-        // limits, and none of those are listed here anyway.
-        $manageable = $projects->mapWithKeys(fn (Project $project): array => [
-            $project->project_id => ! $project->isReadOnly() && ! $project->isArchived(),
-        ]);
-
-        // Keyed by project as well as by technician: this page shows several
-        // boards at once, and the same technician on two projects has a
-        // different amount of each of them on their plate. One query covers
-        // every board on the page.
-        $technicianActiveTaskCounts = app(TechnicianTaskLoad::class)
-            ->forProjects($projects->pluck('project_id'));
+        $linkedTaskDialogs = $linkedProject
+            ? $board->dialogs($linkedProject, collect([$linkedTask]), $this->boardOptions($linkedProject))
+            : '';
 
         // Tasks on this page that cannot proceed, summarised by what each one
         // is missing. An administrator reads every board, so the scope handed
@@ -124,16 +85,63 @@ class TaskController extends Controller
 
         return view('super-admin.tasks', compact(
             'projects',
-            'tasksByProject',
-            'techniciansByProject',
-            'rangesByProject',
-            'manageable',
+            'taskCounts',
+            'gapCounts',
+            'linkedTaskDialogs',
             'schedulableProjects',
-            'technicianActiveTaskCounts',
             'attentionSummary',
-            'phasesByProject',
-            'periodsByProject'
         ));
+    }
+
+    /**
+     * One page of one project's board, for serverTable.js.
+     */
+    public function boardTable(Request $request, int $projectId, TaskBoard $board)
+    {
+        $project = $this->boardProjects()->findOrFail($projectId);
+
+        return $board->respond(
+            $request,
+            $project,
+            Task::query()->where('project_id', $project->project_id),
+            $this->boardOptions($project)
+        );
+    }
+
+    /**
+     * The projects the board lists. Only live work belongs on it: a project
+     * is listed when it is pending or ongoing. Not-yet-scheduled, completed,
+     * cancelled and archived projects are all left out.
+     *
+     * @return Builder<Project>
+     */
+    private function boardProjects(): Builder
+    {
+        return Project::query()
+            // `schedules` for the status badge on each card, which reads every
+            // range to decide whether the project needs rescheduling.
+            ->with('schedules')
+            ->whereIn('status', Project::ACTIVE_PROJECT_STATUSES)
+            ->where('is_archived', false)
+            ->orderBy('name');
+    }
+
+    /**
+     * How a project's board is drawn for an administrator, who runs every
+     * board; only a locked project is off limits, and none of those are
+     * listed anyway.
+     *
+     * @return array{canManage: bool, viewerTechnicianId: null, updateRoute: string, completeRoute: string, deleteRoute: string}
+     */
+    private function boardOptions(Project $project): array
+    {
+        return [
+            'canManage' => ! $project->isReadOnly() && ! $project->isArchived(),
+            'viewerTechnicianId' => null,
+            'updateRoute' => 'super-admin.tasks.update',
+            'completeRoute' => 'super-admin.tasks.complete',
+            'deleteRoute' => 'super-admin.tasks.destroy',
+        ];
     }
 
     /**

@@ -22,6 +22,7 @@ use App\Services\ScheduleModeRules;
 use App\Services\TaskScheduleRules;
 use App\Services\TechnicianAvailabilityService;
 use App\Support\BusinessTime;
+use App\Support\ServerTable;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -175,6 +176,58 @@ class ScheduleController extends Controller
             'partialDayHours',
             'mayOverrideLock'
         ));
+    }
+
+    /**
+     * One page of the table under the calendar, searched, sorted and sliced in
+     * SQL.
+     *
+     * The same projects index() lists there: live, not cancelled, and holding
+     * at least one date. A project with none is Unscheduled and belongs on
+     * neither the table nor the calendar until it is booked again.
+     *
+     * Only the rows travel. The dialogs their buttons open are already on the
+     * page, because the calendar's bars open the very same ones.
+     */
+    public function table(Request $request)
+    {
+        $table = ServerTable::fromRequest($request);
+
+        $page = $table->paginate(
+            Project::query()
+                ->where('is_archived', false)
+                ->where('status', '!=', 'cancelled')
+                ->has('schedules'),
+            sortable: [
+                0 => 'project_id',
+                1 => 'reference_no',
+                2 => 'name',
+                // By the first day booked.
+                4 => fn ($query, string $dir) => $query->orderBy(
+                    Schedule::query()
+                        ->selectRaw('min(start_datetime)')
+                        ->whereColumn('tbl_schedule.project_id', 'tbl_projects.project_id'),
+                    $dir
+                ),
+                5 => 'status',
+            ],
+            search: fn ($query, string $word) => $query
+                ->matchingListingWord($word)
+                ->orWhereHas('projectTechnicians.technician.account', fn ($accounts) => $accounts
+                    ->where('name', 'like', '%'.$word.'%')
+                    ->orWhere('first_name', 'like', '%'.$word.'%')
+                    ->orWhere('last_name', 'like', '%'.$word.'%')),
+            defaultOrder: [[0, 'asc']],
+        );
+
+        $page->items->load(['schedules', 'projectTechnicians.technician.account']);
+
+        return $table->respond(
+            $page,
+            fn (Project $project): string => view('super-admin.partials.schedule-row', [
+                'project' => $project,
+            ])->render(),
+        );
     }
 
     /**

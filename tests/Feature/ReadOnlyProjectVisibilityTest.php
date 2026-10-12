@@ -137,7 +137,11 @@ class ReadOnlyProjectVisibilityTest extends TestCase
 
         $response->assertOk();
         $response->assertSee('scheduleViewModal'.$completed->project_id, false);
-        $response->assertSee('View Schedule');
+
+        // The row's button opens it.
+        $this->getTablePage(route('super-admin.schedules.table'))
+            ->assertSee('data-bs-target="#scheduleViewModal'.$completed->project_id.'"', false)
+            ->assertSee('View Schedule');
 
         // Live work has the editor instead, never both.
         $response->assertDontSee('scheduleViewModal'.$ongoing->project_id, false);
@@ -276,7 +280,7 @@ class ReadOnlyProjectVisibilityTest extends TestCase
         $this->addTask($cancelled, 'Hidden Cancelled Task');
         $this->addTask($archived, 'Hidden Archived Task');
 
-        $response = $this->get(route('super-admin.tasks.index'));
+        $response = $this->getWithTables(route('super-admin.tasks.index'));
 
         $response->assertOk();
         $response->assertSee('Visible Pending Task');
@@ -305,7 +309,7 @@ class ReadOnlyProjectVisibilityTest extends TestCase
         $this->addTask($ongoingWithTask, 'Visible Ongoing Task');
         $this->addTask($cancelled, 'Hidden Cancelled Task');
 
-        $response = $this->get(route('super-admin.tasks.index'));
+        $response = $this->getWithTables(route('super-admin.tasks.index'));
         $response->assertOk();
 
         $filterIds = $response->viewData('projects')->pluck('project_id')->all();
@@ -329,7 +333,7 @@ class ReadOnlyProjectVisibilityTest extends TestCase
         $cancelled = $this->createProject('Cancelled Project', 'cancelled');
         $archived = $this->createProject('Archived Project', 'archived', true);
 
-        $response = $this->get(route('super-admin.tasks.index'));
+        $response = $this->getWithTables(route('super-admin.tasks.index'));
         $response->assertOk();
 
         $selectable = $response->viewData('schedulableProjects')->pluck('project_id')->all();
@@ -347,7 +351,7 @@ class ReadOnlyProjectVisibilityTest extends TestCase
         $onHold = $this->createProject('On Hold Project', 'ongoing');
         $onHold->forceFill(['on_hold' => true])->save();
 
-        $response = $this->get(route('super-admin.tasks.index'));
+        $response = $this->getWithTables(route('super-admin.tasks.index'));
         $response->assertOk();
 
         $selectable = $response->viewData('schedulableProjects')->pluck('project_id')->all();
@@ -362,7 +366,7 @@ class ReadOnlyProjectVisibilityTest extends TestCase
         $project = $this->createProject('Unphased Project', 'pending');
         $project->forceFill(['phase_setup_status' => Project::PHASE_SETUP_PENDING])->save();
 
-        $response = $this->get(route('super-admin.tasks.index'));
+        $response = $this->getWithTables(route('super-admin.tasks.index'));
         $response->assertOk();
 
         $this->assertContains($project->project_id, $response->viewData('schedulableProjects')->pluck('project_id')->all());
@@ -387,7 +391,7 @@ class ReadOnlyProjectVisibilityTest extends TestCase
         $cancelled = $this->createProject('Cancelled Project', 'cancelled');
         $this->addTask($cancelled, 'Hidden Cancelled Task');
 
-        $response = $this->get(route('super-admin.tasks.index'));
+        $response = $this->getWithTables(route('super-admin.tasks.index'));
         $response->assertOk();
 
         $html = $response->getContent();
@@ -427,7 +431,7 @@ class ReadOnlyProjectVisibilityTest extends TestCase
         $ongoing = $this->createProject('Ongoing Project', 'ongoing');
         $this->addTask($ongoing, 'Some Ongoing Task');
 
-        $response = $this->get(route('super-admin.tasks.index'));
+        $response = $this->getWithTables(route('super-admin.tasks.index'));
 
         $response->assertOk();
         $response->assertSee('data-task-board', false);
@@ -451,7 +455,7 @@ class ReadOnlyProjectVisibilityTest extends TestCase
         $this->addTask($pending, 'Some Pending Task');
         $this->addTask($ongoing, 'Some Ongoing Task');
 
-        $response = $this->get(route('super-admin.tasks.index'));
+        $response = $this->getWithTables(route('super-admin.tasks.index'));
 
         $response->assertOk();
 

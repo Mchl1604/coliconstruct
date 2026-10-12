@@ -112,20 +112,14 @@ class LowSeverityAuditFixesTest extends TestCase
         $project = $this->project([$this->technician('Markup Person')]);
         $this->book($project, 0, 2);
 
-        $html = $this->get(route('super-admin.projects'))->assertOk()->getContent();
+        $page = $this->getJson(route('super-admin.projects.table'))->assertOk()->json();
 
-        $tbodyStart = mb_strpos($html, '<tbody>');
-        $tbodyEnd = mb_strpos($html, '</tbody>');
-
-        $this->assertNotFalse($tbodyStart);
-        $this->assertNotFalse($tbodyEnd);
-
-        $tbody = mb_substr($html, $tbodyStart, $tbodyEnd - $tbodyStart);
-
-        // The dialogs still exist - they simply are not in here.
-        $this->assertStringNotContainsString('modal fade', $tbody);
-        $this->assertStringContainsString('onHoldModal'.$project->project_id, $html);
-        $this->assertStringContainsString('completeProjectModal'.$project->project_id, $html);
+        // Each row is a row and nothing else; the dialogs come back beside the
+        // rows, for the page to put outside the table.
+        $this->assertCount(1, $page['rows']);
+        $this->assertStringNotContainsString('modal fade', $page['rows'][0]);
+        $this->assertStringContainsString('onHoldModal'.$project->project_id, $page['extras']);
+        $this->assertStringContainsString('completeProjectModal'.$project->project_id, $page['extras']);
     }
 
     // ==================================================================
@@ -147,10 +141,11 @@ class LowSeverityAuditFixesTest extends TestCase
         $tabs = collect($response->viewData('statusTabs'))->keyBy('key');
         $this->assertSame(1, $tabs['on_hold']['count']);
 
-        // The row carries what the filter reads: the tab it belongs under,
-        // decided once by Project::tabKey().
-        $response->assertSee('data-tab="on_hold"', false);
-        $response->assertSee('data-on-hold="1"', false);
+        // The tab lists the row, filtered by the method the count was taken
+        // from - Project::tabKey().
+        $this->getTablePage(route('super-admin.projects.table'), ['tab' => 'on_hold'])
+            ->assertSee('data-tab="on_hold"', false)
+            ->assertSee('data-on-hold="1"', false);
     }
 
     // ==================================================================
@@ -330,7 +325,7 @@ class LowSeverityAuditFixesTest extends TestCase
             'completed_by' => null,
         ]);
 
-        $this->get(route('super-admin.projects.show', $project->project_id))
+        $this->getWithTables(route('super-admin.projects.show', $project->project_id))
             ->assertOk()
             ->assertSee('Completed On')
             ->assertSee('Not recorded');
@@ -353,7 +348,7 @@ class LowSeverityAuditFixesTest extends TestCase
             'completed_at' => CarbonImmutable::parse('2026-08-14 09:00:00'),
         ]);
 
-        $this->get(route('super-admin.projects.show', $project->project_id))
+        $this->getWithTables(route('super-admin.projects.show', $project->project_id))
             ->assertOk()
             ->assertSee('Aug 14, 2026')
             ->assertDontSee('Not recorded');
