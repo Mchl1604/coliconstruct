@@ -11,6 +11,12 @@
         <div class="alert alert-danger text-start" role="alert">
             {{ $errors->first() }}
         </div>
+    @elseif (session('success'))
+        {{-- Arriving from somewhere that signed this browser out on purpose,
+             such as a finished database restore. --}}
+        <div class="alert alert-success text-start" role="status">
+            {{ session('success') }}
+        </div>
     @endif
 
     <form method="POST" action="{{ route('auth.login.attempt') }}">

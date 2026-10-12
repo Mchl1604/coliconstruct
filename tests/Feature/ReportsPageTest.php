@@ -1939,8 +1939,6 @@ class ReportsPageTest extends TestCase
         $this->assertCount(2, $rows);
         $this->assertSame(['Ana Mendoza'], $rows->pluck('technician')->unique()->all());
         $this->assertSame('Technician', $rows[0]['position']);
-        $this->assertSame('Total Assigned Projects: 2', $this->summaryLine($section, 'Total Assigned Projects'));
-        $this->assertSame('Total Technicians: 1', $this->summaryLine($section, 'Total Technicians'));
 
         $this->assertNotContains(
             $archived->reference_no,
@@ -2026,8 +2024,6 @@ class ReportsPageTest extends TestCase
 
         // 1 + 3 + 4, not the 22 days from July 28 to August 18.
         $this->assertSame(8, $past->sum('duration'));
-        $this->assertSame('Total Scheduled Days: 8', $this->summaryLine($section, 'Total Scheduled Days'));
-        $this->assertSame('Past Scheduled Days: 8', $this->summaryLine($section, 'Past Scheduled Days'));
     }
 
     /**
@@ -2092,8 +2088,9 @@ class ReportsPageTest extends TestCase
     }
 
     /**
-     * "All" carries the three sections, each with its own table and its own
-     * summary - and no utilization anywhere.
+     * "All" carries the three sections, each with its own table. Only Tasks
+     * carries a summary - Assigned Projects and Schedule print their tables
+     * alone - and there is no utilization anywhere.
      */
     public function test_the_all_technician_report_carries_every_section(): void
     {
@@ -2109,13 +2106,14 @@ class ReportsPageTest extends TestCase
             collect($report['sections'])->pluck('key')->all()
         );
 
-        // Every section carries its own summary rather than one at the top.
-        foreach ($report['sections'] as $section) {
-            $this->assertNotEmpty($section['summary']);
-        }
+        $sections = collect($report['sections'])->keyBy('key');
+
+        $this->assertArrayNotHasKey('summary', $sections['assigned']);
+        $this->assertArrayNotHasKey('summary', $sections['technician_schedule']);
+        $this->assertNotEmpty($sections['technician_tasks']['summary']);
 
         $labels = collect($report['sections'])
-            ->flatMap(fn (array $section) => collect($section['summary'])->pluck('label'))
+            ->flatMap(fn (array $section) => collect($section['summary'] ?? [])->pluck('label'))
             ->implode(' ');
 
         foreach (['Utilization', 'Capacity', 'Available Hours'] as $banned) {

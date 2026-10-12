@@ -431,7 +431,18 @@ class ActivityLog extends Model
      */
     public const PHASE_TEMPLATE_UPDATED = 'Phase Template Updated';
 
+    /**
+     * Configuration -> System Settings -> Backup & Restore.
+     *
+     * A download is logged for the same reason an activity log export is: the
+     * archive is every row and every file, and who took a copy away is what an
+     * auditor asks first.
+     */
     public const BACKUP_CREATED = 'Backup Created';
+
+    public const BACKUP_DOWNLOADED = 'Backup Downloaded';
+
+    public const BACKUP_DELETED = 'Backup Deleted';
 
     public const RESTORE_PERFORMED = 'Restore Performed';
 
@@ -545,6 +556,8 @@ class ActivityLog extends Model
         self::PHASE_STAGES_REORDERED => self::MODULE_CONFIGURATION,
         self::PHASE_TEMPLATE_UPDATED => self::MODULE_CONFIGURATION,
         self::BACKUP_CREATED => self::MODULE_CONFIGURATION,
+        self::BACKUP_DOWNLOADED => self::MODULE_CONFIGURATION,
+        self::BACKUP_DELETED => self::MODULE_CONFIGURATION,
         self::RESTORE_PERFORMED => self::MODULE_CONFIGURATION,
     ];
 

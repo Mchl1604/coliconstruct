@@ -204,29 +204,22 @@
         @endif
 
         {{-- ---------------- Assigned Projects ---------------- --}}
-        {{-- One row per technician per project. Assignment Status and Removed
-             Date come from the membership history; Schedule is the dates that
-             technician actually held, never the project's range. The project's
-             own status is the last column and is a different fact from the
-             technician's - a completed project can carry an active
-             assignment. --}}
+        {{-- Who was on which project, and in what role. The rows arrive one
+             per membership span, so somebody taken off and put back on the
+             same project would print twice with nothing to tell the two
+             lines apart - they are collapsed to one here. --}}
         @if ($section['key'] === 'assigned')
             <table class="data">
                 <thead>
                     <tr>
-                        <th style="width:13%">Technician</th>
-                        <th style="width:9%">Reference No.</th>
-                        <th style="width:13%">Client</th>
-                        <th style="width:9%">Role</th>
-                        <th style="width:9%">Assignment Status</th>
-                        <th style="width:9%">Start Date</th>
-                        <th style="width:9%">Removal Date</th>
-                        <th style="width:16%">Schedule</th>
-                        <th>Project Status</th>
+                        <th style="width:28%">Technician</th>
+                        <th style="width:18%">Reference No.</th>
+                        <th style="width:32%">Client</th>
+                        <th>Role</th>
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach ($rows as $row)
+                    @foreach ($rows->unique(fn($row) => $row['technician_id'] . '|' . $row['project_id'] . '|' . $row['role']) as $row)
                         <tr>
                             <td>
                                 {{ $row['technician'] }}
@@ -235,16 +228,6 @@
                             <td class="nowrap">{{ $row['reference_no'] }}</td>
                             <td>{{ $row['client'] }}</td>
                             <td>{{ $row['role'] }}</td>
-                            <td>
-                                {{ $row['assignment_status'] }}
-                                @if (! empty($row['replaced_by']))
-                                    <div class="sub">Replaced by {{ $row['replaced_by'] }}</div>
-                                @endif
-                            </td>
-                            <td class="nowrap">{{ $row['started_on'] }}</td>
-                            <td class="nowrap">{{ $row['removed_on'] }}</td>
-                            <td>{!! $stack($row['schedules'], 'No scheduled dates') !!}</td>
-                            <td>{{ $row['status_label'] ?: '—' }}</td>
                         </tr>
                     @endforeach
                 </tbody>
@@ -348,17 +331,21 @@
         @endif
     @endif
 
-    {{-- The section's own summary, directly under its own table. --}}
-    <div class="summary">
-        <div class="summary-title">{{ $section['title'] }} Summary</div>
-        <table>
-            @foreach (collect($section['summary'])->chunk(4) as $line)
-                <tr>
-                    @foreach ($line as $item)
-                        <td>{{ $item['label'] }}: <span class="value">{{ $item['value'] }}</span></td>
-                    @endforeach
-                </tr>
-            @endforeach
-        </table>
-    </div>
+    {{-- The section's own summary, directly under its own table. Sections
+         that carry none - the technician report's Assigned Projects and
+         Schedule - print their table alone. --}}
+    @if (! empty($section['summary']))
+        <div class="summary">
+            <div class="summary-title">{{ $section['title'] }} Summary</div>
+            <table>
+                @foreach (collect($section['summary'])->chunk(4) as $line)
+                    <tr>
+                        @foreach ($line as $item)
+                            <td>{{ $item['label'] }}: <span class="value">{{ $item['value'] }}</span></td>
+                        @endforeach
+                    </tr>
+                @endforeach
+            </table>
+        </div>
+    @endif
 @endforeach

@@ -10,6 +10,7 @@ use App\Models\ScheduleTechnician;
 use App\Models\Technician;
 use App\Models\User;
 use App\Services\SystemReportService;
+use App\Support\CompanyBranding;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -409,7 +410,6 @@ class TechnicianScheduleExportTest extends TestCase
         $this->assertSame('Jul 29, 2026 - Aug 3, 2026', $rows[0]['schedule']);
         // ...while the figure counts only the August of it.
         $this->assertSame(3, $rows[0]['duration']);
-        $this->assertSame('Past Scheduled Days: 3', $this->summaryLine('Past Scheduled Days'));
     }
 
     /**
@@ -540,8 +540,7 @@ class TechnicianScheduleExportTest extends TestCase
         );
         $this->assertSame([], $this->lines('past'));
         $this->assertCount(1, $this->lines('future'));
-        $this->assertSame('Past Scheduled Days: 0', $this->summaryLine('Past Scheduled Days'));
-        $this->assertSame('Future Scheduled Days: 3', $this->summaryLine('Future Scheduled Days'));
+        $this->assertSame(3, collect($this->rows('future'))->sum('duration'));
     }
 
     // ------------------------------------------------------------------
@@ -574,11 +573,6 @@ class TechnicianScheduleExportTest extends TestCase
             'Ana Mendoza | Removed | Aug 13, 2026 | Aug 10, 2026 - Aug 12, 2026',
             'Ben Santos | Active | — | Aug 13, 2026 - Aug 16, 2026',
         ], $this->assignments());
-
-        $section = $this->section('assigned');
-
-        $this->assertSame('Active Assignments: 1', $this->summaryLine('Active Assignments', $section));
-        $this->assertSame('Removed Assignments: 1', $this->summaryLine('Removed Assignments', $section));
     }
 
     /**
@@ -751,6 +745,44 @@ class TechnicianScheduleExportTest extends TestCase
     }
 
     /**
+     * The printed Assigned Projects table is who, which project and what role -
+     * nothing about the assignment's state, its dates or the project's status -
+     * and neither it nor the Schedule section prints a summary. Somebody taken
+     * off and put back on the same project is one line, not two identical ones.
+     */
+    public function test_the_printed_assigned_projects_table_is_trimmed(): void
+    {
+        $project = $this->project('Printed Job');
+        $this->schedule($project, '2026-08-10', '2026-08-12');
+        $this->schedule($project, '2026-08-24', '2026-08-26');
+        $project->load('schedules');
+
+        $ana = $this->technician('Ana Mendoza');
+        $this->assign($project, $ana, '2026-08-10', '2026-08-13', [$project->schedules[0]]);
+        $this->assign($project, $ana, '2026-08-24', null, [$project->schedules[1]]);
+
+        // Two spans behind it, one line printed for them.
+        $this->assertCount(2, $this->section('assigned')['rows']);
+
+        $assigned = view('super-admin.partials.report-sections', [
+            'report' => ['is_empty' => false, 'sections' => [$this->section('assigned')]],
+        ])->render();
+
+        foreach (['>Assignment Status</th>', '>Start Date</th>', '>Removal Date</th>', '>Schedule</th>', '>Project Status</th>'] as $removed) {
+            $this->assertStringNotContainsString($removed, $assigned);
+        }
+
+        $this->assertStringContainsString('>Role</th>', $assigned);
+        $this->assertSame(1, substr_count($assigned, '<td class="nowrap">'.$project->reference_no.'</td>'));
+
+        $html = view('super-admin.reports-pdf', $this->pdfPayload())->render();
+
+        $this->assertStringNotContainsString('Assigned Projects Summary', $html);
+        $this->assertStringNotContainsString('Schedule Summary', $html);
+        $this->assertStringContainsString('Tasks Summary', $html);
+    }
+
+    /**
      * The whole flow, through the endpoint a user actually presses.
      */
     public function test_the_export_endpoint_returns_a_pdf(): void
@@ -790,17 +822,7 @@ class TechnicianScheduleExportTest extends TestCase
             'generatedBy' => 'Test Super Admin',
             'generatedAt' => CarbonImmutable::now(),
             'logoData' => null,
-            'company' => \App\Support\CompanyBranding::letterhead(),
+            'company' => CompanyBranding::letterhead(),
         ];
-    }
-
-    /**
-     * @param  array<string, mixed>|null  $section
-     */
-    private function summaryLine(string $label, ?array $section = null): ?string
-    {
-        $line = collect(($section ?? $this->section())['summary'])->firstWhere('label', $label);
-
-        return $line ? $line['label'].': '.$line['value'] : null;
     }
 }

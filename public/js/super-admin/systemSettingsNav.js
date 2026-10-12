@@ -41,11 +41,13 @@ document.addEventListener('DOMContentLoaded', function() {
     function setOpen(button, open) {
         const menu = menuFor(button);
 
-        button.setAttribute('aria-expanded', open ? 'true' : 'false');
-
+        // A category with no types beneath it (Backup & Restore) has nothing
+        // to fold, so it claims no expanded state either.
         if (!menu) {
             return;
         }
+
+        button.setAttribute('aria-expanded', open ? 'true' : 'false');
 
         if (window.bootstrap?.Collapse) {
             const collapse = window.bootstrap.Collapse.getOrCreateInstance(menu, { toggle: false });

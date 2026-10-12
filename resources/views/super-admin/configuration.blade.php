@@ -559,6 +559,15 @@
                     'types' => $contentTypes,
                     'accents' => true,
                 ],
+                // One screen, no types beneath it - so nothing folds open.
+                [
+                    'id' => 'backups',
+                    'label' => 'Backup & Restore',
+                    'hint' => 'Database and files',
+                    'icon' => 'bi-database',
+                    'types' => [],
+                    'accents' => false,
+                ],
             ];
         @endphp
         <div class="tab-pane fade" id="systemSettingsPane" role="tabpanel" aria-labelledby="systemSettingsTab">
@@ -579,11 +588,14 @@
                     <ul class="settings-sidebar-nav" data-settings-nav>
                         @foreach ($settingsCategories as $category)
                             @php($isOpen = $loop->first)
+                            @php($hasTypes = $category['types'] !== [])
                             <li class="settings-sidebar-group">
                                 <button type="button" class="settings-sidebar-link {{ $isOpen ? 'active' : '' }}"
                                     id="{{ $category['id'] }}Tab" data-settings-category="{{ $category['id'] }}Pane"
-                                    aria-controls="{{ $category['id'] }}Menu"
-                                    aria-expanded="{{ $isOpen ? 'true' : 'false' }}"
+                                    @if ($hasTypes)
+                                        aria-controls="{{ $category['id'] }}Menu"
+                                        aria-expanded="{{ $isOpen ? 'true' : 'false' }}"
+                                    @endif
                                     @if ($isOpen) aria-current="true" @endif>
                                     <span class="settings-sidebar-icon">
                                         <i class="bi {{ $category['icon'] }}" aria-hidden="true"></i>
@@ -592,9 +604,12 @@
                                         <span class="settings-sidebar-label">{{ $category['label'] }}</span>
                                         <span class="settings-sidebar-hint">{{ $category['hint'] }}</span>
                                     </span>
-                                    <i class="bi bi-chevron-down settings-sidebar-chevron" aria-hidden="true"></i>
+                                    @if ($hasTypes)
+                                        <i class="bi bi-chevron-down settings-sidebar-chevron" aria-hidden="true"></i>
+                                    @endif
                                 </button>
 
+                                @if ($hasTypes)
                                 <div class="collapse {{ $isOpen ? 'show' : '' }}" id="{{ $category['id'] }}Menu">
                                     <ul class="settings-subnav" id="{{ $category['id'] }}Types" data-content-sections
                                         aria-label="{{ $category['label'] }} types">
@@ -615,6 +630,7 @@
                                         @endforeach
                                     </ul>
                                 </div>
+                                @endif
                             </li>
                         @endforeach
                     </ul>
@@ -936,6 +952,82 @@
                         </div>
 
                         @include('super-admin.partials.settings-editor-form', ['loadingLabel' => 'Loading content'])
+
+                    </div>
+                </div>
+                </div>
+
+                {{-- ---------------- Backup & Restore ----------------
+                     Every row and, unless left out, every uploaded file, as
+                     one .tar.gz. A restore takes a backup of what it replaces
+                     first, so every restore can itself be undone from this
+                     list. See DatabaseBackupService and databaseBackups.js. --}}
+                <div class="tab-pane fade" id="backupsPane" role="region" aria-labelledby="backupsTab">
+                <div class="card shadow-sm border-0 rounded-2" data-backups>
+                    <div class="card-body p-4">
+
+                        <div class="settings-panel-head">
+                            <div>
+                                <h5 class="fw-bold mb-1">
+                                    <i class="bi bi-database me-1 text-primary" aria-hidden="true"></i>
+                                    Backup &amp; Restore
+                                </h5>
+                                <p class="text-secondary small mb-0">
+                                    Database and uploaded files.
+                                </p>
+                            </div>
+
+                            <button type="button" class="btn btn-outline-secondary btn-sm" data-backup-upload-open>
+                                <i class="bi bi-upload me-1" aria-hidden="true"></i>
+                                Upload &amp; Restore
+                            </button>
+                        </div>
+
+                        <form class="backup-create" data-backup-create-form novalidate>
+                            <div class="form-check mb-0">
+                                <input class="form-check-input" type="checkbox" id="backupIncludeFiles"
+                                    data-backup-include-files checked>
+                                <label class="form-check-label small" for="backupIncludeFiles">
+                                    Include uploaded files
+                                </label>
+                            </div>
+                            <button type="submit" class="btn btn-primary btn-sm px-3" data-backup-create>
+                                <span class="spinner-border spinner-border-sm me-1 d-none" role="status"
+                                    aria-hidden="true" data-backup-create-spinner></span>
+                                <i class="bi bi-plus-lg me-1" aria-hidden="true" data-backup-create-icon></i>
+                                <span data-backup-create-label>Create Backup</span>
+                            </button>
+                        </form>
+
+                        <div class="alert alert-danger mb-3 d-none" role="alert" data-backup-error></div>
+                        <div class="alert alert-success mb-3 d-none" role="alert" data-backup-success></div>
+
+                        <div class="text-secondary small py-3 px-1" data-backup-loading>
+                            <span class="spinner-border spinner-border-sm me-2" role="status"
+                                aria-hidden="true"></span>
+                            Loading backups&hellip;
+                        </div>
+
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle mb-0 backup-table">
+                                <thead>
+                                    <tr>
+                                        <th>Backup</th>
+                                        <th>Type</th>
+                                        <th>Contents</th>
+                                        <th>Size</th>
+                                        <th>Created By</th>
+                                        <th>Created</th>
+                                        <th class="text-center">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody data-backup-body></tbody>
+                            </table>
+                        </div>
+
+                        <div class="schedule-empty-state mt-2 d-none" data-backup-empty>
+                            No backups yet.
+                        </div>
 
                     </div>
                 </div>
@@ -1740,6 +1832,68 @@
         </div>
     @endif
 
+    @if ($isSuperAdmin)
+        {{-- ==================== RESTORE BACKUP MODAL ====================
+             One dialog for both ways in: restoring a backup from the list,
+             and Upload & Restore, which adds the file field. The password
+             and the typed word are checked again on the server. --}}
+        <div class="modal fade" id="restoreBackupModal" tabindex="-1" aria-labelledby="restoreBackupTitle"
+            aria-hidden="true" data-backup-restore-modal>
+            <div class="modal-dialog modal-dialog-centered">
+                <form class="modal-content" data-backup-restore-form novalidate>
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="restoreBackupTitle" data-backup-restore-title>Restore Backup</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+
+                    <div class="modal-body">
+                        <div class="alert alert-warning small py-2 mb-3" role="alert">
+                            <i class="bi bi-exclamation-triangle me-1" aria-hidden="true"></i>
+                            Current data will be replaced.
+                        </div>
+
+                        <p class="small text-secondary mb-3 d-none" data-backup-restore-name></p>
+
+                        <div class="mb-3 d-none" data-backup-restore-file-group>
+                            <label class="form-label small fw-semibold mb-1" for="restoreBackupFile">
+                                Backup file
+                            </label>
+                            <input type="file" class="form-control" id="restoreBackupFile" accept=".gz,.tar.gz"
+                                data-backup-restore-file>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label small fw-semibold mb-1" for="restoreBackupPassword">
+                                Your password
+                            </label>
+                            <input type="password" class="form-control" id="restoreBackupPassword"
+                                autocomplete="current-password" data-backup-restore-password required>
+                        </div>
+
+                        <div class="mb-0">
+                            <label class="form-label small fw-semibold mb-1" for="restoreBackupConfirmation">
+                                Type {{ \App\Http\Controllers\DatabaseBackupController::CONFIRMATION_WORD }}
+                            </label>
+                            <input type="text" class="form-control" id="restoreBackupConfirmation"
+                                autocomplete="off" spellcheck="false" data-backup-restore-confirmation required>
+                        </div>
+
+                        <div class="alert alert-danger mt-3 mb-0 d-none" role="alert" data-backup-restore-error></div>
+                    </div>
+
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-danger" data-backup-restore-submit>
+                            <span class="spinner-border spinner-border-sm me-1 d-none" role="status"
+                                aria-hidden="true" data-backup-restore-spinner></span>
+                            <span data-backup-restore-label>Restore</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    @endif
+
     {{-- ==================== CONFIRMATION MODAL ==================== --}}
     <div class="modal fade" id="confirmActionModal" tabindex="-1" aria-hidden="true" data-confirm-modal>
         <div class="modal-dialog modal-dialog-centered">
@@ -1809,6 +1963,8 @@
                     phaseTemplates: @json(route('super-admin.configuration.phase-templates.index')),
                     phaseTemplateBase: @json(url('super-admin/configuration/phase-templates')),
                     archivedInquiries: @json(route('super-admin.configuration.inquiries.archived')),
+                    backups: @json(route('super-admin.configuration.backups.index')),
+                    backupUpload: @json(route('super-admin.configuration.backups.upload')),
                 @endif
             };
             window.configurationOptions = {
@@ -1842,6 +1998,7 @@
             <script src="/js/super-admin/systemContents.js"></script>
             <script src="/js/super-admin/projectTypes.js"></script>
             <script src="/js/super-admin/phaseTemplates.js"></script>
+            <script src="/js/super-admin/databaseBackups.js"></script>
             <script src="/js/super-admin/systemSettingsNav.js"></script>
         @endif
     @endpush

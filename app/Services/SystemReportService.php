@@ -1291,14 +1291,6 @@ class SystemReportService
             'key' => 'assigned',
             'title' => 'Assigned Projects',
             'rows' => $rows,
-            'summary' => [
-                ['label' => 'Total Technicians', 'value' => number_format($rows->pluck('technician_id')->unique()->count())],
-                // Assignments, not projects: a project with three people on it
-                // is three assignments, which is what this table has rows for.
-                ['label' => 'Total Assigned Projects', 'value' => number_format($rows->count())],
-                ['label' => 'Active Assignments', 'value' => number_format($rows->where('is_removed', false)->count())],
-                ['label' => 'Removed Assignments', 'value' => number_format($rows->where('is_removed', true)->count())],
-            ],
         ];
     }
 
@@ -1502,13 +1494,6 @@ class SystemReportService
                 ['key' => 'past', 'title' => 'Past Schedule', 'rows' => $past],
                 ['key' => 'future', 'title' => 'Future Schedule', 'rows' => $future],
             ]),
-            'summary' => [
-                ['label' => 'Total Technicians', 'value' => number_format($rows->pluck('technician_id')->unique()->count())],
-                ['label' => 'Total Scheduled Projects', 'value' => number_format($rows->pluck('project_id')->unique()->count())],
-                ['label' => 'Past Scheduled Days', 'value' => number_format($past->sum('duration'))],
-                ['label' => 'Future Scheduled Days', 'value' => number_format($future->sum('duration'))],
-                ['label' => 'Total Scheduled Days', 'value' => number_format($rows->sum('duration'))],
-            ],
         ];
     }
 

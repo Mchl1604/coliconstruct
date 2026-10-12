@@ -6,6 +6,7 @@ use App\Http\Controllers\Auth\PasswordResetController;
 use App\Http\Controllers\ClientProjectController;
 use App\Http\Controllers\ConfigurationController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\DatabaseBackupController;
 use App\Http\Controllers\InquiryController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PhaseTemplateController;
@@ -573,6 +574,24 @@ Route::prefix('super-admin')
 
                 Route::get('/types/{projectType}', [PhaseTemplateController::class, 'showTemplate'])->name('types.show');
                 Route::put('/types/{projectType}', [PhaseTemplateController::class, 'updateTemplate'])->name('types.update');
+            });
+
+            // Backup & Restore: every row and every uploaded file, out and
+            // back in. Super Admin only, on the group rather than in the
+            // controller, because nothing here is ever Admin's.
+            Route::prefix('backups')->name('backups.')->middleware('role:super_admin')->group(function () {
+                Route::get('/', [DatabaseBackupController::class, 'index'])->name('index');
+                Route::post('/', [DatabaseBackupController::class, 'store'])->name('store');
+                Route::post('/upload', [DatabaseBackupController::class, 'upload'])->name('upload');
+                Route::get('/{backup}/download', [DatabaseBackupController::class, 'download'])
+                    ->whereNumber('backup')
+                    ->name('download');
+                Route::post('/{backup}/restore', [DatabaseBackupController::class, 'restore'])
+                    ->whereNumber('backup')
+                    ->name('restore');
+                Route::delete('/{backup}', [DatabaseBackupController::class, 'destroy'])
+                    ->whereNumber('backup')
+                    ->name('destroy');
             });
 
             // Creation.

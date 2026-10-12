@@ -86,6 +86,36 @@ return [
             'report' => false,
         ],
 
+        /*
+        | Database backups - see DatabaseBackupService.
+        |
+        | A disk of their own rather than a folder on `uploads`: the
+        | uploads:prune-orphans command deletes every file there that no row
+        | names, and no row names a backup archive.
+        |
+        | Each setting falls back to its UPLOADS_ twin, so a deployment that
+        | already sends uploads to object storage sends backups there too
+        | without anything new to configure. The root keeps the two apart
+        | inside a shared bucket, exactly as it does on a local disk.
+        */
+        'backups' => [
+            'driver' => env('BACKUPS_DRIVER', env('UPLOADS_DRIVER', 'local')),
+            'root' => env('BACKUPS_ROOT')
+                ? base_path((string) env('BACKUPS_ROOT'))
+                : storage_path('app/backups'),
+            'key' => env('BACKUPS_KEY', env('UPLOADS_KEY')),
+            'secret' => env('BACKUPS_SECRET', env('UPLOADS_SECRET')),
+            'region' => env('BACKUPS_REGION', env('UPLOADS_REGION', 'auto')),
+            'bucket' => env('BACKUPS_BUCKET', env('UPLOADS_BUCKET')),
+            'endpoint' => env('BACKUPS_ENDPOINT', env('UPLOADS_ENDPOINT')),
+            'use_path_style_endpoint' => (bool) env('BACKUPS_PATH_STYLE', env('UPLOADS_PATH_STYLE', true)),
+            'visibility' => 'private',
+            // Unlike uploads, a failed write here must not pass quietly: a
+            // backup that was never stored is worse than an error.
+            'throw' => true,
+            'report' => false,
+        ],
+
         's3' => [
             'driver' => 's3',
             'key' => env('AWS_ACCESS_KEY_ID'),

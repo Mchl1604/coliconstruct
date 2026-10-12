@@ -977,6 +977,49 @@
     font-weight: 600;
 }
 
+/* ---- Backup & Restore ----
+   The Create Backup bar and the list beneath it wear the same settings blue
+   as Project Types, so the two tables read as one family. */
+
+.backup-create {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+    margin-bottom: 1rem;
+    padding: .75rem .9rem;
+    border: 1px solid #cfe3f6;
+    border-radius: .6rem;
+    background: #f4f9fe;
+}
+
+.backup-table thead th {
+    background: #2370b4;
+    color: #fff;
+    border-bottom: 0;
+    font-size: .78rem;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.backup-table thead th:first-child {
+    border-top-left-radius: .45rem;
+}
+
+.backup-table thead th:last-child {
+    border-top-right-radius: .45rem;
+}
+
+/* Generated names are long and unbroken; let them wrap rather than widen
+   the table past the panel. */
+.backup-name {
+    word-break: break-all;
+    font-size: .85rem;
+}
+
 /* ---- Inquiries ---- */
 
 /* A subject can run long; let it wrap rather than stretch the table. */
