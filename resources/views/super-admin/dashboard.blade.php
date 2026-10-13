@@ -134,7 +134,7 @@
             </section>
         </div>
 
-        {{-- ================= ACTIVE TECHNICIANS + ACTIVITY ================= --}}
+        {{-- ================= ACTIVE TECHNICIANS + TASKS ==================== --}}
         <div class="dash-grid-foot">
 
             {{-- Who is on site today, decided by the same booked date ranges
@@ -199,39 +199,78 @@
                 </ul>
             </section>
 
+            {{-- Today's tasks and the late ones, a tab each. Today includes
+                 what is already finished, so it reads as the day's progress;
+                 Late is open work past its due date. Each row opens the task
+                 on the Tasks board. --}}
+            @php
+                $taskLists = [
+                    'today' => ['label' => 'Today', 'empty' => 'No tasks today.'],
+                    'late' => ['label' => 'Late', 'empty' => 'No late tasks.'],
+                ];
+            @endphp
+
             <section class="dash-panel">
                 <div class="dash-panel-head">
-                    <h2 class="dash-panel-title">Recent Activity</h2>
-                    <a class="dash-ghost-btn" href="{{ route('super-admin.configuration.index') }}">See All</a>
+                    <h2 class="dash-panel-title">Task Monitoring</h2>
+                    <a class="dash-ghost-btn" href="{{ route('super-admin.tasks.index') }}">See All</a>
                 </div>
 
-                <ul class="dash-activity">
-                    @forelse ($recentActivity as $entry)
-                        <li>
-                            <span class="dash-activity-dot" aria-hidden="true"></span>
+                <div class="dash-task-tabs nav" role="tablist">
+                    @foreach ($taskLists as $key => $list)
+                        <button type="button" role="tab" id="task-tab-{{ $key }}"
+                            class="dash-task-tab {{ $loop->first ? 'active' : '' }}"
+                            data-bs-toggle="tab" data-bs-target="#task-list-{{ $key }}"
+                            aria-controls="task-list-{{ $key }}"
+                            aria-selected="{{ $loop->first ? 'true' : 'false' }}">
+                            {{ $list['label'] }}
+                            <span class="dash-task-tab-count tone-{{ $key }}">{{ $taskMonitoring[$key.'_count'] }}</span>
+                        </button>
+                    @endforeach
+                </div>
 
-                            <span class="dash-activity-body">
-                                @if ($entry['url'])
-                                    <a class="dash-activity-action" href="{{ $entry['url'] }}">
-                                        {{ $entry['action'] }}
-                                    </a>
-                                @else
-                                    <span class="dash-activity-action">{{ $entry['action'] }}</span>
-                                @endif
+                <div class="tab-content">
+                    @foreach ($taskLists as $key => $list)
+                        @php
+                            $rows = $taskMonitoring[$key];
+                            $more = $taskMonitoring[$key.'_count'] - count($rows);
+                        @endphp
 
-                                <span class="dash-activity-meta">
-                                    {{ $entry['actor_name'] }}
-                                    <span aria-hidden="true">&middot;</span>
-                                    {{ $entry['time']?->diffForHumans() }}
-                                </span>
-                            </span>
+                        <ul class="dash-tasks tab-pane fade {{ $loop->first ? 'show active' : '' }}"
+                            id="task-list-{{ $key }}" role="tabpanel" aria-labelledby="task-tab-{{ $key }}">
+                            @forelse ($rows as $task)
+                                <li>
+                                    <span class="dash-tasks-body">
+                                        <a class="dash-tasks-title" href="{{ $task['url'] }}">{{ $task['title'] }}</a>
+                                        <span class="dash-tasks-meta">
+                                            {{ $task['project'] }}
+                                            <span aria-hidden="true">&middot;</span>
+                                            {{ $task['technician'] ?? 'Unassigned' }}
+                                        </span>
+                                    </span>
 
-                            <span class="dash-activity-module">{{ $entry['module'] }}</span>
-                        </li>
-                    @empty
-                        <li class="dash-empty">Nothing has happened yet.</li>
-                    @endforelse
-                </ul>
+                                    @if ($task['days_late'] > 0)
+                                        <span class="dash-tasks-late">
+                                            {{ $task['days_late'] }} {{ Str::plural('day', $task['days_late']) }} late
+                                        </span>
+                                    @else
+                                        <span class="badge rounded-pill {{ $task['status_badge_class'] }}">
+                                            {{ $task['status_label'] }}
+                                        </span>
+                                    @endif
+                                </li>
+                            @empty
+                                <li class="dash-empty">{{ $list['empty'] }}</li>
+                            @endforelse
+
+                            @if ($more > 0)
+                                <li class="dash-tasks-more">
+                                    <a href="{{ route('super-admin.tasks.index') }}">and {{ $more }} more</a>
+                                </li>
+                            @endif
+                        </ul>
+                    @endforeach
+                </div>
             </section>
         </div>
 

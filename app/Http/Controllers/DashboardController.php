@@ -2,30 +2,20 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\ActivityLog;
-use App\Models\User;
 use App\Services\DashboardMetrics;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Collection;
 
 /**
  * The Admin and Super Admin dashboard.
  *
  * Short on purpose: a strip of figures, the work that is coming, what is
- * waiting on somebody, who is carrying it, and what just happened. Everything
- * here is either a number somebody checks daily or a backlog with the page
- * that clears it one click away.
- *
- * What an Admin may not read is not sent. The archive figures and another
- * administrator's activity are absent from their payload rather than hidden by
- * the view.
+ * waiting on somebody, who is on site, and which tasks are due today or
+ * running late. Everything here is either a number somebody checks daily or a
+ * backlog with the page that clears it one click away.
  */
 class DashboardController extends Controller
 {
-    /** How many entries the Recent Activity list shows. */
-    private const ACTIVITY_LIMIT = 6;
-
     public function __construct(private readonly DashboardMetrics $metrics) {}
 
     public function index(Request $request)
@@ -50,7 +40,10 @@ class DashboardController extends Controller
             // This replaced Quick Actions, which was a second copy of the
             // sidebar - see DashboardMetrics::urgentActions().
             'urgentActions' => $this->metrics->urgentActions(),
-            'recentActivity' => $this->recentActivity($viewer),
+            // Today's tasks and the late ones. This replaced Recent Activity:
+            // the log says what happened, and a dashboard is opened to see
+            // what still needs doing. The full log stays in Configuration.
+            'taskMonitoring' => $this->metrics->taskMonitoring(),
         ]);
     }
 
@@ -60,32 +53,5 @@ class DashboardController extends Controller
     public function summary(): JsonResponse
     {
         return response()->json(['cards' => $this->metrics->summary()]);
-    }
-
-    // ------------------------------------------------------------------
-    // Internals
-    // ------------------------------------------------------------------
-
-    /**
-     * The last few things that happened, as this reader is allowed to see
-     * them - visibleTo() keeps an Admin out of another administrator's trail.
-     *
-     * @return Collection<int, array<string, mixed>>
-     */
-    private function recentActivity(User $viewer)
-    {
-        return ActivityLog::query()
-            ->visibleTo($viewer)
-            ->latest('created_at')
-            ->orderByDesc('activity_log_id')
-            ->limit(self::ACTIVITY_LIMIT)
-            ->get()
-            ->map(fn (ActivityLog $log): array => [
-                'time' => $log->created_at,
-                'actor_name' => $log->actor_name,
-                'action' => $log->action,
-                'module' => $log->module ?? ActivityLog::moduleFor($log->action),
-                'url' => $this->metrics->activityUrl($log->record_type, $log->record_id ? (int) $log->record_id : null),
-            ]);
     }
 }

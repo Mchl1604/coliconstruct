@@ -434,71 +434,120 @@ a.dash-stat:hover {
     color: var(--dash-muted);
 }
 
-/* ---- Activity ---- */
+/* ---- Task monitoring ----
+   Two tabs, Today and Late, each with its count. Bootstrap's tab plugin does
+   the switching; these only dress it in the dashboard's palette. */
 
-.dash-activity {
+.dash-task-tabs {
+    gap: .5rem;
+    margin-bottom: .6rem;
+}
+
+.dash-task-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: .45rem;
+    padding: .35rem .9rem;
+    border-radius: 999px;
+    border: 1px solid var(--dash-line);
+    background: transparent;
+    font-size: .85rem;
+    font-weight: 600;
+    color: var(--dash-muted);
+}
+
+.dash-task-tab:hover {
+    color: var(--dash-blue-deep);
+}
+
+.dash-task-tab.active {
+    background: var(--dash-blue-soft);
+    border-color: var(--dash-blue-line);
+    color: var(--dash-blue-deep);
+}
+
+.dash-task-tab-count {
+    min-width: 1.4rem;
+    padding: .05rem .4rem;
+    border-radius: 999px;
+    background: #fff;
+    font-size: .75rem;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    color: var(--dash-blue-dark);
+}
+
+/* Late work is the one count meant to be noticed from the other tab. */
+.dash-task-tab-count.tone-late {
+    background: #fde8e3;
+    color: #c9302c;
+}
+
+.dash-tasks {
     list-style: none;
     margin: 0;
     padding: 0;
-    display: flex;
-    flex-direction: column;
 }
 
-.dash-activity li {
+.dash-tasks li {
     display: flex;
-    align-items: flex-start;
-    gap: .7rem;
-    padding: .75rem 0;
+    align-items: center;
+    gap: .75rem;
+    padding: .7rem 0;
     border-bottom: 1px solid var(--dash-line);
 }
 
-.dash-activity li:last-child {
+.dash-tasks li:last-child {
     border-bottom: 0;
     padding-bottom: 0;
 }
 
-.dash-activity-dot {
-    flex: 0 0 auto;
-    width: .5rem;
-    height: .5rem;
-    margin-top: .5rem;
-    border-radius: 50%;
-    background: var(--dash-blue-line);
-}
-
-.dash-activity-body {
+.dash-tasks-body {
     display: flex;
     flex-direction: column;
     flex: 1 1 auto;
     min-width: 0;
 }
 
-.dash-activity-action {
+.dash-tasks-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-size: .93rem;
     font-weight: 600;
     color: var(--dash-ink);
     text-decoration: none;
 }
 
-a.dash-activity-action:hover {
+.dash-tasks-title:hover {
     color: var(--dash-blue-deep);
     text-decoration: underline;
 }
 
-.dash-activity-meta {
+.dash-tasks-meta {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-size: .79rem;
     color: var(--dash-muted);
 }
 
-.dash-activity-module {
+.dash-tasks-late {
     flex: 0 0 auto;
-    padding: .2rem .65rem;
-    border-radius: 999px;
-    background: var(--dash-blue-soft);
-    font-size: .72rem;
-    font-weight: 600;
-    color: var(--dash-blue-deep);
+    font-size: .8rem;
+    font-weight: 700;
+    color: #c9302c;
     white-space: nowrap;
+}
+
+.dash-tasks .dash-tasks-more {
+    justify-content: center;
+    font-size: .85rem;
+}
+
+.dash-tasks-more a {
+    color: var(--dash-blue-deep);
+    font-weight: 600;
 }
 
 /* ---- Small screens ---- */

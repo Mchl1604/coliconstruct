@@ -10,7 +10,9 @@ use App\Models\Task;
 use App\Models\Technician;
 use App\Models\User;
 use App\Support\BusinessTime;
+use App\Support\TaskStatus;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 
@@ -18,8 +20,8 @@ use Illuminate\Support\Facades\Cache;
  * Everything the Admin and Super Admin dashboard counts and lists.
  *
  * The dashboard is deliberately short: a strip of figures, the work that is
- * coming, the doors into the modules, who is on site today, and what just
- * happened. Anything that needed a paragraph to explain belongs on the
+ * coming, the doors into the modules, who is on site today, and the tasks due
+ * today or running late. Anything that needed a paragraph to explain belongs on the
  * module's own page, which is one click away.
  *
  * Two rules run through all of it:
@@ -663,18 +665,106 @@ class DashboardMetrics
             ->values();
     }
 
-    /**
-     * Where an activity log entry points, when it points anywhere.
-     *
-     * Only a project is reachable: a task or a report is read inside the
-     * project it belongs to, and the entry does not record which.
-     */
-    public function activityUrl(?string $recordType, ?int $recordId): ?string
-    {
-        if ($recordType !== 'Project' || ! $recordId) {
-            return null;
-        }
+    // ------------------------------------------------------------------
+    // Task monitoring
+    // ------------------------------------------------------------------
 
-        return route('super-admin.projects.show', $recordId);
+    /**
+     * Today's tasks and the late ones, for the Task Monitoring panel.
+     *
+     * Today is every task whose dates cover the office's today, finished ones
+     * included, so the list reads as the day's progress rather than only what
+     * is left. Late is open work whose due date has passed - the rule
+     * TaskStatus::overdue() applies to a single task, asked in SQL.
+     *
+     * Both read the live, workable projects Task::scopeNeedsAssignment() does:
+     * a finished, cancelled or archived project owes nothing, and one on hold
+     * was stopped on purpose - its tasks cannot be edited until it resumes, so
+     * listing them would be an alert nobody can clear.
+     *
+     * Not cached, for the reason urgentActions() is not: a task closed a
+     * moment ago should stop reading as late on the next load.
+     *
+     * @return array{today: array<int, array<string, mixed>>, today_count: int, late: array<int, array<string, mixed>>, late_count: int}
+     */
+    public function taskMonitoring(int $limit = 5): array
+    {
+        $today = BusinessTime::today()->toDateString();
+
+        // A task with no start date but a due date of today is due today.
+        $todays = $this->monitoredTasks()
+            ->where('status', '!=', TaskStatus::CANCELLED)
+            ->whereDate('due_date', '>=', $today)
+            ->where(fn (Builder $starts): Builder => $starts
+                ->whereDate('start_date', '<=', $today)
+                ->orWhere(fn (Builder $undated): Builder => $undated
+                    ->whereNull('start_date')
+                    ->whereDate('due_date', $today)));
+
+        $late = $this->monitoredTasks()
+            ->whereIn('status', Task::OPEN_STATUSES)
+            ->whereDate('due_date', '<', $today);
+
+        return [
+            'today' => (clone $todays)
+                // Still to do first, then nearest deadline.
+                ->orderByRaw("case when status = 'completed' then 1 else 0 end")
+                ->orderBy('due_date')
+                ->orderBy('task_id')
+                ->limit($limit)
+                ->get()
+                ->map(fn (Task $task): array => $this->taskRow($task, $today))
+                ->all(),
+            'today_count' => $todays->count(),
+            'late' => (clone $late)
+                // Longest overdue first.
+                ->orderBy('due_date')
+                ->orderBy('task_id')
+                ->limit($limit)
+                ->get()
+                ->map(fn (Task $task): array => $this->taskRow($task, $today))
+                ->all(),
+            'late_count' => $late->count(),
+        ];
+    }
+
+    /**
+     * Tasks on live, workable projects - see taskMonitoring().
+     *
+     * @return Builder<Task>
+     */
+    private function monitoredTasks(): Builder
+    {
+        return Task::query()
+            ->with(['project', 'technician.account'])
+            ->whereNotNull('due_date')
+            ->whereHas('project', fn (Builder $project): Builder => $project
+                ->whereIn('status', Project::ACTIVE_PROJECT_STATUSES)
+                ->where('is_archived', false)
+                ->where(fn (Builder $paused) => $paused->where('on_hold', false)->orWhereNull('on_hold')));
+    }
+
+    /**
+     * One row of the Task Monitoring panel. The link opens the task itself on
+     * the Tasks board.
+     *
+     * @return array{task_id: int, title: string, project: ?string, technician: ?string, status_label: string, status_badge_class: string, days_late: int, url: string}
+     */
+    private function taskRow(Task $task, string $today): array
+    {
+        $due = CarbonImmutable::parse($task->due_date)->toDateString();
+
+        return [
+            'task_id' => (int) $task->task_id,
+            'title' => (string) $task->task_title,
+            'project' => $task->project?->reference_no ?: $task->project?->name,
+            'technician' => $task->technician?->name ?: null,
+            'status_label' => $task->statusLabel(),
+            'status_badge_class' => $task->statusBadgeClass(),
+            'days_late' => $task->isOverdue()
+                ? (int) CarbonImmutable::parse($due)->diffInDays(CarbonImmutable::parse($today))
+                : 0,
+            'url' => route('super-admin.tasks.index', ['task' => $task->task_id]),
+        ];
     }
 }

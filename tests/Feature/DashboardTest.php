@@ -7,6 +7,7 @@ use App\Models\Project;
 use App\Models\ProjectTechnician;
 use App\Models\Schedule;
 use App\Models\SpecialtyRequest;
+use App\Models\Task;
 use App\Models\Technician;
 use App\Models\User;
 use App\Services\DashboardMetrics;
@@ -90,8 +91,8 @@ class DashboardTest extends TestCase
     {
         $owner = $this->account('super_admin', 'owner@example.test');
 
-        // Four sections and nothing else: the figures, the work that is
-        // coming, the ring, who is carrying it, and what just happened.
+        // The figures, the work that is coming, what is waiting, who is on
+        // site, and the tasks due today or running late.
         $this->actingAs($owner)
             ->get(route('super-admin.dashboard'))
             ->assertOk()
@@ -102,7 +103,8 @@ class DashboardTest extends TestCase
             ->assertSee('Upcoming Work')
             ->assertSee('Urgent Actions')
             ->assertSee('Active Technicians Today')
-            ->assertSee('Recent Activity');
+            ->assertSee('Task Monitoring')
+            ->assertDontSee('Recent Activity');
     }
 
     public function test_a_technician_cannot_reach_the_dashboard(): void
@@ -630,6 +632,137 @@ class DashboardTest extends TestCase
         // A finished project is not upcoming, and neither is a past range.
         $this->assertFalse($ids->contains($done->project_id));
         $this->assertFalse($ids->contains($past->project_id));
+    }
+
+    // ------------------------------------------------------------------
+    // Task monitoring
+    // ------------------------------------------------------------------
+
+    /**
+     * A task on $project, dated by offsets from the office's today so the
+     * test reads the same at any hour.
+     */
+    private function task(Project $project, string $title, ?int $startsIn, ?int $dueIn, string $status = 'pending', ?Technician $technician = null): Task
+    {
+        $day = fn (?int $offset): ?string => $offset === null
+            ? null
+            : BusinessTime::today()->addDays($offset)->toDateString();
+
+        return Task::create([
+            'project_id' => $project->project_id,
+            'technician_id' => $technician?->technician_id,
+            'task_title' => $title,
+            'task_description' => 'Work',
+            'start_date' => $day($startsIn),
+            'due_date' => $day($dueIn),
+            'status' => $status,
+            'completed_at' => $status === 'completed' ? now() : null,
+        ]);
+    }
+
+    public function test_today_lists_tasks_whose_dates_cover_today(): void
+    {
+        $project = $this->project('ongoing', ['start' => now()->subDays(5), 'end' => now()->addDays(5)]);
+
+        $this->task($project, 'Spans today', -2, 2);
+        $this->task($project, 'Due today, no start', null, 0);
+        $this->task($project, 'Done today', 0, 0, 'completed');
+        $this->task($project, 'Starts tomorrow', 1, 3);
+        $this->task($project, 'Ended yesterday', -3, -1, 'completed');
+        $this->task($project, 'Called off', 0, 1, 'cancelled');
+        $this->task($project, 'Undated', null, null);
+
+        $monitoring = app(DashboardMetrics::class)->taskMonitoring();
+        $titles = collect($monitoring['today'])->pluck('title');
+
+        $this->assertSame(3, $monitoring['today_count']);
+        // Open work first, finished work last.
+        $this->assertSame('Done today', $titles->last());
+        $this->assertEqualsCanonicalizing(['Spans today', 'Due today, no start', 'Done today'], $titles->all());
+    }
+
+    public function test_late_lists_open_tasks_past_their_due_date_longest_overdue_first(): void
+    {
+        $account = $this->account('technician', 'late@example.test');
+        $technician = Technician::create(['account_id' => $account->id, 'role' => 'technician']);
+        $project = $this->project('ongoing', ['start' => now()->subDays(10), 'end' => now()->addDays(5)]);
+
+        $this->task($project, 'Three days late', -6, -3, 'ongoing', $technician);
+        $this->task($project, 'One day late', -2, -1);
+        $this->task($project, 'Finished late', -6, -3, 'completed');
+        $this->task($project, 'Due today', -1, 0);
+        $this->task($project, 'Called off', -6, -3, 'cancelled');
+
+        $monitoring = app(DashboardMetrics::class)->taskMonitoring();
+        $late = collect($monitoring['late']);
+
+        $this->assertSame(2, $monitoring['late_count']);
+        $this->assertSame(['Three days late', 'One day late'], $late->pluck('title')->all());
+        $this->assertSame([3, 1], $late->pluck('days_late')->all());
+        $this->assertSame($account->fullName(), $late->first()['technician']);
+        $this->assertNull($late->last()['technician']);
+        $this->assertSame($project->reference_no, $late->first()['project']);
+        $this->assertSame(
+            route('super-admin.tasks.index', ['task' => $late->first()['task_id']]),
+            $late->first()['url']
+        );
+    }
+
+    /**
+     * The same projects the Unassigned Tasks figure reads: nothing on a
+     * finished, archived or paused project is waiting on anybody.
+     */
+    public function test_task_monitoring_ignores_projects_that_owe_no_work(): void
+    {
+        $held = $this->project('ongoing', ['start' => now()->subDays(5), 'end' => now()->addDays(5)], ['on_hold' => true]);
+        $archived = $this->project('ongoing', ['start' => now()->subDays(5), 'end' => now()->addDays(5)], ['is_archived' => true]);
+        $finished = $this->project('completed');
+
+        foreach ([$held, $archived, $finished] as $project) {
+            $this->task($project, 'Today', 0, 0);
+            $this->task($project, 'Late', -3, -1);
+        }
+
+        $monitoring = app(DashboardMetrics::class)->taskMonitoring();
+
+        $this->assertSame(0, $monitoring['today_count']);
+        $this->assertSame(0, $monitoring['late_count']);
+    }
+
+    public function test_task_monitoring_shows_a_few_rows_and_counts_the_rest(): void
+    {
+        $owner = $this->account('super_admin', 'owner@example.test');
+        $project = $this->project('ongoing', ['start' => now()->subDays(10), 'end' => now()->addDays(5)]);
+
+        foreach (range(1, 7) as $number) {
+            $this->task($project, 'Late task '.$number, -5, -1);
+        }
+
+        $this->task($project, 'Pour footing', 0, 1);
+
+        $monitoring = app(DashboardMetrics::class)->taskMonitoring();
+
+        $this->assertCount(5, $monitoring['late']);
+        $this->assertSame(7, $monitoring['late_count']);
+
+        $this->actingAs($owner)
+            ->get(route('super-admin.dashboard'))
+            ->assertOk()
+            ->assertSee('Pour footing')
+            ->assertSee('1 day late')
+            ->assertSee('and 2 more');
+    }
+
+    public function test_task_monitoring_says_so_when_there_is_nothing_to_show(): void
+    {
+        $admin = $this->account('admin', 'admin@example.test');
+
+        $this->actingAs($admin)
+            ->get(route('super-admin.dashboard'))
+            ->assertOk()
+            ->assertSee('Task Monitoring')
+            ->assertSee('No tasks today.')
+            ->assertSee('No late tasks.');
     }
 
     public function test_an_admin_does_not_see_another_administrators_activity(): void
