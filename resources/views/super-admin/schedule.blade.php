@@ -707,8 +707,8 @@
                                                     {{ $project->reference_no ?? 'No reference' }}
                                                 </a>
                                                 @php
-                                                    $client = $project->clients->first()?->fullname
-                                                        ?? $project->clients->first()?->company_name;
+                                                    $client = $project->client?->fullname
+                                                        ?? $project->client?->company_name;
                                                 @endphp
                                                 @if ($client)
                                                     &middot; {{ $client }}

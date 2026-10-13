@@ -60,6 +60,7 @@ class ProjectDetailsConsistencyTest extends TestCase
         ]);
 
         $this->project = Project::create([
+            'client_id' => Client::factory()->create()->client_id,
             'name' => 'Aircon Retrofit',
             'reference_no' => 'REF-DESIGN-1',
             'status' => 'ongoing',
@@ -68,8 +69,7 @@ class ProjectDetailsConsistencyTest extends TestCase
             'quotation' => 100000,
         ]);
 
-        Client::create([
-            'project_id' => $this->project->project_id,
+        tap($this->project->client)->update([
             'client_type' => 'Commercial',
             'company_name' => 'Some Holdings',
             'firstname' => 'Client',

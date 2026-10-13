@@ -108,7 +108,15 @@ class EmailVerificationController extends Controller
             return $this->verifyExistingAccount($request, $subject);
         }
 
-        $account = $this->accounts->completeRegistration($subject);
+        try {
+            $account = $this->accounts->completeRegistration($subject);
+        } catch (RuntimeException $exception) {
+            // The client was given an account, or taken off the books, while
+            // the code was on its way. The registration is gone either way.
+            $request->session()->forget(self::SESSION_KEY);
+
+            return redirect()->route('auth.register')->with('error', $exception->getMessage());
+        }
 
         $this->activityLogger->recordAnonymous(
             ActivityLog::REGISTRATION_VERIFIED,

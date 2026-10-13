@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Client;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
 use App\Models\Schedule;
@@ -59,6 +60,7 @@ class InactiveTechnicianOnProjectTest extends TestCase
         ]);
 
         $this->project = Project::create([
+            'client_id' => Client::factory()->create()->client_id,
             'name' => 'Aircon Retrofit',
             'reference_no' => 'REF-CREW-1',
             'status' => 'ongoing',

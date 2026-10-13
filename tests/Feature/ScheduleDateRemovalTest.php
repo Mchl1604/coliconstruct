@@ -60,20 +60,21 @@ class ScheduleDateRemovalTest extends TestCase
         string $status = 'ongoing',
         string $clientType = 'Commercial'
     ): Project {
-        $project = Project::create([
-            'name' => 'Project '.uniqid(),
-            'reference_no' => 'PRJ-'.strtoupper(substr(md5(uniqid()), 0, 8)),
-            'status' => $status,
-            'address' => 'Address',
-            'description' => 'Description',
-        ]);
-
-        $project->clients()->create([
+        $client = $this->fixtureClient([
             'client_type' => $clientType,
             'firstname' => 'Client',
             'fullname' => 'Client Person',
             'email_address' => 'client'.uniqid().'@example.test',
             'contact_number' => '09171234567',
+        ]);
+
+        $project = Project::create([
+            'client_id' => $client->client_id,
+            'name' => 'Project '.uniqid(),
+            'reference_no' => 'PRJ-'.strtoupper(substr(md5(uniqid()), 0, 8)),
+            'status' => $status,
+            'address' => 'Address',
+            'description' => 'Description',
         ]);
 
         foreach ($technicians as $technician) {

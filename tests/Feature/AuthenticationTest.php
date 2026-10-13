@@ -6,6 +6,7 @@ use App\Http\Controllers\Auth\AuthController;
 use App\Mail\AccountStatusMail;
 use App\Mail\OtpCodeMail;
 use App\Models\ActivityLog;
+use App\Models\Client;
 use App\Models\OtpVerification;
 use App\Models\PendingRegistration;
 use App\Models\Project;
@@ -213,10 +214,10 @@ class AuthenticationTest extends TestCase
     {
         Mail::fake();
 
+        $this->bookedClient('jose@example.test');
+
         $response = $this->post(route('auth.register.store'), [
-            'first_name' => 'Jose', 'last_name' => 'Garcia',
             'email' => 'jose@example.test',
-            'contact_number' => '09175551234',
             'birthdate' => '1990-05-04',
             'password' => 'My-own-password1',
             'password_confirmation' => 'My-own-password1',
@@ -251,18 +252,22 @@ class AuthenticationTest extends TestCase
     }
 
     /**
-     * The name is asked for in its parts, and the account keeps those parts
-     * exactly as typed - a two-word first name is not mistaken for a middle
-     * name, and the middle initial is optional.
+     * The name is not asked for: it comes from the client record, in its
+     * parts - a two-word first name is not mistaken for a middle name.
      */
-    public function test_registration_keeps_the_name_in_its_parts(): void
+    public function test_registration_takes_the_name_in_its_parts_from_the_client(): void
     {
         Mail::fake();
 
+        $this->bookedClient('maria@example.test', [
+            'firstname' => 'Maria Clara',
+            'middlename' => 'd',
+            'surname' => 'Dela Cruz',
+            'fullname' => 'Maria Clara d Dela Cruz',
+        ]);
+
         $this->post(route('auth.register.store'), [
-            'first_name' => 'Maria Clara', 'middle_name' => 'd', 'last_name' => 'Dela Cruz',
             'email' => 'maria@example.test',
-            'contact_number' => '09175551234',
             'birthdate' => '1990-05-04',
             'password' => 'My-own-password1',
             'password_confirmation' => 'My-own-password1',
@@ -280,21 +285,25 @@ class AuthenticationTest extends TestCase
         $this->assertSame('Maria Clara D Dela Cruz', $user->fullName());
     }
 
-    public function test_registration_refuses_a_middle_initial_longer_than_one_letter(): void
+    /**
+     * An older client record may carry a whole middle name; the account keeps
+     * the initial, which is all its field holds.
+     */
+    public function test_a_middle_name_on_the_client_record_becomes_an_initial(): void
     {
         Mail::fake();
 
+        $this->bookedClient('jose@example.test', ['middlename' => 'Santos']);
+
         $this->post(route('auth.register.store'), [
-            'first_name' => 'Jose', 'middle_name' => 'Santos', 'last_name' => 'Garcia',
             'email' => 'jose@example.test',
-            'contact_number' => '09175551234',
             'birthdate' => '1990-05-04',
             'password' => 'My-own-password1',
             'password_confirmation' => 'My-own-password1',
             'terms' => '1',
-        ])->assertSessionHasErrors('middle_name');
+        ])->assertRedirect(route('auth.verify'));
 
-        $this->assertNull(PendingRegistration::where('email', 'jose@example.test')->first());
+        $this->assertSame('S', PendingRegistration::where('email', 'jose@example.test')->value('middle_name'));
     }
 
     /**
@@ -309,10 +318,10 @@ class AuthenticationTest extends TestCase
 
         $this->travelTo(now()->subMinutes(5));
 
+        $this->bookedClient('jose@example.test');
+
         $this->post(route('auth.register.store'), [
-            'first_name' => 'Jose', 'last_name' => 'Gracia',
             'email' => 'jose@example.test',
-            'contact_number' => '09175551234',
             'birthdate' => '1990-05-04',
             'password' => 'First-password1',
             'password_confirmation' => 'First-password1',
@@ -322,10 +331,8 @@ class AuthenticationTest extends TestCase
         $this->travelBack();
 
         $this->post(route('auth.register.store'), [
-            'first_name' => 'Jose', 'last_name' => 'Garcia',
             'email' => 'jose@example.test',
-            'contact_number' => '09175559999',
-            'birthdate' => '1990-05-04',
+            'birthdate' => '1991-06-05',
             'password' => 'Second-password2',
             'password_confirmation' => 'Second-password2',
             'terms' => '1',
@@ -336,8 +343,173 @@ class AuthenticationTest extends TestCase
         $pending = PendingRegistration::where('email', 'jose@example.test')->firstOrFail();
 
         $this->assertSame('Jose Garcia', $pending->full_name);
-        $this->assertSame('09175559999', $pending->contact_number);
+        $this->assertSame('1991-06-05', $pending->birthdate->toDateString());
         $this->assertTrue(Hash::check('Second-password2', $pending->password));
+    }
+
+    // ------------------------------------------------------------------
+    // Only for a client on record
+    // ------------------------------------------------------------------
+
+    public function test_an_address_with_no_client_behind_it_is_refused(): void
+    {
+        Mail::fake();
+
+        $this->post(route('auth.register.store'), [
+            'email' => 'stranger@example.test',
+            'birthdate' => '1990-05-04',
+            'password' => 'My-own-password1',
+            'password_confirmation' => 'My-own-password1',
+            'terms' => '1',
+        ])->assertSessionHasErrors(['email' => 'No project under this email. Contact us.']);
+
+        $this->assertNull(PendingRegistration::where('email', 'stranger@example.test')->first());
+        Mail::assertNothingSent();
+    }
+
+    public function test_a_client_that_already_has_an_account_is_refused(): void
+    {
+        $account = $this->account(User::ROLE_CLIENT, ['email' => 'owner@example.test']);
+        $this->bookedClient('office@example.test', ['user_id' => $account->id]);
+
+        $this->post(route('auth.register.store'), [
+            'email' => 'office@example.test',
+            'birthdate' => '1990-05-04',
+            'password' => 'My-own-password1',
+            'password_confirmation' => 'My-own-password1',
+            'terms' => '1',
+        ])->assertSessionHasErrors(['email' => 'This client already has an account.']);
+    }
+
+    /**
+     * An administrator took an account off this client on purpose; the public
+     * form does not quietly undo that.
+     */
+    public function test_a_client_the_office_unlinked_is_refused(): void
+    {
+        $this->bookedClient('jose@example.test', ['user_unlinked_at' => now()]);
+
+        $this->post(route('auth.register.store'), [
+            'email' => 'jose@example.test',
+            'birthdate' => '1990-05-04',
+            'password' => 'My-own-password1',
+            'password_confirmation' => 'My-own-password1',
+            'terms' => '1',
+        ])->assertSessionHasErrors(['email' => 'Contact us to open this account.']);
+    }
+
+    /**
+     * Matched however the address is typed, as it is stored.
+     */
+    public function test_the_address_is_matched_however_it_is_typed(): void
+    {
+        Mail::fake();
+
+        $this->bookedClient('jose@example.test');
+
+        $this->post(route('auth.register.store'), [
+            'email' => 'Jose@Example.TEST',
+            'birthdate' => '1990-05-04',
+            'password' => 'My-own-password1',
+            'password_confirmation' => 'My-own-password1',
+            'terms' => '1',
+        ])->assertRedirect(route('auth.verify'));
+    }
+
+    /**
+     * The account opens on the client's details as they are when the code
+     * comes back, linked to the client, with a commercial client's company.
+     */
+    public function test_verifying_opens_the_account_from_the_client_record(): void
+    {
+        Mail::fake();
+
+        $client = $this->bookedClient('office@example.test', [
+            'client_type' => 'Commercial',
+            'company_name' => 'Acme Holdings',
+        ]);
+
+        $this->post(route('auth.register.store'), [
+            'email' => 'office@example.test',
+            'birthdate' => '1990-05-04',
+            'password' => 'My-own-password1',
+            'password_confirmation' => 'My-own-password1',
+            'terms' => '1',
+        ]);
+
+        // The office corrects the number while the code is on its way.
+        $client->update(['contact_number' => '09998887777']);
+
+        $this->post(route('auth.verify.store'), ['code' => $this->issuedCode()])
+            ->assertRedirect(route('landing.home'));
+
+        $account = User::where('email', 'office@example.test')->firstOrFail();
+
+        $this->assertSame('Jose Garcia', $account->fullName());
+        $this->assertSame('09998887777', $account->contact_number);
+        $this->assertSame('Acme Holdings', $account->company_name);
+        $this->assertSame($account->id, $client->fresh()->user_id);
+    }
+
+    public function test_a_residential_client_carries_no_company(): void
+    {
+        Mail::fake();
+
+        $this->bookedClient('jose@example.test', ['company_name' => 'Side Business']);
+
+        $this->post(route('auth.register.store'), [
+            'email' => 'jose@example.test',
+            'birthdate' => '1990-05-04',
+            'password' => 'My-own-password1',
+            'password_confirmation' => 'My-own-password1',
+            'terms' => '1',
+        ]);
+
+        $this->post(route('auth.verify.store'), ['code' => $this->issuedCode()]);
+
+        $this->assertNull(User::where('email', 'jose@example.test')->value('company_name'));
+    }
+
+    /**
+     * The client was given an account by an administrator while the code was
+     * on its way. The registration is refused rather than opening a second.
+     */
+    public function test_a_client_given_an_account_meanwhile_refuses_the_registration(): void
+    {
+        Mail::fake();
+
+        $client = $this->bookedClient('jose@example.test');
+
+        $this->post(route('auth.register.store'), [
+            'email' => 'jose@example.test',
+            'birthdate' => '1990-05-04',
+            'password' => 'My-own-password1',
+            'password_confirmation' => 'My-own-password1',
+            'terms' => '1',
+        ]);
+
+        $client->update(['user_id' => $this->account(User::ROLE_CLIENT, ['email' => 'other@example.test'])->id]);
+
+        $this->post(route('auth.verify.store'), ['code' => $this->issuedCode()])
+            ->assertRedirect(route('auth.register'))
+            ->assertSessionHas('error', 'This email can no longer open an account. Contact us.');
+
+        $this->assertNull(User::where('email', 'jose@example.test')->first());
+        $this->assertNull(PendingRegistration::where('email', 'jose@example.test')->first());
+    }
+
+    public function test_the_form_asks_only_for_what_the_client_record_cannot_supply(): void
+    {
+        $this->get(route('auth.register'))
+            ->assertOk()
+            ->assertSee('name="email"', false)
+            ->assertSee('name="birthdate"', false)
+            ->assertSee('name="password"', false)
+            ->assertSee('name="password_confirmation"', false)
+            ->assertSee('name="terms"', false)
+            ->assertDontSee('name="first_name"', false)
+            ->assertDontSee('name="last_name"', false)
+            ->assertDontSee('name="contact_number"', false);
     }
 
     /**
@@ -348,10 +520,10 @@ class AuthenticationTest extends TestCase
     {
         Mail::fake();
 
+        $this->bookedClient('jose@example.test');
+
         $this->post(route('auth.register.store'), [
-            'first_name' => 'Jose', 'last_name' => 'Garcia',
             'email' => 'jose@example.test',
-            'contact_number' => '09175551234',
             'birthdate' => '1990-05-04',
             'password' => 'My-own-password1',
             'password_confirmation' => 'My-own-password1',
@@ -372,10 +544,10 @@ class AuthenticationTest extends TestCase
     {
         Mail::fake();
 
+        $this->bookedClient('jose@example.test');
+
         $this->post(route('auth.register.store'), [
-            'first_name' => 'Jose', 'last_name' => 'Garcia',
             'email' => 'jose@example.test',
-            'contact_number' => '09175551234',
             'birthdate' => '1990-05-04',
             'password' => 'My-own-password1',
             'password_confirmation' => 'My-own-password1',
@@ -416,10 +588,10 @@ class AuthenticationTest extends TestCase
     {
         Mail::fake();
 
+        $this->bookedClient('jose@example.test');
+
         $this->post(route('auth.register.store'), [
-            'first_name' => 'Jose', 'last_name' => 'Garcia',
             'email' => 'jose@example.test',
-            'contact_number' => '09175551234',
             'birthdate' => '1990-05-04',
             'password' => 'My-own-password1',
             'password_confirmation' => 'My-own-password1',
@@ -452,10 +624,10 @@ class AuthenticationTest extends TestCase
     {
         Mail::fake();
 
+        $this->bookedClient('jose@example.test');
+
         $this->post(route('auth.register.store'), [
-            'first_name' => 'Jose', 'last_name' => 'Garcia',
             'email' => 'jose@example.test',
-            'contact_number' => '09175551234',
             'birthdate' => '1990-05-04',
             'password' => 'My-own-password1',
             'password_confirmation' => 'My-own-password1',
@@ -589,19 +761,16 @@ class AuthenticationTest extends TestCase
      * the issued password replaced. Not welcomed as a registration - the
      * account was never inactive.
      */
-    public function test_a_registered_user_opened_by_an_administrator_verifies_on_first_sign_in(): void
+    public function test_a_client_account_opened_by_an_administrator_verifies_on_first_sign_in(): void
     {
         Mail::fake();
 
         $this->actingAs($this->account('admin', ['email' => 'admin@example.test']));
 
-        $created = app(UserAccountService::class)->createClient([
-            'first_name' => 'Jose',
-            'last_name' => 'Garcia',
-            'contact_number' => '09175551234',
-            'birthdate' => '1988-11-20',
-            'email' => 'jose@example.test',
-        ]);
+        $created = app(UserAccountService::class)->createClient(
+            $this->bookedClient('jose@example.test'),
+            ['birthdate' => '1988-11-20']
+        );
 
         auth()->logout();
 
@@ -747,10 +916,10 @@ class AuthenticationTest extends TestCase
     {
         Mail::fake();
 
+        $this->bookedClient('sneaky@example.test');
+
         $this->post(route('auth.register.store'), [
-            'first_name' => 'Sneaky', 'last_name' => 'Person',
             'email' => 'sneaky@example.test',
-            'contact_number' => '09175551234',
             'birthdate' => '1990-05-04',
             'password' => 'My-own-password1',
             'password_confirmation' => 'My-own-password1',
@@ -773,10 +942,10 @@ class AuthenticationTest extends TestCase
     {
         $this->account('client', ['email' => 'taken@example.test']);
 
+        $this->bookedClient('taken@example.test');
+
         $this->post(route('auth.register.store'), [
-            'first_name' => 'Jose', 'last_name' => 'Garcia',
             'email' => 'taken@example.test',
-            'contact_number' => '09175551234',
             'birthdate' => '1990-05-04',
             'password' => 'My-own-password1',
             'password_confirmation' => 'My-own-password1',
@@ -792,10 +961,10 @@ class AuthenticationTest extends TestCase
     {
         $underage = CarbonImmutable::today()->subYears(17)->toDateString();
 
+        $this->bookedClient('young@example.test');
+
         $this->post(route('auth.register.store'), [
-            'first_name' => 'Young', 'last_name' => 'Person',
             'email' => 'young@example.test',
-            'contact_number' => '09175551234',
             'birthdate' => $underage,
             'password' => 'My-own-password1',
             'password_confirmation' => 'My-own-password1',
@@ -821,10 +990,10 @@ class AuthenticationTest extends TestCase
 
         $birthdate = CarbonImmutable::today()->subYears(18)->toDateString();
 
+        $this->bookedClient('eighteen@example.test');
+
         $this->post(route('auth.register.store'), [
-            'first_name' => 'Just', 'last_name' => 'Eighteen',
             'email' => 'eighteen@example.test',
-            'contact_number' => '09175551234',
             'birthdate' => $birthdate,
             'password' => 'My-own-password1',
             'password_confirmation' => 'My-own-password1',
@@ -840,10 +1009,10 @@ class AuthenticationTest extends TestCase
 
     public function test_registration_requires_matching_passwords(): void
     {
+        $this->bookedClient('jose@example.test');
+
         $this->post(route('auth.register.store'), [
-            'first_name' => 'Jose', 'last_name' => 'Garcia',
             'email' => 'jose@example.test',
-            'contact_number' => '09175551234',
             'birthdate' => '1990-05-04',
             'password' => 'My-own-password1',
             'password_confirmation' => 'something-else',
@@ -1160,6 +1329,7 @@ class AuthenticationTest extends TestCase
     private function project(string $name): Project
     {
         return Project::create([
+            'client_id' => Client::factory()->create()->client_id,
             'name' => $name,
             'reference_no' => 'REF-'.strtoupper(substr(md5($name.microtime()), 0, 8)),
             'status' => 'ongoing',

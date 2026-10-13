@@ -3,7 +3,6 @@
 namespace Tests\Feature;
 
 use App\Models\ActivityLog;
-use App\Models\Client;
 use App\Models\Document;
 use App\Models\Notification;
 use App\Models\Project;
@@ -59,23 +58,23 @@ class ProjectCompletionConfirmationTest extends TestCase
 
     private function project(string $status = 'ongoing', string $email = self::CLIENT_EMAIL): Project
     {
-        $project = Project::create([
-            'name' => 'Confirmation Project',
-            'reference_no' => 'REF-'.strtoupper(substr(md5($email.microtime()), 0, 8)),
-            'status' => $status,
-            'address' => 'Address',
-            'description' => 'Description',
-            'quotation' => 1000,
-        ]);
-
-        Client::create([
-            'project_id' => $project->project_id,
+        $client = $this->fixtureClient([
             'client_type' => 'Residential',
             'firstname' => 'Owner',
             'surname' => 'Person',
             'fullname' => 'Owner Person',
             'email_address' => $email,
             'contact_number' => '09123456789',
+        ]);
+
+        $project = Project::create([
+            'client_id' => $client->client_id,
+            'name' => 'Confirmation Project',
+            'reference_no' => 'REF-'.strtoupper(substr(md5($email.microtime()), 0, 8)),
+            'status' => $status,
+            'address' => 'Address',
+            'description' => 'Description',
+            'quotation' => 1000,
         ]);
 
         // One finished task, because a project that is ready to be completed

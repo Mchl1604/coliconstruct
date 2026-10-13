@@ -64,7 +64,7 @@ class ScheduleController extends Controller
     {
         $projects = Project::query()
             ->with([
-                'clients',
+                'client',
                 'schedules',
                 'projectTechnicians.technician.account',
             ])
@@ -120,7 +120,7 @@ class ScheduleController extends Controller
         // Project::calendarCutoff().
         $cancelledProjects = Project::query()
             ->with([
-                'clients',
+                'client',
                 'schedules',
                 'projectTechnicians.technician.account',
             ])
@@ -273,7 +273,7 @@ class ScheduleController extends Controller
 
         $projects = Project::query()
             ->with([
-                'clients',
+                'client',
                 'schedules',
                 // The whole membership history, not the team as it stands:
                 // this panel is asked about one day, and the answer is who was
@@ -321,8 +321,8 @@ class ScheduleController extends Controller
                     'project_id' => $project->project_id,
                     'reference_no' => $project->reference_no,
                     'name' => $project->name,
-                    'client' => $project->clients->first()?->fullname
-                        ?? $project->clients->first()?->company_name,
+                    'client' => $project->client?->fullname
+                        ?? $project->client?->company_name,
                     'status' => $project->status,
                     'status_label' => $this->statusLabel($project),
                     'on_hold' => (bool) $project->on_hold,
@@ -440,7 +440,7 @@ class ScheduleController extends Controller
         $isPartialDay = $entry['mode'] === Schedule::MODE_PARTIAL_DAY;
 
         $candidates = Project::query()
-            ->with(['clients', 'schedules', 'projectTechnicians.technician.account'])
+            ->with(['client', 'schedules', 'projectTechnicians.technician.account'])
             ->whereIn('status', self::SCHEDULABLE_STATUSES)
             ->where('is_archived', false)
             ->where(function ($query): void {
@@ -587,7 +587,7 @@ class ScheduleController extends Controller
         $scheduleLabel = $this->describeRangeEntry($entry);
 
         $projects = Project::query()
-            ->with(['clients', 'schedules', 'projectTechnicians.technician.account', 'rosterTechnicians.technician.account'])
+            ->with(['client', 'schedules', 'projectTechnicians.technician.account', 'rosterTechnicians.technician.account'])
             ->whereIn('project_id', $validated['project_ids'])
             ->get();
 
@@ -771,8 +771,8 @@ class ScheduleController extends Controller
             'project_id' => $project->project_id,
             'reference_no' => $project->reference_no,
             'name' => $project->name,
-            'client' => $project->clients->first()?->fullname
-                ?? $project->clients->first()?->company_name,
+            'client' => $project->client?->fullname
+                ?? $project->client?->company_name,
             'status' => $project->status,
             'status_label' => $this->statusLabel($project),
             'url' => route('super-admin.projects.show', $project->project_id),
@@ -855,7 +855,7 @@ class ScheduleController extends Controller
 
     public function update(Request $request, int $id)
     {
-        $project = Project::with(['schedules', 'projectTechnicians', 'clients'])->findOrFail($id);
+        $project = Project::with(['schedules', 'projectTechnicians', 'client'])->findOrFail($id);
 
         if ($project->isReadOnly()) {
             return redirect()
@@ -1561,7 +1561,7 @@ class ScheduleController extends Controller
             && (bool) $request->user()?->isSuperAdmin();
 
         $project = Project::query()
-            ->with(['clients', 'schedules', 'projectTechnicians.technician.account'])
+            ->with(['client', 'schedules', 'projectTechnicians.technician.account'])
             ->find($schedule->project_id);
 
         if (! $project) {

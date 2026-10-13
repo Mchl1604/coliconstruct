@@ -17,8 +17,9 @@ use App\Models\TechnicianReport;
 use App\Models\User;
 use App\Policies\ProjectPolicy;
 use App\Rules\NotAnEmployeeEmail;
+use App\Rules\UniqueClientEmail;
 use App\Services\ActivityLogger;
-use App\Services\ClientProjects;
+use App\Services\ClientRecords;
 use App\Services\CompletionConfirmability;
 use App\Services\DocumentHistoryLog;
 use App\Services\ImportableTeamSources;
@@ -27,7 +28,6 @@ use App\Services\ProjectCompletion;
 use App\Services\ProjectEmails;
 use App\Services\ProjectPhaseProgress;
 use App\Services\ProjectPhaseRules;
-use App\Services\ProjectRegisteredUser;
 use App\Services\ProjectReopen;
 use App\Services\ProjectScheduleRecovery;
 use App\Services\ProjectStatusRules;
@@ -94,7 +94,6 @@ class ProjectController extends Controller
         private readonly ProjectEmails $clientEmails,
         private readonly ProjectTeam $projectTeam,
         private readonly ScheduleHoldCutoff $holdCutoff,
-        private readonly ProjectRegisteredUser $registeredUsers,
         private readonly CompletionConfirmability $confirmability,
         private readonly QuotationChange $quotations,
         private readonly DocumentHistoryLog $documentHistory,
@@ -151,8 +150,8 @@ class ProjectController extends Controller
             sortable: [
                 0 => fn (Project $project): int => (int) $project->project_id,
                 1 => fn (Project $project): ?string => $project->reference_no,
-                2 => fn (Project $project): ?string => $project->clients->first()?->primaryName(),
-                3 => fn (Project $project): ?string => $project->clients->first()?->client_type,
+                2 => fn (Project $project): ?string => $project->client?->primaryName(),
+                3 => fn (Project $project): ?string => $project->client?->client_type,
                 4 => fn (Project $project): string => $project->projectTypes->pluck('type_name')->implode(', '),
                 5 => fn (Project $project): float => (float) $project->quotation,
                 // By tab, in the order the tabs are read - see tabRank().
@@ -163,8 +162,8 @@ class ProjectController extends Controller
                 $project->displayCode(),
                 $project->reference_no,
                 $project->name,
-                $project->clients->first()?->primaryName(),
-                $project->clients->first()?->client_type,
+                $project->client?->primaryName(),
+                $project->client?->client_type,
                 $project->projectTypes->pluck('type_name')->implode(' '),
                 number_format((float) $project->quotation, 2),
                 $project->statusLabel(),
@@ -175,7 +174,7 @@ class ProjectController extends Controller
         $rows = $page->items;
 
         // What only a drawn row needs, for the rows being drawn.
-        $rows->load(['clients.account', 'documents', 'schedule'])
+        $rows->load(['client.account', 'documents', 'schedule'])
             // What the completion rules will object to, per project, as two
             // subqueries rather than two queries per row - see
             // ProjectPolicy::blockersFor(), which reads these when they are
@@ -246,7 +245,7 @@ class ProjectController extends Controller
     private function listedProjects(): Collection
     {
         $projects = Project::query()
-            ->with(['clients', 'schedules', 'projectTypes', 'rosterTechnicians', 'projectTechnicians.technician.account'])
+            ->with(['client', 'schedules', 'projectTypes', 'rosterTechnicians', 'projectTechnicians.technician.account'])
             ->where('is_archived', false)
             ->where('status', '!=', 'archived')
             ->orderBy('project_id', 'desc')
@@ -304,7 +303,7 @@ class ProjectController extends Controller
 
         // projectTypes and archivedByUser are the two columns the table gained
         // beyond the project's own row - loaded for the page on screen.
-        $page->items->load(['clients', 'projectTypes', 'archivedByUser']);
+        $page->items->load(['client', 'projectTypes', 'archivedByUser']);
 
         return $table->respond(
             $page,
@@ -338,12 +337,19 @@ class ProjectController extends Controller
         $workingHours = Schedule::workingHourOptions();
         $partialDayHours = Schedule::partialDayHourBounds();
 
+        // A failed save comes back in the mode it was sent in, with the same
+        // client still picked.
+        $selectedClient = old('client_mode') === StoreProjectRequest::CLIENT_EXISTING && is_numeric(old('client_id'))
+            ? Client::query()->withCount('projects')->find((int) old('client_id'))
+            : null;
+
         return view('super-admin.createProject', compact(
             'projectTypes',
             'technicians',
             'technicianSchedules',
             'workingHours',
-            'partialDayHours'
+            'partialDayHours',
+            'selectedClient'
         ));
     }
 
@@ -449,8 +455,16 @@ class ProjectController extends Controller
 
             DB::transaction(function () use ($validated, $request, $scheduleEntry, &$created): void {
 
+                // An existing client is used exactly as stored - the wizard's
+                // copy of their details is display only. A new one is written
+                // first, because the project points at it.
+                $client = $request->usesExistingClient()
+                    ? Client::query()->findOrFail($validated['client_id'])
+                    : app(ClientRecords::class)->create($validated);
+
                 $project = Project::create([
-                    'name' => $this->resolveProjectName($validated),
+                    'client_id' => $client->client_id,
+                    'name' => $client->primaryName(),
                     'status' => 'unscheduled',
                     'quotation' => $validated['quotation_amount'],
                     'target_end_date' => $validated['target_end_date'],
@@ -466,28 +480,6 @@ class ProjectController extends Controller
                 // of its history - so a later change has something to read as
                 // "was".
                 $this->targetDates->recordInitial($project, $request->user());
-
-                Client::create([
-                    'project_id' => $project->project_id,
-                    // Linked to the account behind the address when there is
-                    // one. Null when there is not, which is the ordinary case:
-                    // work is often booked before the client registers, and
-                    // registering is what fills this in.
-                    'user_id' => app(ClientProjects::class)
-                        ->accountFor($validated['client_email'])?->id,
-                    'client_type' => $validated['client_type'],
-                    'company_name' => $this->inputCompanyName($validated),
-                    'surname' => $validated['surname'] ?? null,
-                    'firstname' => $validated['firstname'],
-                    'middlename' => $validated['middle_name'] ?? null,
-                    'fullname' => trim(collect([
-                        $validated['firstname'],
-                        $validated['middle_name'] ?? null,
-                        $validated['surname'] ?? null,
-                    ])->filter()->implode(' ')),
-                    'email_address' => $validated['client_email'],
-                    'contact_number' => $validated['client_phone'],
-                ]);
 
                 $projectTypeIds = ProjectType::query()
                     ->get()
@@ -537,7 +529,7 @@ class ProjectController extends Controller
                     'quotation'
                 );
 
-                if ($validated['client_type'] !== 'Residential' && $request->hasFile('contract')) {
+                if ($client->client_type !== 'Residential' && $request->hasFile('contract')) {
                     $this->storeDocuments(
                         $request->file('contract'),
                         $project->project_id,
@@ -740,28 +732,6 @@ class ProjectController extends Controller
             'start_time' => $isPartialDay ? $start->format('H:i') : null,
             'end_time' => $isPartialDay ? $end->format('H:i') : null,
         ];
-    }
-
-    private function resolveProjectName(array $validated): string
-    {
-        if ($validated['client_type'] === 'Commercial' && filled($validated['company_name'] ?? null)) {
-            return $validated['company_name'];
-        }
-
-        return trim(collect([
-            $validated['firstname'],
-            $validated['middle_name'] ?? null,
-            $validated['surname'],
-        ])->filter()->implode(' '));
-    }
-
-    private function inputCompanyName(array $validated): ?string
-    {
-        if ($validated['client_type'] === 'Commercial' && filled($validated['company_name'] ?? null)) {
-            return $validated['company_name'] ?? null;
-        }
-
-        return null;
     }
 
     private function generateReferenceNumber(int $projectId): string
@@ -1180,82 +1150,6 @@ class ProjectController extends Controller
     }
 
     /**
-     * Connect this project to a Registered User account, or move it to a
-     * different one.
-     *
-     * Administrators only, and stated here as well as on the route: the route
-     * group admits Admin and Super Admin, and an endpoint that changes who can
-     * read a project's whole history should not depend on a group declaration
-     * to say so.
-     *
-     * The project's client details are not touched. Whoever the job is booked
-     * for stays exactly as it is written on the project; this decides which
-     * account follows the work on the public website.
-     */
-    public function updateRegisteredUser(Request $request, int $id)
-    {
-        $this->guardRegisteredUserManagement($request);
-
-        $project = Project::findOrFail($id);
-
-        $validated = Validator::make($request->all(), [
-            'registered_user_id' => ['required', 'integer', 'exists:users,id'],
-        ], [
-            'registered_user_id.required' => 'Choose an account to link.',
-            'registered_user_id.exists' => 'That account no longer exists.',
-        ])->validate();
-
-        $account = User::find($validated['registered_user_id']);
-
-        try {
-            $changed = DB::transaction(fn (): bool => $this->registeredUsers->assign($project, $account));
-        } catch (RuntimeException $e) {
-            return back()->with('error', $e->getMessage());
-        } catch (Throwable $e) {
-            return back()->with('error', $this->safeErrorMessage($e, 'Unable to link the account. Nothing was changed.'));
-        }
-
-        return back()->with('success', $changed
-            ? sprintf('%s is now linked to this project.', $account->fullName())
-            : sprintf('%s was already linked to this project.', $account->fullName()));
-    }
-
-    /**
-     * Take the Registered User off this project.
-     *
-     * Nothing is deleted: the account keeps its details and its other
-     * projects, and the project keeps everything it has. Only the connection
-     * between the two ends.
-     */
-    public function removeRegisteredUser(Request $request, int $id)
-    {
-        $this->guardRegisteredUserManagement($request);
-
-        $project = Project::findOrFail($id);
-
-        try {
-            $removed = DB::transaction(fn (): bool => $this->registeredUsers->remove($project));
-        } catch (Throwable $e) {
-            return back()->with('error', $this->safeErrorMessage($e, 'Unable to unlink the account. Nothing was changed.'));
-        }
-
-        return back()->with($removed ? 'success' : 'error', $removed
-            ? 'Account unlinked.'
-            : 'This project has no linked account.');
-    }
-
-    /**
-     * Only an Admin or a Super Admin manages these assignments. A Registered
-     * User never reaches this controller at all - the portal is closed to
-     * them - and a technician who does may read a project without deciding who
-     * else can.
-     */
-    private function guardRegisteredUserManagement(Request $request): void
-    {
-        $this->guardAdministratorAction($request);
-    }
-
-    /**
      * The administrators' door, asked here as well as on the route.
      *
      * The route group already admits exactly these two roles. It is asked
@@ -1369,48 +1263,12 @@ class ProjectController extends Controller
         }
     }
 
-    /**
-     * Put this project's contact address onto the one its Registered User
-     * signs in with.
-     *
-     * Deliberately an action rather than a synchronisation. The two addresses
-     * are different facts and are allowed to stay different - a project booked
-     * to a company mailbox and followed by a person is the ordinary case - so
-     * nothing moves on its own and nothing moves the other way. This is an
-     * administrator saying "the project's address is wrong, use the account's",
-     * and it changes the project only.
-     */
-    public function useAccountEmail(Request $request, int $id)
-    {
-        $this->guardAdministratorAction($request);
-
-        $project = Project::findOrFail($id);
-
-        try {
-            $changed = DB::transaction(fn (): ?array => $this->registeredUsers->useAccountEmail($project));
-        } catch (RuntimeException $e) {
-            return back()->with('error', $e->getMessage());
-        } catch (Throwable $e) {
-            return back()->with('error', $this->safeErrorMessage($e, 'Unable to update the contact email.'));
-        }
-
-        if ($changed === null) {
-            return back()->with('error', 'This project already uses the account\'s email address.');
-        }
-
-        return back()->with('success', sprintf(
-            'Contact email changed from %s to %s.',
-            $changed['previous'],
-            $changed['current']
-        ));
-    }
-
     public function show(Request $request, int $id)
     {
         $project = Project::with([
-            // `clients.account` so the Registered User panel names the account
-            // the project is connected to without a query of its own.
-            'clients.account',
+            // `client.account`, so whether the client can confirm online is
+            // answered without a query of its own.
+            'client.account',
             'documents',
             // The history dialogs: every quotation amount change, and every
             // file uploaded, replaced or removed - with the file itself where
@@ -1563,15 +1421,9 @@ class ProjectController extends Controller
         // the endpoint asks, so the button cannot offer what the route refuses.
         $canArchive = (bool) $request->user()?->isSuperAdmin() && $project->isArchivable();
 
-        // Who the project is connected to on the public website, and who it
-        // could be connected to instead. Both are administrators' business
-        // only - see guardRegisteredUserManagement, which is what the two
-        // endpoints behind these controls ask.
-        $canManageRegisteredUser = in_array($request->user()?->role, User::ADMINISTRATOR_ROLES, true);
-        $assignedRegisteredUser = $project->registeredUserAccount();
-        $registeredUserOptions = $canManageRegisteredUser
-            ? app(ProjectRegisteredUser::class)->candidates()
-            : collect();
+        // Changing the client and recording a confirmation given elsewhere
+        // are administrators' business only - the endpoints ask again.
+        $isAdministrator = in_array($request->user()?->role, User::ADMINISTRATOR_ROLES, true);
 
         // Whether anybody can confirm this project's completion as things
         // stand - which is not the same question as whether an account is
@@ -1584,15 +1436,13 @@ class ProjectController extends Controller
         // Recording a confirmation the client gave elsewhere. Administrators
         // only and only while the project is actually waiting on one - the
         // endpoint asks both questions again.
-        $canRecordClientConfirmation = $canManageRegisteredUser
+        $canRecordClientConfirmation = $isAdministrator
             && $project->isAwaitingClientConfirmation();
 
-        // The project's contact address and the account's are separate facts
-        // and may legitimately differ. This only says that they do, so an
-        // administrator is never surprised by which of the two a message went
-        // to; nothing is changed unless they ask for it.
-        $accountEmailDiffers = $assignedRegisteredUser !== null
-            && $this->registeredUsers->accountEmailDiffers($project);
+        // Moving the project to another client - the only way to make it
+        // someone else's. Not on finished or archived work, which the edit
+        // dialog refuses for the same reason.
+        $canChangeClient = $isAdministrator && ! $project->isReadOnly();
 
         // Every completion cycle this project has been through, already
         // loaded. Never the current report: that one is read off the project.
@@ -1657,13 +1507,10 @@ class ProjectController extends Controller
             'completionBlockers',
             'canArchive',
             'previousCompletionReports',
-            'canManageRegisteredUser',
-            'assignedRegisteredUser',
-            'registeredUserOptions',
             'confirmabilityState',
             'confirmabilityHint',
             'canRecordClientConfirmation',
-            'accountEmailDiffers',
+            'canChangeClient',
             'phaseSummary',
             'canSetUpPhases',
             'canCompletePhase',
@@ -1811,10 +1658,16 @@ class ProjectController extends Controller
             'company_name' => ['nullable', 'string', 'max:255'],
             'address' => ['required', 'string', 'max:500'],
             'contact_number' => ['required', 'regex:/^09\d{9}$/'],
-            // The same rule the wizard applies: a project's client may
+            // The same rules the wizard applies: a project's client may
             // not be one of the staff, whose address is the key their
-            // own portal is keyed on.
-            'email_address' => ['required', 'email', 'max:255', new NotAnEmployeeEmail],
+            // own portal is keyed on, and one address is one client.
+            'email_address' => [
+                'required',
+                'email',
+                'max:255',
+                new NotAnEmployeeEmail,
+                new UniqueClientEmail($project->client_id),
+            ],
             'quotation' => ['required', 'numeric', 'min:0', 'max:'.Project::MAX_QUOTATION],
             'project_description' => ['required', 'string'],
             'project_types' => ['required', 'array', 'min:1'],
@@ -1967,9 +1820,9 @@ class ProjectController extends Controller
                     'replaced_files' => [],
                 ];
 
-                $client = Client::query()
-                    ->where('project_id', $project->project_id)
-                    ->firstOrFail();
+                // Shared by every project this client has, so the edit
+                // reaches all of them - the dialog says so.
+                $client = Client::query()->findOrFail($project->client_id);
 
                 $client->update([
                     'client_type' => $client->client_type,
@@ -1985,6 +1838,10 @@ class ProjectController extends Controller
                     'email_address' => $validated['email_address'],
                     'contact_number' => $validated['contact_number'],
                 ]);
+
+                // The client's account is the same person: their name,
+                // number and company follow. Never their sign-in email.
+                app(ClientRecords::class)->syncToAccount($client);
 
                 $project->projectTypes()->sync($validated['project_types']);
 

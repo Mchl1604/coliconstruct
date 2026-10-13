@@ -149,7 +149,7 @@ class ReportController extends Controller
             defaultOrder: [[6, 'desc']],
         );
 
-        $reports = $page->items->load(['project.clients', 'technician.account', 'submitter', 'images', 'archiver']);
+        $reports = $page->items->load(['project.client', 'technician.account', 'submitter', 'images', 'archiver']);
         $user = $request->user();
 
         return $table->respond(
@@ -228,7 +228,7 @@ class ReportController extends Controller
         // Reports page - see archivedIndex().
         $query = TechnicianReport::query()
             ->active()
-            ->with(['project.clients', 'technician.account', 'submitter', 'images'])
+            ->with(['project.client', 'technician.account', 'submitter', 'images'])
             ->when(! empty($filters['project_id']), fn ($q) => $q->where('project_id', $filters['project_id']))
             ->when(
                 ! empty($filters['report_type']) && $filters['report_type'] !== 'all',
@@ -292,7 +292,7 @@ class ReportController extends Controller
      */
     public function showTechnicianReport(Request $request, TechnicianReport $report)
     {
-        $report->load(['project.clients', 'technician.account', 'images', 'archiver']);
+        $report->load(['project.client', 'technician.account', 'images', 'archiver']);
 
         return response()->json($this->reportRow($report, $request->user()) + [
             // An archived report is still read in full; the viewer says so
@@ -301,8 +301,8 @@ class ReportController extends Controller
             'archived_by' => $report->archiver?->fullName() ?? '—',
             'can_restore' => (bool) $request->user()?->can('restore', $report),
             'description' => $report->report_description,
-            'client' => $report->project?->clients->first()?->company_name
-                ?: $report->project?->clients->first()?->fullname,
+            'client' => $report->project?->client?->company_name
+                ?: $report->project?->client?->fullname,
             'project_url' => $report->project
                 ? route('super-admin.projects.show', $report->project->project_id)
                 : null,
@@ -775,7 +775,7 @@ class ReportController extends Controller
      */
     private function clientNameFor(TechnicianReport $report): string
     {
-        $client = $report->project?->clients->first();
+        $client = $report->project?->client;
 
         return $client?->company_name
             ?: ($client?->fullname ?: '—');

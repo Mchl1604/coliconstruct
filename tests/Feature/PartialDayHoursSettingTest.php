@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Models\Client;
 use App\Models\Project;
 use App\Models\Schedule;
 use App\Models\SystemContent;
@@ -104,23 +103,23 @@ class PartialDayHoursSettingTest extends TestCase
         $sequence = ++self::$sequence;
         $day = $date ?? CarbonImmutable::tomorrow()->toDateString();
 
-        $project = Project::create([
-            'name' => 'Aircon Service '.$sequence,
-            'reference_no' => 'REF-PD-'.$sequence,
-            'status' => 'pending',
-            'address' => '1 Test Street',
-            'description' => 'Description',
-            'quotation' => 50000,
-        ]);
-
-        Client::create([
-            'project_id' => $project->project_id,
+        $client = $this->fixtureClient([
             'client_type' => 'Residential',
             'firstname' => 'Contact',
             'surname' => 'Person',
             'fullname' => 'Contact Person',
             'email_address' => 'contact'.$sequence.'@example.test',
             'contact_number' => '09123456789',
+        ]);
+
+        $project = Project::create([
+            'client_id' => $client->client_id,
+            'name' => 'Aircon Service '.$sequence,
+            'reference_no' => 'REF-PD-'.$sequence,
+            'status' => 'pending',
+            'address' => '1 Test Street',
+            'description' => 'Description',
+            'quotation' => 50000,
         ]);
 
         $schedule = Schedule::create([
@@ -654,17 +653,7 @@ class PartialDayHoursSettingTest extends TestCase
     {
         $this->storeHours('09:00', '15:00');
 
-        $project = Project::create([
-            'name' => 'Office Retrofit',
-            'reference_no' => 'REF-WD-1',
-            'status' => 'pending',
-            'address' => '2 Test Street',
-            'description' => 'Description',
-            'quotation' => 250000,
-        ]);
-
-        Client::create([
-            'project_id' => $project->project_id,
+        $client = $this->fixtureClient([
             'client_type' => 'Commercial',
             'company_name' => 'Some Holdings',
             'firstname' => 'Contact',
@@ -672,6 +661,16 @@ class PartialDayHoursSettingTest extends TestCase
             'fullname' => 'Contact Person',
             'email_address' => 'whole.day@example.test',
             'contact_number' => '09123456789',
+        ]);
+
+        $project = Project::create([
+            'client_id' => $client->client_id,
+            'name' => 'Office Retrofit',
+            'reference_no' => 'REF-WD-1',
+            'status' => 'pending',
+            'address' => '2 Test Street',
+            'description' => 'Description',
+            'quotation' => 250000,
         ]);
 
         $schedule = Schedule::create([

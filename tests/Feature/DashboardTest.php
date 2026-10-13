@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Models\Client;
 use App\Models\Inquiry;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
@@ -46,7 +45,17 @@ class DashboardTest extends TestCase
      */
     private function project(string $status, array $schedule = [], array $attributes = []): Project
     {
+        $client = $this->fixtureClient([
+            'client_type' => 'Residential',
+            'firstname' => 'Juan',
+            'surname' => 'Dela Cruz',
+            'fullname' => 'Juan Dela Cruz',
+            'email_address' => 'client@example.test',
+            'contact_number' => '09171234567',
+        ]);
+
         $project = Project::create(array_merge([
+            'client_id' => $client->client_id,
             'reference_no' => 'PRJ-'.random_int(1000, 9999),
             'name' => 'Dela Cruz',
             'status' => $status,
@@ -60,16 +69,6 @@ class DashboardTest extends TestCase
         // every one of them would also report itself as needing it. Phase
         // setup has its own coverage in ProjectPhaseSetupTest.
         $this->finalizePhases($project);
-
-        Client::create([
-            'project_id' => $project->project_id,
-            'client_type' => 'Residential',
-            'firstname' => 'Juan',
-            'surname' => 'Dela Cruz',
-            'fullname' => 'Juan Dela Cruz',
-            'email_address' => 'client@example.test',
-            'contact_number' => '09171234567',
-        ]);
 
         if ($schedule !== []) {
             Schedule::create([

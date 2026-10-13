@@ -64,23 +64,23 @@ class QuotationSyncTest extends TestCase
 
     private function project(string $status = 'ongoing'): Project
     {
-        $project = Project::create([
-            'name' => 'Quotation Project',
-            'reference_no' => 'REF-QUOTE',
-            'status' => $status,
-            'address' => '123 Sample Street',
-            'description' => 'Description',
-            'quotation' => 1000,
-        ]);
-
-        Client::create([
-            'project_id' => $project->project_id,
+        $client = $this->fixtureClient([
             'client_type' => 'Residential',
             'firstname' => 'Juan',
             'surname' => 'Dela Cruz',
             'fullname' => 'Juan Dela Cruz',
             'email_address' => 'juan@example.test',
             'contact_number' => '09123456789',
+        ]);
+
+        $project = Project::create([
+            'client_id' => $client->client_id,
+            'name' => 'Quotation Project',
+            'reference_no' => 'REF-QUOTE',
+            'status' => $status,
+            'address' => '123 Sample Street',
+            'description' => 'Description',
+            'quotation' => 1000,
         ]);
 
         $project->projectTypes()->attach(
@@ -586,6 +586,7 @@ class QuotationSyncTest extends TestCase
         $this->assertSame('1500.00', $project->refresh()->quotation);
 
         $closed = Project::create([
+            'client_id' => Client::factory()->create()->client_id,
             'name' => 'Closed Project',
             'reference_no' => 'REF-CLOSED',
             'status' => 'completed',
@@ -645,16 +646,18 @@ class QuotationSyncTest extends TestCase
     }
 
     /**
-     * The same guarantee when it is the amount alone: the client row has
-     * gone from under the edit, so the save fails after the history row was
-     * written - and takes it back out.
+     * The same guarantee when it is the amount alone: the client's details
+     * refuse to save, so the edit fails after the history row was written -
+     * and takes it back out.
      */
     public function test_a_failed_amount_only_update_does_not_create_quotation_history(): void
     {
         $project = $this->project();
         $original = $this->existingQuotation($project);
 
-        Client::query()->where('project_id', $project->project_id)->delete();
+        Client::saving(function (): void {
+            throw new RuntimeException('The client could not be saved.');
+        });
 
         $this->save($project, [
             'quotation' => '1500',

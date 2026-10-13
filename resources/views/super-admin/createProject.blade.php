@@ -9,6 +9,8 @@
          menu - shared with the assigned-team editor for the same reason the
          dialog above is. --}}
     <link rel="stylesheet" href="/css/technicianPicker.css">
+    {{-- The Existing client search, the same control as Link Account's. --}}
+    <link rel="stylesheet" href="/css/actorSearch.css">
 @endpush
 
 @section('content')
@@ -91,6 +93,75 @@
                         <p class="text-secondary small mb-0"></p>
                     </div>
 
+                    {{-- One client may have many projects. Existing client
+                         picks one already on record and uses their details
+                         as stored, read-only; New client types one in, and
+                         is refused if the address already belongs to a
+                         client - see UniqueClientEmail. A failed save comes
+                         back in the same mode, with the same client picked. --}}
+                    @php
+                        $clientMode = old('client_mode') === \App\Http\Requests\StoreProjectRequest::CLIENT_EXISTING
+                            ? \App\Http\Requests\StoreProjectRequest::CLIENT_EXISTING
+                            : \App\Http\Requests\StoreProjectRequest::CLIENT_NEW;
+                        $emailIsDuplicate = $errors->first('client_email') === 'Client already exists.';
+                    @endphp
+
+                    <div class="btn-group mb-4" role="group" aria-label="Client" data-client-mode>
+                        <input type="radio" class="btn-check" name="client_mode" id="clientModeExisting"
+                            value="{{ \App\Http\Requests\StoreProjectRequest::CLIENT_EXISTING }}" autocomplete="off"
+                            data-client-mode-radio @checked($clientMode === \App\Http\Requests\StoreProjectRequest::CLIENT_EXISTING)>
+                        <label class="btn btn-outline-primary" for="clientModeExisting">
+                            <i class="bi bi-person-check me-1" aria-hidden="true"></i>
+                            Existing client
+                        </label>
+
+                        <input type="radio" class="btn-check" name="client_mode" id="clientModeNew"
+                            value="{{ \App\Http\Requests\StoreProjectRequest::CLIENT_NEW }}" autocomplete="off"
+                            data-client-mode-radio @checked($clientMode === \App\Http\Requests\StoreProjectRequest::CLIENT_NEW)>
+                        <label class="btn btn-outline-primary" for="clientModeNew">
+                            <i class="bi bi-person-plus me-1" aria-hidden="true"></i>
+                            New client
+                        </label>
+                    </div>
+
+                    {{-- Searched on the server one page at a time - see
+                         ProjectClientController::search() - so the page never
+                         carries every client. --}}
+                    <div class="config-actor-search mb-4" data-account-picker data-client-picker
+                        data-picker-url="{{ route('super-admin.projects.client-search') }}"
+                        data-picker-empty="No matching client."
+                        data-lookup-url="{{ route('super-admin.projects.client-lookup') }}"
+                        @if ($selectedClient) data-picker-initial="{{ json_encode($selectedClient->toPickerArray()) }}" @endif
+                        @if ($clientMode !== \App\Http\Requests\StoreProjectRequest::CLIENT_EXISTING) hidden @endif>
+                        <label for="clientSearch" class="form-label">Client</label>
+
+                        <div class="input-group">
+                            <span class="input-group-text">
+                                <i class="bi bi-search" aria-hidden="true"></i>
+                            </span>
+
+                            <input type="text" class="form-control" id="clientSearch"
+                                placeholder="Search name or email" autocomplete="off" role="combobox"
+                                aria-expanded="false" aria-controls="clientSearchResults"
+                                value="{{ $selectedClient ? $selectedClient->primaryName().($selectedClient->email_address ? ' — '.$selectedClient->email_address : '') : '' }}"
+                                data-picker-search>
+
+                            <button type="button" class="btn btn-outline-secondary {{ $selectedClient ? '' : 'd-none' }}"
+                                aria-label="Clear the chosen client" data-picker-clear>
+                                <i class="bi bi-x-lg" aria-hidden="true"></i>
+                            </button>
+                        </div>
+
+                        <input type="hidden" name="client_id" value="{{ $selectedClient?->client_id }}" data-picker-id>
+
+                        <ul class="config-actor-results d-none" id="clientSearchResults" role="listbox"
+                            data-picker-results></ul>
+
+                        <div class="form-text text-danger {{ $errors->has('client_id') ? '' : 'd-none' }}" data-client-picker-error>
+                            {{ $errors->first('client_id') ?: 'Pick a client.' }}
+                        </div>
+                    </div>
+
                     <div class="client-type-grid mb-4">
                         <label class="client-type-option is-selected" data-client-type-option>
                             <input type="radio" name="client_type" value="Residential" class="visually-hidden"
@@ -143,8 +214,20 @@
 
                         <div class="col-md-6">
                             <label for="clientEmail" class="form-label">Email Address</label>
-                            <input type="email" name="client_email" id="clientEmail" class="form-control"
+                            <input type="email" name="client_email" id="clientEmail"
+                                class="form-control {{ $emailIsDuplicate ? 'is-invalid' : '' }}"
                                 placeholder="Enter email address" data-summary-input="client_email" value="{{ old('client_email') }}" required>
+
+                            {{-- Shown when the address already belongs to a
+                                 client: on Next, by the lookup in
+                                 createProject.js, or after a refused save. --}}
+                            <div class="invalid-feedback" data-client-email-error>
+                                <span>Client already exists.</span>
+                                <button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline"
+                                    data-use-existing-client>
+                                    Use existing client
+                                </button>
+                            </div>
                         </div>
 
                         <div class="col-md-6">
@@ -490,6 +573,10 @@
                                 <h6 class="mb-0">Client Information</h6>
                             </div>
                             <div class="review-group-body">
+                                <div class="review-item review-item-full">
+                                    <span class="review-item-label">Client</span>
+                                    <span class="review-item-value" data-summary-target="client_mode">New client</span>
+                                </div>
                                 <div class="review-item">
                                     <span class="review-item-label">Client Type</span>
                                     <span class="review-item-value" data-summary-target="client_type">Not filled
@@ -621,6 +708,7 @@
             window.partialDayHours = @json($partialDayHours);
         </script>
         <script src="/js/importTeam.js"></script>
+        <script src="/js/accountPicker.js"></script>
         {{-- Thousands separators on the quotation, shared with Project Details. --}}
         <script src="/js/moneyInput.js"></script>
         <script src="/js/super-admin/createProject.js"></script>

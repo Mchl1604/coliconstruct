@@ -42,7 +42,7 @@ class ProjectEmails
      */
     public function projectCreated(Project $project): void
     {
-        $project->loadMissing(['clients', 'projectTypes']);
+        $project->loadMissing(['client', 'projectTypes']);
 
         $types = $project->projectTypes->pluck('type_name')->all();
 
@@ -184,9 +184,10 @@ class ProjectEmails
     }
 
     /**
-     * The addresses a project's client can be reached at.
+     * The address a project's client can be reached at, as a collection of
+     * none or one.
      *
-     * Contacts carry the address themselves rather than pointing at an
+     * The client carries the address itself rather than pointing at an
      * account, which is the whole point: a client is emailed about their
      * project whether or not they have ever registered.
      *
@@ -194,17 +195,16 @@ class ProjectEmails
      */
     private function contacts(Project $project): Collection
     {
-        $project->loadMissing('clients');
+        $project->loadMissing('client');
 
-        return $project->clients
-            ->filter(fn (Client $client): bool => $this->isReachable($client))
-            ->unique(fn (Client $client): string => $this->clientProjects->normalise($client->email_address))
+        return collect([$project->client])
+            ->filter(fn (?Client $client): bool => $client !== null && $this->isReachable($client))
             ->values();
     }
 
     /**
      * Everyone who should hear that something happened to this project: its
-     * contacts, plus the address the Registered User actually signs in with.
+     * contacts, plus the address the client account actually signs in with.
      *
      * The two are separate facts and stay separate - the project's contact may
      * be a company mailbox, the account is a person - so this adds rather than
@@ -225,9 +225,10 @@ class ProjectEmails
      */
     private function recipients(Project $project): Collection
     {
-        $project->loadMissing('clients.account');
+        $project->loadMissing('client.account');
 
-        return $project->clients
+        return collect([$project->client])
+            ->filter()
             ->flatMap(fn (Client $client): array => [$client, $this->accountRecipient($client)])
             ->filter(fn (?Client $client): bool => $client !== null && $this->isReachable($client))
             // Normalised on both sides, so one address written two ways is one

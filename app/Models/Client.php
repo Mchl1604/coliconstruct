@@ -2,11 +2,23 @@
 
 namespace App\Models;
 
+use App\Services\ClientProjects;
+use Database\Factories\ClientFactory;
+use Illuminate\Database\Eloquent\Casts\Attribute;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
+/**
+ * One person or company the work is for - one row however many projects they
+ * have. Every project points at its client through tbl_projects.client_id.
+ */
 class Client extends Model
 {
+    /** @use HasFactory<ClientFactory> */
+    use HasFactory;
+
     public $timestamps = false;
 
     protected $table = 'tbl_clients';
@@ -18,7 +30,6 @@ class Client extends Model
     ];
 
     protected $fillable = [
-        'project_id',
         'user_id',
         'user_unlinked_at',
         'client_type',
@@ -31,13 +42,29 @@ class Client extends Model
         'contact_number',
     ];
 
-    public function project(): BelongsTo
+    /**
+     * Every project booked for this client.
+     */
+    public function projects(): HasMany
     {
-        return $this->belongsTo(Project::class, 'project_id', 'project_id');
+        return $this->hasMany(Project::class, 'client_id', 'client_id');
     }
 
     /**
-     * The Registered User account this contact belongs to, once there is one.
+     * Stored trimmed and lower-cased, the same way ClientProjects compares
+     * addresses, so the unique index sees two spellings of one mailbox as one
+     * client. A blank address is stored as null rather than as an empty
+     * string the index would count.
+     */
+    protected function emailAddress(): Attribute
+    {
+        return Attribute::make(
+            set: fn (?string $value): ?string => app(ClientProjects::class)->normalise($value) ?: null,
+        );
+    }
+
+    /**
+     * The client account this contact belongs to, once there is one.
      *
      * Null while a project has been booked for somebody who has not registered
      * yet, which is the ordinary case at the start: the address is what
@@ -116,6 +143,36 @@ class Client extends Model
         return $this->isCommercial() && filled($this->company_name)
             ? 'Project Contact'
             : 'Company';
+    }
+
+    /**
+     * What the New Project wizard needs to show this client in its picker
+     * and fill the Client step in - shaped for accountPicker.js (`name`,
+     * `email`, `meta`) plus the stored fields. Load `projects_count` first
+     * for the "2 projects" part.
+     *
+     * @return array{id: int, name: string, email: ?string, meta: string, client_type: ?string, company_name: ?string, surname: ?string, firstname: ?string, middlename: ?string, contact_number: ?string}
+     */
+    public function toPickerArray(): array
+    {
+        $projects = (int) ($this->projects_count ?? 0);
+
+        return [
+            'id' => (int) $this->client_id,
+            'name' => $this->primaryName(),
+            'email' => $this->email_address,
+            'meta' => collect([
+                $this->email_address,
+                $this->client_type,
+                $projects === 1 ? '1 project' : $projects.' projects',
+            ])->filter()->implode(' · '),
+            'client_type' => $this->client_type,
+            'company_name' => $this->company_name,
+            'surname' => $this->surname,
+            'firstname' => $this->firstname,
+            'middlename' => $this->middlename,
+            'contact_number' => $this->contact_number,
+        ];
     }
 
     /**

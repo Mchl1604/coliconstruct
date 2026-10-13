@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\ActivityLog;
+use App\Models\Client;
 use App\Models\Notification;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
@@ -72,6 +73,7 @@ class QaAuditFixesTest extends TestCase
     private function project(int $from = -3, int $to = 10, string $name = 'Warehouse Fit-out'): array
     {
         $project = Project::create([
+            'client_id' => Client::factory()->create()->client_id,
             'name' => $name,
             'reference_no' => 'PRJ-'.strtoupper(substr(md5(uniqid('', true)), 0, 8)),
             'status' => 'ongoing',
@@ -354,6 +356,7 @@ class QaAuditFixesTest extends TestCase
     public function test_never_booked_work_is_counted_as_needing_rescheduling_on_the_dashboard(): void
     {
         Project::create([
+            'client_id' => Client::factory()->create()->client_id,
             'name' => 'Never booked',
             'reference_no' => 'PRJ-NOBOOK',
             'status' => 'unscheduled',

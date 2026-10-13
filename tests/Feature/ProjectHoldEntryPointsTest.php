@@ -3,7 +3,6 @@
 namespace Tests\Feature;
 
 use App\Models\ActivityLog;
-use App\Models\Client;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
 use App\Models\Schedule;
@@ -63,17 +62,7 @@ class ProjectHoldEntryPointsTest extends TestCase
      */
     private function scheduledProject(string $reference = 'REF-0001'): Project
     {
-        $project = Project::create([
-            'name' => 'Some Project',
-            'reference_no' => $reference,
-            'status' => 'ongoing',
-            'address' => 'Address',
-            'description' => 'Description',
-            'quotation' => 250000,
-        ]);
-
-        Client::create([
-            'project_id' => $project->project_id,
+        $client = $this->fixtureClient([
             'client_type' => 'Commercial',
             'company_name' => 'Some Holdings',
             'firstname' => 'Client',
@@ -81,6 +70,16 @@ class ProjectHoldEntryPointsTest extends TestCase
             'fullname' => 'Client One',
             'email_address' => 'client@example.test',
             'contact_number' => '09123456789',
+        ]);
+
+        $project = Project::create([
+            'client_id' => $client->client_id,
+            'name' => 'Some Project',
+            'reference_no' => $reference,
+            'status' => 'ongoing',
+            'address' => 'Address',
+            'description' => 'Description',
+            'quotation' => 250000,
         ]);
 
         $assignment = ProjectTechnician::create([

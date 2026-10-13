@@ -121,17 +121,7 @@ class ClientIdentityRulesTest extends TestCase
      */
     private function projectWithClient(string $email = 'client@example.test'): Project
     {
-        $project = Project::create([
-            'name' => 'Client Project',
-            'reference_no' => 'PRJ-CLIENT-1',
-            'status' => 'ongoing',
-            'address' => 'Address',
-            'description' => 'Description',
-            'quotation' => 1000,
-        ]);
-
-        Client::create([
-            'project_id' => $project->project_id,
+        $client = Client::create([
             'client_type' => 'Residential',
             'firstname' => 'Juan',
             'middlename' => 'S',
@@ -139,6 +129,16 @@ class ClientIdentityRulesTest extends TestCase
             'fullname' => 'Juan S Dela Cruz',
             'email_address' => $email,
             'contact_number' => '09123456789',
+        ]);
+
+        $project = Project::create([
+            'client_id' => $client->client_id,
+            'name' => 'Client Project',
+            'reference_no' => 'PRJ-CLIENT-1',
+            'status' => 'ongoing',
+            'address' => 'Address',
+            'description' => 'Description',
+            'quotation' => 1000,
         ]);
 
         return $project->fresh();
@@ -223,7 +223,7 @@ class ClientIdentityRulesTest extends TestCase
         )->assertSessionHasNoErrors();
 
         $this->assertDatabaseHas('tbl_clients', [
-            'project_id' => $project->project_id,
+            'client_id' => $project->client_id,
             'middlename' => 'R',
         ]);
     }
@@ -370,7 +370,7 @@ class ClientIdentityRulesTest extends TestCase
         )->assertSessionHasErrors('email_address');
 
         $this->assertDatabaseHas('tbl_clients', [
-            'project_id' => $project->project_id,
+            'client_id' => $project->client_id,
             'email_address' => 'client@example.test',
         ]);
     }
@@ -385,7 +385,7 @@ class ClientIdentityRulesTest extends TestCase
         )->assertSessionHasNoErrors();
 
         $this->assertDatabaseHas('tbl_clients', [
-            'project_id' => $project->project_id,
+            'client_id' => $project->client_id,
             'email_address' => 'new.client@example.test',
         ]);
     }

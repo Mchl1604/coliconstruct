@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Models\Client;
 use App\Models\Document;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
@@ -46,23 +45,23 @@ class PortalImprovementsTest extends TestCase
     {
         $type = ProjectType::create(['type_name' => 'Aircon Installation']);
 
-        $project = Project::create([
-            'reference_no' => 'PRJ-1',
-            'name' => 'Dela Cruz',
-            'status' => 'ongoing',
-            'quotation' => 1500,
-            'address' => '12 Mabini Street',
-            'description' => "Line one\nLine two",
-        ]);
-
-        Client::create([
-            'project_id' => $project->project_id,
+        $client = $this->fixtureClient([
             'client_type' => 'Residential',
             'firstname' => 'Juan',
             'surname' => 'Dela Cruz',
             'fullname' => 'Juan Dela Cruz',
             'email_address' => $email,
             'contact_number' => '09171234567',
+        ]);
+
+        $project = Project::create([
+            'client_id' => $client->client_id,
+            'reference_no' => 'PRJ-1',
+            'name' => 'Dela Cruz',
+            'status' => 'ongoing',
+            'quotation' => 1500,
+            'address' => '12 Mabini Street',
+            'description' => "Line one\nLine two",
         ]);
 
         $project->projectTypes()->sync([$type->type_id]);

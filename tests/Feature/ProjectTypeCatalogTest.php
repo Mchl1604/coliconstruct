@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Client;
 use App\Models\Project;
 use App\Models\ProjectType;
 use App\Models\Skill;
@@ -36,6 +37,7 @@ class ProjectTypeCatalogTest extends TestCase
     private function project(string $name): Project
     {
         return Project::create([
+            'client_id' => Client::factory()->create()->client_id,
             'name' => $name,
             'reference_no' => 'REF-'.strtoupper(substr(md5($name), 0, 8)),
             'status' => 'ongoing',

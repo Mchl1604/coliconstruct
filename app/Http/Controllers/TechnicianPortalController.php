@@ -200,8 +200,8 @@ class TechnicianPortalController extends Controller
             $projects,
             sortable: [
                 0 => fn (Project $project): ?string => $project->reference_no,
-                1 => fn (Project $project): ?string => $project->clients->first()?->primaryName(),
-                2 => fn (Project $project): ?string => $project->clients->first()?->client_type,
+                1 => fn (Project $project): ?string => $project->client?->primaryName(),
+                2 => fn (Project $project): ?string => $project->client?->client_type,
                 3 => fn (Project $project): string => $project->projectTypes->pluck('type_name')->implode(', '),
                 // By tab, in the order the tabs are read - see tabRank().
                 4 => fn (Project $project): int => $project->tabRank(),
@@ -210,8 +210,8 @@ class TechnicianPortalController extends Controller
                 $word,
                 $project->reference_no,
                 $project->name,
-                $project->clients->first()?->primaryName(),
-                $project->clients->first()?->client_type,
+                $project->client?->primaryName(),
+                $project->client?->client_type,
                 $project->projectTypes->pluck('type_name')->implode(' '),
                 $project->statusLabel(),
             ),
@@ -251,7 +251,7 @@ class TechnicianPortalController extends Controller
         $this->authorize('viewAssigned', $project);
 
         $project->load([
-            'clients',
+            'client',
             'documents',
             'schedules',
             'projectTypes',
@@ -280,7 +280,7 @@ class TechnicianPortalController extends Controller
         // takes it out of both.
         $reports = TechnicianReport::query()
             ->active()
-            ->with(['images', 'technician.account', 'submitter', 'project.clients'])
+            ->with(['images', 'technician.account', 'submitter', 'project.client'])
             ->where('project_id', $project->project_id)
             ->when(
                 $request->filled('report_type'),
@@ -669,7 +669,7 @@ class TechnicianPortalController extends Controller
             defaultOrder: [[5, 'desc']],
         );
 
-        $reports = $page->items->load(['project.clients', 'images', 'technician.account', 'submitter']);
+        $reports = $page->items->load(['project.client', 'images', 'technician.account', 'submitter']);
         $user = $request->user();
 
         return $table->respond(
@@ -725,7 +725,7 @@ class TechnicianPortalController extends Controller
             defaultOrder: [[5, 'desc']],
         );
 
-        $reports = $page->items->load(['project.clients', 'images', 'technician.account', 'submitter', 'archiver']);
+        $reports = $page->items->load(['project.client', 'images', 'technician.account', 'submitter', 'archiver']);
         $user = $request->user();
 
         return $table->respond(
@@ -821,7 +821,7 @@ class TechnicianPortalController extends Controller
         $mineOnly = $request->boolean('mine_only');
 
         $project->load([
-            'clients',
+            'client',
             'schedules',
             'projectTechnicians.technician.account',
             'tasks' => fn ($query) => $query
@@ -842,7 +842,7 @@ class TechnicianPortalController extends Controller
 
         $reports = TechnicianReport::query()
             ->active()
-            ->with(['images', 'technician.account', 'submitter', 'project.clients'])
+            ->with(['images', 'technician.account', 'submitter', 'project.client'])
             ->where('project_id', $project->project_id)
             ->orderByDesc('report_date')
             ->orderByDesc('id')
@@ -1415,7 +1415,7 @@ class TechnicianPortalController extends Controller
     private function assignedProjects(Technician $technician, array $hide = self::HIDDEN_STATUSES): Collection
     {
         return Project::query()
-            ->with(['clients', 'schedules', 'projectTechnicians.technician.account', 'rosterTechnicians.technician.account'])
+            ->with(['client', 'schedules', 'projectTechnicians.technician.account', 'rosterTechnicians.technician.account'])
             // How far through its phases each project is, for the "3/4" chip
             // on the My Projects rows - see Project::phaseProgress(), which
             // reads these rather than asking per row.
@@ -1480,7 +1480,7 @@ class TechnicianPortalController extends Controller
             // project.schedules is needed because isOverdue() inspects every
             // range; without it each event would fire its own query.
             ->with([
-                'project.clients',
+                'project.client',
                 'project.schedules',
                 'scheduleTechnicians.projectTechnician',
             ])
@@ -1643,7 +1643,7 @@ class TechnicianPortalController extends Controller
         $schedules = $project->schedules;
         $start = $schedules->min('start_datetime');
         $end = $schedules->max('end_datetime');
-        $client = $project->clients->first();
+        $client = $project->client;
 
         return [
             'project_id' => $project->project_id,
@@ -1787,7 +1787,7 @@ class TechnicianPortalController extends Controller
 
     private function clientName(Project $project): ?string
     {
-        $client = $project->clients->first();
+        $client = $project->client;
 
         return $client?->company_name ?: $client?->fullname;
     }
@@ -1803,7 +1803,7 @@ class TechnicianPortalController extends Controller
             return '—';
         }
 
-        $project->loadMissing('clients');
+        $project->loadMissing('client');
 
         return $this->clientName($project) ?: '—';
     }

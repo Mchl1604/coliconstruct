@@ -65,6 +65,7 @@ class TechnicianScheduleExportTest extends TestCase
     private function project(string $name): Project
     {
         $project = Project::create([
+            'client_id' => Client::factory()->create()->client_id,
             'name' => $name,
             'reference_no' => 'REF-'.strtoupper(substr(md5($name.microtime()), 0, 8)),
             'status' => 'ongoing',
@@ -74,8 +75,7 @@ class TechnicianScheduleExportTest extends TestCase
             'is_archived' => false,
         ]);
 
-        Client::create([
-            'project_id' => $project->project_id,
+        tap($project->client)->update([
             'client_type' => 'Commercial',
             'company_name' => $name.' Holdings',
             'firstname' => 'Client',

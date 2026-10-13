@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\ActivityLog;
+use App\Models\Client;
 use App\Models\Document;
 use App\Models\Project;
 use App\Models\ProjectCompletionPhoto;
@@ -136,7 +137,7 @@ class DemoDataSeederTest extends TestCase
         $seeded = User::query()->where('email', 'like', '%@'.DemoDataCatalog::EMAIL_DOMAIN)->get();
 
         $this->assertSame(
-            ['admin' => 10, 'client' => 20, 'lead_technician' => 10, 'technician' => 10],
+            ['admin' => 5, 'client' => 20, 'lead_technician' => 10, 'technician' => 15],
             $seeded->countBy('role')->sortKeys()->all()
         );
 
@@ -175,7 +176,7 @@ class DemoDataSeederTest extends TestCase
         $projectTeam = app(ProjectTeam::class);
         $unskilled = [];
 
-        foreach (Project::query()->with(['projectTypes', 'clients.account'])->get() as $project) {
+        foreach (Project::query()->with(['projectTypes', 'client.account'])->get() as $project) {
             $team = ProjectTechnician::query()
                 ->where('project_id', $project->project_id)
                 ->with('technician.account', 'technician.skills')
@@ -197,7 +198,7 @@ class DemoDataSeederTest extends TestCase
                 }
             }
 
-            $this->assertNotNull($project->clients->first()?->account, $project->name.' is not linked to a Registered User.');
+            $this->assertNotNull($project->client?->account, $project->name.' is not linked to a client account.');
             $this->assertNotNull($project->reference_no);
 
             // The stored status is what the dates say it is.
@@ -208,6 +209,22 @@ class DemoDataSeederTest extends TestCase
         }
 
         $this->assertSame([], $unskilled, 'Crew without the specialty for their project.');
+    }
+
+    /**
+     * One client record per Registered User, shared by every project booked
+     * for them - and most of them have more than one.
+     */
+    public function test_each_demo_client_is_one_record_across_their_projects(): void
+    {
+        $this->runSeeder();
+
+        $clients = Client::query()->withCount('projects')->get();
+
+        $this->assertCount(20, $clients);
+        $this->assertSame(50, (int) $clients->sum('projects_count'));
+        $this->assertGreaterThan(0, $clients->where('projects_count', '>', 1)->count());
+        $this->assertSame(20, $clients->pluck('user_id')->filter()->unique()->count());
     }
 
     public function test_nobody_is_booked_on_two_live_projects_on_the_same_day(): void
@@ -471,8 +488,8 @@ class DemoDataSeederTest extends TestCase
                 $this->assertLessThan(DemoDataSeeder::MAX_FILE_BYTES, strlen($contents), $path.' is over 50 KB.');
             }
 
-            foreach (Project::query()->with('clients')->get() as $project) {
-                $expected = $project->clients->first()->isCommercial()
+            foreach (Project::query()->with('client')->get() as $project) {
+                $expected = $project->client->isCommercial()
                     ? ['assessment', 'contract', 'quotation']
                     : ['assessment', 'quotation'];
 

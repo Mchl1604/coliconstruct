@@ -2,7 +2,7 @@
      TechnicianPortalController::projectsTable() for serverTable.js.
      $canCloseProjects and $flagsInactiveCrew come with it. --}}
 @php
-    $client = $project->clients->first();
+    $client = $project->client;
     // Somebody on this crew can no longer sign in.
     // Flagged on the row itself, exactly as the
     // administrative table flags it, so the lead

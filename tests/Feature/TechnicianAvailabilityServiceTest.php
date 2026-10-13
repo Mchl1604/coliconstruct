@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Client;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
 use App\Models\Schedule;
@@ -90,6 +91,7 @@ class TechnicianAvailabilityServiceTest extends TestCase
         string $projectStatus
     ): Project {
         $project = Project::create([
+            'client_id' => Client::factory()->create()->client_id,
             'name' => 'Project '.uniqid(),
             'status' => $projectStatus,
             'address' => 'Address',
@@ -211,6 +213,7 @@ class TechnicianAvailabilityServiceTest extends TestCase
         $technician = $this->createTechnician('Maria Santos');
 
         $project = Project::create([
+            'client_id' => Client::factory()->create()->client_id,
             'name' => 'Legacy Project',
             'status' => 'ongoing',
             'address' => 'Address',

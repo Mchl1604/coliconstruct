@@ -88,13 +88,9 @@ final class DemoDataCatalog
             $admin('Cristina', 'Dizon', 'Reyes', 'cristina.reyes', 'Operations Manager'),
             $admin('Jerome', 'Bautista', 'Villanueva', 'jerome.villanueva', 'Project Coordinator'),
             $admin('Angelica', 'Mercado', 'Ramos', 'angelica.ramos', 'Project Coordinator'),
-            $admin('Rodel', 'Castillo', 'Navarro', 'rodel.navarro', 'Operations Supervisor'),
-            $admin('Kristine', 'Aquino', 'Mendoza', 'kristine.mendoza', 'Administrative Officer'),
-            $admin('Paolo', 'Salazar', 'Gonzales', 'paolo.gonzales', 'Procurement Officer'),
-            $admin('Liza', 'Fernandez', 'Domingo', 'liza.domingo', 'Accounts Officer'),
             $admin('Noel', 'Pascual', 'Garcia', 'noel.garcia', 'Scheduling Officer'),
+            // Opens the client accounts - see DemoDataSeeder::seedAccounts().
             $admin('Hazel', 'Torres', 'Manalo', 'hazel.manalo', 'Customer Relations Officer'),
-            $admin('Arnel', 'De Guzman', 'Santiago', 'arnel.santiago', 'Quality Assurance Officer'),
 
             $crew('lead_technician', 'Ramon', 'Cruz', 'Dela Cruz', 'ramon.delacruz', 'Lead HVAC Technician', [self::AIRCON_INSTALLATION, self::AIRCON_REPAIR, self::DUCTING_INSTALLATION]),
             $crew('lead_technician', 'Eduardo', 'Valdez', 'Soriano', 'eduardo.soriano', 'Lead Ducting Technician', [self::DUCTING_FABRICATION, self::DUCTING_INSTALLATION, self::HEATING_VENTILATION]),
@@ -117,11 +113,16 @@ final class DemoDataCatalog
             $crew('technician', 'Ariel', 'Tan', 'Buenaventura', 'ariel.buenaventura', 'Ducting Fabricator', [self::DUCTING_FABRICATION, self::HEATING_VENTILATION]),
             $crew('technician', 'Nestor', 'Galang', 'Pineda', 'nestor.pineda', 'HVAC Technician', [self::AIRCON_INSTALLATION, self::DUCTING_INSTALLATION]),
             $crew('technician', 'Raymond', 'Lopez', 'Andrada', 'raymond.andrada', 'Service Technician', [self::AIRCON_REPAIR, self::AIRCON_CLEANING, self::HEATING_VENTILATION]),
+            $crew('technician', 'Jericho', 'Mendoza', 'Villafuerte', 'jericho.villafuerte', 'HVAC Technician', [self::AIRCON_INSTALLATION, self::AIRCON_REPAIR]),
+            $crew('technician', 'Allan', 'Reyes', 'Magbanua', 'allan.magbanua', 'Ducting Installer', [self::DUCTING_INSTALLATION, self::DUCTING_FABRICATION]),
+            $crew('technician', 'Rey', 'Castro', 'Lacson', 'rey.lacson', 'Service Technician', [self::AIRCON_CLEANING, self::AIRCON_REPAIR]),
+            $crew('technician', 'Dexter', 'Ramos', 'Quiambao', 'dexter.quiambao', 'Ventilation Technician', [self::HEATING_VENTILATION, self::DUCTING_INSTALLATION]),
+            $crew('technician', 'Joel', 'Santos', 'Esguerra', 'joel.esguerra', 'HVAC Technician', [self::AIRCON_INSTALLATION, self::AIRCON_CLEANING, self::HEATING_VENTILATION]),
         ];
     }
 
     /**
-     * The twenty Registered Users the projects belong to.
+     * The twenty client accounts the projects belong to.
      *
      * Keyed by the local part of the email address, which is what each project
      * names as its client. The address on a residential client is where they

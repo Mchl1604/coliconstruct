@@ -15,6 +15,7 @@ use App\Models\Technician;
 use App\Models\User;
 use App\Services\ProjectStatusRules;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
@@ -41,7 +42,18 @@ class MediumSeverityAuditFixesTest extends TestCase
 
     private function project(array $technicians = [], string $status = 'ongoing'): Project
     {
+        $client = $this->fixtureClient([
+            'client_type' => 'Commercial',
+            'company_name' => 'Medium Holdings',
+            'firstname' => 'Medium',
+            'surname' => 'Client',
+            'fullname' => 'Medium Client',
+            'email_address' => 'medium.client@example.test',
+            'contact_number' => '09123456789',
+        ]);
+
         $project = Project::create([
+            'client_id' => $client->client_id,
             'name' => 'Medium Project '.uniqid(),
             'reference_no' => 'REF-'.strtoupper(uniqid()),
             'status' => $status,
@@ -54,17 +66,6 @@ class MediumSeverityAuditFixesTest extends TestCase
         // TestCase::finalizePhases(). Without it this fixture would be refused
         // at a gate these tests are not asking about.
         $this->finalizePhases($project);
-
-        Client::create([
-            'project_id' => $project->project_id,
-            'client_type' => 'Commercial',
-            'company_name' => 'Medium Holdings',
-            'firstname' => 'Medium',
-            'surname' => 'Client',
-            'fullname' => 'Medium Client',
-            'email_address' => 'medium.client@example.test',
-            'contact_number' => '09123456789',
-        ]);
 
         foreach ($technicians as $technician) {
             ProjectTechnician::create([
@@ -206,9 +207,13 @@ class MediumSeverityAuditFixesTest extends TestCase
         $type = ProjectType::create(['type_name' => 'Aircon Installation']);
         $project = $this->project();
 
-        // The client row disappears underneath the edit, which is what used to
-        // print "No query results for model [App\Models\Client]" on screen.
-        Client::where('project_id', $project->project_id)->delete();
+        // The client row goes missing underneath the edit, which is what used
+        // to print "No query results for model [App\Models\Client]" on screen.
+        // A client cannot be deleted while a project points at it, so the
+        // same fault is raised as the row is saved.
+        Client::saving(function (): void {
+            throw (new ModelNotFoundException)->setModel(Client::class);
+        });
 
         Config::set('app.debug', false);
 

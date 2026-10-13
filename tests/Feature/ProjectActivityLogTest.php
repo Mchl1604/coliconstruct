@@ -3,7 +3,6 @@
 namespace Tests\Feature;
 
 use App\Models\ActivityLog;
-use App\Models\Client;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\Technician;
@@ -59,17 +58,7 @@ class ProjectActivityLogTest extends TestCase
 
     private function createProject(string $reference): Project
     {
-        $project = Project::create([
-            'name' => 'Project '.$reference,
-            'reference_no' => $reference,
-            'status' => 'ongoing',
-            'address' => '1 Test Street',
-            'description' => 'Description',
-            'quotation' => 100000,
-        ]);
-
-        Client::create([
-            'project_id' => $project->project_id,
+        $client = $this->fixtureClient([
             'client_type' => 'Commercial',
             'company_name' => 'Some Holdings',
             'firstname' => 'Client',
@@ -77,6 +66,16 @@ class ProjectActivityLogTest extends TestCase
             'fullname' => 'Client '.$reference,
             'email_address' => strtolower($reference).'@example.test',
             'contact_number' => '09123456789',
+        ]);
+
+        $project = Project::create([
+            'client_id' => $client->client_id,
+            'name' => 'Project '.$reference,
+            'reference_no' => $reference,
+            'status' => 'ongoing',
+            'address' => '1 Test Street',
+            'description' => 'Description',
+            'quotation' => 100000,
         ]);
 
         return $project;

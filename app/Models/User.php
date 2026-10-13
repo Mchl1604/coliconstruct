@@ -85,7 +85,7 @@ class User extends Authenticatable
      * The `client` key is the stored value and is deliberately left alone -
      * every row in `users`, every activity log entry and every foreign key
      * already carries it. What the interface calls that account type is a
-     * Registered User: somebody with an account on the public site, whether
+     * client account: somebody with an account on the public site, whether
      * they opened it themselves or an administrator opened it for them. It is
      * not the same thing as a project's client, which is contact information
      * on the project itself and keeps its own name throughout.
@@ -97,7 +97,7 @@ class User extends Authenticatable
         'admin' => 'Admin',
         'lead_technician' => 'Lead Technician',
         'technician' => 'Technician',
-        'client' => 'Registered User',
+        'client' => 'Client Account',
     ];
 
     /**
@@ -202,23 +202,23 @@ class User extends Authenticatable
     }
 
     /**
-     * The project contact rows this account has been linked to.
+     * The client record this account has been linked to, if any.
      *
-     * Registered Users only - an employee never has one. The rows carry the
-     * project's client details; what makes them this account's is `user_id`,
-     * written when the account registers or when an administrator assigns it.
+     * client accounts only - an employee never has one. What makes it this
+     * account's is `user_id`, written when the account registers or when an
+     * administrator assigns it. One account holds at most one client.
      */
-    public function clientContacts(): HasMany
+    public function clientRecord(): HasOne
     {
-        return $this->hasMany(Client::class, 'user_id', 'id');
+        return $this->hasOne(Client::class, 'user_id', 'id');
     }
 
     /**
-     * The projects this Registered User is connected to.
+     * The projects this client account is connected to.
      *
      * The other direction of the same link the project details page reads -
-     * see Project::registeredUser(). Nothing new is stored for it: a project
-     * is theirs because its contact row names their account.
+     * see Project::registeredUserAccount(). Nothing new is stored for it: a
+     * project is theirs because its client names their account.
      */
     public function assignedProjects(): HasManyThrough
     {
@@ -226,9 +226,9 @@ class User extends Authenticatable
             Project::class,
             Client::class,
             'user_id',
-            'project_id',
+            'client_id',
             'id',
-            'project_id'
+            'client_id'
         );
     }
 
@@ -317,7 +317,7 @@ class User extends Authenticatable
      *
      *   - a client registered before tbl_pending_registrations existed;
      *   - any account an administrator has just opened, employee or
-     *     Registered User, which proves its address on its first sign-in -
+     *     client account, which proves its address on its first sign-in -
      *     see UserAccountService::createEmployee() and createClient();
      *   - an employee whose address an administrator has changed, which
      *     proves the new one on its next sign-in - see updateEmployee().

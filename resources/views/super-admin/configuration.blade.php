@@ -158,11 +158,11 @@
                 </div>
             </div>
 
-            {{-- ---------------- Registered Users ----------------
-                 A Registered User is an account on the public website - opened
-                 by the person themselves or by an administrator here. Not to be
-                 confused with a project's client, which is contact information
-                 held on the project and keeps that name throughout.
+            {{-- ---------------- Client Accounts ----------------
+                 A client account is an account on the public website, opened
+                 for a client already on record - by the client themselves or
+                 by an administrator here. Its name and number are the client
+                 record's own; see ClientRecords.
 
                  `id` stays `clients` so the dashboard's quick action, and any
                  link already saved, still open this tab at this table. --}}
@@ -172,14 +172,14 @@
                         <div>
                             <h6 class="config-table-title mb-0">
                                 <i class="bi bi-person-check me-1" aria-hidden="true"></i>
-                                Registered Users
+                                Client Accounts
                             </h6>
                             <span class="text-secondary small" data-client-count></span>
                         </div>
 
                         <div class="config-table-controls">
                             <input type="search" class="form-control form-control-sm config-search"
-                                placeholder="Search user ID, name or email&hellip;" aria-label="Search registered users"
+                                placeholder="Search user ID, name or email&hellip;" aria-label="Search client accounts"
                                 data-client-search>
 
                             <select class="form-select form-select-sm config-filter" aria-label="Filter by status"
@@ -208,14 +208,14 @@
 
                     <div class="text-secondary small py-3 px-1" data-client-loading>
                         <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-                        Loading registered users&hellip;
+                        Loading client accounts&hellip;
                     </div>
 
                     <div class="schedule-empty-state mt-2 d-none" data-client-empty>
-                        No Registered User accounts match these filters.
+                        No client accounts match these filters.
                     </div>
 
-                    <nav class="config-pagination d-none" aria-label="Registered User pages" data-client-pagination></nav>
+                    <nav class="config-pagination d-none" aria-label="Client account pages" data-client-pagination></nav>
                 </div>
             </div>
         </div>
@@ -1150,8 +1150,8 @@
                     <div class="modal-body">
 
                         {{-- Step 1: account type. Hidden while editing, because an
-                             account never changes between employee and Registered
-                             User. The submitted value stays `client`: it is the
+                             account never changes between employee and client
+                             account. The submitted value stays `client`: it is the
                              stored role, and only its label has changed. --}}
                         <div class="mb-4" data-account-type-step>
                             <label class="form-label fw-semibold">Account Type</label>
@@ -1168,8 +1168,8 @@
                                     <input type="radio" name="account_type" value="client" class="visually-hidden"
                                         data-account-type>
                                     <i class="bi bi-person-check" aria-hidden="true"></i>
-                                    <strong>Registered User</strong>
-                                    <span>Client website account</span>
+                                    <strong>Client Account</strong>
+                                    <span>For a client on record</span>
                                 </label>
                             </div>
                         </div>
@@ -1177,14 +1177,50 @@
                         {{-- Everything below appears only once a type is chosen. --}}
                         <div class="d-none" data-user-fields>
 
+                            {{-- A new client account is opened for a client
+                                 already on record, and takes their email, name,
+                                 number and company from the client record - so
+                                 creating one is picking the client. Only clients
+                                 with an email and no account yet are offered. --}}
+                            <div class="config-actor-search mb-3 d-none" data-account-picker data-client-account-picker
+                                data-picker-url="{{ route('super-admin.projects.client-search', ['without_account' => 1]) }}"
+                                data-picker-empty="No client without an account.">
+                                <label for="clientAccountSearch" class="form-label small fw-semibold mb-1">
+                                    Client <span class="text-danger">*</span>
+                                </label>
+
+                                <div class="input-group">
+                                    <span class="input-group-text">
+                                        <i class="bi bi-search" aria-hidden="true"></i>
+                                    </span>
+
+                                    <input type="text" class="form-control" id="clientAccountSearch"
+                                        placeholder="Search name or email" autocomplete="off" role="combobox"
+                                        aria-expanded="false" aria-controls="clientAccountResults" data-picker-search>
+
+                                    <button type="button" class="btn btn-outline-secondary d-none"
+                                        aria-label="Clear the chosen client" data-picker-clear>
+                                        <i class="bi bi-x-lg" aria-hidden="true"></i>
+                                    </button>
+                                </div>
+
+                                <input type="hidden" name="client_id" data-picker-id>
+
+                                <ul class="config-actor-results d-none" id="clientAccountResults" role="listbox"
+                                    data-picker-results></ul>
+
+                                <div class="form-text">Details come from the client.</div>
+                            </div>
+
                             <div class="config-section-heading">
                                 <i class="bi bi-person-vcard me-1" aria-hidden="true"></i>
                                 Personal Information
                             </div>
 
                             {{-- Name fields, the same three for employees and
-                                 Registered Users. --}}
-                            <div class="row g-3 mb-3">
+                                 client accounts. Not asked when a client account
+                                 is created: the client record supplies them. --}}
+                            <div class="row g-3 mb-3" data-person-fields>
                                 <div class="col-md-4">
                                     <label class="form-label small fw-semibold mb-1" for="userFirstName">
                                         First Name <span class="text-danger">*</span>
@@ -1213,7 +1249,7 @@
                             </div>
 
                             <div class="row g-3 mb-3">
-                                <div class="col-md-4">
+                                <div class="col-md-4" data-person-fields>
                                     <label class="form-label small fw-semibold mb-1" for="userContactNumber">
                                         Contact Number <span class="text-danger">*</span>
                                     </label>
@@ -1253,7 +1289,7 @@
                             {{-- No profile picture field. An internal account
                                  starts on the default avatar and its owner sets
                                  their own picture from their Profile page;
-                                 Registered Users never have one at all. --}}
+                                 client accounts never have one at all. --}}
 
                             {{-- ---------------- Employment ---------------- --}}
                             <div data-employee-only>
@@ -1517,9 +1553,9 @@
         </div>
     @endif
 
-    {{-- ============ REGISTERED USER PROJECTS MODAL ============
-         The other direction of the link the project details page edits: which
-         projects one Registered User account is connected to. Read-only, and
+    {{-- ============ CLIENT ACCOUNT PROJECTS MODAL ============
+         Which projects one client account is connected to, through its
+         client record. Read-only, and
          every value is written in by script with textContent rather than as
          markup - see the inquiry dialog below, which is written the same way
          and for the same reason. --}}
@@ -1923,6 +1959,8 @@
     @push('scripts')
         {{-- Keeps the contact number field to digits only. --}}
         <script src="/js/registerForm.js"></script>
+        {{-- The client picker on Add New User, searching on the server. --}}
+        <script src="/js/accountPicker.js"></script>
         {{-- The temporary password's requirements checklist, and the guard
              that stops the dialog submitting one that fails it. Ahead of
              configuration.js so its guard sees the submit first. --}}

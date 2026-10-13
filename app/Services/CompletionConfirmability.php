@@ -11,7 +11,7 @@ use Illuminate\Support\Collection;
 /**
  * Whether anybody can confirm this project's completion right now.
  *
- * A different question from "does this project have a Registered User", and
+ * A different question from "does this project have a client account", and
  * the difference is the whole reason this class exists. Ownership on the
  * public website is not one fact but two - see ClientProjects::applyOwnership,
  * which claims a project by the account id where there is one and by the
@@ -35,7 +35,7 @@ use Illuminate\Support\Collection;
 class CompletionConfirmability
 {
     /**
-     * A Registered User account is connected to this project. That account can
+     * A client account is connected to this project. That account can
      * see the project on My Projects and press Confirm Completion.
      */
     public const LINKED = 'linked';
@@ -61,11 +61,11 @@ class CompletionConfirmability
      * One of the three constants above, from the data as it stands now.
      *
      * Callers reading this for a page full of projects should eager load
-     * `clients.account`, which is what keeps LINKED free of a query.
+     * `client.account`, which is what keeps LINKED free of a query.
      */
     public function state(Project $project): string
     {
-        $project->loadMissing('clients.account');
+        $project->loadMissing('client.account');
 
         if ($this->linkedAccount($project) !== null) {
             return self::LINKED;
@@ -82,7 +82,7 @@ class CompletionConfirmability
      */
     public function account(Project $project): ?User
     {
-        $project->loadMissing('clients.account');
+        $project->loadMissing('client.account');
 
         return $this->linkedAccount($project) ?? $this->claimableAccount($project);
     }
@@ -140,34 +140,31 @@ class CompletionConfirmability
     // ------------------------------------------------------------------
 
     /**
-     * The account held on a contact row, read off the loaded relation rather
-     * than queried - Project::registeredUserAccount() reads the first contact
-     * only, and a project may in principle carry more than one.
+     * The account held on the project's client, read off the loaded relation
+     * rather than queried.
      */
     private function linkedAccount(Project $project): ?User
     {
-        return $project->clients
-            ->map(fn (Client $contact): ?User => $contact->account)
-            ->filter()
-            ->first();
+        return $project->client?->account;
     }
 
     /**
      * An account that owns this project by address alone.
      *
-     * Only a contact with no account against it and no removal recorded
+     * Only a client with no account against it and no removal recorded
      * against it either: `user_unlinked_at` is an administrator's decision
-     * that this account does NOT own the project, and an answer here would
+     * that this account does NOT own the client, and an answer here would
      * quietly overrule them - the same rule ClientProjects::applyOwnership
      * applies to the query behind My Projects, for the same reason.
      */
     private function claimableAccount(Project $project): ?User
     {
-        return $project->clients
-            ->filter(fn (Client $contact): bool => $contact->user_id === null
-                && $contact->user_unlinked_at === null)
-            ->map(fn (Client $contact): ?User => $this->clientProjects->accountFor($contact->email_address))
-            ->filter()
-            ->first();
+        $client = $project->client;
+
+        if ($client === null || $client->user_id !== null || $client->user_unlinked_at !== null) {
+            return null;
+        }
+
+        return $this->clientProjects->accountFor($client->email_address);
     }
 }

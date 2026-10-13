@@ -136,7 +136,7 @@
                                 <i class="bi bi-person-slash fs-5 lh-1" aria-hidden="true"></i>
                                 <div>
                                     <p class="fw-semibold mb-1">
-                                        No registered client can currently confirm this project.
+                                        No client account can currently confirm this project.
                                     </p>
                                     <p class="mb-0 small">
                                         Auto-completes after {{ \App\Models\Project::completionConfirmationDays() }} days.

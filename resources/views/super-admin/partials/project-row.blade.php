@@ -50,7 +50,7 @@
     <td>{{ $project->reference_no }}</td>
     <td>
         @php
-            $client = $project->clients->first();
+            $client = $project->client;
         @endphp
         {{ $client?->client_type === 'Commercial' ? ($client->company_name ?? $client->fullname) : $client?->fullname ?? 'N/A' }}
     </td>

@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Models\Client;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
 use App\Models\Schedule;
@@ -77,17 +76,7 @@ class RecoveryPartialDayTest extends TestCase
     ): Project {
         $sequence = ++self::$sequence;
 
-        $project = Project::create([
-            'name' => 'Recovery Project '.$sequence,
-            'reference_no' => sprintf('PRJ-2026-%05d', $sequence),
-            'status' => $status,
-            'address' => 'Address',
-            'description' => 'Description',
-            'quotation' => 250000,
-        ]);
-
-        Client::create([
-            'project_id' => $project->project_id,
+        $client = $this->fixtureClient([
             'client_type' => $clientType,
             'company_name' => $clientType === 'Commercial' ? 'Some Holdings' : null,
             'firstname' => 'Client',
@@ -95,6 +84,16 @@ class RecoveryPartialDayTest extends TestCase
             'fullname' => 'Client One',
             'email_address' => 'client'.$sequence.'@example.test',
             'contact_number' => '09123456789',
+        ]);
+
+        $project = Project::create([
+            'client_id' => $client->client_id,
+            'name' => 'Recovery Project '.$sequence,
+            'reference_no' => sprintf('PRJ-2026-%05d', $sequence),
+            'status' => $status,
+            'address' => 'Address',
+            'description' => 'Description',
+            'quotation' => 250000,
         ]);
 
         foreach ($technicians as $technician) {

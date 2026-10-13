@@ -73,7 +73,7 @@ class ImportableTeamSources
     public function forRanges(array $ranges, ?int $excludeProjectId = null): array
     {
         $projects = Project::query()
-            ->with(['clients', 'schedules', 'projectTechnicians.technician.account'])
+            ->with(['client', 'schedules', 'projectTechnicians.technician.account'])
             // Archiving keeps a project's team now, so it has to be named
             // out rather than left to empty itself: a team nobody is working
             // with is not a team to copy onto live work.
@@ -154,8 +154,8 @@ class ImportableTeamSources
             'project_id' => (int) $project->project_id,
             'reference_no' => $project->reference_no,
             'name' => $project->name,
-            'client' => $project->clients->first()?->fullname
-                ?? $project->clients->first()?->company_name,
+            'client' => $project->client?->fullname
+                ?? $project->client?->company_name,
             'status' => $project->status,
             'status_label' => $project->statusLabel(),
             // Grouped rather than filtered: a finished project is often

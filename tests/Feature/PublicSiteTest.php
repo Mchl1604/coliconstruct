@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Models\Client;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
 use App\Models\Schedule;
@@ -57,22 +56,22 @@ class PublicSiteTest extends TestCase
      */
     private function projectFor(string $email, array $overrides = []): Project
     {
-        $project = Project::create(array_merge([
-            'name' => 'Aircon Installation - Greenfield Offices',
-            'reference_no' => 'COL-2026-'.str_pad((string) (++self::$sequence), 4, '0', STR_PAD_LEFT),
-            'status' => 'ongoing',
-            'address' => 'Bonifacio Global City',
-            'description' => 'Installation of aircon units for new office branch expansion.',
-        ], $overrides));
-
-        Client::create([
-            'project_id' => $project->project_id,
+        $client = $this->fixtureClient([
             'client_type' => 'Commercial',
             'firstname' => 'A',
             'surname' => 'Client',
             'fullname' => 'A Client',
             'email_address' => $email,
         ]);
+
+        $project = Project::create(array_merge([
+            'client_id' => $client->client_id,
+            'name' => 'Aircon Installation - Greenfield Offices',
+            'reference_no' => 'COL-2026-'.str_pad((string) (++self::$sequence), 4, '0', STR_PAD_LEFT),
+            'status' => 'ongoing',
+            'address' => 'Bonifacio Global City',
+            'description' => 'Installation of aircon units for new office branch expansion.',
+        ], $overrides));
 
         return $project;
     }
@@ -599,7 +598,7 @@ About | /about',
         $this->actingAs($admin)
             ->get(route('public.projects'))
             ->assertOk()
-            ->assertSee('This page is for Registered User accounts.')
+            ->assertSee('This page is for client accounts.')
             ->assertDontSee('Please log in to view your projects.')
             ->assertDontSee('Aircon Installation - Greenfield Offices');
     }

@@ -45,7 +45,7 @@ document.addEventListener("DOMContentLoaded", function () {
      * A hash names one of three things, and all three end up here:
      *
      *   - a tab pane, which is opened;
-     *   - an element INSIDE a tab pane - the phases panel, the registered user
+     *   - an element INSIDE a tab pane - the phases panel, the client account
      *     card - in which case the pane holding it is opened and the element
      *     is scrolled to;
      *   - something on the page that is not in a tab at all, which is left to

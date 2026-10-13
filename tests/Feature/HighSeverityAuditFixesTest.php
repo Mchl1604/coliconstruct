@@ -70,7 +70,18 @@ class HighSeverityAuditFixesTest extends TestCase
      */
     private function project(array $technicians = [], string $status = 'ongoing'): Project
     {
+        $client = $this->fixtureClient([
+            'client_type' => 'Commercial',
+            'company_name' => 'Audit Holdings',
+            'firstname' => 'Audit',
+            'surname' => 'Client',
+            'fullname' => 'Audit Client',
+            'email_address' => 'audit.client@example.test',
+            'contact_number' => '09123456789',
+        ]);
+
         $project = Project::create([
+            'client_id' => $client->client_id,
             'name' => 'Audit Project '.uniqid(),
             'reference_no' => 'REF-'.strtoupper(uniqid()),
             'status' => $status,
@@ -83,17 +94,6 @@ class HighSeverityAuditFixesTest extends TestCase
         // TestCase::finalizePhases(). Without it this fixture would be refused
         // at a gate these tests are not asking about.
         $this->finalizePhases($project);
-
-        Client::create([
-            'project_id' => $project->project_id,
-            'client_type' => 'Commercial',
-            'company_name' => 'Audit Holdings',
-            'firstname' => 'Audit',
-            'surname' => 'Client',
-            'fullname' => 'Audit Client',
-            'email_address' => 'audit.client@example.test',
-            'contact_number' => '09123456789',
-        ]);
 
         foreach ($technicians as $technician) {
             ProjectTechnician::create([
@@ -672,7 +672,7 @@ class HighSeverityAuditFixesTest extends TestCase
     {
         $project = $this->project([$this->technician('Client Tech')]);
 
-        Client::where('project_id', $project->project_id)
+        Client::whereKey($project->client_id)
             ->update(['email_address' => 'live.client@example.test']);
 
         $client = User::factory()->create(['name' => 'Live Client', 'email' => 'live.client@example.test']);
@@ -691,7 +691,7 @@ class HighSeverityAuditFixesTest extends TestCase
     {
         $project = $this->project([$this->technician('Confirm Tech')]);
 
-        Client::where('project_id', $project->project_id)
+        Client::whereKey($project->client_id)
             ->update(['email_address' => 'confirming@example.test']);
 
         $project->update([

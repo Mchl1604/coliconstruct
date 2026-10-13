@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Models\Client;
 use App\Models\Document;
 use App\Models\Project;
 use App\Models\ProjectCompletionPhoto;
@@ -73,23 +72,23 @@ class ProjectCompletionHistoryTest extends TestCase
      */
     private function project(string $status = 'ongoing'): Project
     {
-        $project = Project::create([
-            'name' => 'History Project',
-            'reference_no' => 'REF-'.strtoupper(substr(md5(uniqid('', true)), 0, 8)),
-            'status' => $status,
-            'address' => 'Address',
-            'description' => 'Description',
-            'quotation' => 5000,
-        ]);
-
-        Client::create([
-            'project_id' => $project->project_id,
+        $client = $this->fixtureClient([
             'client_type' => 'Residential',
             'firstname' => 'History',
             'surname' => 'Owner',
             'fullname' => 'History Owner',
             'email_address' => self::CLIENT_EMAIL,
             'contact_number' => '09123456789',
+        ]);
+
+        $project = Project::create([
+            'client_id' => $client->client_id,
+            'name' => 'History Project',
+            'reference_no' => 'REF-'.strtoupper(substr(md5(uniqid('', true)), 0, 8)),
+            'status' => $status,
+            'address' => 'Address',
+            'description' => 'Description',
+            'quotation' => 5000,
         ]);
 
         Task::create([

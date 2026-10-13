@@ -4,7 +4,6 @@ namespace Tests\Feature;
 
 use App\Mail\ProjectUpdateMail;
 use App\Models\ActivityLog;
-use App\Models\Client;
 use App\Models\Notification;
 use App\Models\Project;
 use App\Models\ProjectType;
@@ -75,7 +74,17 @@ class ProjectTargetDateTest extends TestCase
      */
     private function project(array $overrides = []): Project
     {
+        $client = $this->fixtureClient([
+            'client_type' => 'Residential',
+            'firstname' => 'Maria',
+            'surname' => 'Santos',
+            'fullname' => 'Maria Santos',
+            'email_address' => 'maria@example.test',
+            'contact_number' => '09123456789',
+        ]);
+
         $project = Project::create(array_merge([
+            'client_id' => $client->client_id,
             'name' => 'Target Project',
             'reference_no' => 'REF-TARGET-'.(++self::$sequence),
             'status' => 'pending',
@@ -84,16 +93,6 @@ class ProjectTargetDateTest extends TestCase
             'quotation' => 1000,
             'target_end_date' => $this->day(10),
         ], $overrides));
-
-        Client::create([
-            'project_id' => $project->project_id,
-            'client_type' => 'Residential',
-            'firstname' => 'Maria',
-            'surname' => 'Santos',
-            'fullname' => 'Maria Santos',
-            'email_address' => 'maria@example.test',
-            'contact_number' => '09123456789',
-        ]);
 
         $project->projectTypes()->attach(
             ProjectType::firstOrCreate(['type_name' => 'Aircon Installation'])->type_id

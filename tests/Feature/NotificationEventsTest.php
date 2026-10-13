@@ -66,6 +66,7 @@ class NotificationEventsTest extends TestCase
     private function project(string $status = 'ongoing'): Project
     {
         $project = Project::create([
+            'client_id' => Client::factory()->create()->client_id,
             'name' => 'Warehouse CCTV Installation',
             'reference_no' => 'PRJ-'.uniqid(),
             'status' => $status,
@@ -211,8 +212,7 @@ class NotificationEventsTest extends TestCase
         ]);
 
         $clientAccount = $this->employee('client', 'client@example.test');
-        Client::create([
-            'project_id' => $project->project_id,
+        tap($project->client)->update([
             'client_type' => 'Residential',
             'firstname' => 'A',
             'surname' => 'Client',
@@ -242,8 +242,7 @@ class NotificationEventsTest extends TestCase
         $project = $this->project();
         $clientAccount = $this->employee('client', 'client@example.test');
 
-        Client::create([
-            'project_id' => $project->project_id,
+        tap($project->client)->update([
             'client_type' => 'Residential',
             'firstname' => 'A',
             'surname' => 'Client',

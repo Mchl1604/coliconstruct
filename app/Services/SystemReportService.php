@@ -525,13 +525,11 @@ class SystemReportService
     private function residentialVsCommercial(array $period): array
     {
         $rows = DB::table('tbl_projects')
-            ->join('tbl_clients', 'tbl_clients.project_id', '=', 'tbl_projects.project_id')
+            ->join('tbl_clients', 'tbl_clients.client_id', '=', 'tbl_projects.client_id')
             ->whereBetween('tbl_projects.created_at', BusinessTime::storedRange($period['start'], $period['end']))
             ->selectRaw(
                 'lower(tbl_clients.client_type) as series, '
                 .$this->bucketExpression($this->onOfficeClock('tbl_projects.created_at'), $period['bucket']).' as bucket, '
-                // A project carrying two client rows of the same type is still
-                // one project.
                 .'count(distinct tbl_projects.project_id) as total'
             )
             ->groupBy('series', 'bucket')
@@ -621,7 +619,7 @@ class SystemReportService
         $this->applyQuotationStatus($query, $status);
 
         return $query
-            ->with(['clients', 'projectTypes', 'schedules'])
+            ->with(['client', 'projectTypes', 'schedules'])
             ->orderBy('created_at')
             ->orderBy('project_id')
             ->get();
@@ -683,7 +681,7 @@ class SystemReportService
      */
     private function quotationClientName(Project $project): string
     {
-        $name = (string) $project->clients->first()?->primaryName();
+        $name = (string) $project->client?->primaryName();
         $name = trim((string) preg_replace('/\s+/u', ' ', $name));
 
         return $name === '' || $name === 'N/A' ? 'Unnamed client' : $name;
@@ -991,7 +989,7 @@ class SystemReportService
     private function projectReport(array $period, string $status): array
     {
         $projects = $this->periodProjects($period)
-            ->with(['clients', 'projectTypes', 'schedules'])
+            ->with(['client', 'projectTypes', 'schedules'])
             ->get();
 
         // Status is derived - On Hold is a flag and Overdue is a passed
@@ -1072,7 +1070,7 @@ class SystemReportService
     {
         $projects = $this->excludeArchived(Project::query())
             ->whereBetween('created_at', BusinessTime::storedRange($period['start'], $period['end']))
-            ->with(['clients', 'projectTypes', 'schedules'])
+            ->with(['client', 'projectTypes', 'schedules'])
             ->orderBy('created_at')
             ->orderBy('project_id')
             ->get();
@@ -1320,7 +1318,7 @@ class SystemReportService
 
         $projects = $this->periodProjects($period)
             ->with([
-                'clients',
+                'client',
                 'schedules.scheduleTechnicians',
                 'teamHistory.technician.account',
             ])
@@ -1528,7 +1526,7 @@ class SystemReportService
             // than left to it, which would load them a project at a time the
             // first time each one is asked about.
             ->with([
-                'clients',
+                'client',
                 'schedules.scheduleTechnicians',
                 'teamHistory.technician.account',
             ])
@@ -1610,7 +1608,7 @@ class SystemReportService
                         ->whereNull('due_date')
                         ->whereBetween('start_date', [$period['start']->toDateString(), $period['end']->toDateString()]));
             })
-            ->with(['project.clients', 'phase'])
+            ->with(['project.client', 'phase'])
             ->orderByRaw('due_date is null, due_date')
             ->get();
 
@@ -1703,7 +1701,7 @@ class SystemReportService
             // the whole schedule, and a constrained load would answer it from
             // half the facts. Two queries either way, and only for the
             // projects the period already narrowed us to.
-            ->with(['clients', 'schedules'])
+            ->with(['client', 'schedules'])
             ->get();
 
         return $projects
@@ -1949,7 +1947,7 @@ class SystemReportService
      */
     private function clientName(Project $project): string
     {
-        $client = $project->clients->first();
+        $client = $project->client;
 
         return $client?->company_name ?: ($client?->fullname ?: '—');
     }

@@ -3,7 +3,6 @@
 namespace Tests\Feature;
 
 use App\Models\ActivityLog;
-use App\Models\Client;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
 use App\Models\Schedule;
@@ -83,17 +82,7 @@ class HistoricalScheduleCorrectionTest extends TestCase
      */
     private function project(array $technicians = [], string $status = 'ongoing'): Project
     {
-        $project = Project::create([
-            'name' => 'Historical Test',
-            'reference_no' => 'PRJ-'.random_int(1000, 9999),
-            'status' => $status,
-            'address' => '1 Test Street',
-            'description' => 'Work',
-            'quotation' => 1000,
-        ]);
-
-        Client::create([
-            'project_id' => $project->project_id,
+        $client = $this->fixtureClient([
             'client_type' => 'Commercial',
             'firstname' => 'Juan',
             'surname' => 'Dela Cruz',
@@ -101,6 +90,16 @@ class HistoricalScheduleCorrectionTest extends TestCase
             'company_name' => 'Acme',
             'email_address' => 'client@example.test',
             'contact_number' => '09171234567',
+        ]);
+
+        $project = Project::create([
+            'client_id' => $client->client_id,
+            'name' => 'Historical Test',
+            'reference_no' => 'PRJ-'.random_int(1000, 9999),
+            'status' => $status,
+            'address' => '1 Test Street',
+            'description' => 'Work',
+            'quotation' => 1000,
         ]);
 
         foreach ($technicians as $technician) {

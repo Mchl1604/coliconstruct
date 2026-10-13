@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Http\Controllers\TechnicianPortalController;
+use App\Models\Client;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
 use App\Models\Schedule;
@@ -85,6 +86,7 @@ class TechnicianPortalTest extends TestCase
     private function project(string $name, string $reference, string $status = 'ongoing'): Project
     {
         $project = Project::create([
+            'client_id' => Client::factory()->create()->client_id,
             'name' => $name,
             'reference_no' => $reference,
             'status' => $status,

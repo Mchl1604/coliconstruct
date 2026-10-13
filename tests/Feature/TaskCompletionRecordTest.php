@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Client;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
 use App\Models\Schedule;
@@ -46,6 +47,7 @@ class TaskCompletionRecordTest extends TestCase
         ]);
 
         $this->project = Project::create([
+            'client_id' => Client::factory()->create()->client_id,
             'name' => 'Completion Project',
             'reference_no' => 'REF-COMPLETE',
             'status' => 'ongoing',

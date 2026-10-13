@@ -612,7 +612,7 @@ class DashboardMetrics
         $today = BusinessTime::today();
 
         return Schedule::query()
-            ->with(['project.clients', 'project.projectTypes', 'project.tasks', 'project.projectTechnicians.technician.account'])
+            ->with(['project.client', 'project.projectTypes', 'project.tasks', 'project.projectTechnicians.technician.account'])
             ->whereHas('project', fn ($query) => $query
                 ->where('is_archived', false)
                 ->whereNotIn('status', Project::READ_ONLY_STATUSES))
@@ -627,7 +627,7 @@ class DashboardMetrics
                     return null;
                 }
 
-                $client = $project->clients->first();
+                $client = $project->client;
                 $tasks = $project->tasks;
                 $done = $tasks->where('status', 'completed')->count();
 

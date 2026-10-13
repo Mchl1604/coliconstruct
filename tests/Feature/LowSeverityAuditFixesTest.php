@@ -4,7 +4,6 @@ namespace Tests\Feature;
 
 use App\Mail\ContactInquiryMail;
 use App\Models\ActivityLog;
-use App\Models\Client;
 use App\Models\Inquiry;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
@@ -41,17 +40,7 @@ class LowSeverityAuditFixesTest extends TestCase
 
     private function project(array $technicians = [], string $status = 'ongoing'): Project
     {
-        $project = Project::create([
-            'name' => 'Low Project '.uniqid(),
-            'reference_no' => 'REF-'.strtoupper(uniqid()),
-            'status' => $status,
-            'address' => 'Address',
-            'description' => 'Description',
-            'quotation' => 1000,
-        ]);
-
-        Client::create([
-            'project_id' => $project->project_id,
+        $client = $this->fixtureClient([
             'client_type' => 'Commercial',
             'company_name' => 'Low Holdings',
             'firstname' => 'Low',
@@ -59,6 +48,16 @@ class LowSeverityAuditFixesTest extends TestCase
             'fullname' => 'Low Client',
             'email_address' => 'low.client@example.test',
             'contact_number' => '09123456789',
+        ]);
+
+        $project = Project::create([
+            'client_id' => $client->client_id,
+            'name' => 'Low Project '.uniqid(),
+            'reference_no' => 'REF-'.strtoupper(uniqid()),
+            'status' => $status,
+            'address' => 'Address',
+            'description' => 'Description',
+            'quotation' => 1000,
         ]);
 
         foreach ($technicians as $technician) {

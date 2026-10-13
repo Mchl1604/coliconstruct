@@ -1,7 +1,7 @@
 {{-- One row of the Archived Reports table, rendered by
      ReportController::archivedTable() for serverTable.js. --}}
 @php
-    $reportClient = $report->project?->clients->first();
+    $reportClient = $report->project?->client;
 @endphp
 
 <tr>

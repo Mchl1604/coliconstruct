@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Models\Client;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
 use App\Models\Schedule;
@@ -66,23 +65,23 @@ class ServerPagedTablesTest extends TestCase
 
     private function project(string $reference, string $client = 'Ana Santos', array $attributes = []): Project
     {
-        $project = Project::create($attributes + [
-            'name' => 'Project '.$reference,
-            'reference_no' => $reference,
-            'status' => 'ongoing',
-            'address' => '1 Test Street',
-            'description' => 'Description',
-            'quotation' => 100000,
-        ]);
-
-        Client::create([
-            'project_id' => $project->project_id,
+        $clientRecord = $this->fixtureClient([
             'client_type' => 'Residential',
             'firstname' => explode(' ', $client)[0],
             'surname' => explode(' ', $client)[1] ?? 'Client',
             'fullname' => $client,
             'email_address' => strtolower(str_replace(' ', '.', $client)).'@example.test',
             'contact_number' => '09123456789',
+        ]);
+
+        $project = Project::create($attributes + [
+            'client_id' => $clientRecord->client_id,
+            'name' => 'Project '.$reference,
+            'reference_no' => $reference,
+            'status' => 'ongoing',
+            'address' => '1 Test Street',
+            'description' => 'Description',
+            'quotation' => 100000,
         ]);
 
         return $project;

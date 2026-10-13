@@ -18,7 +18,7 @@
                         @elseif ($isGuest)
                             Sign in to view your projects.
                         @else
-                            For Registered Users only.
+                            For client accounts only.
                         @endif
                     </p>
                 </div>
@@ -36,7 +36,7 @@
         <div class="container">
 
             @if (! $isClient)
-                {{-- Nobody without a Registered User account is shown project information
+                {{-- Nobody without a client account is shown project information
                      at all - not a name, not a date, not a status. --}}
                 <div class="public-empty-state">
                     @if ($isGuest)
@@ -50,7 +50,7 @@
                         {{-- Signed in, but as staff: telling them to log in would
                              be nonsense, so they are pointed at their own portal. --}}
                         <i class="bi bi-person-badge fs-1 d-block mb-3 text-secondary" aria-hidden="true"></i>
-                        <h2 class="h5 fw-bold text-dark mb-2">This page is for Registered User accounts.</h2>
+                        <h2 class="h5 fw-bold text-dark mb-2">This page is for client accounts.</h2>
                         <p class="mb-4">
                             Use your {{ auth()->user()->roleLabel() }} portal instead.
                         </p>

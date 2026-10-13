@@ -270,10 +270,8 @@ class PasswordPolicyTest extends TestCase
         $this->actingAsSuperAdmin();
 
         $this->postJson(route('super-admin.configuration.users.clients.store'), [
-            'first_name' => 'Jose', 'last_name' => 'Garcia',
-            'contact_number' => '09175551234',
+            'client_id' => $this->bookedClient('jose@example.test')->client_id,
             'birthdate' => '1988-11-20',
-            'email' => 'jose@example.test',
             'password' => $password,
         ])->assertStatus(422)->assertJsonPath('error', $message);
 
@@ -304,10 +302,8 @@ class PasswordPolicyTest extends TestCase
         $this->actingAsSuperAdmin();
 
         $response = $this->postJson(route('super-admin.configuration.users.clients.store'), [
-            'first_name' => 'Jose', 'last_name' => 'Garcia',
-            'contact_number' => '09175551234',
+            'client_id' => $this->bookedClient('jose@example.test')->client_id,
             'birthdate' => '1988-11-20',
-            'email' => 'jose@example.test',
             'password' => '',
         ])->assertCreated();
 
@@ -414,9 +410,8 @@ class PasswordPolicyTest extends TestCase
                 'birthdate' => '1990-05-04', 'email' => 'ana@example.test', 'role' => 'admin',
                 'password' => 'password1',
             ]),
-            fn () => $accounts->createClient([
-                'first_name' => 'Jose', 'last_name' => 'Garcia', 'contact_number' => '09175551234',
-                'birthdate' => '1988-11-20', 'email' => 'jose@example.test', 'password' => 'Password!',
+            fn () => $accounts->createClient($this->bookedClient('jose@example.test'), [
+                'birthdate' => '1988-11-20', 'password' => 'Password!',
             ]),
             fn () => $accounts->startRegistration([
                 'first_name' => 'Maria', 'last_name' => 'Santos', 'contact_number' => '09175551234',
@@ -547,10 +542,10 @@ class PasswordPolicyTest extends TestCase
 
     private function register(string $password, ?string $confirmation = null): TestResponse
     {
+        $this->bookedClient('jose@example.test');
+
         return $this->post(route('auth.register.store'), [
-            'first_name' => 'Jose', 'last_name' => 'Garcia',
             'email' => 'jose@example.test',
-            'contact_number' => '09175551234',
             'birthdate' => '1990-05-04',
             'password' => $password,
             'password_confirmation' => $confirmation ?? $password,

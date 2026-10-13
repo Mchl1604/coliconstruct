@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Exceptions\RoleChangeBlocked;
 use App\Models\ActivityLog;
+use App\Models\Client;
 use App\Models\Inquiry;
 use App\Models\Project;
 use App\Models\Skill;
@@ -225,7 +226,7 @@ class ConfigurationController extends Controller
     }
 
     /**
-     * The Registered User table, on the same terms as the employee one.
+     * The Client Accounts table, on the same terms as the employee one.
      */
     public function clients(Request $request)
     {
@@ -262,11 +263,11 @@ class ConfigurationController extends Controller
     }
 
     /**
-     * The projects one Registered User is connected to, behind View Projects.
+     * The projects one client account is connected to, behind View Projects.
      *
-     * The relationship already exists in both directions - a project names its
-     * account on the contact row, and User::assignedProjects() reads the same
-     * link the other way round - so nothing here derives ownership of its own.
+     * The relationship already exists in both directions - a project's client
+     * names its account, and User::assignedProjects() reads the same link the
+     * other way round - so nothing here derives ownership of its own.
      *
      * Archived projects are included and said to be archived. This answers
      * "what is connected to this account", and a project taken out of the
@@ -276,17 +277,13 @@ class ConfigurationController extends Controller
     public function userProjects(User $user)
     {
         if (! $user->isClient()) {
-            return response()->json(['error' => 'That account is not a Registered User.'], 422);
+            return response()->json(['error' => 'That account is not a client account.'], 422);
         }
 
         $projects = $user->assignedProjects()
             ->with(['schedules', 'projectTypes'])
             ->orderByDesc('tbl_projects.project_id')
-            ->get()
-            // A project carrying two contact rows for the same account would
-            // otherwise be listed twice.
-            ->unique('project_id')
-            ->values();
+            ->get();
 
         return response()->json([
             'account' => [
@@ -709,16 +706,16 @@ class ConfigurationController extends Controller
         $data = $validator->validated();
 
         try {
-            $result = $this->accounts->createClient($data);
+            $result = $this->accounts->createClient(Client::query()->findOrFail($data['client_id']), $data);
         } catch (Throwable $exception) {
-            return $this->failure($exception, 'Unable to create Registered User account.');
+            return $this->failure($exception, 'Unable to create client account.');
         }
 
         return response()->json([
             'account' => $this->accountDetail($result['user']),
             'password' => $result['password'],
             'emailed' => $this->deliverCredentials($result['user'], $result['password']),
-            'message' => 'Registered User account created.',
+            'message' => 'Client account created.',
         ], 201);
     }
 
@@ -761,7 +758,7 @@ class ConfigurationController extends Controller
     public function updateClient(Request $request, User $user)
     {
         if (! $user->isClient()) {
-            return response()->json(['error' => 'That account is not a Registered User.'], 422);
+            return response()->json(['error' => 'That account is not a client account.'], 422);
         }
 
         // The email is missing on purpose: it is the client's login
@@ -785,12 +782,12 @@ class ConfigurationController extends Controller
         try {
             $updated = $this->accounts->updateClient($user, $validator->validated());
         } catch (Throwable $exception) {
-            return $this->failure($exception, 'Unable to update Registered User account.');
+            return $this->failure($exception, 'Unable to update client account.');
         }
 
         return response()->json([
             'account' => $this->accountDetail($updated),
-            'message' => 'Registered User account updated.',
+            'message' => 'Client account updated.',
         ]);
     }
 
@@ -912,20 +909,18 @@ class ConfigurationController extends Controller
     }
 
     /**
-     * The company details and the picture are not asked for when the account
-     * is opened; they are filled in later from the edit form.
+     * A client account is opened for a client already on record, and takes
+     * its address, name, number and company from that record - see
+     * UserAccountService::createClient(). Only the date of birth and the
+     * temporary password come from the form.
      *
      * @return array<string, array<int, mixed>>
      */
     private function clientRules(): array
     {
         return [
-            'first_name' => ['required', 'string', 'max:100'],
-            'middle_name' => PersonName::middleInitialRules(),
-            'last_name' => ['required', 'string', 'max:100'],
-            'contact_number' => ['required', 'string', 'max:'.User::CONTACT_NUMBER_LENGTH, self::CONTACT_NUMBER_RULE],
+            'client_id' => ['required', 'integer', Rule::exists('tbl_clients', 'client_id')],
             'birthdate' => AccountAge::rules(),
-            'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users', 'email')],
         ] + $this->passwordRule(null);
     }
 
@@ -963,6 +958,9 @@ class ConfigurationController extends Controller
             'contact_number.regex' => User::CONTACT_NUMBER_MESSAGE,
             'contact_number.max' => User::CONTACT_NUMBER_MESSAGE,
             'skill_ids.*.exists' => 'One of the selected specialties no longer exists.',
+            'client_id.required' => 'Pick a client.',
+            'client_id.integer' => 'Pick a client.',
+            'client_id.exists' => 'That client no longer exists.',
         ] + PersonName::middleInitialMessages() + AccountAge::messages() + PasswordPolicy::messages();
     }
 

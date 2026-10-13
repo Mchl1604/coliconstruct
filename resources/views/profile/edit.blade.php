@@ -211,6 +211,21 @@
                                         <div class="invalid-feedback">{{ $message }}</div>
                                     @enderror
                                 </div>
+
+                                {{-- A commercial client's company, copied from their
+                                     client record. Read-only and never submitted:
+                                     quotations and contracts are made out to it, so a
+                                     change goes through the office. --}}
+                                @if ($account->isClient() && filled($account->company_name))
+                                    <div class="col-md-8">
+                                        <label class="form-label small fw-semibold mb-1" for="companyName">
+                                            Company
+                                        </label>
+                                        <input type="text" class="form-control" id="companyName"
+                                            value="{{ $account->company_name }}" readonly disabled>
+                                        <div class="form-text">Contact us to change.</div>
+                                    </div>
+                                @endif
                             </div>
 
                             <div class="mt-3">

@@ -65,6 +65,7 @@ class RestoreScheduleConflictTest extends TestCase
     private function project(array $technicians, string $status, string $reference): Project
     {
         $project = Project::create([
+            'client_id' => Client::factory()->create()->client_id,
             'name' => 'Conflict Project',
             'reference_no' => $reference,
             'status' => $status,
@@ -73,8 +74,7 @@ class RestoreScheduleConflictTest extends TestCase
             'quotation' => 250000,
         ]);
 
-        Client::create([
-            'project_id' => $project->project_id,
+        tap($project->client)->update([
             'client_type' => 'Commercial',
             'company_name' => 'Some Holdings',
             'firstname' => 'Client',

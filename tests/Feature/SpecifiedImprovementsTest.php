@@ -62,7 +62,18 @@ class SpecifiedImprovementsTest extends TestCase
 
     private function project(string $status = 'ongoing', string $clientEmail = 'client@example.test'): Project
     {
+        $client = $this->fixtureClient([
+            'client_type' => 'Commercial',
+            'company_name' => 'Some Holdings',
+            'firstname' => 'Client',
+            'surname' => 'One',
+            'fullname' => 'Client One',
+            'email_address' => $clientEmail,
+            'contact_number' => '09123456789',
+        ]);
+
         $project = Project::create([
+            'client_id' => $client->client_id,
             'name' => 'Some Project',
             'reference_no' => 'REF-'.random_int(1000, 9999),
             'status' => $status,
@@ -75,17 +86,6 @@ class SpecifiedImprovementsTest extends TestCase
         // TestCase::finalizePhases(). Without it this fixture would be refused
         // at a gate these tests are not asking about.
         $this->finalizePhases($project);
-
-        Client::create([
-            'project_id' => $project->project_id,
-            'client_type' => 'Commercial',
-            'company_name' => 'Some Holdings',
-            'firstname' => 'Client',
-            'surname' => 'One',
-            'fullname' => 'Client One',
-            'email_address' => $clientEmail,
-            'contact_number' => '09123456789',
-        ]);
 
         return $project;
     }
@@ -123,10 +123,12 @@ class SpecifiedImprovementsTest extends TestCase
      */
     private function registration(array $overrides = []): array
     {
+        // Registering is only for a client on record, whose number the
+        // account takes.
+        $this->bookedClient('jose@example.test', ['contact_number' => '09171234567']);
+
         return array_merge([
-            'first_name' => 'Jose', 'last_name' => 'Garcia',
             'email' => 'jose@example.test',
-            'contact_number' => '09171234567',
             'birthdate' => '1990-05-04',
             'password' => 'My-own-password1',
             'password_confirmation' => 'My-own-password1',
@@ -139,24 +141,14 @@ class SpecifiedImprovementsTest extends TestCase
     // ==================================================================
 
     /**
-     * A contact number is eleven digits and nothing else. Anything shorter,
-     * longer, or carrying a space, a dash or a country code is refused, and
-     * the message says what is wanted rather than "invalid".
+     * Registration no longer asks for a contact number: the account takes the
+     * one on the client record, and a number posted anyway is ignored.
      */
-    public function test_registration_wants_exactly_eleven_digits(): void
+    public function test_registration_takes_the_number_from_the_client_record(): void
     {
-        foreach (['0917123456', '091712345678', '0917 123 4567', '+639171234567', 'oh nine one'] as $number) {
-            $this->post(route('auth.register.store'), $this->registration([
-                'contact_number' => $number,
-                'email' => 'refused@example.test',
-            ]))->assertSessionHasErrors('contact_number');
-
-            $this->assertNull(User::where('email', 'refused@example.test')->first());
-            $this->assertNull(PendingRegistration::where('email', 'refused@example.test')->first());
-        }
-
-        $this->post(route('auth.register.store'), $this->registration())
-            ->assertRedirect(route('auth.verify'));
+        $this->post(route('auth.register.store'), $this->registration([
+            'contact_number' => '09990000000',
+        ]))->assertRedirect(route('auth.verify'));
 
         // Held as a pending registration, not an account - see
         // UserAccountService::startRegistration().
@@ -793,7 +785,7 @@ class SpecifiedImprovementsTest extends TestCase
 
         $project = $this->project('ongoing', 'client@example.test');
 
-        Client::where('project_id', $project->project_id)->update(['user_id' => $client->id]);
+        Client::whereKey($project->client_id)->update(['user_id' => $client->id]);
 
         $this->assertSame(
             [$project->project_id],

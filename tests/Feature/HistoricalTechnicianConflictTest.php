@@ -390,6 +390,7 @@ class HistoricalTechnicianConflictTest extends TestCase
         string $clientType = 'Commercial'
     ): Project {
         $project = Project::create([
+            'client_id' => Client::factory()->create()->client_id,
             'name' => $name,
             'reference_no' => 'PRJ-'.strtoupper(substr(md5($name.microtime()), 0, 8)),
             'status' => $status,
@@ -398,8 +399,7 @@ class HistoricalTechnicianConflictTest extends TestCase
             'quotation' => 1000,
         ]);
 
-        Client::create([
-            'project_id' => $project->project_id,
+        tap($project->client)->update([
             'client_type' => $clientType,
             'firstname' => 'Juan',
             'surname' => 'Dela Cruz',

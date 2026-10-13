@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Client;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
 use App\Models\Schedule;
@@ -48,6 +49,7 @@ class ReadOnlyProjectVisibilityTest extends TestCase
     private function createProject(string $name, string $status, bool $archived = false): Project
     {
         $project = Project::create([
+            'client_id' => Client::factory()->create()->client_id,
             'name' => $name,
             'reference_no' => 'REF-'.strtoupper(substr(md5($name.microtime()), 0, 8)),
             'status' => $status,

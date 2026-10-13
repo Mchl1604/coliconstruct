@@ -46,7 +46,14 @@ use Throwable;
  *
  * Run on its own - it is deliberately not part of DatabaseSeeder:
  *
+ *     php artisan projects:clear
  *     php artisan db:seed --class=DemoDataSeeder --force
+ *
+ * projects:clear is only for starting afresh: it deletes every project the
+ * site already has, and asks first. For a presentation, seed within the week
+ * before it - see the Awaiting Client Confirmation note below. The accounts
+ * and the shared password are listed in demo-accounts.md, written from
+ * accountList().
  *
  * What it writes is in DemoDataCatalog. How it writes it:
  *
@@ -56,7 +63,7 @@ use Throwable;
  *     are added at all - so running it twice does no harm.
  *   - Every account shares the one password in DEMO_ACCOUNT_PASSWORD, held to
  *     the same policy as every other password, and none is asked to change it
- *     at first sign-in. Registered Users have the current Terms accepted.
+ *     at first sign-in. client accounts have the current Terms accepted.
  *   - Every date is counted from the office's today, so the statuses come out
  *     right whenever it is run and stay right for fourteen days. Awaiting
  *     Client Confirmation is the exception: if the nightly job runs, it
@@ -180,6 +187,10 @@ class DemoDataSeeder extends Seeder
     public function run(): void
     {
         $this->passwordHash = Hash::make($this->password());
+
+        // Before the transaction: creating a table cannot be rolled back on
+        // MySQL, and a site restored from an older dump may be missing it.
+        $this->call(BackupTableSeeder::class);
 
         // Nothing here sends anything, but should a future change make it do
         // so, the fifty example.com addresses are not where it should go.
@@ -371,7 +382,7 @@ class DemoDataSeeder extends Seeder
             ->groupBy('client')
             ->map(fn (Collection $projects): int => (int) $projects->min('created'));
 
-        $relations = $this->admins[8] ?? $this->admins[0];
+        $relations = $this->admins[4] ?? $this->admins[0];
 
         foreach (array_keys(DemoDataCatalog::clients()) as $index => $email) {
             $client = DemoDataCatalog::clients()[$email];
@@ -480,8 +491,25 @@ class DemoDataSeeder extends Seeder
         $kind = DemoDataCatalog::kindOf($spec['types'][0]);
         $profile = DemoDataCatalog::workProfiles()[$kind];
 
+        // One client record per person, however many projects they have -
+        // the catalog books most clients several times.
+        $clientRecord = Client::query()->firstOrCreate(
+            ['user_id' => $client->id],
+            [
+                'client_type' => $clientSpec['client_type'],
+                'company_name' => $clientSpec['company_name'],
+                'surname' => $clientSpec['last_name'],
+                'firstname' => $clientSpec['first_name'],
+                'middlename' => $clientSpec['middle_name'],
+                'fullname' => implode(' ', [$clientSpec['first_name'], $clientSpec['middle_name'], $clientSpec['last_name']]),
+                'email_address' => $client->email,
+                'contact_number' => $client->contact_number,
+            ]
+        );
+
         $project = new Project;
         $project->forceFill([
+            'client_id' => $clientRecord->client_id,
             'name' => $spec['name'],
             'status' => 'unscheduled',
             'quotation' => $spec['quotation'],
@@ -503,19 +531,6 @@ class DemoDataSeeder extends Seeder
                 str_pad((string) $project->project_id, 5, '0', STR_PAD_LEFT)
             ),
         ])->save();
-
-        Client::create([
-            'project_id' => $project->project_id,
-            'user_id' => $client->id,
-            'client_type' => $clientSpec['client_type'],
-            'company_name' => $clientSpec['company_name'],
-            'surname' => $clientSpec['last_name'],
-            'firstname' => $clientSpec['first_name'],
-            'middlename' => $clientSpec['middle_name'],
-            'fullname' => implode(' ', [$clientSpec['first_name'], $clientSpec['middle_name'], $clientSpec['last_name']]),
-            'email_address' => $client->email,
-            'contact_number' => $client->contact_number,
-        ]);
 
         $project->projectTypes()->sync(collect($spec['types'])->map(fn (string $type): int => $this->typeIds[$type])->all());
 

@@ -75,6 +75,7 @@ class ProjectArchiveRestoreTest extends TestCase
         ?string $reference = null
     ): Project {
         $project = Project::create([
+            'client_id' => Client::factory()->create()->client_id,
             'name' => 'Archive Project',
             'reference_no' => $reference ?? 'REF-'.strtoupper(substr(md5(uniqid('', true)), 0, 8)),
             'status' => $status,
@@ -83,8 +84,7 @@ class ProjectArchiveRestoreTest extends TestCase
             'quotation' => 250000,
         ]);
 
-        Client::create([
-            'project_id' => $project->project_id,
+        tap($project->client)->update([
             'client_type' => 'Commercial',
             'company_name' => 'Some Holdings',
             'firstname' => 'Client',

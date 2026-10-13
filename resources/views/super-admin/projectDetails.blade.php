@@ -12,8 +12,8 @@
              menu - shared with the project wizard, whose two pickers ask the
              same question this one does. --}}
         <link rel="stylesheet" href="/css/technicianPicker.css">
-        {{-- The type-to-search picker on the Edit Registered User dialog, the
-             same control and the same stylesheet as Export Activity Logs. --}}
+        {{-- The type-to-search client picker on the Change Client dialog, the
+             same control and the same stylesheet as the project wizard's. --}}
         <link rel="stylesheet" href="/css/actorSearch.css">
         {{-- The Schedule Conflict dialog a refused Resume opens. The same
              dialog the archive's Restore opens - see scheduleRecovery.js. It
@@ -28,24 +28,6 @@
         <link rel="stylesheet" href="/css/projectPhases.css">
     @endpush
     @php
-        // What the Edit Registered User picker searches. Built here rather
-        // than inside the @json() directive further down: Blade reads that
-        // directive by matching brackets, and a multi-line array literal
-        // inside it compiles to PHP that will not parse.
-        $registeredUserPickerOptions = $registeredUserOptions
-            ->map(
-                fn($candidate) => [
-                    'id' => $candidate->id,
-                    'name' => $candidate->fullName(),
-                    'email' => $candidate->email,
-                    'code' => $candidate->user_code,
-                    // Printed only when it is worth knowing: a deactivated
-                    // account is still one a project may belong to.
-                    'status' => $candidate->isActive() ? null : $candidate->statusLabel(),
-                ],
-            )
-            ->values();
-
         $scheduleStart = $project->schedules->min('start_datetime');
         $scheduleEnd = $project->schedules->max('end_datetime');
         $hasSchedule = $scheduleStart && $scheduleEnd;
@@ -323,7 +305,7 @@
                                         <i class="bi bi-person-slash fs-5 lh-1" aria-hidden="true"></i>
                                         <div>
                                             <p class="fw-semibold mb-1">
-                                                No registered client can currently confirm this project.
+                                                No client account can currently confirm this project.
                                             </p>
                                             <p class="mb-0 small">
                                                 Auto-completes after {{ \App\Models\Project::completionConfirmationDays() }} days.
@@ -487,7 +469,7 @@
                              reply that cannot arrive, which reads exactly like a
                              project whose client is still thinking about it - so
                              it is said out loud rather than left to be worked out
-                             from an empty Registered User panel further down.
+                             from the client details above.
 
                              A statement, not a fault: a project booked before its
                              client registered is ordinary, and the moment they
@@ -496,7 +478,7 @@
                         @if ($confirmabilityState === \App\Services\CompletionConfirmability::UNREACHABLE)
                             <div class="alert alert-warning border-0 py-2 px-3 mb-2" role="status">
                                 <i class="bi bi-person-slash me-1" aria-hidden="true"></i>
-                                <strong>No registered client can confirm this online.</strong>
+                                <strong>No client account can confirm this online.</strong>
                                 It will auto-complete.
                             </div>
                         @endif
@@ -913,7 +895,7 @@
                     // one way here and another way in the technician portal.
                     // Both values stay on screen; only which of them leads
                     // changes.
-                    $headlineClient = $project->clients->first();
+                    $headlineClient = $project->client;
                 @endphp
 
                 <div class="d-flex justify-content-between">
@@ -929,6 +911,17 @@
                                     <i class="bi bi-pencil-square"></i>
                                 </button>
                             @endunless
+
+                            {{-- Who the project is for. Editing the details
+                                 above changes this client everywhere; this
+                                 moves the one project to someone else. --}}
+                            @if ($canChangeClient)
+                                <button type="button" class="btn btn-outline-secondary border btn-sm ms-2"
+                                    data-bs-toggle="modal" data-bs-target="#changeClientModal" data-change-client-open>
+                                    <i class="bi bi-person-gear me-1" aria-hidden="true"></i>
+                                    Change client
+                                </button>
+                            @endif
                         </div>
 
                         @if ($headlineClient?->secondaryName())
@@ -963,7 +956,7 @@
                         </div>
 
                         @php
-                            $client = $project->clients->first();
+                            $client = $project->client;
                             $clientTypeClass = match (strtolower($client?->client_type ?? '')) {
                                 'residential' => 'bi bi-house-door',
                                 'commercial' => 'bi bi-building',
@@ -995,77 +988,6 @@
                                 {{ $client?->email_address ?? 'N/A' }}
                             </span>
                         </div>
-
-                        {{-- Linked account: which account on the public website
-                             follows this project. A different fact from the
-                             client details above - neither edits the other - but
-                             one line is all it needs. Admin and Super Admin get
-                             the Link / Change / Unlink controls; the endpoints
-                             behind them ask the same question again. --}}
-                        <div class="text-muted mb-3 d-flex flex-wrap align-items-center gap-2"
-                            id="linked-account" style="scroll-margin-top: 1.5rem;">
-                            <span>
-                                <i class="bi bi-person-check"></i>
-                                Linked account:
-                            </span>
-
-                            @if ($assignedRegisteredUser)
-                                <span class="d-inline-flex align-items-center gap-1 text-body">
-                                    <x-user-avatar :user="$assignedRegisteredUser" size="xs" />
-                                    <span class="fw-semibold">{{ $assignedRegisteredUser->fullName() }}</span>
-                                </span>
-                                <span>({{ $assignedRegisteredUser->email }})</span>
-
-                                {{-- Only worth a badge when it is not the usual
-                                     case: a deactivated account is still the one
-                                     linked, and saying so is how somebody works
-                                     out why the client cannot sign in. --}}
-                                @unless ($assignedRegisteredUser->isActive())
-                                    <span class="badge {{ $assignedRegisteredUser->statusBadgeClass() }}">
-                                        {{ $assignedRegisteredUser->statusLabel() }}
-                                    </span>
-                                @endunless
-                            @else
-                                <span>None</span>
-                            @endif
-
-                            @if ($canManageRegisteredUser)
-                                <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none"
-                                    data-bs-toggle="modal" data-bs-target="#editRegisteredUserModal">
-                                    {{ $assignedRegisteredUser ? 'Change' : 'Link account' }}
-                                </button>
-
-                                @if ($assignedRegisteredUser)
-                                    <button type="button"
-                                        class="btn btn-link btn-sm p-0 text-danger text-decoration-none"
-                                        data-bs-toggle="modal" data-bs-target="#removeRegisteredUserModal">
-                                        Unlink
-                                    </button>
-                                @endif
-                            @endif
-                        </div>
-
-                        {{-- The two addresses may differ, and often correctly: a
-                             job booked to a company mailbox and followed by a
-                             person is ordinary. Both receive this project's
-                             messages (see ProjectEmails::recipients), so this is
-                             information rather than a warning; the button is for
-                             when the project's own address is simply wrong. --}}
-                        @if ($accountEmailDiffers)
-                            <div class="small text-muted mb-3 d-flex flex-wrap align-items-center gap-2" role="status">
-                                <span>
-                                    <i class="bi bi-info-circle text-brand-blue"></i>
-                                    The linked account's email differs from the project's.
-                                </span>
-
-                                @if ($canManageRegisteredUser)
-                                    <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none"
-                                        data-bs-toggle="modal" data-bs-target="#useAccountEmailModal">
-                                        Use account email
-                                    </button>
-                                @endif
-                            </div>
-                        @endif
 
                         @foreach ($project->projectTypes as $type)
                             <span class="badge rounded-pill fs-6 px-3 py-2 project-type-badge">
@@ -1245,7 +1167,7 @@
                      work is a record and carries none. --}}
                 @php
                     $documentsByType = $project->documents->groupBy('document_type');
-                    $isCommercial = $project->clients->first()?->client_type === 'Commercial';
+                    $isCommercial = $project->client?->client_type === 'Commercial';
                     $documentTypes = collect(\App\Models\Document::TYPES)
                         ->reject(fn ($label, $type) => $type === 'contract' && ! $isCommercial);
                 @endphp
@@ -2095,35 +2017,43 @@
                             Client Information
                         </h6>
 
+                        {{-- One client record is shared by every project the
+                             client has, so a name, number or address saved
+                             here changes on all of them. --}}
+                        <p class="small text-muted mb-3" data-shared-client-note>
+                            <i class="bi bi-people me-1" aria-hidden="true"></i>
+                            Applies to all their projects.
+                        </p>
+
                         <div class="row g-3">
 
                             <div class="col-md-5">
                                 <label class="form-label">First Name</label>
                                 <input type="text" class="form-control" name="first_name"
-                                    value="{{ $project->clients->first()?->firstname ?? '' }}">
+                                    value="{{ $project->client?->firstname ?? '' }}">
                             </div>
 
                             <div class="col-md-2">
                                 <label class="form-label">Middle Initial</label>
                                 <input type="text" maxlength="1" pattern="[A-Za-z]"
                                     class="form-control text-center" name="middle_initial"
-                                    value="{{ $project->clients->first()?->middlename ?? '' }}">
+                                    value="{{ $project->client?->middlename ?? '' }}">
                             </div>
 
                             <div class="col-md-5">
                                 <label class="form-label">Last Name</label>
                                 <input type="text" class="form-control" name="last_name"
-                                    value="{{ $project->clients->first()?->surname ?? '' }}">
+                                    value="{{ $project->client?->surname ?? '' }}">
                             </div>
 
                         </div>
 
-                        @if ($project->clients->first()?->client_type === 'Commercial')
+                        @if ($project->client?->client_type === 'Commercial')
                             <div class="mt-3">
                                 <label class="form-label">Company Name</label>
 
                                 <input type="text" class="form-control" name="company_name"
-                                    value="{{ $project->clients->first()?->company_name ?? '' }}">
+                                    value="{{ $project->client?->company_name ?? '' }}">
                             </div>
                         @endif
 
@@ -2145,7 +2075,7 @@
                                 </label>
 
                                 <input type="text" class="form-control" name="contact_number"
-                                    value="{{ $project->clients->first()?->contact_number ?? '' }}">
+                                    value="{{ $project->client?->contact_number ?? '' }}">
                             </div>
 
                             <div class="col-md-6">
@@ -2154,7 +2084,7 @@
                                 </label>
 
                                 <input type="email" class="form-control" name="email_address"
-                                    value="{{ $project->clients->first()?->email_address ?? '' }}">
+                                    value="{{ $project->client?->email_address ?? '' }}">
                             </div>
 
                         </div>
@@ -2315,7 +2245,7 @@
                                 'quotation' => ['label' => 'Quotation', 'field' => 'quotationDocument'],
                             ];
 
-                            if ($project->clients->first()?->client_type === 'Commercial') {
+                            if ($project->client?->client_type === 'Commercial') {
                                 $uploadFields['contract'] = ['label' => 'Contract', 'field' => 'contractDocument'];
                             }
                         @endphp
@@ -2654,15 +2584,20 @@
     </div>
     <!-- END OF EDIT ASSIGNED TEAM MODAL -->
 
-    @if ($canManageRegisteredUser)
-        <!-- LINK ACCOUNT MODAL -->
-        <div class="modal fade" id="editRegisteredUserModal" tabindex="-1"
-            aria-labelledby="editRegisteredUserModalLabel" aria-hidden="true">
+    @if ($canChangeClient)
+        <!-- CHANGE CLIENT MODAL -->
+        {{-- Moves this one project to another client: one already on record,
+             found by the same server-side search the wizard uses, or a new one
+             typed in under the wizard's rules - including one address being
+             one client. The previous client keeps their record and their other
+             projects. See ProjectClientController::change(). --}}
+        <div class="modal fade" id="changeClientModal" tabindex="-1" aria-labelledby="changeClientModalLabel"
+            aria-hidden="true">
 
-            <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-dialog modal-dialog-centered modal-lg">
 
-                <form action="{{ route('super-admin.projects.registered-user.update', $project->project_id) }}"
-                    method="POST">
+                <form action="{{ route('super-admin.projects.client.change', $project->project_id) }}" method="POST"
+                    class="w-100" data-change-client-form>
 
                     @csrf
                     @method('PUT')
@@ -2670,9 +2605,9 @@
                     <div class="modal-content">
 
                         <div class="modal-header bg-primary text-white">
-                            <h5 class="modal-title" id="editRegisteredUserModalLabel">
+                            <h5 class="modal-title" id="changeClientModalLabel">
                                 <i class="bi bi-person-gear me-2" aria-hidden="true"></i>
-                                Link Account
+                                Change Client
                             </h5>
 
                             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
@@ -2681,24 +2616,31 @@
 
                         <div class="modal-body">
 
-                            <p class="text-muted small">
-                                Pick an account to link.
-                            </p>
+                            <p class="text-muted small mb-3">Moves this project only.</p>
 
-                            {{-- Searched rather than chosen from a list, for the
-                                 reason the Export Logs dialog is: every Registered
-                                 User in the system can appear here, and that is a
-                                 list nobody scrolls. Typed into instead, with the
-                                 matches dropping down beneath - the same control,
-                                 the same classes, the same stylesheet.
+                            <div class="btn-group mb-3" role="group" aria-label="Client">
+                                <input type="radio" class="btn-check" name="client_mode" id="changeClientExisting"
+                                    value="existing" autocomplete="off" data-change-client-mode checked>
+                                <label class="btn btn-outline-primary" for="changeClientExisting">
+                                    <i class="bi bi-person-check me-1" aria-hidden="true"></i>
+                                    Existing client
+                                </label>
 
-                                 Unlike that one, a choice here is required: this
-                                 dialog exists to set the account, so an empty box
-                                 is not a meaningful answer and the submit button
-                                 stays disabled until somebody has picked. --}}
-                            <div class="config-actor-search" data-account-picker="registeredUserOptions">
-                                <label for="registeredUserSearch" class="form-label fw-bold">
-                                    Account <span class="text-danger">*</span>
+                                <input type="radio" class="btn-check" name="client_mode" id="changeClientNew"
+                                    value="new" autocomplete="off" data-change-client-mode>
+                                <label class="btn btn-outline-primary" for="changeClientNew">
+                                    <i class="bi bi-person-plus me-1" aria-hidden="true"></i>
+                                    New client
+                                </label>
+                            </div>
+
+                            {{-- The current client is left out of the results:
+                                 picking them would change nothing. --}}
+                            <div class="config-actor-search" data-account-picker data-change-client-existing
+                                data-picker-url="{{ route('super-admin.projects.client-search', ['exclude' => $project->client_id]) }}"
+                                data-picker-empty="No matching client.">
+                                <label for="changeClientSearch" class="form-label fw-bold">
+                                    Client <span class="text-danger">*</span>
                                 </label>
 
                                 <div class="input-group">
@@ -2706,47 +2648,78 @@
                                         <i class="bi bi-search" aria-hidden="true"></i>
                                     </span>
 
-                                    <input type="text" class="form-control" id="registeredUserSearch"
-                                        placeholder="Search by name, email or account code"
-                                        autocomplete="off" role="combobox" aria-expanded="false"
-                                        aria-controls="registeredUserResults"
-                                        value="{{ $assignedRegisteredUser ? $assignedRegisteredUser->fullName().' — '.$assignedRegisteredUser->email : '' }}"
-                                        @disabled($registeredUserOptions->isEmpty())
-                                        data-picker-search>
+                                    <input type="text" class="form-control" id="changeClientSearch"
+                                        placeholder="Search name or email" autocomplete="off" role="combobox"
+                                        aria-expanded="false" aria-controls="changeClientResults" data-picker-search>
 
-                                    <button type="button"
-                                        class="btn btn-outline-secondary {{ $assignedRegisteredUser ? '' : 'd-none' }}"
-                                        aria-label="Clear the chosen account" data-picker-clear>
+                                    <button type="button" class="btn btn-outline-secondary d-none"
+                                        aria-label="Clear the chosen client" data-picker-clear>
                                         <i class="bi bi-x-lg" aria-hidden="true"></i>
                                     </button>
                                 </div>
 
-                                {{-- What is actually submitted. Typing alone never
-                                     sets it: only picking somebody does, so a
-                                     half-typed name cannot be saved as a choice. --}}
-                                <input type="hidden" name="registered_user_id"
-                                    value="{{ $assignedRegisteredUser?->id }}" data-picker-id>
+                                <input type="hidden" name="client_id" data-picker-id>
 
-                                <ul class="config-actor-results d-none" id="registeredUserResults" role="listbox"
+                                <ul class="config-actor-results d-none" id="changeClientResults" role="listbox"
                                     data-picker-results></ul>
                             </div>
 
-                            @if ($registeredUserOptions->isEmpty())
-                                <div class="form-text text-danger">
-                                    No accounts to link yet.
+                            <div class="row g-3" data-change-client-new hidden>
+                                <div class="col-md-6">
+                                    <label class="form-label fw-bold" for="changeClientType">Client Type</label>
+                                    <select class="form-select" id="changeClientType" name="client_type"
+                                        data-change-client-type required>
+                                        <option value="Residential">Residential</option>
+                                        <option value="Commercial">Commercial</option>
+                                    </select>
                                 </div>
-                            @endif
+
+                                <div class="col-md-6" data-change-client-company hidden>
+                                    <label class="form-label fw-bold" for="changeClientCompany">Company Name</label>
+                                    <input type="text" class="form-control" id="changeClientCompany"
+                                        name="company_name" maxlength="255">
+                                </div>
+
+                                <div class="col-md-5">
+                                    <label class="form-label fw-bold" for="changeClientFirstName">First Name</label>
+                                    <input type="text" class="form-control" id="changeClientFirstName"
+                                        name="firstname" maxlength="255" required>
+                                </div>
+
+                                <div class="col-md-2">
+                                    <label class="form-label fw-bold" for="changeClientMiddle">M.I.</label>
+                                    <input type="text" class="form-control text-center" id="changeClientMiddle"
+                                        name="middle_name" maxlength="1" pattern="[A-Za-z]">
+                                </div>
+
+                                <div class="col-md-5">
+                                    <label class="form-label fw-bold" for="changeClientSurname">Surname</label>
+                                    <input type="text" class="form-control" id="changeClientSurname"
+                                        name="surname" maxlength="255" required>
+                                </div>
+
+                                <div class="col-md-6">
+                                    <label class="form-label fw-bold" for="changeClientEmail">Email Address</label>
+                                    <input type="email" class="form-control" id="changeClientEmail"
+                                        name="client_email" maxlength="255" required>
+                                </div>
+
+                                <div class="col-md-6">
+                                    <label class="form-label fw-bold" for="changeClientPhone">Contact Number</label>
+                                    <input type="tel" class="form-control" id="changeClientPhone"
+                                        name="client_phone" maxlength="11" pattern="^09\d{9}$"
+                                        placeholder="09XXXXXXXXX" required>
+                                </div>
+                            </div>
 
                         </div>
 
                         <div class="modal-footer">
                             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
 
-                            <button type="submit" class="btn btn-primary"
-                                @disabled($registeredUserOptions->isEmpty() || ! $assignedRegisteredUser)
-                                data-picker-submit>
+                            <button type="submit" class="btn btn-primary" data-change-client-submit>
                                 <i class="bi bi-check-lg me-1" aria-hidden="true"></i>
-                                Link Account
+                                Change Client
                             </button>
                         </div>
 
@@ -2757,104 +2730,7 @@
             </div>
 
         </div>
-        <!-- END OF LINK ACCOUNT MODAL -->
-
-        @if ($assignedRegisteredUser)
-            <!-- UNLINK ACCOUNT MODAL -->
-            <div class="modal fade" id="removeRegisteredUserModal" tabindex="-1"
-                aria-labelledby="removeRegisteredUserModalLabel" aria-hidden="true">
-
-                <div class="modal-dialog modal-dialog-centered">
-                    <div class="modal-content">
-
-                        <div class="modal-header">
-                            <h5 class="modal-title" id="removeRegisteredUserModalLabel">
-                                Unlink {{ $assignedRegisteredUser->fullName() }} from this project?
-                            </h5>
-
-                            <button type="button" class="btn-close" data-bs-dismiss="modal"
-                                aria-label="Close"></button>
-                        </div>
-
-                        {{-- The two things somebody deciding this does not
-                             already know: nothing is deleted, and what actually
-                             stops. --}}
-                        <div class="modal-body">
-                            <strong>Nothing is deleted.</strong> Only the link is removed.
-                        </div>
-
-                        <div class="modal-footer">
-                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-
-                            <form
-                                action="{{ route('super-admin.projects.registered-user.destroy', $project->project_id) }}"
-                                method="POST">
-                                @csrf
-                                @method('DELETE')
-
-                                <button type="submit" class="btn btn-danger">
-                                    <i class="bi bi-person-dash me-1" aria-hidden="true"></i>
-                                    Unlink Account
-                                </button>
-                            </form>
-                        </div>
-
-                    </div>
-                </div>
-
-            </div>
-            <!-- END OF UNLINK ACCOUNT MODAL -->
-        @endif
-
-        @if ($accountEmailDiffers)
-            <!-- USE ACCOUNT EMAIL MODAL -->
-            {{-- Confirmed rather than done on the click, because it overwrites a
-                 field somebody typed on purpose. What it will and will not touch
-                 is spelled out here: this is the one place in the system where an
-                 account's details are copied onto a project, and the thing people
-                 will fear is that it works the other way too. --}}
-            <div class="modal fade" id="useAccountEmailModal" tabindex="-1"
-                aria-labelledby="useAccountEmailModalLabel" aria-hidden="true">
-
-                <div class="modal-dialog modal-dialog-centered">
-                    <div class="modal-content">
-
-                        <div class="modal-header">
-                            <h5 class="modal-title" id="useAccountEmailModalLabel">
-                                Use the account's email for this project?
-                            </h5>
-                            <button type="button" class="btn-close" data-bs-dismiss="modal"
-                                aria-label="Close"></button>
-                        </div>
-
-                        <div class="modal-body">
-                            <p class="mb-3">
-                                This project's contact email changes from
-                                <strong>{{ $project->clients->first()?->email_address }}</strong>
-                                to <strong>{{ $assignedRegisteredUser->email }}</strong>.
-                            </p>
-                        </div>
-
-                        <div class="modal-footer">
-                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-
-                            <form action="{{ route('super-admin.projects.contact-email.account', $project->project_id) }}"
-                                method="POST">
-                                @csrf
-                                @method('PUT')
-
-                                <button type="submit" class="btn btn-primary">
-                                    <i class="bi bi-envelope-check me-1" aria-hidden="true"></i>
-                                    Use account email
-                                </button>
-                            </form>
-                        </div>
-
-                    </div>
-                </div>
-            </div>
-            <!-- END OF USE ACCOUNT EMAIL MODAL -->
-        @endif
+        <!-- END OF CHANGE CLIENT MODAL -->
     @endif
 
     @if ($canRecordClientConfirmation)
@@ -3327,9 +3203,8 @@
 
     {{-- What the page's scripts are handed about this project as it stands.
          Inside the workspace rather than pushed to the foot of the page, so a
-         redraw after a save runs it again and the team picker and the
-         Registered User search start from the saved team and accounts, not
-         the ones the page was first loaded with. --}}
+         redraw after a save runs it again and the team picker starts from
+         the saved team, not the one the page was first loaded with. --}}
     <script>
         window.projectHistoryUrl = @json(route('super-admin.projects.history', ['id' => $project->project_id, 'section' => '__SECTION__']));
         window.assignedTeamData = @json($assignedTeamLookup);
@@ -3338,11 +3213,6 @@
             'technicianIds' => $currentTeamTechnicianIds,
         ]);
         window.importTeamProjectId = @json($project->project_id);
-        {{-- Every account the picker may offer, already narrowed by
-             ProjectRegisteredUser::candidates(). Deactivated accounts are
-             included on purpose - one switched off today may be switched back
-             on, and the label says which they are. --}}
-        window.registeredUserOptions = @json($registeredUserPickerOptions);
     </script>
 
     </div>{{-- /[data-project-workspace] --}}
@@ -3366,10 +3236,12 @@
         <script src="/js/super-admin/quotationSync.js"></script>
         <script src="/js/importTeam.js"></script>
         <script src="/js/accountPicker.js"></script>
+        {{-- The Change Client dialog's two modes. --}}
+        <script src="/js/super-admin/changeClient.js"></script>
         <script src="/js/super-admin/projectDetails.js"></script>
         <script src="/js/super-admin/projectHistory.js"></script>
         {{-- Lets a #fragment open the tab holding it - the page is two tabs
-             now, and the phases panel, the registered user card and the task
+             now, and the phases panel, the client details and the task
              board are all inside one of them. Completing a phase redirects
              back to #project-progress, and this is what opens it. --}}
         <script src="/js/tabFromHash.js"></script>

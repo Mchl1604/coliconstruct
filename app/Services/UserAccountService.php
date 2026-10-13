@@ -91,29 +91,49 @@ class UserAccountService
     }
 
     /**
-     * @param  array<string, mixed>  $data
+     * Open a client account for a client already on record, from
+     * Configuration.
+     *
+     * The same rule the public form follows: the account belongs to a client
+     * and takes their address, name, number and - for a commercial client -
+     * company from the client record. The administrator supplies only what
+     * the record cannot: a date of birth, and optionally the temporary
+     * password. The client is linked to the account in the same step, so the
+     * account opens on all of that client's projects.
+     *
+     * @param  array{birthdate: string, password?: ?string}  $data
      * @return array{user: User, password: string}
+     *
+     * @throws RuntimeException when the client cannot be given an account
      */
-    public function createClient(array $data): array
+    public function createClient(Client $client, array $data): array
     {
+        if ($client->user_id !== null) {
+            throw new RuntimeException('This client already has an account.');
+        }
+
+        if (blank($client->email_address)) {
+            throw new RuntimeException('This client has no email. Add one first.');
+        }
+
+        if (User::query()->whereRaw('LOWER(TRIM(email)) = ?', [$client->email_address])->exists()) {
+            throw new RuntimeException('An account already uses that email address.');
+        }
+
         $password = $this->temporaryPasswordFrom($data);
+        $details = app(ClientRecords::class)->accountDetailsFor($client);
 
-        $user = DB::transaction(function () use ($data, $password): User {
-            [$first, $middle, $last] = $this->clientNameParts($data);
-
-            return User::create([
+        $user = DB::transaction(function () use ($client, $data, $details, $password): User {
+            $user = User::create([
                 'user_code' => $this->nextUserCode('CLI'),
-                'name' => $this->displayName(['first_name' => $first, 'middle_name' => $middle, 'last_name' => $last]),
-                'first_name' => $first,
-                'middle_name' => $middle,
-                'last_name' => $last,
-                'contact_number' => $data['contact_number'],
+                'name' => $details['name'],
+                'first_name' => $details['first_name'],
+                'middle_name' => $details['middle_name'],
+                'last_name' => $details['last_name'],
+                'contact_number' => $details['contact_number'],
                 'birthdate' => $data['birthdate'],
-                'email' => $data['email'],
-                // The company details are collected when the account is
-                // edited, not when it is opened.
-                'company_name' => $data['company_name'] ?? null,
-                'company_address' => $data['company_address'] ?? null,
+                'email' => $client->email_address,
+                'company_name' => $details['company_name'],
                 'role' => User::ROLE_CLIENT,
                 'status' => User::STATUS_ACTIVE,
                 'is_archived' => false,
@@ -126,9 +146,13 @@ class UserAccountService
                 'password' => $password,
                 // Clients never carry a profile picture.
             ]);
-        });
 
-        $this->linkExistingProjectContacts($user);
+            // An administrator opening the account answers any earlier "not
+            // this account", so the marker goes with the link.
+            $client->forceFill(['user_id' => $user->id, 'user_unlinked_at' => null])->save();
+
+            return $user;
+        });
 
         $this->activityLogger->record(ActivityLog::CLIENT_CREATED, $user);
         $this->notifications->clientAccountRegistered($user);
@@ -189,17 +213,26 @@ class UserAccountService
      * submitted happens here instead - which is also the more honest place for
      * it: the administrators are told about a client who exists, and the
      * user_code sequence is not spent on somebody who never arrived.
+     *
+     * The name, number and company are read from the client record again
+     * here rather than trusted from the pending row, so the account opens
+     * with the client's details as they are now. A client who was given an
+     * account in the meantime refuses the registration.
+     *
+     * @throws RuntimeException when the address no longer belongs to a client
+     *                          that may open an account
      */
     public function completeRegistration(PendingRegistration $pending): User
     {
-        $user = $this->registerClient([
-            'first_name' => $pending->first_name,
-            'middle_name' => $pending->middle_name,
-            'last_name' => $pending->last_name,
-            // Only read for a registration started before the name was asked
-            // for in parts - see clientNameParts().
-            'full_name' => $pending->full_name,
-            'contact_number' => $pending->contact_number,
+        $client = app(ClientProjects::class)->clientWithEmail($pending->email);
+
+        if ($client === null || $client->user_id !== null || $client->user_unlinked_at !== null) {
+            $pending->delete();
+
+            throw new RuntimeException('This email can no longer open an account. Contact us.');
+        }
+
+        $user = $this->registerClient(app(ClientRecords::class)->accountDetailsFor($client) + [
             'birthdate' => $pending->birthdate,
             // Already a hash. User's `hashed` cast leaves it alone.
             'password' => $pending->password,
@@ -259,6 +292,8 @@ class UserAccountService
                 'contact_number' => $data['contact_number'],
                 'birthdate' => $data['birthdate'],
                 'email' => $data['email'],
+                // A commercial client's company, from their client record.
+                'company_name' => $data['company_name'] ?? null,
                 'role' => User::ROLE_CLIENT,
                 'status' => User::STATUS_ACTIVE,
                 'is_archived' => false,
@@ -286,7 +321,7 @@ class UserAccountService
             ActivityLog::CLIENT_CREATED,
             $user,
             sprintf(
-                'Registered User Account Created - %s (%s), self-registered',
+                'Client Account Created - %s (%s), self-registered',
                 $user->fullName(),
                 $user->user_code
             )
@@ -384,6 +419,10 @@ class UserAccountService
             ]);
 
             $user->save();
+
+            // The same person's client record, and so every project of
+            // theirs, carries the new name and number.
+            app(ClientRecords::class)->syncFromAccount($user);
         });
 
         $this->activityLogger->record(ActivityLog::CLIENT_UPDATED, $user);
@@ -777,15 +816,15 @@ class UserAccountService
     }
 
     /**
-     * Claim the project contacts already booked under this account's address.
+     * Claim the client already booked under this account's address.
      *
      * A project is very often created before its client opens an account, so
      * the address is the only thing connecting the two until this runs.
      * Registering - or being registered by an administrator - is the moment
      * that stops being true, and from then on the id is what holds the
-     * projects rather than the address.
+     * client's projects rather than the address.
      *
-     * @return int how many contacts were claimed
+     * @return int how many clients were claimed - none or one
      */
     private function linkExistingProjectContacts(User $user): int
     {
@@ -799,13 +838,19 @@ class UserAccountService
             return 0;
         }
 
-        // Never a contact an administrator has deliberately taken an account
+        // One account holds one client. An account already linked to a
+        // client keeps that one.
+        if (Client::query()->where('user_id', $user->id)->exists()) {
+            return 0;
+        }
+
+        // Never a client an administrator has deliberately taken an account
         // off: that null is a decision, not an absence, and registering again
         // must not undo it. See the user_unlinked_at migration.
         return Client::query()
             ->whereNull('user_id')
             ->whereNull('user_unlinked_at')
-            ->whereRaw('LOWER(TRIM(email_address)) = ?', [$address])
+            ->where('email_address', $address)
             ->update(['user_id' => $user->id]);
     }
 

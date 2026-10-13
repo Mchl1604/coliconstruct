@@ -11,6 +11,7 @@ use App\Http\Controllers\InquiryController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PhaseTemplateController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\ProjectClientController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ProjectPhaseController;
 use App\Http\Controllers\ProjectTypeController;
@@ -65,10 +66,16 @@ Route::get('/login', [AuthController::class, 'showLogin'])->name('auth.login');
 Route::post('/login', [AuthController::class, 'login'])->name('auth.login.attempt');
 Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth')->name('auth.logout');
 
-// Public registration, which only ever opens a client account. Every employee
-// account is created by an admin or super admin in Configuration.
+// Public registration, which only ever opens a client account, and only for a
+// client already on record. Every employee account is created by an admin or
+// super admin in Configuration.
+//
+// Throttled because the answer says whether an address belongs to a client,
+// and that should not be worth asking a thousand times.
 Route::get('/register', [AuthController::class, 'showRegister'])->name('auth.register');
-Route::post('/register', [AuthController::class, 'register'])->name('auth.register.store');
+Route::post('/register', [AuthController::class, 'register'])
+    ->middleware('throttle:10,1')
+    ->name('auth.register.store');
 
 // Proving a newly registered address is real. Guest routes by necessity: the
 // account exists but cannot sign in until the code sent to it comes back.
@@ -277,6 +284,12 @@ Route::prefix('super-admin')
         // before /projects/{id} so the literal segment wins.
         Route::get('/projects/importable-teams', [ProjectController::class, 'importableTeams'])
             ->name('projects.importable-teams');
+        // The wizard's Client step: the Existing client picker's search, and
+        // the New client duplicate check. Before /projects/{id} as well.
+        Route::get('/projects/client-search', [ProjectClientController::class, 'search'])
+            ->name('projects.client-search');
+        Route::get('/projects/client-lookup', [ProjectClientController::class, 'lookup'])
+            ->name('projects.client-lookup');
         Route::get('/projects/{id}', [ProjectController::class, 'show'])->name('projects.show');
         // The Tasks tab's table, one page at a time - see serverTable.js.
         Route::get('/projects/{id}/tasks/table', [ProjectController::class, 'tasksTable'])->name('projects.tasks.table');
@@ -322,22 +335,11 @@ Route::prefix('super-admin')
         Route::get('/projects/{id}/history/{section}', [ProjectController::class, 'history'])
             ->whereIn('section', ['team', 'schedule'])
             ->name('projects.history');
-        // Which Registered User account a project is connected to. Admin and
-        // Super Admin both manage this - the group above admits exactly those
-        // two - and the controller asks the same question again rather than
-        // trusting the group, because this decides who may read a project's
-        // whole history on the public website.
-        Route::put('/projects/{id}/registered-user', [ProjectController::class, 'updateRegisteredUser'])
-            ->name('projects.registered-user.update');
-        Route::delete('/projects/{id}/registered-user', [ProjectController::class, 'removeRegisteredUser'])
-            ->name('projects.registered-user.destroy');
-
-        // Putting a project's contact address onto the one its Registered User
-        // signs in with. One direction only, and only ever the project: the
-        // account's own address is a login credential and is changed by the
-        // client themselves behind an emailed code, never from here.
-        Route::put('/projects/{id}/contact-email', [ProjectController::class, 'useAccountEmail'])
-            ->name('projects.contact-email.account');
+        // Moving a project to another client, picked from those on record or
+        // typed in new. Admin and Super Admin, as the group above admits; the
+        // request asks the project's own questions again.
+        Route::put('/projects/{id}/client', [ProjectClientController::class, 'change'])
+            ->name('projects.client.change');
 
         Route::put('/projects/{id}/hold', [ProjectController::class, 'putOnHold'])->name('projects.hold');
         Route::put('/projects/{id}/resume', [ProjectController::class, 'resume'])->name('projects.resume');
@@ -635,7 +637,7 @@ Route::prefix('super-admin')
             // which PHP does not parse from a PUT body.
             Route::get('/users/{user}', [ConfigurationController::class, 'show'])->name('users.show');
 
-            // The projects a Registered User is connected to, behind the View
+            // The projects a client account is connected to, behind the View
             // Projects action on their row. Read-only, and inside the same
             // administrative group as the rest of User Management.
             Route::get('/users/{user}/projects', [ConfigurationController::class, 'userProjects'])

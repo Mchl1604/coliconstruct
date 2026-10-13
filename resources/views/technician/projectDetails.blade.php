@@ -13,7 +13,7 @@
 
 @section('content')
     @php
-        $client = $project->clients->first();
+        $client = $project->client;
         // Grouped, not keyed: a project holds any number of files of each
         // type, and keyBy would quietly show only the last of them.
         $documentsByType = $project->documents->groupBy('document_type');

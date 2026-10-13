@@ -1,7 +1,7 @@
 {{-- One row of the Archived Projects table, rendered by
      ProjectController::archivedTable() for serverTable.js. --}}
 @php
-    $client = $project->clients->first();
+    $client = $project->client;
     // The same rule the active Projects table uses:
     // a company is named by its company, a
     // homeowner by their name.

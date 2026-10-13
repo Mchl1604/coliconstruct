@@ -546,6 +546,7 @@ class ReportExportTest extends TestCase
     private function projectCreatedOn(string $createdAt): Project
     {
         $project = Project::create([
+            'client_id' => Client::factory()->create()->client_id,
             'name' => 'Project '.uniqid(),
             'reference_no' => 'REF-'.strtoupper(substr(md5(uniqid()), 0, 8)),
             'status' => 'ongoing',
@@ -557,8 +558,7 @@ class ReportExportTest extends TestCase
 
         $this->finalizePhases($project);
 
-        Client::create([
-            'project_id' => $project->project_id,
+        tap($project->client)->update([
             'client_type' => 'Commercial',
             'company_name' => 'Client Holdings '.$project->project_id,
             'firstname' => 'Client',

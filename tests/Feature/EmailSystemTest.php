@@ -8,7 +8,6 @@ use App\Mail\OtpCodeMail;
 use App\Mail\ProjectUpdateMail;
 use App\Mail\SpecialtyDecisionMail;
 use App\Mail\TemporaryCredentialsMail;
-use App\Models\Client;
 use App\Models\OtpVerification;
 use App\Models\Project;
 use App\Models\Skill;
@@ -99,10 +98,10 @@ class EmailSystemTest extends TestCase
             $mock->shouldReceive('sendNow')->andReturn(false);
         });
 
+        $this->bookedClient('rejected@example.test');
+
         $this->post(route('auth.register.store'), [
-            'first_name' => 'Jose', 'last_name' => 'Garcia',
             'email' => 'rejected@example.test',
-            'contact_number' => '09175551234',
             'birthdate' => '1990-05-04',
             'password' => 'My-own-password1',
             'password_confirmation' => 'My-own-password1',
@@ -166,17 +165,7 @@ class EmailSystemTest extends TestCase
      */
     private function projectFor(string $email, array $overrides = []): Project
     {
-        $project = Project::create(array_merge([
-            'reference_no' => 'PRJ-'.random_int(10000, 99999),
-            'name' => 'Greenfield Offices',
-            'status' => 'pending',
-            'address' => '123 Sample Street',
-            'description' => 'Aircon installation',
-            'quotation' => '1250.00',
-        ], $overrides));
-
-        Client::create([
-            'project_id' => $project->project_id,
+        $client = $this->fixtureClient([
             'client_type' => 'Residential',
             'firstname' => 'Maria',
             'surname' => 'Santos',
@@ -184,6 +173,16 @@ class EmailSystemTest extends TestCase
             'email_address' => $email,
             'contact_number' => '09171234567',
         ]);
+
+        $project = Project::create(array_merge([
+            'client_id' => $client->client_id,
+            'reference_no' => 'PRJ-'.random_int(10000, 99999),
+            'name' => 'Greenfield Offices',
+            'status' => 'pending',
+            'address' => '123 Sample Street',
+            'description' => 'Aircon installation',
+            'quotation' => '1250.00',
+        ], $overrides));
 
         return $project->refresh();
     }

@@ -100,7 +100,7 @@ class ProcessCompletionConfirmations extends Command
     private function awaitingSince(CarbonImmutable $moment)
     {
         return Project::query()
-            ->with(['clients', 'projectTechnicians.technician.account'])
+            ->with(['client', 'projectTechnicians.technician.account'])
             ->where('status', Project::STATUS_AWAITING_CLIENT_CONFIRMATION)
             ->where('is_archived', false)
             ->whereNotNull('completion_requested_at')

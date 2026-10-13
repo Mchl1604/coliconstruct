@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Client;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
 use App\Models\ProjectType;
@@ -55,6 +56,7 @@ class ProjectTeamCandidatesTest extends TestCase
     private function createProject(string $status = 'ongoing'): Project
     {
         return Project::create([
+            'client_id' => Client::factory()->create()->client_id,
             'name' => 'Project '.uniqid(),
             'status' => $status,
             'address' => 'Address',

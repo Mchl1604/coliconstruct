@@ -396,7 +396,7 @@ class TechnicianController extends Controller
     private function assignedProjects(Technician $technician): Collection
     {
         $projects = Project::query()
-            ->with(['clients', 'schedules', 'projectTechnicians.technician.account', 'phases'])
+            ->with(['client', 'schedules', 'projectTechnicians.technician.account', 'phases'])
             ->where('is_archived', false)
             ->where('status', '!=', 'cancelled')
             // Including a project they are scheduled to join: it is work they
@@ -441,7 +441,7 @@ class TechnicianController extends Controller
         // are scoped to the technician being viewed - the panel lists their
         // work on this project, not the whole project's task board.
         $project->load([
-            'clients',
+            'client',
             'schedules',
             'projectTechnicians.technician.account',
             // The closed memberships too, so a booking this technician no
@@ -869,7 +869,7 @@ class TechnicianController extends Controller
         }
 
         $candidates = Project::query()
-            ->with(['clients', 'schedules', 'projectTechnicians.technician.account', 'phases'])
+            ->with(['client', 'schedules', 'projectTechnicians.technician.account', 'phases'])
             ->whereIn('status', self::STAFFABLE_STATUSES)
             ->where('is_archived', false)
             ->where(function ($query): void {
@@ -1349,7 +1349,7 @@ class TechnicianController extends Controller
         $change = app(ProjectTeamChange::class);
 
         $candidates = Project::query()
-            ->with(['clients', 'schedules', 'projectTechnicians.technician.account', 'teamHistory.technician.account', 'phases'])
+            ->with(['client', 'schedules', 'projectTechnicians.technician.account', 'teamHistory.technician.account', 'phases'])
             ->whereIn('status', self::STAFFABLE_STATUSES)
             ->where('is_archived', false)
             ->whereHas('schedules')
@@ -1868,7 +1868,7 @@ class TechnicianController extends Controller
             // membership behind each one is still open without going back to
             // the database per range.
             ->with([
-                'project.clients',
+                'project.client',
                 'project.schedules',
                 'scheduleTechnicians.projectTechnician',
             ])
@@ -2074,7 +2074,7 @@ class TechnicianController extends Controller
 
     private function clientName(Project $project): ?string
     {
-        $client = $project->clients->first();
+        $client = $project->client;
 
         return $client?->fullname ?: $client?->company_name;
     }

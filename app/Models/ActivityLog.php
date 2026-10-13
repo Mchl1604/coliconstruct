@@ -190,26 +190,27 @@ class ActivityLog extends Model
     public const SUPER_ADMIN_TRANSFERRED = 'Super Admin Transferred';
 
     /**
-     * The Registered User account type - the `client` role. The constant names
-     * keep the stored role's word so they line up with User::ROLE_CLIENT; the
-     * sentences are what an auditor reads, and those say Registered User.
+     * The Client Account type - the `client` role. The constant names keep
+     * the stored role's word so they line up with User::ROLE_CLIENT; the
+     * sentences are what an auditor reads, and those say Client Account.
      *
-     * Entries recorded before the rename keep their old wording, which is the
-     * point of an audit trail: a row says what it said when it was written.
+     * Entries recorded before a rename keep their old wording ("Registered
+     * User ..."), which is the point of an audit trail: a row says what it
+     * said when it was written.
      */
-    public const CLIENT_CREATED = 'Registered User Account Created';
+    public const CLIENT_CREATED = 'Client Account Created';
 
-    public const CLIENT_UPDATED = 'Registered User Updated';
+    public const CLIENT_UPDATED = 'Client Account Updated';
 
-    public const CLIENT_PASSWORD_RESET = 'Registered User Password Reset';
+    public const CLIENT_PASSWORD_RESET = 'Client Account Password Reset';
 
-    public const CLIENT_ACTIVATED = 'Registered User Activated';
+    public const CLIENT_ACTIVATED = 'Client Account Activated';
 
-    public const CLIENT_DEACTIVATED = 'Registered User Deactivated';
+    public const CLIENT_DEACTIVATED = 'Client Account Deactivated';
 
-    public const CLIENT_ARCHIVED = 'Registered User Archived';
+    public const CLIENT_ARCHIVED = 'Client Account Archived';
 
-    public const CLIENT_RESTORED = 'Registered User Restored';
+    public const CLIENT_RESTORED = 'Client Account Restored';
 
     /**
      * The specialty approval workflow. A technician asks; an administrator
@@ -315,13 +316,17 @@ class ActivityLog extends Model
     public const INVITATION_EMAIL_SENT = 'Invitation Email Sent';
 
     /**
-     * Which Registered User account a project is connected to.
+     * Which client account a project is connected to.
      *
      * Three entries rather than one because three different things happen and
      * they answer different questions: an account was put on a project that had
      * none, one account was swapped for another, or the project was left with
      * none at all. The project's own client details are untouched by all three
      * - this is about who follows the work on the public website.
+     *
+     * No longer written: accounts are linked to their client when they are
+     * opened, and a project changes hands through PROJECT_CLIENT_CHANGED.
+     * Kept so the entries already in the trail still file under Projects.
      */
     public const REGISTERED_USER_ASSIGNED = 'Registered User Assigned';
 
@@ -331,14 +336,20 @@ class ActivityLog extends Model
 
     /**
      * An administrator moved a project's contact address onto the one its
-     * Registered User signs in with.
+     * client account signs in with.
      *
      * Filed here beside the assignment entries rather than under User
      * Management, because that is what it is about: nothing on the account
      * changes, and the account's own address is never touched. Only the
-     * project's contact details move - see ProjectRegisteredUser::useAccountEmail().
+     * project's contact details move. No longer written; kept for the entries
+     * already in the trail.
      */
     public const PROJECT_CONTACT_EMAIL_UPDATED = 'Project Contact Email Updated';
+
+    /**
+     * A project moved to another client - see ProjectClientController::change().
+     */
+    public const PROJECT_CLIENT_CHANGED = 'Project Client Changed';
 
     public const LEAD_TECHNICIAN_ASSIGNED = 'Lead Technician Assigned';
 
@@ -535,6 +546,7 @@ class ActivityLog extends Model
         self::REGISTERED_USER_ASSIGNMENT_CHANGED => self::MODULE_PROJECTS,
         self::REGISTERED_USER_REMOVED => self::MODULE_PROJECTS,
         self::PROJECT_CONTACT_EMAIL_UPDATED => self::MODULE_PROJECTS,
+        self::PROJECT_CLIENT_CHANGED => self::MODULE_PROJECTS,
         self::LEAD_TECHNICIAN_ASSIGNED => self::MODULE_PROJECTS,
         self::TECHNICIAN_ASSIGNED => self::MODULE_PROJECTS,
         self::TECHNICIAN_REMOVED => self::MODULE_PROJECTS,

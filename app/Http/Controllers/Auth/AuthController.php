@@ -6,14 +6,16 @@ use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
 use App\Models\OtpVerification;
 use App\Models\User;
+use App\Rules\RegistrableClientEmail;
 use App\Services\ActivityLogger;
+use App\Services\ClientProjects;
+use App\Services\ClientRecords;
 use App\Services\NotificationService;
 use App\Services\OtpService;
 use App\Services\SessionGuard;
 use App\Services\UserAccountService;
 use App\Support\AccountAge;
 use App\Support\PasswordPolicy;
-use App\Support\PersonName;
 use App\Support\PortalHome;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -224,6 +226,11 @@ class AuthController extends Controller
      * accounts exist solely because an admin or super admin created them in
      * Configuration.
      *
+     * Only for a client already on record - see RegistrableClientEmail. The
+     * form asks for the address, a date of birth and a password; the name and
+     * number come from the client record, read again once the address is
+     * proved, so nothing about the client is shown to whoever typed it in.
+     *
      * Nothing in `users` is created here. The details are parked in
      * tbl_pending_registrations and a code is emailed to the address; only
      * that code coming back makes the account - see
@@ -233,30 +240,27 @@ class AuthController extends Controller
     public function register(Request $request)
     {
         $validated = $request->validate([
-            'first_name' => ['required', 'string', 'max:100'],
-            // An initial, not a name - see PersonName.
-            'middle_name' => PersonName::middleInitialRules(),
-            'last_name' => ['required', 'string', 'max:100'],
-            'contact_number' => ['required', 'string', 'max:'.User::CONTACT_NUMBER_LENGTH, User::CONTACT_NUMBER_RULE],
+            'email' => ['bail', 'required', 'string', 'email', 'max:255', 'unique:users,email', new RegistrableClientEmail],
             // Nobody under 18 gets an account, whichever form opens it.
             'birthdate' => AccountAge::rules(),
-            'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
             'password' => PasswordPolicy::rules(),
             // Checked on the server as well as in the browser: a checkbox is
             // the easiest field in a form to leave out of a request.
             'terms' => ['accepted'],
         ], [
             'email.unique' => 'An account already exists for that email address.',
-            'contact_number.regex' => User::CONTACT_NUMBER_MESSAGE,
-            'contact_number.max' => User::CONTACT_NUMBER_MESSAGE,
             'terms.accepted' => 'Accept the Terms and Conditions to continue.',
-        ] + PersonName::middleInitialMessages() + AccountAge::messages() + PasswordPolicy::messages());
+        ] + AccountAge::messages() + PasswordPolicy::messages());
 
         // Never handed to the account service: agreeing is a precondition of
         // registering, not a column on the account.
         unset($validated['terms']);
 
-        $pending = app(UserAccountService::class)->startRegistration($validated);
+        $client = app(ClientProjects::class)->clientWithEmail($validated['email']);
+
+        $pending = app(UserAccountService::class)->startRegistration(
+            $validated + app(ClientRecords::class)->accountDetailsFor($client)
+        );
 
         return $this->sendVerificationCode($request, $pending->email, $pending->fullName());
     }

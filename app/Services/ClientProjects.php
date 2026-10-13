@@ -11,15 +11,15 @@ use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 /**
  * Which projects belong to a client account.
  *
- * Ownership is derived from the email address rather than stored as a link:
- * tbl_clients holds a project's contact details and requires a project_id, so
- * it cannot represent an account that has no work yet. Matching on the address
- * means a project created before the client registers becomes theirs the
- * moment they do, with nothing to reassign by hand.
+ * A project belongs to an account when the project's client is linked to that
+ * account (tbl_clients.user_id), or - while the client has no account linked -
+ * when the client's address is the account's. The address match means a
+ * project created before the client registers becomes theirs the moment they
+ * do, with nothing to reassign by hand.
  *
- * The match is on a normalised address - trimmed and lower-cased on both sides
- * - so "J.DelaCruz@Example.com " on a project reaches the account registered
- * as "j.delacruz@example.com".
+ * Addresses are compared normalised - trimmed and lower-cased - which is also
+ * how tbl_clients stores them, so "J.DelaCruz@Example.com " typed into the
+ * wizard reaches the account registered as "j.delacruz@example.com".
  */
 class ClientProjects
 {
@@ -50,7 +50,7 @@ class ClientProjects
     }
 
     /**
-     * Every project whose client contact carries this account's address.
+     * Every project whose client is this account's.
      *
      * @return EloquentCollection<int, Project>
      */
@@ -87,7 +87,7 @@ class ClientProjects
 
         return Project::query()
             ->with([
-                'clients',
+                'client',
                 'schedules',
                 'projectTypes',
                 'projectTechnicians.technician.account',
@@ -103,7 +103,7 @@ class ClientProjects
                 'phases',
                 'phases as completed_phases_count' => fn ($query) => $query->whereNotNull('completed_at'),
             ])
-            ->whereHas('clients', fn ($query) => $this->applyOwnership($query, $user, $normalised))
+            ->whereHas('client', fn ($query) => $this->applyOwnership($query, $user, $normalised))
             ->where('is_archived', false)
             ->get()
             // One sortable key rather than an array of closures: Collection's
@@ -131,7 +131,7 @@ class ClientProjects
 
         return Project::query()
             ->with([
-                'clients',
+                'client',
                 'schedules',
                 'projectTypes',
                 'projectTechnicians.technician.account',
@@ -155,19 +155,19 @@ class ClientProjects
             ])
             ->where('project_id', $projectId)
             ->where('is_archived', false)
-            ->whereHas('clients', fn ($query) => $this->applyOwnership($query, $user, $normalised))
+            ->whereHas('client', fn ($query) => $this->applyOwnership($query, $user, $normalised))
             ->first();
     }
 
     /**
-     * "This contact is theirs": by account, or by address, or either.
+     * "This client is theirs": by account, or by address, or either.
      *
      * The account id is the answer wherever there is one. The address only
-     * speaks for a contact that has no account against it - a project booked
-     * before its client registered - and never for one an administrator has
+     * speaks for a client that has no account against it - work booked before
+     * its client registered - and never for one an administrator has
      * deliberately cleared, which is what user_unlinked_at records. Without
      * that second condition, removing an assignment would not survive the next
-     * page load: the address would hand the project straight back.
+     * page load: the address would hand the projects straight back.
      *
      * @param  \Illuminate\Contracts\Database\Query\Builder|Builder<Client>  $query
      */
@@ -179,12 +179,12 @@ class ClientProjects
             }
 
             if ($normalisedEmail !== '') {
-                // Compared in SQL on both sides so the whole match stays one
-                // scan rather than a filter in PHP.
+                // A plain equality: the column is stored normalised, which is
+                // what lets this use its unique index.
                 $owned->orWhere(function ($byAddress) use ($normalisedEmail): void {
                     $byAddress->whereNull('user_id')
                         ->whereNull('user_unlinked_at')
-                        ->whereRaw('LOWER(TRIM(email_address)) = ?', [$normalisedEmail]);
+                        ->where('email_address', $normalisedEmail);
                 });
             }
         });
@@ -255,21 +255,33 @@ class ClientProjects
     }
 
     /**
-     * Every project contact carrying this address, for the linking check.
+     * The client already on record under this address, however it is typed.
      *
-     * @return EloquentCollection<int, Client>
+     * There is at most one: the address is unique among clients. This is the
+     * duplicate check behind the wizard's New client step.
      */
-    public function contactsFor(?string $email): EloquentCollection
+    public function clientWithEmail(?string $email): ?Client
     {
         $normalised = $this->normalise($email);
 
         if ($normalised === '') {
-            return Client::query()->whereRaw('1 = 0')->get();
+            return null;
         }
 
+        return Client::query()->where('email_address', $normalised)->first();
+    }
+
+    /**
+     * Whether some client other than this one already holds the account.
+     *
+     * One account belongs to one client, so linking it to a second is refused
+     * rather than left to the unique index.
+     */
+    public function accountHeldByAnotherClient(User $account, ?Client $except = null): bool
+    {
         return Client::query()
-            ->whereNull('user_unlinked_at')
-            ->whereRaw('LOWER(TRIM(email_address)) = ?', [$normalised])
-            ->get();
+            ->where('user_id', $account->id)
+            ->when($except, fn (Builder $query) => $query->whereKeyNot($except->getKey()))
+            ->exists();
     }
 }

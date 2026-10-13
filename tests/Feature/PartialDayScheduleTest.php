@@ -97,22 +97,22 @@ class PartialDayScheduleTest extends TestCase
         string $endDatetime,
         string $status = 'ongoing'
     ): Project {
-        $project = Project::create([
-            'name' => 'Residential Project '.uniqid(),
-            'reference_no' => 'REF-'.uniqid(),
-            'status' => $status,
-            'address' => 'Address',
-            'description' => 'Description',
-        ]);
-
-        Client::create([
-            'project_id' => $project->project_id,
+        $client = $this->fixtureClient([
             'client_type' => 'Residential',
             'firstname' => 'Juan',
             'surname' => 'Dela Cruz',
             'fullname' => 'Juan Dela Cruz',
             'email_address' => 'client'.uniqid().'@example.test',
             'contact_number' => '09123456789',
+        ]);
+
+        $project = Project::create([
+            'client_id' => $client->client_id,
+            'name' => 'Residential Project '.uniqid(),
+            'reference_no' => 'REF-'.uniqid(),
+            'status' => $status,
+            'address' => 'Address',
+            'description' => 'Description',
         ]);
 
         $projectTechnician = ProjectTechnician::create([
@@ -134,7 +134,7 @@ class PartialDayScheduleTest extends TestCase
             'project_technician_id' => $projectTechnician->project_technician_id,
         ]);
 
-        return $project->fresh(['schedules', 'clients']);
+        return $project->fresh(['schedules', 'client']);
     }
 
     /**
@@ -143,16 +143,7 @@ class PartialDayScheduleTest extends TestCase
      */
     private function schedulableProject(Technician $technician, string $clientType): Project
     {
-        $project = Project::create([
-            'name' => $clientType.' Project '.uniqid(),
-            'reference_no' => 'REF-'.uniqid(),
-            'status' => 'unscheduled',
-            'address' => 'Address',
-            'description' => 'Description',
-        ]);
-
-        Client::create([
-            'project_id' => $project->project_id,
+        $client = $this->fixtureClient([
             'client_type' => $clientType,
             'firstname' => 'Juan',
             'surname' => 'Dela Cruz',
@@ -160,6 +151,15 @@ class PartialDayScheduleTest extends TestCase
             'company_name' => $clientType === 'Commercial' ? 'Acme Corp' : null,
             'email_address' => 'client'.uniqid().'@example.test',
             'contact_number' => '09123456789',
+        ]);
+
+        $project = Project::create([
+            'client_id' => $client->client_id,
+            'name' => $clientType.' Project '.uniqid(),
+            'reference_no' => 'REF-'.uniqid(),
+            'status' => 'unscheduled',
+            'address' => 'Address',
+            'description' => 'Description',
         ]);
 
         ProjectTechnician::create([
@@ -419,7 +419,7 @@ class PartialDayScheduleTest extends TestCase
         $response->assertSee('Add New Schedule');
 
         // The same project turned Commercial loses the choice entirely.
-        $residential->clients()->update(['client_type' => 'Commercial']);
+        $residential->client()->update(['client_type' => 'Commercial']);
 
         $commercialResponse = $this->get(route('super-admin.schedules.index'));
 
@@ -1059,6 +1059,7 @@ class PartialDayScheduleTest extends TestCase
         $technician = $this->createTechnician('technician', 'Luis Ocampo');
 
         $project = Project::create([
+            'client_id' => Client::factory()->create()->client_id,
             'name' => 'Legacy Project',
             'reference_no' => 'REF-'.uniqid(),
             'status' => 'ongoing',
@@ -1107,16 +1108,18 @@ class PartialDayScheduleTest extends TestCase
     }
 
     /**
-     * A project with no client row at all - older data, and what several of
-     * the pre-existing tests build - is not Residential, so it keeps the
-     * whole-day workflow and cannot reach partial days.
+     * A project whose client has no type recorded - older data - is not
+     * Residential, so it keeps the whole-day workflow and cannot reach
+     * partial days. (Every project has a client now, so a project with no
+     * client row at all can no longer exist.)
      */
-    public function test_a_project_without_a_client_keeps_the_whole_day_workflow(): void
+    public function test_a_client_with_no_type_recorded_keeps_the_whole_day_workflow(): void
     {
         $technician = $this->createTechnician('technician', 'Grace Villanueva');
 
         $project = Project::create([
-            'name' => 'Clientless Project',
+            'client_id' => Client::factory()->create(['client_type' => ''])->client_id,
+            'name' => 'Untyped Client Project',
             'reference_no' => 'REF-'.uniqid(),
             'status' => 'ongoing',
             'address' => 'Address',
@@ -1310,7 +1313,7 @@ class PartialDayScheduleTest extends TestCase
             $this->day(10).' 23:59:59'
         );
 
-        $project->clients()->update(['client_type' => 'Commercial']);
+        $project->client()->update(['client_type' => 'Commercial']);
 
         $schedule = $project->schedules->first();
 

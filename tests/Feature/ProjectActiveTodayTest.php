@@ -458,6 +458,7 @@ class ProjectActiveTodayTest extends TestCase
     private function projectWithDates(string $name, array $ranges, bool $assignCrew = true): Project
     {
         $project = Project::create([
+            'client_id' => Client::factory()->create()->client_id,
             'name' => $name,
             'reference_no' => 'REF-'.strtoupper(substr(md5($name.microtime()), 0, 10)),
             'status' => 'pending',
@@ -466,8 +467,7 @@ class ProjectActiveTodayTest extends TestCase
             'quotation' => 100000,
         ]);
 
-        Client::create([
-            'project_id' => $project->project_id,
+        tap($project->client)->update([
             'client_type' => 'Commercial',
             'company_name' => $name.' Holdings',
             'firstname' => 'Client',

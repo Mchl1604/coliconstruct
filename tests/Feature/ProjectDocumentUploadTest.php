@@ -4,9 +4,9 @@ namespace Tests\Feature;
 
 use App\Models\Client;
 use App\Models\Document;
-use App\Support\UploadStore;
 use App\Models\Project;
 use App\Models\ProjectType;
+use App\Support\UploadStore;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\File;
@@ -45,17 +45,7 @@ class ProjectDocumentUploadTest extends TestCase
 
     private function project(string $clientType = 'Commercial'): Project
     {
-        $project = Project::create([
-            'name' => 'Document Project',
-            'reference_no' => 'REF-DOCTEST',
-            'status' => 'ongoing',
-            'address' => '123 Sample Street',
-            'description' => 'Description',
-            'quotation' => 1000,
-        ]);
-
-        Client::create([
-            'project_id' => $project->project_id,
+        $client = $this->fixtureClient([
             'client_type' => $clientType,
             'company_name' => $clientType === 'Commercial' ? 'Acme Corp' : null,
             'firstname' => 'Juan',
@@ -63,6 +53,16 @@ class ProjectDocumentUploadTest extends TestCase
             'fullname' => 'Juan Dela Cruz',
             'email_address' => 'juan@example.test',
             'contact_number' => '09123456789',
+        ]);
+
+        $project = Project::create([
+            'client_id' => $client->client_id,
+            'name' => 'Document Project',
+            'reference_no' => 'REF-DOCTEST',
+            'status' => 'ongoing',
+            'address' => '123 Sample Street',
+            'description' => 'Description',
+            'quotation' => 1000,
         ]);
 
         $project->projectTypes()->attach(
@@ -205,6 +205,7 @@ class ProjectDocumentUploadTest extends TestCase
         $project = $this->project();
 
         $other = Project::create([
+            'client_id' => Client::factory()->create()->client_id,
             'name' => 'Other Project',
             'reference_no' => 'REF-OTHER',
             'status' => 'ongoing',

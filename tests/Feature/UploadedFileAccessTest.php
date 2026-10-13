@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Models\Client;
 use App\Models\Document;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
@@ -35,17 +34,7 @@ class UploadedFileAccessTest extends TestCase
 
     private function project(string $clientEmail): Project
     {
-        $project = Project::create([
-            'name' => 'Access Project '.uniqid(),
-            'reference_no' => 'REF-'.strtoupper(uniqid()),
-            'status' => 'ongoing',
-            'address' => 'Address',
-            'description' => 'Description',
-            'quotation' => 1000,
-        ]);
-
-        Client::create([
-            'project_id' => $project->project_id,
+        $client = $this->fixtureClient([
             'client_type' => 'Commercial',
             'company_name' => 'Access Holdings',
             'firstname' => 'Owner',
@@ -53,6 +42,16 @@ class UploadedFileAccessTest extends TestCase
             'fullname' => 'Owner Person',
             'email_address' => $clientEmail,
             'contact_number' => '09123456789',
+        ]);
+
+        $project = Project::create([
+            'client_id' => $client->client_id,
+            'name' => 'Access Project '.uniqid(),
+            'reference_no' => 'REF-'.strtoupper(uniqid()),
+            'status' => 'ongoing',
+            'address' => 'Address',
+            'description' => 'Description',
+            'quotation' => 1000,
         ]);
 
         return $project->fresh();

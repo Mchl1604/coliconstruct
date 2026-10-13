@@ -3,13 +3,14 @@
 namespace Tests\Feature;
 
 use App\Models\ActivityLog;
+use App\Models\Client;
+use App\Models\Notification;
 use App\Models\PhaseStage;
 use App\Models\Project;
 use App\Models\ProjectPhase;
 use App\Models\ProjectPhaseDraftTask;
 use App\Models\ProjectTechnician;
 use App\Models\ProjectType;
-use App\Models\ProjectTypeStageTask;
 use App\Models\Schedule;
 use App\Models\ScheduleTechnician;
 use App\Models\Task;
@@ -70,6 +71,7 @@ class PhaseTemplateTest extends TestCase
         $this->electrical = ProjectType::create(['type_name' => 'Electrical Works']);
 
         $this->project = Project::create([
+            'client_id' => Client::factory()->create()->client_id,
             'name' => 'Office Retrofit',
             'reference_no' => 'REF-TPL-1',
             'status' => 'ongoing',
@@ -688,7 +690,7 @@ class PhaseTemplateTest extends TestCase
             ],
         ]);
 
-        $notifications = \App\Models\Notification::query()
+        $notifications = Notification::query()
             ->where('user_id', $this->leadAccount->id)
             ->where('title', 'New Task Assignments')
             ->get();

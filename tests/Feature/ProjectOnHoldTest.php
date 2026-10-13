@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Models\Client;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
 use App\Models\Schedule;
@@ -65,17 +64,7 @@ class ProjectOnHoldTest extends TestCase
         string $status = 'ongoing',
         string $reference = 'REF-0001'
     ): Project {
-        $project = Project::create([
-            'name' => 'Some Project',
-            'reference_no' => $reference,
-            'status' => $status,
-            'address' => 'Address',
-            'description' => 'Description',
-            'quotation' => 250000,
-        ]);
-
-        Client::create([
-            'project_id' => $project->project_id,
+        $client = $this->fixtureClient([
             'client_type' => 'Commercial',
             'company_name' => 'Some Holdings',
             'firstname' => 'Client',
@@ -83,6 +72,16 @@ class ProjectOnHoldTest extends TestCase
             'fullname' => 'Client One',
             'email_address' => 'client@example.test',
             'contact_number' => '09123456789',
+        ]);
+
+        $project = Project::create([
+            'client_id' => $client->client_id,
+            'name' => 'Some Project',
+            'reference_no' => $reference,
+            'status' => $status,
+            'address' => 'Address',
+            'description' => 'Description',
+            'quotation' => 250000,
         ]);
 
         foreach ($technicians as $technician) {

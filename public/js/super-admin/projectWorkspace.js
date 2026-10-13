@@ -285,7 +285,7 @@
      * Scripts parsed out of the answer never run on their own. Each inline one
      * is recreated in this document so it runs once, as the new markup goes
      * in - they are what hand the page's scripts its data (the team picker's
-     * candidates, the Registered User options).
+     * candidates).
      */
     function armScripts(scope) {
         scope.querySelectorAll('script').forEach(function (old) {

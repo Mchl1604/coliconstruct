@@ -2,9 +2,11 @@
 
 namespace Tests;
 
+use App\Models\Client;
 use App\Models\Project;
 use App\Models\ProjectPhase;
 use App\Models\User;
+use App\Services\ClientProjects;
 use App\Services\SystemContentService;
 use App\Support\ServerTable;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
@@ -35,6 +37,41 @@ abstract class TestCase extends BaseTestCase
             'terms_accepted_version' => app(SystemContentService::class)->termsVersion(),
             'terms_accepted_at' => now(),
         ];
+    }
+
+    /**
+     * The client a fixture project is for.
+     *
+     * tbl_clients keeps one row per person, keyed in practice by their
+     * address, so a second fixture booked under an address already on record
+     * belongs to that same client rather than creating a duplicate the unique
+     * index would refuse. A fixture with no address is always a new client.
+     *
+     * @param  array<string, mixed>  $attributes
+     */
+    protected function fixtureClient(array $attributes): Client
+    {
+        return app(ClientProjects::class)->clientWithEmail($attributes['email_address'] ?? null)
+            ?? Client::create($attributes);
+    }
+
+    /**
+     * A client on record under this address, as registering needs: a client
+     * account is only ever opened for a client the company has booked work
+     * for, and it takes its name and number from this record.
+     *
+     * @param  array<string, mixed>  $attributes
+     */
+    protected function bookedClient(string $email, array $attributes = []): Client
+    {
+        return $this->fixtureClient($attributes + [
+            'client_type' => 'Residential',
+            'firstname' => 'Jose',
+            'surname' => 'Garcia',
+            'fullname' => 'Jose Garcia',
+            'email_address' => $email,
+            'contact_number' => '09175551234',
+        ]);
     }
 
     /**

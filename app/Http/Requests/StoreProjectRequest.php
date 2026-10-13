@@ -2,22 +2,23 @@
 
 namespace App\Http\Requests;
 
+use App\Http\Requests\Concerns\ChoosesClient;
 use App\Models\Document;
 use App\Models\Project;
 use App\Models\ProjectType;
 use App\Models\Schedule;
-use App\Rules\NotAnEmployeeEmail;
 use App\Services\ProjectTeamRules;
 use App\Services\ScheduleModeRules;
 use App\Services\TargetDateChange;
 use App\Services\TechnicianAvailabilityService;
-use App\Support\PersonName;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 class StoreProjectRequest extends FormRequest
 {
+    use ChoosesClient;
+
     /**
      * What the submitted schedule turned out to mean, worked out during
      * validation so the controller does not have to interpret raw input a
@@ -32,6 +33,11 @@ class StoreProjectRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        $this->defaultToNewClient();
+    }
+
     public function rules(): array
     {
         $projectTypes = $this->allowedProjectTypeNames();
@@ -44,23 +50,13 @@ class StoreProjectRequest extends FormRequest
 
         // A contract is a Commercial project's to provide. A Residential one
         // may still attach files, but is never asked for them.
-        $contractRules = $this->input('client_type') === 'Commercial'
+        $contractRules = $this->clientType() === 'Commercial'
             ? array_merge(['required'], $documentRules, ['min:1'])
             : array_merge(['nullable'], $documentRules);
 
         return [
-            'client_type' => ['required', Rule::in(['Residential', 'Commercial'])],
-            'company_name' => ['nullable', 'string', 'max:255', Rule::requiredIf($this->input('client_type') === 'Commercial')],
-            'surname' => ['required', 'string', 'max:255'],
-            'firstname' => ['required', 'string', 'max:255'],
-            // An initial, not a name - the field has always been
-            // labelled M.I. and now only accepts one.
-            'middle_name' => PersonName::middleInitialRules(),
-            // A client is not a member of staff. An employee's address
-            // here would hand them the client's own project - see
-            // NotAnEmployeeEmail.
-            'client_email' => ['required', 'email:rfc', 'max:255', new NotAnEmployeeEmail],
-            'client_phone' => ['required', 'regex:/^09\d{9}$/'],
+            // Existing client or New client - see ChoosesClient.
+            ...$this->clientRules(),
             'project_address' => ['required', 'string', 'max:500'],
             'quotation_amount' => ['required', 'numeric', 'min:0', 'max:'.Project::MAX_QUOTATION],
             'project_types' => ['required', 'array', 'min:1'],
@@ -88,7 +84,7 @@ class StoreProjectRequest extends FormRequest
     public function messages(): array
     {
         return [
-            ...PersonName::middleInitialMessages(),
+            ...$this->clientMessages(),
             'quotation_amount.numeric' => 'The quotation amount must be a valid number.',
             'quotation_amount.min' => 'The quotation amount must be at least zero.',
             'quotation_amount.max' => Project::MAX_QUOTATION_MESSAGE,
@@ -173,7 +169,7 @@ class StoreProjectRequest extends FormRequest
                     // Partial days are a Residential offering. A Commercial
                     // project asking for one is refused rather than quietly
                     // downgraded to a whole day.
-                    $this->input('client_type') === 'Residential'
+                    $this->clientType() === 'Residential'
                 );
 
                 if (! $entry) {

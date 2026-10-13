@@ -15,7 +15,6 @@ use App\Policies\ProjectPolicy;
 use App\Services\CompletionConfirmability;
 use App\Services\ProfileService;
 use App\Services\ProjectEmails;
-use App\Services\ProjectRegisteredUser;
 use App\Support\BusinessTime;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -61,23 +60,23 @@ class ProjectClientConfirmationReachTest extends TestCase
 
     private function project(string $email = self::PROJECT_EMAIL): Project
     {
-        $project = Project::create([
-            'name' => 'Reachability Project',
-            'reference_no' => 'REF-'.strtoupper(substr(md5($email.microtime()), 0, 8)),
-            'status' => 'ongoing',
-            'address' => 'Address',
-            'description' => 'Description',
-            'quotation' => 1000,
-        ]);
-
-        Client::create([
-            'project_id' => $project->project_id,
+        $client = $this->fixtureClient([
             'client_type' => 'Residential',
             'firstname' => 'Owner',
             'surname' => 'Person',
             'fullname' => 'Owner Person',
             'email_address' => $email,
             'contact_number' => '09123456789',
+        ]);
+
+        $project = Project::create([
+            'client_id' => $client->client_id,
+            'name' => 'Reachability Project',
+            'reference_no' => 'REF-'.strtoupper(substr(md5($email.microtime()), 0, 8)),
+            'status' => 'ongoing',
+            'address' => 'Address',
+            'description' => 'Description',
+            'quotation' => 1000,
         ]);
 
         // The completion rules refuse a project with nothing recorded on it,
@@ -109,10 +108,10 @@ class ProjectClientConfirmationReachTest extends TestCase
     private function link(Project $project, User $account): void
     {
         Client::query()
-            ->where('project_id', $project->project_id)
+            ->whereKey($project->client_id)
             ->update(['user_id' => $account->id, 'user_unlinked_at' => null]);
 
-        $project->refresh()->unsetRelation('clients');
+        $project->refresh()->unsetRelation('client');
     }
 
     /**
@@ -268,7 +267,7 @@ class ProjectClientConfirmationReachTest extends TestCase
 
         $this->assertSame(
             CompletionConfirmability::CLAIMABLE,
-            $this->confirmability()->state($project->refresh()->unsetRelation('clients'))
+            $this->confirmability()->state($project->refresh()->unsetRelation('client'))
         );
     }
 
@@ -285,11 +284,12 @@ class ProjectClientConfirmationReachTest extends TestCase
         $account = $this->clientAccount(self::PROJECT_EMAIL);
         $this->link($project, $account);
 
-        app(ProjectRegisteredUser::class)->remove($project);
+        // An administrator took the account off this client earlier.
+        Client::query()->whereKey($project->client_id)->update(['user_id' => null, 'user_unlinked_at' => now()]);
 
         $this->assertSame(
             CompletionConfirmability::UNREACHABLE,
-            $this->confirmability()->state($project->refresh()->unsetRelation('clients'))
+            $this->confirmability()->state($project->refresh()->unsetRelation('client'))
         );
     }
 
@@ -497,7 +497,7 @@ class ProjectClientConfirmationReachTest extends TestCase
 
         $this->get(route('super-admin.projects.show', $project->project_id))
             ->assertOk()
-            ->assertSee('No registered client can confirm this online.', false)
+            ->assertSee('No client account can confirm this online.', false)
             ->assertSee('Record Client Confirmation', false);
     }
 
@@ -511,7 +511,7 @@ class ProjectClientConfirmationReachTest extends TestCase
 
         $this->get(route('super-admin.projects.show', $project->project_id))
             ->assertOk()
-            ->assertDontSee('No registered client can confirm this online.', false);
+            ->assertDontSee('No client account can confirm this online.', false);
     }
 
     /**
@@ -532,7 +532,7 @@ class ProjectClientConfirmationReachTest extends TestCase
         $this->schedule($this->project(), -2, 2);
 
         $this->getTablePage(route('super-admin.projects.table'))
-            ->assertSee('No registered client can currently confirm this project.', false);
+            ->assertSee('No client account can currently confirm this project.', false);
     }
 
     /**
@@ -555,7 +555,7 @@ class ProjectClientConfirmationReachTest extends TestCase
 
         $this->get(route('super-admin.projects.show', $project->project_id))
             ->assertOk()
-            ->assertSee('No registered client can currently confirm this project.', false);
+            ->assertSee('No client account can currently confirm this project.', false);
     }
 
     public function test_the_listing_flags_a_project_nobody_can_confirm(): void
@@ -566,31 +566,6 @@ class ProjectClientConfirmationReachTest extends TestCase
 
         $this->getTablePage(route('super-admin.projects.table'))
             ->assertSee('No client to confirm', false);
-    }
-
-    public function test_the_project_page_shows_the_two_addresses_when_they_differ(): void
-    {
-        $this->actingAsSuperAdmin();
-
-        $project = $this->project();
-        $this->link($project, $this->clientAccount());
-
-        $this->get(route('super-admin.projects.show', $project->project_id))
-            ->assertOk()
-            ->assertSee("The linked account's email differs from the project's.", false)
-            ->assertSee('Use account email', false);
-    }
-
-    public function test_the_project_page_is_silent_when_the_addresses_agree(): void
-    {
-        $this->actingAsSuperAdmin();
-
-        $project = $this->project();
-        $this->link($project, $this->clientAccount(self::PROJECT_EMAIL));
-
-        $this->get(route('super-admin.projects.show', $project->project_id))
-            ->assertOk()
-            ->assertDontSee("The linked account's email differs from the project's.", false);
     }
 
     /**
@@ -620,21 +595,6 @@ class ProjectClientConfirmationReachTest extends TestCase
     // The two addresses stay two addresses
     // ==================================================================
 
-    public function test_assigning_a_registered_user_does_not_touch_the_project_contact_email(): void
-    {
-        $this->actingAsSuperAdmin();
-
-        $project = $this->project();
-        $account = $this->clientAccount();
-
-        $this->put(route('super-admin.projects.registered-user.update', $project->project_id), [
-            'registered_user_id' => $account->id,
-        ])->assertRedirect();
-
-        $this->assertSame(self::PROJECT_EMAIL, $project->refresh()->clients->first()->email_address);
-        $this->assertSame(self::ACCOUNT_EMAIL, $account->refresh()->email);
-    }
-
     public function test_editing_the_project_contact_email_does_not_touch_the_account(): void
     {
         $this->actingAsSuperAdmin();
@@ -654,70 +614,8 @@ class ProjectClientConfirmationReachTest extends TestCase
             'project_types' => [ProjectType::create(['type_name' => 'Roofing'])->type_id],
         ])->assertRedirect();
 
-        $this->assertSame('new.office@company.test', $project->refresh()->clients->first()->email_address);
+        $this->assertSame('new.office@company.test', $project->refresh()->client->email_address);
         $this->assertSame(self::ACCOUNT_EMAIL, $account->refresh()->email);
-    }
-
-    public function test_a_difference_between_the_two_addresses_is_reported(): void
-    {
-        $project = $this->project();
-        $this->link($project, $this->clientAccount());
-
-        $this->assertTrue(app(ProjectRegisteredUser::class)->accountEmailDiffers($project));
-    }
-
-    /**
-     * Capitals and stray spaces are not a difference. Reporting them as one
-     * would put a notice on a project where nothing is wrong.
-     */
-    public function test_capitalisation_alone_is_not_a_difference(): void
-    {
-        $project = $this->project('Office@Company.test');
-        $this->link($project, $this->clientAccount(self::PROJECT_EMAIL));
-
-        $this->assertFalse(app(ProjectRegisteredUser::class)->accountEmailDiffers($project));
-    }
-
-    public function test_an_administrator_can_move_the_project_onto_the_account_address(): void
-    {
-        $admin = $this->actingAsSuperAdmin();
-
-        $project = $this->project();
-        $account = $this->clientAccount();
-        $this->link($project, $account);
-
-        $this->put(route('super-admin.projects.contact-email.account', $project->project_id))
-            ->assertRedirect();
-
-        // The project moved.
-        $this->assertSame(self::ACCOUNT_EMAIL, $project->refresh()->clients->first()->email_address);
-        // The account did not. This is the half that must never break: the
-        // address here is a login credential.
-        $this->assertSame(self::ACCOUNT_EMAIL, $account->refresh()->email);
-
-        $entry = ActivityLog::query()
-            ->where('action', ActivityLog::PROJECT_CONTACT_EMAIL_UPDATED)
-            ->latest('id')
-            ->first();
-
-        $this->assertNotNull($entry);
-        $this->assertSame($admin->id, $entry->actor_id);
-        $this->assertStringContainsString(self::PROJECT_EMAIL, $entry->description);
-        $this->assertStringContainsString(self::ACCOUNT_EMAIL, $entry->description);
-    }
-
-    public function test_only_administrators_may_move_the_project_onto_the_account_address(): void
-    {
-        $project = $this->project();
-        $account = $this->clientAccount();
-        $this->link($project, $account);
-
-        $this->actingAs($account);
-
-        $this->put(route('super-admin.projects.contact-email.account', $project->project_id))
-            ->assertRedirect();
-
-        $this->assertSame(self::PROJECT_EMAIL, $project->refresh()->clients->first()->email_address);
     }
 
     // ==================================================================
@@ -738,7 +636,7 @@ class ProjectClientConfirmationReachTest extends TestCase
 
         $this->changeAccountEmail($account, 'maria@newmail.test');
 
-        $this->assertSame(self::PROJECT_EMAIL, $project->refresh()->clients->first()->email_address);
+        $this->assertSame(self::PROJECT_EMAIL, $project->refresh()->client->email_address);
         $this->assertSame('maria@newmail.test', $account->refresh()->email);
     }
 
@@ -754,7 +652,7 @@ class ProjectClientConfirmationReachTest extends TestCase
 
         $this->changeAccountEmail($account, 'maria@newmail.test');
 
-        $this->assertSame('maria@newmail.test', $project->refresh()->clients->first()->email_address);
+        $this->assertSame('maria@newmail.test', $project->refresh()->client->email_address);
     }
 
     public function test_the_carry_over_recognises_the_old_address_written_differently(): void
@@ -765,7 +663,7 @@ class ProjectClientConfirmationReachTest extends TestCase
 
         $this->changeAccountEmail($account, 'maria@newmail.test');
 
-        $this->assertSame('maria@newmail.test', $project->refresh()->clients->first()->email_address);
+        $this->assertSame('maria@newmail.test', $project->refresh()->client->email_address);
     }
 
     /**
@@ -781,7 +679,7 @@ class ProjectClientConfirmationReachTest extends TestCase
 
         $this->changeAccountEmail($account, 'maria@newmail.test');
 
-        $this->assertSame('someone.else@example.test', $theirs->refresh()->clients->first()->email_address);
+        $this->assertSame('someone.else@example.test', $theirs->refresh()->client->email_address);
     }
 
     // ==================================================================

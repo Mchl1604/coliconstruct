@@ -212,7 +212,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     /**
      * A row's person: their picture where they have one, their initials where
-     * they never will. Registered Users carry no picture anywhere in the system, so the
+     * they never will. Client accounts carry no picture anywhere in the system, so the
      * server sends avatar_url as null for them and this shows the initials
      * instead.
      */
@@ -590,7 +590,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     "edit",
                     row.id,
                     "bi-pencil",
-                    "Edit registered user",
+                    "Edit client account",
                     "primary",
                 ) +
                 actionButton(
@@ -1232,6 +1232,14 @@ document.addEventListener("DOMContentLoaded", function () {
     const userSpinner = document.querySelector("[data-user-spinner]");
     const userFormError = document.querySelector("[data-user-form-error]");
     const userModalTitle = document.querySelector("[data-user-modal-title]");
+    // Opening a client account is picking the client it is for: their email,
+    // name, number and company come from the client record. The typed
+    // person fields are for employees, and for editing an account.
+    const clientAccountPicker = document.querySelector("[data-client-account-picker]");
+    const clientAccountId = clientAccountPicker
+        ? clientAccountPicker.querySelector("[data-picker-id]")
+        : null;
+    const personFields = document.querySelectorAll("[data-person-fields]");
 
     // The account being edited, or null while creating.
     let editing = null;
@@ -1313,11 +1321,24 @@ document.addEventListener("DOMContentLoaded", function () {
         roleSelect.disabled = false;
     }
 
+    function creatingClientAccount() {
+        return accountType === "client" && !editing;
+    }
+
     function setAccountType(type) {
         accountType = type;
 
         toggleAll(employeeOnly, type === "employee");
         toggleAll(clientOnly, type === "client");
+
+        const pickingClient = creatingClientAccount();
+
+        if (clientAccountPicker) {
+            clientAccountPicker.classList.toggle("d-none", !pickingClient);
+        }
+
+        toggleAll(personFields, !pickingClient);
+        emailField.classList.toggle("d-none", pickingClient);
 
         fieldsWrap.classList.remove("d-none");
         userSubmit.disabled = false;
@@ -1360,6 +1381,14 @@ document.addEventListener("DOMContentLoaded", function () {
         restoreRoleSelect();
 
         setTemporaryPassword("");
+
+        if (clientAccountPicker) {
+            clientAccountPicker.classList.add("d-none");
+            clientAccountPicker.dispatchEvent(new CustomEvent("account-picker:reset"));
+        }
+
+        toggleAll(personFields, true);
+
         userSubmit.disabled = true;
         userModalTitle.textContent = "Add New User";
         userSubmitLabel.textContent = "Create Account";
@@ -1390,7 +1419,7 @@ document.addEventListener("DOMContentLoaded", function () {
         accountHistory.classList.remove("d-none");
 
         userModalTitle.textContent = account.is_client
-            ? "Edit Registered User Account"
+            ? "Edit Client Account"
             : "Edit Employee Account";
         userSubmitLabel.textContent = "Save Changes";
 
@@ -1513,18 +1542,26 @@ document.addEventListener("DOMContentLoaded", function () {
 
         const payload = new FormData();
 
-        payload.set("contact_number", userForm.querySelector('[name="contact_number"]').value);
         payload.set("birthdate", userForm.querySelector('[name="birthdate"]').value);
-        payload.set("first_name", userForm.querySelector('[name="first_name"]').value);
-        payload.set("middle_name", userForm.querySelector('[name="middle_name"]').value);
-        payload.set("last_name", userForm.querySelector('[name="last_name"]').value);
+
+        if (creatingClientAccount()) {
+            if (!clientAccountId || !clientAccountId.value) {
+                setBusy(userSubmit, userSpinner, false);
+                setAlert(userFormError, "Pick a client.");
+
+                return;
+            }
+
+            payload.set("client_id", clientAccountId.value);
+        } else {
+            payload.set("contact_number", userForm.querySelector('[name="contact_number"]').value);
+            payload.set("first_name", userForm.querySelector('[name="first_name"]').value);
+            payload.set("middle_name", userForm.querySelector('[name="middle_name"]').value);
+            payload.set("last_name", userForm.querySelector('[name="last_name"]').value);
+        }
 
         if (accountType === "client") {
-
-            // An existing client's email address is fixed.
-            if (!editing) {
-                payload.set("email", emailInput.value);
-            }
+            // A client account's email is the client record's, and fixed.
         } else {
             payload.set("email", emailInput.value);
 
@@ -1712,7 +1749,7 @@ document.addEventListener("DOMContentLoaded", function () {
     });
 
     // ---------------------------------------------------------------
-    // A Registered User's projects
+    // A client account's projects
     //
     // The reverse of the assignment edited on a project's own page: the same
     // link read from the account's end. Read-only, so there is no table

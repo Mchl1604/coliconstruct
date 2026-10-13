@@ -55,21 +55,22 @@ class ImportTechnicianTeamTest extends TestCase
         array $technicians = [],
         string $status = 'ongoing'
     ): Project {
-        $project = Project::create([
-            'name' => $name,
-            'reference_no' => 'PRJ-'.strtoupper(substr(md5($name.microtime()), 0, 8)),
-            'status' => $status,
-            'address' => 'Address',
-            'description' => 'Description',
-        ]);
-
-        $project->clients()->create([
+        $client = $this->fixtureClient([
             'client_type' => 'Commercial',
             'firstname' => 'Client',
             'fullname' => 'Client Of '.$name,
             'company_name' => $name.' Holdings',
             'email_address' => 'client'.uniqid().'@example.test',
             'contact_number' => '09171234567',
+        ]);
+
+        $project = Project::create([
+            'client_id' => $client->client_id,
+            'name' => $name,
+            'reference_no' => 'PRJ-'.strtoupper(substr(md5($name.microtime()), 0, 8)),
+            'status' => $status,
+            'address' => 'Address',
+            'description' => 'Description',
         ]);
 
         foreach ($technicians as $technician) {

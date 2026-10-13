@@ -1,7 +1,7 @@
 {{-- One row of a lead's report log, rendered by
      TechnicianPortalController::reportsTable() for serverTable.js. --}}
 @php
-    $reportClient = $report->project?->clients->first();
+    $reportClient = $report->project?->client;
 @endphp
 
 <tr data-report-date="{{ $report->report_date?->toDateString() }}"

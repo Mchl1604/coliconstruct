@@ -256,6 +256,20 @@
     color: #ffffff;
 }
 
+/* An existing client's type is theirs, shown but not changeable here. */
+.client-type-option.is-locked {
+    cursor: not-allowed;
+}
+
+.client-type-option.is-locked:not(.is-selected) {
+    opacity: .55;
+}
+
+/* The read-only details of an existing client. */
+[data-wizard-step="1"] .form-control[readonly] {
+    background-color: #f1f5f9;
+}
+
 /* A project type is nothing but its name, so the tile is the name: no
    icon slot standing empty beside it, and the whole plate lights up
    when it is picked. The tick only appears once the box is checked -

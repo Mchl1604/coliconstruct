@@ -2,10 +2,11 @@
 
 namespace Tests\Feature;
 
+use App\Models\Client;
 use App\Models\Document;
 use App\Models\Project;
+use App\Models\ProjectCompletionPhoto;
 use App\Models\User;
-use App\Support\UploadStore;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
@@ -37,6 +38,7 @@ class MigrateLegacyUploadsTest extends TestCase
     private function project(): Project
     {
         return Project::create([
+            'client_id' => Client::factory()->create()->client_id,
             'name' => 'Legacy Project',
             'reference_no' => 'REF-LEGACY',
             'status' => 'ongoing',
@@ -126,7 +128,7 @@ class MigrateLegacyUploadsTest extends TestCase
         $project = $this->project();
         file_put_contents($this->legacyPublicFile('completion/site.jpg'), 'the site');
 
-        $photo = \App\Models\ProjectCompletionPhoto::create([
+        $photo = ProjectCompletionPhoto::create([
             'project_id' => $project->project_id,
             'photo_path' => 'uploads/completion/site.jpg',
             'uploaded_at' => now(),

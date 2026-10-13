@@ -4,7 +4,6 @@ namespace Tests\Feature;
 
 use App\Http\Controllers\Auth\AuthController;
 use App\Models\ActivityLog;
-use App\Models\Client;
 use App\Models\Inquiry;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
@@ -699,23 +698,23 @@ Payable within :days days to :company. Write to :contact.';
      */
     private function awaitingProject(string $reference, int $daysAgo): Project
     {
-        $project = Project::create([
-            'name' => 'Settings Project '.$reference,
-            'reference_no' => 'REF-'.$reference,
-            'status' => 'ongoing',
-            'address' => 'Address',
-            'description' => 'Description',
-            'quotation' => 1000,
-        ]);
-
-        Client::create([
-            'project_id' => $project->project_id,
+        $client = $this->fixtureClient([
             'client_type' => 'Residential',
             'firstname' => 'Owner',
             'surname' => 'Person',
             'fullname' => 'Owner Person',
             'email_address' => 'owner.'.mb_strtolower($reference).'@example.test',
             'contact_number' => '09123456789',
+        ]);
+
+        $project = Project::create([
+            'client_id' => $client->client_id,
+            'name' => 'Settings Project '.$reference,
+            'reference_no' => 'REF-'.$reference,
+            'status' => 'ongoing',
+            'address' => 'Address',
+            'description' => 'Description',
+            'quotation' => 1000,
         ]);
 
         Task::create([

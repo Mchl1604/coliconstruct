@@ -72,6 +72,7 @@ class OverdueProjectTest extends TestCase
         bool $archived = false
     ): Project {
         $project = Project::create([
+            'client_id' => Client::factory()->create()->client_id,
             'name' => $name,
             'reference_no' => 'REF-'.strtoupper(substr(md5($name.microtime()), 0, 8)),
             'status' => $status,
@@ -87,8 +88,7 @@ class OverdueProjectTest extends TestCase
         ]);
 
         // The projects and details pages both read the client record.
-        Client::create([
-            'project_id' => $project->project_id,
+        tap($project->client)->update([
             'client_type' => 'Residential',
             'firstname' => 'Client',
             'surname' => 'For '.$project->project_id,

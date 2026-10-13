@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Client;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
 use App\Models\Schedule;
@@ -54,6 +55,7 @@ class ProjectTeamScheduleLinkTest extends TestCase
     private function createProject(string $status = 'ongoing'): Project
     {
         return Project::create([
+            'client_id' => Client::factory()->create()->client_id,
             'name' => 'Project '.uniqid(),
             'reference_no' => 'PRJ-'.strtoupper(substr(md5(uniqid()), 0, 8)),
             'status' => $status,

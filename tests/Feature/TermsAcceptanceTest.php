@@ -3,7 +3,6 @@
 namespace Tests\Feature;
 
 use App\Models\ActivityLog;
-use App\Models\Client;
 use App\Models\Project;
 use App\Models\SystemContent;
 use App\Models\User;
@@ -90,17 +89,7 @@ class TermsAcceptanceTest extends TestCase
      */
     private function projectFor(User $client): Project
     {
-        $project = Project::create([
-            'name' => 'Aircon Retrofit',
-            'reference_no' => 'REF-TERMS-'.$client->id,
-            'status' => 'ongoing',
-            'address' => '1 Test Street',
-            'description' => 'Description',
-            'quotation' => 100000,
-        ]);
-
-        Client::create([
-            'project_id' => $project->project_id,
+        $clientRecord = $this->fixtureClient([
             'user_id' => $client->id,
             'client_type' => 'Residential',
             'firstname' => $client->first_name,
@@ -108,6 +97,16 @@ class TermsAcceptanceTest extends TestCase
             'fullname' => $client->fullName(),
             'email_address' => $client->email,
             'contact_number' => '09171234567',
+        ]);
+
+        $project = Project::create([
+            'client_id' => $clientRecord->client_id,
+            'name' => 'Aircon Retrofit',
+            'reference_no' => 'REF-TERMS-'.$client->id,
+            'status' => 'ongoing',
+            'address' => '1 Test Street',
+            'description' => 'Description',
+            'quotation' => 100000,
         ]);
 
         return $project;

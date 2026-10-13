@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Client;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
 use App\Models\Schedule;
@@ -45,6 +46,7 @@ class TaskStatusConsistencyTest extends TestCase
         $this->actingAsSuperAdmin();
 
         $this->project = Project::create([
+            'client_id' => Client::factory()->create()->client_id,
             'name' => 'Status Consistency',
             'reference_no' => 'REF-STATUS',
             'status' => 'ongoing',

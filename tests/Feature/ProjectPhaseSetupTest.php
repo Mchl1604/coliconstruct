@@ -71,6 +71,7 @@ class ProjectPhaseSetupTest extends TestCase
         // Deliberately NOT given phases: this whole file is about the project
         // that has just been created and has none.
         $this->project = Project::create([
+            'client_id' => Client::factory()->create()->client_id,
             'name' => 'Aircon Retrofit',
             'reference_no' => 'REF-PHASE-1',
             'status' => 'ongoing',
@@ -156,6 +157,7 @@ class ProjectPhaseSetupTest extends TestCase
     public function test_a_lead_cannot_set_up_phases_for_a_project_they_are_not_on(): void
     {
         $other = Project::create([
+            'client_id' => Client::factory()->create()->client_id,
             'name' => 'Somebody Else',
             'reference_no' => 'REF-PHASE-2',
             'status' => 'ongoing',
@@ -325,7 +327,7 @@ class ProjectPhaseSetupTest extends TestCase
             // The record in the first half, how far it has got in the second.
             ->assertSeeInOrder([
                 'id="project-information"',
-                'Linked account:',
+                'data-project-client-name',
                 'Assigned Team',
                 'id="project-progress"',
                 'Project Phases',
@@ -571,6 +573,7 @@ class ProjectPhaseSetupTest extends TestCase
         $this->finalize();
 
         $other = Project::create([
+            'client_id' => Client::factory()->create()->client_id,
             'name' => 'Somebody Else',
             'reference_no' => 'REF-PHASE-3',
             'status' => 'ongoing',
@@ -1470,8 +1473,7 @@ class ProjectPhaseSetupTest extends TestCase
         $account = $this->account('client', 'owner.of.'.$project->project_id.'@example.test');
         $account->forceFill($this->acceptedTerms())->save();
 
-        Client::create([
-            'project_id' => $project->project_id,
+        tap($project->client)->update([
             'client_type' => 'Commercial',
             'company_name' => 'Harbour Holdings',
             'firstname' => 'Client',

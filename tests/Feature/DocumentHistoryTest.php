@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Models\Client;
 use App\Models\Document;
 use App\Models\DocumentHistory;
 use App\Models\Project;
@@ -46,17 +45,7 @@ class DocumentHistoryTest extends TestCase
 
     private function project(string $clientType = 'Commercial', string $status = 'ongoing'): Project
     {
-        $project = Project::create([
-            'name' => 'History Project',
-            'reference_no' => 'REF-HISTORY',
-            'status' => $status,
-            'address' => '123 Sample Street',
-            'description' => 'Description',
-            'quotation' => 1000,
-        ]);
-
-        Client::create([
-            'project_id' => $project->project_id,
+        $client = $this->fixtureClient([
             'client_type' => $clientType,
             'company_name' => $clientType === 'Commercial' ? 'Acme Corp' : null,
             'firstname' => 'Juan',
@@ -64,6 +53,16 @@ class DocumentHistoryTest extends TestCase
             'fullname' => 'Juan Dela Cruz',
             'email_address' => 'juan@example.test',
             'contact_number' => '09123456789',
+        ]);
+
+        $project = Project::create([
+            'client_id' => $client->client_id,
+            'name' => 'History Project',
+            'reference_no' => 'REF-HISTORY',
+            'status' => $status,
+            'address' => '123 Sample Street',
+            'description' => 'Description',
+            'quotation' => 1000,
         ]);
 
         $project->projectTypes()->attach(

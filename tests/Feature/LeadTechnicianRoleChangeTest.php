@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Client;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
 use App\Models\Schedule;
@@ -478,6 +479,7 @@ class LeadTechnicianRoleChangeTest extends TestCase
     private function project(string $reference, string $status): Project
     {
         return Project::create([
+            'client_id' => Client::factory()->create()->client_id,
             'name' => 'Project '.$reference,
             'reference_no' => $reference,
             'status' => $status,

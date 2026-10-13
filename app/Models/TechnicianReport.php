@@ -104,7 +104,7 @@ class TechnicianReport extends Model
             ->orWhereHas('project', fn (Builder $projects) => $projects
                 ->where('reference_no', 'like', $like)
                 ->orWhere('name', 'like', $like)
-                ->orWhereHas('clients', fn (Builder $clients) => $clients
+                ->orWhereHas('client', fn (Builder $clients) => $clients
                     ->where('fullname', 'like', $like)
                     ->orWhere('company_name', 'like', $like)))
             ->orWhereHas('submitter', $named)
@@ -141,9 +141,9 @@ class TechnicianReport extends Model
     {
         return $query->orderBy(
             Client::query()
-                ->selectRaw("case when company_name is not null and company_name <> '' then company_name else fullname end")
-                ->whereColumn('tbl_clients.project_id', 'tbl_technician_reports.project_id')
-                ->orderBy('client_id')
+                ->selectRaw("case when tbl_clients.company_name is not null and tbl_clients.company_name <> '' then tbl_clients.company_name else tbl_clients.fullname end")
+                ->join('tbl_projects', 'tbl_projects.client_id', '=', 'tbl_clients.client_id')
+                ->whereColumn('tbl_projects.project_id', 'tbl_technician_reports.project_id')
                 ->limit(1),
             $direction
         );

@@ -21,11 +21,25 @@
  * `[data-picker-submit]`, where a container has one, is disabled while nothing
  * is chosen. That is for the dialogs where a choice is the whole point; a
  * filter that means "everybody" when empty simply leaves it out.
+ *
+ * A container with `data-picker-url` searches on the server instead of a
+ * global array: each search asks that URL for `?q=<term>` and shows the
+ * `results` it returns, so a list too long to put in the page never is. An
+ * entry's `meta` line, when it has one, is shown as given. The New Project
+ * wizard's Existing client picker works this way.
+ *
+ * The container hears about choices so the page around it can react:
+ * `account-picker:chosen` (detail.account) when somebody is picked and
+ * `account-picker:cleared` when the choice is dropped. Dispatching
+ * `account-picker:choose` (detail.account) on it picks somebody from code, and
+ * `account-picker:reset` empties it.
  */
 (function () {
     "use strict";
 
     var RESULT_LIMIT = 8;
+    // How long typing must pause before a server search is sent.
+    var REMOTE_DELAY_MS = 200;
 
     function escapeHtml(value) {
         return String(value === null || value === undefined ? "" : value).replace(
@@ -68,8 +82,20 @@
         var form = container.closest("form");
         var submit = form ? form.querySelector("[data-picker-submit]") : null;
 
+        var remoteUrl = container.dataset.pickerUrl || "";
+        var emptyText = container.dataset.pickerEmpty || "No matching account.";
         var source = window[container.dataset.accountPicker];
+        // For a server-searched picker this holds whatever the last search
+        // returned, which is what a click is looked up in.
         var accounts = Array.isArray(source) ? source : [];
+        var remoteTimer = null;
+        var remoteRequest = null;
+
+        function announce(name, account) {
+            container.dispatchEvent(
+                new CustomEvent(name, { bubbles: true, detail: { account: account || null } }),
+            );
+        }
 
         function close() {
             results.classList.add("d-none");
@@ -93,9 +119,12 @@
 
             close();
             syncSubmit();
+            announce("account-picker:chosen", account);
         }
 
         function reset(refocus) {
+            var hadChoice = Boolean(hidden.value);
+
             hidden.value = "";
             search.value = "";
 
@@ -106,37 +135,19 @@
             close();
             syncSubmit();
 
+            if (hadChoice) {
+                announce("account-picker:cleared");
+            }
+
             if (refocus) {
                 search.focus();
             }
         }
 
-        function render(term) {
-            var needle = term.trim().toLowerCase();
-
-            if (!needle) {
-                close();
-
-                return;
-            }
-
-            // Name, address and account code all match, because all three are
-            // things somebody knows an account by.
-            var matches = accounts
-                .filter(function (account) {
-                    return [account.name, account.email, account.code].some(function (
-                        field,
-                    ) {
-                        return (
-                            field && String(field).toLowerCase().indexOf(needle) !== -1
-                        );
-                    });
-                })
-                .slice(0, RESULT_LIMIT);
-
+        function showMatches(matches) {
             if (!matches.length) {
                 results.innerHTML =
-                    '<li class="config-actor-empty">No matching account.</li>';
+                    '<li class="config-actor-empty">' + escapeHtml(emptyText) + "</li>";
                 results.classList.remove("d-none");
                 search.setAttribute("aria-expanded", "true");
 
@@ -159,6 +170,10 @@
                         meta += (meta ? " · " : "") + escapeHtml(account.status);
                     }
 
+                    if (account.meta) {
+                        meta = escapeHtml(account.meta);
+                    }
+
                     return (
                         '<li><button type="button" class="config-actor-option" data-account-id="' +
                         escapeHtml(String(account.id)) +
@@ -178,6 +193,83 @@
             search.setAttribute("aria-expanded", "true");
         }
 
+        /**
+         * Ask the server for one page of matches. Only the newest search is
+         * shown: an earlier one still in flight is abandoned, so a slow
+         * answer to "ju" cannot land on top of the answer to "juan".
+         */
+        function searchRemote(term) {
+            window.clearTimeout(remoteTimer);
+
+            remoteTimer = window.setTimeout(function () {
+                if (remoteRequest) {
+                    remoteRequest.abort();
+                }
+
+                remoteRequest = new AbortController();
+
+                var url = new URL(remoteUrl, window.location.origin);
+                url.searchParams.set("q", term.trim());
+
+                fetch(url.toString(), {
+                    headers: {
+                        Accept: "application/json",
+                        "X-Requested-With": "XMLHttpRequest",
+                    },
+                    credentials: "same-origin",
+                    signal: remoteRequest.signal,
+                })
+                    .then(function (response) {
+                        return response.ok ? response.json() : { results: [] };
+                    })
+                    .then(function (payload) {
+                        accounts = Array.isArray(payload.results) ? payload.results : [];
+
+                        // The box may have been picked from or left since.
+                        if (document.activeElement === search && !hidden.value) {
+                            showMatches(accounts.slice(0, RESULT_LIMIT));
+                        }
+                    })
+                    .catch(function () {
+                        // Aborted for a newer search, or the network is down;
+                        // either way the list stays as it was.
+                    });
+            }, REMOTE_DELAY_MS);
+        }
+
+        function render(term) {
+            if (remoteUrl) {
+                searchRemote(term);
+
+                return;
+            }
+
+            var needle = term.trim().toLowerCase();
+
+            if (!needle) {
+                close();
+
+                return;
+            }
+
+            // Name, address and account code all match, because all three are
+            // things somebody knows an account by.
+            showMatches(
+                accounts
+                    .filter(function (account) {
+                        return [account.name, account.email, account.code].some(
+                            function (field) {
+                                return (
+                                    field &&
+                                    String(field).toLowerCase().indexOf(needle) !== -1
+                                );
+                            },
+                        );
+                    })
+                    .slice(0, RESULT_LIMIT),
+            );
+        }
+
         search.addEventListener("input", function () {
             // Editing after picking somebody drops the pick: the box must
             // never show one name and submit another.
@@ -189,17 +281,35 @@
                 }
 
                 syncSubmit();
+                announce("account-picker:cleared");
             }
 
             render(search.value);
         });
 
         // Typing nothing and focusing an empty box should still show that
-        // there is something to search, so the first few are offered.
+        // there is something to search, so the first few are offered - for a
+        // server-searched picker, whatever the server offers for no term.
         search.addEventListener("focus", function () {
-            if (!search.value.trim() && accounts.length) {
+            if (search.value.trim() || hidden.value) {
+                return;
+            }
+
+            if (remoteUrl) {
+                render("");
+            } else if (accounts.length) {
                 render(accounts[0].name.slice(0, 1));
             }
+        });
+
+        container.addEventListener("account-picker:choose", function (event) {
+            if (event.detail && event.detail.account) {
+                choose(event.detail.account);
+            }
+        });
+
+        container.addEventListener("account-picker:reset", function () {
+            reset(false);
         });
 
         search.addEventListener("keydown", function (event) {

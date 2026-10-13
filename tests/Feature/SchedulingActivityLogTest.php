@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\ActivityLog;
+use App\Models\Client;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
 use App\Models\Schedule;
@@ -46,6 +47,7 @@ class SchedulingActivityLogTest extends TestCase
     private function createProject(string $status = 'ongoing'): Project
     {
         return Project::create([
+            'client_id' => Client::factory()->create()->client_id,
             'name' => 'Project '.uniqid(),
             'reference_no' => 'REF-'.uniqid(),
             'status' => $status,

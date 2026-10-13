@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Client;
 use App\Models\Document;
 use App\Models\DocumentHistory;
 use App\Models\Project;
@@ -410,6 +411,7 @@ class CreateProjectTest extends TestCase
         string $projectStatus = 'ongoing'
     ): void {
         $existingProject = Project::create([
+            'client_id' => Client::factory()->create()->client_id,
             'name' => 'Existing Project',
             'status' => $projectStatus,
             'address' => 'Existing Address',

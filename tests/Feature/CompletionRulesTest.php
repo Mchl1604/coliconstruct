@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Client;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
 use App\Models\Schedule;
@@ -562,6 +563,7 @@ class CompletionRulesTest extends TestCase
     private function newProject(string $reference): Project
     {
         return Project::create([
+            'client_id' => Client::factory()->create()->client_id,
             'name' => 'Aircon Retrofit',
             'reference_no' => $reference,
             'status' => 'ongoing',

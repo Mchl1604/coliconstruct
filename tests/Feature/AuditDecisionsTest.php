@@ -41,17 +41,7 @@ class AuditDecisionsTest extends TestCase
 
     private function project(array $technicians = [], string $status = 'ongoing', string $email = 'owner@example.test'): Project
     {
-        $project = Project::create([
-            'name' => 'Decision Project '.uniqid(),
-            'reference_no' => 'REF-'.strtoupper(uniqid()),
-            'status' => $status,
-            'address' => 'Address',
-            'description' => 'Description',
-            'quotation' => 1000,
-        ]);
-
-        Client::create([
-            'project_id' => $project->project_id,
+        $client = $this->fixtureClient([
             'client_type' => 'Commercial',
             'company_name' => 'Decision Holdings',
             'firstname' => 'Owner',
@@ -59,6 +49,16 @@ class AuditDecisionsTest extends TestCase
             'fullname' => 'Owner Person',
             'email_address' => $email,
             'contact_number' => '09123456789',
+        ]);
+
+        $project = Project::create([
+            'client_id' => $client->client_id,
+            'name' => 'Decision Project '.uniqid(),
+            'reference_no' => 'REF-'.strtoupper(uniqid()),
+            'status' => $status,
+            'address' => 'Address',
+            'description' => 'Description',
+            'quotation' => 1000,
         ]);
 
         foreach ($technicians as $technician) {
@@ -256,7 +256,7 @@ class AuditDecisionsTest extends TestCase
         $client->forceFill(['role' => User::ROLE_CLIENT, 'status' => User::STATUS_ACTIVE] + $this->acceptedTerms())->save();
 
         $project = $this->project([], 'ongoing', 'before@example.test');
-        Client::where('project_id', $project->project_id)->update(['user_id' => $client->id]);
+        Client::whereKey($project->client_id)->update(['user_id' => $client->id]);
 
         $projects = app(ClientProjects::class);
         $this->assertCount(1, $projects->forUser($client->fresh()));
@@ -269,7 +269,7 @@ class AuditDecisionsTest extends TestCase
         $this->assertCount(1, $projects->forUser($client->fresh()));
         $this->assertSame(
             'after@example.test',
-            Client::where('project_id', $project->project_id)->value('email_address'),
+            Client::whereKey($project->client_id)->value('email_address'),
             'The project contact moved with them.'
         );
     }
@@ -284,7 +284,7 @@ class AuditDecisionsTest extends TestCase
         $client->forceFill(['role' => User::ROLE_CLIENT, 'status' => User::STATUS_ACTIVE] + $this->acceptedTerms())->save();
 
         $project = $this->project([], 'ongoing', 'stale@example.test');
-        Client::where('project_id', $project->project_id)->update(['user_id' => $client->id]);
+        Client::whereKey($project->client_id)->update(['user_id' => $client->id]);
 
         $this->assertCount(1, app(ClientProjects::class)->forUser($client->fresh()));
     }
@@ -297,13 +297,13 @@ class AuditDecisionsTest extends TestCase
     {
         $project = $this->project([], 'ongoing', 'newcomer@example.test');
 
-        $this->assertNull(Client::where('project_id', $project->project_id)->value('user_id'));
+        $this->assertNull(Client::whereKey($project->client_id)->value('user_id'));
 
         Mail::fake();
 
+        $this->bookedClient('newcomer@example.test');
+
         $this->post(route('auth.register.store'), [
-            'first_name' => 'New', 'last_name' => 'Comer',
-            'contact_number' => '09123456789',
             'birthdate' => '1990-01-01',
             'email' => 'newcomer@example.test',
             'password' => 'A-good-password1',
@@ -326,7 +326,7 @@ class AuditDecisionsTest extends TestCase
         $this->assertNotNull($client);
         $this->assertSame(
             $client->id,
-            (int) Client::where('project_id', $project->project_id)->value('user_id'),
+            (int) Client::whereKey($project->client_id)->value('user_id'),
             'Registering claimed the project booked under their address.'
         );
     }
@@ -340,7 +340,7 @@ class AuditDecisionsTest extends TestCase
         $theirs->forceFill(['role' => User::ROLE_CLIENT, 'status' => User::STATUS_ACTIVE] + $this->acceptedTerms())->save();
 
         $project = $this->project([], 'ongoing', 'theirs@example.test');
-        Client::where('project_id', $project->project_id)->update(['user_id' => $theirs->id]);
+        Client::whereKey($project->client_id)->update(['user_id' => $theirs->id]);
 
         $this->assertCount(0, app(ClientProjects::class)->forUser($mine));
         $this->assertNull(app(ClientProjects::class)->findForUser($mine, $project->project_id));

@@ -77,6 +77,31 @@ document.addEventListener('DOMContentLoaded', function() {
     const contractUploadCard = form.querySelector('[data-contract-upload-card]');
     const contractUploadInput = form.querySelector('[data-contract-upload-input]');
     const companyReviewCard = document.querySelector('[data-company-review-card]');
+    // Existing client or New client - see the Client step in the view.
+    const CLIENT_EXISTING = 'existing';
+    const CLIENT_NEW = 'new';
+    const clientModeRadios = Array.from(form.querySelectorAll('[data-client-mode-radio]'));
+    const clientPicker = form.querySelector('[data-client-picker]');
+    const clientPickerSearch = clientPicker ? clientPicker.querySelector('[data-picker-search]') : null;
+    const clientIdInput = clientPicker ? clientPicker.querySelector('[data-picker-id]') : null;
+    const clientPickerError = form.querySelector('[data-client-picker-error]');
+    const clientEmailInput = form.querySelector('[data-summary-input="client_email"]');
+    const useExistingClientButton = form.querySelector('[data-use-existing-client]');
+    // The typed client fields, keyed by the field of the picker's client
+    // entry (Client::toPickerArray()) each one shows. An existing client
+    // fills these in and locks them.
+    const clientTextFields = {
+        company_name: companyInput,
+        surname: form.querySelector('[data-summary-input="surname"]'),
+        firstname: form.querySelector('[data-summary-input="firstname"]'),
+        middlename: form.querySelector('[data-summary-input="middle_name"]'),
+        email: clientEmailInput,
+        contact_number: form.querySelector('[data-summary-input="client_phone"]'),
+    };
+    // The client picked in Existing mode, and the one the last address
+    // lookup found already on record.
+    let pickedClient = null;
+    let duplicateClient = null;
     let startPicker = null;
     let endPicker = null;
     let projectDatePicker = null;
@@ -1608,6 +1633,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
 
         const summaryMap = {
+            client_mode: usesExistingClient() ? 'Existing client' : 'New client',
             client_type: formatFieldValue(form.querySelector('[data-client-type-radio]:checked')),
             company_name: formatFieldValue(form.querySelector('[data-summary-input="company_name"]')),
             client_name: [clientFirstName, clientMiddleName, clientSurname]
@@ -1688,6 +1714,11 @@ document.addEventListener('DOMContentLoaded', function() {
             return !field.checkValidity();
         });
 
+        if (currentStep.value === 1 && usesExistingClient() && !(clientIdInput && clientIdInput.value)) {
+            showClientPickerError();
+            return false;
+        }
+
         if (invalidField) {
             invalidField.reportValidity();
             return false;
@@ -1754,10 +1785,258 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
+        // A new client's address is checked against the clients on record
+        // before the person moves on - one address is one client.
+        if (currentStep.value === 1 && !usesExistingClient()) {
+            nextButton.disabled = true;
+
+            lookupClientByEmail(clientEmailInput ? clientEmailInput.value : '')
+                .then(function(payload) {
+                    if (payload && payload.exists && payload.client) {
+                        showDuplicateEmail(payload.client);
+
+                        return;
+                    }
+
+                    hideDuplicateEmail();
+                    setStep(2);
+                })
+                .finally(function() {
+                    nextButton.disabled = false;
+                });
+
+            return;
+        }
+
         if (currentStep.value < steps.length) {
             setStep(currentStep.value + 1);
         }
     });
+
+    // ---------------------------------------------------------------
+    // Client step: Existing client or New client
+    // ---------------------------------------------------------------
+
+    function usesExistingClient() {
+        const checked = clientModeRadios.find(function(radio) {
+            return radio.checked;
+        });
+
+        return (checked ? checked.value : CLIENT_NEW) === CLIENT_EXISTING;
+    }
+
+    function showClientPickerError() {
+        if (clientPickerError) {
+            clientPickerError.textContent = 'Pick a client.';
+            clientPickerError.classList.remove('d-none');
+        }
+
+        if (clientPickerSearch) {
+            clientPickerSearch.focus();
+        }
+    }
+
+    function hideClientPickerError() {
+        if (clientPickerError) {
+            clientPickerError.classList.add('d-none');
+        }
+    }
+
+    function showDuplicateEmail(client) {
+        duplicateClient = client;
+
+        if (clientEmailInput) {
+            clientEmailInput.classList.add('is-invalid');
+            clientEmailInput.focus();
+        }
+    }
+
+    function hideDuplicateEmail() {
+        duplicateClient = null;
+
+        if (clientEmailInput) {
+            clientEmailInput.classList.remove('is-invalid');
+        }
+    }
+
+    /**
+     * Ask whether a client is already on record under this address. A lookup
+     * that cannot be made answers "no": the server refuses a duplicate on
+     * save as well, so the person is not held on this step by a network
+     * fault.
+     */
+    function lookupClientByEmail(email) {
+        const lookupUrl = clientPicker ? clientPicker.dataset.lookupUrl : '';
+        const address = String(email || '').trim();
+
+        if (!lookupUrl || !address) {
+            return Promise.resolve({ exists: false });
+        }
+
+        const url = new URL(lookupUrl, window.location.origin);
+        url.searchParams.set('email', address);
+
+        return fetch(url.toString(), {
+            headers: {
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            credentials: 'same-origin',
+        })
+            .then(function(response) {
+                return response.ok ? response.json() : { exists: false };
+            })
+            .catch(function() {
+                return { exists: false };
+            });
+    }
+
+    /**
+     * Copy a client's stored details into the step, or empty it for none.
+     * The client type goes first, because choosing it is what shows or
+     * clears the company field.
+     */
+    function fillClientFields(client) {
+        const type = client && client.client_type === 'Commercial' ? 'Commercial' : 'Residential';
+
+        clientTypeRadios.forEach(function(radio) {
+            radio.checked = radio.value === type;
+        });
+
+        syncSelectableCards();
+        updateClientType();
+        updateScheduleFieldState();
+
+        Object.keys(clientTextFields).forEach(function(key) {
+            const field = clientTextFields[key];
+
+            if (field) {
+                field.value = client && client[key] ? String(client[key]) : '';
+            }
+        });
+
+        updateSummary();
+    }
+
+    /**
+     * An existing client's details are theirs, not this project's, so they
+     * are shown read-only and the server ignores whatever is posted for them.
+     */
+    function lockClientFields(locked) {
+        Object.keys(clientTextFields).forEach(function(key) {
+            const field = clientTextFields[key];
+
+            if (field) {
+                field.readOnly = locked;
+            }
+        });
+
+        clientTypeRadios.forEach(function(radio) {
+            radio.disabled = locked;
+        });
+
+        clientTypeOptions.forEach(function(option) {
+            option.classList.toggle('is-locked', locked);
+        });
+    }
+
+    function applyClientMode() {
+        const existing = usesExistingClient();
+
+        if (clientPicker) {
+            clientPicker.hidden = !existing;
+        }
+
+        hideClientPickerError();
+        hideDuplicateEmail();
+
+        if (!existing && clientPicker) {
+            // Back to typing a client in: the pick goes with the mode.
+            clientPicker.dispatchEvent(new CustomEvent('account-picker:reset'));
+        }
+
+        pickedClient = null;
+        lockClientFields(existing);
+        fillClientFields(null);
+    }
+
+    clientModeRadios.forEach(function(radio) {
+        radio.addEventListener('change', applyClientMode);
+    });
+
+    if (clientPicker) {
+        clientPicker.addEventListener('account-picker:chosen', function(event) {
+            pickedClient = event.detail ? event.detail.account : null;
+            hideClientPickerError();
+            fillClientFields(pickedClient);
+        });
+
+        clientPicker.addEventListener('account-picker:cleared', function() {
+            pickedClient = null;
+            fillClientFields(null);
+        });
+    }
+
+    if (clientEmailInput) {
+        clientEmailInput.addEventListener('input', hideDuplicateEmail);
+    }
+
+    if (useExistingClientButton) {
+        useExistingClientButton.addEventListener('click', function() {
+            const switchTo = function(client) {
+                clientModeRadios.forEach(function(radio) {
+                    radio.checked = radio.value === CLIENT_EXISTING;
+                });
+
+                applyClientMode();
+                clientPicker.dispatchEvent(new CustomEvent('account-picker:choose', {
+                    detail: { account: client },
+                }));
+            };
+
+            if (duplicateClient) {
+                switchTo(duplicateClient);
+
+                return;
+            }
+
+            // After a refused save the page carries the message but not the
+            // client, so it is looked up once more.
+            lookupClientByEmail(clientEmailInput ? clientEmailInput.value : '').then(function(payload) {
+                if (payload && payload.exists && payload.client) {
+                    switchTo(payload.client);
+                }
+            });
+        });
+    }
+
+    /**
+     * How the step opens: New client and editable, or - after a refused save
+     * in Existing mode - with the same client picked and their details shown.
+     */
+    function initClientStep() {
+        const existing = usesExistingClient();
+
+        if (clientPicker) {
+            clientPicker.hidden = !existing;
+        }
+
+        lockClientFields(existing);
+
+        if (!existing) {
+            return;
+        }
+
+        try {
+            pickedClient = clientPicker && clientPicker.dataset.pickerInitial && clientIdInput && clientIdInput.value
+                ? JSON.parse(clientPicker.dataset.pickerInitial)
+                : null;
+        } catch (error) {
+            pickedClient = null;
+        }
+
+        fillClientFields(pickedClient);
+    }
 
     clientTypeRadios.forEach(function(radio) {
         radio.addEventListener('change', function() {
@@ -1813,6 +2092,14 @@ document.addEventListener('DOMContentLoaded', function() {
     // change invalidates the chosen schedule, so re-check on submit too. The
     // server enforces the same rules regardless.
     form.addEventListener('submit', function(event) {
+        if (usesExistingClient() && !(clientIdInput && clientIdInput.value)) {
+            event.preventDefault();
+            setStep(1);
+            showClientPickerError();
+
+            return;
+        }
+
         if (!validateScheduleInputs()) {
             event.preventDefault();
             setStep(3);
@@ -1937,6 +2224,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     syncSelectableCards();
     updateClientType();
+    initClientStep();
     renderTechnicianDropdown();
     renderLeadTechnicianDropdown();
     renderTechnicianChips();

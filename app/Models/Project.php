@@ -12,7 +12,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
-use Illuminate\Database\Eloquent\Relations\HasOneThrough;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
@@ -278,6 +277,7 @@ class Project extends Model
     public const PHASE_SETUP_FINALIZED = 'finalized';
 
     protected $fillable = [
+        'client_id',
         'reference_no',
         'name',
         'status',
@@ -343,9 +343,13 @@ class Project extends Model
         'archived_at' => 'datetime',
     ];
 
-    public function clients(): HasMany
+    /**
+     * Who the work is for. One client may have many projects, so anything
+     * written to this record reaches all of them.
+     */
+    public function client(): BelongsTo
     {
-        return $this->hasMany(Client::class, 'project_id', 'project_id');
+        return $this->belongsTo(Client::class, 'client_id', 'client_id');
     }
 
     /**
@@ -679,45 +683,17 @@ class Project extends Model
     }
 
     /**
-     * The project's contact row - its client details.
+     * The client account this project is connected to, if any.
      *
-     * A project is created with exactly one, so first() is the whole of it.
-     * Kept in one place because half a dozen callers reach for it and the
-     * relation has to be loaded for any of them to be cheap.
-     */
-    public function primaryContact(): ?Client
-    {
-        return $this->clients->first();
-    }
-
-    /**
-     * The Registered User account this project is connected to, if any.
-     *
-     * Distinct from the project's client, which is contact information written
-     * on the project itself and belongs to nobody. This is the account on the
-     * public website that follows this work - the link that puts the project on
-     * their My Projects page. It is held on the contact row, which is where it
-     * has always been; see the link migration on tbl_clients.
-     */
-    public function registeredUser(): HasOneThrough
-    {
-        return $this->hasOneThrough(
-            User::class,
-            Client::class,
-            'project_id',
-            'id',
-            'project_id',
-            'user_id'
-        );
-    }
-
-    /**
-     * The same account, read off the already-loaded contact row rather than
-     * queried again. Callers should eager load `clients.account`.
+     * Distinct from the project's client, which is contact information and
+     * belongs to nobody. This is the account on the public website that
+     * follows the work - the link that puts the project on their My Projects
+     * page. It is held on the client record, so it covers every project that
+     * client has. Callers should eager load `client.account`.
      */
     public function registeredUserAccount(): ?User
     {
-        return $this->primaryContact()?->account;
+        return $this->client?->account;
     }
 
     public function hasRegisteredUser(): bool
@@ -730,12 +706,12 @@ class Project extends Model
      *
      * There is no type column on the project itself: the distinction is set
      * once when the wizard writes the client row and is never editable
-     * afterwards. Callers that ask this in a loop should eager load `clients`,
+     * afterwards. Callers that ask this in a loop should eager load `client`,
      * as the projects and schedules listings already do.
      */
     public function clientType(): ?string
     {
-        return $this->clients->first()?->client_type;
+        return $this->client?->client_type;
     }
 
     /**
@@ -2356,7 +2332,7 @@ class Project extends Model
         return $query
             ->where('reference_no', 'like', $like)
             ->orWhere('name', 'like', $like)
-            ->orWhereHas('clients', fn (Builder $clients) => $clients
+            ->orWhereHas('client', fn (Builder $clients) => $clients
                 ->where('fullname', 'like', $like)
                 ->orWhere('company_name', 'like', $like)
                 ->orWhere('client_type', 'like', $like))
@@ -2369,8 +2345,7 @@ class Project extends Model
 
     /**
      * Sort by the client a projects table names - the company for a
-     * commercial client, the person otherwise - read from the first client
-     * on the project, as the tables print it.
+     * commercial client, the person otherwise - as the tables print it.
      *
      * @param  Builder<self>  $query
      * @return Builder<self>
@@ -2380,15 +2355,14 @@ class Project extends Model
         return $query->orderBy(
             Client::query()
                 ->selectRaw("case when client_type = 'Commercial' and company_name is not null and company_name <> '' then company_name else fullname end")
-                ->whereColumn('tbl_clients.project_id', $this->getQualifiedKeyName())
-                ->orderBy('client_id')
+                ->whereColumn('tbl_clients.client_id', $this->qualifyColumn('client_id'))
                 ->limit(1),
             $direction
         );
     }
 
     /**
-     * Sort by the first client's type, Commercial or Residential.
+     * Sort by the client's type, Commercial or Residential.
      *
      * @param  Builder<self>  $query
      * @return Builder<self>
@@ -2398,8 +2372,7 @@ class Project extends Model
         return $query->orderBy(
             Client::query()
                 ->select('client_type')
-                ->whereColumn('tbl_clients.project_id', $this->getQualifiedKeyName())
-                ->orderBy('client_id')
+                ->whereColumn('tbl_clients.client_id', $this->qualifyColumn('client_id'))
                 ->limit(1),
             $direction
         );

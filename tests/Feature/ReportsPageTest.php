@@ -67,6 +67,7 @@ class ReportsPageTest extends TestCase
         bool $archived = false
     ): Project {
         $project = Project::create([
+            'client_id' => Client::factory()->create()->client_id,
             'name' => $name,
             'reference_no' => 'REF-'.strtoupper(substr(md5($name.microtime()), 0, 8)),
             'status' => $status,
@@ -81,8 +82,7 @@ class ReportsPageTest extends TestCase
         // at a gate these tests are not asking about.
         $this->finalizePhases($project);
 
-        Client::create([
-            'project_id' => $project->project_id,
+        tap($project->client)->update([
             'client_type' => 'Commercial',
             'company_name' => $name.' Holdings',
             'firstname' => 'Client',
@@ -839,7 +839,7 @@ class ReportsPageTest extends TestCase
     public function test_residential_and_commercial_are_drawn_as_two_series(): void
     {
         $residential = $this->project('House Job', 'ongoing');
-        $residential->clients()->update(['client_type' => 'Residential']);
+        $residential->client()->update(['client_type' => 'Residential']);
 
         $this->project('Office Job', 'ongoing');
         $this->project('Warehouse Job', 'ongoing');
@@ -1111,7 +1111,7 @@ class ReportsPageTest extends TestCase
         foreach ([['Acme Holdings', 300000], ['Acme Holdings', 500000], ['Solo Corp', 600000]] as [$company, $quotation]) {
             $project = $this->project($company.' Job '.$quotation, 'ongoing', [], $quotation);
 
-            $project->clients()->update(['company_name' => $company]);
+            $project->client()->update(['company_name' => $company]);
         }
 
         $response = $this->getJson(route('super-admin.reports.system.chart', [
@@ -1134,16 +1134,16 @@ class ReportsPageTest extends TestCase
     public function test_top_clients_group_by_the_client_details_and_skip_uncommitted_money(): void
     {
         $first = $this->project('First Home', 'ongoing', [], 300000);
-        $first->clients()->update(['client_type' => 'Residential', 'company_name' => 'Ignored Co', 'fullname' => 'Juan Dela Cruz']);
+        $first->client()->update(['client_type' => 'Residential', 'company_name' => 'Ignored Co', 'fullname' => 'Juan Dela Cruz']);
 
         $second = $this->project('Second Home', 'completed', [], 200000);
-        $second->clients()->update(['client_type' => 'Residential', 'company_name' => '', 'fullname' => '  juan  dela cruz ']);
+        $second->client()->update(['client_type' => 'Residential', 'company_name' => '', 'fullname' => '  juan  dela cruz ']);
 
         $office = $this->project('Office Fit-out', 'ongoing', [], 400000);
-        $office->clients()->update(['client_type' => 'Commercial', 'company_name' => 'Acme Holdings']);
+        $office->client()->update(['client_type' => 'Commercial', 'company_name' => 'Acme Holdings']);
 
         $dead = $this->project('Called Off', 'cancelled', [], 9000000);
-        $dead->clients()->update(['client_type' => 'Commercial', 'company_name' => 'Ghost Corp']);
+        $dead->client()->update(['client_type' => 'Commercial', 'company_name' => 'Ghost Corp']);
 
         $data = $this->chartData('topClients');
 
@@ -1166,7 +1166,7 @@ class ReportsPageTest extends TestCase
         $this->schedule($ongoing, $this->day(-1), $this->day(5));
 
         $repeat = $this->project('Repeat Project', 'completed', [], 300000);
-        $repeat->clients()->update(['company_name' => 'Ongoing Project Holdings']);
+        $repeat->client()->update(['company_name' => 'Ongoing Project Holdings']);
 
         $this->project('Dead Project', 'cancelled', [], 1000000);
         $this->project('Filed Project', 'archived', [], 2000000, true);
@@ -1201,7 +1201,7 @@ class ReportsPageTest extends TestCase
         $this->schedule($ongoing, $this->day(-1), $this->day(5));
 
         $repeat = $this->project('Repeat Project', 'completed', [], 300000);
-        $repeat->clients()->update(['company_name' => 'Ongoing Project Holdings']);
+        $repeat->client()->update(['company_name' => 'Ongoing Project Holdings']);
 
         $this->project('Other Project', 'ongoing', [], 100000);
 

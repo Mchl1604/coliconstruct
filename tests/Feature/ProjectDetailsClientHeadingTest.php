@@ -149,7 +149,7 @@ class ProjectDetailsClientHeadingTest extends TestCase
     public function test_the_stored_client_record_is_untouched_by_the_page(): void
     {
         $project = $this->project('Commercial', 'ABC Construction Corporation', 'John Smith');
-        $before = $project->clients->first()->only([
+        $before = $project->client->only([
             'client_type', 'company_name', 'fullname', 'firstname', 'surname',
         ]);
 
@@ -160,7 +160,7 @@ class ProjectDetailsClientHeadingTest extends TestCase
 
         $this->assertSame(
             $before,
-            $project->fresh()->clients->first()->only([
+            $project->fresh()->client->only([
                 'client_type', 'company_name', 'fullname', 'firstname', 'surname',
             ]),
             'This is a display change; the record must be exactly as it was.'
@@ -262,7 +262,7 @@ class ProjectDetailsClientHeadingTest extends TestCase
      */
     private function client(string $type, ?string $company, string $person): Client
     {
-        return $this->project($type, $company, $person)->clients->first();
+        return $this->project($type, $company, $person)->client;
     }
 
     /**
@@ -274,6 +274,7 @@ class ProjectDetailsClientHeadingTest extends TestCase
         static $sequence = 0;
 
         $project = Project::create([
+            'client_id' => Client::factory()->create()->client_id,
             'name' => $person,
             'reference_no' => 'REF-'.(++$sequence).'-'.strtoupper(substr(md5(microtime()), 0, 6)),
             'status' => 'ongoing',
@@ -284,8 +285,7 @@ class ProjectDetailsClientHeadingTest extends TestCase
 
         [$first, $last] = array_pad(explode(' ', $person, 2), 2, '');
 
-        Client::create([
-            'project_id' => $project->project_id,
+        tap($project->client)->update([
             'client_type' => $type,
             'company_name' => $company,
             'firstname' => $first,

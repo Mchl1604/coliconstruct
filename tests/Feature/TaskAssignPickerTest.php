@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Client;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
 use App\Models\Schedule;
@@ -34,6 +35,7 @@ class TaskAssignPickerTest extends TestCase
         $this->actingAsSuperAdmin();
 
         $this->project = Project::create([
+            'client_id' => Client::factory()->create()->client_id,
             'name' => 'Picker Project',
             'reference_no' => 'REF-PICKER',
             'status' => 'ongoing',
@@ -155,6 +157,7 @@ class TaskAssignPickerTest extends TestCase
 
         // A second project, with Zoe on it and a task in her name.
         $other = Project::create([
+            'client_id' => Client::factory()->create()->client_id,
             'name' => 'Other Project',
             'reference_no' => 'REF-OTHER',
             'status' => 'ongoing',
@@ -220,6 +223,7 @@ class TaskAssignPickerTest extends TestCase
         $zoe = Technician::whereHas('account', fn ($query) => $query->where('name', 'Zoe Alvarez'))->first();
 
         $other = Project::create([
+            'client_id' => Client::factory()->create()->client_id,
             'name' => 'Other Project',
             'reference_no' => 'REF-OTHER-2',
             'status' => 'ongoing',

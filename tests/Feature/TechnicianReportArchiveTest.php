@@ -107,6 +107,7 @@ class TechnicianReportArchiveTest extends TestCase
     private function project(string $name, string $status = 'ongoing', bool $archived = false): Project
     {
         $project = Project::create([
+            'client_id' => Client::factory()->create()->client_id,
             'name' => $name,
             'reference_no' => 'REF-'.strtoupper(substr(md5($name.microtime()), 0, 8)),
             'status' => $status,
@@ -116,8 +117,7 @@ class TechnicianReportArchiveTest extends TestCase
             'is_archived' => $archived,
         ]);
 
-        Client::create([
-            'project_id' => $project->project_id,
+        tap($project->client)->update([
             'client_type' => 'Commercial',
             'company_name' => $name.' Holdings',
             'firstname' => 'Client',

@@ -10,7 +10,7 @@
 @section('card')
     <img src="/img/coliconstructlogor.png" alt="Coliconstruct" width="72" class="mb-3">
     <h3 class="mb-1">Create an Account</h3>
-    <p class="text-muted mb-4">Sign up to follow your projects with Coliconstruct</p>
+    <p class="text-muted mb-4">Use the email on your project.</p>
 
     @if ($errors->any())
         <div class="alert alert-danger text-start" role="alert">
@@ -22,52 +22,21 @@
         @csrf
 
         {{-- Two columns from `md` up, one below it. Every field keeps the
-             left-aligned label the single-column form had. --}}
+             left-aligned label the single-column form had.
+
+             Only what the client record cannot supply. An account is opened
+             for a client already on record - see RegistrableClientEmail - and
+             takes its name and number from that record once the emailed code
+             proves the address, so none of it is asked for or shown here. --}}
         <div class="row g-3 text-start">
 
-            {{-- The name in its parts, the same three fields the Profile page
-                 keeps: nothing has to guess later where one part ends. --}}
-            <div class="col-md-5">
-                <label class="form-label" for="first_name">First Name</label>
-                <input type="text" id="first_name" name="first_name" class="form-control" maxlength="100"
-                    value="{{ old('first_name') }}" required autofocus autocomplete="given-name">
-            </div>
-
-            <div class="col-md-2">
-                <label class="form-label" for="middle_name">M.I.</label>
-                {{-- One letter, which is what an initial is - see PersonName. --}}
-                <input type="text" id="middle_name" name="middle_name" class="form-control text-center"
-                    maxlength="1" pattern="[A-Za-z]" placeholder="Optional" title="A single letter (A-Z)"
-                    value="{{ old('middle_name') }}" autocomplete="additional-name">
-            </div>
-
-            <div class="col-md-5">
-                <label class="form-label" for="last_name">Last Name</label>
-                <input type="text" id="last_name" name="last_name" class="form-control" maxlength="100"
-                    value="{{ old('last_name') }}" required autocomplete="family-name">
-            </div>
-
-            <div class="col-md-4">
+            <div class="col-md-6">
                 <label class="form-label" for="email">Email</label>
                 <input type="email" id="email" name="email" class="form-control" placeholder="you@email.com"
-                    maxlength="255" value="{{ old('email') }}" required autocomplete="username">
+                    maxlength="255" value="{{ old('email') }}" required autofocus autocomplete="username">
             </div>
 
-            <div class="col-md-4">
-                <label class="form-label" for="contact_number">Contact Number</label>
-                {{-- Digits and nothing else, and exactly eleven of them - the
-                     same rule User::CONTACT_NUMBER_RULE applies on the server.
-                     `inputmode` gets a phone keypad rather than a full
-                     keyboard; registerForm.js strips anything that is not a
-                     digit as it is typed or pasted. --}}
-                <input type="text" id="contact_number" name="contact_number" class="form-control"
-                    placeholder="09171234567" inputmode="numeric" autocomplete="tel"
-                    maxlength="{{ \App\Models\User::CONTACT_NUMBER_LENGTH }}"
-                    minlength="{{ \App\Models\User::CONTACT_NUMBER_LENGTH }}" pattern="[0-9]{11}"
-                    data-digits-only value="{{ old('contact_number') }}" required>
-            </div>
-
-            <div class="col-md-4">
+            <div class="col-md-6">
                 <label class="form-label" for="birthdate">Date of Birth</label>
                 {{-- The picker's own bounds match the rule the server applies, so
                      an under-age date is refused before the form is even sent. --}}
@@ -130,7 +99,4 @@
     <x-terms-modal />
 @endsection
 
-@push('scripts')
-    {{-- Keeps the contact number to digits only as it is typed or pasted. --}}
-    <script src="/js/registerForm.js"></script>
-@endpush
+

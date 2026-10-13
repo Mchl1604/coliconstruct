@@ -1,7 +1,7 @@
 {{-- One row of a lead's archived reports, rendered by
      TechnicianPortalController::archivedReportsTable() for serverTable.js. --}}
 @php
-    $reportClient = $report->project?->clients->first();
+    $reportClient = $report->project?->client;
 @endphp
 
 <tr>

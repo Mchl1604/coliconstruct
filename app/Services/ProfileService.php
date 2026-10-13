@@ -35,7 +35,9 @@ class ProfileService
         private readonly OtpService $otp,
         private readonly EmailService $email,
         // For normalise() only - the one address comparison in the system.
-        private readonly ClientProjects $clientProjects
+        private readonly ClientProjects $clientProjects,
+        // A client account and its client record are one person.
+        private readonly ClientRecords $clientRecords
     ) {}
 
     // ------------------------------------------------------------------
@@ -134,6 +136,12 @@ class ProfileService
             // all read, so it has to stay in step with the parts.
             $user->name = $this->displayName($user);
             $user->save();
+
+            // A client's name and number are their client record's too, so
+            // every project of theirs shows the change.
+            if ($user->isClient()) {
+                $this->clientRecords->syncFromAccount($user);
+            }
         });
 
         if ($user->fullName() !== $nameBefore) {
@@ -296,17 +304,25 @@ class ProfileService
         }
 
         $previous = $this->clientProjects->normalise($previousEmail);
+        $next = $this->clientProjects->normalise($newEmail);
 
-        if ($previous === '') {
+        if ($previous === '' || $next === '') {
+            return 0;
+        }
+
+        // One address is one client: when another client is already on record
+        // under the new address, this one keeps its old address rather than
+        // collide with it.
+        $holder = $this->clientProjects->clientWithEmail($next);
+
+        if ($holder !== null && $holder->user_id !== $user->id) {
             return 0;
         }
 
         return Client::query()
             ->where('user_id', $user->id)
-            // Normalised on both sides, so a contact stored as
-            // "Maria@Old.test " is still recognised as the old address.
-            ->whereRaw('LOWER(TRIM(email_address)) = ?', [$previous])
-            ->update(['email_address' => $newEmail]);
+            ->where('email_address', $previous)
+            ->update(['email_address' => $next]);
     }
 
     /**

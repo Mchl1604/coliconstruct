@@ -221,7 +221,7 @@ class PublicSiteController extends Controller
         return view('public.project-details', [
             'project' => $record,
             'card' => $this->card($record),
-            'client' => $record->clients->first(),
+            'client' => $record->client,
             // Contact Support sends the client to the Contact Us page, which
             // is where every published channel is listed; the number is
             // repeated in the sentence beneath the buttons so somebody holding
@@ -276,7 +276,7 @@ class PublicSiteController extends Controller
     {
         $start = $project->schedules->min('start_datetime');
         $end = $project->schedules->max('end_datetime');
-        $client = $project->clients->first();
+        $client = $project->client;
         $clientName = $client?->company_name ?: $client?->fullname;
 
         return [

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Client;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
 use App\Models\Schedule;
@@ -53,6 +54,7 @@ class ScheduleCalendarAssignTest extends TestCase
         bool $onHold = false
     ): Project {
         $project = Project::create([
+            'client_id' => Client::factory()->create()->client_id,
             'name' => $name,
             'reference_no' => 'REF-'.strtoupper(substr(md5($name.microtime()), 0, 8)),
             'status' => $status,
@@ -190,6 +192,7 @@ class ScheduleCalendarAssignTest extends TestCase
     public function test_a_restored_project_with_no_technicians_can_be_booked(): void
     {
         $bare = Project::create([
+            'client_id' => Client::factory()->create()->client_id,
             'name' => 'Restored Project',
             'reference_no' => 'REF-RESTORED',
             'status' => 'unscheduled',

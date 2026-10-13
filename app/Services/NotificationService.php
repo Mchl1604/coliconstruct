@@ -230,31 +230,27 @@ class NotificationService
     }
 
     /**
-     * Client accounts for a project's contacts.
+     * Client accounts for a project's client.
      *
-     * Contacts and accounts are still matched on email address, exactly as the
-     * public website does it - see ClientProjects.
+     * The client and the account are still matched on email address, exactly
+     * as the public website does it - see ClientProjects.
      *
      * @return EloquentCollection<int, User>
      */
     public function projectClients(Project $project): EloquentCollection
     {
-        $project->loadMissing('clients');
+        $project->loadMissing('client');
 
-        $emails = $project->clients
-            ->pluck('email_address')
-            ->filter()
-            ->unique()
-            ->values();
+        $email = $project->client?->email_address;
 
-        if ($emails->isEmpty()) {
+        if (! filled($email)) {
             return User::query()->whereRaw('1 = 0')->get();
         }
 
         return User::query()
             ->loginable()
             ->where('role', User::ROLE_CLIENT)
-            ->whereIn('email', $emails->all())
+            ->whereRaw('LOWER(TRIM(email)) = ?', [mb_strtolower(trim($email))])
             ->get();
     }
 
@@ -1636,8 +1632,8 @@ class NotificationService
     {
         $this->deliver(
             $this->administrators(),
-            'New Registered User',
-            sprintf('%s registered a Registered User account.', $account->fullName()),
+            'New Client Account',
+            sprintf('%s opened a client account.', $account->fullName()),
             Notification::MODULE_USER_MANAGEMENT,
             $account,
             $this->accountLink()

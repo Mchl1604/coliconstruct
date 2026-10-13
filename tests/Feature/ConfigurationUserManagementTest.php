@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\ActivityLog;
+use App\Models\Client;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
 use App\Models\Skill;
@@ -59,6 +60,21 @@ class ConfigurationUserManagementTest extends TestCase
      * @param  array<string, mixed>  $overrides
      * @return array<string, mixed>
      */
+    /**
+     * Opening a client account: the client it is for, and what the client
+     * record cannot supply.
+     *
+     * @param  array<string, mixed>  $overrides
+     * @return array<string, mixed>
+     */
+    private function clientAccountPayload(array $overrides = []): array
+    {
+        return array_merge([
+            'client_id' => $this->bookedClient('jose.garcia@example.test')->client_id,
+            'birthdate' => '1988-11-20',
+        ], $overrides);
+    }
+
     private function clientPayload(array $overrides = []): array
     {
         return array_merge([
@@ -353,7 +369,7 @@ class ConfigurationUserManagementTest extends TestCase
 
         $client = $this->postJson(
             route('super-admin.configuration.users.clients.store'),
-            $this->clientPayload(['birthdate' => $underage])
+            $this->clientAccountPayload(['birthdate' => $underage])
         );
 
         $client->assertStatus(422);
@@ -371,7 +387,7 @@ class ConfigurationUserManagementTest extends TestCase
     {
         foreach ([
             'super-admin.configuration.users.employees.store' => $this->employeePayload(['birthdate' => '']),
-            'super-admin.configuration.users.clients.store' => $this->clientPayload(['birthdate' => '']),
+            'super-admin.configuration.users.clients.store' => $this->clientAccountPayload(['birthdate' => '']),
         ] as $route => $payload) {
             $this->postJson(route($route), $payload)->assertStatus(422);
         }
@@ -435,7 +451,7 @@ class ConfigurationUserManagementTest extends TestCase
     {
         $response = $this->postJson(
             route('super-admin.configuration.users.clients.store'),
-            $this->clientPayload()
+            $this->clientAccountPayload()
         );
 
         $response->assertCreated();
@@ -462,18 +478,50 @@ class ConfigurationUserManagementTest extends TestCase
         ]);
     }
 
-    public function test_a_client_still_requires_a_name_number_and_email(): void
+    /**
+     * A client account is opened for a client on record, so one has to be
+     * picked - and one that has no account yet.
+     */
+    public function test_a_client_account_needs_a_client_without_one(): void
     {
-        foreach (['first_name', 'last_name', 'contact_number', 'email'] as $field) {
-            $response = $this->postJson(
-                route('super-admin.configuration.users.clients.store'),
-                $this->clientPayload([$field => ''])
-            );
+        $this->postJson(
+            route('super-admin.configuration.users.clients.store'),
+            $this->clientAccountPayload(['client_id' => ''])
+        )->assertStatus(422)->assertJsonPath('error', 'Pick a client.');
 
-            $response->assertStatus(422);
-        }
+        $taken = $this->bookedClient('taken@example.test', ['user_id' => $this->makeClient(['email' => 'holder@example.test'])->id]);
 
-        $this->assertSame(0, User::clients()->count());
+        $this->postJson(
+            route('super-admin.configuration.users.clients.store'),
+            $this->clientAccountPayload(['client_id' => $taken->client_id])
+        )->assertStatus(422)->assertJsonPath('error', 'This client already has an account.');
+
+        $this->assertSame(1, User::clients()->count());
+    }
+
+    /**
+     * The account takes the client's email, name, number and - for a
+     * commercial client - company, and is linked to the client at once.
+     */
+    public function test_a_client_account_is_built_from_the_client_record(): void
+    {
+        $client = $this->bookedClient('office@example.test', [
+            'client_type' => 'Commercial',
+            'company_name' => 'Acme Holdings',
+            'middlename' => 'B.',
+        ]);
+
+        $this->postJson(
+            route('super-admin.configuration.users.clients.store'),
+            $this->clientAccountPayload(['client_id' => $client->client_id])
+        )->assertCreated();
+
+        $user = User::where('email', 'office@example.test')->firstOrFail();
+
+        $this->assertSame('Jose B Garcia', $user->fullName());
+        $this->assertSame('09175551234', $user->contact_number);
+        $this->assertSame('Acme Holdings', $user->company_name);
+        $this->assertSame($user->id, $client->fresh()->user_id);
     }
 
     /**
@@ -540,6 +588,7 @@ class ConfigurationUserManagementTest extends TestCase
         $technician->skills()->attach($skill->skill_id);
 
         $project = Project::create([
+            'client_id' => Client::factory()->create()->client_id,
             'name' => 'Some Project',
             'reference_no' => 'REF-0001',
             'status' => 'ongoing',
@@ -607,7 +656,7 @@ class ConfigurationUserManagementTest extends TestCase
 
         $this->postJson(
             route('super-admin.configuration.users.clients.store'),
-            $this->clientPayload()
+            $this->clientAccountPayload()
         )->assertCreated();
 
         $this->assertFalse(User::where('email', 'ana.mendoza@example.test')->firstOrFail()->hasVerifiedEmail());
@@ -1056,12 +1105,12 @@ class ConfigurationUserManagementTest extends TestCase
     {
         $this->postJson(
             route('super-admin.configuration.users.clients.store'),
-            $this->clientPayload(['password' => 'short'])
+            $this->clientAccountPayload(['password' => 'short'])
         )->assertStatus(422);
 
         $this->postJson(
             route('super-admin.configuration.users.clients.store'),
-            $this->clientPayload(['password' => 'Client-chosen-1'])
+            $this->clientAccountPayload(['password' => 'Client-chosen-1'])
         )->assertCreated();
 
         $client = User::where('email', 'jose.garcia@example.test')->firstOrFail();
