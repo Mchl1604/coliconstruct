@@ -6,7 +6,6 @@ use App\Models\ActivityLog;
 use App\Models\Client;
 use App\Models\Document;
 use App\Models\DocumentHistory;
-use App\Models\PhaseStage;
 use App\Models\Project;
 use App\Models\ProjectCompletionPhoto;
 use App\Models\ProjectPhase;
@@ -20,6 +19,7 @@ use App\Models\TaskImage;
 use App\Models\TechnicianReport;
 use App\Models\TechnicianReportImage;
 use App\Models\User;
+use App\Services\PhaseTemplateMerger;
 use App\Services\ProjectCompletion;
 use App\Services\ProjectTypeCatalog;
 use App\Services\SystemContentService;
@@ -164,11 +164,6 @@ class DemoDataSeeder extends Seeder
     private array $skillIds = [];
 
     /**
-     * @var array<string, int>
-     */
-    private array $stageIds = [];
-
-    /**
      * Activity log rows, written in date order once everything else is in.
      *
      * @var array<int, array<string, mixed>>
@@ -201,6 +196,9 @@ class DemoDataSeeder extends Seeder
         try {
             $added = DB::transaction(function (): int {
                 $this->ensureProjectTypes();
+                // Every type's default phases and tasks, which the projects
+                // below are then set up from.
+                $this->call(PhaseTemplateSeeder::class);
                 $this->seedAccounts();
 
                 $added = 0;
@@ -208,8 +206,6 @@ class DemoDataSeeder extends Seeder
                 if ($this->projectsAlreadySeeded()) {
                     $this->command?->warn('Demo projects are already present, so no projects were added.');
                 } else {
-                    $this->stageIds = PhaseStage::query()->pluck('stage_id', 'name')->map(fn ($id): int => (int) $id)->all();
-
                     if ($this->withFiles) {
                         $this->loadPhotos();
                     }
@@ -307,23 +303,16 @@ class DemoDataSeeder extends Seeder
         $skills = Skill::query()->get();
 
         foreach (DemoDataCatalog::PROJECT_TYPES as $name) {
-            $type = $types->first(fn (ProjectType $type): bool => $this->looseKey($type->type_name) === $this->looseKey($name))
+            $type = $types->first(fn (ProjectType $type): bool => DemoDataCatalog::sameName($type->type_name, $name))
                 ?? app(ProjectTypeCatalog::class)->add($name);
 
-            $skill = $skills->first(fn (Skill $skill): bool => $this->looseKey($skill->skill_name) === $this->looseKey($type->type_name))
+            $skill = $skills->first(fn (Skill $skill): bool => DemoDataCatalog::sameName($skill->skill_name, $type->type_name))
                 ?? Skill::query()->where('skill_name', $type->type_name)->first()
                 ?? Skill::create(['skill_name' => $type->type_name]);
 
             $this->typeIds[$name] = (int) $type->type_id;
             $this->skillIds[$name] = (int) $skill->skill_id;
         }
-    }
-
-    private function looseKey(string $name): string
-    {
-        $letters = preg_replace('/[^a-z]/', '', mb_strtolower($name)) ?? '';
-
-        return preg_replace('/(.)\1+/', '$1', $letters) ?? $letters;
     }
 
     private function seedAccounts(): void
@@ -941,6 +930,28 @@ class DemoDataSeeder extends Seeder
     // ------------------------------------------------------------------
 
     /**
+     * The phases and tasks a project is offered at phase setup: its types'
+     * templates merged the way the setup screen merges them - see
+     * PhaseTemplateMerger - so a demo project is set up exactly as one
+     * created in the wizard would be.
+     *
+     * @return array<int, array{stage_id: ?int, title: string, description: string, tasks: array<int, array{0: string, 1: string}>}>
+     */
+    private function phasesFromTemplates(Project $project): array
+    {
+        return collect(app(PhaseTemplateMerger::class)->for($project)['phases'])
+            ->map(fn (array $phase): array => [
+                'stage_id' => $phase['stage_id'],
+                'title' => $phase['title'],
+                'description' => (string) $phase['description'],
+                'tasks' => collect($phase['tasks'])
+                    ->map(fn (array $task): array => [$task['title'], (string) $task['description']])
+                    ->all(),
+            ])
+            ->all();
+    }
+
+    /**
      * The phase structure and its tasks, for work that has been planned.
      *
      * @param  array<string, mixed>  $spec
@@ -957,7 +968,7 @@ class DemoDataSeeder extends Seeder
         $crew = count($team) > 1 ? array_slice($team, 1) : $team;
         $finalizedAt = $createdAt->addDay()->min($this->now());
         $days = $this->workDays($spec);
-        $phases = $profile['phases'];
+        $phases = $this->phasesFromTemplates($project);
         $outcome = $spec['scenario'] === 'archived' ? $spec['archived_from'] : $spec['scenario'];
         $taskTotal = (int) collect($phases)->sum(fn (array $phase): int => count($phase['tasks']));
         $taskNumber = 0;
@@ -965,7 +976,7 @@ class DemoDataSeeder extends Seeder
         foreach ($phases as $phaseIndex => $phaseSpec) {
             $phase = ProjectPhase::forceCreate([
                 'project_id' => $project->project_id,
-                'stage_id' => $this->stageIds[$phaseSpec['title']] ?? null,
+                'stage_id' => $phaseSpec['stage_id'],
                 'sequence' => $phaseIndex + 1,
                 'title' => $phaseSpec['title'],
                 'description' => $phaseSpec['description'],

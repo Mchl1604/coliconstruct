@@ -916,33 +916,166 @@ final class DemoDataCatalog
     }
 
     /**
-     * What each kind of job involves, for its phases, tasks, quotation and
-     * reports. A project's first type decides which kind it is.
+     * The phase stages every project type's template is drawn from, in the
+     * order a project works through them, each with the description a phase
+     * starts with. Site Preparation first, Testing and Final Inspection last,
+     * and the work itself - which depends on the type - in between.
      *
-     * @return array<string, array{phases: array<int, array{title: string, description: string, tasks: array<int, array{0: string, 1: string}>}>, quotation: array<int, array{0: string, 1: float}>, findings: array<int, string>, recommendation: string, summary: string, remarks: string, photos: array<int, string>, progress: array<int, string>}>
+     * @var array<string, string>
+     */
+    public const PHASE_STAGES = [
+        'Site Preparation' => 'Survey the site and prepare the work area.',
+        'Fabrication' => 'Fabricate the duct sections and fittings.',
+        'Installation' => 'Install the equipment, piping and wiring.',
+        'Ventilation Works' => 'Install the fans, ducting and controls.',
+        'Repair' => 'Replace the faulty parts and restore the system.',
+        'Cleaning' => 'Clean and service the units.',
+        'Testing' => 'Test the completed work.',
+        'Final Inspection' => 'Inspect the work and hand it over to the client.',
+    ];
+
+    /**
+     * Every project type's default phases and the default tasks in each -
+     * what Configuration -> Phase Templates holds, and so what a new project
+     * of that type is offered at phase setup. The demo projects are set up
+     * from these too, the same way. See PhaseTemplateSeeder.
+     *
+     * @return array<string, array<string, array<int, array{0: string, 1: string}>>>
+     */
+    public static function phaseTemplates(): array
+    {
+        return [
+            self::AIRCON_INSTALLATION => [
+                'Site Preparation' => [
+                    ['Site survey and layout marking', 'Confirm the indoor and outdoor unit locations with the client and mark the bracket, sleeve and drain positions.'],
+                    ['Core drilling and wall sleeves', 'Drill the refrigerant and drain line penetrations and fit PVC sleeves.'],
+                ],
+                'Installation' => [
+                    ['Mount indoor and outdoor units', 'Install the mounting plates and outdoor brackets, then set and level the units.'],
+                    ['Refrigerant piping and insulation', 'Run, flare and insulate the copper lines, then route the condensate drain with the correct fall.'],
+                    ['Electrical termination', 'Pull the power and control cables and terminate them on a dedicated breaker.'],
+                ],
+                'Testing' => [
+                    ['Pressure test and vacuum', 'Hold a nitrogen pressure test for 30 minutes, then evacuate the lines to below 500 microns.'],
+                    ['Commissioning and performance check', 'Release the charge, check suction pressure and running amps, and record supply-air temperatures.'],
+                ],
+                'Final Inspection' => [
+                    ['Client walkthrough and turnover', 'Show the client the remote, filter cleaning and warranty terms, then clean up the work area.'],
+                ],
+            ],
+            self::AIRCON_REPAIR => [
+                'Site Preparation' => [
+                    ['Troubleshooting and fault diagnosis', 'Check the electrical components, pressures and controls to find the cause of the fault.'],
+                    ['Confirm the repair with the client', 'Explain the fault and the parts needed, and get the client\'s go-ahead before any work starts.'],
+                ],
+                'Repair' => [
+                    ['Replace faulty components', 'Replace the parts found faulty and repair any refrigerant or drain leaks.'],
+                    ['Recharge and restore operation', 'Pressure test, vacuum and recharge the system where the circuit was opened.'],
+                ],
+                'Testing' => [
+                    ['Operational test', 'Run the system under load and check pressures, amps and temperatures.'],
+                ],
+                'Final Inspection' => [
+                    ['Repair report and turnover', 'Explain the repair to the client and hand over the replaced parts and warranty.'],
+                ],
+            ],
+            self::AIRCON_CLEANING => [
+                'Site Preparation' => [
+                    ['Pre-cleaning inspection', 'Check each unit\'s operation, note existing faults and protect the walls and furniture.'],
+                ],
+                'Cleaning' => [
+                    ['Indoor unit cleaning', 'Wash the evaporator coils and blower wheels and clean the filters and drain pans.'],
+                    ['Outdoor unit cleaning', 'Wash the condenser coils and check the fan blades and electrical connections.'],
+                ],
+                'Testing' => [
+                    ['Post-cleaning performance check', 'Run each unit, check drainage and record supply-air temperatures and running amps.'],
+                ],
+                'Final Inspection' => [
+                    ['Service report and turnover', 'Go over the service report with the client and recommend the next cleaning date.'],
+                ],
+            ],
+            self::DUCTING_FABRICATION => [
+                'Site Preparation' => [
+                    ['Site measurement for fabrication', 'Take the site measurements and confirm the duct sizes and routes against the approved plans.'],
+                    ['Shop drawing approval', 'Prepare the shop drawings and have them approved before any sheet is cut.'],
+                ],
+                'Fabrication' => [
+                    ['Cut and form duct sections', 'Cut, form and lock-seam the GI duct sections to the approved shop drawings.'],
+                    ['Fabricate fittings and transitions', 'Fabricate the elbows, tees, reducers and transitions.'],
+                    ['Seal and label sections', 'Seal the seams and label each section with its location on the drawings.'],
+                ],
+                'Testing' => [
+                    ['Dimension and seam check', 'Check every section against the drawings and test the seams for leaks.'],
+                ],
+                'Final Inspection' => [
+                    ['Delivery and handover', 'Deliver the sections to site and hand them over with the cutting list.'],
+                ],
+            ],
+            self::DUCTING_INSTALLATION => [
+                'Site Preparation' => [
+                    ['As-built measurement and duct layout', 'Take ceiling heights and obstructions and mark the trunk and branch routes on site.'],
+                    ['Check delivered duct sections', 'Check the duct sections and fittings on site against the shop drawings before they are hung.'],
+                ],
+                'Installation' => [
+                    ['Install hangers and supports', 'Install threaded rod hangers and angle bar supports at the required spacing.'],
+                    ['Hang and seal trunk and branch ducts', 'Hang the duct sections, seal the joints with mastic and apply the thermal insulation.'],
+                    ['Fit dampers, diffusers and grilles', 'Install volume dampers and connect the diffusers and grilles with flexible ducts.'],
+                ],
+                'Testing' => [
+                    ['Leak check and airflow balancing', 'Check the joints for leakage, then measure and balance the airflow at each outlet.'],
+                ],
+                'Final Inspection' => [
+                    ['Final walkthrough and as-built handover', 'Walk the client through the system and hand over the as-built drawings and balancing report.'],
+                ],
+            ],
+            self::HEATING_VENTILATION => [
+                'Site Preparation' => [
+                    ['Survey fan and opening locations', 'Confirm fan, louver and intake positions with the client and check the structural supports.'],
+                    ['Prepare openings and supports', 'Cut the wall and roof openings and install the fan bases and curbs.'],
+                ],
+                'Ventilation Works' => [
+                    ['Install exhaust and supply fans', 'Set the fans on their bases, fit the vibration isolators and weatherproof the openings.'],
+                    ['Connect ducting and hoods', 'Connect the exhaust ducting to the hoods and fans with sealed, fire-rated joints where needed.'],
+                    ['Wire fan controls', 'Wire the fan starters, speed controllers and wall switches.'],
+                ],
+                'Testing' => [
+                    ['Airflow and noise test', 'Run every fan and measure its airflow, rotation and noise level against the design values.'],
+                ],
+                'Final Inspection' => [
+                    ['Turnover and maintenance briefing', 'Walk the client through the controls and brief their staff on cleaning and maintenance.'],
+                ],
+            ],
+        ];
+    }
+
+    /**
+     * Whether two project type or stage names are the same name, however a
+     * site happens to have spelled it - "Heating Ventillation" is Heating
+     * Ventilation, and "aircon cleaning" is Aircon Cleaning.
+     */
+    public static function sameName(string $first, string $second): bool
+    {
+        return self::looseKey($first) === self::looseKey($second);
+    }
+
+    private static function looseKey(string $name): string
+    {
+        $letters = preg_replace('/[^a-z]/', '', mb_strtolower($name)) ?? '';
+
+        return preg_replace('/(.)\1+/', '$1', $letters) ?? $letters;
+    }
+
+    /**
+     * What each kind of job involves, for its quotation and reports. A
+     * project's first type decides which kind it is. Its phases and tasks
+     * come from phaseTemplates().
+     *
+     * @return array<string, array{quotation: array<int, array{0: string, 1: float}>, findings: array<int, string>, recommendation: string, summary: string, remarks: string, photos: array<int, string>, progress: array<int, string>}>
      */
     public static function workProfiles(): array
     {
         return [
             'installation' => [
-                'phases' => [
-                    ['title' => 'Site Preparation', 'description' => 'Confirm unit locations, protect finishes and prepare the wall penetrations.', 'tasks' => [
-                        ['Site survey and layout marking', 'Confirm the indoor and outdoor unit locations with the client and mark the bracket, sleeve and drain positions.'],
-                        ['Core drilling and wall sleeves', 'Drill the refrigerant and drain line penetrations and fit PVC sleeves.'],
-                    ]],
-                    ['title' => 'Installation', 'description' => 'Mount the units and run the piping, drain and power.', 'tasks' => [
-                        ['Mount indoor and outdoor units', 'Install the mounting plates and outdoor brackets, then set and level the units.'],
-                        ['Refrigerant piping and insulation', 'Run, flare and insulate the copper lines, then route the condensate drain with the correct fall.'],
-                        ['Electrical termination', 'Pull the power and control cables and terminate them on a dedicated breaker.'],
-                    ]],
-                    ['title' => 'Testing', 'description' => 'Pressure test, vacuum, charge and check performance.', 'tasks' => [
-                        ['Pressure test and vacuum', 'Hold a nitrogen pressure test for 30 minutes, then evacuate the lines to below 500 microns.'],
-                        ['Commissioning and performance check', 'Release the charge, check suction pressure and running amps, and record supply-air temperatures.'],
-                    ]],
-                    ['title' => 'Final Inspection', 'description' => 'Walk the client through the system and clean up.', 'tasks' => [
-                        ['Client walkthrough and turnover', 'Show the client the remote, filter cleaning and warranty terms, then clean up the work area.'],
-                    ]],
-                ],
                 'quotation' => [
                     ['Supply of air-conditioning unit(s) as specified', 0.58],
                     ['Installation materials: copper tubing, insulation, drain line, brackets and wiring', 0.14],
@@ -965,23 +1098,6 @@ final class DemoDataCatalog
                 ],
             ],
             'ducting' => [
-                'phases' => [
-                    ['title' => 'Site Preparation', 'description' => 'Verify measurements against the plans and set out the duct routes.', 'tasks' => [
-                        ['As-built measurement and duct layout', 'Take ceiling heights and obstructions and mark the trunk and branch routes on site.'],
-                        ['Shop fabrication of duct sections', 'Fabricate the GI duct sections, fittings and transitions to the approved shop drawings.'],
-                    ]],
-                    ['title' => 'Installation', 'description' => 'Hang and seal the ducting and fit the terminals.', 'tasks' => [
-                        ['Install hangers and supports', 'Install threaded rod hangers and angle bar supports at the required spacing.'],
-                        ['Hang and seal trunk and branch ducts', 'Hang the duct sections, seal the joints with mastic and apply the thermal insulation.'],
-                        ['Fit dampers, diffusers and grilles', 'Install volume dampers and connect the diffusers and grilles with flexible ducts.'],
-                    ]],
-                    ['title' => 'Testing', 'description' => 'Check for leaks and balance the airflow.', 'tasks' => [
-                        ['Leak check and airflow balancing', 'Check the joints for leakage, then measure and balance the airflow at each outlet.'],
-                    ]],
-                    ['title' => 'Final Inspection', 'description' => 'Walk through with the client and hand over.', 'tasks' => [
-                        ['Final walkthrough and as-built handover', 'Walk the client through the system and hand over the as-built drawings and balancing report.'],
-                    ]],
-                ],
                 'quotation' => [
                     ['GI sheets, fittings and duct accessories', 0.34],
                     ['Thermal insulation, mastic and sealing materials', 0.12],
@@ -1005,23 +1121,6 @@ final class DemoDataCatalog
                 ],
             ],
             'ventilation' => [
-                'phases' => [
-                    ['title' => 'Site Preparation', 'description' => 'Confirm fan positions, openings and structural supports.', 'tasks' => [
-                        ['Survey fan and opening locations', 'Confirm fan, louver and intake positions with the client and check the structural supports.'],
-                        ['Prepare openings and supports', 'Cut the wall and roof openings and install the fan bases and curbs.'],
-                    ]],
-                    ['title' => 'Installation', 'description' => 'Install the fans, ducting and controls.', 'tasks' => [
-                        ['Install exhaust and supply fans', 'Set the fans on their bases, fit the vibration isolators and weatherproof the openings.'],
-                        ['Connect ducting and hoods', 'Connect the exhaust ducting to the hoods and fans with sealed, fire-rated joints where needed.'],
-                        ['Wire fan controls', 'Wire the fan starters, speed controllers and wall switches.'],
-                    ]],
-                    ['title' => 'Testing', 'description' => 'Run the fans and measure airflow.', 'tasks' => [
-                        ['Airflow and noise test', 'Run every fan and measure its airflow, rotation and noise level against the design values.'],
-                    ]],
-                    ['title' => 'Final Inspection', 'description' => 'Walk through with the client and hand over.', 'tasks' => [
-                        ['Turnover and maintenance briefing', 'Walk the client through the controls and brief their staff on cleaning and maintenance.'],
-                    ]],
-                ],
                 'quotation' => [
                     ['Supply of exhaust / supply fans and controls', 0.42],
                     ['Ducting, hoods, louvers and accessories', 0.22],
@@ -1044,21 +1143,6 @@ final class DemoDataCatalog
                 ],
             ],
             'cleaning' => [
-                'phases' => [
-                    ['title' => 'Site Preparation', 'description' => 'Protect the area and check the units before cleaning.', 'tasks' => [
-                        ['Pre-cleaning inspection', 'Check each unit\'s operation, note existing faults and protect the walls and furniture.'],
-                    ]],
-                    ['title' => 'Cleaning and Servicing', 'description' => 'Clean the coils, blowers, filters and drains.', 'tasks' => [
-                        ['Indoor unit cleaning', 'Wash the evaporator coils and blower wheels and clean the filters and drain pans.'],
-                        ['Outdoor unit cleaning', 'Wash the condenser coils and check the fan blades and electrical connections.'],
-                    ]],
-                    ['title' => 'Testing', 'description' => 'Check performance after cleaning.', 'tasks' => [
-                        ['Post-cleaning performance check', 'Run each unit, check drainage and record supply-air temperatures and running amps.'],
-                    ]],
-                    ['title' => 'Final Inspection', 'description' => 'Turn over to the client.', 'tasks' => [
-                        ['Service report and turnover', 'Go over the service report with the client and recommend the next cleaning date.'],
-                    ]],
-                ],
                 'quotation' => [
                     ['Labor: general cleaning per unit', 0.70],
                     ['Cleaning chemicals and consumables', 0.18],
@@ -1078,21 +1162,6 @@ final class DemoDataCatalog
                 ],
             ],
             'repair' => [
-                'phases' => [
-                    ['title' => 'Diagnosis', 'description' => 'Find the fault and confirm the repair with the client.', 'tasks' => [
-                        ['Troubleshooting and fault diagnosis', 'Check the electrical components, pressures and controls to find the cause of the fault.'],
-                    ]],
-                    ['title' => 'Repair Works', 'description' => 'Replace the faulty parts and restore the system.', 'tasks' => [
-                        ['Replace faulty components', 'Replace the parts found faulty and repair any refrigerant or drain leaks.'],
-                        ['Recharge and restore operation', 'Pressure test, vacuum and recharge the system where the circuit was opened.'],
-                    ]],
-                    ['title' => 'Testing', 'description' => 'Run the system and check that the fault is fixed.', 'tasks' => [
-                        ['Operational test', 'Run the system under load and check pressures, amps and temperatures.'],
-                    ]],
-                    ['title' => 'Final Inspection', 'description' => 'Turn over to the client.', 'tasks' => [
-                        ['Repair report and turnover', 'Explain the repair to the client and hand over the replaced parts and warranty.'],
-                    ]],
-                ],
                 'quotation' => [
                     ['Replacement parts as diagnosed', 0.45],
                     ['Refrigerant and consumables', 0.15],

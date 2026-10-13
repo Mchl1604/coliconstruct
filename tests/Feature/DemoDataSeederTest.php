@@ -15,6 +15,7 @@ use App\Models\TaskImage;
 use App\Models\TechnicianReport;
 use App\Models\TechnicianReportImage;
 use App\Models\User;
+use App\Services\PhaseTemplateMerger;
 use App\Services\ProjectStatusRules;
 use App\Services\ProjectTeam;
 use App\Support\UploadStore;
@@ -225,6 +226,39 @@ class DemoDataSeederTest extends TestCase
         $this->assertSame(50, (int) $clients->sum('projects_count'));
         $this->assertGreaterThan(0, $clients->where('projects_count', '>', 1)->count());
         $this->assertSame(20, $clients->pluck('user_id')->filter()->unique()->count());
+    }
+
+    /**
+     * Every project that has been through phase setup has the phases its
+     * types' templates give - stamped with their stages, each with tasks.
+     */
+    public function test_every_set_up_project_follows_its_phase_templates(): void
+    {
+        $this->runSeeder();
+
+        $merger = app(PhaseTemplateMerger::class);
+        $checked = 0;
+
+        foreach (Project::query()->with('phases.tasks')->get() as $project) {
+            if ($project->phases->isEmpty()) {
+                continue;
+            }
+
+            $checked++;
+
+            $this->assertSame(
+                array_column($merger->for($project)['phases'], 'title'),
+                $project->phases->sortBy('sequence')->pluck('title')->values()->all(),
+                $project->name.' does not follow its phase templates.'
+            );
+
+            foreach ($project->phases as $phase) {
+                $this->assertNotNull($phase->stage_id, $project->name.' / '.$phase->title.' has no stage.');
+                $this->assertTrue($phase->tasks->isNotEmpty(), $project->name.' / '.$phase->title.' has no tasks.');
+            }
+        }
+
+        $this->assertGreaterThan(30, $checked);
     }
 
     public function test_nobody_is_booked_on_two_live_projects_on_the_same_day(): void
