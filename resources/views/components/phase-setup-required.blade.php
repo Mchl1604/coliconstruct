@@ -28,7 +28,7 @@
             </p>
             <p class="text-secondary small mb-0">
                 @if ($canSetUp)
-                    Finalize phases to start adding tasks.
+                    Set phases and materials to start.
                 @else
                     An Admin or Lead Technician must set up phases.
                 @endif
@@ -38,7 +38,7 @@
         @if ($canSetUp)
             <a href="{{ route($setupRoute, $project->project_id) }}" class="btn btn-primary">
                 <i class="bi bi-sliders me-1" aria-hidden="true"></i>
-                Set Up Project Phases
+                Set Up Now
             </a>
         @endif
     </div>

@@ -193,7 +193,7 @@
     }
 
     // The Add Task dialog is not on every project: a project whose phases have
-    // not been finalized is offered Set Up Project Phases instead, and the
+    // not been finalized is offered Set Up Now instead, and the
     // dialog is not rendered at all.
     function initTaskDates(root) {
         const taskStartDate = root.querySelector('#taskStartDate');

@@ -81,6 +81,10 @@ class PortalImprovementsTest extends TestCase
             'uploaded_at' => now(),
         ]);
 
+        // Set up, as any project with work under way is: one that never was
+        // offers Set Up Now and nothing else on the listing.
+        $this->finalizePhases($project);
+
         return $project->refresh();
     }
 

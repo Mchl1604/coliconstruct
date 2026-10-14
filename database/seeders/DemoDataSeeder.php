@@ -6,8 +6,11 @@ use App\Models\ActivityLog;
 use App\Models\Client;
 use App\Models\Document;
 use App\Models\DocumentHistory;
+use App\Models\Material;
 use App\Models\Project;
 use App\Models\ProjectCompletionPhoto;
+use App\Models\ProjectMaterial;
+use App\Models\ProjectMaterialEntry;
 use App\Models\ProjectPhase;
 use App\Models\ProjectTechnician;
 use App\Models\ProjectType;
@@ -179,6 +182,13 @@ class DemoDataSeeder extends Seeder
 
     private int $taskCounter = 0;
 
+    /**
+     * The material list, keyed by name|brand|unit, read once.
+     *
+     * @var Collection<string, Material>|null
+     */
+    private ?Collection $materials = null;
+
     public function run(): void
     {
         $this->passwordHash = Hash::make($this->password());
@@ -199,6 +209,8 @@ class DemoDataSeeder extends Seeder
                 // Every type's default phases and tasks, which the projects
                 // below are then set up from.
                 $this->call(PhaseTemplateSeeder::class);
+                // The material list the projects' materials are picked from.
+                $this->call(MaterialSeeder::class);
                 $this->seedAccounts();
 
                 $added = 0;
@@ -543,6 +555,7 @@ class DemoDataSeeder extends Seeder
         }
 
         $this->buildWorkPlan($project, $spec, $profile, $team, $createdAt);
+        $this->seedMaterials($project, $spec, $team, $createdAt);
         $this->fileReports($project, $spec, $profile, $lead, $team);
         $this->applyOutcome($project, $spec, $profile, $client, $admin, $lead, $createdAt);
     }
@@ -1074,6 +1087,172 @@ class DemoDataSeeder extends Seeder
             sprintf('Finalized the phase structure for %s: %d %s.', $project->reference_no, count($phases), count($phases) === 1 ? 'phase' : 'phases'),
             record: $project
         );
+    }
+
+    /**
+     * The project's material plan, and what became of it as far as the work
+     * got: planned at setup, used along the way, and on a finished job the
+     * leftovers returned - or, on a closed one, recorded as unused.
+     *
+     * Only for work that was set up: a project whose phases were never
+     * finalized has no material plan either. Written straight onto the rows,
+     * as the work plan is, with the figures ProjectMaterialLedger would have
+     * arrived at.
+     *
+     * @param  array<string, mixed>  $spec
+     * @param  array<int, array{user: User, technician_id: int, lead: bool, skills: array<int, string>, order: int}>  $team
+     */
+    private function seedMaterials(Project $project, array $spec, array $team, CarbonImmutable $createdAt): void
+    {
+        if (! $this->isPlanned($spec)) {
+            return;
+        }
+
+        $kind = DemoDataCatalog::kindOf($spec['types'][0]);
+        $lines = DemoDataCatalog::projectMaterials()[$kind] ?? [];
+
+        if ($lines === []) {
+            return;
+        }
+
+        if ($kind === 'installation') {
+            $brands = DemoDataCatalog::INSTALLATION_BRANDS;
+            $lines[0][1] = $brands[$project->project_id % count($brands)];
+        }
+
+        $lead = $team[0]['user'];
+        $plannedAt = $createdAt->addDay()->min($this->now());
+        $outcome = $spec['scenario'] === 'archived' ? $spec['archived_from'] : $spec['scenario'];
+        $today = $this->today->toDateString();
+        $worked = array_values(array_filter(
+            array_column($this->workDays($spec), 'date'),
+            fn (string $date): bool => $date <= $today
+        ));
+
+        // How much of the plan had been used by now.
+        $share = match ($outcome) {
+            'pending' => 0.0,
+            'on_hold' => 0.4,
+            'cancelled' => 0.3,
+            'ongoing', 'overdue' => 0.6,
+            default => 1.0,
+        };
+        $finished = in_array($outcome, ['awaiting', 'completed'], true);
+        $closedOn = match ($outcome) {
+            'completed' => end($worked) ?: null,
+            'cancelled' => min($this->date($spec['cancelled']), $today),
+            default => null,
+        };
+        $planned = 0;
+        $leftovers = 0;
+
+        foreach ($lines as $index => [$name, $brand, $unitValue, $quantity]) {
+            $material = $this->material($name, $brand, $unitValue);
+
+            if ($material === null) {
+                continue;
+            }
+
+            $line = ProjectMaterial::forceCreate([
+                'project_id' => $project->project_id,
+                'material_id' => $material->material_id,
+                'quantity_needed' => $quantity,
+                'created_by' => $lead->id,
+                'created_at' => $plannedAt,
+                'updated_at' => $plannedAt,
+            ]);
+            $planned++;
+
+            if ($share === 0.0 || $worked === []) {
+                continue;
+            }
+
+            $fractional = $material->unit->allowsFractions();
+            // A finished job uses about all of it; one line in three comes in
+            // under plan, and that is what is returned or left over.
+            $usedShare = $finished ? (($project->project_id + $index) % 3 === 0 ? 0.8 : 1.0) : $share;
+            $used = $fractional
+                ? round($quantity * $usedShare, 1)
+                : (float) floor($quantity * $usedShare);
+            $left = round($quantity - $used, 2);
+
+            if ($used > 0) {
+                $this->materialEntry($line, ProjectMaterialEntry::TYPE_USED, $used, $worked[intdiv(count($worked) - 1, 2)], $lead);
+
+                $this->log(
+                    ActivityLog::PROJECT_MATERIAL_USED,
+                    $this->moment($this->offsetOf($worked[intdiv(count($worked) - 1, 2)]), '16:30'),
+                    $lead,
+                    sprintf('Used %s %s of %s on %s.', $material->unit->format($used), $material->unit->value, $material->displayName(), $project->reference_no),
+                    record: $project
+                );
+            }
+
+            // Half the leftovers of a finished job go back to the office; the
+            // rest are still on site when it closes.
+            if ($finished && $left > 0 && ($project->project_id + $index) % 2 === 0) {
+                $this->materialEntry($line, ProjectMaterialEntry::TYPE_RETURNED, $left, end($worked), $lead);
+                $left = 0.0;
+            }
+
+            if ($closedOn !== null && $left > 0) {
+                $this->materialEntry($line, ProjectMaterialEntry::TYPE_UNUSED, $left, $closedOn, null,
+                    $outcome === 'cancelled' ? 'Left over at cancellation.' : 'Left over at completion.');
+                $leftovers++;
+            }
+        }
+
+        $this->log(
+            ActivityLog::PROJECT_MATERIALS_PLANNED,
+            $plannedAt,
+            $lead,
+            sprintf('Planned %d %s for %s.', $planned, $planned === 1 ? 'material' : 'materials', $project->reference_no),
+            record: $project
+        );
+
+        if ($leftovers > 0) {
+            $this->log(
+                ActivityLog::PROJECT_MATERIALS_CLOSED_OUT,
+                $this->moment($this->offsetOf($closedOn), '17:45'),
+                null,
+                sprintf('Recorded %d leftover %s on %s as unused.', $leftovers, $leftovers === 1 ? 'material' : 'materials', $project->reference_no),
+                record: $project
+            );
+        }
+    }
+
+    private function materialEntry(ProjectMaterial $line, string $type, float $quantity, string $date, ?User $by, ?string $notes = null): void
+    {
+        $at = CarbonImmutable::parse($date.' 17:00', Schedule::BUSINESS_TIMEZONE)
+            ->setTimezone(config('app.timezone'))
+            ->min($this->now());
+
+        ProjectMaterialEntry::forceCreate([
+            'project_id' => $line->project_id,
+            'project_material_id' => $line->project_material_id,
+            'entry_type' => $type,
+            'quantity' => $quantity,
+            'entry_date' => $date,
+            'notes' => $notes,
+            'recorded_by' => $by?->id,
+            'recorded_by_name' => $by?->fullName() ?? 'System',
+            'created_at' => $at,
+            'updated_at' => $at,
+        ]);
+    }
+
+    /**
+     * A material off the list by name, brand and unit.
+     */
+    private function material(string $name, ?string $brand, string $unit): ?Material
+    {
+        if ($this->materials === null) {
+            $this->materials = Material::query()
+                ->get()
+                ->keyBy(fn (Material $material): string => mb_strtolower($material->name).'|'.mb_strtolower((string) $material->brand).'|'.$material->unit->value);
+        }
+
+        return $this->materials->get(mb_strtolower($name).'|'.mb_strtolower((string) $brand).'|'.$unit);
     }
 
     /**

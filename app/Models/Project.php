@@ -590,6 +590,22 @@ class Project extends Model
     }
 
     /**
+     * The materials this project needs - its plan, one row per material.
+     */
+    public function materials(): HasMany
+    {
+        return $this->hasMany(ProjectMaterial::class, 'project_id', 'project_id');
+    }
+
+    /**
+     * Every material movement recorded on this project since setup.
+     */
+    public function materialEntries(): HasMany
+    {
+        return $this->hasMany(ProjectMaterialEntry::class, 'project_id', 'project_id');
+    }
+
+    /**
      * Who settled this project's phase structure. Null on a project whose
      * phases the backfill wrote - see the backfill migration, which
      * deliberately declines to name anybody.
@@ -1683,6 +1699,30 @@ class Project extends Model
     public function phasesAreFinalized(): bool
     {
         return ! $this->needsPhaseSetup();
+    }
+
+    /**
+     * Whether this project has been through setup at least once.
+     *
+     * Not the same as phasesAreFinalized(): a Super Admin who unlocks a
+     * finalized structure puts it back to pending, but the project has still
+     * been set up - its material plan is settled and its work is under way.
+     * phase_setup_finalized_at survives the unlock, which is what this reads.
+     * The stored flag is asked as well for the projects the phase backfill
+     * finalized without a date.
+     */
+    public function hasCompletedInitialSetup(): bool
+    {
+        return $this->phasesAreFinalized() || $this->phase_setup_finalized_at !== null;
+    }
+
+    /**
+     * A project that has never been set up: its listing row offers Set Up
+     * Now and nothing else.
+     */
+    public function awaitingInitialSetup(): bool
+    {
+        return ! $this->hasCompletedInitialSetup();
     }
 
     /**

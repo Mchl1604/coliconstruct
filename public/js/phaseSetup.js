@@ -821,6 +821,15 @@ document.addEventListener("DOMContentLoaded", function () {
      * folded away, then focus and mark the field.
      */
     function reportProblem(problem) {
+        // The phases are step 1 of setup. A problem found while the person
+        // is on step 2 has to bring step 1 back, or it is reported out of
+        // sight.
+        const phasesTab = document.querySelector('[data-setup-step="phases"]');
+
+        if (phasesTab && window.bootstrap) {
+            bootstrap.Tab.getOrCreateInstance(phasesTab).show();
+        }
+
         setError(problem.message);
 
         if (problem.phase === undefined) {
@@ -894,6 +903,14 @@ document.addEventListener("DOMContentLoaded", function () {
             return false;
         }
 
+        // The other step of setup gets its say before anything is sent - see
+        // setupMaterials.js, which cancels this when a material row is wrong.
+        const before = new CustomEvent("phase-setup:before-submit", { cancelable: true });
+
+        if (!form.dispatchEvent(before)) {
+            return false;
+        }
+
         form.querySelectorAll("[data-phase-payload]").forEach(function (input) {
             input.remove();
         });
@@ -960,7 +977,13 @@ document.addEventListener("DOMContentLoaded", function () {
         const problem = validationError();
 
         if (!problem) {
-            submitTo(form.dataset.finalizeUrl);
+            // Refused by the materials step: close the dialog so the reason,
+            // which that step has already put on screen, is not behind it.
+            if (!submitTo(form.dataset.finalizeUrl)) {
+                bootstrap.Modal.getOrCreateInstance(
+                    document.getElementById("finalizePhasesModal"),
+                ).hide();
+            }
 
             return;
         }

@@ -26,6 +26,8 @@ use App\Services\ImportableTeamSources;
 use App\Services\NotificationService;
 use App\Services\ProjectCompletion;
 use App\Services\ProjectEmails;
+use App\Services\ProjectMaterialLedger;
+use App\Services\ProjectMaterialRules;
 use App\Services\ProjectPhaseProgress;
 use App\Services\ProjectPhaseRules;
 use App\Services\ProjectReopen;
@@ -1489,6 +1491,15 @@ class ProjectController extends Controller
             ->withQueryString()
             ->fragment('project-activity-log');
 
+        // The Materials tab. Every figure is summed from the entries by the
+        // ledger, and whether this reader may record is asked of the same
+        // rules the endpoints ask again.
+        $materialSummary = app(ProjectMaterialLedger::class)->summary($project);
+        $canRecordMaterials = app(ProjectMaterialRules::class)->canRecord($request->user(), $project);
+        $materialQuickAdd = $canRecordMaterials
+            ? ProjectMaterialController::quickAddOptions()
+            : ['types' => [], 'units' => []];
+
         return view('super-admin.projectDetails', compact(
             'project',
             'projectTypes',
@@ -1519,7 +1530,10 @@ class ProjectController extends Controller
             'selectablePhases',
             'activityLogs',
             'taskTechnicians',
-            'technicianPeriods'
+            'technicianPeriods',
+            'materialSummary',
+            'canRecordMaterials',
+            'materialQuickAdd'
         ));
 
     }
@@ -2661,6 +2675,10 @@ class ProjectController extends Controller
                 // A team change still scheduled is called off, so the called-
                 // off job keeps the team it stopped with.
                 app(ProjectTeamChange::class)->cancelScheduledAfterClosing($project);
+
+                // Whatever material is still on site is recorded as unused,
+                // so the called-off job's materials still add up.
+                app(ProjectMaterialLedger::class)->closeOut($project, 'Left over at cancellation.');
             });
 
             $this->activityLogger->record(

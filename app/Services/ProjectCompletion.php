@@ -279,6 +279,12 @@ class ProjectCompletion
             'client_confirmation_recorded_by' => $recordedBy?->id,
             'client_confirmation_recorded_at' => $recordedBy ? CarbonImmutable::now() : null,
         ]);
+
+        // Completed is final, so whatever material is still on site is
+        // recorded as unused now - not at Awaiting Client Confirmation, which
+        // can still be reopened and worked on. No warning: leftovers are a
+        // fact to keep, not a reason to stop the close.
+        app(ProjectMaterialLedger::class)->closeOut($project, 'Left over at completion.');
     }
 
     /**

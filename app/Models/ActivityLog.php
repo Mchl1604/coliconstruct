@@ -38,7 +38,12 @@ class ActivityLog extends Model
 
     public const MODULE_TASKS = 'Tasks';
 
-    public const MODULE_INVENTORY = 'Inventory';
+    /**
+     * The material list and every project's materials. Took the place of the
+     * Inventory placeholder, which nothing ever logged to: materials are a
+     * reference list and a per-project record, not stock.
+     */
+    public const MODULE_MATERIALS = 'Materials';
 
     public const MODULE_PURCHASE_ORDERS = 'Purchase Orders';
 
@@ -72,9 +77,9 @@ class ActivityLog extends Model
     }
 
     /**
-     * Every module the filter offers, in the order it lists them. Inventory and
-     * Purchase Orders are here before those modules exist so the audit trail is
-     * ready for them.
+     * Every module the filter offers, in the order it lists them. Purchase
+     * Orders is here before that module exists so the audit trail is ready for
+     * it.
      *
      * @var array<int, string>
      */
@@ -83,7 +88,7 @@ class ActivityLog extends Model
         self::MODULE_USER_MANAGEMENT,
         self::MODULE_PROJECTS,
         self::MODULE_TASKS,
-        self::MODULE_INVENTORY,
+        self::MODULE_MATERIALS,
         self::MODULE_PURCHASE_ORDERS,
         self::MODULE_REPORTS,
         self::MODULE_CONFIGURATION,
@@ -469,6 +474,45 @@ class ActivityLog extends Model
 
     public const RESTORE_PERFORMED = 'Restore Performed';
 
+    // ------------------------------------------------------------------
+    // Materials
+    // ------------------------------------------------------------------
+
+    public const MATERIAL_CREATED = 'Material Added';
+
+    public const MATERIAL_UPDATED = 'Material Updated';
+
+    public const MATERIAL_ACTIVATED = 'Material Activated';
+
+    public const MATERIAL_DEACTIVATED = 'Material Deactivated';
+
+    public const MATERIAL_DELETED = 'Material Removed';
+
+    public const MATERIAL_TYPE_CREATED = 'Material Type Added';
+
+    public const MATERIAL_TYPE_UPDATED = 'Material Type Renamed';
+
+    public const MATERIAL_TYPE_DELETED = 'Material Type Removed';
+
+    /**
+     * The plan a project was set up with, written when its setup is
+     * finalized.
+     */
+    public const PROJECT_MATERIALS_PLANNED = 'Project Materials Planned';
+
+    public const PROJECT_MATERIAL_ADDED = 'Project Material Added';
+
+    public const PROJECT_MATERIAL_USED = 'Project Material Used';
+
+    public const PROJECT_MATERIAL_RETURNED = 'Project Material Returned';
+
+    public const PROJECT_MATERIAL_ENTRY_VOIDED = 'Project Material Entry Voided';
+
+    /**
+     * What was still on site when the project closed, recorded as unused.
+     */
+    public const PROJECT_MATERIALS_CLOSED_OUT = 'Project Materials Closed Out';
+
     /**
      * Which module each action belongs to.
      *
@@ -565,6 +609,21 @@ class ActivityLog extends Model
         self::REPORT_PRINTED => self::MODULE_REPORTS,
         self::REPORT_ARCHIVED => self::MODULE_REPORTS,
         self::REPORT_RESTORED => self::MODULE_REPORTS,
+
+        self::MATERIAL_CREATED => self::MODULE_MATERIALS,
+        self::MATERIAL_UPDATED => self::MODULE_MATERIALS,
+        self::MATERIAL_ACTIVATED => self::MODULE_MATERIALS,
+        self::MATERIAL_DEACTIVATED => self::MODULE_MATERIALS,
+        self::MATERIAL_DELETED => self::MODULE_MATERIALS,
+        self::MATERIAL_TYPE_CREATED => self::MODULE_MATERIALS,
+        self::MATERIAL_TYPE_UPDATED => self::MODULE_MATERIALS,
+        self::MATERIAL_TYPE_DELETED => self::MODULE_MATERIALS,
+        self::PROJECT_MATERIALS_PLANNED => self::MODULE_MATERIALS,
+        self::PROJECT_MATERIAL_ADDED => self::MODULE_MATERIALS,
+        self::PROJECT_MATERIAL_USED => self::MODULE_MATERIALS,
+        self::PROJECT_MATERIAL_RETURNED => self::MODULE_MATERIALS,
+        self::PROJECT_MATERIAL_ENTRY_VOIDED => self::MODULE_MATERIALS,
+        self::PROJECT_MATERIALS_CLOSED_OUT => self::MODULE_MATERIALS,
 
         self::SYSTEM_SETTINGS_UPDATED => self::MODULE_CONFIGURATION,
         self::ACTIVITY_LOGS_EXPORTED => self::MODULE_CONFIGURATION,

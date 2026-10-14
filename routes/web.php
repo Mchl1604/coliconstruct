@@ -8,11 +8,13 @@ use App\Http\Controllers\ConfigurationController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DatabaseBackupController;
 use App\Http\Controllers\InquiryController;
+use App\Http\Controllers\MaterialController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PhaseTemplateController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ProjectClientController;
 use App\Http\Controllers\ProjectController;
+use App\Http\Controllers\ProjectMaterialController;
 use App\Http\Controllers\ProjectPhaseController;
 use App\Http\Controllers\ProjectTypeController;
 use App\Http\Controllers\PublicSiteController;
@@ -329,6 +331,28 @@ Route::prefix('super-admin')
             ->whereNumber('project')
             ->whereNumber('phase')
             ->name('projects.phases.complete');
+
+        // ---------------------------------------------------------------
+        // Project materials
+        // ---------------------------------------------------------------
+        //
+        // The Materials tab and the setup screen's material picker. Who may
+        // record is ProjectMaterialRules' decision, asked again inside the
+        // controller - the same split the phase routes above make.
+        Route::prefix('/projects/{project}/materials')
+            ->whereNumber('project')
+            ->name('projects.materials.')
+            ->group(function () {
+                Route::get('/table', [ProjectMaterialController::class, 'table'])->name('table');
+                Route::get('/suggest', [ProjectMaterialController::class, 'suggest'])->name('suggest');
+                Route::post('/quick-add', [ProjectMaterialController::class, 'quickAdd'])->name('quick-add');
+                Route::post('/', [ProjectMaterialController::class, 'add'])->name('add');
+                Route::post('/record', [ProjectMaterialController::class, 'record'])->name('record');
+                Route::post('/entries/{entry}/void', [ProjectMaterialController::class, 'void'])
+                    ->whereNumber('entry')
+                    ->name('void');
+            });
+
         // What has changed about a project's team, or about its dates. Read by
         // the two history buttons on the project details page; `section` says
         // which of the two is asking.
@@ -610,6 +634,25 @@ Route::prefix('super-admin')
                 Route::put('/types/{projectType}', [PhaseTemplateController::class, 'updateTemplate'])->name('types.update');
             });
 
+            // Materials: the list projects pick from, and its groups. A
+            // reference list, not stock. Super Admin only, turned away by the
+            // controller on the same terms as Project Types.
+            Route::prefix('materials')->name('materials.')->group(function () {
+                Route::get('/', [MaterialController::class, 'index'])->name('index');
+                Route::post('/', [MaterialController::class, 'store'])->name('store');
+
+                // Before the {material} routes, so "types" is not read as the
+                // id of a material.
+                Route::get('/types', [MaterialController::class, 'types'])->name('types.index');
+                Route::post('/types', [MaterialController::class, 'storeType'])->name('types.store');
+                Route::put('/types/{materialType}', [MaterialController::class, 'updateType'])->name('types.update');
+                Route::delete('/types/{materialType}', [MaterialController::class, 'destroyType'])->name('types.destroy');
+
+                Route::put('/{material}', [MaterialController::class, 'update'])->whereNumber('material')->name('update');
+                Route::put('/{material}/status', [MaterialController::class, 'setStatus'])->whereNumber('material')->name('status');
+                Route::delete('/{material}', [MaterialController::class, 'destroy'])->whereNumber('material')->name('destroy');
+            });
+
             // Backup & Restore: every row and every uploaded file, out and
             // back in. Super Admin only, on the group rather than in the
             // controller, because nothing here is ever Admin's.
@@ -685,6 +728,10 @@ Route::prefix('technician')
             ->name('projects.tasks.table');
         Route::get('/projects/{project}/details', [TechnicianPortalController::class, 'projectDetails'])
             ->name('projects.details');
+        // The Materials tab's history, readable by the whole crew - a plain
+        // technician sees what is on site without recording any of it.
+        Route::get('/projects/{project}/materials/table', [ProjectMaterialController::class, 'table'])
+            ->name('projects.materials.table');
         Route::post('/tasks/{task}/complete', [TechnicianPortalController::class, 'completeTask'])
             ->name('tasks.complete');
 
@@ -730,6 +777,21 @@ Route::prefix('technician')
                 ->name('projects.phases.reload');
             Route::post('/projects/{project}/phases/{phase}/complete', [ProjectPhaseController::class, 'complete'])
                 ->name('projects.phases.complete');
+
+            // Project materials: the setup screen's picker and recording on
+            // the Materials tab. Narrowed to a project the lead runs today -
+            // see ProjectMaterialRules.
+            Route::get('/projects/{project}/materials/suggest', [ProjectMaterialController::class, 'suggest'])
+                ->name('projects.materials.suggest');
+            Route::post('/projects/{project}/materials/quick-add', [ProjectMaterialController::class, 'quickAdd'])
+                ->name('projects.materials.quick-add');
+            Route::post('/projects/{project}/materials', [ProjectMaterialController::class, 'add'])
+                ->name('projects.materials.add');
+            Route::post('/projects/{project}/materials/record', [ProjectMaterialController::class, 'record'])
+                ->name('projects.materials.record');
+            Route::post('/projects/{project}/materials/entries/{entry}/void', [ProjectMaterialController::class, 'void'])
+                ->whereNumber('entry')
+                ->name('projects.materials.void');
         });
     });
 

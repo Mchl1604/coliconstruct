@@ -52,7 +52,7 @@
                         <a href="{{ route($setupRoute, $project->project_id) }}"
                             class="btn btn-sm btn-warning">
                             <i class="bi bi-sliders me-1" aria-hidden="true"></i>
-                            Set Up Phases
+                            Set Up Now
                         </a>
                     </li>
                 @endforeach

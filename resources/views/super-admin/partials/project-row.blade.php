@@ -98,8 +98,22 @@
             // how this list came to be missing a status the rest of
             // the system already treats as locked.
             $isReadOnly = $project->isReadOnly();
+
+            // A project nobody has set up yet has one thing to do: set it
+            // up - phases, then materials. Every other action waits until
+            // that is done; the details page stays reachable from the setup
+            // screen's Back to Project. Only for whoever can actually do it.
+            $offersSetUpOnly = $project->awaitingInitialSetup()
+                && app(\App\Services\ProjectPhaseRules::class)->canSetUp(auth()->user(), $project);
         @endphp
         <div class="projects-action-buttons">
+            @if ($offersSetUpOnly)
+                <a class="btn btn-sm btn-warning py-1 px-2 fw-semibold text-nowrap"
+                    href="{{ route('super-admin.projects.phases.setup', $project->project_id) }}"
+                    title="Set up phases and materials">
+                    <i class="bi bi-sliders me-1" aria-hidden="true"></i>Set Up Now
+                </a>
+            @else
             <button class="btn btn-sm btn-primary py-1 px-2"
                 onclick="window.location='{{ route('super-admin.projects.show', $project->project_id) }}'">
                 <i class="bi bi-eye"></i>
@@ -151,6 +165,7 @@
                     title="Archive Project">
                     <i class="bi bi-archive"></i>
                 </button>
+            @endif
             @endif
         </div>
     </td>

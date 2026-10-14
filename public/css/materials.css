@@ -1,0 +1,338 @@
+/*
+ * Materials: the setup screen's Materials step, the project's Materials tab,
+ * and System Settings -> Materials.
+ *
+ * One stylesheet for the three because they draw the same things - a material
+ * name with its brand, a unit chip, a quantity - and should draw them alike.
+ */
+
+/* ---------- Setup steps ---------- */
+
+.setup-steps {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem;
+    margin-bottom: 1rem;
+    padding: 0;
+    list-style: none;
+}
+
+.setup-step {
+    display: inline-flex;
+    align-items: center;
+    gap: .5rem;
+    padding: .55rem 1rem;
+    border: 1px solid #dbe4ee;
+    border-radius: 2rem;
+    background: #fff;
+    color: #475569;
+    font-weight: 600;
+    transition: all .15s ease;
+}
+
+.setup-step:hover {
+    border-color: #2370b4;
+    color: #2370b4;
+}
+
+.setup-step.active {
+    border-color: #2370b4;
+    background: #2370b4;
+    color: #fff;
+}
+
+.setup-step-number {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 50%;
+    background: #e8f1fa;
+    color: #2370b4;
+    font-size: .8rem;
+    font-weight: 700;
+}
+
+.setup-step.active .setup-step-number {
+    background: #fff;
+}
+
+.setup-step-count {
+    padding: .05rem .45rem;
+    border-radius: 1rem;
+    background: rgba(35, 112, 180, .12);
+    font-size: .75rem;
+}
+
+.setup-step.active .setup-step-count {
+    background: rgba(255, 255, 255, .25);
+}
+
+.setup-step-footer {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: .75rem;
+}
+
+/* ---------- The picker ---------- */
+
+.material-picker {
+    position: relative;
+}
+
+.material-picker-menu {
+    position: absolute;
+    top: calc(100% + .25rem);
+    left: 0;
+    right: 0;
+    z-index: 1060;
+    max-height: 18rem;
+    overflow-y: auto;
+    margin: 0;
+    padding: .3rem;
+    list-style: none;
+    border: 1px solid #dbe4ee;
+    border-radius: .6rem;
+    background: #fff;
+    box-shadow: 0 10px 28px rgba(15, 23, 42, .14);
+}
+
+.material-picker-option {
+    display: flex;
+    flex-direction: column;
+    gap: .1rem;
+    padding: .45rem .6rem;
+    border-radius: .45rem;
+    cursor: pointer;
+}
+
+.material-picker-option:hover,
+.material-picker-option.is-active {
+    background: #eef5fc;
+}
+
+.material-picker-option-label {
+    font-weight: 600;
+    color: #0f172a;
+}
+
+.material-picker-option-meta {
+    color: #64748b;
+    font-size: .78rem;
+}
+
+.material-picker-option.is-add {
+    color: #2370b4;
+    font-weight: 600;
+}
+
+.material-picker-empty {
+    padding: .5rem .6rem;
+    color: #64748b;
+    font-size: .85rem;
+}
+
+/* ---------- Names, units, quantities ---------- */
+
+.material-name {
+    font-weight: 600;
+    color: #0f172a;
+}
+
+.material-brand {
+    display: inline-block;
+    margin-left: .35rem;
+    padding: .05rem .45rem;
+    border-radius: .35rem;
+    background: #eef5fc;
+    color: #1d5f99;
+    font-size: .75rem;
+    font-weight: 600;
+}
+
+.material-meta {
+    color: #64748b;
+    font-size: .78rem;
+}
+
+.material-unit-chip {
+    display: inline-block;
+    padding: .1rem .5rem;
+    border-radius: 1rem;
+    background: #f1f5f9;
+    color: #334155;
+    font-size: .78rem;
+    font-weight: 600;
+}
+
+.material-qty {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.material-qty.is-zero {
+    color: #94a3b8;
+}
+
+.material-on-site {
+    font-weight: 700;
+    color: #15803d;
+}
+
+.material-unused {
+    font-weight: 700;
+    color: #b45309;
+}
+
+/* ---------- Setup step list ---------- */
+
+.material-plan-card {
+    padding: 1.25rem;
+    margin-bottom: 1rem;
+    border-radius: .75rem;
+    background: #fff;
+    box-shadow: 0 .125rem .25rem rgba(15, 23, 42, .075);
+}
+
+.material-suggestions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .4rem;
+    margin-bottom: .9rem;
+}
+
+.material-suggestion-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: .3rem;
+    padding: .25rem .65rem;
+    border: 1px dashed #93b8dc;
+    border-radius: 1rem;
+    background: #f8fbfe;
+    color: #1d5f99;
+    font-size: .8rem;
+    font-weight: 600;
+}
+
+.material-suggestion-chip:hover {
+    border-style: solid;
+    background: #eef5fc;
+}
+
+.material-plan-table td {
+    vertical-align: middle;
+}
+
+.material-plan-table .material-qty-input {
+    max-width: 7.5rem;
+}
+
+.material-plan-empty {
+    padding: 1.25rem;
+    border: 2px dashed #e2e8f0;
+    border-radius: .75rem;
+    color: #64748b;
+    text-align: center;
+}
+
+/* ---------- Project Materials tab ---------- */
+
+.material-entry-badge {
+    display: inline-block;
+    padding: .15rem .55rem;
+    border-radius: 1rem;
+    font-size: .75rem;
+    font-weight: 700;
+}
+
+.material-entry-badge.is-added {
+    background: #e0f2fe;
+    color: #075985;
+}
+
+.material-entry-badge.is-used {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.material-entry-badge.is-returned {
+    background: #ede9fe;
+    color: #5b21b6;
+}
+
+.material-entry-badge.is-unused {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.material-entry-voided td {
+    color: #94a3b8;
+}
+
+.material-entry-voided .material-entry-strike {
+    text-decoration: line-through;
+}
+
+.material-row-actions {
+    display: inline-flex;
+    gap: .3rem;
+}
+
+/* ---------- System Settings -> Materials ---------- */
+
+.material-types-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .4rem;
+    align-items: center;
+}
+
+.material-type-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    padding: .25rem .35rem .25rem .7rem;
+    border: 1px solid #dbe4ee;
+    border-radius: 1rem;
+    background: #fff;
+    font-size: .8rem;
+    font-weight: 600;
+    color: #334155;
+}
+
+.material-type-chip .material-type-count {
+    color: #64748b;
+    font-weight: 500;
+}
+
+.material-type-chip button {
+    padding: 0 .3rem;
+    border: 0;
+    background: transparent;
+    color: #64748b;
+    line-height: 1;
+}
+
+.material-type-chip button:hover {
+    color: #2370b4;
+}
+
+.material-status {
+    font-size: .75rem;
+    font-weight: 700;
+}
+
+.material-status.is-active {
+    color: #15803d;
+}
+
+.material-status.is-inactive {
+    color: #94a3b8;
+}
+
+@media (max-width: 575.98px) {
+    .material-plan-table .material-qty-input {
+        max-width: 5.5rem;
+    }
+}

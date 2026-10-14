@@ -59,7 +59,21 @@
     <td><x-project-status-badge :project="$project" /></td>
     <td><x-project-phase-progress :project="$project" /></td>
     <td class="text-center">
+        @php
+            // A lead on a project nobody has set up is offered that and
+            // nothing else - see the administrators' row. A plain technician
+            // cannot set anything up, so they keep View.
+            $offersSetUpOnly = $project->awaitingInitialSetup()
+                && app(\App\Services\ProjectPhaseRules::class)->canSetUp(auth()->user(), $project);
+        @endphp
         <div class="projects-action-buttons">
+            @if ($offersSetUpOnly)
+                <a class="btn btn-sm btn-warning py-1 px-2 fw-semibold text-nowrap"
+                    href="{{ route('technician.projects.phases.setup', $project->project_id) }}"
+                    title="Set up phases and materials">
+                    <i class="bi bi-sliders me-1" aria-hidden="true"></i>Set Up Now
+                </a>
+            @else
             <a class="btn btn-sm btn-primary py-1 px-2"
                 href="{{ route('technician.projects.show', $project->project_id) }}"
                 title="View project">
@@ -79,6 +93,7 @@
                     title="Complete project">
                     <i class="bi bi-check-lg" aria-hidden="true"></i>
                 </button>
+            @endif
             @endif
         </div>
     </td>

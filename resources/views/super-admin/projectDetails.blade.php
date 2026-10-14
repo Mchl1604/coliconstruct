@@ -26,6 +26,7 @@
              that replaces it. Shared with the technician portal's copy of this
              page and with the setup screen itself. --}}
         <link rel="stylesheet" href="/css/projectPhases.css">
+        <link rel="stylesheet" href="/css/materials.css">
     @endpush
     @php
         $scheduleStart = $project->schedules->min('start_datetime');
@@ -875,6 +876,15 @@
                     aria-selected="false">
                     <i class="bi bi-graph-up-arrow me-1" aria-hidden="true"></i>
                     Project Progress
+                </button>
+            </li>
+
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" type="button" role="tab" data-bs-toggle="tab"
+                    data-bs-target="#project-materials" aria-controls="project-materials"
+                    aria-selected="false">
+                    <i class="bi bi-box-seam me-1" aria-hidden="true"></i>
+                    Materials
                 </button>
             </li>
         </ul>
@@ -1838,7 +1848,7 @@
                                     <a href="{{ route('super-admin.projects.phases.setup', $project->project_id) }}"
                                         class="btn btn-warning">
                                         <i class="bi bi-sliders me-1"></i>
-                                        Set Up Project Phases
+                                        Set Up Now
                                     </a>
                                 @else
                                     <button class="btn btn-primary" disabled
@@ -1900,6 +1910,13 @@
         </div>
 
         </div>{{-- /#project-progress --}}
+
+        <div class="tab-pane fade" id="project-materials" role="tabpanel"
+            aria-labelledby="projectSectionTabs">
+            <x-project-materials :project="$project" :summary="$materialSummary"
+                :can-record="$canRecordMaterials" portal="super-admin"
+                :quick-add="$materialQuickAdd" />
+        </div>{{-- /#project-materials --}}
 
         </div>{{-- /.tab-content --}}
     </div>
@@ -3240,6 +3257,9 @@
         <script src="/js/super-admin/changeClient.js"></script>
         <script src="/js/super-admin/projectDetails.js"></script>
         <script src="/js/super-admin/projectHistory.js"></script>
+        {{-- The Materials tab: its history table and its three dialogs. --}}
+        <script src="/js/materialPicker.js"></script>
+        <script src="/js/projectMaterials.js"></script>
         {{-- Lets a #fragment open the tab holding it - the page is two tabs
              now, and the phases panel, the client details and the task
              board are all inside one of them. Completing a phase redirects

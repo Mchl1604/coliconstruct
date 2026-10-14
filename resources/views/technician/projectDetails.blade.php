@@ -9,6 +9,7 @@
     {{-- The phase panel and the setup-required notice, the same stylesheet the
          administrative copy of this page loads. --}}
     <link rel="stylesheet" href="/css/projectPhases.css">
+    <link rel="stylesheet" href="/css/materials.css">
 @endpush
 
 @section('content')
@@ -139,6 +140,15 @@
                     aria-selected="false">
                     <i class="bi bi-graph-up-arrow me-1" aria-hidden="true"></i>
                     Project Progress
+                </button>
+            </li>
+
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" type="button" role="tab" data-bs-toggle="tab"
+                    data-bs-target="#project-materials" aria-controls="project-materials"
+                    aria-selected="false">
+                    <i class="bi bi-box-seam me-1" aria-hidden="true"></i>
+                    Materials
                 </button>
             </li>
         </ul>
@@ -730,7 +740,7 @@
                                     <a href="{{ route('technician.projects.phases.setup', $project->project_id) }}"
                                         class="btn btn-warning">
                                         <i class="bi bi-sliders me-1" aria-hidden="true"></i>
-                                        Set Up Project Phases
+                                        Set Up Now
                                     </a>
                                 @endif
                             @elseif ($canManageTasks)
@@ -769,6 +779,15 @@
         </div>
 
         </div>{{-- /#project-progress --}}
+
+        {{-- A lead records materials here; the rest of the crew reads what is
+             on site. ProjectMaterialRules decides which, per project. --}}
+        <div class="tab-pane fade" id="project-materials" role="tabpanel"
+            aria-labelledby="projectSectionTabs">
+            <x-project-materials :project="$project" :summary="$materialSummary"
+                :can-record="$canRecordMaterials" portal="technician"
+                :quick-add="$materialQuickAdd" />
+        </div>{{-- /#project-materials --}}
 
         </div>{{-- /.tab-content --}}
     </div>
@@ -1036,6 +1055,9 @@
         {{-- The same range-aware task date pickers the Super Admin task forms use. --}}
         <script src="/js/super-admin/taskDatePickers.js"></script>
         <script src="/js/imagePreview.js"></script>
+        {{-- The Materials tab: its history table and its three dialogs. --}}
+        <script src="/js/materialPicker.js"></script>
+        <script src="/js/projectMaterials.js"></script>
 
         {{-- The task list is a DataTable here for the same reason it is one on
              the administrative copy of this page: a project can run to dozens

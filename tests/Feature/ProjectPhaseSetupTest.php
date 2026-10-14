@@ -107,7 +107,7 @@ class ProjectPhaseSetupTest extends TestCase
             ->get(route('super-admin.projects.show', $this->project->project_id))
             ->assertOk()
             ->assertSee('Phase Setup Required')
-            ->assertSee('Set Up Project Phases')
+            ->assertSee('Set Up Now')
             // The monitoring interface is absent, not merely empty.
             ->assertDontSee('0/0 Phases');
     }
@@ -121,13 +121,13 @@ class ProjectPhaseSetupTest extends TestCase
             $this->actingAs($viewer)
                 ->get(route('super-admin.projects.phases.setup', $this->project->project_id))
                 ->assertOk()
-                ->assertSee('Set Up Project Phases');
+                ->assertSee('Set Up Project');
         }
 
         $this->actingAs($this->leadAccount)
             ->get(route('technician.projects.phases.setup', $this->project->project_id))
             ->assertOk()
-            ->assertSee('Set Up Project Phases');
+            ->assertSee('Set Up Project');
     }
 
     /**
@@ -1418,7 +1418,7 @@ class ProjectPhaseSetupTest extends TestCase
             ->get(route('technician.projects'))
             ->assertOk()
             ->assertSee('Project Phase Setup Required')
-            ->assertSee('Set Up Phases');
+            ->assertSee('Set Up Now');
     }
 
     public function test_a_plain_technician_is_not_offered_the_setup_action(): void
@@ -1426,7 +1426,7 @@ class ProjectPhaseSetupTest extends TestCase
         $this->actingAs($this->mate->account)
             ->get(route('technician.projects'))
             ->assertOk()
-            ->assertDontSee('Set Up Phases');
+            ->assertDontSee('Set Up Now');
     }
 
     // ------------------------------------------------------------------

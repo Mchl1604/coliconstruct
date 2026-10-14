@@ -16,6 +16,8 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         $this->call(SuperAdminSeeder::class);
+        // The material list projects pick from - see MaterialSeeder.
+        $this->call(MaterialSeeder::class);
 
         // User::factory(10)->create();
 

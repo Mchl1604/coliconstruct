@@ -19,6 +19,8 @@ use App\Services\ActivityLogger;
 use App\Services\NotificationService;
 use App\Services\ProjectCompletion;
 use App\Services\ProjectEmails;
+use App\Services\ProjectMaterialLedger;
+use App\Services\ProjectMaterialRules;
 use App\Services\ProjectPhaseProgress;
 use App\Services\ProjectPhaseRules;
 use App\Services\TaskAssignmentGaps;
@@ -308,6 +310,7 @@ class TechnicianPortalController extends Controller
             ->forProject($project->project_id);
 
         $user = $request->user();
+        $canRecordMaterials = app(ProjectMaterialRules::class)->canRecord($user, $project);
 
         return view('technician.projectDetails', [
             'project' => $project,
@@ -359,6 +362,14 @@ class TechnicianPortalController extends Controller
             'canSetUpPhases' => app(ProjectPhaseRules::class)->canSetUp($user, $project),
             'canCompletePhase' => app(ProjectPhaseRules::class)->canCompletePhase($user, $project),
             'selectablePhases' => app(ProjectPhaseProgress::class)->selectablePhases($project),
+
+            // The Materials tab, read by the whole crew and recorded by the
+            // lead - see ProjectMaterialRules, which the endpoints ask again.
+            'materialSummary' => app(ProjectMaterialLedger::class)->summary($project),
+            'canRecordMaterials' => $canRecordMaterials,
+            'materialQuickAdd' => $canRecordMaterials
+                ? ProjectMaterialController::quickAddOptions()
+                : ['types' => [], 'units' => []],
         ]);
     }
 

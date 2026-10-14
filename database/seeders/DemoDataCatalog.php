@@ -1049,6 +1049,75 @@ final class DemoDataCatalog
     }
 
     /**
+     * The aircon brands an installation job's units rotate through, so the
+     * demo projects do not all read "Daikin". Each has a 1.5 HP split-type
+     * unit in MaterialSeeder::catalog().
+     *
+     * @var array<int, string>
+     */
+    public const INSTALLATION_BRANDS = ['Daikin', 'Carrier', 'Panasonic', 'Koppel', 'LG', 'Samsung'];
+
+    /**
+     * The material plan each kind of job is set up with: [name, brand, unit,
+     * quantity]. Every entry is on MaterialSeeder::catalog(). An installation's
+     * first line is its aircon unit, whose brand rotates - see
+     * INSTALLATION_BRANDS.
+     *
+     * @return array<string, array<int, array{0: string, 1: string|null, 2: string, 3: float|int}>>
+     */
+    public static function projectMaterials(): array
+    {
+        return [
+            'installation' => [
+                ['Split-Type Inverter 1.5 HP', 'Daikin', 'unit', 2],
+                ['Outdoor Unit Wall Bracket 1.0-2.0 HP', null, 'set', 2],
+                ['Copper Tube 1/4"', 'Mueller', 'm', 15],
+                ['Copper Tube 1/2"', 'Mueller', 'm', 15],
+                ['Rubber Foam Insulation 3/8" x 3/4"', 'Armaflex', 'length', 10],
+                ['THHN Wire 3.5 mm²', 'Phelps Dodge', 'm', 30],
+                ['Circuit Breaker 2P 20A', 'Schneider Electric', 'pc', 2],
+                ['Drain Hose 5/8"', null, 'm', 10],
+                ['Refrigerant R32', 'Chemours', 'kg', 2.5],
+            ],
+            'repair' => [
+                ['Run Capacitor 35+5 µF', null, 'pc', 2],
+                ['Refrigerant R32', 'Chemours', 'kg', 3],
+                ['Filter Drier 1/4"', 'Danfoss', 'pc', 2],
+                ['Brazing Rod 15% Silver', 'Harris', 'pc', 5],
+                ['Nitrogen, Dry', null, 'tank', 1],
+                ['Indoor Fan Motor, Split-Type', null, 'pc', 1],
+            ],
+            'cleaning' => [
+                ['Coil Cleaner, Alkaline', 'Nu-Calgon', 'gal', 2],
+                ['Evaporator Coil Cleaner Spray', 'Nu-Calgon', 'can', 6],
+                ['Aircon Cleaning Bag', null, 'pc', 4],
+                ['Washable Air Filter', null, 'pc', 10],
+                ['Cotton Rags', null, 'pack', 3],
+            ],
+            'ducting' => [
+                ['G.I. Sheet Gauge 24', null, 'sheet', 40],
+                ['G.I. Sheet Gauge 26', null, 'sheet', 30],
+                ['Fiberglass Duct Wrap 1"', 'Owens Corning', 'roll', 12],
+                ['Duct Sealant Mastic', 'Hardcast', 'gal', 6],
+                ['Aluminum Foil Tape 2"', '3M', 'roll', 20],
+                ['Square Ceiling Diffuser 12" x 12"', null, 'pc', 16],
+                ['Volume Damper 10"', null, 'pc', 8],
+                ['Threaded Rod 3/8"', null, 'length', 30],
+                ['Blind Rivet 1/8"', null, 'box', 4],
+            ],
+            'ventilation' => [
+                ['Centrifugal Fan 2 HP', null, 'unit', 1],
+                ['Inline Duct Fan 8"', 'KDK', 'unit', 2],
+                ['Wall Exhaust Fan 12"', 'Hanabishi', 'unit', 3],
+                ['Fresh Air Louver 24" x 24"', null, 'pc', 2],
+                ['Flexible Duct 10"', null, 'm', 20],
+                ['THHN Wire 3.5 mm²', 'Phelps Dodge', 'm', 40],
+                ['Safety Switch 30A', 'GE', 'pc', 2],
+            ],
+        ];
+    }
+
+    /**
      * Whether two project type or stage names are the same name, however a
      * site happens to have spelled it - "Heating Ventillation" is Heating
      * Ventilation, and "aircon cleaning" is Aircon Cleaning.
