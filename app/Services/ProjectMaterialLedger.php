@@ -162,8 +162,8 @@ class ProjectMaterialLedger
 
             if ($this->hundredths($quantity) > $onSite) {
                 throw new RuntimeException($onSite <= 0
-                    ? sprintf('No %s on site. Add more first.', $material->displayName())
-                    : sprintf('Only %s %s on site. Add more first.', $material->unit->format($onSite / 100), $material->unit->value));
+                    ? sprintf('No %s remaining. Add more first.', $material->displayName())
+                    : sprintf('Only %s %s remaining. Add more first.', $material->unit->format($onSite / 100), $material->unit->value));
             }
 
             $entry = $this->write($line, $type, $quantity, $date, $notes, $by);

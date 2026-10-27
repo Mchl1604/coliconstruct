@@ -82,7 +82,7 @@
         const onSite = Number(option.dataset.onSite || 0);
 
         unit.textContent = option.dataset.unit || "";
-        hint.textContent = "On site: " + window.materialPicker.formatQty(onSite) + " " + (option.dataset.unit || "");
+        hint.textContent = "Remaining: " + window.materialPicker.formatQty(onSite) + " " + (option.dataset.unit || "");
         qtyRules(qty, option.dataset.fractional === "1");
         qty.max = String(onSite);
     }

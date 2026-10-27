@@ -107,8 +107,7 @@
                         <tr>
                             <th>Material</th>
                             <th>Unit</th>
-                            <th class="text-end">Needed</th>
-                            <th class="text-end">On Site</th>
+                            <th class="text-end">Remaining</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -121,7 +120,6 @@
                                     @endif
                                 </td>
                                 <td><span class="material-unit-chip">{{ $line['material']->unit->value }}</span></td>
-                                <td class="text-end material-qty">{{ $line['material']->unit->format($line['needed']) }}</td>
                                 <td class="text-end material-qty">{{ $line['material']->unit->format($line['on_site']) }}</td>
                             </tr>
                         @endforeach

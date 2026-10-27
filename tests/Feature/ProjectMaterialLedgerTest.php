@@ -97,7 +97,7 @@ class ProjectMaterialLedgerTest extends TestCase
     public function test_more_cannot_be_used_or_returned_than_is_on_site(): void
     {
         $this->record($this->superAdmin, $this->airconLine, 'used', '3')
-            ->assertSessionHas('error', 'Only 2 unit on site. Add more first.');
+            ->assertSessionHas('error', 'Only 2 unit remaining. Add more first.');
 
         $this->assertSame(0, ProjectMaterialEntry::count());
     }
@@ -232,6 +232,16 @@ class ProjectMaterialLedgerTest extends TestCase
             ->assertOk()
             ->assertSee('Record Return')
             ->assertSee('Add Material');
+    }
+
+    public function test_the_table_shows_remaining_and_no_needed_column(): void
+    {
+        $this->actingAs($this->admin)
+            ->get(route('super-admin.projects.show', $this->project->project_id))
+            ->assertOk()
+            ->assertSee('<th class="text-end">Remaining</th>', false)
+            ->assertDontSee('<th class="text-end">Needed</th>', false)
+            ->assertDontSee('<th class="text-end">On Site</th>', false);
     }
 
     public function test_a_project_waiting_on_its_client_takes_no_entries(): void

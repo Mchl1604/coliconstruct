@@ -11,8 +11,8 @@
 ])
 
 {{--
-    The Materials tab: what the project planned, what was added, used and
-    returned since, and what is on site now.
+    The Materials tab: what was added (the setup plan included), used and
+    returned, and what remains.
 
     Every figure comes from ProjectMaterialLedger, summed from the entries
     listed in the history below - nothing on this tab is a stored total. When
@@ -76,14 +76,13 @@
                             <th>Material</th>
                             <th>Type</th>
                             <th>Unit</th>
-                            <th class="text-end">Needed</th>
                             <th class="text-end">Added</th>
                             <th class="text-end">Used</th>
                             <th class="text-end">Returned</th>
                             @if ($showsUnused)
                                 <th class="text-end">Unused</th>
                             @endif
-                            <th class="text-end">On Site</th>
+                            <th class="text-end">Remaining</th>
                             @if ($canRecord)
                                 <th class="text-center">Actions</th>
                             @endif
@@ -107,7 +106,13 @@
                                 </td>
                                 <td class="small">{{ $row['material']->type?->type_name }}</td>
                                 <td><span class="material-unit-chip" title="{{ $unit->label() }}">{{ $unit->value }}</span></td>
-                                @foreach (['needed', 'added', 'used', 'returned'] as $figure)
+                                {{-- Added counts the setup plan too, so the columns
+                                     still add up to Remaining. --}}
+                                @php($added = $row['needed'] + $row['added'])
+                                <td class="text-end material-qty {{ $added == 0 ? 'is-zero' : '' }}">
+                                    {{ $unit->format($added) }}
+                                </td>
+                                @foreach (['used', 'returned'] as $figure)
                                     <td class="text-end material-qty {{ $row[$figure] == 0 ? 'is-zero' : '' }}">
                                         {{ $unit->format($row[$figure]) }}
                                     </td>
@@ -219,7 +224,7 @@
                                         @disabled($row['on_site'] <= 0)>
                                         {{ $row['material']->displayName() }}
                                         &mdash; {{ $row['material']->unit->format($row['on_site']) }}
-                                        {{ $row['material']->unit->value }} on site
+                                        {{ $row['material']->unit->value }} remaining
                                     </option>
                                 @endforeach
                             </select>
