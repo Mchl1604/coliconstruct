@@ -62,6 +62,10 @@ document.addEventListener('DOMContentLoaded', function() {
             sectionNav?.querySelector('[data-content-section]'))?.dataset.contentSection || '';
         const pendingImages = new Map();
         const imageRemovals = new Set();
+        // Saved images on the section's own image fields that are to be taken
+        // away on Save. Service and owner pictures travel in their rows'
+        // remove_image flag instead.
+        const fieldImageRemovals = new Set();
 
         // What the fields held when they were last drawn from the server, so
         // "is there anything to save" is a comparison rather than a guess. Null
@@ -114,15 +118,15 @@ document.addEventListener('DOMContentLoaded', function() {
 
                 return '<div class="col-md-6"><label class="form-label fw-semibold" for="' + id + '">' +
                     escapeHtml(field.label) + '</label>' +
-                    '<div class="content-image-field" data-content-image="' + escapeHtml(field.key) + '">' +
+                    '<div class="content-image-field" data-content-image="' + escapeHtml(field.key) + '"' +
+                    ' data-has-image="' + (field.url ? 'true' : 'false') + '">' +
                     preview +
                     '<div class="d-flex flex-wrap gap-2 mt-2">' +
                     '<label class="btn btn-sm btn-outline-primary mb-0" for="' + id + '">' +
                     (field.url ? 'Replace' : 'Upload') + '</label>' +
                     '<input type="file" id="' + id + '" class="d-none" accept="image/*" data-content-file>' +
-                    (field.url
-                        ? '<button type="button" class="btn btn-sm btn-outline-danger" data-content-remove>Remove</button>'
-                        : '') +
+                    '<button type="button" class="btn btn-sm btn-outline-danger' + (field.url ? '' : ' d-none') +
+                    '" data-content-remove>Remove</button>' +
                     '</div>' + help + '</div></div>';
             }
 
@@ -300,6 +304,7 @@ document.addEventListener('DOMContentLoaded', function() {
         function clearPendingImages() {
             pendingImages.clear();
             imageRemovals.clear();
+            fieldImageRemovals.clear();
         }
 
         /**
@@ -346,6 +351,29 @@ document.addEventListener('DOMContentLoaded', function() {
             return null;
         }
 
+        /**
+         * An image field shows its picture, or the empty placeholder. Nothing
+         * is sent from here: a chosen or removed image waits for Save Changes
+         * like every other edit - see uploadPendingImages() and
+         * removeFieldImages().
+         */
+        function showFieldImage(wrap, source) {
+            wrap.querySelector('.content-image-preview, .content-image-empty')?.remove();
+
+            if (source) {
+                const image = document.createElement('img');
+                image.src = source;
+                image.alt = '';
+                image.className = 'content-image-preview';
+                wrap.insertBefore(image, wrap.firstChild);
+            } else {
+                wrap.insertAdjacentHTML('afterbegin', '<div class="content-image-empty">' +
+                    '<i class="bi bi-image" aria-hidden="true"></i><span>No image</span></div>');
+            }
+
+            wrap.querySelector('[data-content-remove]')?.classList.toggle('d-none', !source);
+        }
+
         function bindImageActions() {
             fieldsWrap.querySelectorAll('[data-content-image]').forEach(function(wrap) {
                 const key = wrap.dataset.contentImage;
@@ -358,58 +386,27 @@ document.addEventListener('DOMContentLoaded', function() {
                             return;
                         }
 
-                        const body = new FormData();
-                        body.append('image', fileInput.files[0]);
+                        const file = fileInput.files[0];
 
-                        showError('');
-
-                        fetch(imageUrl(key), {
-                                method: 'POST',
-                                headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': token },
-                                credentials: 'same-origin',
-                                body: body,
-                            })
-                            .then(function(response) {
-                                return response.json().then(function(payload) {
-                                    if (!response.ok) {
-                                        throw new Error(payload.error || payload.message ||
-                                            'Unable to upload image.');
-                                    }
-
-                                    return payload;
-                                });
-                            })
-                            .then(function() {
-                                // The image is saved the moment it is chosen;
-                                // anything typed but not yet saved stays typed.
-                                load(currentSection, true);
-                            })
-                            .catch(function(exception) {
-                                showError(exception.message);
-                            });
+                        pendingImages.set(key, file);
+                        fieldImageRemovals.delete(key);
+                        showFieldImage(wrap, URL.createObjectURL(file));
                     });
                 }
 
                 if (removeButton) {
                     removeButton.addEventListener('click', function() {
-                        showError('');
+                        pendingImages.delete(key);
 
-                        fetch(imageUrl(key), {
-                                method: 'POST',
-                                headers: {
-                                    'Accept': 'application/json',
-                                    'Content-Type': 'application/json',
-                                    'X-CSRF-TOKEN': token,
-                                },
-                                credentials: 'same-origin',
-                                body: JSON.stringify({ _method: 'DELETE' }),
-                            })
-                            .then(function() {
-                                load(currentSection, true);
-                            })
-                            .catch(function() {
-                                showError('Unable to remove image.');
-                            });
+                        if (fileInput) {
+                            fileInput.value = '';
+                        }
+
+                        if (wrap.dataset.hasImage === 'true') {
+                            fieldImageRemovals.add(key);
+                        }
+
+                        showFieldImage(wrap, null);
                     });
                 }
             });
@@ -555,6 +552,27 @@ document.addEventListener('DOMContentLoaded', function() {
             return Promise.all(uploads);
         }
 
+        function removeFieldImages() {
+            const removals = Array.from(fieldImageRemovals).map(function(key) {
+                return fetch(imageUrl(key), {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': token,
+                    },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ _method: 'DELETE' }),
+                }).then(function(response) {
+                    if (!response.ok) {
+                        throw new Error('Unable to remove image.');
+                    }
+                });
+            });
+
+            return Promise.all(removals);
+        }
+
         /**
          * Panels in the markup that stand for a type of their own rather than
          * being fields of a catalogue section - Project Types and Default
@@ -629,6 +647,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 services: repeatablePayload('service'),
                 owners: repeatablePayload('owner'),
                 images: Array.from(pendingImages.keys()).sort(),
+                removedImages: Array.from(fieldImageRemovals).sort(),
             });
         }
 
@@ -1040,6 +1059,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 })
                 .then(function() {
                     return uploadPendingImages();
+                })
+                .then(function() {
+                    return removeFieldImages();
                 })
                 .then(function() {
                     clearPendingImages();

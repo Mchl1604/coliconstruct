@@ -165,7 +165,7 @@
             padding: 1px 0;
         }
 
-        /* How many bookings a duration was summed from, under the figure. */
+        /* A quieter second line under a cell's value, such as a position. */
         .sub {
             font-size: 7.5px;
             color: #475569;

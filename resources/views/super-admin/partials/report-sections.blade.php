@@ -190,9 +190,6 @@
                             <td>{!! $stack($row['schedules'], 'No Schedule') !!}</td>
                             <td class="nowrap">
                                 {{ $row['duration'] }} {{ $row['duration'] === 1 ? 'day' : 'days' }}
-                                @if ($row['entries'] > 1)
-                                    <div class="sub">{{ $row['entries'] }} bookings</div>
-                                @endif
                             </td>
                             <td>{{ $row['status_label'] ?: '—' }}</td>
                         </tr>

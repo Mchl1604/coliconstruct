@@ -9,11 +9,13 @@ use App\Models\ProjectTechnician;
 use App\Models\ProjectType;
 use App\Models\Schedule;
 use App\Models\ScheduleTechnician;
+use App\Models\SystemContent;
 use App\Models\Task;
 use App\Models\Technician;
 use App\Models\TechnicianReport;
 use App\Models\TechnicianReportImage;
 use App\Models\User;
+use App\Services\SystemContentService;
 use App\Services\SystemReportService;
 use App\Support\CompanyBranding;
 use Carbon\CarbonImmutable;
@@ -1931,6 +1933,49 @@ class ReportsPageTest extends TestCase
         $this->assertSame('Total Scheduled Projects: 1', $this->summaryLine($section, 'Total Scheduled Projects'));
         // The days are printed per row; the summary carries no day total.
         $this->assertNull($this->summaryLine($section, 'Total Scheduled Days'));
+
+        // The printed duration is the days alone, with no count of bookings.
+        $html = $this->postJson(route('super-admin.reports.preview'), $this->exportPayload([
+            'report_type' => 'schedule',
+            'month' => 8,
+        ]))->assertOk()->json('html');
+
+        $this->assertStringContainsString('11 days', $html);
+        $this->assertStringNotContainsString('bookings', $html);
+
+        // The letterhead carries the company's full name.
+        $this->assertStringContainsString('<div class="report-doc-company">Coliconstruct Engineering Services</div>', $html);
+    }
+
+    /**
+     * The letterhead address is the Company Address from System Contents >
+     * Contact, folded onto one line, and the catalogue default until one is
+     * saved.
+     */
+    public function test_the_report_letterhead_uses_the_contact_page_address(): void
+    {
+        $default = SystemContent::DEFINITIONS['contact.address']['default'];
+
+        $this->assertSame($default, CompanyBranding::letterhead()['address']);
+
+        SystemContent::create([
+            'content_key' => 'contact.address',
+            'content_value' => "Unit 4, Main Road\nGeneral Mariano Alvarez, Cavite",
+            'content_type' => SystemContent::TYPE_TEXTAREA,
+            'section' => SystemContent::SECTION_CONTACT,
+        ]);
+        app(SystemContentService::class)->flush();
+
+        $this->assertSame(
+            'Unit 4, Main Road, General Mariano Alvarez, Cavite',
+            CompanyBranding::letterhead()['address']
+        );
+
+        $html = $this->postJson(route('super-admin.reports.preview'), $this->exportPayload([
+            'report_type' => 'schedule',
+        ]))->assertOk()->json('html');
+
+        $this->assertStringContainsString('Unit 4, Main Road, General Mariano Alvarez, Cavite', $html);
     }
 
     /**

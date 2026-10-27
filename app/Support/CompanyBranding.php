@@ -2,6 +2,8 @@
 
 namespace App\Support;
 
+use App\Services\SystemContentService;
+
 /**
  * The company details every system email is dressed in.
  *
@@ -20,16 +22,21 @@ class CompanyBranding
      *
      * Deliberately not read from config/company.php: those values are the
      * email footer's and a deployment may leave them blank, which is fine in
-     * an inbox and not fine on a document. Move both to a settings table if
-     * they ever become editable in-app.
+     * an inbox and not fine on a document.
+     *
+     * The address is the Company Address on System Contents > Contact, so
+     * the public Contact page and every document print the same one. It is a
+     * multi-line field there, folded onto one line here.
      *
      * @return array<string, string>
      */
     public static function letterhead(): array
     {
+        $address = (string) app(SystemContentService::class)->get('contact.address');
+
         return [
-            'name' => 'Coliconstruct',
-            'address' => 'Carmona, Cavite, Philippines',
+            'name' => 'Coliconstruct Engineering Services',
+            'address' => trim(preg_replace('/\s*\R\s*/', ', ', trim($address))),
             'system' => 'Coliconstruct Project Management System',
         ];
     }

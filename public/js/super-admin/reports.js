@@ -1656,6 +1656,27 @@ document.addEventListener("DOMContentLoaded", function () {
                 document.body.classList.remove("report-printing");
             });
 
+            // The browser prints the page title at the top of every sheet. The
+            // report carries its own letterhead, so the title is blanked for
+            // the print and put back afterwards.
+            let titleBeforePrint = null;
+
+            window.addEventListener("beforeprint", function () {
+                if (!document.body.classList.contains("report-printing")) {
+                    return;
+                }
+
+                titleBeforePrint = document.title;
+                document.title = "";
+            });
+
+            window.addEventListener("afterprint", function () {
+                if (titleBeforePrint !== null) {
+                    document.title = titleBeforePrint;
+                    titleBeforePrint = null;
+                }
+            });
+
             // Straight to the browser's own dialog, where the printer is
             // chosen. Nothing is generated, downloaded or opened on the way.
             printBtn.addEventListener("click", function () {

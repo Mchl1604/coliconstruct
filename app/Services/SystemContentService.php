@@ -101,12 +101,18 @@ class SystemContentService
      * - but it is still the application handing the bytes over, which keeps
      * every upload on one disk and makes the deployment's storage durable
      * rather than a directory the next deploy empties.
+     *
+     * The URL carries a version taken from the stored file, so a replaced
+     * image is a new address: the browser's copy of the old picture is never
+     * shown in place of the new one.
      */
     public function image(string $key): ?string
     {
-        return $this->imagePath($key) === null
+        $path = $this->imagePath($key);
+
+        return $path === null
             ? null
-            : route('media.system', ['key' => $key]);
+            : route('media.system', ['key' => $key, 'v' => substr(md5($path), 0, 10)]);
     }
 
     /**

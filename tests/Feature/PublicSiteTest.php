@@ -1215,6 +1215,38 @@ About | /about',
             ->assertSee(route('media.system', ['key' => 'branding.logo']), escape: false);
     }
 
+    /**
+     * A replaced image is served at a new address, so neither the editor nor
+     * the public site can keep showing the browser's copy of the old one.
+     */
+    public function test_a_replaced_image_gets_a_new_url(): void
+    {
+        Storage::fake('uploads');
+
+        $superAdmin = $this->account('super_admin', 'owner@example.test');
+        $store = route('super-admin.configuration.contents.images.store', 'branding.logo');
+
+        $first = $this->actingAs($superAdmin)
+            ->post($store, ['image' => UploadedFile::fake()->image('first.png')])
+            ->assertOk()
+            ->json('url');
+
+        $second = $this->actingAs($superAdmin)
+            ->post($store, ['image' => UploadedFile::fake()->image('second.png')])
+            ->assertOk()
+            ->json('url');
+
+        $this->assertNotSame($first, $second);
+        $this->assertStringStartsWith(route('media.system', ['key' => 'branding.logo']).'?v=', $second);
+
+        $this->get(route('landing.home'))
+            ->assertOk()
+            ->assertSee($second, escape: false)
+            ->assertDontSee($first, escape: false);
+
+        $this->get($second)->assertOk();
+    }
+
     public function test_replacing_an_image_deletes_the_one_it_replaced(): void
     {
         Storage::fake('uploads');
