@@ -25,11 +25,13 @@
     data-overdue="{{ $project->isOverdue() ? '1' : '0' }}"
     data-on-hold="{{ $project->on_hold ? '1' : '0' }}"
     data-active-today="{{ $isActiveToday ? '1' : '0' }}"
-    class="{{ $needsPhaseSetup ? 'project-row-needs-phase-setup' : '' }} {{ $isActiveToday ? 'project-row-active-today' : '' }} {{ $needsRecrew ? 'project-row-needs-recrew' : '' }}">
+    class="{{ $needsPhaseSetup ? 'project-row-needs-phase-setup' : '' }} {{ $project->isPastTargetDate() ? 'project-row-past-target' : '' }} {{ $isActiveToday ? 'project-row-active-today' : '' }} {{ $needsRecrew ? 'project-row-needs-recrew' : '' }}">
     <td>
         {{ $project->reference_no }}
 
         <x-project-phase-setup-flag :project="$project" />
+
+        <x-project-overdue-flag :project="$project" />
 
         <x-project-active-today-flag :project="$project" />
 

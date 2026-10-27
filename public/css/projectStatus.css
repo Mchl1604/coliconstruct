@@ -337,6 +337,35 @@
     cursor: help;
 }
 
+/* Past the target completion date - see x-project-overdue-flag. Tinted like
+   a phase setup row, in red. Declared after it, so a row that is both reads
+   as overdue; projects.css still puts the recrew tint over both. */
+.project-row-past-target > * {
+    background-color: #fdf2f3 !important;
+}
+
+.project-row-past-target > *:first-child {
+    box-shadow: inset 4px 0 0 0 #dc3545;
+}
+
+/* Past the target completion date - see x-project-overdue-flag. Shaped like
+   the phase setup pill, in the red the Overdue badge uses on the project. */
+.project-overdue-flag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    margin-top: 0.2rem;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    color: #b02a37;
+    background: #fbe7e9;
+    border-radius: 999px;
+    padding: 0.1rem 0.5rem;
+    white-space: nowrap;
+    cursor: help;
+}
+
 /* ------------------------------------------------------------------
    The Phase column on a task table
    ------------------------------------------------------------------ */

@@ -143,7 +143,7 @@ class ProjectClientController extends Controller
 
             $project->forceFill([
                 'client_id' => $client->client_id,
-                ...($previous && $project->name === $previous->primaryName() ? ['name' => $client->primaryName()] : []),
+                ...($previous && $project->isNamedFor($previous) ? ['name' => $project->standardNameFor($client)] : []),
             ])->save();
 
             return $client;

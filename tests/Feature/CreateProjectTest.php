@@ -255,8 +255,11 @@ class CreateProjectTest extends TestCase
         $response->assertRedirect(route('super-admin.projects'));
 
         $this->assertDatabaseCount('tbl_projects', 1);
+        $this->assertSame(
+            Project::query()->value('reference_no').' - Juan S Dela Cruz',
+            Project::query()->value('name')
+        );
         $this->assertDatabaseHas('tbl_projects', [
-            'name' => 'Juan S Dela Cruz',
             'status' => 'pending',
             'address' => '123 Sample Street, Sample City',
             'quotation' => '1250.00',

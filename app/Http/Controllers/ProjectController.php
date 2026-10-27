@@ -476,7 +476,9 @@ class ProjectController extends Controller
 
                 $project->forceFill([
                     'reference_no' => $this->generateReferenceNumber($project->project_id),
-                ])->save();
+                ]);
+
+                $project->forceFill(['name' => $project->standardNameFor($client)])->save();
 
                 // The date the client is first promised, as the opening entry
                 // of its history - so a later change has something to read as

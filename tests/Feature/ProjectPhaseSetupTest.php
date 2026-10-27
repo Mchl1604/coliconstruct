@@ -1230,6 +1230,32 @@ class ProjectPhaseSetupTest extends TestCase
             ->assertSee('PHASE SETUP REQUIRED');
     }
 
+    /**
+     * Past the target date, the row is tinted and says so under the project
+     * ID - in both tables, from the same component.
+     */
+    public function test_a_project_past_its_target_date_is_flagged_overdue_on_its_row(): void
+    {
+        $this->actingAs($this->superAdmin)
+            ->getTablePage(route('super-admin.projects.table'))
+            ->assertDontSee('project-overdue-flag')
+            ->assertDontSee('project-row-past-target');
+
+        $this->project->forceFill([
+            'target_end_date' => Schedule::businessToday()->subDay()->toDateString(),
+        ])->save();
+
+        $this->actingAs($this->superAdmin)
+            ->getTablePage(route('super-admin.projects.table'))
+            ->assertSee('project-overdue-flag')
+            ->assertSee('project-row-past-target');
+
+        $this->actingAs($this->leadAccount)
+            ->getTablePage(route('technician.projects.table'))
+            ->assertSee('project-overdue-flag')
+            ->assertSee('project-row-past-target');
+    }
+
     // ------------------------------------------------------------------
     // Phase progress on a projects table
     // ------------------------------------------------------------------

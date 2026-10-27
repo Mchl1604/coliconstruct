@@ -80,7 +80,7 @@ class ChangeProjectClientTest extends TestCase
 
         $this->assertSame($next->client_id, $project->client_id);
         // Named after its client, as the wizard names a project.
-        $this->assertSame('New Owner', $project->name);
+        $this->assertSame($project->reference_no.' - New Owner', $project->name);
         // The previous client keeps everything else.
         $this->assertSame($previous->client_id, $kept->fresh()->client_id);
         $this->assertSame('Old Owner', $previous->fresh()->fullname);

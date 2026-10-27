@@ -134,7 +134,7 @@ class NewProjectClientStepTest extends TestCase
         $project = Project::query()->latest('project_id')->first();
 
         $this->assertSame($client->client_id, $project->client_id);
-        $this->assertSame('Maria Santos', $project->name);
+        $this->assertSame($project->reference_no.' - Maria Santos', $project->name);
         $this->assertSame(1, Client::query()->count());
         $this->assertSame(2, $client->projects()->count());
 
@@ -197,7 +197,11 @@ class NewProjectClientStepTest extends TestCase
             'contract' => [UploadedFile::fake()->create('contract.pdf', 12, 'application/pdf')],
         ]))->assertSessionHasNoErrors();
 
-        $this->assertDatabaseHas('tbl_projects', ['client_id' => $client->client_id, 'name' => 'Acme Corp']);
+        $project = Project::query()->latest('project_id')->first();
+
+        $this->assertSame($client->client_id, $project->client_id);
+        // Commercial work is named after the company.
+        $this->assertSame($project->reference_no.' - Acme Corp', $project->name);
         $this->assertDatabaseHas('tbl_documents', ['document_type' => 'contract']);
     }
 

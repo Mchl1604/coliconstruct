@@ -27,13 +27,15 @@
          overlapping, so a list rather than a second
          status. See Project::attentionTabKeys(). --}}
     data-tab-extra="{{ implode(' ', $project->attentionTabKeys()) }}"
-    class="{{ $needsPhaseSetup ? 'project-row-needs-phase-setup' : '' }} {{ $isActiveToday ? 'project-row-active-today' : '' }} {{ $needsRecrew ? 'project-row-needs-recrew' : '' }}">
+    class="{{ $needsPhaseSetup ? 'project-row-needs-phase-setup' : '' }} {{ $project->isPastTargetDate() ? 'project-row-past-target' : '' }} {{ $isActiveToday ? 'project-row-active-today' : '' }} {{ $needsRecrew ? 'project-row-needs-recrew' : '' }}">
     <td>
         {{ $project->displayCode() }}
 
         <x-project-new-flag :project="$project" />
 
         <x-project-phase-setup-flag :project="$project" />
+
+        <x-project-overdue-flag :project="$project" />
 
         <x-project-active-today-flag :project="$project" />
 

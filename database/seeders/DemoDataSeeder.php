@@ -457,8 +457,12 @@ class DemoDataSeeder extends Seeder
 
     private function projectsAlreadySeeded(): bool
     {
+        // By description as well as by name: demo projects are named by
+        // reference number now, and sites seeded earlier carry the old names.
         return Project::query()
-            ->whereIn('name', array_column(DemoDataCatalog::projects(), 'name'))
+            ->where(fn ($query) => $query
+                ->whereIn('name', array_column(DemoDataCatalog::projects(), 'name'))
+                ->orWhereIn('description', array_column(DemoDataCatalog::projects(), 'description')))
             ->exists();
     }
 
@@ -531,7 +535,9 @@ class DemoDataSeeder extends Seeder
                 BusinessTime::at($createdAt)->format('Ymd'),
                 str_pad((string) $project->project_id, 5, '0', STR_PAD_LEFT)
             ),
-        ])->save();
+        ]);
+
+        $project->forceFill(['name' => $project->standardNameFor($clientRecord)])->save();
 
         $project->projectTypes()->sync(collect($spec['types'])->map(fn (string $type): int => $this->typeIds[$type])->all());
 

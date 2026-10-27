@@ -687,6 +687,28 @@ class Project extends Model
     }
 
     /**
+     * The name every project is given: its reference number, then whose job
+     * it is - the company on commercial work, the person otherwise. See
+     * Client::primaryName().
+     */
+    public function standardNameFor(Client $client): string
+    {
+        return filled($this->reference_no)
+            ? sprintf('%s - %s', $this->reference_no, $client->primaryName())
+            : $client->primaryName();
+    }
+
+    /**
+     * Whether this project still carries the name it was given for a client,
+     * rather than one typed by hand. Projects named before the reference
+     * number was added carry the client's name alone.
+     */
+    public function isNamedFor(Client $client): bool
+    {
+        return in_array($this->name, [$this->standardNameFor($client), $client->primaryName()], true);
+    }
+
+    /**
      * How the project's key is printed, e.g. PROJ-0007.
      *
      * Not the same thing as reference_no, which the client quotes and which
