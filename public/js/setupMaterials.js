@@ -37,6 +37,20 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     });
 
+    // The action bar's one button follows the step: Next on Phases,
+    // Finish Setup on Materials.
+    const nextButton = document.querySelector("[data-setup-next]");
+    const finishButton = document.querySelector("[data-setup-finish]");
+
+    document.querySelectorAll("[data-setup-step]").forEach(function (tab) {
+        tab.addEventListener("shown.bs.tab", function () {
+            const onMaterials = tab.dataset.setupStep === "materials";
+
+            nextButton?.classList.toggle("d-none", onMaterials);
+            finishButton?.classList.toggle("d-none", !onMaterials);
+        });
+    });
+
     if (!form || !body || !initial || !window.materialPicker) {
         return;
     }

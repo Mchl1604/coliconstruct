@@ -86,6 +86,19 @@ class ProjectMaterialSetupTest extends TestCase
             ->assertSee('materials_submitted', false);
     }
 
+    public function test_the_setup_screen_steps_through_next_to_finish_setup(): void
+    {
+        $this->actingAs($this->leadAccount)
+            ->get(route('technician.projects.phases.setup', $this->project->project_id))
+            ->assertOk()
+            ->assertSee('data-setup-next', false)
+            ->assertSee('Finish Setup')
+            ->assertSee('Add Material')
+            ->assertDontSee('Without Locking')
+            ->assertDontSee('Finalize Phases')
+            ->assertDontSee('data-phase-save', false);
+    }
+
     public function test_save_keeps_the_plan_without_locking_anything(): void
     {
         $this->submit('save', [

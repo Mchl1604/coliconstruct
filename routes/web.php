@@ -645,6 +645,7 @@ Route::prefix('super-admin')
                 // id of a material.
                 Route::get('/types', [MaterialController::class, 'types'])->name('types.index');
                 Route::post('/types', [MaterialController::class, 'storeType'])->name('types.store');
+                Route::get('/types/{materialType}', [MaterialController::class, 'showType'])->name('types.show');
                 Route::put('/types/{materialType}', [MaterialController::class, 'updateType'])->name('types.update');
                 Route::delete('/types/{materialType}', [MaterialController::class, 'destroyType'])->name('types.destroy');
 

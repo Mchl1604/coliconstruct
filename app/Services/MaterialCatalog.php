@@ -167,7 +167,7 @@ class MaterialCatalog
     public function remove(Material $material): void
     {
         if ($this->isUsed($material)) {
-            throw new RuntimeException('Used on projects. Deactivate it instead.');
+            throw new RuntimeException('Used on projects.');
         }
 
         $material->delete();

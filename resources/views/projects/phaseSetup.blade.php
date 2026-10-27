@@ -136,7 +136,7 @@
             @csrf
 
             {{-- Two steps, one form. Both panes stay in the document whichever
-                 is showing, so Save and Finalize always send the phases and
+                 is showing, so Finish Setup always sends the phases and
                  the materials together - see setupMaterials.js. --}}
             <ul class="setup-steps" role="tablist">
                 <li role="presentation">
@@ -213,13 +213,6 @@
                 <p class="phase-error d-none" role="alert" data-phase-error></p>
             </div>
 
-            <div class="setup-step-footer">
-                <button type="button" class="btn btn-outline-primary" data-setup-go="materials">
-                    Next: Materials
-                    <i class="bi bi-arrow-right ms-1" aria-hidden="true"></i>
-                </button>
-            </div>
-
             </div>{{-- /#setupPhasesStep --}}
 
             <div class="tab-pane fade" id="setupMaterialsStep" role="tabpanel" aria-labelledby="setupMaterialsTab">
@@ -253,15 +246,17 @@
                         </button>
                     @endif
 
-                    <button type="button" class="btn btn-outline-secondary" data-phase-save>
-                        <i class="bi bi-save me-1" aria-hidden="true"></i>
-                        Save<span class="d-none d-sm-inline"> Without Locking</span>
+                    {{-- One button that follows the step: Next on Phases,
+                         Finish Setup on Materials. setupMaterials.js swaps them. --}}
+                    <button type="button" class="btn btn-primary" data-setup-go="materials" data-setup-next>
+                        Next
+                        <i class="bi bi-arrow-right ms-1" aria-hidden="true"></i>
                     </button>
 
-                    <button type="button" class="btn btn-success" data-bs-toggle="modal"
-                        data-bs-target="#finalizePhasesModal">
-                        <i class="bi bi-lock-fill me-1" aria-hidden="true"></i>
-                        Finalize<span class="d-none d-sm-inline"> Phases</span>
+                    <button type="button" class="btn btn-success d-none" data-bs-toggle="modal"
+                        data-bs-target="#finalizePhasesModal" data-setup-finish>
+                        <i class="bi bi-check-lg me-1" aria-hidden="true"></i>
+                        Finish Setup
                     </button>
                 </div>
             </div>
@@ -276,7 +271,7 @@
                         <div class="modal-header bg-success text-white">
                             <h5 class="modal-title">
                                 <i class="bi bi-lock-fill me-2" aria-hidden="true"></i>
-                                Finalize Phases
+                                Finish Setup
                             </h5>
                             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
                                 aria-label="Close"></button>
@@ -300,7 +295,7 @@
                             </button>
                             <button type="button" class="btn btn-success" data-phase-finalize>
                                 <i class="bi bi-check-lg me-1" aria-hidden="true"></i>
-                                Finalize Phases
+                                Finish Setup
                             </button>
                         </div>
                     </div>

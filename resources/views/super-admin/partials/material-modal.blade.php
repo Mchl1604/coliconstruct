@@ -66,3 +66,37 @@
         </div>
     </div>
 </div>
+
+
+{{-- View Type: the materials in one type, filled by materials.js from
+     materials.types.show. --}}
+<div class="modal fade" id="materialTypeViewModal" tabindex="-1" aria-hidden="true"
+    aria-labelledby="materialTypeViewTitle" data-material-type-view-modal>
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="materialTypeViewTitle" data-material-type-view-title>Materials</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+
+            <div class="modal-body">
+                <div class="table-responsive">
+                    <table class="table align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Material</th>
+                                <th>Brand</th>
+                                <th>Unit</th>
+                            </tr>
+                        </thead>
+                        <tbody data-material-type-view-rows></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>

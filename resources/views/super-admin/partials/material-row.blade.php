@@ -23,37 +23,15 @@
     </td>
     <td class="small">{{ $material->type?->type_name }}</td>
     <td><span class="material-unit-chip" title="{{ $material->unit->label() }}">{{ $material->unit->value }}</span></td>
-    <td>
-        @if ($isUsed)
-            <span class="project-type-count">
-                {{ $material->project_materials_count }}
-                {{ \Illuminate\Support\Str::plural('project', (int) $material->project_materials_count) }}
-            </span>
-        @else
-            <span class="project-type-count is-none">None</span>
-        @endif
-    </td>
-    <td>
-        <span class="material-status {{ $material->is_active ? 'is-active' : 'is-inactive' }}">
-            {{ $material->is_active ? 'Active' : 'Inactive' }}
-        </span>
-    </td>
     <td class="text-center text-nowrap">
         <button type="button" class="btn btn-sm btn-outline-primary py-1 px-2"
             data-material-edit='@json($payload)' title="Edit">
             <i class="bi bi-pencil" aria-hidden="true"></i>
         </button>
-        <button type="button" class="btn btn-sm {{ $material->is_active ? 'btn-outline-warning' : 'btn-outline-success' }} py-1 px-2"
-            data-material-toggle="{{ $material->material_id }}"
-            data-material-active="{{ $material->is_active ? '1' : '0' }}"
-            data-material-label="{{ $material->displayName() }}"
-            title="{{ $material->is_active ? 'Deactivate' : 'Activate' }}">
-            <i class="bi {{ $material->is_active ? 'bi-eye-slash' : 'bi-eye' }}" aria-hidden="true"></i>
-        </button>
         <button type="button" class="btn btn-sm btn-outline-danger py-1 px-2"
             data-material-delete="{{ $material->material_id }}"
             data-material-label="{{ $material->displayName() }}"
-            @if ($isUsed) disabled title="Used on projects. Deactivate instead." @else title="Remove" @endif>
+            @if ($isUsed) disabled title="Used on projects." @else title="Remove" @endif>
             <i class="bi bi-trash3" aria-hidden="true"></i>
         </button>
     </td>

@@ -32,7 +32,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
     const container = form.querySelector("[data-phase-rows]");
     const addButton = form.querySelector("[data-phase-add]");
-    const saveButton = form.querySelector("[data-phase-save]");
     const finalizeButton = form.querySelector("[data-phase-finalize]");
     const countBadge = form.querySelector("[data-phase-count-badge]");
     const summary = form.querySelector("[data-phase-summary]");
@@ -966,10 +965,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
         form.appendChild(input);
     }
-
-    saveButton.addEventListener("click", function () {
-        submitTo(form.dataset.saveUrl);
-    });
 
     finalizeButton.addEventListener("click", function () {
         syncFromInputs();

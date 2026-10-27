@@ -63,8 +63,6 @@ class MaterialController extends Controller
                     $dir
                 ),
                 3 => 'unit',
-                4 => fn (Builder $builder, string $dir) => $builder->orderBy('project_materials_count', $dir),
-                5 => 'is_active',
             ],
             fn (Builder $builder, string $word, string $like) => $builder
                 ->where('name', 'like', $like)
@@ -198,6 +196,25 @@ class MaterialController extends Controller
         $this->authorizeSuperAdmin($request);
 
         return response()->json(['types' => $this->catalog->types()->all()]);
+    }
+
+    /**
+     * The materials in one type, for its View dialog.
+     */
+    public function showType(Request $request, MaterialType $materialType): JsonResponse
+    {
+        $this->authorizeSuperAdmin($request);
+
+        $materials = $materialType->materials()
+            ->with('type')
+            ->orderBy('name')
+            ->get()
+            ->map(fn (Material $material): array => $material->toOption());
+
+        return response()->json([
+            'type_name' => $materialType->type_name,
+            'materials' => $materials->all(),
+        ]);
     }
 
     public function storeType(Request $request): JsonResponse

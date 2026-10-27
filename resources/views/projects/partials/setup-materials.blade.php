@@ -1,8 +1,7 @@
 {{--
     Step 2 of project setup: the materials the job needs.
 
-    Inside the setup form, so Save Without Locking and Finalize send it with
-    the phases - setupMaterials.js keeps the rows' inputs named materials[N][...]
+    Inside the setup form, so Finish Setup sends it with the phases - setupMaterials.js keeps the rows' inputs named materials[N][...]
     and ProjectPhaseController::submittedMaterials() reads them. The
     `materials_submitted` marker is what tells the controller this request
     carries a plan at all.
@@ -49,7 +48,10 @@
 
         <div class="row g-2 align-items-end mb-3">
             <div class="col-md">
-                <label class="form-label small fw-semibold mb-1" for="setupMaterialSearch">Add material</label>
+                <label class="form-label small fw-semibold mb-1" for="setupMaterialSearch">
+                    <i class="bi bi-plus-lg" aria-hidden="true"></i>
+                    Add Material
+                </label>
                 <div>
                     <input type="search" class="form-control" id="setupMaterialSearch"
                         placeholder="Search name, brand or type" data-setup-material-search>

@@ -121,7 +121,7 @@ class MaterialCatalogTest extends TestCase
 
         $this->deleteJson(route('super-admin.configuration.materials.destroy', $material))
             ->assertStatus(422)
-            ->assertJsonPath('error', 'Used on projects. Deactivate it instead.');
+            ->assertJsonPath('error', 'Used on projects.');
 
         $this->putJson(route('super-admin.configuration.materials.status', $material), ['is_active' => false])
             ->assertOk();
@@ -214,7 +214,39 @@ class MaterialCatalogTest extends TestCase
         $this->get(route('super-admin.configuration.index'))
             ->assertOk()
             ->assertSee('data-content-section="materials"', false)
-            ->assertSee('Material Types');
+            ->assertSee('Material Types')
+            ->assertSee('id="materialTypesTable"', false)
+            ->assertSee('data-material-type-view-modal', false);
+    }
+
+    public function test_a_type_lists_its_own_materials(): void
+    {
+        $this->actingAsSuperAdmin();
+
+        $other = MaterialType::factory()->create(['type_name' => 'Electrical']);
+
+        Material::factory()->create(['material_type_id' => $this->type->material_type_id, 'name' => 'Window Unit 1 HP']);
+        Material::factory()->create(['material_type_id' => $this->type->material_type_id, 'name' => 'Cassette 3.0 HP']);
+        Material::factory()->create(['material_type_id' => $other->material_type_id, 'name' => 'THHN Wire']);
+
+        $this->getJson(route('super-admin.configuration.materials.types.show', $this->type))
+            ->assertOk()
+            ->assertJsonPath('type_name', 'Aircon Units')
+            ->assertJsonCount(2, 'materials')
+            ->assertJsonPath('materials.0.name', 'Cassette 3.0 HP')
+            ->assertJsonPath('materials.1.name', 'Window Unit 1 HP');
+    }
+
+    public function test_the_list_rows_show_no_projects_status_or_toggle(): void
+    {
+        $this->actingAsSuperAdmin();
+
+        Material::factory()->create(['material_type_id' => $this->type->material_type_id, 'name' => 'Cassette 3.0 HP']);
+
+        $this->getTablePage(route('super-admin.configuration.materials.index'))
+            ->assertSee('Cassette 3.0 HP')
+            ->assertDontSee('data-material-toggle', false)
+            ->assertDontSee('material-status', false);
     }
 
     public function test_the_seeder_lists_aircon_units_by_brand_and_adds_nothing_twice(): void

@@ -29,11 +29,13 @@ document.addEventListener("DOMContentLoaded", function () {
     const unitLocked = modalEl.querySelector("[data-material-unit-locked]");
     const typesBar = pane.querySelector("[data-material-types]");
     const typeFilter = pane.querySelector("[data-materials-type-filter]");
-    const statusFilter = pane.querySelector("[data-materials-status-filter]");
     const typeAddForm = pane.querySelector("[data-material-type-add-form]");
     const typeNameInput = pane.querySelector("[data-material-type-name]");
     const errorBox = pane.querySelector("[data-materials-error]");
     const successBox = pane.querySelector("[data-materials-success]");
+    const viewModalEl = document.querySelector("[data-material-type-view-modal]");
+    const viewTitle = viewModalEl.querySelector("[data-material-type-view-title]");
+    const viewRows = viewModalEl.querySelector("[data-material-type-view-rows]");
     const token = document.querySelector('meta[name="csrf-token"]')?.content || "";
 
     let table = null;
@@ -115,26 +117,47 @@ document.addEventListener("DOMContentLoaded", function () {
         modalSelect.value = modalValue;
     }
 
+    function iconButton(className, icon, title) {
+        const button = document.createElement("button");
+
+        button.type = "button";
+        button.className = "btn btn-sm py-1 px-2 " + className;
+        button.title = title;
+        button.innerHTML = '<i class="bi ' + icon + '" aria-hidden="true"></i>';
+
+        return button;
+    }
+
+    function messageRow(body, columns, text) {
+        const row = document.createElement("tr");
+        const cell = document.createElement("td");
+
+        cell.colSpan = columns;
+        cell.className = "text-secondary small";
+        cell.textContent = text;
+        row.appendChild(cell);
+        body.appendChild(row);
+    }
+
     function renderTypes() {
         typesBar.replaceChildren();
 
         if (!types.length) {
-            const none = document.createElement("span");
-
-            none.className = "text-secondary small";
-            none.textContent = "No types yet.";
-            typesBar.appendChild(none);
+            messageRow(typesBar, 3, "No types yet.");
         }
 
         types.forEach(function (type) {
-            const chip = document.createElement("span");
+            const row = document.createElement("tr");
+            const nameCell = document.createElement("td");
+            const countCell = document.createElement("td");
+            const actions = document.createElement("td");
 
-            chip.className = "material-type-chip";
+            actions.className = "text-center text-nowrap";
 
             if (renamingId === type.material_type_id) {
                 const input = document.createElement("input");
-                const save = document.createElement("button");
-                const cancel = document.createElement("button");
+                const save = iconButton("btn-outline-success me-1", "bi-check-lg", "Save");
+                const cancel = iconButton("btn-outline-secondary", "bi-x-lg", "Cancel");
 
                 input.type = "text";
                 input.maxLength = 100;
@@ -143,53 +166,84 @@ document.addEventListener("DOMContentLoaded", function () {
                 input.setAttribute("aria-label", "Type name");
                 input.dataset.materialTypeInput = "";
 
-                save.type = "button";
                 save.dataset.materialTypeSave = String(type.material_type_id);
-                save.title = "Save";
-                save.innerHTML = '<i class="bi bi-check-lg" aria-hidden="true"></i>';
-
-                cancel.type = "button";
                 cancel.dataset.materialTypeCancel = "";
-                cancel.title = "Cancel";
-                cancel.innerHTML = '<i class="bi bi-x-lg" aria-hidden="true"></i>';
 
-                chip.append(input, save, cancel);
-                typesBar.appendChild(chip);
+                nameCell.appendChild(input);
+                actions.append(save, cancel);
 
                 setTimeout(function () {
                     input.focus();
                     input.select();
                 });
+            } else {
+                const view = iconButton("btn-outline-info me-1", "bi-eye", "View");
+                const rename = iconButton("btn-outline-primary me-1", "bi-pencil", "Edit");
+                const remove = iconButton("btn-outline-danger", "bi-trash3", type.material_count ? "Has materials" : "Remove");
+
+                nameCell.className = "fw-semibold";
+                nameCell.textContent = type.type_name;
+
+                view.dataset.materialTypeView = String(type.material_type_id);
+                rename.dataset.materialTypeRename = String(type.material_type_id);
+                remove.dataset.materialTypeRemove = String(type.material_type_id);
+                remove.dataset.materialTypeLabel = type.type_name;
+                remove.disabled = type.material_count > 0;
+
+                actions.append(view, rename, remove);
+            }
+
+            countCell.textContent = String(type.material_count);
+
+            row.append(nameCell, countCell, actions);
+            typesBar.appendChild(row);
+        });
+
+        fillTypeSelects();
+    }
+
+    function viewType(id) {
+        viewTitle.textContent = "Materials";
+        viewRows.replaceChildren();
+        messageRow(viewRows, 3, "Loading materials…");
+
+        bootstrap.Modal.getOrCreateInstance(viewModalEl).show();
+
+        request(routes.materialTypes + "/" + id, "GET").then(function (result) {
+            viewRows.replaceChildren();
+
+            if (!result.ok) {
+                messageRow(viewRows, 3, result.body.error || "Unable to load materials.");
 
                 return;
             }
 
-            const name = document.createElement("span");
-            const count = document.createElement("span");
-            const rename = document.createElement("button");
-            const remove = document.createElement("button");
+            viewTitle.textContent = result.body.type_name;
 
-            name.textContent = type.type_name;
-            count.className = "material-type-count";
-            count.textContent = "(" + type.material_count + ")";
+            const materials = result.body.materials || [];
 
-            rename.type = "button";
-            rename.dataset.materialTypeRename = String(type.material_type_id);
-            rename.title = "Rename";
-            rename.innerHTML = '<i class="bi bi-pencil" aria-hidden="true"></i>';
+            if (!materials.length) {
+                messageRow(viewRows, 3, "No materials yet.");
+            }
 
-            remove.type = "button";
-            remove.dataset.materialTypeRemove = String(type.material_type_id);
-            remove.dataset.materialTypeLabel = type.type_name;
-            remove.title = type.material_count ? "Has materials" : "Remove";
-            remove.disabled = type.material_count > 0;
-            remove.innerHTML = '<i class="bi bi-x-lg" aria-hidden="true"></i>';
+            materials.forEach(function (material) {
+                const row = document.createElement("tr");
+                const name = document.createElement("td");
+                const brand = document.createElement("td");
+                const unit = document.createElement("td");
 
-            chip.append(name, count, rename, remove);
-            typesBar.appendChild(chip);
+                if (!material.is_active) {
+                    row.className = "text-secondary";
+                }
+
+                name.textContent = material.name;
+                brand.textContent = material.brand || "–";
+                unit.textContent = material.unit_label;
+
+                row.append(name, brand, unit);
+                viewRows.appendChild(row);
+            });
         });
-
-        fillTypeSelects();
     }
 
     function loadTypes() {
@@ -241,6 +295,14 @@ document.addEventListener("DOMContentLoaded", function () {
     });
 
     typesBar.addEventListener("click", function (event) {
+        const view = event.target.closest("[data-material-type-view]");
+
+        if (view) {
+            viewType(view.dataset.materialTypeView);
+
+            return;
+        }
+
         const rename = event.target.closest("[data-material-type-rename]");
 
         if (rename) {
@@ -317,7 +379,7 @@ document.addEventListener("DOMContentLoaded", function () {
         table = window.serverTable("#materialsTable", {
             url: routes.materials,
             params: function () {
-                return { type: typeFilter.value, status: statusFilter.value };
+                return { type: typeFilter.value };
             },
             autoWidth: false,
             pageLength: 10,
@@ -333,12 +395,6 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     typeFilter.addEventListener("change", function () {
-        if (table) {
-            table.draw();
-        }
-    });
-
-    statusFilter.addEventListener("change", function () {
         if (table) {
             table.draw();
         }
@@ -420,32 +476,6 @@ document.addEventListener("DOMContentLoaded", function () {
             } catch (error) {
                 showError("Unable to open that material.");
             }
-
-            return;
-        }
-
-        const toggle = event.target.closest("[data-material-toggle]");
-
-        if (toggle) {
-            const activate = toggle.dataset.materialActive !== "1";
-
-            toggle.disabled = true;
-
-            request(routes.materials + "/" + toggle.dataset.materialToggle + "/status", "PUT", {
-                is_active: activate,
-            }).then(function (result) {
-                toggle.disabled = false;
-
-                if (!result.ok) {
-                    showError(result.body.error || "Unable to change status.");
-
-                    return;
-                }
-
-                showError("");
-                showSuccess(result.body.message || "");
-                redraw();
-            });
 
             return;
         }
