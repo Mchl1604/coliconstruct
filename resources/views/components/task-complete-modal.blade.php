@@ -8,6 +8,8 @@
     // The technician who did the work is asked what it was. An administrator
     // or lead closing it on their behalf has no first-hand account to give.
     $isOwnTask = $task->isAssignedTo(auth()->user());
+    // A photo is required of a regular technician only.
+    $needsImage = $task->requiresCompletionImage(auth()->user());
 @endphp
 
 {{--
@@ -64,10 +66,9 @@
                     <label class="form-label fw-semibold"
                         for="completionImages{{ $task->task_id }}">
                         Upload Completion Image
-                        <span class="text-muted fw-normal">(optional)</span>
                     </label>
                     <input type="file" class="form-control" id="completionImages{{ $task->task_id }}"
-                        name="images[]" accept=".jpg,.jpeg,.png" multiple data-image-input
+                        name="images[]" accept=".jpg,.jpeg,.png" multiple @required($needsImage) data-image-input
                         data-image-preview-target="#completionPreview{{ $task->task_id }}">
                     <div class="form-text">JPG or PNG, max 5 MB each.</div>
                 </div>

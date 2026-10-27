@@ -737,7 +737,9 @@ class TechnicianScheduleExportTest extends TestCase
 
         $this->assertStringContainsString('PAST SCHEDULE', $html);
         $this->assertStringContainsString('FUTURE SCHEDULE', $html);
-        $this->assertStringContainsString('Scheduled Days', $html);
+        // Schedule is the last column: no Scheduled Days, no Status.
+        $this->assertStringNotContainsString('Scheduled Days', $html);
+        $this->assertMatchesRegularExpression('/PAST SCHEDULE.*?<th>Schedule<\/th>\s*<\/tr>/s', $html);
         $this->assertStringContainsString('Aug 10, 2026 - Aug 12, 2026', $html);
         $this->assertStringContainsString('Aug 13, 2026 - Aug 16, 2026', $html);
         // The project's own range is never printed as anybody's schedule.

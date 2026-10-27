@@ -18,7 +18,7 @@
     @if ($task->isOpen()
         && $task->status !== 'unassigned'
         && ($canManage || $isMine)
-        && ! ($viewerTechnicianId !== null && $task->startsInFuture()))
+        && ! $task->waitsForStartDate(auth()->user()))
         <x-task-complete-modal :task="$task"
             :action="route($completeRoute, $task->task_id)" :method="$completeMethod" />
     @endif

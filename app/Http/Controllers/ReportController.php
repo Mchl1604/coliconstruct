@@ -90,6 +90,13 @@ class ReportController extends Controller
             ->filter(fn (Project $project): bool => $this->isReportable($project))
             ->values();
 
+        $technicians = Technician::query()
+            ->with('account')
+            ->whereHas('account', fn ($query) => $query->whereIn('role', User::TECHNICIAN_ROLES))
+            ->get()
+            ->sortBy(fn (Technician $technician): string => $technician->name)
+            ->values();
+
         return view('super-admin.reports', [
             'filterProjects' => $filterProjects,
             'reportableProjects' => $reportableProjects,
@@ -99,17 +106,22 @@ class ReportController extends Controller
             'quotationGroups' => SystemReportService::QUOTATION_GROUPS,
             'exportStatuses' => SystemReportService::REPORT_STATUSES,
             'exportTechnicianKinds' => SystemReportService::TECHNICIAN_REPORT_KINDS,
-            'exportTechnicians' => Technician::query()
-                ->with('account')
-                ->whereHas('account', fn ($query) => $query->whereIn('role', User::TECHNICIAN_ROLES))
-                ->get()
-                ->sortBy(fn (Technician $technician): string => $technician->name)
-                ->map(fn (Technician $technician): array => [
-                    'id' => $technician->technician_id,
-                    'name' => $technician->name,
-                ])
-                ->values(),
+            'exportTechnicians' => $technicians->map(fn (Technician $technician): array => [
+                'id' => $technician->technician_id,
+                'name' => $technician->name,
+            ]),
+            // The Task Performance chart's type-to-search picker, in the shape
+            // accountPicker.js reads.
+            'taskPerformanceTechnicians' => $technicians->map(fn (Technician $technician): array => [
+                'id' => $technician->technician_id,
+                'name' => $technician->name,
+                'email' => $technician->account?->email,
+                'code' => $technician->displayCode(),
+                'meta' => $technician->displayCode().' · '.($technician->account?->roleLabel() ?? 'Technician'),
+            ]),
             'reportYears' => $this->reportYears(),
+            // Task Performance opens on the current month.
+            'taskPerformanceWindow' => app(SystemReportService::class)->taskPerformanceWindow(),
         ]);
     }
 
@@ -387,6 +399,10 @@ class ReportController extends Controller
             'month' => ['nullable', 'string', 'regex:'.self::MONTH_PATTERN],
             'year' => ['nullable', 'integer', 'between:'.$this->yearBounds()],
             'quotation_status' => ['nullable', 'string', 'in:'.implode(',', array_keys(SystemReportService::QUOTATION_STATUSES))],
+            // Task Performance only: whose tasks, and between which dates.
+            'technician_id' => ['nullable', 'integer', 'exists:tbl_technicians,technician_id'],
+            'from' => ['nullable', 'date_format:Y-m-d'],
+            'to' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:from'],
         ]);
 
         if ($validator->fails()) {
@@ -402,7 +418,12 @@ class ReportController extends Controller
                 $input['granularity'] ?? null,
                 $input['quotation_status'] ?? null,
                 $input['month'] ?? null,
-                isset($input['year']) ? (int) $input['year'] : null
+                isset($input['year']) ? (int) $input['year'] : null,
+                [
+                    'technician_id' => isset($input['technician_id']) ? (int) $input['technician_id'] : null,
+                    'from' => $input['from'] ?? null,
+                    'to' => $input['to'] ?? null,
+                ]
             ),
         ]);
     }

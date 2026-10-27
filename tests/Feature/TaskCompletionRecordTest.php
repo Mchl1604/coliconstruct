@@ -132,7 +132,9 @@ class TaskCompletionRecordTest extends TestCase
     {
         $task = $this->task();
 
-        $this->patch(route('super-admin.tasks.complete', $task->task_id), []);
+        $this->patch(route('super-admin.tasks.complete', $task->task_id), [
+            'images' => [UploadedFile::fake()->image('done.jpg')],
+        ]);
 
         $response = $this->getWithTables(route('super-admin.tasks.index'));
 

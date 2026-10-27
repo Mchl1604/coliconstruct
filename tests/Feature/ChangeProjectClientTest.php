@@ -224,6 +224,13 @@ class ChangeProjectClientTest extends TestCase
         $this->get(route('super-admin.projects.show', $live->project_id))
             ->assertOk()
             ->assertSee('id="changeClientModal"', false)
+            // The three name fields share a row of their own.
+            ->assertSeeInOrder([
+                'data-change-client-name-row',
+                'id="changeClientFirstName"',
+                'id="changeClientMiddle"',
+                'id="changeClientSurname"',
+            ], false)
             ->assertSee(route('super-admin.projects.client-search', ['exclude' => $live->client_id]), false);
 
         $this->get(route('super-admin.projects.show', $finished->project_id))

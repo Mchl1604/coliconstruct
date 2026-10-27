@@ -52,7 +52,8 @@ class TaskPolicy
      * anything on a project they run, for work that is finished on site but
      * was never marked.
      *
-     * Never before the day the work was due to begin. A task ticked off ahead
+     * A regular technician never closes work before the day it was due to
+     * begin; a lead technician may - see Task::waitsForStartDate(). A task ticked off ahead
      * of its start date is not a completion, it is a claim about work nobody
      * has been on site for - and the record would then carry a completion
      * instant days before the first scheduled day. The date is read off the
@@ -68,7 +69,7 @@ class TaskPolicy
      */
     public function complete(User $user, Task $task): bool
     {
-        return $this->completableBy($user, $task) && ! $task->startsInFuture();
+        return $this->completableBy($user, $task) && ! $task->waitsForStartDate($user);
     }
 
     /**
@@ -82,7 +83,7 @@ class TaskPolicy
      */
     public function blockedByStartDate(User $user, Task $task): bool
     {
-        return $task->startsInFuture() && $this->completableBy($user, $task);
+        return $task->waitsForStartDate($user) && $this->completableBy($user, $task);
     }
 
     /**

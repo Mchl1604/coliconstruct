@@ -100,6 +100,7 @@ class CompletionRulesTest extends TestCase
 
         $this->post(route('technician.tasks.complete', $task), [
             'completion_notes' => 'Fitted and tested.',
+            'images' => [UploadedFile::fake()->image('done.jpg')],
         ])->assertRedirect();
 
         $this->assertSame('completed', $task->refresh()->status);
@@ -113,27 +114,142 @@ class CompletionRulesTest extends TestCase
 
         $this->post(route('technician.tasks.complete', $task), [
             'completion_notes' => 'Finished this morning.',
+            'images' => [UploadedFile::fake()->image('done.jpg')],
         ])->assertRedirect();
 
         $this->assertSame('completed', $task->refresh()->status);
     }
 
     /**
-     * A lead closing somebody else's task is closing the same task, so the
-     * same day has to have arrived. Rank decides whose work you may touch, not
-     * when the work happened.
+     * A completion photo is required of a regular technician only.
      */
-    public function test_a_lead_cannot_close_a_future_task_on_the_crews_behalf(): void
+    public function test_a_technician_cannot_complete_a_task_without_an_image(): void
+    {
+        $task = $this->task($this->mate, 'Fit the unit', startsIn: -1);
+
+        $this->actingAs($this->mate->account);
+
+        $this->postJson(route('technician.tasks.complete', $task), [
+            'completion_notes' => 'Fitted and tested.',
+        ])
+            ->assertStatus(422)
+            ->assertJsonPath('error', Task::IMAGE_REQUIRED_REFUSAL);
+
+        $this->assertSame('pending', $task->refresh()->status);
+    }
+
+    public function test_an_administrator_can_complete_a_task_without_an_image(): void
+    {
+        foreach (['super_admin', 'admin'] as $role) {
+            $task = $this->task($this->mate, 'Fit the unit '.$role, startsIn: -1);
+
+            $this->actingAs($this->employee($role, $role.'@example.test'));
+
+            $this->patch(route('super-admin.tasks.complete', $task->task_id), [])
+                ->assertSessionHasNoErrors()
+                ->assertRedirect();
+
+            $this->assertSame('completed', $task->refresh()->status, $role);
+            $this->assertCount(0, $task->images);
+        }
+    }
+
+    public function test_a_lead_can_complete_a_task_without_an_image(): void
+    {
+        $task = $this->task($this->lead, 'Survey the site', startsIn: -1);
+
+        $this->actingAs($this->leadAccount);
+
+        $this->post(route('technician.tasks.complete', $task), [
+            'completion_notes' => 'Surveyed.',
+        ])->assertRedirect();
+
+        $this->assertSame('completed', $task->refresh()->status);
+        $this->assertCount(0, $task->images);
+    }
+
+    /**
+     * A lead technician is not held to the start date: they may close a task
+     * early on a project they run, their own or the crew's.
+     */
+    public function test_a_lead_can_close_a_future_task_on_the_crews_behalf(): void
     {
         $task = $this->task($this->mate, 'Fit the unit', startsIn: 4);
 
         $this->actingAs($this->leadAccount);
 
-        $this->postJson(route('technician.tasks.complete', $task), [])
-            ->assertStatus(422)
-            ->assertJsonPath('error', Task::NOT_STARTED_REFUSAL);
+        $this->post(route('technician.tasks.complete', $task), [])
+            ->assertRedirect();
 
-        $this->assertSame('pending', $task->refresh()->status);
+        $this->assertSame('completed', $task->refresh()->status);
+    }
+
+    public function test_a_lead_can_close_their_own_future_task(): void
+    {
+        $task = $this->task($this->lead, 'Survey the site', startsIn: 5);
+
+        $this->actingAs($this->leadAccount);
+
+        $this->post(route('technician.tasks.complete', $task), [
+            'completion_notes' => 'Surveyed early.',
+        ])->assertRedirect();
+
+        $this->assertSame('completed', $task->refresh()->status);
+    }
+
+    /**
+     * A task closed before its start date shows both dates blank in its view,
+     * while the stored dates stay on the record.
+     */
+    public function test_a_task_finished_before_its_start_date_shows_blank_dates(): void
+    {
+        $early = $this->task($this->mate, 'Closed early', startsIn: 4);
+        $onTime = $this->task($this->mate, 'Closed on the day', startsIn: -1);
+
+        $this->actingAs($this->leadAccount);
+
+        foreach ([$early, $onTime] as $task) {
+            $this->post(route('technician.tasks.complete', $task), [])->assertRedirect();
+        }
+
+        $early->refresh();
+        $onTime->refresh();
+
+        $this->assertTrue($early->wasFinishedBeforeStart());
+        $this->assertFalse($onTime->wasFinishedBeforeStart());
+        $this->assertNotNull($early->start_date);
+        $this->assertNotNull($early->due_date);
+
+        $this->blade('<x-task-details-modal :task="$task" />', ['task' => $early])
+            ->assertSee('name="start_date"', false)
+            ->assertDontSee('value="'.$early->start_date.'"', false)
+            ->assertDontSee('value="'.$early->due_date.'"', false);
+
+        $this->blade('<x-task-details-modal :task="$task" />', ['task' => $onTime])
+            ->assertSee('value="'.$onTime->start_date.'"', false);
+    }
+
+    /**
+     * The pages a lead reads offer the live button, not the disabled one.
+     */
+    public function test_a_lead_is_offered_the_complete_button_before_the_start_date(): void
+    {
+        $this->task($this->mate, 'Starts next week', startsIn: 7);
+
+        $this->actingAs($this->leadAccount);
+
+        foreach ([route('technician.projects.show', $this->project), route('technician.tasks')] as $url) {
+            $page = $this->getWithTables($url);
+
+            $page->assertOk();
+            $page->assertSee('data-bs-target="#completeTaskModal', false);
+            $page->assertDontSee(Task::NOT_STARTED_REFUSAL);
+        }
+
+        $this->getJson(route('technician.projects.details', $this->project))
+            ->assertOk()
+            ->assertJsonPath('tasks.0.can_complete', true)
+            ->assertJsonPath('tasks.0.completion_blocked_reason', null);
     }
 
     /**
@@ -150,6 +266,7 @@ class CompletionRulesTest extends TestCase
 
         $this->post(route('technician.tasks.complete', $task), [
             'completion_notes' => 'Done.',
+            'images' => [UploadedFile::fake()->image('done.jpg')],
         ])->assertRedirect();
 
         $this->assertSame('completed', $task->refresh()->status);
@@ -200,8 +317,9 @@ class CompletionRulesTest extends TestCase
 
         $this->actingAs($this->employee('super_admin', 'boss@example.test'));
 
-        $this->patch(route('super-admin.tasks.complete', $task->task_id), [])
-            ->assertRedirect();
+        $this->patch(route('super-admin.tasks.complete', $task->task_id), [
+            'images' => [UploadedFile::fake()->image('done.jpg')],
+        ])->assertRedirect();
 
         $this->assertSame('completed', $task->refresh()->status);
     }

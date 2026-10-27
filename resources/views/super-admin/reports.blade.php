@@ -4,6 +4,7 @@
     <link href="/css/super-admin/projects.css" rel="stylesheet">
     <link href="/css/super-admin/technicians.css" rel="stylesheet">
     <link href="/css/super-admin/reports.css" rel="stylesheet">
+    <link href="/css/actorSearch.css" rel="stylesheet">
     {{-- The generated report's own sheet, on screen and on paper. Loaded last
          so its @media print rules have the final word over the portal's. --}}
     <link href="/css/super-admin/report-print.css" rel="stylesheet">
@@ -266,7 +267,7 @@
                     ],
                     [
                         'title' => 'Technician Reports',
-                        'subtitle' => 'The lead technicians answerable for the live work',
+                        'subtitle' => 'Who leads the work, and how tasks go',
                         'icon' => 'bi-people',
                         'charts' => [
                             [
@@ -274,26 +275,26 @@
                                 'title' => 'Active Project Distribution by Lead Technician',
                                 'subtitle' => 'Unscheduled, Pending, Ongoing, On Hold and Needs Rescheduling work, counted once each',
                                 'type' => 'pie',
-                                'col' => 'col-12 col-xl-7',
+                                'col' => 'col-12',
                                 'categorical' => true,
                                 // Names never fit around a pie, so each lead is
                                 // named in the key beside it with their share.
                                 'legend' => true,
                             ],
                             [
-                                'id' => 'leadTechnicianAvailability',
-                                'title' => 'Lead Technician Availability',
-                                'subtitle' => 'Active accounts only',
-                                'type' => 'doughnut',
-                                'col' => 'col-12 col-xl-5',
-                            ],
-                            [
-                                'id' => 'leadTechnicianWorkload',
-                                'title' => 'Lead Technician Workload',
-                                'subtitle' => 'Active assignments by when the work is booked, so unscheduled work has no month yet',
-                                'type' => 'bar',
+                                'id' => 'taskPerformance',
+                                'title' => 'Task Performance',
+                                'subtitle' => 'Pending includes ongoing and overdue',
+                                'type' => 'pie',
+                                // Each outcome named in the key beside the pie,
+                                // with its count and share.
+                                'legend' => true,
+                                'legendNarrow' => true,
                                 'col' => 'col-12',
-                                'granularity' => true,
+                                // A technician picker and a date range, in
+                                // place of a period toggle.
+                                'taskFilter' => true,
+                                'empty' => 'Pick a technician.',
                             ],
                         ],
                     ],
@@ -304,7 +305,7 @@
                         'charts' => [
                             [
                                 'id' => 'scheduledProjectsTrend',
-                                'title' => 'Scheduled Projects Trend',
+                                'title' => 'Scheduled Projects',
                                 'subtitle' => 'Projects with work booked, counted once each',
                                 'type' => 'bar',
                                 'col' => 'col-12',
@@ -397,6 +398,51 @@
                                         </div>
                                     </div>
 
+                                    @if (! empty($chart['taskFilter']))
+                                        {{-- The same type-to-search picker as the
+                                             rest of the system - see accountPicker.js.
+                                             Typing never sets the technician; only
+                                             picking one from the list does. --}}
+                                        <div class="row g-2 mb-3" data-task-performance-filters>
+                                            <div class="col-12 col-md-6">
+                                                <div class="config-actor-search"
+                                                    data-account-picker="taskPerformanceTechnicians"
+                                                    data-picker-empty="No technician by that name.">
+                                                    <div class="input-group input-group-sm">
+                                                        <span class="input-group-text">
+                                                            <i class="bi bi-search" aria-hidden="true"></i>
+                                                        </span>
+                                                        <input type="text" class="form-control"
+                                                            placeholder="Search technician name"
+                                                            aria-label="Technician" autocomplete="off"
+                                                            role="combobox" aria-expanded="false"
+                                                            aria-controls="taskPerformanceResults"
+                                                            data-picker-search>
+                                                        <button type="button" class="btn btn-outline-secondary d-none"
+                                                            aria-label="Clear the chosen technician" data-picker-clear>
+                                                            <i class="bi bi-x-lg" aria-hidden="true"></i>
+                                                        </button>
+                                                    </div>
+                                                    <input type="hidden" data-picker-id data-task-performance-technician>
+                                                    <ul class="config-actor-results d-none" id="taskPerformanceResults"
+                                                        role="listbox" data-picker-results></ul>
+                                                </div>
+                                            </div>
+                                            <div class="col-6 col-md-3">
+                                                <input type="date" class="form-control form-control-sm"
+                                                    placeholder="From" aria-label="From date"
+                                                    value="{{ $taskPerformanceWindow['start']->toDateString() }}"
+                                                    data-task-performance-from>
+                                            </div>
+                                            <div class="col-6 col-md-3">
+                                                <input type="date" class="form-control form-control-sm"
+                                                    placeholder="To" aria-label="To date"
+                                                    value="{{ $taskPerformanceWindow['end']->toDateString() }}"
+                                                    data-task-performance-to>
+                                            </div>
+                                        </div>
+                                    @endif
+
                                     {{-- The graph's own total or average, written by the
                                          service alongside the series it describes. --}}
                                     <div class="report-chart-summary d-none"
@@ -426,7 +472,7 @@
 
                                     <div class="report-chart-empty d-none" data-chart-empty="{{ $chart['id'] }}">
                                         <i class="bi bi-bar-chart-line" aria-hidden="true"></i>
-                                        <span>No data for this period yet.</span>
+                                        <span data-chart-empty-text>{{ $chart['empty'] ?? 'No data for this period yet.' }}</span>
                                     </div>
                                 </div>
                             </div>
@@ -848,7 +894,11 @@
                 archiveBase: @json(url('technician-reports')),
             };
         </script>
+        <script>
+            window.taskPerformanceTechnicians = @json($taskPerformanceTechnicians);
+        </script>
         <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+        <script src="/js/accountPicker.js"></script>
         <script src="/js/super-admin/reports.js"></script>
     @endpush
 @endsection

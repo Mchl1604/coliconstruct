@@ -23,6 +23,10 @@
     $isCompleted = $task->isCompleted();
     $isEditable = $updateAction !== null && ! $isCompleted;
 
+    // Closed before it was due to begin: the stored dates stay on the record,
+    // but the view shows them blank.
+    $hidesDates = $task->wasFinishedBeforeStart();
+
     // A completed phase takes no new work, so it is not on the list - but a
     // task already sitting on one keeps it, or saving an edit to this task's
     // wording would silently move the work to a different stage. The same
@@ -127,14 +131,15 @@
                     <div class="col-md-6">
                         <label class="form-label fw-semibold">Start Date</label>
                         <input type="text" class="form-control" name="start_date"
-                            value="{{ $task->start_date }}" data-task-start
-                            placeholder="Select start date" @readonly(! $isEditable)>
+                            value="{{ $hidesDates ? '' : $task->start_date }}" data-task-start
+                            placeholder="{{ $hidesDates ? '' : 'Select start date' }}" @readonly(! $isEditable)>
                     </div>
 
                     <div class="col-md-6">
                         <label class="form-label fw-semibold">Due Date</label>
                         <input type="text" class="form-control" name="due_date"
-                            value="{{ $task->due_date }}" data-task-due placeholder="Select due date"
+                            value="{{ $hidesDates ? '' : $task->due_date }}" data-task-due
+                            placeholder="{{ $hidesDates ? '' : 'Select due date' }}"
                             @readonly(! $isEditable)>
                     </div>
                 </div>

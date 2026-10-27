@@ -914,13 +914,6 @@ class ReportsPageTest extends TestCase
         $this->assertNotContains('Rita Cruz', $data['labels']);
         $this->assertNotContains('Ex Lead', $data['labels']);
         $this->assertNotContains('Ana Mendoza', $data['labels']);
-
-        // But the idle lead is still counted as capacity.
-        $availability = $this->chartData('leadTechnicianAvailability');
-
-        $this->assertSame(['Assigned to Active Project', 'Available'], $availability['labels']);
-        $this->assertSame([1, 1], $availability['values']);
-        $this->assertSame('Active lead technicians: 2', $availability['summary']);
     }
 
     /**
@@ -948,12 +941,6 @@ class ReportsPageTest extends TestCase
 
         $this->assertSame(['Jose Garcia'], $distribution['labels']);
         $this->assertSame([2], $distribution['values']);
-
-        // And a lead holding only unscheduled work is not free.
-        $spare = $this->lead('Rita Cruz');
-        $this->project('Rita Unscheduled', 'unscheduled', [$spare]);
-
-        $this->assertSame([2, 0], $this->chartData('leadTechnicianAvailability')['values']);
     }
 
     /**
@@ -970,11 +957,6 @@ class ReportsPageTest extends TestCase
         $this->schedule($project, $this->dateThisYear('03-20'), $this->dateThisYear('03-24'));
 
         $this->assertSame([1], $this->chartData('leadTechnicianProjects')['values']);
-
-        $workload = $this->chartData('leadTechnicianWorkload');
-
-        $this->assertCount(12, $workload['labels']);
-        $this->assertSame(1, array_sum($workload['datasets'][0]['values']));
     }
 
     /**
@@ -994,7 +976,6 @@ class ReportsPageTest extends TestCase
         $this->schedule($archived, $this->day(-2), $this->day(2));
 
         $this->assertSame([], $this->chartData('leadTechnicianProjects')['labels']);
-        $this->assertSame([0, 1], $this->chartData('leadTechnicianAvailability')['values']);
     }
 
     /**
@@ -1012,12 +993,153 @@ class ReportsPageTest extends TestCase
         $lead->account->forceFill(['status' => User::STATUS_DEACTIVATED])->save();
 
         $this->assertSame([], $this->chartData('leadTechnicianProjects')['values']);
-        $this->assertSame('Active lead technicians: 0', $this->chartData('leadTechnicianAvailability')['summary']);
         $this->assertSame(
             1,
             ProjectTechnician::where('project_id', $project->project_id)->count(),
             'The historical assignment must survive the deactivation.'
         );
+    }
+
+    // ------------------------------------------------------------------
+    // Task Performance
+    // ------------------------------------------------------------------
+
+    /**
+     * The two lead technician charts it replaced are gone from the page.
+     */
+    public function test_task_performance_replaces_the_lead_availability_and_workload_charts(): void
+    {
+        $response = $this->get(route('super-admin.reports.index'));
+
+        $response->assertOk();
+        $response->assertSee('Task Performance');
+        $response->assertSee('data-account-picker="taskPerformanceTechnicians"', false);
+        $response->assertDontSee('Lead Technician Availability');
+        $response->assertDontSee('Lead Technician Workload');
+        // Each technician chart takes the full width of the section.
+        $response->assertSeeInOrder([
+            '<div class="col-12">',
+            'data-chart="leadTechnicianProjects"',
+            '<div class="col-12">',
+            'Task Performance',
+        ], false);
+        $response->assertSee('Scheduled Projects');
+        $response->assertDontSee('Scheduled Projects Trend');
+
+        foreach (['leadTechnicianWorkload', 'leadTechnicianAvailability'] as $removed) {
+            $this->getJson(route('super-admin.reports.system.chart', ['chart' => $removed]))
+                ->assertStatus(422);
+        }
+    }
+
+    /**
+     * Open work - ongoing or overdue - is Pending; a completion is on time or
+     * late by its due date. Cancelled tasks, other people's tasks and tasks on
+     * archived projects are not counted.
+     */
+    public function test_task_performance_counts_one_technicians_tasks_by_outcome(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-08-20 04:00:00', 'UTC'));
+
+        $ana = $this->technician('Ana Mendoza');
+        $ben = $this->technician('Ben Reyes');
+        $project = $this->project('Task Job', 'ongoing', [$ana, $ben]);
+        $filed = $this->project('Filed Job', 'ongoing', [$ana], 100, true);
+
+        $this->task($project, $ana, 'Still Ahead', '2026-08-25');
+        $this->task($project, $ana, 'Gone Overdue', '2026-08-10', 'pending');
+        $this->task($project, $ana, 'Called Off', '2026-08-12', 'cancelled');
+        $this->task($project, $ben, 'Not Ana', '2026-08-12');
+        $this->task($filed, $ana, 'Archived Work', '2026-08-12');
+
+        $this->task($project, $ana, 'On Time', '2026-08-10', 'completed')
+            ->forceFill(['completed_at' => '2026-08-09 02:00:00'])->save();
+        $this->task($project, $ana, 'Late', '2026-08-05', 'completed')
+            ->forceFill(['completed_at' => '2026-08-08 02:00:00'])->save();
+
+        $data = $this->chartData('taskPerformance', ['technician_id' => $ana->technician_id]);
+
+        $this->assertSame(['Pending', 'Completed On Time', 'Finished Late'], $data['labels']);
+        $this->assertSame([2, 1, 1], $data['values']);
+        $this->assertSame('Total tasks: 4', $data['summary']);
+    }
+
+    /**
+     * The date range is on the due date, both ends inclusive. With no dates
+     * it is the current month; one end alone is completed to its own month.
+     */
+    public function test_task_performance_filters_by_due_date(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-08-20 04:00:00', 'UTC'));
+
+        $ana = $this->technician('Ana Mendoza');
+        $project = $this->project('Task Job', 'ongoing', [$ana]);
+
+        $this->task($project, $ana, 'July', '2026-07-15');
+        $this->task($project, $ana, 'Early August', '2026-08-01');
+        $this->task($project, $ana, 'Late August', '2026-08-31');
+        $this->task($project, $ana, 'September', '2026-09-10');
+
+        $countFor = fn (array $dates): int => array_sum($this->chartData(
+            'taskPerformance',
+            ['technician_id' => $ana->technician_id] + $dates
+        )['values']);
+
+        $this->assertSame(2, $countFor([]));
+        $this->assertSame(2, $countFor(['from' => '2026-08-01', 'to' => '2026-08-31']));
+        $this->assertSame(4, $countFor(['from' => '2026-07-01', 'to' => '2026-09-30']));
+        $this->assertSame(2, $countFor(['from' => '2026-08-01']));
+        $this->assertSame(1, $countFor(['to' => '2026-07-31']));
+    }
+
+    /**
+     * The date fields open on the current month, and the chart is a pie.
+     */
+    public function test_task_performance_defaults_to_the_current_month(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-08-20 04:00:00', 'UTC'));
+
+        $this->get(route('super-admin.reports.index'))
+            ->assertOk()
+            ->assertSee('value="2026-08-01"', false)
+            ->assertSee('value="2026-08-31"', false)
+            ->assertSeeInOrder(['data-chart="taskPerformance"', 'data-chart-type="pie"'], false);
+    }
+
+    /**
+     * Nobody picked, nothing drawn; and a range that runs backwards is
+     * refused rather than read as empty.
+     */
+    public function test_task_performance_waits_for_a_technician_and_a_valid_range(): void
+    {
+        $this->assertSame([0, 0, 0], $this->chartData('taskPerformance')['values']);
+
+        $ana = $this->technician('Ana Mendoza');
+
+        $this->getJson(route('super-admin.reports.system.chart', [
+            'chart' => 'taskPerformance',
+            'technician_id' => $ana->technician_id,
+            'from' => '2026-08-31',
+            'to' => '2026-08-01',
+        ]))->assertStatus(422);
+    }
+
+    /**
+     * An Admin reads the chart as well as a Super Admin.
+     */
+    public function test_an_admin_can_read_task_performance(): void
+    {
+        $admin = User::factory()->create();
+        $admin->forceFill(['role' => User::ROLE_ADMIN, 'status' => User::STATUS_ACTIVE])->save();
+
+        $ana = $this->technician('Ana Mendoza');
+
+        $this->actingAs($admin)
+            ->getJson(route('super-admin.reports.system.chart', [
+                'chart' => 'taskPerformance',
+                'technician_id' => $ana->technician_id,
+            ]))
+            ->assertOk();
     }
 
     // ------------------------------------------------------------------
@@ -1049,7 +1171,6 @@ class ReportsPageTest extends TestCase
             'completedProjects',
             'residentialVsCommercial',
             'totalQuotation',
-            'leadTechnicianWorkload',
             'scheduledProjectsTrend',
         ];
 
@@ -1217,7 +1338,7 @@ class ReportsPageTest extends TestCase
         $clients = $report['sections'][0];
         $this->assertSame(['Ongoing Project Holdings', 'Other Project Holdings'], $clients['rows']->pluck('client')->all());
         $this->assertSame(2, $clients['rows'][0]['projects']);
-        $this->assertSame(80.0, $clients['rows'][0]['share']);
+        $this->assertArrayNotHasKey('share', $clients['rows'][0]);
         // Each status the client's work is in, with how many projects.
         $this->assertSame(['Ongoing (1)', 'Completed (1)'], $clients['rows'][0]['statuses']);
         $this->assertSame('Clients: 2', $this->summaryLine($clients, 'Clients'));
@@ -1281,7 +1402,8 @@ class ReportsPageTest extends TestCase
             ->json('html');
 
         $this->assertStringContainsString('Quotations by Client', $html);
-        $this->assertStringContainsString('<th style="width:22%">Status</th>', $html);
+        $this->assertStringContainsString('<th style="width:34%">Status</th>', $html);
+        $this->assertStringNotContainsString('>Share</th>', $html);
         $this->assertStringContainsString('Completed (1)', $html);
         $this->assertStringContainsString('By Client', $html);
         $this->assertStringNotContainsString('Quotations by Project', $html);

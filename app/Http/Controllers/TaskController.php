@@ -482,13 +482,15 @@ class TaskController extends Controller
         }
 
         $mustDescribe = $task->isAssignedTo($request->user());
+        $needsImage = $task->requiresCompletionImage($request->user());
 
         $validated = $request->validate([
             'completion_notes' => [$mustDescribe ? 'required' : 'nullable', 'string'],
-            'images' => ['nullable', 'array'],
+            'images' => [$needsImage ? 'required' : 'nullable', 'array'],
             'images.*' => ['nullable', 'image', 'mimes:jpg,jpeg,png', 'max:5120'],
         ], [
             'completion_notes.required' => 'Describe what was done before completing the task.',
+            'images.required' => Task::IMAGE_REQUIRED_REFUSAL,
         ]);
 
         DB::beginTransaction();

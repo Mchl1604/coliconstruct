@@ -585,6 +585,34 @@ class Task extends Model
     }
 
     /**
+     * Why a completion was refused for want of a photo, in the one sentence
+     * both portals say it in.
+     */
+    public const IMAGE_REQUIRED_REFUSAL = 'Upload at least one completion image.';
+
+    /**
+     * Whether closing this task needs at least one completion image from this
+     * account. Only a regular technician must give one; a lead technician and
+     * the office may close a task without.
+     */
+    public function requiresCompletionImage(?User $user): bool
+    {
+        return $user === null || $user->isTechnician();
+    }
+
+    /**
+     * Whether the start date still stands between this account and closing
+     * the task.
+     *
+     * Only a regular technician waits for the day. A lead technician may close
+     * work early on a project they run, and the office is never held to it.
+     */
+    public function waitsForStartDate(?User $user): bool
+    {
+        return $user !== null && $user->isTechnician() && $this->startsInFuture();
+    }
+
+    /**
      * Finished, but after the deadline. Still a completion - isCompleted() is
      * true for these - and deliberately told apart from one that landed on
      * time.
@@ -592,6 +620,15 @@ class Task extends Model
     public function wasFinishedLate(): bool
     {
         return TaskStatus::finishedLate($this);
+    }
+
+    /**
+     * Closed before its start date. The view leaves both dates blank for
+     * these, since the work never ran to that schedule.
+     */
+    public function wasFinishedBeforeStart(): bool
+    {
+        return TaskStatus::finishedBeforeStart($this);
     }
 
     /**

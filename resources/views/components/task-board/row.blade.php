@@ -7,15 +7,12 @@
         && $task->status !== 'unassigned'
         && ($canManage || $isMine);
     // Work that has not been due to start yet
-    // cannot be ticked off - see TaskPolicy,
-    // which refuses the request as well. The
-    // crew's rule, not the office's: this board
-    // is shared, and $viewerTechnicianId is
-    // null for an administrator, who may still
-    // close a task on the crew's behalf.
+    // cannot be ticked off by a regular
+    // technician - see TaskPolicy, which
+    // refuses the request as well. A lead and
+    // the office may close it early.
     $startsLater = $canComplete
-        && $viewerTechnicianId !== null
-        && $task->startsInFuture();
+        && $task->waitsForStartDate(auth()->user());
     $canComplete = $canComplete && ! $startsLater;
     // What, if anything, is stopping this task
     // proceeding. One rule decides it - see

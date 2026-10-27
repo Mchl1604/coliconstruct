@@ -2697,22 +2697,28 @@
                                         name="company_name" maxlength="255">
                                 </div>
 
-                                <div class="col-md-5">
-                                    <label class="form-label fw-bold" for="changeClientFirstName">First Name</label>
-                                    <input type="text" class="form-control" id="changeClientFirstName"
-                                        name="firstname" maxlength="255" required>
-                                </div>
+                                {{-- The name on a row of its own, so a hidden Company
+                                     Name cannot pull First Name up beside Client Type. --}}
+                                <div class="col-12">
+                                    <div class="row g-3" data-change-client-name-row>
+                                        <div class="col-md-5">
+                                            <label class="form-label fw-bold" for="changeClientFirstName">First Name</label>
+                                            <input type="text" class="form-control" id="changeClientFirstName"
+                                                name="firstname" maxlength="255" required>
+                                        </div>
 
-                                <div class="col-md-2">
-                                    <label class="form-label fw-bold" for="changeClientMiddle">M.I.</label>
-                                    <input type="text" class="form-control text-center" id="changeClientMiddle"
-                                        name="middle_name" maxlength="1" pattern="[A-Za-z]">
-                                </div>
+                                        <div class="col-md-2">
+                                            <label class="form-label fw-bold" for="changeClientMiddle">M.I.</label>
+                                            <input type="text" class="form-control text-center" id="changeClientMiddle"
+                                                name="middle_name" maxlength="1" pattern="[A-Za-z]">
+                                        </div>
 
-                                <div class="col-md-5">
-                                    <label class="form-label fw-bold" for="changeClientSurname">Surname</label>
-                                    <input type="text" class="form-control" id="changeClientSurname"
-                                        name="surname" maxlength="255" required>
+                                        <div class="col-md-5">
+                                            <label class="form-label fw-bold" for="changeClientSurname">Surname</label>
+                                            <input type="text" class="form-control" id="changeClientSurname"
+                                                name="surname" maxlength="255" required>
+                                        </div>
+                                    </div>
                                 </div>
 
                                 <div class="col-md-6">

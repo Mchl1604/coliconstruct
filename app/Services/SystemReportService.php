@@ -9,6 +9,7 @@ use App\Models\Task;
 use App\Models\Technician;
 use App\Models\User;
 use App\Support\BusinessTime;
+use App\Support\TaskStatus;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
@@ -123,24 +124,12 @@ class SystemReportService
         'residentialVsCommercial',
         'totalQuotation',
         'topClients',
-        // Lead technicians
+        // Technicians
         'leadTechnicianProjects',
-        'leadTechnicianWorkload',
-        'leadTechnicianAvailability',
+        'taskPerformance',
         // Schedules
         'scheduledProjectsTrend',
     ];
-
-    /**
-     * How many lead technicians the workload chart will draw as separate
-     * series before it collapses into a single total.
-     *
-     * A grouped bar chart compares a handful of people well and turns into
-     * stripes beyond that, so past this point the chart answers "how much work
-     * was booked" rather than "who by" - which is what the distribution chart
-     * beside it is for.
-     */
-    private const WORKLOAD_SERIES_LIMIT = 5;
 
     /**
      * How the Quotation Report is laid out: a row per project, or a row per
@@ -321,13 +310,15 @@ class SystemReportService
      * @param  array<string, string>  $granularities  chart key => monthly|yearly
      * @param  array<string, string>  $months  chart key => current|1-12
      * @param  array<string, int>  $years  chart key => four-digit year
+     * @param  array{technician_id?: int|null, from?: string|null, to?: string|null}  $taskPerformance
      * @return array<string, array<string, mixed>>
      */
     public function charts(
         array $granularities = [],
         ?string $quotationStatus = null,
         array $months = [],
-        array $years = []
+        array $years = [],
+        array $taskPerformance = []
     ): array {
         $charts = [];
 
@@ -337,7 +328,8 @@ class SystemReportService
                 $granularities[$key] ?? null,
                 $quotationStatus,
                 $months[$key] ?? null,
-                $years[$key] ?? null
+                $years[$key] ?? null,
+                $taskPerformance
             );
         }
 
@@ -347,6 +339,7 @@ class SystemReportService
     /**
      * One chart, so flipping a single toggle doesn't recompute the page.
      *
+     * @param  array{technician_id?: int|null, from?: string|null, to?: string|null}  $taskPerformance
      * @return array<string, mixed>
      */
     public function chart(
@@ -354,7 +347,8 @@ class SystemReportService
         ?string $granularity = null,
         ?string $quotationStatus = null,
         ?string $month = null,
-        ?int $year = null
+        ?int $year = null,
+        array $taskPerformance = []
     ): array {
         $period = $this->resolveGranularity($granularity);
 
@@ -362,7 +356,13 @@ class SystemReportService
             // Snapshots of where things stand right now, so they have no window
             // and ignore the granularity entirely.
             'leadTechnicianProjects' => $this->leadTechnicianProjects(),
-            'leadTechnicianAvailability' => $this->leadTechnicianAvailability(),
+
+            // One technician, over the dates the chart was given.
+            'taskPerformance' => $this->taskPerformance(
+                $taskPerformance['technician_id'] ?? null,
+                $taskPerformance['from'] ?? null,
+                $taskPerformance['to'] ?? null
+            ),
 
             // Read against one named month rather than a year of buckets.
             'projectBreakdown' => $this->projectBreakdown($this->resolveMonthWindow($month, $year)),
@@ -372,7 +372,6 @@ class SystemReportService
             'totalQuotation' => $this->totalQuotation($period, $quotationStatus ?? 'all'),
             'residentialVsCommercial' => $this->residentialVsCommercial($period),
             'topClients' => $this->topClients($period),
-            'leadTechnicianWorkload' => $this->leadTechnicianWorkload($period),
             'scheduledProjectsTrend' => $this->scheduledProjectsTrend($period),
             default => throw new InvalidArgumentException("Unknown chart [{$key}]."),
         };
@@ -765,84 +764,104 @@ class SystemReportService
     }
 
     /**
-     * Active project assignments per lead, over time.
+     * How one technician's tasks have gone over a period: still open,
+     * finished on time, or finished late.
      *
-     * A project lands in the bucket its work is booked in rather than the one
-     * it was created in - workload is about when the crew is out, not when the
-     * paperwork was raised. Within a bucket a project counts once per lead, so
-     * neither extra ranges nor extra crew inflate it.
+     * Read through TaskStatus, so a task counts here under the same state it
+     * shows on every other screen. Overdue and Ongoing tasks are still owed,
+     * so both sit under Pending. Cancelled tasks are left out - nobody owed
+     * them - and so are tasks on archived projects, as everywhere on this
+     * page.
      *
-     * Unscheduled work is therefore absent from this chart alone, having no
-     * date to be placed under. It is counted everywhere else a lead's load is
-     * reported; this axis is months, and a project with no dates has no month.
+     * The dates pick tasks the way the Technician Report's Tasks section
+     * does: by due date, or by start date for a task with no deadline. The
+     * period defaults to the current month; see taskPerformanceWindow().
      *
-     * @param  array{start: CarbonImmutable, end: CarbonImmutable, bucket: string}  $period
      * @return array<string, mixed>
      */
-    private function leadTechnicianWorkload(array $period): array
+    private function taskPerformance(?int $technicianId, ?string $from, ?string $to): array
     {
-        $rows = $this->leadTechnicianQuery()
-            ->join('tbl_schedule as s', 's.project_id', '=', 'p.project_id')
-            ->whereBetween('s.start_datetime', [$period['start'], $period['end']])
-            ->selectRaw(
-                'u.name as series, '
-                .$this->bucketExpression('s.start_datetime', $period['bucket']).' as bucket, '
-                .'count(distinct p.project_id) as total'
-            )
-            ->groupBy('series', 'bucket')
-            ->get();
+        $chart = [
+            'labels' => ['Pending', 'Completed On Time', 'Finished Late'],
+            'colors' => [
+                TaskStatus::COLORS[TaskStatus::PENDING][0],
+                TaskStatus::COLORS[TaskStatus::COMPLETED][0],
+                TaskStatus::COLORS[TaskStatus::FINISHED_LATE][0],
+            ],
+            'label' => 'Tasks',
+        ];
 
-        $names = $rows->pluck('series')->unique()->values();
-
-        // Few enough leads to tell apart: one series each, so the chart shows
-        // who as well as how much.
-        if ($names->count() <= self::WORKLOAD_SERIES_LIMIT) {
-            return $this->bucketedDatasets(
-                $period,
-                $rows,
-                $names->mapWithKeys(fn ($name): array => [$name => [$name, null]])->all()
-            );
+        // Nobody picked yet: the card waits on the picker rather than
+        // reporting on the whole workforce.
+        if ($technicianId === null) {
+            return $chart + ['values' => [0, 0, 0], 'summary' => null];
         }
 
-        // Past that the stripes stop being readable, so the chart falls back to
-        // the total booked - and who is carrying it is read off the
-        // distribution chart beside it.
-        $totals = $rows
-            ->groupBy('bucket')
-            ->map(fn (Collection $bucket): int => (int) $bucket->sum('total'));
+        $window = $this->taskPerformanceWindow($from, $to);
+        $fromDate = $window['start']->toDateString();
+        $toDate = $window['end']->toDateString();
 
-        return $this->bucketedSeries($period, $totals, 'Lead Technician Assignments');
-    }
+        $states = Task::query()
+            ->where('technician_id', $technicianId)
+            ->where('status', '!=', TaskStatus::CANCELLED)
+            ->whereHas('project', fn (Builder $project) => $this->excludeArchived($project))
+            ->where(function (Builder $dates) use ($fromDate, $toDate): void {
+                $dates
+                    ->where(fn (Builder $due) => $this->applyDateBounds($due, 'due_date', $fromDate, $toDate))
+                    ->orWhere(fn (Builder $started) => $this->applyDateBounds(
+                        $started->whereNull('due_date'),
+                        'start_date',
+                        $fromDate,
+                        $toDate
+                    ));
+            })
+            ->get(['status', 'start_date', 'due_date', 'completed_at'])
+            ->map(fn (Task $task): string => $task->derivedStatus());
 
-    /**
-     * How many leads are carrying live work right now, and how many are free.
-     *
-     * Only active accounts are counted on either side: a deactivated lead is
-     * not available, and their historical assignments stay exactly where they
-     * are. Finished, cancelled and archived work releases a lead, so nobody
-     * reads as busy on the strength of a project that ended last year.
-     *
-     * @return array<string, mixed>
-     */
-    private function leadTechnicianAvailability(): array
-    {
-        $total = $this->activeLeadTechnicianCount();
-        $assigned = min($this->leadTechnicianActiveProjects()->count(), $total);
-
-        return [
-            'labels' => ['Assigned to Active Project', 'Available'],
-            'values' => [$assigned, max($total - $assigned, 0)],
-            'colors' => ['#2563eb', '#20c997'],
-            'label' => 'Lead Technicians',
-            'summary' => 'Active lead technicians: '.number_format($total),
+        return $chart + [
+            'values' => [
+                $states->reject(fn (string $state): bool => in_array($state, TaskStatus::COMPLETED_STATES, true))->count(),
+                $states->filter(fn (string $state): bool => $state === TaskStatus::COMPLETED)->count(),
+                $states->filter(fn (string $state): bool => $state === TaskStatus::FINISHED_LATE)->count(),
+            ],
+            'summary' => $states->isEmpty() ? null : 'Total tasks: '.number_format($states->count()),
+            'empty_text' => 'No tasks in this period.',
         ];
     }
 
     /**
-     * Active projects per lead technician, highest first.
+     * The dates Task Performance covers. Nothing given is the current month;
+     * one end given on its own is completed to the end - or the start - of
+     * that end's month, so the window is always a real span.
      *
-     * Memoised: the distribution chart and the availability doughnut are the
-     * same question asked twice, and a page load asks for both.
+     * @return array{start: CarbonImmutable, end: CarbonImmutable}
+     */
+    public function taskPerformanceWindow(?string $from = null, ?string $to = null): array
+    {
+        $today = BusinessTime::today();
+
+        $start = $from ? CarbonImmutable::parse($from)->startOfDay() : null;
+        $end = $to ? CarbonImmutable::parse($to)->startOfDay() : null;
+
+        $start ??= ($end ?? $today)->startOfMonth();
+        $end ??= ($from ? $start : $today)->endOfMonth()->startOfDay();
+
+        return ['start' => $start, 'end' => $end];
+    }
+
+    /**
+     * A date column held between two optional, inclusive bounds.
+     */
+    private function applyDateBounds(Builder $query, string $column, ?string $from, ?string $to): Builder
+    {
+        return $query
+            ->whereNotNull($column)
+            ->when($from, fn (Builder $bounded) => $bounded->where($column, '>=', $from))
+            ->when($to, fn (Builder $bounded) => $bounded->where($column, '<=', $to));
+    }
+
+    /**
+     * Active projects per lead technician, highest first.
      *
      * @return Collection<int, object{technician: string, total: int}>
      */
@@ -886,15 +905,6 @@ class SystemReportService
             ->where('u.is_archived', false);
 
         return $this->applyActiveProjects($query, 'p');
-    }
-
-    private function activeLeadTechnicianCount(): int
-    {
-        return $this->memo['activeLeadTechnicianCount'] ??= User::query()
-            ->where('role', User::ROLE_LEAD_TECHNICIAN)
-            ->where('status', User::STATUS_ACTIVE)
-            ->where('is_archived', false)
-            ->count();
     }
 
     // ------------------------------------------------------------------
@@ -1142,7 +1152,6 @@ class SystemReportService
             $clients = $this->clientTotals($projects)
                 ->map(fn (array $client): array => $client + [
                     'total_label' => $this->money($client['total']),
-                    'share' => $total > 0 ? round($client['total'] / $total * 100, 1) : 0.0,
                 ]);
 
             return [

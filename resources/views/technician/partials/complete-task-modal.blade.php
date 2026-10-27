@@ -36,8 +36,10 @@
                         Upload Completion Image
                     </label>
                     <input type="file" class="form-control" id="completionImages" name="images[]"
-                        accept=".jpg,.jpeg,.png" multiple data-complete-task-images>
-                    <div class="form-text">Optional. JPG or PNG, max 5 MB.</div>
+                        accept=".jpg,.jpeg,.png" multiple data-complete-task-images
+                        {{-- Only a regular technician must add a photo. --}}
+                        @required(auth()->user()?->isTechnician())>
+                    <div class="form-text">JPG or PNG, max 5 MB.</div>
                 </div>
 
                 <div class="row g-2" data-complete-task-preview></div>

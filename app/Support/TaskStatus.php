@@ -215,6 +215,22 @@ class TaskStatus
     }
 
     /**
+     * Finished on a day before the work was due to begin - which only a lead
+     * technician or the office may do. Compared as calendar days, as
+     * finishedLate() is.
+     */
+    public static function finishedBeforeStart(Task $task): bool
+    {
+        if ($task->status !== self::COMPLETED || $task->start_date === null || $task->completed_at === null) {
+            return false;
+        }
+
+        $closed = BusinessTime::at($task->completed_at)?->toDateString();
+
+        return $closed !== null && $closed < self::startsOn($task);
+    }
+
+    /**
      * How many days past the deadline the work landed, or null when it did
      * not land late.
      *

@@ -598,6 +598,7 @@ class TechnicianPortalTest extends TestCase
 
         $this->post(route('technician.tasks.complete', $mine), [
             'completion_notes' => 'Fitted and tested.',
+            'images' => [UploadedFile::fake()->image('done.jpg')],
         ])->assertRedirect();
 
         $this->assertSame('completed', $mine->refresh()->status);

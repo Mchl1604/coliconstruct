@@ -15,6 +15,7 @@ use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Tests\TestCase;
 
 /**
@@ -314,6 +315,7 @@ class NotificationEventsTest extends TestCase
         $this->actingAs($worker->account)
             ->post(route('technician.tasks.complete', $task->task_id), [
                 'completion_notes' => 'Cameras mounted and tested.',
+                'images' => [UploadedFile::fake()->image('done.jpg')],
             ]);
 
         // They did it, so they are not told about it...
@@ -504,6 +506,7 @@ class NotificationEventsTest extends TestCase
 
         $this->patch(route('super-admin.tasks.complete', $task->task_id), [
             'completion_notes' => 'Closed on the owner\'s behalf.',
+            'images' => [UploadedFile::fake()->image('done.jpg')],
         ]);
 
         $this->assertContains('Task Completed', $this->titlesFor($owner->account));

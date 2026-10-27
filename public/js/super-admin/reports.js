@@ -1080,6 +1080,19 @@ document.addEventListener("DOMContentLoaded", function () {
 
         if (emptyEl) {
             emptyEl.classList.toggle("d-none", !empty);
+
+            // A chart may say why it is empty - Task Performance before and
+            // after a technician is picked - falling back to the page's text.
+            const emptyText = emptyEl.querySelector("[data-chart-empty-text]");
+
+            if (emptyText) {
+                if (emptyText.dataset.defaultText === undefined) {
+                    emptyText.dataset.defaultText = emptyText.textContent;
+                }
+
+                emptyText.textContent =
+                    (data && data.empty_text) || emptyText.dataset.defaultText;
+            }
         }
 
         // The wrap reserves the chart's height, so hiding the canvas alone
@@ -1144,8 +1157,76 @@ document.addEventListener("DOMContentLoaded", function () {
 
         params.set("quotation_status", quotationStatus);
 
+        if (key === "taskPerformance") {
+            const filters = taskPerformanceFilters();
+
+            Object.keys(filters).forEach(function (name) {
+                if (filters[name]) {
+                    params.set(name, filters[name]);
+                }
+            });
+        }
+
         return params;
     }
+
+    // ---------------------------------------------------------------
+    // Task Performance: one technician, an optional date range
+    // ---------------------------------------------------------------
+
+    const taskPerformancePicker = document.querySelector(
+        '[data-account-picker="taskPerformanceTechnicians"]',
+    );
+    const taskPerformanceTechnician = document.querySelector(
+        "[data-task-performance-technician]",
+    );
+    const taskPerformanceFrom = document.querySelector(
+        "[data-task-performance-from]",
+    );
+    const taskPerformanceTo = document.querySelector(
+        "[data-task-performance-to]",
+    );
+
+    function taskPerformanceFilters() {
+        return {
+            technician_id: taskPerformanceTechnician
+                ? taskPerformanceTechnician.value
+                : "",
+            from: taskPerformanceFrom ? taskPerformanceFrom.value : "",
+            to: taskPerformanceTo ? taskPerformanceTo.value : "",
+        };
+    }
+
+    if (taskPerformancePicker) {
+        ["account-picker:chosen", "account-picker:cleared"].forEach(
+            function (name) {
+                taskPerformancePicker.addEventListener(name, function () {
+                    loadChart("taskPerformance");
+                });
+            },
+        );
+    }
+
+    // Each end bounds the other, so the range can never be inverted.
+    function boundTaskPerformanceRange() {
+        if (taskPerformanceFrom && taskPerformanceTo) {
+            taskPerformanceTo.min = taskPerformanceFrom.value || "";
+            taskPerformanceFrom.max = taskPerformanceTo.value || "";
+        }
+    }
+
+    boundTaskPerformanceRange();
+
+    [taskPerformanceFrom, taskPerformanceTo].forEach(function (input) {
+        if (!input) {
+            return;
+        }
+
+        input.addEventListener("change", function () {
+            boundTaskPerformanceRange();
+            loadChart("taskPerformance");
+        });
+    });
 
     // Each chart tracks its own in-flight request, so a slow one can never
     // overwrite a newer render of a different chart.
@@ -1219,6 +1300,12 @@ document.addEventListener("DOMContentLoaded", function () {
 
                 renderCharts(result.body.charts);
                 systemLoaded = true;
+
+                // The page-wide load knows nothing of the picker, so a
+                // technician chosen while it was in flight is asked for again.
+                if (taskPerformanceFilters().technician_id) {
+                    loadChart("taskPerformance");
+                }
             },
         );
     }

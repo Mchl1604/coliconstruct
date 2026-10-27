@@ -1065,7 +1065,7 @@ class TechnicianPortalController extends Controller
         // Read off the task as it stands in the database, not off whatever the
         // page was drawn from: the button may have been enabled when it was
         // rendered, or never have been drawn at all.
-        if ($task->startsInFuture()) {
+        if ($task->waitsForStartDate($request->user())) {
             return $this->failed($request, Task::NOT_STARTED_REFUSAL);
         }
 
@@ -1074,12 +1074,15 @@ class TechnicianPortalController extends Controller
         $user = $request->user();
         $mustDescribe = app(TaskPolicy::class)->mustDescribeCompletion($user, $task);
 
+        $needsImage = $task->requiresCompletionImage($user);
+
         $validator = Validator::make($request->all(), [
             'completion_notes' => [$mustDescribe ? 'required' : 'nullable', 'string'],
-            'images' => ['nullable', 'array'],
+            'images' => [$needsImage ? 'required' : 'nullable', 'array'],
             'images.*' => ['nullable', 'image', 'mimes:jpg,jpeg,png', 'max:5120'],
         ], [
             'completion_notes.required' => 'Describe what was done before completing the task.',
+            'images.required' => Task::IMAGE_REQUIRED_REFUSAL,
         ]);
 
         if ($validator->fails()) {

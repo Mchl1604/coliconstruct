@@ -14,6 +14,7 @@ use App\Support\BusinessTime;
 use App\Support\TaskStatus;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Tests\TestCase;
 
 /**
@@ -424,6 +425,7 @@ class TaskStatusConsistencyTest extends TestCase
         // Through the endpoint the completion dialog posts to.
         $this->patch(route('super-admin.tasks.complete', $task->task_id), [
             'completion_notes' => 'Finished it, late.',
+            'images' => [UploadedFile::fake()->image('done.jpg')],
         ])->assertRedirect();
 
         $task = $task->fresh();

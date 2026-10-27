@@ -152,8 +152,7 @@
                         <th style="width:10%">Projects</th>
                         {{-- A client can hold work in several states, so each
                              status is listed with how many projects are in it. --}}
-                        <th style="width:22%">Status</th>
-                        <th style="width:12%">Share</th>
+                        <th style="width:34%">Status</th>
                         <th class="amount">Total Quotation</th>
                     </tr>
                 </thead>
@@ -163,7 +162,6 @@
                             <td>{{ $row['client'] }}</td>
                             <td>{{ number_format($row['projects']) }}</td>
                             <td>{!! $stack($row['statuses']) !!}</td>
-                            <td>{{ number_format($row['share'], 1) }}%</td>
                             <td class="amount">{{ $row['total_label'] }}</td>
                         </tr>
                     @endforeach
@@ -254,12 +252,10 @@
                     <table class="data">
                         <thead>
                             <tr>
-                                <th style="width:18%">Technician</th>
-                                <th style="width:13%">Reference No.</th>
-                                <th style="width:22%">Client</th>
-                                <th style="width:23%">Schedule</th>
-                                <th style="width:11%">Scheduled Days</th>
-                                <th>Status</th>
+                                <th style="width:24%">Technician</th>
+                                <th style="width:16%">Reference No.</th>
+                                <th style="width:30%">Client</th>
+                                <th>Schedule</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -272,10 +268,6 @@
                                     <td class="nowrap">{{ $row['reference_no'] }}</td>
                                     <td>{{ $row['client'] }}</td>
                                     <td>{{ $row['schedule'] }}</td>
-                                    <td class="nowrap">
-                                        {{ $row['duration'] }} {{ $row['duration'] === 1 ? 'day' : 'days' }}
-                                    </td>
-                                    <td>{{ $row['status_label'] ?: '—' }}</td>
                                 </tr>
                             @endforeach
                         </tbody>
