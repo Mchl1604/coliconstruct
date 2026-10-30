@@ -27,6 +27,7 @@ return [
         'documents' => 'documents',
         'completion_photos' => 'completion-photos',
         'task_images' => 'task-images',
+        'task_update_images' => 'task-update-images',
         'report_images' => 'report-images',
         'system_contents' => 'system-contents',
     ],

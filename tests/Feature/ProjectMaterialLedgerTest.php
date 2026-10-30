@@ -353,12 +353,17 @@ class ProjectMaterialLedgerTest extends TestCase
             ]);
     }
 
+    /**
+     * Bought directly, so the warehouse - which these tests leave empty - is
+     * not asked. ProjectMaterialStockTest covers additions from stock.
+     */
     private function addMaterial(User $user, Material $material, string $quantity, string $portal = 'super-admin')
     {
         return $this->actingAs($user)
             ->from(route($portal.'.projects.show', $this->project->project_id))
             ->post(route($portal.'.projects.materials.add', $this->project->project_id), [
                 'material_id' => $material->material_id,
+                'source' => 'direct',
                 'quantity' => $quantity,
                 'entry_date' => BusinessTime::today()->toDateString(),
             ]);

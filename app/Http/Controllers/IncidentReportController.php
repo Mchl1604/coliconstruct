@@ -1,0 +1,178 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\IncidentReport;
+use App\Models\Project;
+use App\Models\ProjectTechnician;
+use App\Policies\ProjectPolicy;
+use App\Services\IncidentReporting;
+use App\Support\BusinessTime;
+use Illuminate\Contracts\View\View;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rule;
+use RuntimeException;
+
+/**
+ * Incident reports: the lead's structured form in the technician portal, and
+ * the office's review on the report's page. Who may file is
+ * IncidentReporting's decision, asked again on every submission.
+ */
+class IncidentReportController extends Controller
+{
+    public function __construct(
+        private readonly IncidentReporting $incidents,
+        private readonly ProjectPolicy $projects,
+    ) {}
+
+    /**
+     * Choose the project; once chosen, the form - its phases, tasks and team
+     * offered as the choices they are.
+     */
+    public function create(Request $request): View
+    {
+        $user = $request->user();
+        $technician = $user->technicianRecord();
+
+        $projects = Project::query()
+            ->whereHas('projectTechnicians', fn ($query) => $query->where('technician_id', $technician->technician_id))
+            ->where('is_archived', false)
+            ->orderByDesc('project_id')
+            ->get()
+            ->filter(fn (Project $project): bool => $this->projects->reportsOn($user, $project))
+            ->values();
+
+        $project = $projects->firstWhere('project_id', $request->integer('project'));
+
+        return view('technician.incident-report-create', [
+            'projects' => $projects,
+            'project' => $project,
+            'phases' => $project?->phases()->orderBy('sequence')->get(['phase_id', 'title']) ?? collect(),
+            'tasks' => $project?->tasks()->orderBy('task_title')->get(['task_id', 'task_title']) ?? collect(),
+            'team' => $project
+                ? ProjectTechnician::query()
+                    ->with('technician.account')
+                    ->where('project_id', $project->project_id)
+                    ->get()
+                    ->map(fn (ProjectTechnician $member) => $member->technician)
+                    ->filter()
+                    ->unique('technician_id')
+                    ->values()
+                : collect(),
+            'today' => BusinessTime::today()->toDateString(),
+            'now' => BusinessTime::now()->format('H:i'),
+        ]);
+    }
+
+    public function store(Request $request): RedirectResponse
+    {
+        $project = Project::query()->find($request->integer('project_id'));
+
+        if ($project === null) {
+            return back()->withInput()->with('error', 'Choose a project.');
+        }
+
+        $validator = Validator::make($request->all(), [
+            'incident_type' => ['required', Rule::in(array_keys(IncidentReport::TYPES))],
+            'severity' => ['required', Rule::in(array_keys(IncidentReport::SEVERITIES))],
+            'occurred_date' => ['required', 'date_format:Y-m-d', 'before_or_equal:'.BusinessTime::today()->toDateString()],
+            'occurred_time' => ['required', 'date_format:H:i'],
+            'phase_id' => ['nullable', 'integer', Rule::exists('tbl_project_phases', 'phase_id')->where('project_id', $project->project_id)],
+            'task_id' => ['nullable', 'integer', Rule::exists('tbl_tasks', 'task_id')->where('project_id', $project->project_id)],
+            'location' => ['required', Rule::in(array_keys(IncidentReport::LOCATIONS))],
+            'location_details' => ['nullable', 'string', 'max:255'],
+            'description' => ['required', 'string', 'max:5000'],
+            'injury_body_part' => ['nullable', 'required_if:incident_type,injury', Rule::in(array_keys(IncidentReport::BODY_PARTS))],
+            'injury_type' => ['nullable', 'required_if:incident_type,injury', Rule::in(array_keys(IncidentReport::INJURY_TYPES))],
+            'injury_treatment' => ['nullable', 'required_if:incident_type,injury', Rule::in(array_keys(IncidentReport::TREATMENTS))],
+            'damage_description' => ['nullable', 'string', 'max:255'],
+            'damage_owner' => ['nullable', Rule::in(array_keys(IncidentReport::DAMAGE_OWNERS))],
+            'damage_cost' => ['nullable', 'numeric', 'min:0', 'max:9999999999'],
+            'refrigerant_type' => ['nullable', 'required_if:incident_type,refrigerant_leak', Rule::in(array_keys(IncidentReport::REFRIGERANTS))],
+            'refrigerant_amount' => ['nullable', 'numeric', 'min:0', 'max:999999'],
+            'immediate_action' => ['nullable', 'string', 'max:2000'],
+            'cause' => ['nullable', Rule::in(array_keys(IncidentReport::CAUSES))],
+            'preventive_action' => ['nullable', 'string', 'max:2000'],
+            'work_stopped' => ['nullable', 'boolean'],
+            'client_notified' => ['nullable', 'boolean'],
+            'persons' => ['nullable', 'array', 'max:30'],
+            'persons.*.technician_id' => ['nullable', 'integer'],
+            'persons.*.name' => ['nullable', 'string', 'max:150'],
+            'persons.*.person_type' => ['required', Rule::in(array_keys(IncidentReport::PERSON_TYPES))],
+            'persons.*.involvement' => ['required', Rule::in(array_keys(IncidentReport::INVOLVEMENTS))],
+            'images' => ['nullable', 'array', 'max:5'],
+            'images.*' => ['image', 'mimes:jpg,jpeg,png', 'max:5120'],
+        ], [
+            'incident_type.required' => 'Choose the type of incident.',
+            'severity.required' => 'Choose how serious it was.',
+            'occurred_date.required' => 'Say when it happened.',
+            'occurred_date.before_or_equal' => 'It cannot have happened in the future.',
+            'occurred_time.required' => 'Say what time it happened.',
+            'location.required' => 'Choose where it happened.',
+            'description.required' => 'Describe what happened.',
+            'injury_body_part.required_if' => 'Choose the part of the body hurt.',
+            'injury_type.required_if' => 'Choose the kind of injury.',
+            'injury_treatment.required_if' => 'Choose the treatment given.',
+            'refrigerant_type.required_if' => 'Choose the refrigerant released.',
+            'persons.*.person_type.required' => 'Say who each person is.',
+            'persons.*.involvement.required' => 'Say how each person was involved.',
+            'images.max' => 'At most 5 photos.',
+            'images.*.image' => 'Photos must be JPG or PNG.',
+            'images.*.mimes' => 'Photos must be JPG or PNG.',
+            'images.*.max' => 'Each photo must be under 5 MB.',
+        ]);
+
+        if ($validator->fails()) {
+            return back()->withInput()->with('error', $validator->errors()->first());
+        }
+
+        $data = $validator->validated();
+
+        try {
+            $this->incidents->file(
+                $project,
+                $data,
+                array_values($data['persons'] ?? []),
+                $request->file('images') ?? [],
+                $request->user()
+            );
+        } catch (RuntimeException $exception) {
+            return back()->withInput()->with('error', $exception->getMessage());
+        }
+
+        return redirect()->route('technician.reports')->with('success', 'Incident report filed.');
+    }
+
+    /**
+     * The office's review: Open, Under Review, Closed, with notes.
+     */
+    public function updateStatus(Request $request, IncidentReport $incidentReport): RedirectResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'status' => ['required', Rule::in(array_keys(IncidentReport::STATUSES))],
+            'resolution_notes' => ['nullable', 'string', 'max:2000'],
+        ], [
+            'status.required' => 'Choose a status.',
+            'status.in' => 'Choose a status.',
+        ]);
+
+        if ($validator->fails()) {
+            return back()->with('error', $validator->errors()->first());
+        }
+
+        try {
+            $this->incidents->review(
+                $incidentReport,
+                $request->string('status')->toString(),
+                $request->input('resolution_notes'),
+                $request->user()
+            );
+        } catch (RuntimeException $exception) {
+            return back()->withInput()->with('error', $exception->getMessage());
+        }
+
+        return back()->with('success', 'Incident updated.');
+    }
+}

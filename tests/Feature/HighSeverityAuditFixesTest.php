@@ -758,8 +758,9 @@ class HighSeverityAuditFixesTest extends TestCase
             // Every task belongs to a phase of its project - see TaskPhaseRules.
             'phase_id' => $this->defaultPhaseId($project),
             'technician_id' => $outsider->technician_id,
-            'start_date' => CarbonImmutable::today()->toDateString(),
-            'due_date' => CarbonImmutable::today()->addDay()->toDateString(),
+            // Tomorrow: a new task cannot start today.
+            'start_date' => CarbonImmutable::today()->addDay()->toDateString(),
+            'due_date' => CarbonImmutable::today()->addDays(2)->toDateString(),
         ])->assertSessionHasErrors('technician_id');
 
         $this->assertSame(0, Task::where('project_id', $project->project_id)->count());
@@ -808,8 +809,9 @@ class HighSeverityAuditFixesTest extends TestCase
             'task_description' => 'Description',
             'phase_id' => $this->defaultPhaseId($project),
             'technician_id' => $member->technician_id,
-            'start_date' => CarbonImmutable::today()->toDateString(),
-            'due_date' => CarbonImmutable::today()->addDay()->toDateString(),
+            // Tomorrow: a new task cannot start today.
+            'start_date' => CarbonImmutable::today()->addDay()->toDateString(),
+            'due_date' => CarbonImmutable::today()->addDays(2)->toDateString(),
         ])->assertSessionHasNoErrors();
 
         $this->assertDatabaseHas('tbl_tasks', [

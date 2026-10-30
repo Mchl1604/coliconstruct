@@ -28,6 +28,7 @@ use App\Services\ProjectCompletion;
 use App\Services\ProjectDetailForms;
 use App\Services\ProjectEmails;
 use App\Services\ProjectMaterialLedger;
+use App\Services\ProjectMaterialPlan;
 use App\Services\ProjectMaterialRules;
 use App\Services\ProjectPhaseProgress;
 use App\Services\ProjectPhaseRules;
@@ -43,6 +44,7 @@ use App\Services\QuotationChange;
 use App\Services\ScheduleConsolidation;
 use App\Services\ScheduleHoldCutoff;
 use App\Services\ScheduleModeRules;
+use App\Services\StockAvailability;
 use App\Services\TargetDateChange;
 use App\Services\TaskAssignmentRules;
 use App\Services\TaskBoard;
@@ -348,6 +350,10 @@ class ProjectController extends Controller
             ? Client::query()->withCount('projects')->find((int) old('client_id'))
             : null;
 
+        // A failed save comes back with its material lines, read again with
+        // today's stock figures.
+        $wizardMaterials = $this->wizardMaterialRows((array) old('materials', []));
+
         return view('super-admin.createProject', compact(
             'projectTypes',
             'detailTypes',
@@ -355,8 +361,58 @@ class ProjectController extends Controller
             'technicianSchedules',
             'workingHours',
             'partialDayHours',
-            'selectedClient'
+            'selectedClient',
+            'wizardMaterials'
         ));
+    }
+
+    /**
+     * Submitted material lines as the wizard's Materials step redraws them,
+     * each with its stock figures.
+     *
+     * @param  array<int, mixed>  $submitted
+     * @return array<int, array<string, mixed>>
+     */
+    private function wizardMaterialRows(array $submitted): array
+    {
+        $rows = app(ProjectMaterialPlan::class)->rowsFromInput(array_values($submitted));
+        $figures = app(StockAvailability::class)->forMaterials($rows->pluck('material_id')->all());
+
+        return $rows
+            ->map(fn (array $row): array => $row + ($figures[$row['material_id']] ?? []))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Tell Purchasing what a new project needs that the warehouse cannot
+     * cover - one notice for the project, naming how many materials are
+     * short. A warning, not a refusal: the project is booked either way.
+     *
+     * Follow-up like announceNewProject(), so it swallows its own faults.
+     */
+    private function announceMaterialShortfall(Project $project): void
+    {
+        try {
+            $lines = $project->materials()->with('material')->get();
+
+            if ($lines->isEmpty()) {
+                return;
+            }
+
+            $figures = app(StockAvailability::class)->forMaterials($lines->pluck('material_id')->all(), $project);
+
+            $short = $lines
+                ->filter(fn ($line): bool => (float) $line->quantity_needed > (float) ($figures[(int) $line->material_id]['available'] ?? 0))
+                ->map(fn ($line) => $line->material)
+                ->values();
+
+            if ($short->isNotEmpty()) {
+                $this->notifications->projectMaterialsShort($project, $short);
+            }
+        } catch (Throwable $exception) {
+            report($exception);
+        }
     }
 
     /**
@@ -504,6 +560,11 @@ class ProjectController extends Controller
                     $validated['details'] ?? []
                 );
 
+                // The Materials step: the plan, which reserves stock from now
+                // on. The setup screen opens on it and may still change it
+                // until setup is finalized.
+                app(ProjectMaterialPlan::class)->save($project, $validated['materials'] ?? [], $request->user());
+
                 $selectedTechnicianIds = collect([
                     $validated['lead_tech'],
                     ...$validated['technicians'],
@@ -568,6 +629,7 @@ class ProjectController extends Controller
             // reports as failed. announceNewProject() therefore swallows its
             // own faults rather than letting them reach the catch below.
             $this->announceNewProject($created, count($validated['technicians']));
+            $this->announceMaterialShortfall($created);
 
             return redirect()
                 ->route('super-admin.projects')

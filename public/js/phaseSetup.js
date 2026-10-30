@@ -142,6 +142,23 @@ document.addEventListener("DOMContentLoaded", function () {
         };
     }
 
+    /**
+     * The earliest a drafted task may start - it becomes a new task when
+     * setup is finalized, and new tasks start tomorrow at the earliest. The
+     * server holds it to the office's clock either way.
+     */
+    function tomorrow() {
+        const date = new Date();
+
+        date.setDate(date.getDate() + 1);
+
+        return [
+            date.getFullYear(),
+            String(date.getMonth() + 1).padStart(2, "0"),
+            String(date.getDate()).padStart(2, "0"),
+        ].join("-");
+    }
+
     function escapeHtml(value) {
         return String(value == null ? "" : value).replace(
             /[&<>"']/g,
@@ -262,7 +279,9 @@ document.addEventListener("DOMContentLoaded", function () {
             '<span class="phase-task-field-label"><i class="bi bi-calendar-event"></i>Start</span>' +
             '<input type="text" class="form-control form-control-sm" aria-label="' +
             label +
-            ' start date" data-task-start value="' +
+            ' start date" data-task-start data-not-before="' +
+            tomorrow() +
+            '" value="' +
             escapeHtml(task.start_date) +
             '"' +
             dateAttrs +

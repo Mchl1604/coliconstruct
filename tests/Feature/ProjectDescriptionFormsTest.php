@@ -58,7 +58,8 @@ class ProjectDescriptionFormsTest extends TestCase
     {
         $page = $this->get(route('super-admin.projects.create'))->assertOk();
 
-        $page->assertSee('Step <span data-step-counter>1</span> of 4', false);
+        // Client, Project Details, Materials, Initial Schedule, Review.
+        $page->assertSee('Step <span data-step-counter>1</span> of 5', false);
         $page->assertSee('data-details-type-name="Aircon Installation"', false);
         $page->assertSee('data-details-type-name="Ducting Fabrication"', false);
         $page->assertSee('name="details['.$this->installation->type_id.'][project][work]"', false);

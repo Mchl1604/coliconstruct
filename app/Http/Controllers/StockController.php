@@ -6,6 +6,7 @@ use App\Models\Material;
 use App\Models\MaterialType;
 use App\Models\Project;
 use App\Models\StockMovement;
+use App\Services\StockAvailability;
 use App\Services\StockLedger;
 use App\Support\BusinessTime;
 use App\Support\ServerTable;
@@ -26,7 +27,10 @@ use RuntimeException;
  */
 class StockController extends Controller
 {
-    public function __construct(private readonly StockLedger $ledger) {}
+    public function __construct(
+        private readonly StockLedger $ledger,
+        private readonly StockAvailability $availability,
+    ) {}
 
     /**
      * One page of the Stock table, for serverTable.js.
@@ -56,7 +60,7 @@ class StockController extends Controller
                     $dir
                 ),
                 2 => 'on_hand',
-                3 => 'reorder_level',
+                5 => 'reorder_level',
             ],
             fn (Builder $builder, string $word, string $like) => $builder
                 ->where('name', 'like', $like)
@@ -67,10 +71,15 @@ class StockController extends Controller
             [[0, 'asc']],
         );
 
+        // Reserved and Available for the rows on this page only - the sum
+        // runs across every live project's plan.
+        $figures = $this->availability->forMaterials($page->items->pluck('material_id')->all());
+
         return $table->respond(
             $page,
             fn (Material $material): string => view('super-admin.partials.stock-row', [
                 'material' => $material,
+                'figures' => $figures[(int) $material->material_id] ?? null,
             ])->render(),
         );
     }

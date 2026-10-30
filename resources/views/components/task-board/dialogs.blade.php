@@ -23,6 +23,10 @@
             :action="route($completeRoute, $task->task_id)" :method="$completeMethod" />
     @endif
 
+    @can('postUpdate', $task)
+        <x-task-update-modal :task="$task" />
+    @endcan
+
     @if ($canManage)
         <x-task-delete-modal :task="$task" :action="route($deleteRoute, $task->task_id)" />
     @endif

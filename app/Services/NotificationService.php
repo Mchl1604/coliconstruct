@@ -2,12 +2,14 @@
 
 namespace App\Services;
 
+use App\Models\IncidentReport;
 use App\Models\Material;
 use App\Models\Notification;
 use App\Models\Project;
 use App\Models\Schedule;
 use App\Models\SpecialtyRequest;
 use App\Models\Task;
+use App\Models\TechnicianReport;
 use App\Models\User;
 use App\Support\BusinessTime;
 use App\Support\RoleAccess;
@@ -1618,6 +1620,27 @@ class NotificationService
         );
     }
 
+    /**
+     * A Serious or Critical incident, told to the administrators the moment
+     * it is filed - on top of the ordinary "report filed" notice.
+     */
+    public function urgentIncident(Project $project, TechnicianReport $report, IncidentReport $incident): void
+    {
+        $this->deliver(
+            $this->administrators(),
+            $incident->severity === 'critical' ? 'Critical Incident' : 'Serious Incident',
+            sprintf(
+                '%s on %s: %s.',
+                $incident->label('SEVERITIES', 'severity'),
+                $this->projectLabel($project),
+                $incident->label('TYPES', 'incident_type')
+            ),
+            Notification::MODULE_REPORTS,
+            $report,
+            route('reports.document', $report->getKey(), false)
+        );
+    }
+
     public function reportExported(string $label): void
     {
         $this->deliver(
@@ -1661,6 +1684,28 @@ class NotificationService
             Notification::MODULE_INVENTORY,
             $material,
             route('inventory.index', ['stock' => $status], false)
+        );
+    }
+
+    /**
+     * A new project whose material plan the warehouse cannot cover from what
+     * is available - on hand, less what other live projects have reserved.
+     *
+     * @param  Collection<int, Material>  $materials  the ones that are short
+     */
+    public function projectMaterialsShort(Project $project, Collection $materials): void
+    {
+        $count = $materials->count();
+
+        $this->deliver(
+            $this->inventoryStaff(),
+            'Materials Short',
+            $count === 1
+                ? sprintf('%s needs more %s than is available.', $project->reference_no, $materials->first()->displayName())
+                : sprintf('%s needs more of %d materials than is available.', $project->reference_no, $count),
+            Notification::MODULE_INVENTORY,
+            $project,
+            route('inventory.index', [], false)
         );
     }
 

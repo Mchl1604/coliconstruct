@@ -323,8 +323,9 @@ class MediumSeverityAuditFixesTest extends TestCase
             // Every task belongs to a phase of its project - see TaskPhaseRules.
             'phase_id' => $this->defaultPhaseId($project),
             'technician_id' => $lead->technician_id,
-            'start_date' => Schedule::businessToday()->toDateString(),
-            'due_date' => Schedule::businessToday()->addDay()->toDateString(),
+            // Tomorrow: a new task cannot start today.
+            'start_date' => Schedule::businessToday()->addDay()->toDateString(),
+            'due_date' => Schedule::businessToday()->addDays(2)->toDateString(),
         ];
 
         $this->post(route('super-admin.task.store', $project->project_id), $payload)

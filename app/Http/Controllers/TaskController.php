@@ -284,6 +284,8 @@ class TaskController extends Controller
         ]);
 
         $this->attachRangeRule($validator, $ranges);
+        // New work starts tomorrow at the earliest.
+        $this->scheduleRules->attachNewTaskStart($validator);
         // New work, so there is no current owner to make an exception for.
         $this->assignmentRules->attach($validator);
         // Assigned to this project for every day of the task - see

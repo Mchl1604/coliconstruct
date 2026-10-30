@@ -510,6 +510,18 @@ document.addEventListener("DOMContentLoaded", function () {
             dateEl.textContent = report.report_date_label;
             descriptionEl.textContent = report.description || "—";
 
+            // A generated progress report or a structured incident report
+            // has more than its description: its own printable page.
+            if (report.document_url) {
+                const full = document.createElement("a");
+
+                full.href = report.document_url;
+                full.className = "btn btn-sm btn-outline-primary d-block mt-2";
+                full.textContent = "View Full Report";
+                descriptionEl.appendChild(document.createElement("br"));
+                descriptionEl.appendChild(full);
+            }
+
             if (report.project_url) {
                 linkEl.href = report.project_url;
                 linkRefEl.textContent = report.reference_no;

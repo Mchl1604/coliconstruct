@@ -199,8 +199,20 @@ document.addEventListener("DOMContentLoaded", function () {
             report.submitted_by || "—";
         viewEl.querySelector("[data-report-view-date]").textContent =
             report.date_label;
-        viewEl.querySelector("[data-report-view-description]").textContent =
-            report.description;
+        const descriptionEl = viewEl.querySelector("[data-report-view-description]");
+
+        descriptionEl.textContent = report.description;
+
+        // A generated progress report or a structured incident report has
+        // more than its description: its own printable page.
+        if (report.document_url) {
+            const full = document.createElement("a");
+
+            full.href = report.document_url;
+            full.className = "btn btn-sm btn-outline-primary d-block mt-2";
+            full.textContent = "View Full Report";
+            descriptionEl.appendChild(full);
+        }
 
         const images = report.images || [];
 

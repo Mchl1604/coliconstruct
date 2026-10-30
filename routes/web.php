@@ -8,12 +8,14 @@ use App\Http\Controllers\ConfigurationController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DatabaseBackupController;
 use App\Http\Controllers\DetailFormController;
+use App\Http\Controllers\IncidentReportController;
 use App\Http\Controllers\InquiryController;
 use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\MaterialController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PhaseTemplateController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\ProgressReportController;
 use App\Http\Controllers\ProjectClientController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ProjectDetailController;
@@ -26,6 +28,7 @@ use App\Http\Controllers\ScheduleController;
 use App\Http\Controllers\StockController;
 use App\Http\Controllers\SystemContentController;
 use App\Http\Controllers\TaskController;
+use App\Http\Controllers\TaskUpdateController;
 use App\Http\Controllers\TechnicianController;
 use App\Http\Controllers\TechnicianPortalController;
 use App\Http\Controllers\TechnicianReportArchiveController;
@@ -170,6 +173,9 @@ Route::prefix('media')->name('media.')->group(function () {
         Route::get('/task-images/{image}', [UploadedFileController::class, 'taskImage'])
             ->whereNumber('image')
             ->name('task-image');
+        Route::get('/task-update-images/{image}', [UploadedFileController::class, 'taskUpdateImage'])
+            ->whereNumber('image')
+            ->name('task-update-image');
         Route::get('/report-images/{image}', [UploadedFileController::class, 'reportImage'])
             ->whereNumber('image')
             ->name('report-image');
@@ -299,6 +305,9 @@ Route::prefix('super-admin')
             ->name('projects.client-search');
         Route::get('/projects/client-lookup', [ProjectClientController::class, 'lookup'])
             ->name('projects.client-lookup');
+        // The wizard's Materials step: the search, with stock figures.
+        Route::get('/projects/material-options', [ProjectMaterialController::class, 'options'])
+            ->name('projects.material-options');
         Route::get('/projects/{id}', [ProjectController::class, 'show'])->name('projects.show');
         // The Tasks tab's table, one page at a time - see serverTable.js.
         Route::get('/projects/{id}/tasks/table', [ProjectController::class, 'tasksTable'])->name('projects.tasks.table');
@@ -508,6 +517,10 @@ Route::prefix('super-admin')
         // document as a PDF. Two doors onto one build so that printing never
         // has to go through a file the user did not ask for.
         Route::post('/reports/preview', [ReportController::class, 'preview'])->name('reports.preview');
+        // The office's review of an incident: Open, Under Review, Closed.
+        Route::put('/incident-reports/{incidentReport}/status', [IncidentReportController::class, 'updateStatus'])
+            ->whereNumber('incidentReport')
+            ->name('incident-reports.status');
         Route::post('/reports/export', [ReportController::class, 'export'])->name('reports.export');
 
         // ROUTE FOR SUPER ADMIN TECHNICIANS PAGE
@@ -798,11 +811,23 @@ Route::prefix('technician')
             ->name('projects.materials.table');
         Route::post('/tasks/{task}/complete', [TechnicianPortalController::class, 'completeTask'])
             ->name('tasks.complete');
+        // Today's progress on a task, by its holder or the project's lead -
+        // see TaskProgress.
+        Route::post('/tasks/{task}/updates', [TaskUpdateController::class, 'store'])
+            ->name('tasks.updates.store');
 
         // Lead-only. Each one is additionally gated by a policy, so the
         // middleware here is the outer fence rather than the whole of the
         // permission model.
         Route::middleware('role:lead_technician')->group(function () {
+            // The generated daily progress report and the structured incident
+            // report - the lead's two ways to report. Who may, on which project
+            // and day, is ProgressReportBuilder's and IncidentReporting's.
+            Route::get('/progress-reports/create', [ProgressReportController::class, 'create'])->name('progress-reports.create');
+            Route::post('/progress-reports', [ProgressReportController::class, 'store'])->name('progress-reports.store');
+            Route::get('/incident-reports/create', [IncidentReportController::class, 'create'])->name('incident-reports.create');
+            Route::post('/incident-reports', [IncidentReportController::class, 'store'])->name('incident-reports.store');
+
             Route::get('/reports', [TechnicianPortalController::class, 'reports'])->name('reports');
             Route::get('/reports/table', [TechnicianPortalController::class, 'reportsTable'])->name('reports.table');
 
@@ -858,6 +883,14 @@ Route::prefix('technician')
                 ->name('projects.materials.void');
         });
     });
+
+// The whole of a generated progress report or a structured incident report,
+// on one printable page. Read by the office's scheduling side and by the
+// project's crew - ProgressReportController::show() decides per report.
+Route::get('/report-documents/{report}', [ProgressReportController::class, 'show'])
+    ->middleware(['auth', 'password.changed'])
+    ->whereNumber('report')
+    ->name('reports.document');
 
 // Archiving a technician report, and putting it back.
 //

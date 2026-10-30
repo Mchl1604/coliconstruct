@@ -11,6 +11,9 @@
     <link rel="stylesheet" href="/css/technicianPicker.css">
     {{-- The Existing client search, the same control as Link Account's. --}}
     <link rel="stylesheet" href="/css/actorSearch.css">
+    {{-- The Materials step: the picker, names, brands and unit chips. --}}
+    <link href="/css/materials.css" rel="stylesheet">
+    <link href="/css/inventory.css" rel="stylesheet">
 @endpush
 
 @section('content')
@@ -21,7 +24,7 @@
             </p>
         </div>
         <div class="create-project-step-counter text-secondary small">
-            Step <span data-step-counter>1</span> of 4
+            Step <span data-step-counter>1</span> of 5
         </div>
     </div>
 
@@ -43,6 +46,13 @@
 
             <div class="client-progress-step" data-progress-step="3">
                 <div class="client-progress-circle">3</div>
+                <div class="client-progress-label">Materials</div>
+            </div>
+
+            <div class="client-progress-line" aria-hidden="true"></div>
+
+            <div class="client-progress-step" data-progress-step="4">
+                <div class="client-progress-circle">4</div>
                 {{-- Named for what the step collects, so the rail does not
                      promise a fuller schedule than the step asks for. --}}
                 <div class="client-progress-label">Initial Schedule</div>
@@ -50,8 +60,8 @@
 
             <div class="client-progress-line" aria-hidden="true"></div>
 
-            <div class="client-progress-step" data-progress-step="4">
-                <div class="client-progress-circle">4</div>
+            <div class="client-progress-step" data-progress-step="5">
+                <div class="client-progress-circle">5</div>
                 <div class="client-progress-label">Review</div>
             </div>
         </div>
@@ -389,7 +399,47 @@
                     </div>
                 </section>
 
-                <section class="wizard-step" data-wizard-step="3" hidden>
+                {{-- ==================== MATERIALS ====================
+                     What the job needs, checked against the warehouse as it
+                     is typed. Optional, and a shortage is a warning rather
+                     than a refusal: the project can be booked before the
+                     stock arrives, and Purchasing is told. Driven by
+                     projectWizardMaterials.js; each line posts as
+                     materials[n][material_id] and materials[n][quantity]. --}}
+                <section class="wizard-step" data-wizard-step="3" hidden data-wizard-materials>
+                    <div class="wizard-step-header">
+                        <h5 class="mb-1">Materials</h5>
+                        <p class="text-secondary small mb-0">What the job needs. Optional.</p>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="wizardMaterialSearch" class="form-label">Add Material</label>
+                        <input type="text" class="form-control" id="wizardMaterialSearch" autocomplete="off"
+                            placeholder="Search by name, brand or type" data-wizard-material-search>
+                    </div>
+
+                    <div class="table-responsive">
+                        <table class="table align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Material</th>
+                                    <th style="width: 10rem">Needed</th>
+                                    <th>Available</th>
+                                    <th>Stock</th>
+                                    <th class="text-center"><span class="visually-hidden">Remove</span></th>
+                                </tr>
+                            </thead>
+                            <tbody data-wizard-material-rows></tbody>
+                        </table>
+                    </div>
+
+                    <p class="text-secondary small mt-2 mb-0" data-wizard-material-empty>No materials yet.</p>
+                    <div class="alert alert-warning small py-2 mt-3 mb-0 d-none" role="alert" data-wizard-material-short>
+                        Some materials are short. Purchasing will be told.
+                    </div>
+                </section>
+
+                <section class="wizard-step" data-wizard-step="4" hidden>
                     {{-- "Initial", not "Schedule", and said before any date is
                          typed. A project takes as many booked ranges as the
                          work needs, added afterwards from the Schedules page -
@@ -582,7 +632,7 @@
                     </div>
                 </section>
 
-                <section class="wizard-step" data-wizard-step="4" hidden>
+                <section class="wizard-step" data-wizard-step="5" hidden>
                     <div class="wizard-step-header">
                         <h5 class="mb-1">Review</h5>
                         <p class="text-secondary small mb-0">Check the captured details before saving the project.</p>
@@ -673,6 +723,20 @@
 
                         <div class="review-group">
                             <div class="review-group-header">
+                                <span class="review-group-icon"><i class="bi bi-box-seam" aria-hidden="true"></i></span>
+                                <h6 class="mb-0">Materials</h6>
+                            </div>
+                            <div class="review-group-body">
+                                {{-- Written by projectWizardMaterials.js. --}}
+                                <div class="review-item review-item-full">
+                                    <span class="review-item-label">Needed</span>
+                                    <span class="review-item-value" data-wizard-material-review>None</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="review-group">
+                            <div class="review-group-header">
                                 <span class="review-group-icon"><i class="bi bi-people" aria-hidden="true"></i></span>
                                 <h6 class="mb-0">Initial Schedule &amp; Team</h6>
                             </div>
@@ -732,7 +796,15 @@
             {{-- The one place the partial-day window is decided, handed to the
                  wizard rather than repeated in it. See Schedule. --}}
             window.partialDayHours = @json($partialDayHours);
+            // The Materials step: where it searches, and the lines a failed
+            // save came back with.
+            window.projectWizardMaterials = {
+                url: @json(route('super-admin.projects.material-options')),
+                rows: @json($wizardMaterials),
+            };
         </script>
+        <script src="/js/materialPicker.js"></script>
+        <script src="/js/projectWizardMaterials.js"></script>
         <script src="/js/importTeam.js"></script>
         <script src="/js/accountPicker.js"></script>
         {{-- Thousands separators on the quotation, shared with Project Details. --}}

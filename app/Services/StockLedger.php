@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\ActivityLog;
 use App\Models\Material;
 use App\Models\Project;
+use App\Models\ProjectMaterialEntry;
 use App\Models\StockMovement;
 use App\Models\User;
 use Carbon\CarbonInterface;
@@ -244,6 +245,115 @@ class StockLedger
     }
 
     // ------------------------------------------------------------------
+    // A project's Materials tab
+    //
+    // What a lead records on site moves the warehouse too: more brought in
+    // comes off the shelf, a return goes back on it. Each movement points at
+    // the entry that caused it, so voiding the entry voids the movement.
+    // ------------------------------------------------------------------
+
+    /**
+     * Take an Added entry's quantity out of stock.
+     *
+     * Refused when the warehouse does not hold that much - the entry is
+     * refused with it, so the site and the shelf never disagree. Material
+     * bought straight from a supplier is recorded without this - see
+     * ProjectMaterialLedger::add().
+     *
+     * @throws RuntimeException
+     */
+    public function issueForEntry(ProjectMaterialEntry $entry, Material $material, User $by): StockMovement
+    {
+        $project = $entry->project;
+
+        return DB::transaction(function () use ($entry, $material, $project, $by): StockMovement {
+            $this->lock($material);
+
+            $before = $this->onHandHundredths($material);
+            $wanted = $this->hundredths($entry->quantity);
+
+            if ($wanted > $before) {
+                throw new RuntimeException($before <= 0
+                    ? 'None in stock. Ask Purchasing.'
+                    : sprintf('Only %s in stock. Ask Purchasing.', $this->amount($material, $before / 100)));
+            }
+
+            $movement = $this->write($material, StockMovement::TYPE_STOCK_OUT, -$wanted, $entry->entry_date, [
+                'project_id' => $project?->project_id,
+                'project_material_entry_id' => $entry->material_entry_id,
+                'notes' => 'Added on site',
+            ], $by);
+
+            $this->activityLogger->record(
+                ActivityLog::STOCK_ISSUED,
+                null,
+                sprintf(
+                    'Issued %s of %s to %s from its Materials tab.',
+                    $this->amount($material, $entry->quantity),
+                    $material->displayName(),
+                    $project?->reference_no
+                ),
+                $project ?? $material
+            );
+
+            $this->alertIfRunningLow($material, $before, $before - $wanted);
+
+            return $movement;
+        });
+    }
+
+    /**
+     * Put stock back on the shelf for a Returned entry, or for leftovers at
+     * close-out - which have nobody to record them, so $by may be null.
+     */
+    public function returnForEntry(ProjectMaterialEntry $entry, Material $material, float|int|string $quantity, ?User $by): StockMovement
+    {
+        $project = $entry->project;
+
+        return DB::transaction(function () use ($entry, $material, $quantity, $project, $by): StockMovement {
+            $this->lock($material);
+
+            $movement = $this->write($material, StockMovement::TYPE_RETURNED, $this->hundredths($quantity), $entry->entry_date, [
+                'project_id' => $project?->project_id,
+                'project_material_entry_id' => $entry->material_entry_id,
+                'notes' => $by === null ? 'Left over at close-out' : 'Returned from site',
+            ], $by);
+
+            $this->activityLogger->record(
+                ActivityLog::STOCK_RETURNED,
+                null,
+                sprintf(
+                    'Returned %s of %s to stock from %s.',
+                    $this->amount($material, $quantity),
+                    $material->displayName(),
+                    $project?->reference_no
+                ),
+                $project ?? $material
+            );
+
+            return $movement;
+        });
+    }
+
+    /**
+     * Void the movement an entry caused, if it caused one that still counts.
+     *
+     * @throws RuntimeException when the warehouse has since issued what the
+     *                          movement brought in
+     */
+    public function voidForEntry(ProjectMaterialEntry $entry, User $by): void
+    {
+        $movement = StockMovement::query()
+            ->notVoided()
+            ->where('project_material_entry_id', $entry->material_entry_id)
+            ->first();
+
+        if ($movement !== null) {
+            $this->void($movement, $by);
+        }
+    }
+
+    // ------------------------------------------------------------------
     // Internals
     // ------------------------------------------------------------------
 
@@ -292,9 +402,9 @@ class StockLedger
     }
 
     /**
-     * @param  array{reference_no?: string|null, supplier?: string|null, project_id?: int|null, notes?: string|null}  $details
+     * @param  array{reference_no?: string|null, supplier?: string|null, project_id?: int|null, project_material_entry_id?: int|null, notes?: string|null}  $details
      */
-    private function write(Material $material, string $type, int $hundredths, CarbonInterface|string $date, array $details, User $by): StockMovement
+    private function write(Material $material, string $type, int $hundredths, CarbonInterface|string $date, array $details, ?User $by): StockMovement
     {
         return StockMovement::create([
             'material_id' => $material->material_id,
@@ -304,9 +414,10 @@ class StockLedger
             'reference_no' => $this->text($details['reference_no'] ?? null, 100),
             'supplier' => $this->text($details['supplier'] ?? null, 150),
             'project_id' => $details['project_id'] ?? null,
+            'project_material_entry_id' => $details['project_material_entry_id'] ?? null,
             'notes' => $this->text($details['notes'] ?? null, 255),
-            'recorded_by' => $by->id,
-            'recorded_by_name' => $by->fullName(),
+            'recorded_by' => $by?->id,
+            'recorded_by_name' => $by?->fullName() ?? 'System',
         ]);
     }
 

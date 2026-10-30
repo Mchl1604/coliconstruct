@@ -6,6 +6,7 @@ use App\Models\Document;
 use App\Models\Project;
 use App\Models\ProjectCompletionPhoto;
 use App\Models\TaskImage;
+use App\Models\TaskUpdateImage;
 use App\Models\TechnicianReportImage;
 use App\Models\User;
 use App\Services\ClientProjects;
@@ -93,6 +94,25 @@ class UploadedFileController extends Controller
 
         // Only the technician roles are narrowed further; the office reads the
         // whole board and a client never reaches a task photograph at all.
+        if ($task !== null && $request->user()?->needsTechnicianRecord()) {
+            abort_unless(Gate::forUser($request->user())->allows('view', $task), 403);
+        }
+
+        return $this->stream($image->image_path);
+    }
+
+    /**
+     * A photograph from one day's progress on a task, on the same terms as
+     * the task's own completion photographs.
+     */
+    public function taskUpdateImage(Request $request, TaskUpdateImage $image): StreamedResponse
+    {
+        $task = $image->taskUpdate?->task;
+
+        abort_if($request->user()?->isClient(), 403);
+
+        $this->authorizeProject($request, $task?->project);
+
         if ($task !== null && $request->user()?->needsTechnicianRecord()) {
             abort_unless(Gate::forUser($request->user())->allows('view', $task), 403);
         }

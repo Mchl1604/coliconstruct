@@ -13,6 +13,7 @@ use App\Services\ActivityLogger;
 use App\Services\MaterialCatalog;
 use App\Services\ProjectMaterialLedger;
 use App\Services\ProjectMaterialRules;
+use App\Services\StockAvailability;
 use App\Support\BusinessTime;
 use App\Support\MaterialUnit;
 use App\Support\ServerTable;
@@ -107,6 +108,26 @@ class ProjectMaterialController extends Controller
     }
 
     /**
+     * The create wizard's material search: what matches what was typed, each
+     * with how many are on hand, reserved by live projects, and available.
+     *
+     * Not tied to a project - there is none yet - so it offers the plain
+     * suggestions, and the office alone reaches it.
+     */
+    public function options(Request $request, StockAvailability $availability): JsonResponse
+    {
+        $query = mb_substr((string) $request->query('q', ''), 0, 100);
+        $materials = $this->catalog->suggest($query);
+        $figures = $availability->forMaterials($materials->pluck('material_id')->all());
+
+        return response()->json([
+            'materials' => $materials
+                ->map(fn (array $material): array => $material + ($figures[$material['material_id']] ?? []))
+                ->all(),
+        ]);
+    }
+
+    /**
      * Add a material to the master list from this project, because what the
      * job needs is not on it yet. Answered with the new material, which the
      * picker then selects.
@@ -154,7 +175,8 @@ class ProjectMaterialController extends Controller
     }
 
     /**
-     * More of a material on site, or a material the plan did not have.
+     * More of a material on site, or a material the plan did not have - from
+     * the warehouse, which takes it off the shelf, or bought directly.
      */
     public function add(Request $request, Project $project): RedirectResponse
     {
@@ -162,6 +184,7 @@ class ProjectMaterialController extends Controller
 
         $validator = Validator::make($request->all(), [
             'material_id' => ['required', 'integer'],
+            'source' => ['nullable', Rule::in(['warehouse', 'direct'])],
             'quantity' => ['required', 'numeric'],
             'entry_date' => ['required', 'date', 'before_or_equal:'.BusinessTime::today()->toDateString()],
             'notes' => ['nullable', 'string', 'max:255'],
@@ -179,7 +202,15 @@ class ProjectMaterialController extends Controller
         }
 
         try {
-            $this->ledger->add($project, $material, $data['quantity'], $data['entry_date'], $data['notes'] ?? null, $request->user());
+            $this->ledger->add(
+                $project,
+                $material,
+                $data['quantity'],
+                $data['entry_date'],
+                $data['notes'] ?? null,
+                $request->user(),
+                ($data['source'] ?? 'warehouse') !== 'direct'
+            );
         } catch (RuntimeException $exception) {
             return $this->refused($request, $project, $exception->getMessage());
         }

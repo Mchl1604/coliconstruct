@@ -1743,9 +1743,13 @@
 
                                 <div class="card-body">
 
-                                    <p>
-                                        {{ $report->report_description }}
-                                    </p>
+                                    <p style="white-space: pre-line">{{ $report->report_description }}</p>
+
+                                    @if ($report->documentUrl())
+                                        <a href="{{ $report->documentUrl() }}" class="btn btn-sm btn-outline-primary mb-3">
+                                            View Full Report
+                                        </a>
+                                    @endif
 
                                     @if ($report->images->count())
                                         <h6>Pictures</h6>
@@ -3025,8 +3029,10 @@
                                     Start Date
                                 </label>
 
+                                {{-- New tasks start tomorrow at the earliest. --}}
                                 <input type="text" id="taskStartDate" name="start_date" class="form-control"
-                                    data-task-start placeholder="Select start date" required>
+                                    data-task-start placeholder="Select start date" required
+                                    data-not-before="{{ \App\Support\BusinessTime::today()->addDay()->toDateString() }}">
 
                             </div>
 

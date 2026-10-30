@@ -313,6 +313,8 @@ class ReportController extends Controller
             'archived_by' => $report->archiver?->fullName() ?? '—',
             'can_restore' => (bool) $request->user()?->can('restore', $report),
             'description' => $report->report_description,
+            // The printable page for a generated or structured report.
+            'document_url' => $report->documentUrl(),
             'client' => $report->project?->client?->company_name
                 ?: $report->project?->client?->fullname,
             'project_url' => $report->project

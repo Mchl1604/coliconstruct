@@ -14,6 +14,10 @@
             :action="route('technician.tasks.complete', $task->task_id)" method="POST" />
     @endcan
 
+    @can('postUpdate', $task)
+        <x-task-update-modal :task="$task" />
+    @endcan
+
     @can('delete', $task)
         <x-task-delete-modal :task="$task"
             :action="route('technician.tasks.destroy', $task->task_id)" />

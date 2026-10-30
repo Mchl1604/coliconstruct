@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class TechnicianReport extends Model
 {
@@ -20,6 +21,7 @@ class TechnicianReport extends Model
         'submitted_by',
         'report_title',
         'report_description',
+        'report_data',
         'report_date',
         'report_type',
         'is_archived',
@@ -28,6 +30,9 @@ class TechnicianReport extends Model
     ];
 
     protected $casts = [
+        // What a generated progress report gathered, frozen at submission -
+        // see ProgressReportBuilder. Null for a report written by hand.
+        'report_data' => 'array',
         'report_date' => 'date',
         'is_archived' => 'boolean',
         'archived_at' => 'datetime',
@@ -42,6 +47,43 @@ class TechnicianReport extends Model
         'progress' => 'Progress Report',
         'incident' => 'Incident Report',
     ];
+
+    /**
+     * Whether the report was gathered by the system rather than written -
+     * see ProgressReportBuilder.
+     */
+    public function isGenerated(): bool
+    {
+        return $this->report_data !== null;
+    }
+
+    /**
+     * The printable page that shows the whole report, for a report that has
+     * more than its description: a generated progress report, or a
+     * structured incident report.
+     */
+    public function documentUrl(): ?string
+    {
+        return $this->isGenerated() || $this->hasIncidentDetails()
+            ? route('reports.document', $this->getKey())
+            : null;
+    }
+
+    /**
+     * Whether an incident report was filed with the structured form.
+     */
+    public function hasIncidentDetails(): bool
+    {
+        return $this->report_type === 'incident' && $this->incident()->exists();
+    }
+
+    /**
+     * The structured details of an incident report - see IncidentReport.
+     */
+    public function incident(): HasOne
+    {
+        return $this->hasOne(IncidentReport::class, 'technician_report_id', 'id');
+    }
 
     /**
      * How the report's key is printed, e.g. RPT-0007.

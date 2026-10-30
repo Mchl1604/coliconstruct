@@ -932,6 +932,8 @@ class TechnicianPortalController extends Controller
         ]);
 
         $this->scheduleRules->attach($validator, $ranges);
+        // New work starts tomorrow at the earliest.
+        $this->scheduleRules->attachNewTaskStart($validator);
         // New work, so there is no current owner to make an exception for.
         $this->assignmentRules->attach($validator);
         // Assigned to this project for every day of the task.
@@ -1772,6 +1774,8 @@ class TechnicianPortalController extends Controller
             'reference_no' => $report->project?->reference_no ?? '—',
             'title' => $report->report_title,
             'description' => $report->report_description,
+            // The printable page for a generated or structured report.
+            'document_url' => $report->documentUrl(),
             'client' => $this->reportClientName($report),
             'type' => $report->report_type,
             'type_label' => $report->typeLabel(),

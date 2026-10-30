@@ -383,6 +383,11 @@ class ActivityLog extends Model
 
     public const TASK_COMPLETED = 'Task Completed';
 
+    /**
+     * A day's progress on a task, before it is completed - see TaskProgress.
+     */
+    public const TASK_PROGRESS_POSTED = 'Task Progress Posted';
+
     public const TASK_CANCELLED = 'Task Cancelled';
 
     public const TASK_IMAGE_UPLOADED = 'Task Image Uploaded';
@@ -394,6 +399,11 @@ class ActivityLog extends Model
     // ------------------------------------------------------------------
 
     public const REPORT_GENERATED = 'Report Generated';
+
+    /**
+     * An incident report moved through its review - see IncidentReporting.
+     */
+    public const INCIDENT_REVIEWED = 'Incident Reviewed';
 
     public const REPORT_EXPORTED = 'Report Exported';
 
@@ -645,11 +655,13 @@ class ActivityLog extends Model
         self::TASK_ASSIGNED => self::MODULE_TASKS,
         self::TASK_REASSIGNED => self::MODULE_TASKS,
         self::TASK_COMPLETED => self::MODULE_TASKS,
+        self::TASK_PROGRESS_POSTED => self::MODULE_TASKS,
         self::TASK_CANCELLED => self::MODULE_TASKS,
         self::TASK_IMAGE_UPLOADED => self::MODULE_TASKS,
         self::TASK_ARCHIVED => self::MODULE_TASKS,
 
         self::REPORT_GENERATED => self::MODULE_REPORTS,
+        self::INCIDENT_REVIEWED => self::MODULE_REPORTS,
         self::REPORT_EXPORTED => self::MODULE_REPORTS,
         self::REPORT_PRINTED => self::MODULE_REPORTS,
         self::REPORT_ARCHIVED => self::MODULE_REPORTS,

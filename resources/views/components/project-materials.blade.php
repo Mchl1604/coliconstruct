@@ -340,6 +340,17 @@
                             </div>
                         </div>
 
+                        {{-- From the warehouse takes it off the shelf, and is
+                             refused when the shelf does not hold it. Bought
+                             directly touches no stock. --}}
+                        <div class="mt-3">
+                            <label class="form-label fw-semibold" for="addMaterialSource">Source</label>
+                            <select class="form-select" id="addMaterialSource" name="source">
+                                <option value="warehouse">From the warehouse</option>
+                                <option value="direct">Bought directly</option>
+                            </select>
+                        </div>
+
                         <div class="mt-3">
                             <label class="form-label fw-semibold" for="addMaterialNotes">Notes</label>
                             <input type="text" class="form-control" id="addMaterialNotes" name="notes"

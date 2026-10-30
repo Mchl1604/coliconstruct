@@ -1,0 +1,27 @@
+/*
+ * A generated progress report or a structured incident report: on its
+ * printable page, and in the lead's preview before it is filed.
+ */
+
+.report-doc-heading {
+    margin: 1rem 0 .4rem;
+    font-size: .8rem;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: #1b5688;
+}
+
+/* Printed - or saved as a PDF from the print dialog - without the portal
+   around it. */
+@media print {
+    .admin-sidebar,
+    .admin-topbar,
+    .no-print {
+        display: none !important;
+    }
+
+    .admin-content {
+        margin: 0 !important;
+    }
+}

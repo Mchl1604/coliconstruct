@@ -4,6 +4,7 @@ namespace App\Policies;
 
 use App\Models\Task;
 use App\Models\User;
+use App\Services\TaskProgress;
 
 /**
  * What a technician may do with a single task.
@@ -15,6 +16,16 @@ use App\Models\User;
 class TaskPolicy
 {
     public function __construct(private ProjectPolicy $projects) {}
+
+    /**
+     * Whether this account may post today's progress on this task - the
+     * holder, or the project's lead on their behalf. TaskProgress decides;
+     * this is how a page asks it with @can.
+     */
+    public function postUpdate(User $user, Task $task): bool
+    {
+        return app(TaskProgress::class)->canPost($user, $task);
+    }
 
     /**
      * Whether this account may read a single task at all.

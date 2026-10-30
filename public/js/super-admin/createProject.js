@@ -117,7 +117,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const currentStep = {
         value: 1
     };
-    const SCHEDULE_STEP = 3;
+    const SCHEDULE_STEP = 4;
     // The project description: one detail form per ticked type.
     const detailsHolder = form.querySelector('[data-project-details]');
     const detailSections = detailsHolder ? Array.from(detailsHolder.querySelectorAll('[data-details-type]')) : [];

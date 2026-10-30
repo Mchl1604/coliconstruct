@@ -75,6 +75,7 @@ class StockMovement extends Model
         'reference_no',
         'supplier',
         'project_id',
+        'project_material_entry_id',
         'notes',
         'recorded_by',
         'recorded_by_name',
@@ -96,6 +97,15 @@ class StockMovement extends Model
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class, 'project_id', 'project_id');
+    }
+
+    /**
+     * The entry on a project's Materials tab that caused this movement, when
+     * one did - see StockLedger::issueForEntry().
+     */
+    public function projectEntry(): BelongsTo
+    {
+        return $this->belongsTo(ProjectMaterialEntry::class, 'project_material_entry_id', 'material_entry_id');
     }
 
     public function recorder(): BelongsTo

@@ -1,7 +1,10 @@
 {{-- One row of Inventory -> Stock, rendered by StockController::index() for
-     serverTable.js. On hand comes from the row's own withOnHand() column. --}}
+     serverTable.js. On hand comes from the row's own withOnHand() column;
+     Reserved and Available from StockAvailability, as $figures. --}}
 @php
     $onHand = $material->onHand();
+    $reserved = (float) ($figures['reserved'] ?? 0);
+    $available = (float) ($figures['available'] ?? $onHand);
     $status = $material->stockStatus($onHand);
     $unit = $material->unit;
     $payload = [
@@ -31,6 +34,10 @@
     <td class="text-nowrap">
         <span class="material-qty fw-semibold {{ $onHand <= 0 ? 'is-zero' : '' }}">{{ $unit->format($onHand) }}</span>
         <span class="material-unit-chip" title="{{ $unit->label() }}">{{ $unit->value }}</span>
+    </td>
+    <td class="text-nowrap small {{ $reserved > 0 ? '' : 'text-secondary' }}">{{ $unit->format($reserved) }}</td>
+    <td class="text-nowrap">
+        <span class="material-qty {{ $available < 0 ? 'text-danger fw-semibold' : '' }}">{{ $unit->format($available) }}</span>
     </td>
     <td class="text-nowrap small">
         @if ($material->reorder_level !== null)

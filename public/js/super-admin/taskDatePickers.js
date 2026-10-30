@@ -114,6 +114,15 @@
 
         const enable = enabledRanges(ranges);
 
+        // A new task starts tomorrow at the earliest. The create dialog says
+        // so with data-not-before on its start field; an edit form leaves it
+        // off, because an existing task keeps the dates it has.
+        const notBefore = startInput.dataset.notBefore || null;
+        const floor = [startInput.value || window.start, notBefore]
+            .filter(Boolean)
+            .sort()
+            .pop();
+
         // `minDate` on the deadline is what keeps it at or after the start.
         // It narrows the same enabled set rather than replacing it, so the gap
         // days stay unselectable however the start moves - which is the whole
@@ -122,13 +131,14 @@
             dateFormat: 'Y-m-d',
             allowInput: false,
             enable: enable,
-            minDate: startInput.value || window.start,
+            minDate: floor,
         });
 
         global.flatpickr(startInput, {
             dateFormat: 'Y-m-d',
             allowInput: false,
             enable: enable,
+            minDate: notBefore || undefined,
             onChange: function (selectedDates, dateStr) {
                 // The only rule left between the two: a task cannot finish
                 // before it starts.
