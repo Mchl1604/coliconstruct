@@ -1,4 +1,4 @@
-{{-- One row of System Settings -> Materials, rendered by
+{{-- One row of Inventory -> Materials, rendered by
      MaterialController::index() for serverTable.js. --}}
 @php
     $isUsed = (int) $material->project_materials_count > 0;

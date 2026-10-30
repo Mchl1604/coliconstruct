@@ -696,6 +696,8 @@ class ActivityLog extends Model
     public const ROLE_BADGE_CLASSES = [
         'super_admin' => 'bg-danger',
         'admin' => 'bg-primary',
+        'admin_officer' => 'bg-info text-dark',
+        'purchasing_admin' => 'bg-warning text-dark',
         'lead_technician' => 'badge-role-lead',
         'technician' => 'bg-success',
         'client' => 'bg-secondary',
@@ -803,10 +805,10 @@ class ActivityLog extends Model
     /**
      * The entries one account is allowed to read.
      *
-     * A Super Admin sees everything. An Admin sees their own trail and that of
-     * everyone below them, but not another administrator's - an audit trail
-     * that one peer can quietly read is not much of a check on the other.
-     * Anyone else sees nothing; the page is not theirs.
+     * A Super Admin sees everything. An HR Admin or Admin Officer sees their
+     * own trail and that of everyone below them, but not another office
+     * account's - an audit trail that one peer can quietly read is not much of
+     * a check on the other. Anyone else sees nothing; the page is not theirs.
      */
     public function scopeVisibleTo(Builder $query, ?User $viewer): Builder
     {
@@ -814,13 +816,13 @@ class ActivityLog extends Model
             return $query;
         }
 
-        if ($viewer?->role !== 'admin') {
+        if (! in_array($viewer?->role, User::ADMINISTRATOR_ROLES, true)) {
             return $query->whereRaw('1 = 0');
         }
 
         return $query->where(function (Builder $outer) use ($viewer): void {
             $outer->where('actor_id', $viewer->id)
-                ->orWhereNotIn('actor_role', ['super_admin', 'admin'])
+                ->orWhereNotIn('actor_role', User::OFFICE_ROLES)
                 // An entry with no role recorded predates this column; it can
                 // only have come from User Management, which was administrator
                 // -only, so it stays with the administrators.

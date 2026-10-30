@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Models\ActivityLog;
 use App\Models\Material;
 use App\Models\MaterialType;
-use App\Models\User;
 use App\Services\ActivityLogger;
 use App\Services\MaterialCatalog;
 use App\Support\MaterialUnit;
@@ -18,13 +17,12 @@ use Illuminate\Validation\Rule;
 use RuntimeException;
 
 /**
- * Configuration -> System Settings -> Materials: the material list and its
- * groups.
+ * Inventory -> Materials: the material list and its groups.
  *
- * Super Admin only, checked here rather than on the route group for the same
- * reason Project Types does it: the Configuration page is shared with Admin,
- * and System Settings is not theirs. Every write goes through MaterialCatalog,
- * the same service a project's Add to List goes through.
+ * Who reaches it is the `area:inventory` middleware on the route group - a
+ * Super Admin, Admin Officer or Purchasing Admin, see RoleAccess - so nothing
+ * here asks again. Every write goes through MaterialCatalog, the same service
+ * a project's Add to List goes through.
  */
 class MaterialController extends Controller
 {
@@ -38,8 +36,6 @@ class MaterialController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $this->authorizeSuperAdmin($request);
-
         $table = ServerTable::fromRequest($request);
         $typeId = $request->integer('type') ?: null;
         $status = (string) $request->query('status', 'all');
@@ -82,8 +78,6 @@ class MaterialController extends Controller
 
     public function store(Request $request): JsonResponse
     {
-        $this->authorizeSuperAdmin($request);
-
         $validator = $this->validateMaterial($request);
 
         if ($validator->fails()) {
@@ -110,8 +104,6 @@ class MaterialController extends Controller
 
     public function update(Request $request, Material $material): JsonResponse
     {
-        $this->authorizeSuperAdmin($request);
-
         $validator = $this->validateMaterial($request);
 
         if ($validator->fails()) {
@@ -145,8 +137,6 @@ class MaterialController extends Controller
      */
     public function setStatus(Request $request, Material $material): JsonResponse
     {
-        $this->authorizeSuperAdmin($request);
-
         $active = $request->boolean('is_active');
 
         $material = $this->catalog->setActive($material, $active);
@@ -166,10 +156,8 @@ class MaterialController extends Controller
         ]);
     }
 
-    public function destroy(Request $request, Material $material): JsonResponse
+    public function destroy(Material $material): JsonResponse
     {
-        $this->authorizeSuperAdmin($request);
-
         $name = $material->displayName();
 
         try {
@@ -191,20 +179,16 @@ class MaterialController extends Controller
     // Types
     // ------------------------------------------------------------------
 
-    public function types(Request $request): JsonResponse
+    public function types(): JsonResponse
     {
-        $this->authorizeSuperAdmin($request);
-
         return response()->json(['types' => $this->catalog->types()->all()]);
     }
 
     /**
      * The materials in one type, for its View dialog.
      */
-    public function showType(Request $request, MaterialType $materialType): JsonResponse
+    public function showType(MaterialType $materialType): JsonResponse
     {
-        $this->authorizeSuperAdmin($request);
-
         $materials = $materialType->materials()
             ->with('type')
             ->orderBy('name')
@@ -219,8 +203,6 @@ class MaterialController extends Controller
 
     public function storeType(Request $request): JsonResponse
     {
-        $this->authorizeSuperAdmin($request);
-
         $validator = $this->validateTypeName($request);
 
         if ($validator->fails()) {
@@ -247,8 +229,6 @@ class MaterialController extends Controller
 
     public function updateType(Request $request, MaterialType $materialType): JsonResponse
     {
-        $this->authorizeSuperAdmin($request);
-
         $validator = $this->validateTypeName($request);
 
         if ($validator->fails()) {
@@ -275,10 +255,8 @@ class MaterialController extends Controller
         ]);
     }
 
-    public function destroyType(Request $request, MaterialType $materialType): JsonResponse
+    public function destroyType(MaterialType $materialType): JsonResponse
     {
-        $this->authorizeSuperAdmin($request);
-
         $name = $materialType->type_name;
 
         try {
@@ -336,10 +314,5 @@ class MaterialController extends Controller
             'type_name.required' => 'Enter a type name.',
             'type_name.max' => 'Type name is too long.',
         ]);
-    }
-
-    private function authorizeSuperAdmin(Request $request): void
-    {
-        abort_unless($request->user()?->role === User::ROLE_SUPER_ADMIN, 403);
     }
 }

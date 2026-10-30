@@ -128,7 +128,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     openButton.addEventListener("click", function () {
         if (!select.value) {
-            setSelectError("Choose an Admin.");
+            setSelectError("Choose an HR Admin.");
 
             return;
         }

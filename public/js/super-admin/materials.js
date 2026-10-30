@@ -1,19 +1,19 @@
 /**
- * Configuration -> System Settings -> Materials.
+ * Inventory -> Materials.
  *
  * The list a project's materials are picked from, and its groups. Every write
  * goes to the server and the list is redrawn from what it answers, so what is
  * on screen is always what was saved.
  *
- * Nothing is loaded until the panel is first shown: it sits hidden behind the
- * settings sidebar, and a DataTable built while hidden measures its columns
- * as zero wide.
+ * Nothing is loaded until the panel is first shown: a DataTable built while
+ * hidden measures its columns as zero wide. On the Inventory page that is at
+ * once; the check stays so the panel can sit behind a tab again.
  */
 document.addEventListener("DOMContentLoaded", function () {
     "use strict";
 
     const pane = document.getElementById("materialsPane");
-    const routes = window.configurationRoutes || {};
+    const routes = window.inventoryRoutes || {};
 
     if (!pane || !routes.materials) {
         return;
@@ -333,21 +333,23 @@ document.addEventListener("DOMContentLoaded", function () {
 
         const remove = event.target.closest("[data-material-type-remove]");
 
-        if (remove && !remove.disabled && window.configurationConfirm) {
+        if (remove && !remove.disabled && window.confirmDialog) {
             const url = routes.materialTypes + "/" + remove.dataset.materialTypeRemove;
 
-            window.configurationConfirm({
-                title: 'Remove "' + remove.dataset.materialTypeLabel + '"?',
-                body: "Only empty types can be removed.",
-                label: "Remove Type",
-                variant: "btn-danger",
-                onConfirm: function () {
-                    return request(url, "DELETE");
-                },
-                onSuccess: function (body) {
-                    handleTypes({ ok: true, body: body });
-                },
-            });
+            window
+                .confirmDialog({
+                    title: 'Remove "' + remove.dataset.materialTypeLabel + '"?',
+                    body: "Only empty types can be removed.",
+                    label: "Remove Type",
+                    onConfirm: function () {
+                        return request(url, "DELETE");
+                    },
+                })
+                .then(function (body) {
+                    if (body) {
+                        handleTypes({ ok: true, body: body });
+                    }
+                });
         }
     });
 
@@ -482,24 +484,28 @@ document.addEventListener("DOMContentLoaded", function () {
 
         const remove = event.target.closest("[data-material-delete]");
 
-        if (remove && !remove.disabled && window.configurationConfirm) {
+        if (remove && !remove.disabled && window.confirmDialog) {
             const url = routes.materials + "/" + remove.dataset.materialDelete;
 
-            window.configurationConfirm({
-                title: 'Remove "' + remove.dataset.materialLabel + '"?',
-                body: "Unused materials only.",
-                label: "Remove Material",
-                variant: "btn-danger",
-                onConfirm: function () {
-                    return request(url, "DELETE");
-                },
-                onSuccess: function (body) {
+            window
+                .confirmDialog({
+                    title: 'Remove "' + remove.dataset.materialLabel + '"?',
+                    body: "Unused materials only.",
+                    label: "Remove Material",
+                    onConfirm: function () {
+                        return request(url, "DELETE");
+                    },
+                })
+                .then(function (body) {
+                    if (!body) {
+                        return;
+                    }
+
                     showError("");
                     showSuccess(body.message || "");
                     redraw();
                     loadTypes();
-                },
-            });
+                });
         }
     });
 
@@ -529,7 +535,7 @@ document.addEventListener("DOMContentLoaded", function () {
         new MutationObserver(start).observe(holder, { attributes: true, attributeFilter: ["hidden"] });
     }
 
-    // The Configuration tab itself may open later than the panel is unhidden.
+    // A tab holding the panel may open later than the panel is unhidden.
     document.addEventListener("shown.bs.tab", start);
 
     start();

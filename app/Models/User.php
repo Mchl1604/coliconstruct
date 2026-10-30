@@ -4,6 +4,7 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Services\SystemContentService;
+use App\Support\RoleAccess;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -90,11 +91,17 @@ class User extends Authenticatable
      * not the same thing as a project's client, which is contact information
      * on the project itself and keeps its own name throughout.
      *
+     * `admin` is the same story: the stored value is unchanged, and what the
+     * interface calls it is HR Admin - the office role that runs projects,
+     * schedules and technicians.
+     *
      * @var array<string, string>
      */
     public const ROLES = [
         'super_admin' => 'Super Admin',
-        'admin' => 'Admin',
+        'admin' => 'HR Admin',
+        'admin_officer' => 'Admin Officer',
+        'purchasing_admin' => 'Purchasing Admin',
         'lead_technician' => 'Lead Technician',
         'technician' => 'Technician',
         'client' => 'Client Account',
@@ -107,7 +114,7 @@ class User extends Authenticatable
      *
      * @var array<int, string>
      */
-    public const EMPLOYEE_ROLES = ['super_admin', 'admin', 'lead_technician', 'technician'];
+    public const EMPLOYEE_ROLES = ['super_admin', 'admin', 'admin_officer', 'purchasing_admin', 'lead_technician', 'technician'];
 
     /**
      * The roles the create and edit forms may actually assign.
@@ -119,14 +126,15 @@ class User extends Authenticatable
      *
      * @var array<int, string>
      */
-    public const ASSIGNABLE_ROLES = ['admin', 'lead_technician', 'technician'];
+    public const ASSIGNABLE_ROLES = ['admin', 'admin_officer', 'purchasing_admin', 'lead_technician', 'technician'];
 
     /**
-     * The roles an Admin may assign.
+     * The roles an HR Admin or Admin Officer may assign.
      *
-     * An Admin cannot make another Admin: granting a peer the same authority
-     * you hold is how an administrative tier quietly stops being controlled by
-     * the system's owner. Only a Super Admin hands out `admin`.
+     * Neither can make another office account: granting a peer the same
+     * authority you hold is how an administrative tier quietly stops being
+     * controlled by the system's owner. Only a Super Admin hands out the
+     * office roles.
      *
      * @var array<int, string>
      */
@@ -134,14 +142,40 @@ class User extends Authenticatable
 
     public const ROLE_SUPER_ADMIN = 'super_admin';
 
+    /**
+     * Shown as HR Admin - see ROLES.
+     */
     public const ROLE_ADMIN = 'admin';
 
     /**
-     * The two roles that run the system and share the administrative portal.
+     * HR Admin's reach and the Purchasing Admin's together.
+     */
+    public const ROLE_ADMIN_OFFICER = 'admin_officer';
+
+    /**
+     * The inventory, and nothing else.
+     */
+    public const ROLE_PURCHASING_ADMIN = 'purchasing_admin';
+
+    /**
+     * The roles that run projects, schedules and technicians - the scheduling
+     * side of the office portal. A Purchasing Admin works from the same portal
+     * but is not one of these: see OFFICE_ROLES.
      *
      * @var array<int, string>
      */
-    public const ADMINISTRATOR_ROLES = ['super_admin', 'admin'];
+    public const ADMINISTRATOR_ROLES = ['super_admin', 'admin', 'admin_officer'];
+
+    /**
+     * Every role that works from the office portal, whatever part of it they
+     * reach - which part is App\Support\RoleAccess's.
+     *
+     * Also the tier only a Super Admin manages: an HR Admin or Admin Officer
+     * may not edit, demote or switch off any of these accounts.
+     *
+     * @var array<int, string>
+     */
+    public const OFFICE_ROLES = ['super_admin', 'admin', 'admin_officer', 'purchasing_admin'];
 
     public const ROLE_LEAD_TECHNICIAN = 'lead_technician';
 
@@ -427,6 +461,23 @@ class User extends Authenticatable
     public function isSuperAdmin(): bool
     {
         return $this->role === self::ROLE_SUPER_ADMIN;
+    }
+
+    /**
+     * Whether this account works from the office portal at all.
+     */
+    public function isOfficeStaff(): bool
+    {
+        return in_array($this->role, self::OFFICE_ROLES, true);
+    }
+
+    /**
+     * Whether this account's role reaches one part of the office portal - see
+     * RoleAccess for the parts and who reaches each.
+     */
+    public function canReach(string $area): bool
+    {
+        return RoleAccess::allows($this, $area);
     }
 
     /**

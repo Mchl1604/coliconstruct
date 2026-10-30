@@ -15,7 +15,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 /**
- * Configuration -> System Settings -> Materials: the list projects pick from.
+ * Inventory -> Materials: the list projects pick from.
  *
  * A reference list, not stock - so the rules are about keeping it one list:
  * one spelling of each material, a unit that never changes under a project
@@ -38,7 +38,7 @@ class MaterialCatalogTest extends TestCase
     {
         $this->actingAsSuperAdmin();
 
-        $this->postJson(route('super-admin.configuration.materials.store'), [
+        $this->postJson(route('inventory.materials.store'), [
             'name' => 'Split-Type Inverter 1.5 HP',
             'brand' => 'Daikin',
             'material_type_id' => $this->type->material_type_id,
@@ -48,7 +48,7 @@ class MaterialCatalogTest extends TestCase
 
         $material = Material::query()->firstOrFail();
 
-        $this->putJson(route('super-admin.configuration.materials.update', $material), [
+        $this->putJson(route('inventory.materials.update', $material), [
             'name' => 'Split-Type Inverter 1.5 HP',
             'brand' => 'Carrier',
             'material_type_id' => $this->type->material_type_id,
@@ -60,25 +60,16 @@ class MaterialCatalogTest extends TestCase
         $this->assertSame(2, ActivityLog::query()->where('module', ActivityLog::MODULE_MATERIALS)->count());
     }
 
-    public function test_the_list_is_the_super_admins_alone(): void
+    public function test_an_hr_admin_cannot_reach_the_list(): void
     {
-        $admin = User::create([
-            'user_code' => 'EMP-0002',
-            'name' => 'An Admin',
-            'first_name' => 'An',
-            'last_name' => 'Admin',
-            'email' => 'admin@example.test',
-            'role' => User::ROLE_ADMIN,
-            'status' => User::STATUS_ACTIVE,
-            'password' => 'correct-password',
-        ]);
+        $admin = $this->officeAccount(User::ROLE_ADMIN);
 
         $this->actingAs($admin)
-            ->getJson(route('super-admin.configuration.materials.index'))
+            ->getJson(route('inventory.materials.index'))
             ->assertForbidden();
 
         $this->actingAs($admin)
-            ->postJson(route('super-admin.configuration.materials.store'), [
+            ->postJson(route('inventory.materials.store'), [
                 'name' => 'Anything',
                 'material_type_id' => $this->type->material_type_id,
                 'unit' => 'pc',
@@ -88,13 +79,30 @@ class MaterialCatalogTest extends TestCase
         $this->assertSame(0, Material::count());
     }
 
+    public function test_the_purchasing_admin_and_admin_officer_keep_the_list(): void
+    {
+        foreach ([User::ROLE_PURCHASING_ADMIN, User::ROLE_ADMIN_OFFICER] as $index => $role) {
+            $this->actingAs($this->officeAccount($role))
+                ->postJson(route('inventory.materials.store'), [
+                    'name' => 'Copper Pipe '.$index,
+                    'material_type_id' => $this->type->material_type_id,
+                    'unit' => 'm',
+                ])
+                ->assertOk();
+
+            $this->getTablePage(route('inventory.materials.index'))->assertSee('Copper Pipe '.$index);
+        }
+
+        $this->assertSame(2, Material::count());
+    }
+
     public function test_the_same_name_brand_and_unit_is_listed_once(): void
     {
         $this->actingAsSuperAdmin();
 
         Material::factory()->brand('Daikin')->create(['name' => 'Split-Type Inverter 1.0 HP', 'unit' => MaterialUnit::Unit]);
 
-        $this->postJson(route('super-admin.configuration.materials.store'), [
+        $this->postJson(route('inventory.materials.store'), [
             'name' => '  split-type   inverter 1.0 hp ',
             'brand' => 'DAIKIN',
             'material_type_id' => $this->type->material_type_id,
@@ -102,7 +110,7 @@ class MaterialCatalogTest extends TestCase
         ])->assertStatus(422);
 
         // Another brand of the same unit is another material.
-        $this->postJson(route('super-admin.configuration.materials.store'), [
+        $this->postJson(route('inventory.materials.store'), [
             'name' => 'Split-Type Inverter 1.0 HP',
             'brand' => 'Panasonic',
             'material_type_id' => $this->type->material_type_id,
@@ -119,11 +127,11 @@ class MaterialCatalogTest extends TestCase
         $material = Material::factory()->create(['material_type_id' => $this->type->material_type_id]);
         $this->useOnAProject($material);
 
-        $this->deleteJson(route('super-admin.configuration.materials.destroy', $material))
+        $this->deleteJson(route('inventory.materials.destroy', $material))
             ->assertStatus(422)
             ->assertJsonPath('error', 'Used on projects.');
 
-        $this->putJson(route('super-admin.configuration.materials.status', $material), ['is_active' => false])
+        $this->putJson(route('inventory.materials.status', $material), ['is_active' => false])
             ->assertOk();
 
         $this->assertFalse($material->fresh()->is_active);
@@ -136,7 +144,7 @@ class MaterialCatalogTest extends TestCase
 
         $material = Material::factory()->create(['material_type_id' => $this->type->material_type_id]);
 
-        $this->deleteJson(route('super-admin.configuration.materials.destroy', $material))->assertOk();
+        $this->deleteJson(route('inventory.materials.destroy', $material))->assertOk();
 
         $this->assertSame(0, Material::count());
     }
@@ -148,7 +156,7 @@ class MaterialCatalogTest extends TestCase
         $material = Material::factory()->create(['material_type_id' => $this->type->material_type_id]);
         $this->useOnAProject($material);
 
-        $this->putJson(route('super-admin.configuration.materials.update', $material), [
+        $this->putJson(route('inventory.materials.update', $material), [
             'name' => $material->name,
             'material_type_id' => $this->type->material_type_id,
             'unit' => 'm',
@@ -161,24 +169,24 @@ class MaterialCatalogTest extends TestCase
     {
         $this->actingAsSuperAdmin();
 
-        $this->postJson(route('super-admin.configuration.materials.types.store'), ['type_name' => 'Refrigerants'])
+        $this->postJson(route('inventory.materials.types.store'), ['type_name' => 'Refrigerants'])
             ->assertOk();
 
         $refrigerants = MaterialType::query()->where('type_name', 'Refrigerants')->firstOrFail();
 
-        $this->putJson(route('super-admin.configuration.materials.types.update', $refrigerants), ['type_name' => 'Refrigerants & Gases'])
+        $this->putJson(route('inventory.materials.types.update', $refrigerants), ['type_name' => 'Refrigerants & Gases'])
             ->assertOk();
 
-        $this->postJson(route('super-admin.configuration.materials.types.store'), ['type_name' => 'refrigerants & gases'])
+        $this->postJson(route('inventory.materials.types.store'), ['type_name' => 'refrigerants & gases'])
             ->assertStatus(422);
 
         Material::factory()->create(['material_type_id' => $this->type->material_type_id]);
 
-        $this->deleteJson(route('super-admin.configuration.materials.types.destroy', $this->type))
+        $this->deleteJson(route('inventory.materials.types.destroy', $this->type))
             ->assertStatus(422)
             ->assertJsonPath('error', 'It has 1 material. Move them first.');
 
-        $this->deleteJson(route('super-admin.configuration.materials.types.destroy', $refrigerants))->assertOk();
+        $this->deleteJson(route('inventory.materials.types.destroy', $refrigerants))->assertOk();
 
         $this->assertSame(['Aircon Units'], MaterialType::query()->pluck('type_name')->all());
     }
@@ -193,30 +201,36 @@ class MaterialCatalogTest extends TestCase
         Material::factory()->inactive()->create(['material_type_id' => $this->type->material_type_id, 'name' => 'Retired Window Unit']);
         Material::factory()->create(['material_type_id' => $other->material_type_id, 'name' => 'THHN Wire']);
 
-        $this->getTablePage(route('super-admin.configuration.materials.index'), ['type' => $this->type->material_type_id])
+        $this->getTablePage(route('inventory.materials.index'), ['type' => $this->type->material_type_id])
             ->assertSee('Cassette 3.0 HP')
             ->assertSee('Retired Window Unit')
             ->assertDontSee('THHN Wire');
 
-        $this->getTablePage(route('super-admin.configuration.materials.index'), ['status' => 'active'])
+        $this->getTablePage(route('inventory.materials.index'), ['status' => 'active'])
             ->assertSee('THHN Wire')
             ->assertDontSee('Retired Window Unit');
 
-        $this->getTablePage(route('super-admin.configuration.materials.index'), ['search' => 'daikin'])
+        $this->getTablePage(route('inventory.materials.index'), ['search' => 'daikin'])
             ->assertSee('Cassette 3.0 HP')
             ->assertDontSee('THHN Wire');
     }
 
-    public function test_the_settings_page_lists_materials(): void
+    public function test_the_inventory_page_lists_materials_and_settings_no_longer_does(): void
     {
         $this->actingAsSuperAdmin();
 
-        $this->get(route('super-admin.configuration.index'))
+        $this->get(route('inventory.index'))
             ->assertOk()
-            ->assertSee('data-content-section="materials"', false)
+            ->assertSee('id="materialsPane"', false)
             ->assertSee('Material Types')
             ->assertSee('id="materialTypesTable"', false)
-            ->assertSee('data-material-type-view-modal', false);
+            ->assertSee('data-material-type-view-modal', false)
+            ->assertSee('data-app-confirm', false);
+
+        $this->get(route('super-admin.configuration.index'))
+            ->assertOk()
+            ->assertDontSee('data-content-section="materials"', false)
+            ->assertDontSee('id="materialsPane"', false);
     }
 
     public function test_a_type_lists_its_own_materials(): void
@@ -229,7 +243,7 @@ class MaterialCatalogTest extends TestCase
         Material::factory()->create(['material_type_id' => $this->type->material_type_id, 'name' => 'Cassette 3.0 HP']);
         Material::factory()->create(['material_type_id' => $other->material_type_id, 'name' => 'THHN Wire']);
 
-        $this->getJson(route('super-admin.configuration.materials.types.show', $this->type))
+        $this->getJson(route('inventory.materials.types.show', $this->type))
             ->assertOk()
             ->assertJsonPath('type_name', 'Aircon Units')
             ->assertJsonCount(2, 'materials')
@@ -243,7 +257,7 @@ class MaterialCatalogTest extends TestCase
 
         Material::factory()->create(['material_type_id' => $this->type->material_type_id, 'name' => 'Cassette 3.0 HP']);
 
-        $this->getTablePage(route('super-admin.configuration.materials.index'))
+        $this->getTablePage(route('inventory.materials.index'))
             ->assertSee('Cassette 3.0 HP')
             ->assertDontSee('data-material-toggle', false)
             ->assertDontSee('material-status', false);
@@ -270,6 +284,22 @@ class MaterialCatalogTest extends TestCase
         $this->seed(MaterialSeeder::class);
 
         $this->assertSame($count, Material::count());
+    }
+
+    private function officeAccount(string $role): User
+    {
+        $sequence = User::count() + 2;
+
+        return User::create([
+            'user_code' => sprintf('EMP-%04d', $sequence),
+            'name' => 'Office '.$sequence,
+            'first_name' => 'Office',
+            'last_name' => (string) $sequence,
+            'email' => 'office'.$sequence.'@example.test',
+            'role' => $role,
+            'status' => User::STATUS_ACTIVE,
+            'password' => 'correct-password',
+        ]);
     }
 
     private function useOnAProject(Material $material): void

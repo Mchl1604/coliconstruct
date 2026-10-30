@@ -180,7 +180,9 @@ class NotificationService
     // ------------------------------------------------------------------
 
     /**
-     * Everybody who runs the system: admins and super admins.
+     * Everybody who runs projects and schedules: super admins, HR admins and
+     * admin officers. Not a Purchasing Admin, who reaches none of what these
+     * notifications link to.
      *
      * @return EloquentCollection<int, User>
      */
@@ -188,7 +190,7 @@ class NotificationService
     {
         return User::query()
             ->loginable()
-            ->whereIn('role', [User::ROLE_SUPER_ADMIN, User::ROLE_ADMIN])
+            ->whereIn('role', User::ADMINISTRATOR_ROLES)
             ->get();
     }
 
@@ -1778,12 +1780,12 @@ class NotificationService
     }
 
     /**
-     * Somebody resetting an administrator's password is a security event, so
+     * Somebody resetting an office account's password is a security event, so
      * it goes to the super admins whoever the account belongs to.
      */
     public function accountPasswordReset(User $account): void
     {
-        $recipients = in_array($account->role, User::ADMINISTRATOR_ROLES, true)
+        $recipients = in_array($account->role, User::OFFICE_ROLES, true)
             ? $this->superAdministrators()
             : $this->administrators();
 
@@ -1791,7 +1793,7 @@ class NotificationService
             $recipients,
             'Password Reset',
             sprintf('%s reset the password for %s.', $this->actorName(), $account->fullName()),
-            in_array($account->role, User::ADMINISTRATOR_ROLES, true)
+            in_array($account->role, User::OFFICE_ROLES, true)
                 ? Notification::MODULE_SECURITY
                 : Notification::MODULE_USER_MANAGEMENT,
             $account,
@@ -1800,14 +1802,15 @@ class NotificationService
     }
 
     /**
-     * Anything touching an administrator account is a super admin's business;
-     * everything else is ordinary operational news for both admin roles.
+     * Anything touching an office account is a super admin's business - only
+     * they manage that tier. Everything else is ordinary operational news for
+     * the administrators.
      *
      * @return EloquentCollection<int, User>
      */
     private function audienceForAccount(User $account): EloquentCollection
     {
-        return in_array($account->role, User::ADMINISTRATOR_ROLES, true)
+        return in_array($account->role, User::OFFICE_ROLES, true)
             ? $this->superAdministrators()
             : $this->administrators();
     }

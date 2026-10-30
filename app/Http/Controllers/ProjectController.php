@@ -1412,7 +1412,7 @@ class ProjectController extends Controller
         // the endpoint cannot disagree about it.
         $canReopen = $project->canBeReopened()
             && (bool) $request->user()?->isEmployee()
-            && in_array($request->user()?->role, [User::ROLE_SUPER_ADMIN, User::ROLE_ADMIN], true);
+            && in_array($request->user()?->role, User::ADMINISTRATOR_ROLES, true);
 
         // The reopen dialog books new dates, so it needs the same bookable
         // hours every other scheduling screen offers, and the days its pickers

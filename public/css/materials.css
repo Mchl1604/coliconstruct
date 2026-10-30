@@ -1,6 +1,6 @@
 /*
  * Materials: the setup screen's Materials step, the project's Materials tab,
- * and System Settings -> Materials.
+ * and Inventory -> Materials.
  *
  * One stylesheet for the three because they draw the same things - a material
  * name with its brand, a unit chip, a quantity - and should draw them alike.

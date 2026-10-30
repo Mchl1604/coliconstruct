@@ -26,6 +26,8 @@ class ErrorRecovery
     private const LABELS = [
         'super_admin' => 'Go to Dashboard',
         'admin' => 'Go to Dashboard',
+        'admin_officer' => 'Go to Dashboard',
+        'purchasing_admin' => 'Go to Inventory',
         'lead_technician' => 'Go to My Schedule',
         'technician' => 'Go to My Schedule',
     ];

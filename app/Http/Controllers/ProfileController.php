@@ -50,7 +50,7 @@ class ProfileController extends Controller
         // Each role reads this inside the shell it already lives in; a client
         // has no portal of their own, so theirs is the public website.
         $layout = match (true) {
-            in_array($user->role, User::ADMINISTRATOR_ROLES, true) => 'layouts.superadminNav',
+            $user->isOfficeStaff() => 'layouts.superadminNav',
             $user->isClient() => 'layouts.publicSite',
             default => 'layouts.portalNav',
         };
@@ -289,8 +289,8 @@ class ProfileController extends Controller
         $validator = Validator::make($request->all(), [
             'new_owner_id' => ['required', 'integer'],
         ], [
-            'new_owner_id.required' => 'Choose an Admin.',
-            'new_owner_id.integer' => 'Choose an Admin.',
+            'new_owner_id.required' => 'Choose an HR Admin.',
+            'new_owner_id.integer' => 'Choose an HR Admin.',
         ]);
 
         if ($validator->fails()) {
@@ -377,7 +377,7 @@ class ProfileController extends Controller
         $request->session()->forget(self::TRANSFER_SESSION_KEY);
 
         // The page reloads: it is now an Admin's profile.
-        $request->session()->flash('success', 'Super Admin transferred. You are now an Admin.');
+        $request->session()->flash('success', 'Super Admin transferred. You are now an HR Admin.');
 
         return response()->json(['redirect' => route('profile.edit')]);
     }

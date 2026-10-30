@@ -1078,7 +1078,7 @@ class ConfigurationController extends Controller
 
         return (bool) $actor?->isSuperAdmin()
             || (bool) $actor?->is($user)
-            || ! in_array($user->role, User::ADMINISTRATOR_ROLES, true);
+            || ! in_array($user->role, User::OFFICE_ROLES, true);
     }
 
     /**

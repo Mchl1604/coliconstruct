@@ -602,7 +602,7 @@ class ProfileManagementTest extends TestCase
             ->putJson(route('profile.super-admin.transfer'), ['code' => $this->transferCode('owner@example.test')])
             ->assertOk()
             ->assertJsonPath('redirect', route('profile.edit'))
-            ->assertSessionHas('success', 'Super Admin transferred. You are now an Admin.');
+            ->assertSessionHas('success', 'Super Admin transferred. You are now an HR Admin.');
 
         $this->assertSame(User::ROLE_SUPER_ADMIN, $admin->refresh()->role);
         $this->assertSame(User::ROLE_ADMIN, $owner->refresh()->role);
@@ -770,7 +770,7 @@ class ProfileManagementTest extends TestCase
             [$this->account('admin', 'new@example.test', ['email_verified_at' => null])->id, 'That Admin has not verified their email.'],
             [$owner->id, 'You are already the Super Admin.'],
             [999999, 'Only an active Admin can become Super Admin.'],
-            [null, 'Choose an Admin.'],
+            [null, 'Choose an HR Admin.'],
         ];
 
         foreach ($refusals as [$id, $message]) {

@@ -1,5 +1,5 @@
 {{--
-    Configuration -> System Settings -> Materials.
+    Inventory -> Materials.
 
     The list a project's materials are picked from - names, brands, groups and
     units. Deliberately not an inventory: nothing here counts stock. A used

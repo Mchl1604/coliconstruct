@@ -553,7 +553,7 @@ class ProjectPhaseController extends Controller
      */
     private function layoutFor(?User $user): string
     {
-        return $user !== null && in_array($user->role, [User::ROLE_SUPER_ADMIN, User::ROLE_ADMIN], true)
+        return $user !== null && in_array($user->role, User::ADMINISTRATOR_ROLES, true)
             ? 'layouts.superadminNav'
             : 'layouts.portalNav';
     }

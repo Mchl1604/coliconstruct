@@ -146,7 +146,10 @@ class UploadedFileController extends Controller
 
         abort_unless($user !== null && $user->canLogin(), 403);
 
-        if ($user->isEmployee() && ! $user->needsTechnicianRecord()) {
+        // The office here is the part of it that works projects. A
+        // Purchasing Admin reaches no project page, so none of a project's
+        // files either.
+        if (in_array($user->role, User::ADMINISTRATOR_ROLES, true)) {
             return;
         }
 

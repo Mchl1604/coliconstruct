@@ -1,5 +1,5 @@
 {{--
-    Add / Edit Material, for System Settings -> Materials. One dialog for both:
+    Add / Edit Material, for Inventory -> Materials. One dialog for both:
     materials.js fills it from the row being edited, or empties it for a new
     one. Sent as JSON, so the fields carry data attributes rather than relying
     on a form submit.

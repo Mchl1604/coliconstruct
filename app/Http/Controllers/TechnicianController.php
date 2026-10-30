@@ -197,7 +197,7 @@ class TechnicianController extends Controller
      * Apply a technician's pending specialty request.
      *
      * Only an administrator reaches this - the whole Super Admin group is
-     * behind `role:super_admin,admin` - and the change is the only thing that
+     * behind `area:scheduling` - and the change is the only thing that
      * moves a technician's specialties short of editing them here directly.
      */
     public function approveSpecialtyRequest(Request $request, SpecialtyRequest $specialtyRequest)

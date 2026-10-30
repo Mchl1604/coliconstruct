@@ -554,7 +554,7 @@
                         <div class="card-body">
                             <div class="alert alert-warning small py-2 mb-3" role="alert">
                                 <i class="bi bi-exclamation-triangle me-1" aria-hidden="true"></i>
-                                You become an Admin.
+                                You become an HR Admin.
                             </div>
 
                             @if ($superAdminCandidates->isEmpty())
@@ -567,7 +567,7 @@
                                         </label>
                                         <select class="form-select" id="newSuperAdmin" required
                                             data-transfer-select>
-                                            <option value="">Choose an Admin</option>
+                                            <option value="">Choose an HR Admin</option>
                                             @foreach ($superAdminCandidates as $candidate)
                                                 <option value="{{ $candidate->id }}">
                                                     {{ $candidate->fullName() }} ({{ $candidate->user_code }})

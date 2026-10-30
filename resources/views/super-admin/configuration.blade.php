@@ -6,8 +6,6 @@
     <link href="/css/super-admin/projects.css" rel="stylesheet">
     <link href="/css/super-admin/technicians.css" rel="stylesheet">
     <link href="/css/super-admin/configuration.css" rel="stylesheet">
-    {{-- System Settings -> Materials. --}}
-    <link href="/css/materials.css" rel="stylesheet">
     {{-- The user search in the Export Logs dialog, shared with the
          Technicians page. --}}
     <link href="/css/actorSearch.css" rel="stylesheet">
@@ -516,7 +514,6 @@
                 \App\Models\SystemContent::SECTION_FOOTER => 'bi-layout-text-window-reverse',
                 'project_types' => 'bi-diagram-3',
                 'phase_templates' => 'bi-list-check',
-                'materials' => 'bi-box-seam',
             ];
 
             // Every entry in a category's list. Most are catalogue sections,
@@ -533,8 +530,6 @@
                 if ($key === \App\Models\SystemContent::SECTION_PROJECT_SETTINGS) {
                     $generalTypes['project_types'] = ['label' => 'Project Types', 'panel' => true];
                     $generalTypes['phase_templates'] = ['label' => 'Default Phases & Tasks', 'panel' => true];
-                    // The list a project's materials are picked from.
-                    $generalTypes['materials'] = ['label' => 'Materials', 'panel' => true];
                 }
             }
 
@@ -762,10 +757,6 @@
 
                                     @include('super-admin.partials.detail-forms-panel')
                             </div>
-                        </div>
-
-                        <div data-content-extra="materials" hidden>
-                            @include('super-admin.partials.materials-panel')
                         </div>
 
                         <div data-content-extra="phase_templates" hidden>
@@ -1893,10 +1884,6 @@
     @endif
 
     @if ($isSuperAdmin)
-        {{-- Add / Edit Material, for System Settings -> Materials. Out here
-             with the page's other dialogs rather than inside the panel, which
-             is hidden whenever another settings entry is open. --}}
-        @include('super-admin.partials.material-modal')
         @include('super-admin.partials.detail-form-modal')
     @endif
 
@@ -2033,8 +2020,6 @@
                     detailForms: @json(route('super-admin.configuration.detail-forms.index')),
                     phaseTemplates: @json(route('super-admin.configuration.phase-templates.index')),
                     phaseTemplateBase: @json(url('super-admin/configuration/phase-templates')),
-                    materials: @json(route('super-admin.configuration.materials.index')),
-                    materialTypes: @json(route('super-admin.configuration.materials.types.index')),
                     archivedInquiries: @json(route('super-admin.configuration.inquiries.archived')),
                     backups: @json(route('super-admin.configuration.backups.index')),
                     backupUpload: @json(route('super-admin.configuration.backups.upload')),
@@ -2072,7 +2057,6 @@
             <script src="/js/super-admin/detailForms.js"></script>
             <script src="/js/super-admin/projectTypes.js"></script>
             <script src="/js/super-admin/phaseTemplates.js"></script>
-            <script src="/js/super-admin/materials.js"></script>
             <script src="/js/super-admin/databaseBackups.js"></script>
             <script src="/js/super-admin/systemSettingsNav.js"></script>
         @endif

@@ -14,8 +14,9 @@ use App\Models\User;
 class PortalHome
 {
     /**
-     * The route each role calls home. Admin shares the super admin's portal:
-     * same sidebar, same pages, same routes.
+     * The route each role calls home. Every office role shares the super
+     * admin's portal; a Purchasing Admin, who reaches only its inventory,
+     * starts there rather than on a dashboard they cannot open.
      *
      * A client has no portal of their own - the public website is their
      * portal, and My Projects there shows the work booked under their email.
@@ -25,6 +26,8 @@ class PortalHome
     private const ROUTES = [
         'super_admin' => 'super-admin.dashboard',
         'admin' => 'super-admin.dashboard',
+        'admin_officer' => 'super-admin.dashboard',
+        'purchasing_admin' => 'inventory.index',
         'lead_technician' => 'technician.schedule',
         'technician' => 'technician.schedule',
         'client' => 'landing.home',

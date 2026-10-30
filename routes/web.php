@@ -9,6 +9,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DatabaseBackupController;
 use App\Http\Controllers\DetailFormController;
 use App\Http\Controllers\InquiryController;
+use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\MaterialController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PhaseTemplateController;
@@ -30,6 +31,7 @@ use App\Http\Controllers\TechnicianReportArchiveController;
 use App\Http\Controllers\TechnicianReportController;
 use App\Http\Controllers\TermsController;
 use App\Http\Controllers\UploadedFileController;
+use App\Support\RoleAccess;
 use Illuminate\Support\Facades\Route;
 
 // The public website. Every page here is readable by anyone; My Projects is
@@ -249,11 +251,13 @@ Route::middleware(['auth', 'password.changed'])
         Route::delete('/{notification}', [NotificationController::class, 'destroy'])->name('destroy');
     });
 
-// Super Admin routes. Admin shares this portal entirely - same sidebar, same
-// pages - so both roles are admitted here.
+// Super Admin routes: the scheduling side of the office portal. HR Admin and
+// Admin Officer share it entirely - same sidebar, same pages - and a
+// Purchasing Admin, who reaches only the inventory below, is turned away. See
+// RoleAccess for who reaches which part.
 Route::prefix('super-admin')
     ->name('super-admin.')
-    ->middleware(['auth', 'password.changed', 'role:super_admin,admin'])
+    ->middleware(['auth', 'password.changed', 'area:'.RoleAccess::SCHEDULING])
     ->group(function () {
 
         // The landing page after sign-in. Everything it shows arrives with the
@@ -650,26 +654,6 @@ Route::prefix('super-admin')
                 Route::put('/types/{projectType}', [PhaseTemplateController::class, 'updateTemplate'])->name('types.update');
             });
 
-            // Materials: the list projects pick from, and its groups. A
-            // reference list, not stock. Super Admin only, turned away by the
-            // controller on the same terms as Project Types.
-            Route::prefix('materials')->name('materials.')->group(function () {
-                Route::get('/', [MaterialController::class, 'index'])->name('index');
-                Route::post('/', [MaterialController::class, 'store'])->name('store');
-
-                // Before the {material} routes, so "types" is not read as the
-                // id of a material.
-                Route::get('/types', [MaterialController::class, 'types'])->name('types.index');
-                Route::post('/types', [MaterialController::class, 'storeType'])->name('types.store');
-                Route::get('/types/{materialType}', [MaterialController::class, 'showType'])->name('types.show');
-                Route::put('/types/{materialType}', [MaterialController::class, 'updateType'])->name('types.update');
-                Route::delete('/types/{materialType}', [MaterialController::class, 'destroyType'])->name('types.destroy');
-
-                Route::put('/{material}', [MaterialController::class, 'update'])->whereNumber('material')->name('update');
-                Route::put('/{material}/status', [MaterialController::class, 'setStatus'])->whereNumber('material')->name('status');
-                Route::delete('/{material}', [MaterialController::class, 'destroy'])->whereNumber('material')->name('destroy');
-            });
-
             // Backup & Restore: every row and every uploaded file, out and
             // back in. Super Admin only, on the group rather than in the
             // controller, because nothing here is ever Admin's.
@@ -711,6 +695,34 @@ Route::prefix('super-admin')
                 Route::delete('/users/{user}', [ConfigurationController::class, 'archive'])->name('users.archive');
                 Route::put('/users/{user}/restore', [ConfigurationController::class, 'restoreAccount'])->name('users.restore');
             });
+        });
+    });
+
+// Inventory: the other side of the office portal. Super Admin, Admin Officer
+// and Purchasing Admin reach it; an HR Admin does not. Same shell and header
+// as the routes above - only the door differs. See RoleAccess.
+Route::prefix('inventory')
+    ->name('inventory.')
+    ->middleware(['auth', 'password.changed', 'area:'.RoleAccess::INVENTORY])
+    ->group(function () {
+        Route::get('/', [InventoryController::class, 'index'])->name('index');
+
+        // Materials: the list projects pick from, and its groups.
+        Route::prefix('materials')->name('materials.')->group(function () {
+            Route::get('/', [MaterialController::class, 'index'])->name('index');
+            Route::post('/', [MaterialController::class, 'store'])->name('store');
+
+            // Before the {material} routes, so "types" is not read as the id
+            // of a material.
+            Route::get('/types', [MaterialController::class, 'types'])->name('types.index');
+            Route::post('/types', [MaterialController::class, 'storeType'])->name('types.store');
+            Route::get('/types/{materialType}', [MaterialController::class, 'showType'])->name('types.show');
+            Route::put('/types/{materialType}', [MaterialController::class, 'updateType'])->name('types.update');
+            Route::delete('/types/{materialType}', [MaterialController::class, 'destroyType'])->name('types.destroy');
+
+            Route::put('/{material}', [MaterialController::class, 'update'])->whereNumber('material')->name('update');
+            Route::put('/{material}/status', [MaterialController::class, 'setStatus'])->whereNumber('material')->name('status');
+            Route::delete('/{material}', [MaterialController::class, 'destroy'])->whereNumber('material')->name('destroy');
         });
     });
 
@@ -823,7 +835,7 @@ Route::prefix('technician')
 // touch is TechnicianReportPolicy's decision, made per report inside the
 // controller - a lead archives only what they filed themselves, whatever the
 // page they came from and whatever id they send.
-Route::middleware(['auth', 'password.changed', 'role:super_admin,admin,lead_technician'])
+Route::middleware(['auth', 'password.changed', 'role:super_admin,admin,admin_officer,lead_technician'])
     ->prefix('technician-reports')
     ->name('technician-reports.')
     ->group(function () {
