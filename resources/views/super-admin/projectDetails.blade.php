@@ -1286,14 +1286,9 @@
                         </button>
                     @endif
                 </div>
-                <div class="mt-3">
-                    <span class="fw-bold me-2">
-                        Project Description:
-                    </span>
-                    <p>
-                        {{ $project->description ?? 'N/A' }}
-                    </p>
-                </div>
+                {{-- Each type's detail form, folded, then the Notes. --}}
+                <x-project-description :project="$project"
+                    :edit-target="$isReadOnly ? null : 'editProjectDescriptionModal'" />
 
             </div>
         </div>
@@ -2230,8 +2225,10 @@
 
                         <div class="mb-3">
 
+                            {{-- The description proper is each type's detail
+                                 form, edited from its own dialog. --}}
                             <label class="form-label">
-                                Project Description
+                                Notes
                             </label>
 
                             <textarea class="form-control" rows="2" name="project_description">{{ $project->description }}</textarea>
@@ -3204,6 +3201,9 @@
     {{-- Asks before replacing a lead technician, and before removing a
          document. Both were browser confirm() dialogs, which could not say who
          comes off the project or why the server refused. --}}
+    @unless ($isReadOnly)
+        <x-project-details-modal :project="$project" />
+    @endunless
     <x-confirm-dialog />
 
     @if ($quotationHistoryCount > 0)

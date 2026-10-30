@@ -18,6 +18,8 @@ class DatabaseSeeder extends Seeder
         $this->call(SuperAdminSeeder::class);
         // The material list projects pick from - see MaterialSeeder.
         $this->call(MaterialSeeder::class);
+        // Installation, Repair and Cleaning detail forms - see DetailFormSeeder.
+        $this->call(DetailFormSeeder::class);
 
         // User::factory(10)->create();
 

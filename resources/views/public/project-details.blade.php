@@ -151,10 +151,10 @@
                         </div>
                     </div>
 
-                    @if ($card['description'])
-                        <hr>
-                        <p class="text-secondary public-prewrap mb-0">{{ $card['description'] }}</p>
-                    @endif
+                    {{-- The same folded description the office reads: each
+                         type's details, then the notes. --}}
+                    <hr>
+                    <x-project-description :project="$project" />
 
                     {{-- The closing report. Shown from the moment the work is
                          reported finished, not only once it is signed off: this

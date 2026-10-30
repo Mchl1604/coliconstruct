@@ -437,6 +437,18 @@ class Project extends Model
     }
 
     /**
+     * What the project's detail forms were filled in with - its units - in
+     * the order they were entered.
+     */
+    public function details(): HasMany
+    {
+        return $this->hasMany(ProjectDetail::class, 'project_id', 'project_id')
+            ->orderBy('type_id')
+            ->orderBy('sort_order')
+            ->orderBy('detail_id');
+    }
+
+    /**
      * The team as it stands today: every span that covers the office's today.
      *
      * Scoped rather than raw, because "the team" is what every screen, guard

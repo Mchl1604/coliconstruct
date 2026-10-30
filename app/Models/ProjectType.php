@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
@@ -16,7 +17,17 @@ class ProjectType extends Model
 
     protected $fillable = [
         'type_name',
+        'form_id',
     ];
+
+    /**
+     * The detail form this type asks for in the create wizard, or null for
+     * "None".
+     */
+    public function detailForm(): BelongsTo
+    {
+        return $this->belongsTo(DetailForm::class, 'form_id', 'form_id');
+    }
 
     public function projects(): BelongsToMany
     {

@@ -5,6 +5,10 @@
  * page offers as specialties. Every write goes to the server and comes back
  * with the whole list, so what is on screen is always what was saved rather
  * than what this file guessed.
+ *
+ * Each type also names the detail form it asks for in the create wizard's
+ * Units step. The forms themselves are detailForms.js's; this file only reads
+ * the list it announces, and opens its builder for "+ New form".
  */
 document.addEventListener('DOMContentLoaded', function() {
     const pane = document.getElementById('projectTypesPane');
@@ -21,6 +25,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     const addForm = pane.querySelector('[data-project-type-add-form]');
     const nameInput = pane.querySelector('[data-project-type-name]');
+    const formSelect = pane.querySelector('[data-project-type-form]');
     const addButton = pane.querySelector('[data-project-type-add]');
     const addSpinner = pane.querySelector('[data-project-type-add-spinner]');
     const body = pane.querySelector('[data-project-type-body]');
@@ -32,6 +37,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // The row being renamed, so only one input is ever open at a time.
     let editingId = null;
+    // The last list drawn, redrawn as-is when the forms list changes.
+    let types = [];
+    // The detail forms, as detailForms.js last announced them.
+    let forms = [];
+    const NEW_FORM = '__new';
 
     function escapeHtml(value) {
         const span = document.createElement('span');
@@ -108,6 +118,63 @@ document.addEventListener('DOMContentLoaded', function() {
             (count === 1 ? noun : noun + 's') + '</span>';
     }
 
+    /**
+     * The form choices: every form, and "+ New form", which opens the
+     * builder rather than being a value of its own.
+     */
+    function formOptionsMarkup(selectedId) {
+        // Every type has a form, so there is no "None" - only a prompt while
+        // nothing is chosen yet, on the add row.
+        return (selectedId ? '' : '<option value="">Choose form</option>') +
+            forms.map(function(form) {
+                return '<option value="' + form.form_id + '"' +
+                    (Number(selectedId) === form.form_id ? ' selected' : '') + '>' +
+                    escapeHtml(form.name) + '</option>';
+            }).join('') +
+            '<option value="' + NEW_FORM + '">+ New form</option>';
+    }
+
+    function renderFormSelect() {
+        if (!formSelect) {
+            return;
+        }
+
+        const current = formSelect.value === NEW_FORM ? '' : formSelect.value;
+        formSelect.innerHTML = formOptionsMarkup(current);
+    }
+
+    /**
+     * "+ New form" picked: open the builder, and pick what it saves - or put
+     * the choice back if it is closed without saving.
+     */
+    function chooseNewForm(select, previous, onPicked) {
+        if (!window.detailForms) {
+            select.value = previous;
+
+            return;
+        }
+
+        window.detailForms.openBuilder({
+            onSaved: function(form) {
+                select.value = String(form.form_id);
+                onPicked(form.form_id);
+            },
+            onClosed: function() {
+                select.value = previous;
+            },
+        });
+    }
+
+    function assignForm(typeId, formId) {
+        showSuccess('');
+
+        return request(
+            routes.projectTypes + '/' + typeId + '/form',
+            'PUT',
+            { form_id: formId || null }
+        ).then(handle);
+    }
+
     function rowMarkup(type) {
         const blocked = blockedReason(type);
 
@@ -126,6 +193,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
         return '<tr>' +
             '<td>' + nameCell + '</td>' +
+            '<td><select class="form-select form-select-sm project-type-form-select" aria-label="Form for ' +
+            escapeHtml(type.type_name) + '" data-project-type-form-select="' + type.type_id + '" ' +
+            'data-previous="' + (type.form_id || '') + '">' +
+            formOptionsMarkup(type.form_id) + '</select></td>' +
             '<td>' + countCell(type.project_count, 'project') + '</td>' +
             '<td>' + countCell(type.technician_count, 'technician') + '</td>' +
             '<td class="text-center">' +
@@ -141,7 +212,8 @@ document.addEventListener('DOMContentLoaded', function() {
             '</tr>';
     }
 
-    function render(types) {
+    function render(list) {
+        types = list;
         body.innerHTML = types.map(rowMarkup).join('');
         empty.classList.toggle('d-none', types.length > 0);
 
@@ -209,12 +281,24 @@ document.addEventListener('DOMContentLoaded', function() {
         addSpinner.classList.remove('d-none');
         showSuccess('');
 
-        request(routes.projectTypes, 'POST', { type_name: name }).then(function(result) {
+        const formId = formSelect && formSelect.value !== NEW_FORM ? formSelect.value : '';
+
+        if (!formId) {
+            showError('Pick a form for the project type.');
+
+            return;
+        }
+
+        request(routes.projectTypes, 'POST', { type_name: name, form_id: formId || null }).then(function(result) {
             addButton.disabled = false;
             addSpinner.classList.add('d-none');
 
             if (handle(result)) {
                 nameInput.value = '';
+
+                if (formSelect) {
+                    formSelect.value = '';
+                }
             }
         });
     });
@@ -298,6 +382,54 @@ document.addEventListener('DOMContentLoaded', function() {
                     handle({ ok: true, body: body });
                 },
             });
+        }
+    });
+
+    if (formSelect) {
+        let previousAddForm = '';
+
+        formSelect.addEventListener('focus', function() {
+            previousAddForm = formSelect.value;
+        });
+
+        formSelect.addEventListener('change', function() {
+            if (formSelect.value === NEW_FORM) {
+                chooseNewForm(formSelect, previousAddForm, function() {});
+
+                return;
+            }
+
+            previousAddForm = formSelect.value;
+        });
+    }
+
+    body.addEventListener('change', function(event) {
+        const select = event.target.closest('[data-project-type-form-select]');
+
+        if (!select) {
+            return;
+        }
+
+        const typeId = select.dataset.projectTypeFormSelect;
+
+        if (select.value === NEW_FORM) {
+            chooseNewForm(select, select.dataset.previous, function(formId) {
+                assignForm(typeId, formId);
+            });
+
+            return;
+        }
+
+        assignForm(typeId, select.value);
+    });
+
+    // A form added, renamed or removed in Detail Forms below.
+    document.addEventListener('detail-forms:changed', function(event) {
+        forms = (event.detail && event.detail.forms) || [];
+        renderFormSelect();
+
+        if (editingId === null) {
+            body.innerHTML = types.map(rowMarkup).join('');
         }
     });
 

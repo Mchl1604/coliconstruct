@@ -7,6 +7,7 @@ use App\Http\Controllers\ClientProjectController;
 use App\Http\Controllers\ConfigurationController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DatabaseBackupController;
+use App\Http\Controllers\DetailFormController;
 use App\Http\Controllers\InquiryController;
 use App\Http\Controllers\MaterialController;
 use App\Http\Controllers\NotificationController;
@@ -14,6 +15,7 @@ use App\Http\Controllers\PhaseTemplateController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ProjectClientController;
 use App\Http\Controllers\ProjectController;
+use App\Http\Controllers\ProjectDetailController;
 use App\Http\Controllers\ProjectMaterialController;
 use App\Http\Controllers\ProjectPhaseController;
 use App\Http\Controllers\ProjectTypeController;
@@ -432,6 +434,8 @@ Route::prefix('super-admin')
             ->whereNumber('document')
             ->name('projects.documents.destroy');
         Route::put('/projects/{id}', [ProjectController::class, 'update'])->name('projects.update');
+        // Edit Description: what each type's detail form was filled in with.
+        Route::put('/projects/{id}/details', [ProjectDetailController::class, 'update'])->name('projects.details.update');
         Route::put('/projects/{id}/team', [ProjectController::class, 'updateAssignedTeam'])->name('projects.team.update');
         // What a team change would do before it is saved - its refusals and the
         // tasks it would strand. Read by the Edit Assigned Team dialog.
@@ -607,7 +611,19 @@ Route::prefix('super-admin')
                 Route::get('/', [ProjectTypeController::class, 'index'])->name('index');
                 Route::post('/', [ProjectTypeController::class, 'store'])->name('store');
                 Route::put('/{projectType}', [ProjectTypeController::class, 'update'])->name('update');
+                Route::put('/{projectType}/form', [ProjectTypeController::class, 'updateForm'])->name('form');
                 Route::delete('/{projectType}', [ProjectTypeController::class, 'destroy'])->name('destroy');
+            });
+
+            // Detail Forms: the fields a project type asks for in the create
+            // wizard's Units step. Super Admin only, turned away by the
+            // controller on the same terms as Project Types.
+            Route::prefix('detail-forms')->name('detail-forms.')->group(function () {
+                Route::get('/', [DetailFormController::class, 'index'])->name('index');
+                Route::post('/', [DetailFormController::class, 'store'])->name('store');
+                Route::get('/{detailForm}', [DetailFormController::class, 'show'])->name('show');
+                Route::put('/{detailForm}', [DetailFormController::class, 'update'])->name('update');
+                Route::delete('/{detailForm}', [DetailFormController::class, 'destroy'])->name('destroy');
             });
 
             // Phase Templates: the default phases each kind of job goes

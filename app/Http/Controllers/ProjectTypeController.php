@@ -3,12 +3,15 @@
 namespace App\Http\Controllers;
 
 use App\Models\ActivityLog;
+use App\Models\DetailForm;
 use App\Models\ProjectType;
 use App\Models\User;
 use App\Services\ActivityLogger;
+use App\Services\DetailFormCatalog;
 use App\Services\ProjectTypeCatalog;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use RuntimeException;
 
@@ -28,6 +31,7 @@ class ProjectTypeController extends Controller
 {
     public function __construct(
         private readonly ProjectTypeCatalog $catalog,
+        private readonly DetailFormCatalog $forms,
         private readonly ActivityLogger $activityLogger
     ) {}
 
@@ -48,8 +52,19 @@ class ProjectTypeController extends Controller
             return response()->json(['error' => $validator->errors()->first()], 422);
         }
 
+        $formValidator = $this->validateForm($request);
+
+        if ($formValidator->fails()) {
+            return response()->json(['error' => $formValidator->errors()->first()], 422);
+        }
+
+        // Every type has a form - it is what the wizard asks for in place of
+        // a free-text description - so the two are written together.
         try {
-            $type = $this->catalog->add((string) $request->input('type_name'));
+            $type = DB::transaction(fn (): ProjectType => $this->forms->assign(
+                $this->catalog->add((string) $request->input('type_name')),
+                DetailForm::query()->findOrFail($request->integer('form_id'))
+            ));
         } catch (RuntimeException $exception) {
             return response()->json(['error' => $exception->getMessage()], 422);
         }
@@ -99,6 +114,35 @@ class ProjectTypeController extends Controller
         ]);
     }
 
+    /**
+     * Point a type at another detail form. Never at none: every type has one.
+     */
+    public function updateForm(Request $request, ProjectType $projectType): JsonResponse
+    {
+        $this->authorizeSuperAdmin($request);
+
+        $validator = $this->validateForm($request);
+
+        if ($validator->fails()) {
+            return response()->json(['error' => $validator->errors()->first()], 422);
+        }
+
+        $form = DetailForm::query()->findOrFail($request->integer('form_id'));
+
+        $this->forms->assign($projectType, $form);
+
+        $this->activityLogger->record(
+            ActivityLog::PROJECT_TYPE_FORM_CHANGED,
+            null,
+            sprintf("Set the form of '%s' to '%s'.", $projectType->type_name, $form->name)
+        );
+
+        return response()->json([
+            'message' => sprintf("'%s' now uses %s.", $projectType->type_name, $form->name),
+            'types' => $this->catalog->all()->all(),
+        ]);
+    }
+
     public function destroy(Request $request, ProjectType $projectType): JsonResponse
     {
         $this->authorizeSuperAdmin($request);
@@ -139,6 +183,16 @@ class ProjectTypeController extends Controller
         ], [
             'type_name.required' => 'Enter a name for the project type.',
             'type_name.max' => 'A project type name may be 255 characters at most.',
+        ]);
+    }
+
+    private function validateForm(Request $request): \Illuminate\Validation\Validator
+    {
+        return Validator::make($request->all(), [
+            'form_id' => ['required', 'integer', 'exists:tbl_detail_forms,form_id'],
+        ], [
+            'form_id.required' => 'Pick a form.',
+            'form_id.*' => 'That form no longer exists.',
         ]);
     }
 

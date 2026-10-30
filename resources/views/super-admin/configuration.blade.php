@@ -710,6 +710,18 @@
                                                 placeholder="e.g. Heating Installation" maxlength="255"
                                                 data-project-type-name required>
                                         </div>
+                                        {{-- The detail form the new type asks for in the
+                                             create wizard - required, every type has
+                                             one. "+ New form" opens the builder and
+                                             picks the form it saves. --}}
+                                        <div class="col-sm-4">
+                                            <label class="form-label small fw-semibold mb-1" for="projectTypeForm">
+                                                Form
+                                            </label>
+                                            <select class="form-select" id="projectTypeForm" data-project-type-form required>
+                                                <option value="">Choose form</option>
+                                            </select>
+                                        </div>
                                         <div class="col-sm-auto">
                                             <button type="submit" class="btn btn-primary px-4" data-project-type-add>
                                                 <span class="spinner-border spinner-border-sm me-1 d-none" role="status"
@@ -731,6 +743,7 @@
                                             <thead>
                                                 <tr>
                                                     <th>Project Type</th>
+                                                    <th>Form</th>
                                                     <th>Projects</th>
                                                     <th>Technicians</th>
                                                     <th class="text-center">Actions</th>
@@ -746,6 +759,8 @@
 
                                     <div class="alert alert-danger mt-3 mb-0 d-none" role="alert" data-project-type-error></div>
                                     <div class="alert alert-success mt-3 mb-0 d-none" role="alert" data-project-type-success></div>
+
+                                    @include('super-admin.partials.detail-forms-panel')
                             </div>
                         </div>
 
@@ -1882,6 +1897,7 @@
              with the page's other dialogs rather than inside the panel, which
              is hidden whenever another settings entry is open. --}}
         @include('super-admin.partials.material-modal')
+        @include('super-admin.partials.detail-form-modal')
     @endif
 
     @if ($isSuperAdmin)
@@ -2014,6 +2030,7 @@
                 @if ($isSuperAdmin)
                     archivedAccounts: @json(route('super-admin.configuration.users.archived')),
                     projectTypes: @json(route('super-admin.configuration.project-types.index')),
+                    detailForms: @json(route('super-admin.configuration.detail-forms.index')),
                     phaseTemplates: @json(route('super-admin.configuration.phase-templates.index')),
                     phaseTemplateBase: @json(url('super-admin/configuration/phase-templates')),
                     materials: @json(route('super-admin.configuration.materials.index')),
@@ -2052,6 +2069,7 @@
         <script src="/js/super-admin/inquiries.js"></script>
         @if (auth()->user()?->isSuperAdmin())
             <script src="/js/super-admin/systemContents.js"></script>
+            <script src="/js/super-admin/detailForms.js"></script>
             <script src="/js/super-admin/projectTypes.js"></script>
             <script src="/js/super-admin/phaseTemplates.js"></script>
             <script src="/js/super-admin/materials.js"></script>
