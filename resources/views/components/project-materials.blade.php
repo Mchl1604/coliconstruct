@@ -7,7 +7,7 @@
     // Which portal's routes the forms post to: 'super-admin' or 'technician'.
     'portal' => 'super-admin',
     // ProjectMaterialController::quickAddOptions(), for Add to List.
-    'quickAdd' => ['types' => [], 'units' => []],
+    'quickAdd' => ['types' => [], 'brands' => [], 'units' => []],
 ])
 
 {{--
@@ -94,8 +94,8 @@
                             <tr>
                                 <td>
                                     <span class="material-name">{{ $row['material']->name }}</span>
-                                    @if ($row['material']->brand)
-                                        <span class="material-brand">{{ $row['material']->brand }}</span>
+                                    @if ($row['material']->brandName())
+                                        <span class="material-brand">{{ $row['material']->brandName() }}</span>
                                     @endif
                                     @if ($row['material']->description)
                                         <div class="material-meta">{{ $row['material']->description }}</div>
@@ -312,6 +312,7 @@
 
                             @include('projects.partials.material-quick-add-fields', [
                                 'types' => $quickAdd['types'],
+                                'brands' => $quickAdd['brands'],
                                 'units' => $quickAdd['units'],
                                 'idPrefix' => 'projectQuickAdd',
                             ])

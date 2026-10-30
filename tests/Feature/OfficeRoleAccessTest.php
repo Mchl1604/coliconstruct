@@ -47,11 +47,17 @@ class OfficeRoleAccessTest extends TestCase
 
         $this->actingAs($account);
 
-        foreach (['super-admin.dashboard', 'super-admin.projects', 'super-admin.configuration.index'] as $page) {
+        foreach (['super-admin.dashboard', 'super-admin.projects'] as $page) {
             $scheduling
                 ? $this->get(route($page))->assertOk()
                 : $this->get(route($page))->assertRedirect($home);
         }
+
+        // Configuration is both sides': accounts for scheduling, Inventory
+        // Settings for inventory.
+        $scheduling || $inventory
+            ? $this->get(route('super-admin.configuration.index'))->assertOk()
+            : $this->get(route('super-admin.configuration.index'))->assertRedirect($home);
 
         $inventory
             ? $this->get(route('inventory.index'))->assertOk()
@@ -89,9 +95,9 @@ class OfficeRoleAccessTest extends TestCase
         $this->get(route('inventory.index'))
             ->assertOk()
             ->assertSee('href="'.route('inventory.index').'"', false)
+            ->assertSee('href="'.route('super-admin.configuration.index').'"', false)
             ->assertDontSee('href="'.route('super-admin.dashboard').'"', false)
-            ->assertDontSee('href="'.route('super-admin.projects').'"', false)
-            ->assertDontSee('href="'.route('super-admin.configuration.index').'"', false);
+            ->assertDontSee('href="'.route('super-admin.projects').'"', false);
 
         $this->actingAs($this->account(User::ROLE_ADMIN));
 
@@ -106,6 +112,44 @@ class OfficeRoleAccessTest extends TestCase
             ->assertOk()
             ->assertSee('href="'.route('super-admin.projects').'"', false)
             ->assertSee('href="'.route('inventory.index').'"', false);
+    }
+
+    public function test_configuration_shows_each_role_only_its_own_tabs(): void
+    {
+        $this->actingAs($this->account(User::ROLE_PURCHASING_ADMIN));
+
+        $this->get(route('super-admin.configuration.index'))
+            ->assertOk()
+            ->assertSee('id="inventorySettingsPane"', false)
+            ->assertDontSee('id="userManagementPane"', false)
+            ->assertDontSee('id="activityLogsPane"', false)
+            ->assertDontSee('id="inquiriesPane"', false)
+            ->assertDontSee('configuration.js', false)
+            ->assertSee('data-app-confirm', false);
+
+        $this->actingAs($this->account(User::ROLE_ADMIN));
+
+        $this->get(route('super-admin.configuration.index'))
+            ->assertOk()
+            ->assertSee('id="userManagementPane"', false)
+            ->assertDontSee('id="inventorySettingsPane"', false);
+
+        $this->actingAs($this->account(User::ROLE_ADMIN_OFFICER));
+
+        $this->get(route('super-admin.configuration.index'))
+            ->assertOk()
+            ->assertSee('id="userManagementPane"', false)
+            ->assertSee('id="inventorySettingsPane"', false)
+            ->assertDontSee('id="systemSettingsPane"', false);
+    }
+
+    public function test_a_purchasing_admin_reaches_no_other_configuration_endpoint(): void
+    {
+        $this->actingAs($this->account(User::ROLE_PURCHASING_ADMIN));
+
+        $this->getJson(route('super-admin.configuration.users.employees'))->assertForbidden();
+        $this->getJson(route('super-admin.configuration.activity-logs'))->assertForbidden();
+        $this->getJson(route('inventory.materials.types.index'))->assertOk();
     }
 
     public function test_admin_shows_as_hr_admin_and_keeps_its_stored_value(): void

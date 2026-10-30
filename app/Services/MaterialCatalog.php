@@ -2,7 +2,9 @@
 
 namespace App\Services;
 
+use App\Models\Brand;
 use App\Models\Material;
+use App\Models\MaterialSubtype;
 use App\Models\MaterialType;
 use App\Models\Project;
 use App\Models\ProjectMaterial;
@@ -14,16 +16,17 @@ use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 /**
- * The material list: the one place its rows and its groups are written, and
- * the suggestions a project's material picker offers from it.
+ * The material list: the one place its rows, its groups and their sub-types,
+ * and its brands are written, and the suggestions a project's material picker
+ * offers from it.
  *
- * A reference list, not stock. It says what a material is called, who makes
- * it and what it is counted in - never how many the company has.
+ * It says what a material is called, who makes it, what it is counted in and
+ * when it counts as Low Stock. How many the company holds is StockLedger's.
  *
- * Written from two places. The Super Admin keeps it in System Settings; a lead
+ * Written from two places. Purchasing keeps it on the Inventory page; a lead
  * or an administrator may add to it from a project when what they need is
  * missing, so the next project finds it. Both come through add(), so an entry
- * added from a project is held to exactly the rules one added in Settings is.
+ * added from a project is held to exactly the rules one added in Inventory is.
  */
 class MaterialCatalog
 {
@@ -37,20 +40,29 @@ class MaterialCatalog
     // ------------------------------------------------------------------
 
     /**
-     * Every group, with how many materials are in it.
+     * Every group, with how many materials are in it and its sub-types.
      *
-     * @return Collection<int, array{material_type_id: int, type_name: string, material_count: int}>
+     * @return Collection<int, array{material_type_id: int, type_name: string, material_count: int, subtypes: array<int, array{material_subtype_id: int, subtype_name: string, material_count: int}>}>
      */
     public function types(): Collection
     {
         return MaterialType::query()
             ->withCount('materials')
+            ->with(['subtypes' => fn ($query) => $query->withCount('materials')->orderBy('subtype_name')])
             ->orderBy('type_name')
             ->get()
             ->map(fn (MaterialType $type): array => [
                 'material_type_id' => (int) $type->material_type_id,
                 'type_name' => $type->type_name,
                 'material_count' => (int) $type->materials_count,
+                'subtypes' => $type->subtypes
+                    ->map(fn (MaterialSubtype $subtype): array => [
+                        'material_subtype_id' => (int) $subtype->material_subtype_id,
+                        'subtype_name' => $subtype->subtype_name,
+                        'material_count' => (int) $subtype->materials_count,
+                    ])
+                    ->values()
+                    ->all(),
             ])
             ->values();
     }
@@ -97,13 +109,129 @@ class MaterialCatalog
     }
 
     // ------------------------------------------------------------------
+    // Sub-types
+    // ------------------------------------------------------------------
+
+    public function addSubtype(MaterialType $type, string $name): MaterialSubtype
+    {
+        $name = $this->clean($name);
+
+        $this->assertSubtypeNameIsFree($type, $name);
+
+        return MaterialSubtype::create([
+            'material_type_id' => $type->material_type_id,
+            'subtype_name' => $name,
+        ]);
+    }
+
+    public function renameSubtype(MaterialSubtype $subtype, string $name): MaterialSubtype
+    {
+        $name = $this->clean($name);
+
+        $this->assertSubtypeNameIsFree($subtype->type, $name, $subtype);
+
+        $subtype->update(['subtype_name' => $name]);
+
+        return $subtype->refresh();
+    }
+
+    /**
+     * Refused while any material is filed under it, for the reason
+     * removeType() gives.
+     *
+     * @throws RuntimeException
+     */
+    public function removeSubtype(MaterialSubtype $subtype): void
+    {
+        $count = $subtype->materials()->count();
+
+        if ($count > 0) {
+            throw new RuntimeException(sprintf(
+                'It has %d %s. Move them first.',
+                $count,
+                $count === 1 ? 'material' : 'materials'
+            ));
+        }
+
+        $subtype->delete();
+    }
+
+    // ------------------------------------------------------------------
+    // Brands
+    // ------------------------------------------------------------------
+
+    /**
+     * Every brand, with how many materials carry it.
+     *
+     * @return Collection<int, array{brand_id: int, brand_name: string, material_count: int}>
+     */
+    public function brands(): Collection
+    {
+        return Brand::query()
+            ->withCount('materials')
+            ->orderBy('brand_name')
+            ->get()
+            ->map(fn (Brand $brand): array => [
+                'brand_id' => (int) $brand->brand_id,
+                'brand_name' => $brand->brand_name,
+                'material_count' => (int) $brand->materials_count,
+            ])
+            ->values();
+    }
+
+    public function addBrand(string $name): Brand
+    {
+        $name = $this->clean($name);
+
+        $this->assertBrandNameIsFree($name);
+
+        return Brand::create(['brand_name' => $name]);
+    }
+
+    /**
+     * Every material carrying it reads the new name at once - it is one row,
+     * not a word copied onto each of them.
+     */
+    public function renameBrand(Brand $brand, string $name): Brand
+    {
+        $name = $this->clean($name);
+
+        $this->assertBrandNameIsFree($name, $brand);
+
+        $brand->update(['brand_name' => $name]);
+
+        return $brand->refresh();
+    }
+
+    /**
+     * Refused while any material carries it, for the reason removeType()
+     * gives.
+     *
+     * @throws RuntimeException
+     */
+    public function removeBrand(Brand $brand): void
+    {
+        $count = $brand->materials()->count();
+
+        if ($count > 0) {
+            throw new RuntimeException(sprintf(
+                'It has %d %s. Change them first.',
+                $count,
+                $count === 1 ? 'material' : 'materials'
+            ));
+        }
+
+        $brand->delete();
+    }
+
+    // ------------------------------------------------------------------
     // Materials
     // ------------------------------------------------------------------
 
     /**
      * Add a material to the list.
      *
-     * @param  array{material_type_id: int, name: string, brand?: string|null, unit: string, description?: string|null}  $attributes
+     * @param  array{material_type_id: int, material_subtype_id?: int|null, brand_id?: int|null, name: string, unit: string, description?: string|null, reorder_level?: float|string|null}  $attributes
      *
      * @throws RuntimeException when the same name, brand and unit is already listed.
      */
@@ -128,7 +256,7 @@ class MaterialCatalog
      * them. Everything else - a corrected spelling, a brand, a description - is
      * a fix to the label, and every project reads the new label.
      *
-     * @param  array{material_type_id: int, name: string, brand?: string|null, unit: string, description?: string|null}  $attributes
+     * @param  array{material_type_id: int, material_subtype_id?: int|null, brand_id?: int|null, name: string, unit: string, description?: string|null, reorder_level?: float|string|null}  $attributes
      *
      * @throws RuntimeException
      */
@@ -208,9 +336,10 @@ class MaterialCatalog
 
                     $builder->where(function (Builder $match) use ($like): void {
                         $match->where('name', 'like', $like)
-                            ->orWhere('brand', 'like', $like)
+                            ->orWhereHas('brand', fn (Builder $brand) => $brand->where('brand_name', 'like', $like))
                             ->orWhere('description', 'like', $like)
-                            ->orWhereHas('type', fn (Builder $type) => $type->where('type_name', 'like', $like));
+                            ->orWhereHas('type', fn (Builder $type) => $type->where('type_name', 'like', $like))
+                            ->orWhereHas('subtype', fn (Builder $subtype) => $subtype->where('subtype_name', 'like', $like));
                     });
                 }
             })
@@ -306,8 +435,12 @@ class MaterialCatalog
     /**
      * The columns a submission writes, trimmed and with blanks as nulls.
      *
+     * The reorder level and the sub-type are only written when the
+     * submission carries them, so a project's Add to List - which has neither
+     * field - leaves them alone.
+     *
      * @param  array<string, mixed>  $attributes
-     * @return array{material_type_id: int, name: string, brand: string|null, unit: string, description: string|null}
+     * @return array{material_type_id: int, material_subtype_id?: int|null, brand_id: int|null, name: string, unit: string, description: string|null, reorder_level?: float|null}
      */
     private function values(array $attributes): array
     {
@@ -321,16 +454,84 @@ class MaterialCatalog
             throw new RuntimeException('Choose a material type.');
         }
 
-        $brand = $this->clean((string) ($attributes['brand'] ?? ''));
+        $brandId = filled($attributes['brand_id'] ?? null) ? (int) $attributes['brand_id'] : null;
+
+        if ($brandId !== null && ! Brand::query()->whereKey($brandId)->exists()) {
+            throw new RuntimeException('Choose a brand from the list.');
+        }
+
         $description = $this->clean((string) ($attributes['description'] ?? ''));
 
-        return [
+        $values = [
             'material_type_id' => (int) $attributes['material_type_id'],
+            'brand_id' => $brandId,
             'name' => $this->clean((string) $attributes['name']),
-            'brand' => $brand === '' ? null : $brand,
             'unit' => $unit->value,
             'description' => $description === '' ? null : $description,
         ];
+
+        if (array_key_exists('reorder_level', $attributes)) {
+            $values['reorder_level'] = $this->reorderLevel($unit, $attributes['reorder_level']);
+        }
+
+        if (array_key_exists('material_subtype_id', $attributes)) {
+            $values['material_subtype_id'] = $this->subtypeOf($values['material_type_id'], $attributes['material_subtype_id']);
+        }
+
+        return $values;
+    }
+
+    /**
+     * A sub-type has to be one of the chosen type's own: Split-Type is a kind
+     * of aircon unit, not of copper tube.
+     *
+     * @throws RuntimeException
+     */
+    private function subtypeOf(int $typeId, mixed $subtypeId): ?int
+    {
+        if (! filled($subtypeId)) {
+            return null;
+        }
+
+        $belongs = MaterialSubtype::query()
+            ->whereKey((int) $subtypeId)
+            ->where('material_type_id', $typeId)
+            ->exists();
+
+        if (! $belongs) {
+            throw new RuntimeException('Choose a sub-type of this type.');
+        }
+
+        return (int) $subtypeId;
+    }
+
+    /**
+     * A reorder level is a quantity like any other, held to the unit's rule
+     * on fractions; blank means the material has none.
+     *
+     * @throws RuntimeException
+     */
+    private function reorderLevel(MaterialUnit $unit, mixed $level): ?float
+    {
+        if ($level === null || trim((string) $level) === '') {
+            return null;
+        }
+
+        if (! is_numeric($level) || (float) $level < 0) {
+            throw new RuntimeException('Enter a reorder level of zero or more.');
+        }
+
+        if ((float) $level == 0) {
+            return 0.0;
+        }
+
+        $problem = $unit->quantityProblem($level);
+
+        if ($problem !== null) {
+            throw new RuntimeException('Reorder level: '.lcfirst($problem));
+        }
+
+        return round((float) $level, 2);
     }
 
     /**
@@ -338,7 +539,7 @@ class MaterialCatalog
      * their casing. Enforced here rather than by an index, because brand is
      * nullable and a unique index never sees two nulls as the same.
      *
-     * @param  array{name: string, brand: string|null, unit: string}  $values
+     * @param  array{name: string, brand_id: int|null, unit: string}  $values
      *
      * @throws RuntimeException
      */
@@ -348,9 +549,9 @@ class MaterialCatalog
             ->whereRaw('LOWER(name) = ?', [mb_strtolower($values['name'])])
             ->where('unit', $values['unit'])
             ->when(
-                $values['brand'] === null,
-                fn (Builder $query) => $query->whereNull('brand'),
-                fn (Builder $query) => $query->whereRaw('LOWER(brand) = ?', [mb_strtolower((string) $values['brand'])])
+                $values['brand_id'] === null,
+                fn (Builder $query) => $query->whereNull('brand_id'),
+                fn (Builder $query) => $query->where('brand_id', $values['brand_id'])
             )
             ->when($except, fn (Builder $query) => $query->whereKeyNot($except->material_id))
             ->first();
@@ -376,6 +577,48 @@ class MaterialCatalog
         $taken = MaterialType::query()
             ->whereRaw('LOWER(type_name) = ?', [mb_strtolower($name)])
             ->when($except, fn (Builder $query) => $query->whereKeyNot($except->material_type_id))
+            ->exists();
+
+        if ($taken) {
+            throw new RuntimeException(sprintf("'%s' already exists.", $name));
+        }
+    }
+
+    /**
+     * Unique within its type - Fittings may be a kind of copper and a kind
+     * of PVC at once.
+     *
+     * @throws RuntimeException
+     */
+    private function assertSubtypeNameIsFree(MaterialType $type, string $name, ?MaterialSubtype $except = null): void
+    {
+        if ($name === '') {
+            throw new RuntimeException('Enter a sub-type name.');
+        }
+
+        $taken = MaterialSubtype::query()
+            ->where('material_type_id', $type->material_type_id)
+            ->whereRaw('LOWER(subtype_name) = ?', [mb_strtolower($name)])
+            ->when($except, fn (Builder $query) => $query->whereKeyNot($except->material_subtype_id))
+            ->exists();
+
+        if ($taken) {
+            throw new RuntimeException(sprintf("'%s' already exists.", $name));
+        }
+    }
+
+    /**
+     * @throws RuntimeException
+     */
+    private function assertBrandNameIsFree(string $name, ?Brand $except = null): void
+    {
+        if ($name === '') {
+            throw new RuntimeException('Enter a brand name.');
+        }
+
+        $taken = Brand::query()
+            ->whereRaw('LOWER(brand_name) = ?', [mb_strtolower($name)])
+            ->when($except, fn (Builder $query) => $query->whereKeyNot($except->brand_id))
             ->exists();
 
         if ($taken) {

@@ -51,4 +51,18 @@ class RoleAccess
     {
         return in_array($area, self::areasFor($user), true);
     }
+
+    /**
+     * Every role that reaches this part of the portal - who a notice about
+     * it is addressed to.
+     *
+     * @return array<int, string>
+     */
+    public static function rolesFor(string $area): array
+    {
+        return array_keys(array_filter(
+            self::AREAS,
+            fn (array $areas): bool => in_array($area, $areas, true)
+        ));
+    }
 }

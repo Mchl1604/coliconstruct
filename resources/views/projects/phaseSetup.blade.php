@@ -394,6 +394,7 @@
                         <div class="modal-body">
                             @include('projects.partials.material-quick-add-fields', [
                                 'types' => $materialQuickAdd['types'],
+                                'brands' => $materialQuickAdd['brands'],
                                 'units' => $materialQuickAdd['units'],
                                 'idPrefix' => 'setupQuickAdd',
                             ])

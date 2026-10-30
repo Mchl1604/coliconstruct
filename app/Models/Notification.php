@@ -65,6 +65,12 @@ class Notification extends Model
     public const MODULE_INQUIRIES = 'Inquiries';
 
     /**
+     * A material running low or out. Addressed to the people who reach the
+     * Inventory page, who are the ones who reorder.
+     */
+    public const MODULE_INVENTORY = 'Inventory';
+
+    /**
      * Every module the filter offers, in the order it lists them.
      *
      * @var array<int, string>
@@ -76,6 +82,7 @@ class Notification extends Model
         self::MODULE_USER_MANAGEMENT,
         self::MODULE_REPORTS,
         self::MODULE_INQUIRIES,
+        self::MODULE_INVENTORY,
         self::MODULE_SECURITY,
     ];
 
@@ -91,6 +98,7 @@ class Notification extends Model
         self::MODULE_USER_MANAGEMENT => 'bi-person-badge',
         self::MODULE_REPORTS => 'bi-file-earmark-text',
         self::MODULE_INQUIRIES => 'bi-envelope-paper',
+        self::MODULE_INVENTORY => 'bi-box-seam',
         self::MODULE_SECURITY => 'bi-shield-exclamation',
     ];
 

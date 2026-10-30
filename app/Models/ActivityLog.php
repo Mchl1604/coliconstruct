@@ -39,11 +39,15 @@ class ActivityLog extends Model
     public const MODULE_TASKS = 'Tasks';
 
     /**
-     * The material list and every project's materials. Took the place of the
-     * Inventory placeholder, which nothing ever logged to: materials are a
-     * reference list and a per-project record, not stock.
+     * The material list - its materials, types and brands - and every
+     * project's materials.
      */
     public const MODULE_MATERIALS = 'Materials';
+
+    /**
+     * Stock: what came in, what went out, and counts set right.
+     */
+    public const MODULE_INVENTORY = 'Inventory';
 
     public const MODULE_PURCHASE_ORDERS = 'Purchase Orders';
 
@@ -89,6 +93,7 @@ class ActivityLog extends Model
         self::MODULE_PROJECTS,
         self::MODULE_TASKS,
         self::MODULE_MATERIALS,
+        self::MODULE_INVENTORY,
         self::MODULE_PURCHASE_ORDERS,
         self::MODULE_REPORTS,
         self::MODULE_CONFIGURATION,
@@ -507,6 +512,18 @@ class ActivityLog extends Model
 
     public const MATERIAL_TYPE_DELETED = 'Material Type Removed';
 
+    public const MATERIAL_SUBTYPE_CREATED = 'Material Sub-type Added';
+
+    public const MATERIAL_SUBTYPE_UPDATED = 'Material Sub-type Renamed';
+
+    public const MATERIAL_SUBTYPE_DELETED = 'Material Sub-type Removed';
+
+    public const BRAND_CREATED = 'Brand Added';
+
+    public const BRAND_UPDATED = 'Brand Renamed';
+
+    public const BRAND_DELETED = 'Brand Removed';
+
     /**
      * The plan a project was set up with, written when its setup is
      * finalized.
@@ -525,6 +542,20 @@ class ActivityLog extends Model
      * What was still on site when the project closed, recorded as unused.
      */
     public const PROJECT_MATERIALS_CLOSED_OUT = 'Project Materials Closed Out';
+
+    // ------------------------------------------------------------------
+    // Inventory
+    // ------------------------------------------------------------------
+
+    public const STOCK_RECEIVED = 'Stock Received';
+
+    public const STOCK_ISSUED = 'Stock Issued';
+
+    public const STOCK_RETURNED = 'Stock Returned';
+
+    public const STOCK_ADJUSTED = 'Stock Adjusted';
+
+    public const STOCK_MOVEMENT_VOIDED = 'Stock Entry Voided';
 
     /**
      * Which module each action belongs to.
@@ -632,12 +663,23 @@ class ActivityLog extends Model
         self::MATERIAL_TYPE_CREATED => self::MODULE_MATERIALS,
         self::MATERIAL_TYPE_UPDATED => self::MODULE_MATERIALS,
         self::MATERIAL_TYPE_DELETED => self::MODULE_MATERIALS,
+        self::MATERIAL_SUBTYPE_CREATED => self::MODULE_MATERIALS,
+        self::MATERIAL_SUBTYPE_UPDATED => self::MODULE_MATERIALS,
+        self::MATERIAL_SUBTYPE_DELETED => self::MODULE_MATERIALS,
+        self::BRAND_CREATED => self::MODULE_MATERIALS,
+        self::BRAND_UPDATED => self::MODULE_MATERIALS,
+        self::BRAND_DELETED => self::MODULE_MATERIALS,
         self::PROJECT_MATERIALS_PLANNED => self::MODULE_MATERIALS,
         self::PROJECT_MATERIAL_ADDED => self::MODULE_MATERIALS,
         self::PROJECT_MATERIAL_USED => self::MODULE_MATERIALS,
         self::PROJECT_MATERIAL_RETURNED => self::MODULE_MATERIALS,
         self::PROJECT_MATERIAL_ENTRY_VOIDED => self::MODULE_MATERIALS,
         self::PROJECT_MATERIALS_CLOSED_OUT => self::MODULE_MATERIALS,
+        self::STOCK_RECEIVED => self::MODULE_INVENTORY,
+        self::STOCK_ISSUED => self::MODULE_INVENTORY,
+        self::STOCK_RETURNED => self::MODULE_INVENTORY,
+        self::STOCK_ADJUSTED => self::MODULE_INVENTORY,
+        self::STOCK_MOVEMENT_VOIDED => self::MODULE_INVENTORY,
 
         self::SYSTEM_SETTINGS_UPDATED => self::MODULE_CONFIGURATION,
         self::ACTIVITY_LOGS_EXPORTED => self::MODULE_CONFIGURATION,

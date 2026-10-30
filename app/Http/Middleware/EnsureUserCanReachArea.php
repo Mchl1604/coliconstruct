@@ -13,15 +13,17 @@ use Symfony\Component\HttpFoundation\Response;
  * portal.
  *
  * Used as `area:scheduling` or `area:inventory` - see RoleAccess for who
- * reaches which. Answers a wrong turn exactly the way the role middleware
- * does: a page sends the reader to their own home, a JSON request gets a 403.
+ * reaches which - or `area:scheduling,inventory` for a page either side may
+ * open, like Configuration. Answers a wrong turn exactly the way the role
+ * middleware does: a page sends the reader to their own home, a JSON request
+ * gets a 403.
  */
 class EnsureUserCanReachArea
 {
     /**
      * @param  Closure(Request): (Response)  $next
      */
-    public function handle(Request $request, Closure $next, string $area): Response
+    public function handle(Request $request, Closure $next, string ...$areas): Response
     {
         $user = $request->user();
 
@@ -29,8 +31,10 @@ class EnsureUserCanReachArea
             return redirect()->guest(route('auth.login'));
         }
 
-        if (RoleAccess::allows($user, $area)) {
-            return $next($request);
+        foreach ($areas as $area) {
+            if (RoleAccess::allows($user, $area)) {
+                return $next($request);
+            }
         }
 
         if ($request->expectsJson()) {

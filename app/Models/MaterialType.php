@@ -27,4 +27,9 @@ class MaterialType extends Model
     {
         return $this->hasMany(Material::class, 'material_type_id', 'material_type_id');
     }
+
+    public function subtypes(): HasMany
+    {
+        return $this->hasMany(MaterialSubtype::class, 'material_type_id', 'material_type_id');
+    }
 }

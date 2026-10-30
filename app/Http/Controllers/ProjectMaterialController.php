@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\ActivityLog;
+use App\Models\Brand;
 use App\Models\Material;
 use App\Models\MaterialType;
 use App\Models\Project;
@@ -77,7 +78,7 @@ class ProjectMaterialController extends Controller
                 ->orWhere('entry_type', 'like', $like)
                 ->orWhereHas('projectMaterial.material', fn (Builder $material) => $material
                     ->where('name', 'like', $like)
-                    ->orWhere('brand', 'like', $like)),
+                    ->orWhereHas('brand', fn (Builder $brand) => $brand->where('brand_name', 'like', $like))),
             [[0, 'desc']],
         );
 
@@ -116,13 +117,14 @@ class ProjectMaterialController extends Controller
 
         $validator = Validator::make($request->all(), [
             'material_type_id' => ['required', 'integer', 'exists:tbl_material_types,material_type_id'],
+            'brand_id' => ['nullable', 'integer', 'exists:tbl_brands,brand_id'],
             'name' => ['required', 'string', 'max:150'],
-            'brand' => ['nullable', 'string', 'max:100'],
             'unit' => ['required', 'string', Rule::enum(MaterialUnit::class)],
             'description' => ['nullable', 'string', 'max:255'],
         ], [
             'material_type_id.required' => 'Choose a material type.',
             'material_type_id.exists' => 'Choose a material type.',
+            'brand_id.exists' => 'Choose a brand from the list.',
             'name.required' => 'Enter a material name.',
             'unit.required' => 'Choose a unit.',
             'unit.enum' => 'Choose a unit.',
@@ -350,10 +352,10 @@ class ProjectMaterialController extends Controller
     }
 
     /**
-     * The groups and units the Add to List dialog offers - shared with the
-     * views through this so both portals list them the same way.
+     * The groups, brands and units the Add to List dialog offers - shared
+     * with the views through this so both portals list them the same way.
      *
-     * @return array{types: array<int, array{material_type_id: int, type_name: string}>, units: array<string, string>}
+     * @return array{types: array<int, array{material_type_id: int, type_name: string}>, brands: array<int, array{brand_id: int, brand_name: string}>, units: array<string, string>}
      */
     public static function quickAddOptions(): array
     {
@@ -364,6 +366,14 @@ class ProjectMaterialController extends Controller
                 ->map(fn (MaterialType $type): array => [
                     'material_type_id' => (int) $type->material_type_id,
                     'type_name' => $type->type_name,
+                ])
+                ->all(),
+            'brands' => Brand::query()
+                ->orderBy('brand_name')
+                ->get(['brand_id', 'brand_name'])
+                ->map(fn (Brand $brand): array => [
+                    'brand_id' => (int) $brand->brand_id,
+                    'brand_name' => $brand->brand_name,
                 ])
                 ->all(),
             'units' => MaterialUnit::options(),

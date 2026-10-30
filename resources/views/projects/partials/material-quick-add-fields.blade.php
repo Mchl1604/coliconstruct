@@ -5,14 +5,14 @@
     Material dialog) and are sent by materialPicker.quickAdd() as JSON, never
     with the form around them. Read through data-quick-add-field.
 
-    Expects $types (from ProjectMaterialController::quickAddOptions()), $units
-    and $idPrefix, which keeps two copies on one page apart.
+    Expects $types and $brands (from ProjectMaterialController::quickAddOptions()),
+    $units and $idPrefix, which keeps two copies on one page apart.
 --}}
 <div class="row g-2" data-quick-add-fields>
     @if ($types === [])
         <div class="col-12">
             <div class="alert alert-warning small py-2 mb-0">
-                No material types yet. Ask a Super Admin.
+                No material types yet. Ask Purchasing.
             </div>
         </div>
     @endif
@@ -25,8 +25,13 @@
 
     <div class="col-sm-6">
         <label class="form-label small fw-semibold mb-1" for="{{ $idPrefix }}Brand">Brand</label>
-        <input type="text" class="form-control" id="{{ $idPrefix }}Brand" maxlength="100"
-            placeholder="Optional" data-quick-add-field="brand">
+        {{-- Picked from the list Purchasing keeps, like the type. --}}
+        <select class="form-select" id="{{ $idPrefix }}Brand" data-quick-add-field="brand_id">
+            <option value="">No brand</option>
+            @foreach ($brands as $brand)
+                <option value="{{ $brand['brand_id'] }}">{{ $brand['brand_name'] }}</option>
+            @endforeach
+        </select>
     </div>
 
     <div class="col-sm-6">

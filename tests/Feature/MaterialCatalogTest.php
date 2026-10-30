@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\ActivityLog;
+use App\Models\Brand;
 use App\Models\Client;
 use App\Models\Material;
 use App\Models\MaterialType;
@@ -38,9 +39,12 @@ class MaterialCatalogTest extends TestCase
     {
         $this->actingAsSuperAdmin();
 
+        $daikin = Brand::factory()->create(['brand_name' => 'Daikin']);
+        $carrier = Brand::factory()->create(['brand_name' => 'Carrier']);
+
         $this->postJson(route('inventory.materials.store'), [
             'name' => 'Split-Type Inverter 1.5 HP',
-            'brand' => 'Daikin',
+            'brand_id' => $daikin->brand_id,
             'material_type_id' => $this->type->material_type_id,
             'unit' => 'unit',
             'description' => 'R32',
@@ -50,12 +54,12 @@ class MaterialCatalogTest extends TestCase
 
         $this->putJson(route('inventory.materials.update', $material), [
             'name' => 'Split-Type Inverter 1.5 HP',
-            'brand' => 'Carrier',
+            'brand_id' => $carrier->brand_id,
             'material_type_id' => $this->type->material_type_id,
             'unit' => 'unit',
         ])->assertOk();
 
-        $this->assertSame('Carrier', $material->fresh()->brand);
+        $this->assertSame('Carrier', $material->fresh()->brandName());
         $this->assertNull($material->fresh()->description);
         $this->assertSame(2, ActivityLog::query()->where('module', ActivityLog::MODULE_MATERIALS)->count());
     }
@@ -100,11 +104,12 @@ class MaterialCatalogTest extends TestCase
     {
         $this->actingAsSuperAdmin();
 
-        Material::factory()->brand('Daikin')->create(['name' => 'Split-Type Inverter 1.0 HP', 'unit' => MaterialUnit::Unit]);
+        $daikin = Material::factory()->brand('Daikin')->create(['name' => 'Split-Type Inverter 1.0 HP', 'unit' => MaterialUnit::Unit])->brand;
+        $panasonic = Brand::factory()->create(['brand_name' => 'Panasonic']);
 
         $this->postJson(route('inventory.materials.store'), [
             'name' => '  split-type   inverter 1.0 hp ',
-            'brand' => 'DAIKIN',
+            'brand_id' => $daikin->brand_id,
             'material_type_id' => $this->type->material_type_id,
             'unit' => 'unit',
         ])->assertStatus(422);
@@ -112,7 +117,7 @@ class MaterialCatalogTest extends TestCase
         // Another brand of the same unit is another material.
         $this->postJson(route('inventory.materials.store'), [
             'name' => 'Split-Type Inverter 1.0 HP',
-            'brand' => 'Panasonic',
+            'brand_id' => $panasonic->brand_id,
             'material_type_id' => $this->type->material_type_id,
             'unit' => 'unit',
         ])->assertOk();
@@ -215,21 +220,24 @@ class MaterialCatalogTest extends TestCase
             ->assertDontSee('THHN Wire');
     }
 
-    public function test_the_inventory_page_lists_materials_and_settings_no_longer_does(): void
+    public function test_the_list_is_on_inventory_and_its_types_and_brands_in_configuration(): void
     {
         $this->actingAsSuperAdmin();
 
         $this->get(route('inventory.index'))
             ->assertOk()
             ->assertSee('id="materialsPane"', false)
-            ->assertSee('Material Types')
-            ->assertSee('id="materialTypesTable"', false)
-            ->assertSee('data-material-type-view-modal', false)
-            ->assertSee('data-app-confirm', false);
+            ->assertSee('data-app-confirm', false)
+            ->assertDontSee('id="materialTypesTable"', false)
+            ->assertDontSee('id="brandsTable"', false);
 
         $this->get(route('super-admin.configuration.index'))
             ->assertOk()
-            ->assertDontSee('data-content-section="materials"', false)
+            ->assertSee('id="inventorySettingsPane"', false)
+            ->assertSee('id="materialTypesTable"', false)
+            ->assertSee('id="brandsTable"', false)
+            ->assertSee('data-material-subtype-modal', false)
+            ->assertSee('data-material-type-view-modal', false)
             ->assertDontSee('id="materialsPane"', false);
     }
 
@@ -273,13 +281,14 @@ class MaterialCatalogTest extends TestCase
         $this->assertTrue(
             Material::query()
                 ->where('name', 'Split-Type Inverter 1.5 HP')
-                ->whereIn('brand', ['Daikin', 'Carrier', 'Panasonic', 'Koppel', 'LG', 'Samsung'])
+                ->whereHas('brand', fn ($brand) => $brand->whereIn('brand_name', ['Daikin', 'Carrier', 'Panasonic', 'Koppel', 'LG', 'Samsung']))
                 ->count() === 6
         );
         $this->assertSame(
             MaterialUnit::Unit,
-            Material::query()->where('brand', 'Daikin')->firstOrFail()->unit
+            Material::query()->whereHas('brand', fn ($brand) => $brand->where('brand_name', 'Daikin'))->firstOrFail()->unit
         );
+        $this->assertSame(1, Brand::query()->where('brand_name', 'Daikin')->count());
 
         $this->seed(MaterialSeeder::class);
 

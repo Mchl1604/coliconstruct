@@ -1258,7 +1258,7 @@ class DemoDataSeeder extends Seeder
         if ($this->materials === null) {
             $this->materials = Material::query()
                 ->get()
-                ->keyBy(fn (Material $material): string => mb_strtolower($material->name).'|'.mb_strtolower((string) $material->brand).'|'.$material->unit->value);
+                ->keyBy(fn (Material $material): string => mb_strtolower($material->name).'|'.mb_strtolower((string) $material->brandName()).'|'.$material->unit->value);
         }
 
         return $this->materials->get(mb_strtolower($name).'|'.mb_strtolower((string) $brand).'|'.$unit);

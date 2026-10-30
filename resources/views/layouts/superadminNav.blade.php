@@ -31,7 +31,8 @@ href="https://cdn.datatables.net/2.3.8/css/dataTables.dataTables.css">
         $user = auth()->user();
         // Each entry names the part of the portal it belongs to, and only
         // the parts this role reaches are drawn - see RoleAccess. A
-        // Purchasing Admin sees Inventory alone; an HR Admin everything else.
+        // Purchasing Admin sees Inventory and Configuration; an HR Admin
+        // everything but Inventory.
         $adminNavItems = collect([
             [
                 'label' => 'Dashboard',
@@ -85,12 +86,14 @@ href="https://cdn.datatables.net/2.3.8/css/dataTables.dataTables.css">
             [
                 'label' => 'Configuration',
                 'icon' => 'bi-sliders',
-                'area' => \App\Support\RoleAccess::SCHEDULING,
+                // Both sides: a Purchasing Admin keeps Inventory Settings here.
+                'area' => [\App\Support\RoleAccess::SCHEDULING, \App\Support\RoleAccess::INVENTORY],
                 'route' => 'super-admin.configuration.index',
                 'active' => 'super-admin.configuration.*',
             ],
         ])
-            ->filter(fn (array $item): bool => (bool) $user?->canReach($item['area']))
+            ->filter(fn (array $item): bool => collect((array) $item['area'])
+                ->contains(fn (string $area): bool => (bool) $user?->canReach($area)))
             ->map(fn (array $item): array => $item + [
                 'url' => route($item['route']),
                 'is_active' => request()->routeIs($item['active']),

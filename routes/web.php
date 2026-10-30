@@ -23,6 +23,7 @@ use App\Http\Controllers\ProjectTypeController;
 use App\Http\Controllers\PublicSiteController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\ScheduleController;
+use App\Http\Controllers\StockController;
 use App\Http\Controllers\SystemContentController;
 use App\Http\Controllers\TaskController;
 use App\Http\Controllers\TechnicianController;
@@ -544,8 +545,10 @@ Route::prefix('super-admin')
         Route::get('/projects/{id}/task-form-data', [TaskController::class, 'projectFormData'])->name('projects.task-form-data');
 
         // ROUTE FOR SUPER ADMIN CONFIGURATION PAGE
+        //
+        // The page itself is declared below, outside this group: the
+        // inventory roles open it too, for Inventory Settings.
         Route::prefix('configuration')->name('configuration.')->group(function () {
-            Route::get('/', [ConfigurationController::class, 'index'])->name('index');
 
             // User Management tables.
             Route::get('/users/employees', [ConfigurationController::class, 'employees'])->name('users.employees');
@@ -698,6 +701,14 @@ Route::prefix('super-admin')
         });
     });
 
+// Configuration's page, which both sides of the office portal open: the
+// scheduling roles for accounts, logs, settings and inquiries, the inventory
+// roles for Inventory Settings. Which tabs each sees is the view's to decide
+// - see RoleAccess - and every endpoint a tab calls keeps its own door.
+Route::get('/super-admin/configuration', [ConfigurationController::class, 'index'])
+    ->middleware(['auth', 'password.changed', 'area:'.RoleAccess::SCHEDULING.','.RoleAccess::INVENTORY])
+    ->name('super-admin.configuration.index');
+
 // Inventory: the other side of the office portal. Super Admin, Admin Officer
 // and Purchasing Admin reach it; an HR Admin does not. Same shell and header
 // as the routes above - only the door differs. See RoleAccess.
@@ -707,7 +718,20 @@ Route::prefix('inventory')
     ->group(function () {
         Route::get('/', [InventoryController::class, 'index'])->name('index');
 
-        // Materials: the list projects pick from, and its groups.
+        // Stock: how many of each material are held, and every movement in
+        // and out. Every write goes through StockLedger.
+        Route::prefix('stock')->name('stock.')->group(function () {
+            Route::get('/', [StockController::class, 'index'])->name('index');
+            Route::get('/movements', [StockController::class, 'movements'])->name('movements');
+            Route::post('/receive', [StockController::class, 'receive'])->name('receive');
+            Route::post('/issue', [StockController::class, 'issue'])->name('issue');
+            Route::post('/adjust', [StockController::class, 'adjust'])->name('adjust');
+            Route::post('/movements/{movement}/void', [StockController::class, 'void'])
+                ->whereNumber('movement')
+                ->name('void');
+        });
+
+        // Materials: the list projects pick from, its groups and its brands.
         Route::prefix('materials')->name('materials.')->group(function () {
             Route::get('/', [MaterialController::class, 'index'])->name('index');
             Route::post('/', [MaterialController::class, 'store'])->name('store');
@@ -719,6 +743,17 @@ Route::prefix('inventory')
             Route::get('/types/{materialType}', [MaterialController::class, 'showType'])->name('types.show');
             Route::put('/types/{materialType}', [MaterialController::class, 'updateType'])->name('types.update');
             Route::delete('/types/{materialType}', [MaterialController::class, 'destroyType'])->name('types.destroy');
+
+            // A type's sub-types: added under the type, then addressed on
+            // their own.
+            Route::post('/types/{materialType}/subtypes', [MaterialController::class, 'storeSubtype'])->name('subtypes.store');
+            Route::put('/subtypes/{materialSubtype}', [MaterialController::class, 'updateSubtype'])->name('subtypes.update');
+            Route::delete('/subtypes/{materialSubtype}', [MaterialController::class, 'destroySubtype'])->name('subtypes.destroy');
+
+            Route::get('/brands', [MaterialController::class, 'brands'])->name('brands.index');
+            Route::post('/brands', [MaterialController::class, 'storeBrand'])->name('brands.store');
+            Route::put('/brands/{brand}', [MaterialController::class, 'updateBrand'])->name('brands.update');
+            Route::delete('/brands/{brand}', [MaterialController::class, 'destroyBrand'])->name('brands.destroy');
 
             Route::put('/{material}', [MaterialController::class, 'update'])->whereNumber('material')->name('update');
             Route::put('/{material}/status', [MaterialController::class, 'setStatus'])->whereNumber('material')->name('status');

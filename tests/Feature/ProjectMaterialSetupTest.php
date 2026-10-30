@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\ActivityLog;
+use App\Models\Brand;
 use App\Models\Client;
 use App\Models\Material;
 use App\Models\MaterialType;
@@ -258,7 +259,7 @@ class ProjectMaterialSetupTest extends TestCase
         $this->actingAs($this->leadAccount)
             ->postJson(route('technician.projects.materials.quick-add', $this->project->project_id), [
                 'name' => 'Ceiling Cassette 3.0 HP',
-                'brand' => 'Daikin',
+                'brand_id' => Brand::factory()->create(['brand_name' => 'Daikin'])->brand_id,
                 'material_type_id' => $this->type->material_type_id,
                 'unit' => 'unit',
             ])
@@ -276,7 +277,7 @@ class ProjectMaterialSetupTest extends TestCase
         $this->actingAs($this->superAdmin)
             ->postJson(route('super-admin.projects.materials.quick-add', $this->project->project_id), [
                 'name' => 'split-type inverter 2.0 hp',
-                'brand' => 'CARRIER',
+                'brand_id' => $this->aircon->brand_id,
                 'material_type_id' => $this->type->material_type_id,
                 'unit' => 'unit',
             ])

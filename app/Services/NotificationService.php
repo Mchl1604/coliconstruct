@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Material;
 use App\Models\Notification;
 use App\Models\Project;
 use App\Models\Schedule;
@@ -9,6 +10,7 @@ use App\Models\SpecialtyRequest;
 use App\Models\Task;
 use App\Models\User;
 use App\Support\BusinessTime;
+use App\Support\RoleAccess;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
@@ -191,6 +193,20 @@ class NotificationService
         return User::query()
             ->loginable()
             ->whereIn('role', User::ADMINISTRATOR_ROLES)
+            ->get();
+    }
+
+    /**
+     * Everybody who reaches the Inventory page: super admins, admin officers
+     * and purchasing admins.
+     *
+     * @return EloquentCollection<int, User>
+     */
+    public function inventoryStaff(): EloquentCollection
+    {
+        return User::query()
+            ->loginable()
+            ->whereIn('role', RoleAccess::rolesFor(RoleAccess::INVENTORY))
             ->get();
     }
 
@@ -1611,6 +1627,40 @@ class NotificationService
             Notification::MODULE_REPORTS,
             null,
             route('super-admin.reports.index', [], false)
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // Inventory
+    // ------------------------------------------------------------------
+
+    /**
+     * A material that has just dropped to its reorder level, or run out.
+     *
+     * Sent on the way down only - see StockLedger - so a material sitting at
+     * Low Stock is announced once, not every time another one is issued.
+     * Everybody who reaches the Inventory page hears it, the person who
+     * issued the last one included: they are as likely as anybody to be the
+     * one reordering.
+     */
+    public function stockRunningLow(Material $material, string $status, float $onHand): void
+    {
+        $out = $status === Material::STOCK_OUT;
+
+        $this->deliver(
+            $this->inventoryStaff(),
+            $out ? 'Out of Stock' : 'Low Stock',
+            $out
+                ? sprintf('%s is out of stock.', $material->displayName())
+                : sprintf(
+                    '%s is down to %s %s.',
+                    $material->displayName(),
+                    $material->unit->format($onHand),
+                    $material->unit->value
+                ),
+            Notification::MODULE_INVENTORY,
+            $material,
+            route('inventory.index', ['stock' => $status], false)
         );
     }
 

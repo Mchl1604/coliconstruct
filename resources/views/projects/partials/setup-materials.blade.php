@@ -115,8 +115,8 @@
                             <tr>
                                 <td>
                                     <span class="material-name">{{ $line['material']->name }}</span>
-                                    @if ($line['material']->brand)
-                                        <span class="material-brand">{{ $line['material']->brand }}</span>
+                                    @if ($line['material']->brandName())
+                                        <span class="material-brand">{{ $line['material']->brandName() }}</span>
                                     @endif
                                 </td>
                                 <td><span class="material-unit-chip">{{ $line['material']->unit->value }}</span></td>

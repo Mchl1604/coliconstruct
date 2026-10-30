@@ -1,15 +1,18 @@
 {{--
     Inventory -> Materials.
 
-    The list a project's materials are picked from - names, brands, groups and
-    units. Deliberately not an inventory: nothing here counts stock. A used
-    material cannot be removed, so the projects that used it can still say
-    what it was.
+    The list a project's materials are picked from - names, brands, types and
+    sub-types, units and reorder levels. The stock held of each is the Stock
+    tab's. A used material cannot be removed, so the projects that used it can
+    still say what it was.
+
+    The types, sub-types and brands a material is filed under are kept in
+    Configuration -> Inventory Settings; this page only picks from them.
 
     Driven by materials.js: the table loads a page at a time from
-    materials.index (serverTable.js), and the types below it from
-    materials.types.index. The Add / Edit and View Type dialogs live with the
-    page's other dialogs - see material-modal.
+    materials.index (serverTable.js), and the filters and the dialog's choices
+    from materials.types.index and materials.brands.index. The Add / Edit
+    dialog lives with the page's other dialogs - see material-modal.
 --}}
 <div class="materials-panel" id="materialsPane">
 
@@ -20,7 +23,8 @@
                 Materials
             </h5>
             <p class="text-secondary small mb-0">
-                A list to pick from, not stock.
+                What projects pick from.
+                <a href="{{ route('super-admin.configuration.index') }}#inventorySettingsPane">Edit types and brands</a>
             </p>
         </div>
 
@@ -40,6 +44,13 @@
                 <option value="">All types</option>
             </select>
         </div>
+        <div class="col-sm-6 col-md-4">
+            <label class="form-label small fw-semibold mb-1" for="materialsSubtypeFilter">Sub-type</label>
+            {{-- The chosen type's sub-types; disabled until a type is chosen. --}}
+            <select class="form-select form-select-sm" id="materialsSubtypeFilter" data-materials-subtype-filter disabled>
+                <option value="">All sub-types</option>
+            </select>
+        </div>
     </div>
 
     <div class="table-responsive">
@@ -57,38 +68,5 @@
                  MaterialController::index(). --}}
             <tbody></tbody>
         </table>
-    </div>
-
-    {{-- The groups: renamed and removed in place, added from the header.
-         View lists a type's materials in materialTypeViewModal. --}}
-    <div class="border rounded-3 p-3 mt-4">
-        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-            <h6 class="fw-bold mb-0">Material Types</h6>
-            <form class="d-flex gap-2" data-material-type-add-form novalidate>
-                <input type="text" class="form-control form-control-sm" maxlength="100"
-                    placeholder="New type" aria-label="New material type" data-material-type-name>
-                <button type="submit" class="btn btn-sm btn-outline-primary text-nowrap">
-                    <i class="bi bi-plus-lg" aria-hidden="true"></i>
-                    Add
-                </button>
-            </form>
-        </div>
-
-        <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0" id="materialTypesTable">
-                <thead class="table-info">
-                    <tr>
-                        <th>Type</th>
-                        <th>Materials</th>
-                        <th class="text-center">Actions</th>
-                    </tr>
-                </thead>
-                <tbody data-material-types>
-                    <tr>
-                        <td colspan="3" class="text-secondary small">Loading types&hellip;</td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
     </div>
 </div>

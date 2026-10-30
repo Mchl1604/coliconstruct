@@ -6,6 +6,8 @@
     <link href="/css/super-admin/projects.css" rel="stylesheet">
     <link href="/css/super-admin/technicians.css" rel="stylesheet">
     <link href="/css/super-admin/configuration.css" rel="stylesheet">
+    {{-- Inventory Settings: the type, sub-type and brand tables. --}}
+    <link href="/css/materials.css" rel="stylesheet">
     {{-- The user search in the Export Logs dialog, shared with the
          Technicians page. --}}
     <link href="/css/actorSearch.css" rel="stylesheet">
@@ -16,18 +18,32 @@
         // Archiving - and everything that hangs off it - belongs to the Super
         // Admin. An Admin creates, reads, edits, activates and deactivates.
         $isSuperAdmin = (bool) auth()->user()?->isSuperAdmin();
+
+        // Which parts of Configuration this reader gets - see RoleAccess. The
+        // scheduling side is accounts, logs, settings and inquiries; the
+        // inventory side is Inventory Settings. A Purchasing Admin has only
+        // the second, an HR Admin only the first.
+        $canSchedule = (bool) auth()->user()?->canReach(\App\Support\RoleAccess::SCHEDULING);
+        $canStock = (bool) auth()->user()?->canReach(\App\Support\RoleAccess::INVENTORY);
     @endphp
 
     <div class="d-flex justify-content-between align-items-center mb-3">
         <div>
             <h4 class="fw-bold mb-1">Configuration</h4>
             <p class="text-secondary small mb-0">
-                {{ $isSuperAdmin ? 'Accounts, audit history and system-wide settings.' : 'Accounts and audit history.' }}
+                @if ($isSuperAdmin)
+                    Accounts, audit history and system-wide settings.
+                @elseif ($canSchedule)
+                    Accounts and audit history.
+                @else
+                    Material types, sub-types and brands.
+                @endif
             </p>
         </div>
     </div>
 
     <ul class="nav nav-tabs technician-tabs mb-3" role="tablist">
+        @if ($canSchedule)
         <li class="nav-item" role="presentation">
             <button class="nav-link active" id="userManagementTab" data-bs-toggle="tab"
                 data-bs-target="#userManagementPane" type="button" role="tab" aria-controls="userManagementPane"
@@ -43,6 +59,7 @@
                 Activity Logs
             </button>
         </li>
+        @endif
         @if ($isSuperAdmin)
             <li class="nav-item" role="presentation">
                 <button class="nav-link" id="systemSettingsTab" data-bs-toggle="tab"
@@ -53,6 +70,17 @@
                 </button>
             </li>
         @endif
+        @if ($canStock)
+            <li class="nav-item" role="presentation">
+                <button class="nav-link {{ $canSchedule ? '' : 'active' }}" id="inventorySettingsTab" data-bs-toggle="tab"
+                    data-bs-target="#inventorySettingsPane" type="button" role="tab"
+                    aria-controls="inventorySettingsPane" aria-selected="{{ $canSchedule ? 'false' : 'true' }}">
+                    <i class="bi bi-box-seam me-1" aria-hidden="true"></i>
+                    Inventory Settings
+                </button>
+            </li>
+        @endif
+        @if ($canSchedule)
         <li class="nav-item" role="presentation">
             <button class="nav-link" id="inquiriesTab" data-bs-toggle="tab" data-bs-target="#inquiriesPane"
                 type="button" role="tab" aria-controls="inquiriesPane" aria-selected="false">
@@ -63,10 +91,12 @@
                 <span class="badge rounded-pill bg-danger ms-1 d-none" data-inquiry-new-count></span>
             </button>
         </li>
+        @endif
     </ul>
 
     <div class="tab-content">
 
+        @if ($canSchedule)
         {{-- ==================== TAB 1: USER MANAGEMENT ==================== --}}
         <div class="tab-pane fade show active" id="userManagementPane" role="tabpanel"
             aria-labelledby="userManagementTab">
@@ -487,6 +517,8 @@
                 </div>
             </div>
         </div>
+
+        @endif
 
         {{-- ==================== TAB 3: SYSTEM SETTINGS ==================== --}}
         {{-- Super Admin only. An Admin's Configuration is User Management and
@@ -1053,6 +1085,22 @@
         </div>
         @endif
 
+        {{-- ==================== INVENTORY SETTINGS ==================== --}}
+        {{-- Material types with their sub-types, and brands. Super Admin,
+             Admin Officer and Purchasing Admin - whoever reaches Inventory.
+             The only tab a Purchasing Admin has, so it opens on it. --}}
+        @if ($canStock)
+            <div class="tab-pane fade {{ $canSchedule ? '' : 'show active' }}" id="inventorySettingsPane" role="tabpanel"
+                aria-labelledby="inventorySettingsTab">
+                <div class="card shadow-sm border-0 rounded-2">
+                    <div class="card-body p-4">
+                        @include('super-admin.partials.material-settings-panel')
+                    </div>
+                </div>
+            </div>
+        @endif
+
+        @if ($canSchedule)
         {{-- ==================== TAB 4: INQUIRIES ==================== --}}
         {{-- Messages written in from the public Contact page. Admin and Super
              Admin both work this list; only the archive is the Super Admin's,
@@ -1147,8 +1195,20 @@
                 </div>
             </div>
         </div>
+        @endif
     </div>
 
+    @if ($canStock)
+        @include('super-admin.partials.material-settings-modals')
+
+        {{-- Configuration's own confirmation dialog belongs to the scheduling
+             side, below. A reader without it asks with the shared one. --}}
+        @unless ($canSchedule)
+            <x-confirm-dialog />
+        @endunless
+    @endif
+
+    @if ($canSchedule)
     {{-- ==================== ADD / EDIT USER MODAL ==================== --}}
     <div class="modal fade" id="userFormModal" tabindex="-1" aria-hidden="true" data-user-modal>
         <div class="modal-dialog modal-lg modal-dialog-scrollable">
@@ -1975,7 +2035,27 @@
         </div>
     </div>
 
+    @endif
+
     @push('scripts')
+        @if ($canStock)
+            <script>
+                window.materialSettingsRoutes = {
+                    materialTypes: @json(route('inventory.materials.types.index')),
+                    subtypes: @json(url('inventory/materials/subtypes')),
+                    brands: @json(route('inventory.materials.brands.index')),
+                };
+            </script>
+            @unless ($canSchedule)
+                <script src="/js/confirmDialog.js"></script>
+            @endunless
+            <script src="/js/super-admin/materialSettings.js"></script>
+            {{-- Inventory's "Edit types and brands" arrives on
+                 #inventorySettingsPane. --}}
+            <script src="/js/tabFromHash.js"></script>
+        @endif
+
+        @if ($canSchedule)
         {{-- Keeps the contact number field to digits only. --}}
         <script src="/js/registerForm.js"></script>
         {{-- The client picker on Add New User, searching on the server. --}}
@@ -2059,6 +2139,7 @@
             <script src="/js/super-admin/phaseTemplates.js"></script>
             <script src="/js/super-admin/databaseBackups.js"></script>
             <script src="/js/super-admin/systemSettingsNav.js"></script>
+        @endif
         @endif
     @endpush
 @endsection

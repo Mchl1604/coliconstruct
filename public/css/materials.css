@@ -156,6 +156,17 @@
     font-size: .78rem;
 }
 
+.material-subtype-chip {
+    display: inline-block;
+    margin: 0 .25rem .2rem 0;
+    padding: .05rem .45rem;
+    border-radius: .35rem;
+    background: #f1f5f9;
+    color: #334155;
+    font-size: .75rem;
+    font-weight: 600;
+}
+
 .material-unit-chip {
     display: inline-block;
     padding: .1rem .5rem;
