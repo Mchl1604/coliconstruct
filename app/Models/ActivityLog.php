@@ -236,6 +236,8 @@ class ActivityLog extends Model
 
     public const PROJECT_UPDATED = 'Project Updated';
 
+    public const PROJECT_DESCRIPTION_UPDATED = 'Project Description Updated';
+
     public const PROJECT_COMPLETED = 'Project Completed';
 
     /**
@@ -445,6 +447,17 @@ class ActivityLog extends Model
 
     public const PROJECT_TYPE_DELETED = 'Project Type Removed';
 
+    /**
+     * The detail forms project types ask for, and which form a type uses.
+     */
+    public const DETAIL_FORM_CREATED = 'Detail Form Created';
+
+    public const DETAIL_FORM_UPDATED = 'Detail Form Updated';
+
+    public const DETAIL_FORM_DELETED = 'Detail Form Removed';
+
+    public const PROJECT_TYPE_FORM_CHANGED = 'Project Type Form Changed';
+
     public const PHASE_STAGE_CREATED = 'Phase Stage Added';
 
     public const PHASE_STAGE_UPDATED = 'Phase Stage Updated';
@@ -567,6 +580,7 @@ class ActivityLog extends Model
 
         self::PROJECT_CREATED => self::MODULE_PROJECTS,
         self::PROJECT_UPDATED => self::MODULE_PROJECTS,
+        self::PROJECT_DESCRIPTION_UPDATED => self::MODULE_PROJECTS,
         self::PROJECT_COMPLETED => self::MODULE_PROJECTS,
         self::PROJECT_COMPLETION_REQUESTED => self::MODULE_PROJECTS,
         self::PROJECT_COMPLETION_OVERRIDDEN => self::MODULE_PROJECTS,
@@ -635,6 +649,10 @@ class ActivityLog extends Model
         self::PROJECT_TYPE_CREATED => self::MODULE_CONFIGURATION,
         self::PROJECT_TYPE_UPDATED => self::MODULE_CONFIGURATION,
         self::PROJECT_TYPE_DELETED => self::MODULE_CONFIGURATION,
+        self::DETAIL_FORM_CREATED => self::MODULE_CONFIGURATION,
+        self::DETAIL_FORM_UPDATED => self::MODULE_CONFIGURATION,
+        self::DETAIL_FORM_DELETED => self::MODULE_CONFIGURATION,
+        self::PROJECT_TYPE_FORM_CHANGED => self::MODULE_CONFIGURATION,
         self::PHASE_STAGE_CREATED => self::MODULE_CONFIGURATION,
         self::PHASE_STAGE_UPDATED => self::MODULE_CONFIGURATION,
         self::PHASE_STAGE_DELETED => self::MODULE_CONFIGURATION,

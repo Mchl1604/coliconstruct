@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Client;
+use App\Models\DetailForm;
 use App\Models\Project;
 use App\Models\ProjectType;
 use App\Models\Skill;
@@ -57,7 +58,7 @@ class ProjectTypeCatalogTest extends TestCase
 
         $response = $this->postJson(
             route('super-admin.configuration.project-types.store'),
-            ['type_name' => 'Heating Installation']
+            ['type_name' => 'Heating Installation', 'form_id' => DetailForm::factory()->create()->form_id]
         );
 
         $response->assertOk();
@@ -81,7 +82,7 @@ class ProjectTypeCatalogTest extends TestCase
 
         $this->postJson(
             route('super-admin.configuration.project-types.store'),
-            ['type_name' => 'Heating Installation']
+            ['type_name' => 'Heating Installation', 'form_id' => DetailForm::factory()->create()->form_id]
         )->assertOk();
 
         $response = $this->get(route('super-admin.technicians.index'));
@@ -169,7 +170,7 @@ class ProjectTypeCatalogTest extends TestCase
 
         $response = $this->postJson(
             route('super-admin.configuration.project-types.store'),
-            ['type_name' => '  heating   installation  ']
+            ['type_name' => '  heating   installation  ', 'form_id' => DetailForm::factory()->create()->form_id]
         );
 
         $response->assertStatus(422);

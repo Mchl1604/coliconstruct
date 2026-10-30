@@ -358,10 +358,33 @@
                             </div>
                         </div>
 
+                        {{-- The project description: each ticked type's detail
+                             form - see Configuration -> Project Types - drawn
+                             as soon as the type is ticked above. A hidden
+                             section's inputs are disabled, so they are neither
+                             checked nor sent. Notes takes whatever the forms
+                             do not cover. --}}
                         <div class="col-12">
-                            <label for="projectDescription" class="form-label">Project Description</label>
-                            <textarea name="project_description" id="projectDescription" rows="4" class="form-control"
-                                placeholder="Describe the scope of work" data-summary-input="project_description" required>{{ old('project_description') }}</textarea>
+                            <label class="form-label">Project Description</label>
+                            <p class="text-secondary small mb-2" data-details-empty>Select a project type first.</p>
+
+                            <div data-project-details>
+                                @foreach ($detailTypes as $detailType)
+                                    <x-project-details-editor :type="$detailType" :hidden="true"
+                                        :project="(array) old('details.'.$detailType->type_id.'.project', [])"
+                                        :units="collect((array) old('details.'.$detailType->type_id.'.units', []))
+                                            ->filter(fn ($row) => is_array($row))
+                                            ->map(fn ($row) => ['values' => $row, 'detail_id' => null])
+                                            ->values()
+                                            ->all()" />
+                                @endforeach
+                            </div>
+                        </div>
+
+                        <div class="col-12">
+                            <label for="projectDescription" class="form-label">Notes <span class="text-secondary small">(optional)</span></label>
+                            <textarea name="project_description" id="projectDescription" rows="3" class="form-control"
+                                placeholder="Anything else about the job" data-summary-input="project_description">{{ old('project_description') }}</textarea>
                         </div>
                     </div>
                 </section>
@@ -637,8 +660,11 @@
                                     <span class="review-item-value" data-summary-target="project_documents">Not filled
                                         yet</span>
                                 </div>
+                                {{-- One item per ticked type, written by
+                                     createProject.js from its detail form. --}}
+                                <div class="review-item review-item-full p-0 border-0 bg-transparent" data-details-review></div>
                                 <div class="review-item review-item-full">
-                                    <span class="review-item-label">Project Description</span>
+                                    <span class="review-item-label">Notes</span>
                                     <span class="review-item-value" data-summary-target="project_description">Not filled
                                         yet</span>
                                 </div>
@@ -711,6 +737,7 @@
         <script src="/js/accountPicker.js"></script>
         {{-- Thousands separators on the quotation, shared with Project Details. --}}
         <script src="/js/moneyInput.js"></script>
+        <script src="/js/projectDetailsForm.js"></script>
         <script src="/js/super-admin/createProject.js"></script>
     @endpush
 @endsection

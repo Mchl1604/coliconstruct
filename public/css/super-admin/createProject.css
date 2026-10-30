@@ -390,6 +390,11 @@
     min-width: 120px;
 }
 
+/* A unit row's remove button is an icon, not a footer action. */
+.create-project-card .detail-form-row .btn {
+    min-width: 0;
+}
+
 .create-project-card .wizard-step {
     display: none;
 }

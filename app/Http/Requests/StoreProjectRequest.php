@@ -7,12 +7,14 @@ use App\Models\Document;
 use App\Models\Project;
 use App\Models\ProjectType;
 use App\Models\Schedule;
+use App\Services\ProjectDetailForms;
 use App\Services\ProjectTeamRules;
 use App\Services\ScheduleModeRules;
 use App\Services\TargetDateChange;
 use App\Services\TechnicianAvailabilityService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Collection;
 use Illuminate\Validation\Rule;
 
 class StoreProjectRequest extends FormRequest
@@ -27,6 +29,9 @@ class StoreProjectRequest extends FormRequest
      * @var array{mode: string, start: CarbonImmutable, end: CarbonImmutable}|null
      */
     private ?array $scheduleEntry = null;
+
+    /** @var Collection<int, ProjectType>|null */
+    private ?Collection $chosenProjectTypes = null;
 
     public function authorize(): bool
     {
@@ -67,7 +72,8 @@ class StoreProjectRequest extends FormRequest
             'approved_quotation.*' => $fileRules,
             'contract' => $contractRules,
             'contract.*' => $fileRules,
-            'project_description' => ['required', 'string'],
+            // Notes: optional, beside the detail forms that describe the job.
+            'project_description' => ['nullable', 'string'],
             // A promise, not a booking. Measured against the schedule in
             // after(), once the schedule itself has been read.
             'target_end_date' => ['required', 'date_format:Y-m-d'],
@@ -78,6 +84,8 @@ class StoreProjectRequest extends FormRequest
             // their meaning by ScheduleModeRules in after(), which is the only
             // place that knows what the chosen mode requires.
             ...app(ScheduleModeRules::class)->rules(),
+            // The Units step: whatever each chosen type's form asks for.
+            ...app(ProjectDetailForms::class)->rules($this->chosenProjectTypes()),
         ];
     }
 
@@ -116,7 +124,16 @@ class StoreProjectRequest extends FormRequest
             'technicians.*.integer' => 'Choose technicians from the list.',
             'technicians.*.exists' => 'One of the chosen technicians no longer exists.',
             ...app(ScheduleModeRules::class)->messages(),
+            ...app(ProjectDetailForms::class)->messages($this->chosenProjectTypes()),
         ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function attributes(): array
+    {
+        return app(ProjectDetailForms::class)->attributes($this->chosenProjectTypes());
     }
 
     /**
@@ -226,6 +243,23 @@ class StoreProjectRequest extends FormRequest
                 }
             },
         ];
+    }
+
+    /**
+     * The project types ticked in Step 2, read once per request.
+     *
+     * @return Collection<int, ProjectType>
+     */
+    private function chosenProjectTypes(): Collection
+    {
+        $names = collect((array) $this->input('project_types', []))
+            ->filter(fn ($name): bool => is_string($name))
+            ->values()
+            ->all();
+
+        return $this->chosenProjectTypes ??= ProjectType::query()
+            ->whereIn('type_name', $names)
+            ->get();
     }
 
     /**

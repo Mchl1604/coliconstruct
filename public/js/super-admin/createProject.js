@@ -117,6 +117,12 @@ document.addEventListener('DOMContentLoaded', function() {
     const currentStep = {
         value: 1
     };
+    const SCHEDULE_STEP = 3;
+    // The project description: one detail form per ticked type.
+    const detailsHolder = form.querySelector('[data-project-details]');
+    const detailSections = detailsHolder ? Array.from(detailsHolder.querySelectorAll('[data-details-type]')) : [];
+    const detailsEmpty = form.querySelector('[data-details-empty]');
+    const detailsReview = document.querySelector('[data-details-review]');
 
     function getStepElement(stepNumber) {
         return steps.find(function(step) {
@@ -1672,6 +1678,8 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         });
 
+        updateDetailsReview();
+
         if (companyReviewCard) {
             const commercialSelected = form.querySelector('[data-client-type-radio][value="Commercial"]')?.checked;
             companyReviewCard.closest('.review-item')?.classList.toggle('d-none', !commercialSelected);
@@ -1743,7 +1751,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // The lead is a dropdown rather than a <select> now, so its "you have
         // to pick one" is checked here instead of by the browser - exactly as
         // the technicians picker below it has always been checked.
-        if (currentStep.value === 3 && !selectedLeadTechnician()) {
+        if (currentStep.value === SCHEDULE_STEP && !selectedLeadTechnician()) {
             showScheduleError('Choose a lead technician for this project.');
 
             if (leadTechButton) {
@@ -1753,7 +1761,7 @@ document.addEventListener('DOMContentLoaded', function() {
             return false;
         }
 
-        if (currentStep.value === 3 && selectedTechnicians().length === 0) {
+        if (currentStep.value === SCHEDULE_STEP && selectedTechnicians().length === 0) {
             showScheduleError('Choose at least one technician for this project.');
 
             if (technicianDropdownButton) {
@@ -1763,7 +1771,7 @@ document.addEventListener('DOMContentLoaded', function() {
             return false;
         }
 
-        if (currentStep.value === 3 && !validateScheduleInputs()) {
+        if (currentStep.value === SCHEDULE_STEP && !validateScheduleInputs()) {
             return false;
         }
 
@@ -1812,6 +1820,58 @@ document.addEventListener('DOMContentLoaded', function() {
             setStep(currentStep.value + 1);
         }
     });
+
+    // ---------------------------------------------------------------
+    // Project description: one detail form per ticked type
+    // ---------------------------------------------------------------
+
+    function syncDetailSections() {
+        const chosen = selectedProjectTypes();
+
+        detailSections.forEach(function(section) {
+            window.projectDetailsForm.setEnabled(section, chosen.indexOf(section.dataset.detailsTypeName) !== -1);
+        });
+
+        if (detailsEmpty) {
+            detailsEmpty.hidden = chosen.length > 0;
+        }
+    }
+
+    function updateDetailsReview() {
+        if (!detailsReview) {
+            return;
+        }
+
+        detailsReview.innerHTML = detailSections.filter(function(section) {
+            return !section.hidden;
+        }).map(function(section) {
+            const summary = window.projectDetailsForm.summarize(section);
+            const lines = [];
+
+            if (summary.project) {
+                lines.push(escapeHtml(summary.project));
+            }
+
+            summary.units.forEach(function(unit, index) {
+                lines.push('Unit ' + (index + 1) + ': ' + (unit ? escapeHtml(unit) : 'Not filled yet'));
+            });
+
+            return '<div class="review-item review-item-full mb-2">' +
+                '<span class="review-item-label">' + escapeHtml(section.dataset.detailsTypeName) + '</span>' +
+                '<span class="review-item-value">' + (lines.length ? lines.join('<br>') : 'Not filled yet') + '</span>' +
+                '</div>';
+        }).join('');
+    }
+
+    if (detailsHolder && window.projectDetailsForm) {
+        window.projectDetailsForm.init(detailsHolder);
+
+        projectTypeCheckboxes.forEach(function(checkbox) {
+            checkbox.addEventListener('change', syncDetailSections);
+        });
+
+        syncDetailSections();
+    }
 
     // ---------------------------------------------------------------
     // Client step: Existing client or New client
@@ -2102,7 +2162,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         if (!validateScheduleInputs()) {
             event.preventDefault();
-            setStep(3);
+            setStep(SCHEDULE_STEP);
 
             const firstField = scheduleFields().find(Boolean);
 

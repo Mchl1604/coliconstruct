@@ -213,10 +213,12 @@ class NewProjectClientStepTest extends TestCase
             ->post(route('super-admin.projects.create.store'), $this->payload([
                 'client_mode' => 'existing',
                 'client_id' => $client->client_id,
-                'project_description' => '',
+                // Notes are optional now, so the refusal comes from the
+                // quotation instead.
+                'quotation_amount' => '-5',
             ]))
             ->assertRedirect(route('super-admin.projects.create'))
-            ->assertSessionHasErrors('project_description');
+            ->assertSessionHasErrors('quotation_amount');
 
         $this->get(route('super-admin.projects.create'))
             ->assertOk()

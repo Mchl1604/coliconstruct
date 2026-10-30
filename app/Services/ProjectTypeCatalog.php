@@ -44,6 +44,8 @@ class ProjectTypeCatalog
             ->map(fn (ProjectType $type): array => [
                 'type_id' => $type->type_id,
                 'type_name' => $type->type_name,
+                // Which detail form the type asks for - null is "None".
+                'form_id' => $type->form_id,
                 'project_count' => $type->projects_count,
                 'technician_count' => $technicianCounts[$this->key($type->type_name)] ?? 0,
             ])

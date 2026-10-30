@@ -25,6 +25,7 @@ use App\Services\DocumentHistoryLog;
 use App\Services\ImportableTeamSources;
 use App\Services\NotificationService;
 use App\Services\ProjectCompletion;
+use App\Services\ProjectDetailForms;
 use App\Services\ProjectEmails;
 use App\Services\ProjectMaterialLedger;
 use App\Services\ProjectMaterialRules;
@@ -321,6 +322,8 @@ class ProjectController extends Controller
     public function create()
     {
         $projectTypes = ProjectType::query()->orderBy('type_name', 'asc')->get();
+        // The types that ask for a detail form, drawn as the Units step.
+        $detailTypes = app(ProjectDetailForms::class)->withForms($projectTypes);
         // Only technicians who can actually be given the work. A new project
         // assigns everybody on it from scratch, so there is no existing member
         // to make an exception for - see ProjectTeamRules, which refuses the
@@ -347,6 +350,7 @@ class ProjectController extends Controller
 
         return view('super-admin.createProject', compact(
             'projectTypes',
+            'detailTypes',
             'technicians',
             'technicianSchedules',
             'workingHours',
@@ -471,7 +475,7 @@ class ProjectController extends Controller
                     'quotation' => $validated['quotation_amount'],
                     'target_end_date' => $validated['target_end_date'],
                     'address' => $validated['project_address'],
-                    'description' => $validated['project_description'],
+                    'description' => $validated['project_description'] ?? null,
                 ]);
 
                 $project->forceFill([
@@ -492,6 +496,13 @@ class ProjectController extends Controller
                     ->all();
 
                 $project->projectTypes()->sync($projectTypeIds);
+
+                // The Units step: one row per unit for each type with a form.
+                app(ProjectDetailForms::class)->sync(
+                    $project,
+                    $project->projectTypes()->get(),
+                    $validated['details'] ?? []
+                );
 
                 $selectedTechnicianIds = collect([
                     $validated['lead_tech'],
@@ -1685,7 +1696,8 @@ class ProjectController extends Controller
                 new UniqueClientEmail($project->client_id),
             ],
             'quotation' => ['required', 'numeric', 'min:0', 'max:'.Project::MAX_QUOTATION],
-            'project_description' => ['required', 'string'],
+            // Notes - the detail forms are the description proper.
+            'project_description' => ['nullable', 'string'],
             'project_types' => ['required', 'array', 'min:1'],
             'project_types.*' => ['required', 'integer', 'exists:tbl_project_types,type_id'],
 
@@ -1794,7 +1806,7 @@ class ProjectController extends Controller
                 $project->update([
                     'quotation' => $validated['quotation'],
                     'address' => $validated['address'],
-                    'description' => $validated['project_description'],
+                    'description' => $validated['project_description'] ?? null,
                     ...($targetChanged ? ['target_end_date' => $validated['target_end_date']] : []),
                 ]);
 
@@ -1860,6 +1872,9 @@ class ProjectController extends Controller
                 app(ClientRecords::class)->syncToAccount($client);
 
                 $project->projectTypes()->sync($validated['project_types']);
+
+                // A type taken off the project takes its units with it.
+                app(ProjectDetailForms::class)->pruneRemovedTypes($project);
 
                 // An assessment or a contract upload is added to what the
                 // project already holds. Those files are only ever taken away

@@ -327,10 +327,8 @@
                      this; here there is nothing between the files and the
                      description, for the same reason the Quotation documents
                      are absent. --}}
-                <div class="mt-3">
-                    <span class="fw-bold me-2">Project Description:</span>
-                    <p>{{ $project->description ?? 'N/A' }}</p>
-                </div>
+                {{-- The same folded description the office reads. --}}
+                <x-project-description :project="$project" />
             </div>
         </div>
 

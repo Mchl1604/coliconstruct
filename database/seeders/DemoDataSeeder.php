@@ -325,6 +325,9 @@ class DemoDataSeeder extends Seeder
             $this->typeIds[$name] = (int) $type->type_id;
             $this->skillIds[$name] = (int) $skill->skill_id;
         }
+
+        // Every type has a detail form - see DetailFormSeeder.
+        app(DetailFormSeeder::class)->run();
     }
 
     private function seedAccounts(): void
