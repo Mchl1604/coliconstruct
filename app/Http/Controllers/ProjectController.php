@@ -53,6 +53,7 @@ use App\Services\TechnicianAvailabilityService;
 use App\Services\TechnicianTaskLoad;
 use App\Support\BusinessTime;
 use App\Support\PersonName;
+use App\Support\ProjectAddress;
 use App\Support\ServerTable;
 use App\Support\UploadStore;
 use Carbon\CarbonImmutable;
@@ -530,7 +531,7 @@ class ProjectController extends Controller
                     'status' => 'unscheduled',
                     'quotation' => $validated['quotation_amount'],
                     'target_end_date' => $validated['target_end_date'],
-                    'address' => $validated['project_address'],
+                    ...ProjectAddress::columns($validated),
                     'description' => $validated['project_description'] ?? null,
                 ]);
 
@@ -1745,7 +1746,7 @@ class ProjectController extends Controller
             'middle_initial' => PersonName::middleInitialRules(),
             'last_name' => ['required', 'string', 'max:255'],
             'company_name' => ['nullable', 'string', 'max:255'],
-            'address' => ['required', 'string', 'max:500'],
+            ...ProjectAddress::rules($request->all()),
             'contact_number' => ['required', 'regex:/^09\d{9}$/'],
             // The same rules the wizard applies: a project's client may
             // not be one of the staff, whose address is the key their
@@ -1785,6 +1786,7 @@ class ProjectController extends Controller
             'target_end_date' => ['sometimes', $project->target_end_date ? 'required' : 'nullable', 'date_format:Y-m-d'],
             'target_date_reason' => ['nullable', 'string', 'max:'.TargetDateChange::MAX_REASON],
         ], [
+            ...ProjectAddress::messages(),
             'target_end_date.required' => 'Target date is required.',
             'target_end_date.date_format' => 'Enter a valid target date.',
             'target_date_reason.max' => 'Keep the reason under '.TargetDateChange::MAX_REASON.' characters.',
@@ -1867,7 +1869,7 @@ class ProjectController extends Controller
 
                 $project->update([
                     'quotation' => $validated['quotation'],
-                    'address' => $validated['address'],
+                    ...ProjectAddress::columns($validated),
                     'description' => $validated['project_description'] ?? null,
                     ...($targetChanged ? ['target_end_date' => $validated['target_end_date']] : []),
                 ]);

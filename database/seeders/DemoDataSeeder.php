@@ -23,6 +23,7 @@ use App\Models\TechnicianReport;
 use App\Models\TechnicianReportImage;
 use App\Models\User;
 use App\Services\PhaseTemplateMerger;
+use App\Services\ProjectAddressSplitter;
 use App\Services\ProjectCompletion;
 use App\Services\ProjectTypeCatalog;
 use App\Services\SystemContentService;
@@ -522,7 +523,7 @@ class DemoDataSeeder extends Seeder
             'status' => 'unscheduled',
             'quotation' => $spec['quotation'],
             'target_end_date' => $this->date($spec['target']),
-            'address' => $spec['address'] ?? $clientSpec['address'],
+            ...app(ProjectAddressSplitter::class)->split($spec['address'] ?? $clientSpec['address']),
             'description' => $spec['description'],
             'first_viewed_at' => ($spec['new'] ?? false) ? null : $createdAt->addMinutes(35),
             'created_at' => $createdAt,

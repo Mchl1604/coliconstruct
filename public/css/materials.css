@@ -1,79 +1,10 @@
 /*
- * Materials: the setup screen's Materials step, the project's Materials tab,
+ * Materials: the create wizard's Materials step, the project's Materials tab,
  * and Inventory -> Materials.
  *
  * One stylesheet for the three because they draw the same things - a material
  * name with its brand, a unit chip, a quantity - and should draw them alike.
  */
-
-/* ---------- Setup steps ---------- */
-
-.setup-steps {
-    display: flex;
-    flex-wrap: wrap;
-    gap: .5rem;
-    margin-bottom: 1rem;
-    padding: 0;
-    list-style: none;
-}
-
-.setup-step {
-    display: inline-flex;
-    align-items: center;
-    gap: .5rem;
-    padding: .55rem 1rem;
-    border: 1px solid #dbe4ee;
-    border-radius: 2rem;
-    background: #fff;
-    color: #475569;
-    font-weight: 600;
-    transition: all .15s ease;
-}
-
-.setup-step:hover {
-    border-color: #2370b4;
-    color: #2370b4;
-}
-
-.setup-step.active {
-    border-color: #2370b4;
-    background: #2370b4;
-    color: #fff;
-}
-
-.setup-step-number {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 1.5rem;
-    height: 1.5rem;
-    border-radius: 50%;
-    background: #e8f1fa;
-    color: #2370b4;
-    font-size: .8rem;
-    font-weight: 700;
-}
-
-.setup-step.active .setup-step-number {
-    background: #fff;
-}
-
-.setup-step-count {
-    padding: .05rem .45rem;
-    border-radius: 1rem;
-    background: rgba(35, 112, 180, .12);
-    font-size: .75rem;
-}
-
-.setup-step.active .setup-step-count {
-    background: rgba(255, 255, 255, .25);
-}
-
-.setup-step-footer {
-    display: flex;
-    justify-content: flex-end;
-    margin-top: .75rem;
-}
 
 /* ---------- The picker ---------- */
 
@@ -196,48 +127,7 @@
     color: #b45309;
 }
 
-/* ---------- Setup step list ---------- */
-
-.material-plan-card {
-    padding: 1.25rem;
-    margin-bottom: 1rem;
-    border-radius: .75rem;
-    background: #fff;
-    box-shadow: 0 .125rem .25rem rgba(15, 23, 42, .075);
-}
-
-.material-suggestions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: .4rem;
-    margin-bottom: .9rem;
-}
-
-.material-suggestion-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: .3rem;
-    padding: .25rem .65rem;
-    border: 1px dashed #93b8dc;
-    border-radius: 1rem;
-    background: #f8fbfe;
-    color: #1d5f99;
-    font-size: .8rem;
-    font-weight: 600;
-}
-
-.material-suggestion-chip:hover {
-    border-style: solid;
-    background: #eef5fc;
-}
-
-.material-plan-table td {
-    vertical-align: middle;
-}
-
-.material-plan-table .material-qty-input {
-    max-width: 7.5rem;
-}
+/* ---------- Nothing to list ---------- */
 
 .material-plan-empty {
     padding: 1.25rem;
@@ -288,10 +178,4 @@
 .material-row-actions {
     display: inline-flex;
     gap: .3rem;
-}
-
-@media (max-width: 575.98px) {
-    .material-plan-table .material-qty-input {
-        max-width: 5.5rem;
-    }
 }

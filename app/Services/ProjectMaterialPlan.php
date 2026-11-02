@@ -11,12 +11,11 @@ use Illuminate\Support\Collection;
 use RuntimeException;
 
 /**
- * The materials step of a project's setup: what the job needs, and how much.
+ * A project's material plan: what the job needs, and how much.
  *
- * Written with the phases, by the same Save and Finalize buttons, and only
- * until the project's first setup is finalized. After that the plan is the
- * baseline - see ProjectMaterialRules::canPlan() - and everything that changes
- * is an entry kept by ProjectMaterialLedger.
+ * Written once, by the create wizard's Materials step. From then on the plan
+ * is the baseline, and everything that changes is an entry kept by
+ * ProjectMaterialLedger on the project's Materials tab.
  */
 class ProjectMaterialPlan
 {
@@ -28,23 +27,8 @@ class ProjectMaterialPlan
     public function __construct(private readonly ActivityLogger $activityLogger) {}
 
     /**
-     * The plan as the setup screen lists it.
-     *
-     * @return Collection<int, array<string, mixed>>
-     */
-    public function rows(Project $project): Collection
-    {
-        return $project->materials()
-            ->with('material.type')
-            ->orderBy('project_material_id')
-            ->get()
-            ->map(fn (ProjectMaterial $line): array => $this->row($line->material, $line->quantity_needed, $line->notes))
-            ->values();
-    }
-
-    /**
-     * Submitted rows as the setup screen redraws them after a refusal, so the
-     * person gets their own list back rather than the saved one.
+     * Submitted rows as the create wizard redraws them after a refusal, so the
+     * person gets their own list back.
      *
      * @param  array<int, array<string, mixed>>  $submitted
      * @return Collection<int, array<string, mixed>>
@@ -76,10 +60,9 @@ class ProjectMaterialPlan
      * @param  array<int, array<string, mixed>>  $rows
      * @return array<string, string>
      */
-    public function errors(Project $project, array $rows): array
+    public function errors(array $rows): array
     {
         $errors = [];
-        $planned = $project->materials()->pluck('material_id')->map(fn ($id): int => (int) $id)->all();
         $materials = Material::query()
             ->whereIn('material_id', collect($rows)->pluck('material_id')->filter()->all())
             ->get()
@@ -96,9 +79,7 @@ class ProjectMaterialPlan
                 continue;
             }
 
-            // A material deactivated while it sat on a saved draft may stay;
-            // it may not be newly picked.
-            if (! $material->is_active && ! in_array((int) $material->material_id, $planned, true)) {
+            if (! $material->is_active) {
                 $errors['materials.'.$index.'.material_id'] = sprintf('%s is inactive.', $material->displayName());
 
                 continue;
@@ -125,8 +106,8 @@ class ProjectMaterialPlan
     /**
      * Replace the plan with what was submitted.
      *
-     * Rewritten wholesale, like the draft tasks: before finalization nothing
-     * has been recorded against a line, so there is no history to keep.
+     * Rewritten wholesale: before setup is finished nothing has been recorded
+     * against a line, so there is no history to keep.
      *
      * @param  array<int, array{material_id: int, quantity: float|int|string, notes?: string|null}>  $rows
      *
@@ -144,7 +125,7 @@ class ProjectMaterialPlan
             throw new RuntimeException(sprintf('At most %d materials.', self::MAX_LINES));
         }
 
-        $errors = $this->errors($project, $rows);
+        $errors = $this->errors($rows);
 
         if ($errors !== []) {
             throw new RuntimeException((string) reset($errors));

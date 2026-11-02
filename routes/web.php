@@ -16,6 +16,7 @@ use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PhaseTemplateController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ProgressReportController;
+use App\Http\Controllers\ProjectAddressController;
 use App\Http\Controllers\ProjectClientController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ProjectDetailController;
@@ -308,6 +309,9 @@ Route::prefix('super-admin')
         // The wizard's Materials step: the search, with stock figures.
         Route::get('/projects/material-options', [ProjectMaterialController::class, 'options'])
             ->name('projects.material-options');
+        // The project address fields: the next list down, Luzon only.
+        Route::get('/projects/address-options', [ProjectAddressController::class, 'options'])
+            ->name('projects.address-options');
         Route::get('/projects/{id}', [ProjectController::class, 'show'])->name('projects.show');
         // The Tasks tab's table, one page at a time - see serverTable.js.
         Route::get('/projects/{id}/tasks/table', [ProjectController::class, 'tasksTable'])->name('projects.tasks.table');
@@ -352,9 +356,9 @@ Route::prefix('super-admin')
         // Project materials
         // ---------------------------------------------------------------
         //
-        // The Materials tab and the setup screen's material picker. Who may
-        // record is ProjectMaterialRules' decision, asked again inside the
-        // controller - the same split the phase routes above make.
+        // The Materials tab. Who may record is ProjectMaterialRules' decision,
+        // asked again inside the controller - the same split the phase routes
+        // above make.
         Route::prefix('/projects/{project}/materials')
             ->whereNumber('project')
             ->name('projects.materials.')
@@ -867,9 +871,8 @@ Route::prefix('technician')
             Route::post('/projects/{project}/phases/{phase}/complete', [ProjectPhaseController::class, 'complete'])
                 ->name('projects.phases.complete');
 
-            // Project materials: the setup screen's picker and recording on
-            // the Materials tab. Narrowed to a project the lead runs today -
-            // see ProjectMaterialRules.
+            // Project materials: recording on the Materials tab. Narrowed to a
+            // project the lead runs today - see ProjectMaterialRules.
             Route::get('/projects/{project}/materials/suggest', [ProjectMaterialController::class, 'suggest'])
                 ->name('projects.materials.suggest');
             Route::post('/projects/{project}/materials/quick-add', [ProjectMaterialController::class, 'quickAdd'])

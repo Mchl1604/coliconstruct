@@ -258,10 +258,8 @@
 
                     <div class="row g-3">
                         <div class="col-12">
-                            <label for="projectAddress" class="form-label">Project Address</label>
-                            <textarea name="project_address" id="projectAddress" rows="3" class="form-control"
-                                placeholder="House/Unit No., Street, Barangay, City/Municipality, Province" maxlength="500"
-                                data-summary-input="project_address" required>{{ old('project_address') }}</textarea>
+                            <h6 class="fw-semibold mb-2">Project Address</h6>
+                            <x-project-address-fields />
                         </div>
 
                         <div class="col-md-6">
@@ -809,6 +807,7 @@
         <script src="/js/accountPicker.js"></script>
         {{-- Thousands separators on the quotation, shared with Project Details. --}}
         <script src="/js/moneyInput.js"></script>
+        <script src="/js/addressFields.js"></script>
         <script src="/js/projectDetailsForm.js"></script>
         <script src="/js/super-admin/createProject.js"></script>
     @endpush

@@ -4,7 +4,6 @@
 
 @push('styles')
     <link rel="stylesheet" href="/css/projectPhases.css">
-    <link rel="stylesheet" href="/css/materials.css">
 @endpush
 
 @section('content')
@@ -81,7 +80,7 @@
             <i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i>
             <span>
                 <strong>Phase Setup Required.</strong>
-                Set phases and materials, then finalize.
+                Set the phases, then finalize.
             </span>
         </div>
 
@@ -135,32 +134,6 @@
             data-reassign-targets='@json($reassignTargets)'>
             @csrf
 
-            {{-- Two steps, one form. Both panes stay in the document whichever
-                 is showing, so Finish Setup always sends the phases and
-                 the materials together - see setupMaterials.js. --}}
-            <ul class="setup-steps" role="tablist">
-                <li role="presentation">
-                    <button type="button" class="setup-step active" id="setupPhasesTab" role="tab"
-                        data-bs-toggle="tab" data-bs-target="#setupPhasesStep" aria-controls="setupPhasesStep"
-                        aria-selected="true" data-setup-step="phases">
-                        <span class="setup-step-number">1</span>
-                        Phases
-                    </button>
-                </li>
-                <li role="presentation">
-                    <button type="button" class="setup-step" id="setupMaterialsTab" role="tab"
-                        data-bs-toggle="tab" data-bs-target="#setupMaterialsStep" aria-controls="setupMaterialsStep"
-                        aria-selected="false" data-setup-step="materials">
-                        <span class="setup-step-number">2</span>
-                        Materials
-                        <span class="setup-step-count" data-setup-material-count></span>
-                    </button>
-                </li>
-            </ul>
-
-            <div class="tab-content">
-            <div class="tab-pane fade show active" id="setupPhasesStep" role="tabpanel" aria-labelledby="setupPhasesTab">
-
             <div class="phase-structure-card">
                 <div class="phase-structure-head">
                     <h5 class="fw-bold mb-1">Phase Structure</h5>
@@ -213,20 +186,6 @@
                 <p class="phase-error d-none" role="alert" data-phase-error></p>
             </div>
 
-            </div>{{-- /#setupPhasesStep --}}
-
-            <div class="tab-pane fade" id="setupMaterialsStep" role="tabpanel" aria-labelledby="setupMaterialsTab">
-                @include('projects.partials.setup-materials')
-
-                <div class="setup-step-footer justify-content-start">
-                    <button type="button" class="btn btn-outline-secondary" data-setup-go="phases">
-                        <i class="bi bi-arrow-left me-1" aria-hidden="true"></i>
-                        Back: Phases
-                    </button>
-                </div>
-            </div>{{-- /#setupMaterialsStep --}}
-            </div>{{-- /.tab-content --}}
-
             {{-- Stays on screen however long the structure gets, so the buttons that
                  actually write anything are never a scroll away. --}}
             <div class="phase-setup-actions">
@@ -246,15 +205,8 @@
                         </button>
                     @endif
 
-                    {{-- One button that follows the step: Next on Phases,
-                         Finish Setup on Materials. setupMaterials.js swaps them. --}}
-                    <button type="button" class="btn btn-primary" data-setup-go="materials" data-setup-next>
-                        Next
-                        <i class="bi bi-arrow-right ms-1" aria-hidden="true"></i>
-                    </button>
-
-                    <button type="button" class="btn btn-success d-none" data-bs-toggle="modal"
-                        data-bs-target="#finalizePhasesModal" data-setup-finish>
+                    <button type="button" class="btn btn-success" data-bs-toggle="modal"
+                        data-bs-target="#finalizePhasesModal">
                         <i class="bi bi-check-lg me-1" aria-hidden="true"></i>
                         Finish Setup
                     </button>
@@ -283,10 +235,6 @@
                             </p>
 
                             <div class="alert alert-light border small mb-0" data-phase-summary></div>
-
-                            @if ($materialPlanOpen)
-                                <div class="alert alert-light border small mt-2 mb-0" data-material-summary></div>
-                            @endif
                         </div>
 
                         <div class="modal-footer">
@@ -376,45 +324,8 @@
             </div>
         </div>
 
-        @if ($materialPlanOpen)
-            {{-- Add to List, for a material the list does not have yet. Outside
-                 the setup form: it is sent as JSON, never with the phases. --}}
-            <div class="modal fade" id="setupQuickAddModal" tabindex="-1" aria-hidden="true"
-                aria-labelledby="setupQuickAddTitle" data-setup-quick-add
-                data-url="{{ $materialQuickAddUrl }}">
-                <div class="modal-dialog modal-dialog-centered">
-                    <div class="modal-content">
-                        <div class="modal-header">
-                            <h5 class="modal-title" id="setupQuickAddTitle">
-                                <i class="bi bi-plus-circle me-2" aria-hidden="true"></i>
-                                Add to Material List
-                            </h5>
-                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                        </div>
-                        <div class="modal-body">
-                            @include('projects.partials.material-quick-add-fields', [
-                                'types' => $materialQuickAdd['types'],
-                                'brands' => $materialQuickAdd['brands'],
-                                'units' => $materialQuickAdd['units'],
-                                'idPrefix' => 'setupQuickAdd',
-                            ])
-                        </div>
-                        <div class="modal-footer">
-                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                            <button type="button" class="btn btn-primary" data-quick-add-save>
-                                <i class="bi bi-check-lg me-1" aria-hidden="true"></i>
-                                Add to List
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        @endif
-
         {{-- The editor's starting rows, read once by the script. --}}
-        <span class="d-none" data-phase-initial='@json($initialRows)'
-            data-material-suggest-url="{{ $materialSuggestUrl }}"
-            data-fractional-units='@json($fractionalUnits)'></span>
+        <span class="d-none" data-phase-initial='@json($initialRows)'></span>
     </div>
 
     @push('scripts')
@@ -422,7 +333,5 @@
              dated here is held to exactly the rule it will be held to there. --}}
         <script src="/js/super-admin/taskDatePickers.js"></script>
         <script src="/js/phaseSetup.js"></script>
-        <script src="/js/materialPicker.js"></script>
-        <script src="/js/setupMaterials.js"></script>
     @endpush
 @endsection

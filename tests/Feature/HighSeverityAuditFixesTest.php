@@ -308,7 +308,7 @@ class HighSeverityAuditFixesTest extends TestCase
             'firstname' => 'Wiz', 'surname' => 'Ard',
             'client_email' => 'wizard@example.test',
             'client_phone' => '09123456789',
-            'project_address' => 'Address',
+            ...$this->luzonAddress(),
             'project_description' => 'Description',
             'quotation_amount' => 1000,
             'project_types' => ['Aircon Installation'],

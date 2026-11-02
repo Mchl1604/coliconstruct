@@ -7,17 +7,13 @@ use App\Models\ProjectPhase;
 use App\Models\ProjectTechnician;
 use App\Models\Technician;
 use App\Models\User;
-use App\Services\MaterialCatalog;
 use App\Services\PhaseSetupTaskRules;
 use App\Services\PhaseTemplateMerger;
-use App\Services\ProjectMaterialLedger;
 use App\Services\ProjectMaterialPlan;
-use App\Services\ProjectMaterialRules;
 use App\Services\ProjectPhaseProgress;
 use App\Services\ProjectPhaseRules;
 use App\Services\ProjectPhaseSetup;
 use App\Services\TaskScheduleRules;
-use App\Support\MaterialUnit;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -47,7 +43,6 @@ class ProjectPhaseController extends Controller
         private readonly PhaseSetupTaskRules $taskRules,
         private readonly TaskScheduleRules $scheduleRules,
         private readonly ProjectMaterialPlan $materialPlan,
-        private readonly ProjectMaterialRules $materialRules,
     ) {}
 
     /**
@@ -121,44 +116,7 @@ class ProjectPhaseController extends Controller
             'reloadUrl' => $this->actionUrl($request, $project, 'reload'),
             'minPhases' => ProjectPhase::MIN_PHASES,
             'maxPhases' => ProjectPhase::MAX_PHASES,
-        ] + $this->materialStep($request, $project));
-    }
-
-    /**
-     * What the setup screen's Materials step is drawn from.
-     *
-     * Editable only during the project's first setup. After that - a Super
-     * Admin who has unlocked the phases - the plan is shown as it stands and
-     * changes go through the Materials tab. See ProjectMaterialRules::canPlan().
-     *
-     * @return array<string, mixed>
-     */
-    private function materialStep(Request $request, Project $project): array
-    {
-        $planOpen = $this->materialRules->canPlan($request->user(), $project);
-        $old = $request->old('materials');
-
-        return [
-            'materialPlanOpen' => $planOpen,
-            // The person's own refused list first, then what was saved.
-            'materialRows' => $planOpen
-                ? (is_array($old) ? $this->materialPlan->rowsFromInput($old) : $this->materialPlan->rows($project))
-                : collect(),
-            'materialSummary' => $planOpen ? collect() : app(ProjectMaterialLedger::class)->summary($project),
-            'suggestedMaterials' => $planOpen ? app(MaterialCatalog::class)->suggestedFor($project) : collect(),
-            'materialSuggestUrl' => $this->materialUrl($request, $project, 'suggest'),
-            'materialQuickAddUrl' => $this->materialUrl($request, $project, 'quick-add'),
-            'materialQuickAdd' => ProjectMaterialController::quickAddOptions(),
-            'fractionalUnits' => MaterialUnit::fractionalValues(),
-            'maxMaterials' => ProjectMaterialPlan::MAX_LINES,
-        ];
-    }
-
-    private function materialUrl(Request $request, Project $project, string $action): string
-    {
-        $prefix = $this->inAdminPortal($request) ? 'super-admin' : 'technician';
-
-        return route(sprintf('%s.projects.materials.%s', $prefix, $action), $project->project_id);
+        ]);
     }
 
     /**
@@ -207,16 +165,9 @@ class ProjectPhaseController extends Controller
         $this->authorizeSetup($request, $project);
 
         $structure = $this->submittedStructure($request, $project);
-        $materials = $this->submittedMaterials($request, $project);
 
         try {
-            DB::transaction(function () use ($request, $project, $structure, $materials): void {
-                $this->setup->save($project, ...$structure);
-
-                if ($materials !== null) {
-                    $this->materialPlan->save($project, $materials, $request->user());
-                }
-            });
+            $this->setup->save($project, ...$structure);
         } catch (RuntimeException $exception) {
             return back()->withInput()->with('error', $exception->getMessage());
         }
@@ -228,23 +179,20 @@ class ProjectPhaseController extends Controller
 
     /**
      * Lock the structure and turn the monitoring interface on.
+     *
+     * Only the phases: a project's materials were planned when it was created
+     * and change on its Materials tab. The plan is left exactly as it stands,
+     * and logged as the baseline the first time setup is finished.
      */
     public function finalize(Request $request, Project $project): RedirectResponse
     {
         $this->authorizeSetup($request, $project);
 
         $structure = $this->submittedStructure($request, $project);
-        $materials = $this->submittedMaterials($request, $project);
         $firstSetup = $project->awaitingInitialSetup();
 
         try {
-            DB::transaction(function () use ($request, $project, $structure, $materials, $firstSetup): void {
-                // The plan first: it may only be written while the project
-                // has never been finalized, which the line below changes.
-                if ($materials !== null) {
-                    $this->materialPlan->save($project, $materials, $request->user());
-                }
-
+            DB::transaction(function () use ($request, $project, $structure, $firstSetup): void {
                 $this->setup->finalize($project, $request->user(), ...$structure);
 
                 if ($firstSetup) {
@@ -412,57 +360,6 @@ class ProjectPhaseController extends Controller
             ->all();
 
         return [$rows, $reassignments];
-    }
-
-    /**
-     * The submitted material plan, validated - or null when this submission
-     * does not carry one.
-     *
-     * The setup form marks its plan with `materials_submitted`, so a request
-     * without it leaves a saved plan alone rather than reading "no rows" as
-     * "delete every row". The plan is also left alone once the project has
-     * been set up: it is read-only from then on.
-     *
-     * @return array<int, array{material_id: int, quantity: string, notes: string|null}>|null
-     *
-     * @throws ValidationException
-     */
-    private function submittedMaterials(Request $request, Project $project): ?array
-    {
-        if (! $request->boolean('materials_submitted') || ! $this->materialRules->canPlan($request->user(), $project)) {
-            return null;
-        }
-
-        $validator = Validator::make($request->all(), [
-            'materials' => ['nullable', 'array', 'max:'.ProjectMaterialPlan::MAX_LINES],
-            'materials.*.material_id' => ['required', 'integer'],
-            'materials.*.quantity' => ['required'],
-            'materials.*.notes' => ['nullable', 'string', 'max:255'],
-        ], [
-            'materials.max' => sprintf('At most %d materials.', ProjectMaterialPlan::MAX_LINES),
-            'materials.*.material_id.required' => 'Pick a material for every row.',
-            'materials.*.quantity.required' => 'Enter a quantity for every material.',
-            'materials.*.notes.max' => 'Material notes are too long.',
-        ]);
-
-        $validator->after(function (\Illuminate\Validation\Validator $validator) use ($project): void {
-            if ($validator->errors()->isNotEmpty()) {
-                return;
-            }
-
-            foreach ($this->materialPlan->errors($project, array_values($validator->getData()['materials'] ?? [])) as $key => $message) {
-                $validator->errors()->add($key, $message);
-            }
-        });
-
-        return collect($validator->validate()['materials'] ?? [])
-            ->values()
-            ->map(fn (array $row): array => [
-                'material_id' => (int) $row['material_id'],
-                'quantity' => (string) $row['quantity'],
-                'notes' => isset($row['notes']) ? (string) $row['notes'] : null,
-            ])
-            ->all();
     }
 
     /**

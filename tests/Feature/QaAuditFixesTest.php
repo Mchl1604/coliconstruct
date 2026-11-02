@@ -360,7 +360,7 @@ class QaAuditFixesTest extends TestCase
             'name' => 'Never booked',
             'reference_no' => 'PRJ-NOBOOK',
             'status' => 'unscheduled',
-            'address' => 'A',
+            ...$this->luzonAddress(),
             'description' => 'D',
         ]);
 

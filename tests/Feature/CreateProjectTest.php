@@ -73,7 +73,7 @@ class CreateProjectTest extends TestCase
             'middle_name' => 'S',
             'client_email' => 'juan.dela.cruz@example.test',
             'client_phone' => '09123456789',
-            'project_address' => '123 Sample Street, Sample City',
+            ...$this->luzonAddress(),
             'quotation_amount' => '1250.00',
             'project_types' => ['Aircon Installation'],
             // Each document type takes an array of files, which is what the
@@ -261,7 +261,12 @@ class CreateProjectTest extends TestCase
         );
         $this->assertDatabaseHas('tbl_projects', [
             'status' => 'pending',
-            'address' => '123 Sample Street, Sample City',
+            'address' => '12 Rizal St., Brgy. Canlalay, City of Biñan, Laguna',
+            'address_province' => 'Laguna',
+            'address_municipality' => 'City of Biñan',
+            'address_barangay' => 'Canlalay',
+            'address_street' => 'Rizal St.',
+            'address_house_no' => '12',
             'quotation' => '1250.00',
         ]);
 

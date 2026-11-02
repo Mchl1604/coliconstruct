@@ -72,7 +72,7 @@
             @if ($offersSetUpOnly)
                 <a class="btn btn-sm btn-warning py-1 px-2 fw-semibold text-nowrap"
                     href="{{ route('technician.projects.phases.setup', $project->project_id) }}"
-                    title="Set up phases and materials">
+                    title="Set up phases">
                     <i class="bi bi-sliders me-1" aria-hidden="true"></i>Set Up Now
                 </a>
             @else

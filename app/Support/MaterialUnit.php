@@ -123,17 +123,4 @@ enum MaterialUnit: string
 
         return $options;
     }
-
-    /**
-     * The values that take fractions, for the browser's own check.
-     *
-     * @return array<int, string>
-     */
-    public static function fractionalValues(): array
-    {
-        return array_values(array_map(
-            fn (self $unit): string => $unit->value,
-            array_filter(self::cases(), fn (self $unit): bool => $unit->allowsFractions())
-        ));
-    }
 }

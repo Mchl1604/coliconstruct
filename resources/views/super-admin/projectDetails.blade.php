@@ -2076,10 +2076,9 @@
 
                         <div class="mt-4">
 
-                            <label class="form-label">Project Address</label>
+                            <h6 class="fw-semibold mb-2">Project Address</h6>
 
-                            <textarea class="form-control" name="address" rows="3" maxlength="500"
-                                placeholder="House/Unit No., Street, Barangay, City/Municipality, Province">{{ $project->address }}</textarea>
+                            <x-project-address-fields :project="$project" />
 
                         </div>
 
@@ -3260,6 +3259,7 @@
         <script src="/js/imagePreview.js"></script>
         {{-- Thousands separators on the quotation, shared with the create wizard. --}}
         <script src="/js/moneyInput.js"></script>
+        <script src="/js/addressFields.js"></script>
         {{-- Asks about the other half of the quotation when only the amount or
              only the file changed. After moneyInput.js, whose fields it reads. --}}
         <script src="/js/super-admin/quotationSync.js"></script>

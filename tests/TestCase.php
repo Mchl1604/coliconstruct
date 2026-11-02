@@ -17,6 +17,22 @@ use Illuminate\Testing\TestResponse;
 abstract class TestCase extends BaseTestCase
 {
     /**
+     * A valid project address, as the create wizard and Edit Details send it.
+     *
+     * @return array<string, string>
+     */
+    protected function luzonAddress(): array
+    {
+        return [
+            'address_province' => 'Laguna',
+            'address_municipality' => 'City of Biñan',
+            'address_barangay' => 'Canlalay',
+            'address_street' => 'Rizal St.',
+            'address_house_no' => '12',
+        ];
+    }
+
+    /**
      * The Terms and Conditions columns a client fixture needs.
      *
      * A client who has not agreed to the current terms is held outside their

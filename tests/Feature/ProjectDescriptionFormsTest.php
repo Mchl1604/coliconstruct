@@ -334,7 +334,7 @@ class ProjectDescriptionFormsTest extends TestCase
             'firstname' => 'Juan',
             'client_email' => 'juan.dela.cruz@example.test',
             'client_phone' => '09123456789',
-            'project_address' => '123 Sample Street, Sample City',
+            ...$this->luzonAddress(),
             'quotation_amount' => '1250.00',
             'project_types' => ['Aircon Installation'],
             'details' => [$this->installation->type_id => [

@@ -218,7 +218,7 @@ class MediumSeverityAuditFixesTest extends TestCase
         Config::set('app.debug', false);
 
         $this->put(route('super-admin.projects.update', $project->project_id), [
-            'first_name' => 'A', 'last_name' => 'B', 'address' => 'X',
+            'first_name' => 'A', 'last_name' => 'B', ...$this->luzonAddress(),
             'contact_number' => '09123456789', 'email_address' => 'a@b.test',
             'quotation' => 10, 'quotation_change' => 'amount', 'project_description' => 'Y',
             'project_types' => [$type->type_id],

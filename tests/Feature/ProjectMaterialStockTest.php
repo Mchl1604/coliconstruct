@@ -104,6 +104,29 @@ class ProjectMaterialStockTest extends TestCase
         $this->assertSame(0, Project::count());
     }
 
+    public function test_bad_wizard_lines_are_refused_with_nothing_saved(): void
+    {
+        $inactive = Material::factory()->inactive()->create();
+        $payload = $this->wizardPayload([]);
+
+        $cases = [
+            'materials.0.quantity' => [['material_id' => $this->copper->material_id, 'quantity' => 0]],
+            'materials.0.material_id' => [['material_id' => $inactive->material_id, 'quantity' => 1]],
+            'materials.1.material_id' => [
+                ['material_id' => $this->copper->material_id, 'quantity' => 1],
+                ['material_id' => $this->copper->material_id, 'quantity' => 2],
+            ],
+        ];
+
+        foreach ($cases as $field => $rows) {
+            $this->post(route('super-admin.projects.create.store'), ['materials' => $rows] + $payload)
+                ->assertSessionHasErrors($field);
+        }
+
+        $this->assertSame(0, Project::count());
+        $this->assertSame(0, ProjectMaterial::count());
+    }
+
     public function test_the_wizard_search_answers_with_stock_figures(): void
     {
         $this->stockIn($this->copper, 25);
@@ -344,7 +367,7 @@ class ProjectMaterialStockTest extends TestCase
             'middle_name' => 'S',
             'client_email' => 'juan.dela.cruz@example.test',
             'client_phone' => '09123456789',
-            'project_address' => '123 Sample Street, Sample City',
+            ...$this->luzonAddress(),
             'quotation_amount' => '1250.00',
             'project_types' => ['Aircon Installation'],
             'assessment_report' => [UploadedFile::fake()->create('assessment.pdf', 12, 'application/pdf')],

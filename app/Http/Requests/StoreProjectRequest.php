@@ -13,6 +13,7 @@ use App\Services\ProjectTeamRules;
 use App\Services\ScheduleModeRules;
 use App\Services\TargetDateChange;
 use App\Services\TechnicianAvailabilityService;
+use App\Support\ProjectAddress;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Collection;
@@ -63,7 +64,7 @@ class StoreProjectRequest extends FormRequest
         return [
             // Existing client or New client - see ChoosesClient.
             ...$this->clientRules(),
-            'project_address' => ['required', 'string', 'max:500'],
+            ...ProjectAddress::rules($this->all()),
             'quotation_amount' => ['required', 'numeric', 'min:0', 'max:'.Project::MAX_QUOTATION],
             'project_types' => ['required', 'array', 'min:1'],
             'project_types.*' => ['required', 'string', Rule::in($projectTypes)],
@@ -99,6 +100,7 @@ class StoreProjectRequest extends FormRequest
     public function messages(): array
     {
         return [
+            ...ProjectAddress::messages(),
             'materials.max' => 'At most '.ProjectMaterialPlan::MAX_LINES.' materials.',
             'materials.*.material_id.required' => 'Choose a material.',
             'materials.*.quantity.required' => 'Enter a quantity for every material.',
@@ -163,12 +165,10 @@ class StoreProjectRequest extends FormRequest
     {
         return [
             function ($validator): void {
-                // The material lines, by the same rules the setup screen's
-                // Materials step uses - a listed, active material, once each,
-                // in a quantity its unit allows. A project not yet saved has
-                // no plan of its own to make an exception for.
+                // The material lines: a listed, active material, once each, in a
+                // quantity its unit allows.
                 if (! $validator->errors()->has('materials*') && is_array($this->input('materials'))) {
-                    foreach (app(ProjectMaterialPlan::class)->errors(new Project, array_values($this->input('materials'))) as $key => $message) {
+                    foreach (app(ProjectMaterialPlan::class)->errors(array_values($this->input('materials'))) as $key => $message) {
                         $validator->errors()->add($key, $message);
                     }
                 }

@@ -1650,8 +1650,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 .join(' '),
             client_email: formatFieldValue(form.querySelector('[data-summary-input="client_email"]')),
             client_phone: formatFieldValue(form.querySelector('[data-summary-input="client_phone"]')),
-            project_address: formatFieldValue(form.querySelector(
-                '[data-summary-input="project_address"]')),
+            project_address: AddressFields.format(form.querySelector('[data-address-fields]')),
             // Already grouped by moneyInput.js, so the review restates the
             // figure exactly as it was typed - with the peso sign the field
             // itself carries in its input group.

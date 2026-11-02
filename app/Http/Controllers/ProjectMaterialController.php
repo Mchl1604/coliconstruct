@@ -27,7 +27,7 @@ use RuntimeException;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
 /**
- * A project's Materials tab, and the material picker on its setup screen.
+ * A project's Materials tab, and the create wizard's material search.
  *
  * One controller for both portals, as ProjectPhaseController is: an Admin and
  * a Lead Technician record materials through the same rules, and only the

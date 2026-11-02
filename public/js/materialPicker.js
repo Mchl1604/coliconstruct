@@ -1,10 +1,10 @@
 /**
  * The material picker: type a few letters, choose a material from the list.
  *
- * Shared by the setup screen's Materials step and the project's Add Material
- * dialog, so both search the same way and both offer the same way out when the
- * material is not listed yet - "Add ... to list", which the page handles with
- * quickAdd() below.
+ * Shared by the create wizard's Materials step and the project's Add Material
+ * dialog, so both search the same way. The dialog also offers a way out when
+ * the material is not listed yet - "Add ... to list", which the page handles
+ * with quickAdd() below.
  *
  *     materialPicker.attach(input, {
  *         url: "/super-admin/projects/7/materials/suggest",

@@ -11,8 +11,9 @@
 ])
 
 {{--
-    The Materials tab: what was added (the setup plan included), used and
-    returned, and what remains.
+    The Materials tab: what was planned when the project was created, what was
+    added, used and returned since, and what remains. Readable from the moment
+    the project exists; recording opens once its setup is finished.
 
     Every figure comes from ProjectMaterialLedger, summed from the entries
     listed in the history below - nothing on this tab is a stored total. When
@@ -64,10 +65,10 @@
             @endif
         </div>
 
-        @if ($project->awaitingInitialSetup())
-            <div class="material-plan-empty">Set up the project first.</div>
-        @elseif ($summary->isEmpty())
-            <div class="material-plan-empty">No materials listed.</div>
+        @if ($summary->isEmpty())
+            <div class="material-plan-empty">
+                {{ $project->awaitingInitialSetup() ? 'Set up the project first.' : 'No materials listed.' }}
+            </div>
         @else
             <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0">

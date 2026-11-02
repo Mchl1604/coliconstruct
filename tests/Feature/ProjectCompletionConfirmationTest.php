@@ -142,7 +142,8 @@ class ProjectCompletionConfirmationTest extends TestCase
         return [
             'first_name' => 'Owner',
             'last_name' => 'Person',
-            'address' => $address,
+            ...$this->luzonAddress(),
+            'address_street' => $address,
             'contact_number' => '09123456789',
             'email_address' => self::CLIENT_EMAIL,
             'quotation' => 2000,
@@ -1098,7 +1099,7 @@ class ProjectCompletionConfirmationTest extends TestCase
             $this->editPayload('A new address')
         )->assertRedirect();
 
-        $this->assertSame('A new address', $project->refresh()->address);
+        $this->assertSame('A new address', $project->refresh()->address_street);
     }
 
     // ==================================================================

@@ -17,24 +17,7 @@ use App\Policies\ProjectPolicy;
  */
 class ProjectMaterialRules
 {
-    public function __construct(
-        private readonly ProjectPhaseRules $phaseRules,
-        private readonly ProjectPolicy $projects,
-    ) {}
-
-    /**
-     * Whether the setup screen's material plan may be written.
-     *
-     * Only during a project's first setup. Once it has been finalized the plan
-     * is the baseline everything since is measured against, so a Super Admin
-     * who unlocks the phases later finds the plan read-only: changes from then
-     * on are entries on the Materials tab.
-     */
-    public function canPlan(?User $user, Project $project): bool
-    {
-        return $project->awaitingInitialSetup()
-            && $this->phaseRules->canSetUp($user, $project);
-    }
+    public function __construct(private readonly ProjectPolicy $projects) {}
 
     /**
      * Whether this account may record materials added, used or returned.
@@ -57,7 +40,7 @@ class ProjectMaterialRules
      */
     public function canAddToCatalog(?User $user, Project $project): bool
     {
-        return $this->canPlan($user, $project) || $this->canRecord($user, $project);
+        return $this->canRecord($user, $project);
     }
 
     /**
