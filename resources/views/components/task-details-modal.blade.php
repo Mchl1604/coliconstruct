@@ -359,6 +359,44 @@
                     </div>
                 @endif
 
+                {{-- Daily progress, newest first: what was done each day
+                     before the task was completed - see TaskProgress. Read
+                     by everyone who can open the task. --}}
+                <div class="task-progress mt-4">
+                    <h6 class="fw-bold mb-2">
+                        <i class="bi bi-journal-text me-1" aria-hidden="true"></i>
+                        Progress
+                    </h6>
+
+                    @forelse ($task->updates as $update)
+                        <div class="border rounded-3 p-3 mb-2">
+                            <div class="d-flex flex-wrap justify-content-between gap-2 small">
+                                <span class="fw-semibold">{{ $update->update_date?->format(\App\Support\BusinessTime::DATE) }}</span>
+                                <span class="text-secondary">
+                                    {{ $update->technician?->name }}
+                                    @if ($update->wasPostedOnBehalf())
+                                        &middot; posted by {{ $update->posterName() }}
+                                    @endif
+                                </span>
+                            </div>
+                            <p class="mb-0 mt-1" style="white-space: pre-line">{{ $update->notes }}</p>
+
+                            @if ($update->images->isNotEmpty())
+                                <div class="d-flex flex-wrap gap-2 mt-2">
+                                    @foreach ($update->images as $image)
+                                        <a href="{{ $image->url() }}" target="_blank" rel="noopener noreferrer">
+                                            <img src="{{ $image->url() }}" class="rounded shadow-sm"
+                                                style="width: 6rem; height: 6rem; object-fit: cover"
+                                                alt="Progress photo">
+                                        </a>
+                                    @endforeach
+                                </div>
+                            @endif
+                        </div>
+                    @empty
+                        <p class="text-secondary small mb-0">No updates yet.</p>
+                    @endforelse
+                </div>
             </div>
 
             <div class="modal-footer">

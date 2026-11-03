@@ -12,6 +12,7 @@ use App\Models\Task;
 use App\Models\Technician;
 use App\Services\ActivityLogger;
 use App\Services\HistoricalScheduleCorrection;
+use App\Services\HolidayCalendar;
 use App\Services\NotificationService;
 use App\Services\ProjectStatusRules;
 use App\Services\ProjectTeam;
@@ -640,6 +641,8 @@ class ScheduleController extends Controller
 
                     $this->projectTeam->linkScheduleToTeam($schedule, $project);
 
+                    app(HolidayCalendar::class)->skip($schedule);
+
                     // A date booked from the calendar often butts straight onto
                     // what the project already holds, which is one booking
                     // rather than two.
@@ -1037,6 +1040,13 @@ class ScheduleController extends Controller
                             $overrode = true;
                         }
 
+                        $before = Schedule::query()
+                            ->where('project_id', $project->project_id)
+                            ->find($range['schedule_id']);
+                        $datesMoved = $before === null
+                            || ! CarbonImmutable::parse($before->start_datetime)->equalTo($range['start'])
+                            || ! CarbonImmutable::parse($before->end_datetime)->equalTo($range['end']);
+
                         Schedule::query()
                             ->where('project_id', $project->project_id)
                             ->where('schedule_id', $range['schedule_id'])
@@ -1047,6 +1057,10 @@ class ScheduleController extends Controller
                             ]);
 
                         $schedule = Schedule::find($range['schedule_id']);
+
+                        if ($datesMoved && ! $range['used_override']) {
+                            app(HolidayCalendar::class)->skip($schedule);
+                        }
                     } else {
                         $schedule = Schedule::create([
                             'project_id' => $project->project_id,
@@ -1070,6 +1084,10 @@ class ScheduleController extends Controller
                         // prevent.
                         if (! $this->isEntirelyHistorical($range)) {
                             $this->projectTeam->linkScheduleToTeam($schedule, $project);
+
+                            if (! ($range['used_override'] ?? false)) {
+                                app(HolidayCalendar::class)->skip($schedule);
+                            }
                         }
                     }
 

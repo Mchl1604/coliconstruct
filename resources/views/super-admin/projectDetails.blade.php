@@ -608,7 +608,7 @@
                              whole day free while an hours-only one needs an hour
                              of it. See reopenProject.js. --}}
                         <form method="POST" action="{{ route('super-admin.projects.reopen', $project->project_id) }}"
-                            data-reopen-form data-reopen-earliest="{{ $today }}"
+                            data-reopen-form data-reopen-earliest="{{ \App\Models\Schedule::earliestBookable(auth()->user())->toDateString() }}"
                             data-reopen-blocked-whole-day="{{ json_encode($reopenBlockedDates['whole_day']) }}"
                             data-reopen-blocked-partial-day="{{ json_encode($reopenBlockedDates['partial_day']) }}">
                             @csrf
@@ -1638,29 +1638,19 @@
 
                             </form>
 
-                            {{-- A finished, cancelled or archived project is a
-                                 closed record and takes no more reports -
-                                 TechnicianReportController refuses one on the
-                                 same rule, so this button was offering an
-                                 action that could only ever end in an error
-                                 toast. Awaiting Client Confirmation is one of
-                                 those statuses: the work is done and the client
-                                 is reading the report on it.
-
-                                 A hold is different and keeps its button, shown
-                                 but disabled: that project is coming back, and
-                                 the tooltip says what to do about it. --}}
-                            @unless ($isReadOnly)
-                                <button class="btn btn-primary" data-bs-toggle="modal"
-                                    data-bs-target="#addTechnicianReportModal" @disabled($isOnHold)
-                                    title="{{ $isOnHold ? 'This project is on hold. Resume it before adding reports.' : 'Add a technician report' }}">
-
-                                    <i class="bi bi-plus-lg me-1"></i>
-
-                                    Add Report
-
+                            {{-- The same two reports a lead files, on the same forms. Not on a
+                                 closed project. A hold keeps a button, disabled:
+                                 that project is coming back, and the tooltip says
+                                 what to do about it. --}}
+                            @if ($canFileReports && ! $isReadOnly && $isOnHold)
+                                <button class="btn btn-primary" disabled
+                                    title="This project is on hold. Resume it before adding reports.">
+                                    <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
+                                    Create Report
                                 </button>
-                            @endunless
+                            @elseif ($canFileReports && ! $isReadOnly)
+                                <x-create-report-button portal="super-admin" :project="$project->project_id" />
+                            @endif
 
                         </div>
 
@@ -1743,9 +1733,13 @@
 
                                 <div class="card-body">
 
-                                    <p>
-                                        {{ $report->report_description }}
-                                    </p>
+                                    <p style="white-space: pre-line">{{ $report->report_description }}</p>
+
+                                    @if ($report->documentUrl())
+                                        <a href="{{ $report->documentUrl() }}" class="btn btn-sm btn-outline-primary mb-3">
+                                            View Full Report
+                                        </a>
+                                    @endif
 
                                     @if ($report->images->count())
                                         <h6>Pictures</h6>
@@ -1845,13 +1839,15 @@
                                         <i class="bi bi-sliders me-1"></i>
                                         Set Up Now
                                     </a>
-                                @else
+                                @elseif ($canManageTasks)
                                     <button class="btn btn-primary" disabled
                                         title="Phases not set up.">
                                         <i class="bi bi-plus-lg me-1"></i>
                                         Add Task
                                     </button>
                                 @endif
+                            @elseif (! $canManageTasks)
+                                {{-- The office reads the board; the crew runs it. --}}
                             @elseif ($isOnHold)
                                 <button class="btn btn-primary" disabled
                                     title="On hold. Resume first.">
@@ -1909,7 +1905,7 @@
         <div class="tab-pane fade" id="project-materials" role="tabpanel"
             aria-labelledby="projectSectionTabs">
             <x-project-materials :project="$project" :summary="$materialSummary"
-                :can-record="$canRecordMaterials" portal="super-admin"
+                :abilities="$materialAbilities" portal="super-admin"
                 :quick-add="$materialQuickAdd" />
         </div>{{-- /#project-materials --}}
 
@@ -2072,10 +2068,9 @@
 
                         <div class="mt-4">
 
-                            <label class="form-label">Project Address</label>
+                            <h6 class="fw-semibold mb-2">Project Address</h6>
 
-                            <textarea class="form-control" name="address" rows="3" maxlength="500"
-                                placeholder="House/Unit No., Street, Barangay, City/Municipality, Province">{{ $project->address }}</textarea>
+                            <x-project-address-fields :project="$project" />
 
                         </div>
 
@@ -2852,106 +2847,12 @@
 
     <x-import-team-modal />
 
-    <!-- Add Technician Report Modal -->
-    {{-- Drawn only where the report could actually be filed, so the form is not
-         sitting in the page of a closed or paused project waiting for somebody
-         to reach it. --}}
-    @if ($canTakeWork)
-    <div class="modal fade" id="addTechnicianReportModal" tabindex="-1" aria-labelledby="addTechnicianReportModalLabel"
-        aria-hidden="true">
-        <div class="modal-dialog modal-lg">
-            <form action="{{ route('super-admin.technician.reports.store', $project->project_id) }}" method="POST"
-                enctype="multipart/form-data">
-                @csrf
-
-                <div class="modal-content">
-
-                    <div class="modal-header bg-primary text-white">
-                        <h5 class="modal-title" id="addTechnicianReportModalLabel">
-                            <i class="fas fa-file-alt me-2"></i>
-                            Add Technician Report
-                        </h5>
-
-                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                    </div>
-
-                    <div class="modal-body">
-
-                        <!-- Report Type -->
-                        <div class="mb-3">
-                            <label class="form-label fw-semibold">
-                                Report Type
-                            </label>
-
-                            <select class="form-select" name="report_type" required>
-                                <option value="">Select Report Type</option>
-                                <option value="progress">Progress Report</option>
-                                <option value="incident">Incident Report</option>
-                            </select>
-                        </div>
-
-                        <!-- Report Title -->
-                        <div class="mb-3">
-                            <label class="form-label fw-semibold">
-                                Report Title
-                            </label>
-
-                            <input type="text" class="form-control" name="report_title"
-                                placeholder="Enter report title" required>
-                        </div>
-
-                        <!-- Description -->
-                        <div class="mb-3">
-                            <label class="form-label fw-semibold">
-                                Report Description
-                            </label>
-
-                            <textarea class="form-control" name="report_description" rows="5"
-                                placeholder="Describe the work completed or incident..." required></textarea>
-                        </div>
-
-                        <!-- Upload Images -->
-                        <div class="mb-3">
-                            <label class="form-label fw-semibold">
-                                Upload Images
-                            </label>
-
-                            <input type="file" class="form-control" name="images[]" id="reportImages"
-                                accept="image/*" multiple required>
-
-                            <small class="text-muted">
-                                You may upload multiple images (JPG, PNG, JPEG).
-                            </small>
-                        </div>
-
-                        <!-- Image Preview -->
-                        <div class="row g-2" id="imagePreview"></div>
-
-                    </div>
-
-                    <div class="modal-footer">
-                        <button class="btn btn-secondary" type="button" data-bs-dismiss="modal">
-                            Cancel
-                        </button>
-
-                        <button class="btn btn-primary" type="submit">
-                            <i class="fas fa-save me-1"></i>
-                            Submit Report
-                        </button>
-                    </div>
-
-                </div>
-            </form>
-        </div>
-    </div>
-    @endif
-    <!-- End of Add Technician Report Modal -->
 
     <!-- Add Task Modal -->
     {{-- Not rendered on a project whose phases are not settled: the Phase
          select would have nothing to offer, and the button that opens it is a
          link to the setup screen there instead. --}}
-    @if ($selectablePhases->isNotEmpty())
+    @if ($canManageTasks && $selectablePhases->isNotEmpty())
     <div class="modal fade" id="addTaskModal" tabindex="-1" aria-labelledby="addTaskModalLabel" aria-hidden="true">
 
         <div class="modal-dialog modal-xl">
@@ -3025,8 +2926,10 @@
                                     Start Date
                                 </label>
 
+                                {{-- New tasks start tomorrow at the earliest. --}}
                                 <input type="text" id="taskStartDate" name="start_date" class="form-control"
-                                    data-task-start placeholder="Select start date" required>
+                                    data-task-start placeholder="Select start date" required
+                                    data-not-before="{{ \App\Support\BusinessTime::today()->addDay()->toDateString() }}">
 
                             </div>
 
@@ -3254,6 +3157,7 @@
         <script src="/js/imagePreview.js"></script>
         {{-- Thousands separators on the quotation, shared with the create wizard. --}}
         <script src="/js/moneyInput.js"></script>
+        <script src="/js/addressFields.js"></script>
         {{-- Asks about the other half of the quotation when only the amount or
              only the file changed. After moneyInput.js, whose fields it reads. --}}
         <script src="/js/super-admin/quotationSync.js"></script>

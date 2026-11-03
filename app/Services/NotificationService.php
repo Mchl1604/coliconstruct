@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Models\Material;
+use App\Models\MaterialRequest;
 use App\Models\Notification;
 use App\Models\Project;
 use App\Models\Schedule;
@@ -9,6 +11,7 @@ use App\Models\SpecialtyRequest;
 use App\Models\Task;
 use App\Models\User;
 use App\Support\BusinessTime;
+use App\Support\RoleAccess;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
@@ -180,7 +183,9 @@ class NotificationService
     // ------------------------------------------------------------------
 
     /**
-     * Everybody who runs the system: admins and super admins.
+     * Everybody who runs projects and schedules: super admins, HR admins and
+     * admin officers. Not a Purchasing Admin, who reaches none of what these
+     * notifications link to.
      *
      * @return EloquentCollection<int, User>
      */
@@ -188,7 +193,21 @@ class NotificationService
     {
         return User::query()
             ->loginable()
-            ->whereIn('role', [User::ROLE_SUPER_ADMIN, User::ROLE_ADMIN])
+            ->whereIn('role', User::ADMINISTRATOR_ROLES)
+            ->get();
+    }
+
+    /**
+     * Everybody who reaches the Inventory page: super admins, admin officers
+     * and purchasing admins.
+     *
+     * @return EloquentCollection<int, User>
+     */
+    public function inventoryStaff(): EloquentCollection
+    {
+        return User::query()
+            ->loginable()
+            ->whereIn('role', RoleAccess::rolesFor(RoleAccess::INVENTORY))
             ->get();
     }
 
@@ -1613,6 +1632,106 @@ class NotificationService
     }
 
     // ------------------------------------------------------------------
+    // Inventory
+    // ------------------------------------------------------------------
+
+    /**
+     * A material that has just dropped to its reorder level, or run out.
+     *
+     * Sent on the way down only - see StockLedger - so a material sitting at
+     * Low Stock is announced once, not every time another one is issued.
+     * Everybody who reaches the Inventory page hears it, the person who
+     * issued the last one included: they are as likely as anybody to be the
+     * one reordering.
+     */
+    public function stockRunningLow(Material $material, string $status, float $onHand): void
+    {
+        $out = $status === Material::STOCK_OUT;
+
+        $this->deliver(
+            $this->inventoryStaff(),
+            $out ? 'Out of Stock' : 'Low Stock',
+            $out
+                ? sprintf('%s is out of stock.', $material->displayName())
+                : sprintf(
+                    '%s is down to %s %s.',
+                    $material->displayName(),
+                    $material->unit->format($onHand),
+                    $material->unit->value
+                ),
+            Notification::MODULE_INVENTORY,
+            $material,
+            route('inventory.index', ['stock' => $status], false)
+        );
+    }
+
+    /**
+     * A lead has asked for material. Whoever can decide hears it.
+     */
+    public function materialRequested(MaterialRequest $materialRequest): void
+    {
+        $this->deliver(
+            $this->inventoryStaff(),
+            'Material Requested',
+            sprintf(
+                '%s requested %s %s of %s for %s.',
+                $this->actorName(),
+                $materialRequest->material->unit->format($materialRequest->quantity),
+                $materialRequest->material->unit->value,
+                $materialRequest->material->displayName(),
+                $this->projectLabel($materialRequest->project)
+            ),
+            Notification::MODULE_INVENTORY,
+            $materialRequest->project,
+            route('inventory.material-requests.index', [], false)
+        );
+    }
+
+    /**
+     * Tell the lead what became of what they asked for.
+     */
+    public function materialRequestDecided(MaterialRequest $materialRequest): void
+    {
+        $approved = $materialRequest->status === MaterialRequest::STATUS_APPROVED;
+
+        $this->deliver(
+            $materialRequest->requester,
+            $approved ? 'Material Request Approved' : 'Material Request Rejected',
+            sprintf(
+                '%s for %s was %s.',
+                $materialRequest->material->displayName(),
+                $this->projectLabel($materialRequest->project),
+                $approved ? 'approved' : 'rejected: '.$materialRequest->rejection_reason
+            ),
+            Notification::MODULE_INVENTORY,
+            $materialRequest->project,
+            route('technician.projects.show', $materialRequest->project_id, false).'#project-materials'
+        );
+    }
+
+    /**
+     * A new project whose material plan the warehouse cannot cover from what
+     * is available - on hand, less what other live projects have reserved.
+     *
+     * @param  Collection<int, Material>  $materials  the ones that are short
+     */
+    public function projectMaterialsShort(Project $project, Collection $materials): void
+    {
+        $count = $materials->count();
+
+        $this->deliver(
+            $this->inventoryStaff(),
+            'Materials Short',
+            $count === 1
+                ? sprintf('%s needs more %s than is available.', $project->reference_no, $materials->first()->displayName())
+                : sprintf('%s needs more of %d materials than is available.', $project->reference_no, $count),
+            Notification::MODULE_INVENTORY,
+            $project,
+            route('inventory.index', [], false)
+        );
+    }
+
+    // ------------------------------------------------------------------
     // User management
     // ------------------------------------------------------------------
 
@@ -1778,12 +1897,12 @@ class NotificationService
     }
 
     /**
-     * Somebody resetting an administrator's password is a security event, so
+     * Somebody resetting an office account's password is a security event, so
      * it goes to the super admins whoever the account belongs to.
      */
     public function accountPasswordReset(User $account): void
     {
-        $recipients = in_array($account->role, User::ADMINISTRATOR_ROLES, true)
+        $recipients = in_array($account->role, User::OFFICE_ROLES, true)
             ? $this->superAdministrators()
             : $this->administrators();
 
@@ -1791,7 +1910,7 @@ class NotificationService
             $recipients,
             'Password Reset',
             sprintf('%s reset the password for %s.', $this->actorName(), $account->fullName()),
-            in_array($account->role, User::ADMINISTRATOR_ROLES, true)
+            in_array($account->role, User::OFFICE_ROLES, true)
                 ? Notification::MODULE_SECURITY
                 : Notification::MODULE_USER_MANAGEMENT,
             $account,
@@ -1800,14 +1919,15 @@ class NotificationService
     }
 
     /**
-     * Anything touching an administrator account is a super admin's business;
-     * everything else is ordinary operational news for both admin roles.
+     * Anything touching an office account is a super admin's business - only
+     * they manage that tier. Everything else is ordinary operational news for
+     * the administrators.
      *
      * @return EloquentCollection<int, User>
      */
     private function audienceForAccount(User $account): EloquentCollection
     {
-        return in_array($account->role, User::ADMINISTRATOR_ROLES, true)
+        return in_array($account->role, User::OFFICE_ROLES, true)
             ? $this->superAdministrators()
             : $this->administrators();
     }

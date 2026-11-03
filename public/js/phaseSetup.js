@@ -142,6 +142,23 @@ document.addEventListener("DOMContentLoaded", function () {
         };
     }
 
+    /**
+     * The earliest a drafted task may start - it becomes a new task when
+     * setup is finalized, and new tasks start tomorrow at the earliest. The
+     * server holds it to the office's clock either way.
+     */
+    function tomorrow() {
+        const date = new Date();
+
+        date.setDate(date.getDate() + 1);
+
+        return [
+            date.getFullYear(),
+            String(date.getMonth() + 1).padStart(2, "0"),
+            String(date.getDate()).padStart(2, "0"),
+        ].join("-");
+    }
+
     function escapeHtml(value) {
         return String(value == null ? "" : value).replace(
             /[&<>"']/g,
@@ -262,7 +279,9 @@ document.addEventListener("DOMContentLoaded", function () {
             '<span class="phase-task-field-label"><i class="bi bi-calendar-event"></i>Start</span>' +
             '<input type="text" class="form-control form-control-sm" aria-label="' +
             label +
-            ' start date" data-task-start value="' +
+            ' start date" data-task-start data-not-before="' +
+            tomorrow() +
+            '" value="' +
             escapeHtml(task.start_date) +
             '"' +
             dateAttrs +
@@ -284,6 +303,12 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function tasksMarkup(row, index) {
+        // The office reads tasks; a lead drafts them. The server keeps what
+        // has been drafted whatever this form leaves out.
+        if (form.dataset.tasksLocked === "1") {
+            return "";
+        }
+
         const drafts = row.tasks
             .map(function (task, taskIndex) {
                 return taskMarkup(task, index, taskIndex);
@@ -820,15 +845,6 @@ document.addEventListener("DOMContentLoaded", function () {
      * folded away, then focus and mark the field.
      */
     function reportProblem(problem) {
-        // The phases are step 1 of setup. A problem found while the person
-        // is on step 2 has to bring step 1 back, or it is reported out of
-        // sight.
-        const phasesTab = document.querySelector('[data-setup-step="phases"]');
-
-        if (phasesTab && window.bootstrap) {
-            bootstrap.Tab.getOrCreateInstance(phasesTab).show();
-        }
-
         setError(problem.message);
 
         if (problem.phase === undefined) {
@@ -902,14 +918,6 @@ document.addEventListener("DOMContentLoaded", function () {
             return false;
         }
 
-        // The other step of setup gets its say before anything is sent - see
-        // setupMaterials.js, which cancels this when a material row is wrong.
-        const before = new CustomEvent("phase-setup:before-submit", { cancelable: true });
-
-        if (!form.dispatchEvent(before)) {
-            return false;
-        }
-
         form.querySelectorAll("[data-phase-payload]").forEach(function (input) {
             input.remove();
         });
@@ -972,13 +980,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const problem = validationError();
 
         if (!problem) {
-            // Refused by the materials step: close the dialog so the reason,
-            // which that step has already put on screen, is not behind it.
-            if (!submitTo(form.dataset.finalizeUrl)) {
-                bootstrap.Modal.getOrCreateInstance(
-                    document.getElementById("finalizePhasesModal"),
-                ).hide();
-            }
+            submitTo(form.dataset.finalizeUrl);
 
             return;
         }

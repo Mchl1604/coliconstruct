@@ -28,7 +28,7 @@
             </p>
             <p class="text-secondary small mb-0">
                 @if ($canSetUp)
-                    Set phases and materials to start.
+                    Set the phases to start.
                 @else
                     An Admin or Lead Technician must set up phases.
                 @endif

@@ -205,3 +205,13 @@
 .calendar-standard .fc-event.fc-event-former .fc-event-time {
     color: #ffffff !important;
 }
+
+/* Non-working days. */
+.calendar-standard .fc-daygrid-day.is-non-working {
+    background: #fef2f2;
+}
+
+.calendar-standard .fc-daygrid-day.is-non-working .fc-daygrid-day-number {
+    color: #dc2626 !important;
+    font-weight: 700;
+}

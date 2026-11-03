@@ -218,7 +218,7 @@ class MediumSeverityAuditFixesTest extends TestCase
         Config::set('app.debug', false);
 
         $this->put(route('super-admin.projects.update', $project->project_id), [
-            'first_name' => 'A', 'last_name' => 'B', 'address' => 'X',
+            'first_name' => 'A', 'last_name' => 'B', ...$this->luzonAddress(),
             'contact_number' => '09123456789', 'email_address' => 'a@b.test',
             'quotation' => 10, 'quotation_change' => 'amount', 'project_description' => 'Y',
             'project_types' => [$type->type_id],
@@ -323,8 +323,9 @@ class MediumSeverityAuditFixesTest extends TestCase
             // Every task belongs to a phase of its project - see TaskPhaseRules.
             'phase_id' => $this->defaultPhaseId($project),
             'technician_id' => $lead->technician_id,
-            'start_date' => Schedule::businessToday()->toDateString(),
-            'due_date' => Schedule::businessToday()->addDay()->toDateString(),
+            // Tomorrow: a new task cannot start today.
+            'start_date' => Schedule::businessToday()->addDay()->toDateString(),
+            'due_date' => Schedule::businessToday()->addDays(2)->toDateString(),
         ];
 
         $this->post(route('super-admin.task.store', $project->project_id), $payload)

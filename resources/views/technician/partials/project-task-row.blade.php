@@ -61,6 +61,15 @@
                 <i class="bi bi-eye" aria-hidden="true"></i>
             </button>
 
+            @can('postUpdate', $task)
+                <button type="button" class="btn btn-sm btn-info"
+                    data-bs-toggle="modal"
+                    data-bs-target="#taskUpdateModal{{ $task->task_id }}"
+                    title="Add today's update">
+                    <i class="bi bi-journal-plus" aria-hidden="true"></i>
+                </button>
+            @endcan
+
             {{-- A lead may close anything on a project
                  they run, not only their own work. --}}
             @can('complete', $task)

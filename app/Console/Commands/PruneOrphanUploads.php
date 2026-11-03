@@ -6,6 +6,7 @@ use App\Models\Document;
 use App\Models\ProjectCompletionPhoto;
 use App\Models\SystemContent;
 use App\Models\TaskImage;
+use App\Models\TaskUpdateImage;
 use App\Models\TechnicianReportImage;
 use App\Models\User;
 use App\Support\UploadStore;
@@ -97,6 +98,7 @@ class PruneOrphanUploads extends Command
             ->merge(Document::query()->pluck('document_path'))
             ->merge(ProjectCompletionPhoto::query()->pluck('photo_path'))
             ->merge(TaskImage::query()->pluck('image_path'))
+            ->merge(TaskUpdateImage::query()->pluck('image_path'))
             ->merge(TechnicianReportImage::query()->pluck('image_path'))
             ->merge(SystemContent::query()->where('content_type', 'image')->pluck('content_value'))
             ->filter()

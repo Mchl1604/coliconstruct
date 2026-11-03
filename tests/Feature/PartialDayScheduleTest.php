@@ -68,7 +68,7 @@ class PartialDayScheduleTest extends TestCase
             'firstname' => 'Juan',
             'client_email' => 'juan.dela.cruz@example.test',
             'client_phone' => '09123456789',
-            'project_address' => '123 Sample Street',
+            ...$this->luzonAddress(),
             'quotation_amount' => '1250.00',
             'project_types' => ['Aircon Installation'],
             'assessment_report' => [UploadedFile::fake()->create('assessment.pdf', 12, 'application/pdf')],

@@ -84,8 +84,11 @@
                     <div class="row" data-task-date-row>
                         <div class="col-md-6 mb-3">
                             <label class="form-label fw-semibold" for="createTaskStartDate">Start Date</label>
+                            {{-- New tasks start tomorrow at the earliest - see
+                                 TaskScheduleRules::NEW_TASK_REFUSAL. --}}
                             <input type="text" class="form-control" id="createTaskStartDate" name="start_date"
-                                placeholder="Select start date" data-task-start required>
+                                placeholder="Select start date" data-task-start required
+                                data-not-before="{{ \App\Support\BusinessTime::today()->addDay()->toDateString() }}">
                         </div>
 
                         <div class="col-md-6 mb-3">

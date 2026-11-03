@@ -149,5 +149,24 @@
         buildJump(calendar, titleEl, anchorEl);
     }
 
-    global.calendarHeader = { attach: attach, toolbar: toolbar };
+    /**
+     * FullCalendar options that mark the non-working days, for every calendar
+     * to spread in: the date reads red, and hovering the day names it.
+     */
+    function nonWorkingDays() {
+        return {
+            dayCellClassNames: function (cell) {
+                return global.bookingCalendar?.nameOf(cell.date) ? ["is-non-working"] : [];
+            },
+            dayCellDidMount: function (cell) {
+                const name = global.bookingCalendar?.nameOf(cell.date);
+
+                if (name) {
+                    cell.el.title = name;
+                }
+            },
+        };
+    }
+
+    global.calendarHeader = { attach: attach, toolbar: toolbar, nonWorkingDays: nonWorkingDays };
 })(window);

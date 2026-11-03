@@ -132,6 +132,17 @@ class Task extends Model
         return $this->hasMany(TaskImage::class, 'task_id', 'task_id');
     }
 
+    /**
+     * Each day's progress before the task was completed, newest first - see
+     * TaskProgress.
+     */
+    public function updates(): HasMany
+    {
+        return $this->hasMany(TaskUpdate::class, 'task_id', 'task_id')
+            ->orderByDesc('update_date')
+            ->orderByDesc('task_update_id');
+    }
+
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class, 'project_id', 'project_id');

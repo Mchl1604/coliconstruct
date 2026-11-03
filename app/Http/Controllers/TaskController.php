@@ -15,6 +15,7 @@ use App\Services\TaskBoard;
 use App\Services\TaskPhaseRules;
 use App\Services\TaskScheduleRules;
 use App\Services\TechnicianTaskLoad;
+use App\Support\RoleAccess;
 use App\Support\UploadStore;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
@@ -83,7 +84,10 @@ class TaskController extends Controller
             ->orderBy('name')
             ->get(['project_id', 'name', 'reference_no', 'status', 'on_hold', 'is_archived', 'phase_setup_status']);
 
+        $canManageTasks = RoleAccess::can($request->user(), RoleAccess::MANAGE_TASKS);
+
         return view('super-admin.tasks', compact(
+            'canManageTasks',
             'projects',
             'taskCounts',
             'gapCounts',
@@ -127,16 +131,18 @@ class TaskController extends Controller
     }
 
     /**
-     * How a project's board is drawn for an administrator, who runs every
-     * board; only a locked project is off limits, and none of those are
-     * listed anyway.
+     * How a project's board is drawn for the office. A Super Admin runs every
+     * board, a locked project aside, and none of those are listed anyway. The
+     * other office roles read it.
      *
      * @return array{canManage: bool, viewerTechnicianId: null, updateRoute: string, completeRoute: string, deleteRoute: string}
      */
     private function boardOptions(Project $project): array
     {
         return [
-            'canManage' => ! $project->isReadOnly() && ! $project->isArchived(),
+            'canManage' => ! $project->isReadOnly()
+                && ! $project->isArchived()
+                && RoleAccess::can(auth()->user(), RoleAccess::MANAGE_TASKS),
             'viewerTechnicianId' => null,
             'updateRoute' => 'super-admin.tasks.update',
             'completeRoute' => 'super-admin.tasks.complete',
@@ -284,6 +290,8 @@ class TaskController extends Controller
         ]);
 
         $this->attachRangeRule($validator, $ranges);
+        // New work starts tomorrow at the earliest.
+        $this->scheduleRules->attachNewTaskStart($validator);
         // New work, so there is no current owner to make an exception for.
         $this->assignmentRules->attach($validator);
         // Assigned to this project for every day of the task - see

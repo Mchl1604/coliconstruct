@@ -8,11 +8,17 @@ use App\Http\Controllers\ConfigurationController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DatabaseBackupController;
 use App\Http\Controllers\DetailFormController;
+use App\Http\Controllers\HolidayController;
+use App\Http\Controllers\IncidentReportController;
 use App\Http\Controllers\InquiryController;
+use App\Http\Controllers\InventoryController;
 use App\Http\Controllers\MaterialController;
+use App\Http\Controllers\MaterialRequestController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PhaseTemplateController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\ProgressReportController;
+use App\Http\Controllers\ProjectAddressController;
 use App\Http\Controllers\ProjectClientController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ProjectDetailController;
@@ -22,14 +28,17 @@ use App\Http\Controllers\ProjectTypeController;
 use App\Http\Controllers\PublicSiteController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\ScheduleController;
+use App\Http\Controllers\StockController;
 use App\Http\Controllers\SystemContentController;
 use App\Http\Controllers\TaskController;
+use App\Http\Controllers\TaskUpdateController;
 use App\Http\Controllers\TechnicianController;
 use App\Http\Controllers\TechnicianPortalController;
 use App\Http\Controllers\TechnicianReportArchiveController;
 use App\Http\Controllers\TechnicianReportController;
 use App\Http\Controllers\TermsController;
 use App\Http\Controllers\UploadedFileController;
+use App\Support\RoleAccess;
 use Illuminate\Support\Facades\Route;
 
 // The public website. Every page here is readable by anyone; My Projects is
@@ -167,6 +176,9 @@ Route::prefix('media')->name('media.')->group(function () {
         Route::get('/task-images/{image}', [UploadedFileController::class, 'taskImage'])
             ->whereNumber('image')
             ->name('task-image');
+        Route::get('/task-update-images/{image}', [UploadedFileController::class, 'taskUpdateImage'])
+            ->whereNumber('image')
+            ->name('task-update-image');
         Route::get('/report-images/{image}', [UploadedFileController::class, 'reportImage'])
             ->whereNumber('image')
             ->name('report-image');
@@ -249,11 +261,13 @@ Route::middleware(['auth', 'password.changed'])
         Route::delete('/{notification}', [NotificationController::class, 'destroy'])->name('destroy');
     });
 
-// Super Admin routes. Admin shares this portal entirely - same sidebar, same
-// pages - so both roles are admitted here.
+// Super Admin routes: the scheduling side of the office portal. HR Admin and
+// Admin Officer share it entirely - same sidebar, same pages - and a
+// Purchasing Admin, who reaches only the inventory below, is turned away. See
+// RoleAccess for who reaches which part.
 Route::prefix('super-admin')
     ->name('super-admin.')
-    ->middleware(['auth', 'password.changed', 'role:super_admin,admin'])
+    ->middleware(['auth', 'password.changed', 'area:'.RoleAccess::SCHEDULING])
     ->group(function () {
 
         // The landing page after sign-in. Everything it shows arrives with the
@@ -280,8 +294,12 @@ Route::prefix('super-admin')
         Route::get('/projects/archived/table', [ProjectController::class, 'archivedTable'])
             ->middleware('role:super_admin')
             ->name('projects.archived.table');
-        Route::get('/projects/create', [ProjectController::class, 'create'])->name('projects.create');
-        Route::post('/projects/create', [ProjectController::class, 'store'])->name('projects.create.store');
+        Route::get('/projects/create', [ProjectController::class, 'create'])
+            ->middleware('capability:'.RoleAccess::CREATE_PROJECTS)
+            ->name('projects.create');
+        Route::post('/projects/create', [ProjectController::class, 'store'])
+            ->middleware('capability:'.RoleAccess::CREATE_PROJECTS)
+            ->name('projects.create.store');
 
         // The teams that could be copied onto a project, for the Import Team
         // dialog in the wizard and in the assigned-team editor. Declared
@@ -294,6 +312,12 @@ Route::prefix('super-admin')
             ->name('projects.client-search');
         Route::get('/projects/client-lookup', [ProjectClientController::class, 'lookup'])
             ->name('projects.client-lookup');
+        // The wizard's Materials step: the search, with stock figures.
+        Route::get('/projects/material-options', [ProjectMaterialController::class, 'options'])
+            ->name('projects.material-options');
+        // The project address fields: the next list down, Luzon only.
+        Route::get('/projects/address-options', [ProjectAddressController::class, 'options'])
+            ->name('projects.address-options');
         Route::get('/projects/{id}', [ProjectController::class, 'show'])->name('projects.show');
         // The Tasks tab's table, one page at a time - see serverTable.js.
         Route::get('/projects/{id}/tasks/table', [ProjectController::class, 'tasksTable'])->name('projects.tasks.table');
@@ -338,9 +362,9 @@ Route::prefix('super-admin')
         // Project materials
         // ---------------------------------------------------------------
         //
-        // The Materials tab and the setup screen's material picker. Who may
-        // record is ProjectMaterialRules' decision, asked again inside the
-        // controller - the same split the phase routes above make.
+        // The Materials tab. Who may record is ProjectMaterialRules' decision,
+        // asked again inside the controller - the same split the phase routes
+        // above make.
         Route::prefix('/projects/{project}/materials')
             ->whereNumber('project')
             ->name('projects.materials.')
@@ -444,11 +468,23 @@ Route::prefix('super-admin')
         Route::delete('/projects/{id}/team/scheduled/{membership}', [ProjectController::class, 'cancelScheduledTeamChange'])
             ->whereNumber('membership')
             ->name('projects.team.scheduled.cancel');
-        Route::post('/projects/{id}/reports', [TechnicianReportController::class, 'store'])->name('technician.reports.store');
-        Route::post('/projects/{id}/task', [TaskController::class, 'store'])->name('task.store');
-        Route::patch('/tasks/{task}/complete', [TaskController::class, 'complete'])->name('tasks.complete');
-        Route::put('/tasks/{task}', [TaskController::class, 'update'])->name('tasks.update');
-        Route::delete('/tasks/{task}', [TaskController::class, 'destroy'])->name('tasks.destroy');
+        // The office reads tasks and reports. A Super Admin alone may write
+        // them - see RoleAccess.
+        Route::post('/projects/{id}/reports', [TechnicianReportController::class, 'store'])
+            ->middleware('capability:'.RoleAccess::FILE_REPORTS)
+            ->name('technician.reports.store');
+        Route::post('/projects/{id}/task', [TaskController::class, 'store'])
+            ->middleware('capability:'.RoleAccess::MANAGE_TASKS)
+            ->name('task.store');
+        Route::patch('/tasks/{task}/complete', [TaskController::class, 'complete'])
+            ->middleware('capability:'.RoleAccess::MANAGE_TASKS)
+            ->name('tasks.complete');
+        Route::put('/tasks/{task}', [TaskController::class, 'update'])
+            ->middleware('capability:'.RoleAccess::MANAGE_TASKS)
+            ->name('tasks.update');
+        Route::delete('/tasks/{task}', [TaskController::class, 'destroy'])
+            ->middleware('capability:'.RoleAccess::MANAGE_TASKS)
+            ->name('tasks.destroy');
 
         // ROUTE FOR SUPER ADMIN SCHEDULES PAGE
         Route::get('/schedules', [ScheduleController::class, 'index'])->name('schedules.index');
@@ -503,6 +539,19 @@ Route::prefix('super-admin')
         // document as a PDF. Two doors onto one build so that printing never
         // has to go through a file the user did not ask for.
         Route::post('/reports/preview', [ReportController::class, 'preview'])->name('reports.preview');
+        // The office's review of an incident: Open, Under Review, Closed.
+        // A Super Admin files the same two reports a lead does, on the same
+        // forms. Which projects, and which days, is the same rule too.
+        Route::middleware('capability:'.RoleAccess::FILE_REPORTS)->group(function () {
+            Route::get('/progress-reports/create', [ProgressReportController::class, 'create'])->name('progress-reports.create');
+            Route::post('/progress-reports', [ProgressReportController::class, 'store'])->name('progress-reports.store');
+            Route::get('/incident-reports/create', [IncidentReportController::class, 'create'])->name('incident-reports.create');
+            Route::post('/incident-reports', [IncidentReportController::class, 'store'])->name('incident-reports.store');
+        });
+
+        Route::put('/incident-reports/{incidentReport}/status', [IncidentReportController::class, 'updateStatus'])
+            ->whereNumber('incidentReport')
+            ->name('incident-reports.status');
         Route::post('/reports/export', [ReportController::class, 'export'])->name('reports.export');
 
         // ROUTE FOR SUPER ADMIN TECHNICIANS PAGE
@@ -537,11 +586,15 @@ Route::prefix('super-admin')
         Route::get('/tasks', [TaskController::class, 'index'])->name('tasks.index');
         // One page of one project's board at a time - see taskBoard.js.
         Route::get('/tasks/projects/{projectId}/table', [TaskController::class, 'boardTable'])->name('tasks.board-table');
-        Route::get('/projects/{id}/task-form-data', [TaskController::class, 'projectFormData'])->name('projects.task-form-data');
+        Route::get('/projects/{id}/task-form-data', [TaskController::class, 'projectFormData'])
+            ->middleware('capability:'.RoleAccess::MANAGE_TASKS)
+            ->name('projects.task-form-data');
 
         // ROUTE FOR SUPER ADMIN CONFIGURATION PAGE
+        //
+        // The page itself is declared below, outside this group: the
+        // inventory roles open it too, for Inventory Settings.
         Route::prefix('configuration')->name('configuration.')->group(function () {
-            Route::get('/', [ConfigurationController::class, 'index'])->name('index');
 
             // User Management tables.
             Route::get('/users/employees', [ConfigurationController::class, 'employees'])->name('users.employees');
@@ -615,6 +668,15 @@ Route::prefix('super-admin')
                 Route::delete('/{projectType}', [ProjectTypeController::class, 'destroy'])->name('destroy');
             });
 
+            // Holidays: the days bookings skip. What they do is HolidayCalendar's.
+            Route::prefix('holidays')->name('holidays.')->middleware('role:super_admin')->group(function () {
+                Route::get('/', [HolidayController::class, 'index'])->name('index');
+                Route::post('/', [HolidayController::class, 'store'])->name('store');
+                Route::delete('/{holiday}', [HolidayController::class, 'destroy'])
+                    ->whereNumber('holiday')
+                    ->name('destroy');
+            });
+
             // Detail Forms: the fields a project type asks for in the create
             // wizard's Units step. Super Admin only, turned away by the
             // controller on the same terms as Project Types.
@@ -648,26 +710,6 @@ Route::prefix('super-admin')
 
                 Route::get('/types/{projectType}', [PhaseTemplateController::class, 'showTemplate'])->name('types.show');
                 Route::put('/types/{projectType}', [PhaseTemplateController::class, 'updateTemplate'])->name('types.update');
-            });
-
-            // Materials: the list projects pick from, and its groups. A
-            // reference list, not stock. Super Admin only, turned away by the
-            // controller on the same terms as Project Types.
-            Route::prefix('materials')->name('materials.')->group(function () {
-                Route::get('/', [MaterialController::class, 'index'])->name('index');
-                Route::post('/', [MaterialController::class, 'store'])->name('store');
-
-                // Before the {material} routes, so "types" is not read as the
-                // id of a material.
-                Route::get('/types', [MaterialController::class, 'types'])->name('types.index');
-                Route::post('/types', [MaterialController::class, 'storeType'])->name('types.store');
-                Route::get('/types/{materialType}', [MaterialController::class, 'showType'])->name('types.show');
-                Route::put('/types/{materialType}', [MaterialController::class, 'updateType'])->name('types.update');
-                Route::delete('/types/{materialType}', [MaterialController::class, 'destroyType'])->name('types.destroy');
-
-                Route::put('/{material}', [MaterialController::class, 'update'])->whereNumber('material')->name('update');
-                Route::put('/{material}/status', [MaterialController::class, 'setStatus'])->whereNumber('material')->name('status');
-                Route::delete('/{material}', [MaterialController::class, 'destroy'])->whereNumber('material')->name('destroy');
             });
 
             // Backup & Restore: every row and every uploaded file, out and
@@ -714,6 +756,105 @@ Route::prefix('super-admin')
         });
     });
 
+// Configuration's page, which both sides of the office portal open: the
+// scheduling roles for accounts, logs, settings and inquiries, the inventory
+// roles for Inventory Settings. Which tabs each sees is the view's to decide
+// - see RoleAccess - and every endpoint a tab calls keeps its own door.
+Route::get('/super-admin/configuration', [ConfigurationController::class, 'index'])
+    ->middleware(['auth', 'password.changed', 'area:'.RoleAccess::SCHEDULING.','.RoleAccess::INVENTORY])
+    ->name('super-admin.configuration.index');
+
+// Inventory: the other side of the office portal. Super Admin, Admin Officer
+// and Purchasing Admin reach it; an HR Admin does not. Same shell and header
+// as the routes above - only the door differs. See RoleAccess.
+Route::prefix('inventory')
+    ->name('inventory.')
+    ->middleware(['auth', 'password.changed', 'area:'.RoleAccess::INVENTORY])
+    ->group(function () {
+        Route::get('/', [InventoryController::class, 'index'])->name('index');
+        Route::get('/movements', [InventoryController::class, 'movements'])->name('movements');
+        Route::get('/material-list', [InventoryController::class, 'materials'])->name('materials-page');
+
+        // A project as the inventory side reads it: what it is, and its
+        // Materials tab. Who may change anything is ProjectMaterialRules',
+        // asked again inside the controller.
+        Route::get('/projects', [InventoryController::class, 'projects'])->name('projects');
+        Route::get('/projects/table', [InventoryController::class, 'projectsTable'])->name('projects.table');
+        Route::get('/projects/{project}', [InventoryController::class, 'showProject'])
+            ->whereNumber('project')
+            ->name('projects.show');
+        Route::prefix('/projects/{project}/materials')
+            ->whereNumber('project')
+            ->name('projects.materials.')
+            ->group(function () {
+                Route::get('/table', [ProjectMaterialController::class, 'table'])->name('table');
+                Route::get('/suggest', [ProjectMaterialController::class, 'suggest'])->name('suggest');
+                Route::post('/quick-add', [ProjectMaterialController::class, 'quickAdd'])->name('quick-add');
+                Route::post('/', [ProjectMaterialController::class, 'add'])->name('add');
+                Route::post('/record', [ProjectMaterialController::class, 'record'])->name('record');
+                Route::post('/entries/{entry}/void', [ProjectMaterialController::class, 'void'])
+                    ->whereNumber('entry')
+                    ->name('void');
+            });
+
+        // What leads have asked for, waiting on a decision.
+        Route::prefix('material-requests')->name('material-requests.')->group(function () {
+            Route::get('/', [MaterialRequestController::class, 'index'])->name('index');
+            Route::get('/table', [MaterialRequestController::class, 'table'])->name('table');
+            Route::post('/{materialRequest}/approve', [MaterialRequestController::class, 'approve'])
+                ->whereNumber('materialRequest')
+                ->name('approve');
+            Route::post('/{materialRequest}/reject', [MaterialRequestController::class, 'reject'])
+                ->whereNumber('materialRequest')
+                ->name('reject');
+        });
+
+        // Stock: how many of each material are held, and every movement in
+        // and out. Every write goes through StockLedger.
+        Route::prefix('stock')->name('stock.')->group(function () {
+            Route::get('/', [StockController::class, 'index'])->name('index');
+            Route::get('/movements', [StockController::class, 'movements'])->name('movements');
+            Route::get('/options', [StockController::class, 'options'])->name('options');
+            Route::post('/receive', [StockController::class, 'receive'])->name('receive');
+            Route::post('/receive-many', [StockController::class, 'receiveMany'])->name('receive-many');
+            Route::post('/issue', [StockController::class, 'issue'])->name('issue');
+            Route::post('/issue-many', [StockController::class, 'issueMany'])->name('issue-many');
+            Route::post('/adjust', [StockController::class, 'adjust'])->name('adjust');
+            Route::post('/movements/{movement}/void', [StockController::class, 'void'])
+                ->whereNumber('movement')
+                ->name('void');
+        });
+
+        // Materials: the list projects pick from, its groups and its brands.
+        Route::prefix('materials')->name('materials.')->group(function () {
+            Route::get('/', [MaterialController::class, 'index'])->name('index');
+            Route::post('/', [MaterialController::class, 'store'])->name('store');
+
+            // Before the {material} routes, so "types" is not read as the id
+            // of a material.
+            Route::get('/types', [MaterialController::class, 'types'])->name('types.index');
+            Route::post('/types', [MaterialController::class, 'storeType'])->name('types.store');
+            Route::get('/types/{materialType}', [MaterialController::class, 'showType'])->name('types.show');
+            Route::put('/types/{materialType}', [MaterialController::class, 'updateType'])->name('types.update');
+            Route::delete('/types/{materialType}', [MaterialController::class, 'destroyType'])->name('types.destroy');
+
+            // A type's sub-types: added under the type, then addressed on
+            // their own.
+            Route::post('/types/{materialType}/subtypes', [MaterialController::class, 'storeSubtype'])->name('subtypes.store');
+            Route::put('/subtypes/{materialSubtype}', [MaterialController::class, 'updateSubtype'])->name('subtypes.update');
+            Route::delete('/subtypes/{materialSubtype}', [MaterialController::class, 'destroySubtype'])->name('subtypes.destroy');
+
+            Route::get('/brands', [MaterialController::class, 'brands'])->name('brands.index');
+            Route::post('/brands', [MaterialController::class, 'storeBrand'])->name('brands.store');
+            Route::put('/brands/{brand}', [MaterialController::class, 'updateBrand'])->name('brands.update');
+            Route::delete('/brands/{brand}', [MaterialController::class, 'destroyBrand'])->name('brands.destroy');
+
+            Route::put('/{material}', [MaterialController::class, 'update'])->whereNumber('material')->name('update');
+            Route::put('/{material}/status', [MaterialController::class, 'setStatus'])->whereNumber('material')->name('status');
+            Route::delete('/{material}', [MaterialController::class, 'destroy'])->whereNumber('material')->name('destroy');
+        });
+    });
+
 // Technician portal. Both technician roles share every page here: the same
 // calendar, the same DataTables, the same task board. What differs is reach,
 // and that is decided by ProjectPolicy / TaskPolicy inside the pages rather
@@ -751,11 +892,23 @@ Route::prefix('technician')
             ->name('projects.materials.table');
         Route::post('/tasks/{task}/complete', [TechnicianPortalController::class, 'completeTask'])
             ->name('tasks.complete');
+        // Today's progress on a task, by its holder or the project's lead -
+        // see TaskProgress.
+        Route::post('/tasks/{task}/updates', [TaskUpdateController::class, 'store'])
+            ->name('tasks.updates.store');
 
         // Lead-only. Each one is additionally gated by a policy, so the
         // middleware here is the outer fence rather than the whole of the
         // permission model.
         Route::middleware('role:lead_technician')->group(function () {
+            // The generated daily progress report and the structured incident
+            // report - the lead's two ways to report. Who may, on which project
+            // and day, is ProgressReportBuilder's and IncidentReporting's.
+            Route::get('/progress-reports/create', [ProgressReportController::class, 'create'])->name('progress-reports.create');
+            Route::post('/progress-reports', [ProgressReportController::class, 'store'])->name('progress-reports.store');
+            Route::get('/incident-reports/create', [IncidentReportController::class, 'create'])->name('incident-reports.create');
+            Route::post('/incident-reports', [IncidentReportController::class, 'store'])->name('incident-reports.store');
+
             Route::get('/reports', [TechnicianPortalController::class, 'reports'])->name('reports');
             Route::get('/reports/table', [TechnicianPortalController::class, 'reportsTable'])->name('reports.table');
 
@@ -795,15 +948,13 @@ Route::prefix('technician')
             Route::post('/projects/{project}/phases/{phase}/complete', [ProjectPhaseController::class, 'complete'])
                 ->name('projects.phases.complete');
 
-            // Project materials: the setup screen's picker and recording on
-            // the Materials tab. Narrowed to a project the lead runs today -
-            // see ProjectMaterialRules.
+            // Project materials: a lead records use and returns, and requests
+            // more rather than adding it. Narrowed to a project the lead runs
+            // today - see ProjectMaterialRules.
             Route::get('/projects/{project}/materials/suggest', [ProjectMaterialController::class, 'suggest'])
                 ->name('projects.materials.suggest');
-            Route::post('/projects/{project}/materials/quick-add', [ProjectMaterialController::class, 'quickAdd'])
-                ->name('projects.materials.quick-add');
-            Route::post('/projects/{project}/materials', [ProjectMaterialController::class, 'add'])
-                ->name('projects.materials.add');
+            Route::post('/projects/{project}/materials/requests', [MaterialRequestController::class, 'store'])
+                ->name('projects.materials.requests.store');
             Route::post('/projects/{project}/materials/record', [ProjectMaterialController::class, 'record'])
                 ->name('projects.materials.record');
             Route::post('/projects/{project}/materials/entries/{entry}/void', [ProjectMaterialController::class, 'void'])
@@ -811,6 +962,14 @@ Route::prefix('technician')
                 ->name('projects.materials.void');
         });
     });
+
+// The whole of a generated progress report or a structured incident report,
+// on one printable page. Read by the office's scheduling side and by the
+// project's crew - ProgressReportController::show() decides per report.
+Route::get('/report-documents/{report}', [ProgressReportController::class, 'show'])
+    ->middleware(['auth', 'password.changed'])
+    ->whereNumber('report')
+    ->name('reports.document');
 
 // Archiving a technician report, and putting it back.
 //
@@ -823,7 +982,7 @@ Route::prefix('technician')
 // touch is TechnicianReportPolicy's decision, made per report inside the
 // controller - a lead archives only what they filed themselves, whatever the
 // page they came from and whatever id they send.
-Route::middleware(['auth', 'password.changed', 'role:super_admin,admin,lead_technician'])
+Route::middleware(['auth', 'password.changed', 'role:super_admin,admin,admin_officer,lead_technician'])
     ->prefix('technician-reports')
     ->name('technician-reports.')
     ->group(function () {

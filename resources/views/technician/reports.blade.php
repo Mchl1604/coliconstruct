@@ -31,11 +31,10 @@
                 View Archived Reports
             </a>
 
-            <button type="button" class="btn btn-sm btn-primary" data-submit-report
-                @disabled($reportableProjects->isEmpty())>
-                <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
-                Submit Report
-            </button>
+            {{-- A progress report is gathered from the day's work, an incident
+                 report filled in with the structured form - both on pages of
+                 their own. --}}
+            <x-create-report-button portal="technician" size="btn-sm" />
         </div>
     </div>
 

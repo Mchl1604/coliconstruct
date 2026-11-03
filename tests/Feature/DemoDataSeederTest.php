@@ -5,13 +5,17 @@ namespace Tests\Feature;
 use App\Models\ActivityLog;
 use App\Models\Client;
 use App\Models\Document;
+use App\Models\Material;
+use App\Models\MaterialRequest;
 use App\Models\Project;
 use App\Models\ProjectCompletionPhoto;
 use App\Models\ProjectTechnician;
 use App\Models\ProjectType;
 use App\Models\Schedule;
+use App\Models\StockMovement;
 use App\Models\Task;
 use App\Models\TaskImage;
+use App\Models\TaskUpdate;
 use App\Models\TechnicianReport;
 use App\Models\TechnicianReportImage;
 use App\Models\User;
@@ -373,6 +377,29 @@ class DemoDataSeederTest extends TestCase
         $this->assertSame(3, Project::query()->where('on_hold', true)->whereNotNull('held_on')->count());
         $this->assertSame(4, Project::query()->whereNotNull('cancelled_at')->where('is_archived', false)->count());
         $this->assertTrue(ActivityLog::query()->where('action', ActivityLog::PROJECT_CREATED)->count() === 50);
+    }
+
+    public function test_it_follows_the_current_inventory_and_report_forms(): void
+    {
+        $this->runSeeder();
+
+        $reports = TechnicianReport::query()->active()->get();
+
+        $this->assertTrue($reports->where('report_type', 'progress')->every(fn (TechnicianReport $report): bool => $report->isGenerated()));
+        $this->assertTrue($reports->where('report_type', 'incident')->every(fn (TechnicianReport $report): bool => $report->hasIncidentDetails()));
+
+        // Stock exists and never reads below zero, with some low and some out.
+        $this->assertSame(0, Material::query()->withOnHand()->get()->filter(fn (Material $material): bool => $material->onHand() < 0)->count());
+        $this->assertGreaterThan(0, Material::query()->inStockStatus(Material::STOCK_IN)->count());
+        $this->assertGreaterThan(0, Material::query()->inStockStatus(Material::STOCK_OUT)->count());
+        $this->assertGreaterThan(0, StockMovement::query()->whereNotNull('project_id')->count());
+
+        // Each decision has something to show, and a task has its daily update.
+        foreach (MaterialRequest::STATUSES as $status => $label) {
+            $this->assertGreaterThan(0, MaterialRequest::query()->where('status', $status)->count(), $label);
+        }
+
+        $this->assertGreaterThan(0, TaskUpdate::count());
     }
 
     public function test_both_kinds_of_technician_report_have_data(): void

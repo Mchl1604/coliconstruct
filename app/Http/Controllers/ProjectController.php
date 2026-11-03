@@ -22,12 +22,14 @@ use App\Services\ActivityLogger;
 use App\Services\ClientRecords;
 use App\Services\CompletionConfirmability;
 use App\Services\DocumentHistoryLog;
+use App\Services\HolidayCalendar;
 use App\Services\ImportableTeamSources;
 use App\Services\NotificationService;
 use App\Services\ProjectCompletion;
 use App\Services\ProjectDetailForms;
 use App\Services\ProjectEmails;
 use App\Services\ProjectMaterialLedger;
+use App\Services\ProjectMaterialPlan;
 use App\Services\ProjectMaterialRules;
 use App\Services\ProjectPhaseProgress;
 use App\Services\ProjectPhaseRules;
@@ -43,6 +45,7 @@ use App\Services\QuotationChange;
 use App\Services\ScheduleConsolidation;
 use App\Services\ScheduleHoldCutoff;
 use App\Services\ScheduleModeRules;
+use App\Services\StockAvailability;
 use App\Services\TargetDateChange;
 use App\Services\TaskAssignmentRules;
 use App\Services\TaskBoard;
@@ -51,6 +54,8 @@ use App\Services\TechnicianAvailabilityService;
 use App\Services\TechnicianTaskLoad;
 use App\Support\BusinessTime;
 use App\Support\PersonName;
+use App\Support\ProjectAddress;
+use App\Support\RoleAccess;
 use App\Support\ServerTable;
 use App\Support\UploadStore;
 use Carbon\CarbonImmutable;
@@ -348,6 +353,10 @@ class ProjectController extends Controller
             ? Client::query()->withCount('projects')->find((int) old('client_id'))
             : null;
 
+        // A failed save comes back with its material lines, read again with
+        // today's stock figures.
+        $wizardMaterials = $this->wizardMaterialRows((array) old('materials', []));
+
         return view('super-admin.createProject', compact(
             'projectTypes',
             'detailTypes',
@@ -355,8 +364,58 @@ class ProjectController extends Controller
             'technicianSchedules',
             'workingHours',
             'partialDayHours',
-            'selectedClient'
+            'selectedClient',
+            'wizardMaterials'
         ));
+    }
+
+    /**
+     * Submitted material lines as the wizard's Materials step redraws them,
+     * each with its stock figures.
+     *
+     * @param  array<int, mixed>  $submitted
+     * @return array<int, array<string, mixed>>
+     */
+    private function wizardMaterialRows(array $submitted): array
+    {
+        $rows = app(ProjectMaterialPlan::class)->rowsFromInput(array_values($submitted));
+        $figures = app(StockAvailability::class)->forMaterials($rows->pluck('material_id')->all());
+
+        return $rows
+            ->map(fn (array $row): array => $row + ($figures[$row['material_id']] ?? []))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Tell Purchasing what a new project needs that the warehouse cannot
+     * cover - one notice for the project, naming how many materials are
+     * short. A warning, not a refusal: the project is booked either way.
+     *
+     * Follow-up like announceNewProject(), so it swallows its own faults.
+     */
+    private function announceMaterialShortfall(Project $project): void
+    {
+        try {
+            $lines = $project->materials()->with('material')->get();
+
+            if ($lines->isEmpty()) {
+                return;
+            }
+
+            $figures = app(StockAvailability::class)->forMaterials($lines->pluck('material_id')->all(), $project);
+
+            $short = $lines
+                ->filter(fn ($line): bool => (float) $line->quantity_needed > (float) ($figures[(int) $line->material_id]['available'] ?? 0))
+                ->map(fn ($line) => $line->material)
+                ->values();
+
+            if ($short->isNotEmpty()) {
+                $this->notifications->projectMaterialsShort($project, $short);
+            }
+        } catch (Throwable $exception) {
+            report($exception);
+        }
     }
 
     /**
@@ -474,7 +533,7 @@ class ProjectController extends Controller
                     'status' => 'unscheduled',
                     'quotation' => $validated['quotation_amount'],
                     'target_end_date' => $validated['target_end_date'],
-                    'address' => $validated['project_address'],
+                    ...ProjectAddress::columns($validated),
                     'description' => $validated['project_description'] ?? null,
                 ]);
 
@@ -504,6 +563,11 @@ class ProjectController extends Controller
                     $validated['details'] ?? []
                 );
 
+                // The Materials step: the plan, which reserves stock from now
+                // on. The setup screen opens on it and may still change it
+                // until setup is finalized.
+                app(ProjectMaterialPlan::class)->save($project, $validated['materials'] ?? [], $request->user());
+
                 $selectedTechnicianIds = collect([
                     $validated['lead_tech'],
                     ...$validated['technicians'],
@@ -515,7 +579,7 @@ class ProjectController extends Controller
                 // The dates are written first so that attaching each technician
                 // books them onto this schedule in the same step, through the
                 // one path that always writes both rows.
-                Schedule::create([
+                $schedule = Schedule::create([
                     'project_id' => $project->project_id,
                     'start_datetime' => $scheduleEntry['start'],
                     'end_datetime' => $scheduleEntry['end'],
@@ -523,6 +587,8 @@ class ProjectController extends Controller
                     'status' => 'scheduled',
                     'remarks' => 'Created from project wizard',
                 ]);
+
+                app(HolidayCalendar::class)->skip($schedule);
 
                 $createdBy = $request->user()?->id;
 
@@ -568,6 +634,7 @@ class ProjectController extends Controller
             // reports as failed. announceNewProject() therefore swallows its
             // own faults rather than letting them reach the catch below.
             $this->announceNewProject($created, count($validated['technicians']));
+            $this->announceMaterialShortfall($created);
 
             return redirect()
                 ->route('super-admin.projects')
@@ -1412,7 +1479,7 @@ class ProjectController extends Controller
         // the endpoint cannot disagree about it.
         $canReopen = $project->canBeReopened()
             && (bool) $request->user()?->isEmployee()
-            && in_array($request->user()?->role, [User::ROLE_SUPER_ADMIN, User::ROLE_ADMIN], true);
+            && in_array($request->user()?->role, User::ADMINISTRATOR_ROLES, true);
 
         // The reopen dialog books new dates, so it needs the same bookable
         // hours every other scheduling screen offers, and the days its pickers
@@ -1508,8 +1575,10 @@ class ProjectController extends Controller
         // ledger, and whether this reader may record is asked of the same
         // rules the endpoints ask again.
         $materialSummary = app(ProjectMaterialLedger::class)->summary($project);
-        $canRecordMaterials = app(ProjectMaterialRules::class)->canRecord($request->user(), $project);
-        $materialQuickAdd = $canRecordMaterials
+        $materialAbilities = app(ProjectMaterialRules::class)->abilities($request->user(), $project);
+        $canManageTasks = RoleAccess::can($request->user(), RoleAccess::MANAGE_TASKS);
+        $canFileReports = RoleAccess::can($request->user(), RoleAccess::FILE_REPORTS);
+        $materialQuickAdd = $materialAbilities['add']
             ? ProjectMaterialController::quickAddOptions()
             : ['types' => [], 'units' => []];
 
@@ -1545,7 +1614,9 @@ class ProjectController extends Controller
             'taskTechnicians',
             'technicianPeriods',
             'materialSummary',
-            'canRecordMaterials',
+            'materialAbilities',
+            'canManageTasks',
+            'canFileReports',
             'materialQuickAdd'
         ));
 
@@ -1568,7 +1639,7 @@ class ProjectController extends Controller
         $isReadOnly = $project->isReadOnly();
         // A locked project's task history is a record, and a paused one takes
         // no work until it is resumed - see show().
-        $canTakeWork = ! $isReadOnly && ! $project->on_hold;
+        $canTakeWork = ! $isReadOnly && ! $project->on_hold && RoleAccess::can($request->user(), RoleAccess::MANAGE_TASKS);
         $taskTechnicians = $this->taskTechnicians($project);
 
         return $table->respond(
@@ -1683,7 +1754,7 @@ class ProjectController extends Controller
             'middle_initial' => PersonName::middleInitialRules(),
             'last_name' => ['required', 'string', 'max:255'],
             'company_name' => ['nullable', 'string', 'max:255'],
-            'address' => ['required', 'string', 'max:500'],
+            ...ProjectAddress::rules($request->all()),
             'contact_number' => ['required', 'regex:/^09\d{9}$/'],
             // The same rules the wizard applies: a project's client may
             // not be one of the staff, whose address is the key their
@@ -1723,6 +1794,7 @@ class ProjectController extends Controller
             'target_end_date' => ['sometimes', $project->target_end_date ? 'required' : 'nullable', 'date_format:Y-m-d'],
             'target_date_reason' => ['nullable', 'string', 'max:'.TargetDateChange::MAX_REASON],
         ], [
+            ...ProjectAddress::messages(),
             'target_end_date.required' => 'Target date is required.',
             'target_end_date.date_format' => 'Enter a valid target date.',
             'target_date_reason.max' => 'Keep the reason under '.TargetDateChange::MAX_REASON.' characters.',
@@ -1805,7 +1877,7 @@ class ProjectController extends Controller
 
                 $project->update([
                     'quotation' => $validated['quotation'],
-                    'address' => $validated['address'],
+                    ...ProjectAddress::columns($validated),
                     'description' => $validated['project_description'] ?? null,
                     ...($targetChanged ? ['target_end_date' => $validated['target_end_date']] : []),
                 ]);

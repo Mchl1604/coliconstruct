@@ -30,11 +30,13 @@
                 </button>
             @endif
 
-            <button type="button" class="btn btn-sm btn-primary"
-                onclick="window.location='{{ route('super-admin.projects.create') }}'">
-                <i class="bi bi-plus-lg me-1"></i>
-                Add Project
-            </button>
+            @if (\App\Support\RoleAccess::can(auth()->user(), \App\Support\RoleAccess::CREATE_PROJECTS))
+                <button type="button" class="btn btn-sm btn-primary"
+                    onclick="window.location='{{ route('super-admin.projects.create') }}'">
+                    <i class="bi bi-plus-lg me-1"></i>
+                    Add Project
+                </button>
+            @endif
         </div>
     </div>
 

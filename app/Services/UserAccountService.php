@@ -904,8 +904,9 @@ class UserAccountService
 
     /**
      * Whether the signed-in administrator outranks the account they are acting
-     * on - which means "an administrator's account, Admin or Super Admin, is
-     * a Super Admin's to manage". An Admin may still act on their own row.
+     * on - which means "an office account, whichever of User::OFFICE_ROLES it
+     * holds, is a Super Admin's to manage". An HR Admin or Admin Officer may
+     * still act on their own row.
      *
      * The reason is account takeover rather than tidiness. An Admin who can
      * write to a Super Admin's row does not need that row's password: they can
@@ -928,7 +929,7 @@ class UserAccountService
         return $actor === null
             || $actor->isSuperAdmin()
             || $actor->is($user)
-            || ! in_array($user->role, User::ADMINISTRATOR_ROLES, true);
+            || ! in_array($user->role, User::OFFICE_ROLES, true);
     }
 
     /**
@@ -946,7 +947,7 @@ class UserAccountService
             return;
         }
 
-        throw new RuntimeException('An Admin or Super Admin account can only be edited by a Super Admin.');
+        throw new RuntimeException('Only a Super Admin can edit an office account.');
     }
 
     /**
@@ -981,7 +982,7 @@ class UserAccountService
             return;
         }
 
-        throw new RuntimeException('An Admin or Super Admin password can only be reset by a Super Admin.');
+        throw new RuntimeException('Only a Super Admin can reset this password.');
     }
 
     /**

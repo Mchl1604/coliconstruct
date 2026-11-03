@@ -66,7 +66,7 @@ class SharedClientRecordTest extends TestCase
         return array_merge([
             'first_name' => 'Maria',
             'last_name' => 'Santos',
-            'address' => 'Address',
+            ...$this->luzonAddress(),
             'contact_number' => '09123456789',
             'email_address' => 'maria@example.test',
             'quotation' => 1000,

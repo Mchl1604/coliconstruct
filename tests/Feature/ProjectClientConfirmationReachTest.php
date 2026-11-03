@@ -606,7 +606,7 @@ class ProjectClientConfirmationReachTest extends TestCase
         $this->put(route('super-admin.projects.update', $project->project_id), [
             'first_name' => 'Owner',
             'last_name' => 'Person',
-            'address' => 'Address',
+            ...$this->luzonAddress(),
             'contact_number' => '09123456789',
             'email_address' => 'new.office@company.test',
             'quotation' => 1000,

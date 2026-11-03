@@ -6,6 +6,7 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\User;
 use App\Support\BusinessTime;
+use App\Support\RoleAccess;
 
 /**
  * What a technician may do with a project they are assigned to.
@@ -93,7 +94,7 @@ class ProjectPolicy
     }
 
     /**
-     * Filing a report is a lead's job, and only on live work.
+     * Filing a report is a lead's job or a Super Admin's, and only on live work.
      *
      * A hold is asked about separately because it does not change the stored
      * status: pausing a project leaves it Unscheduled, which is a reportable
@@ -107,8 +108,9 @@ class ProjectPolicy
     }
 
     /**
-     * Everything submitReport() asks except the date: whether this lead files
-     * this project's reports at all, on the days it is scheduled.
+     * Everything submitReport() asks except the date: whether this account
+     * files this project's reports at all, on the days it is scheduled. A lead
+     * files on the projects they run; a Super Admin on any.
      *
      * A report is dated the day it is filed and describes that day's visit, so
      * it is only taken on one of the project's scheduled days. Asked on its own
@@ -116,8 +118,8 @@ class ProjectPolicy
      */
     public function reportsOn(User $user, Project $project): bool
     {
-        return $user->isLeadTechnician()
-            && $this->worksOn($user, $project)
+        return (RoleAccess::can($user, RoleAccess::FILE_REPORTS)
+                || ($user->isLeadTechnician() && $this->worksOn($user, $project)))
             && ! $project->isArchived()
             && ! $project->on_hold
             && in_array($project->status, self::REPORTABLE_STATUSES, true);

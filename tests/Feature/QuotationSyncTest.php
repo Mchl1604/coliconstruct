@@ -122,7 +122,7 @@ class QuotationSyncTest extends TestCase
         return array_merge([
             'first_name' => 'Juan',
             'last_name' => 'Dela Cruz',
-            'address' => $project->address,
+            ...$this->luzonAddress(),
             'contact_number' => '09123456789',
             'email_address' => 'juan@example.test',
             'quotation' => '1000',
@@ -261,7 +261,7 @@ class QuotationSyncTest extends TestCase
 
         $response = $this->save($project, [
             'quotation' => '1500',
-            'address' => 'Somewhere Else',
+            'address_street' => 'Somewhere Else',
             'quotation_change' => 'none',
         ]);
 

@@ -29,56 +29,106 @@ href="https://cdn.datatables.net/2.3.8/css/dataTables.dataTables.css">
 <body>
     @php
         $user = auth()->user();
-        $adminNavItems = [
+        // Each entry names the part of the portal it belongs to, and only
+        // the parts this role reaches are drawn - see RoleAccess. A
+        // Purchasing Admin sees Materials, Inventory, Movements and
+        // Configuration; an HR Admin everything but those first three.
+        $adminNavItems = collect([
             [
-    'label' => 'Dashboard',
-    'icon' => 'bi-speedometer2',
-    'url' => route('super-admin.dashboard'),
-    'active' => request()->routeIs('super-admin.dashboard'),
-],
-
-[
-    'label' => 'Projects',
-    'icon' => 'bi-folder2-open',
-    'url' => route('super-admin.projects'),
-    'active' => request()->routeIs('super-admin.projects'),
-],
-
-[
-    'label' => 'Schedules',
-    'icon' => 'bi-calendar-event',
-    'url' => route('super-admin.schedules.index'),
-    'active' => request()->routeIs('super-admin.schedules.*'),
-],
-
-[
-    'label' => 'Task',
-    'icon' => 'bi-list-task',
-    'url' => route('super-admin.tasks.index'),
-    'active' => request()->routeIs('super-admin.tasks.*'),
-],
-
-[
-    'label' => 'Technicians',
-    'icon' => 'bi-tools',
-    'url' => route('super-admin.technicians.index'),
-    'active' => request()->routeIs('super-admin.technicians.*'),
-],
-
-[
-    'label' => 'Reports',
-    'icon' => 'bi-graph-up',
-    'url' => route('super-admin.reports.index'),
-    'active' => request()->routeIs('super-admin.reports.*'),
-],
-
-[
-    'label' => 'Configuration',
-    'icon' => 'bi-sliders',
-    'url' => route('super-admin.configuration.index'),
-    'active' => request()->routeIs('super-admin.configuration.*'),
-],
-        ];
+                'label' => 'Dashboard',
+                'icon' => 'bi-speedometer2',
+                'area' => \App\Support\RoleAccess::SCHEDULING,
+                'route' => 'super-admin.dashboard',
+                'active' => 'super-admin.dashboard',
+            ],
+            [
+                'label' => 'Projects',
+                'icon' => 'bi-folder2-open',
+                'area' => \App\Support\RoleAccess::SCHEDULING,
+                'route' => 'super-admin.projects',
+                'active' => 'super-admin.projects',
+            ],
+            [
+                'label' => 'Schedules',
+                'icon' => 'bi-calendar-event',
+                'area' => \App\Support\RoleAccess::SCHEDULING,
+                'route' => 'super-admin.schedules.index',
+                'active' => 'super-admin.schedules.*',
+            ],
+            [
+                'label' => 'Task',
+                'icon' => 'bi-list-task',
+                'area' => \App\Support\RoleAccess::SCHEDULING,
+                'route' => 'super-admin.tasks.index',
+                'active' => 'super-admin.tasks.*',
+            ],
+            [
+                'label' => 'Technicians',
+                'icon' => 'bi-tools',
+                'area' => \App\Support\RoleAccess::SCHEDULING,
+                'route' => 'super-admin.technicians.index',
+                'active' => 'super-admin.technicians.*',
+            ],
+            [
+                'label' => 'Reports',
+                'icon' => 'bi-graph-up',
+                'area' => \App\Support\RoleAccess::SCHEDULING,
+                'route' => 'super-admin.reports.index',
+                'active' => 'super-admin.reports.*',
+            ],
+            [
+                // The scheduling roles have the full Projects page above.
+                'label' => 'Projects',
+                'icon' => 'bi-folder2-open',
+                'area' => \App\Support\RoleAccess::INVENTORY,
+                'unless_area' => \App\Support\RoleAccess::SCHEDULING,
+                'route' => 'inventory.projects',
+                'active' => 'inventory.projects*',
+            ],
+            [
+                'label' => 'Material Requests',
+                'icon' => 'bi-inbox',
+                'area' => \App\Support\RoleAccess::INVENTORY,
+                'route' => 'inventory.material-requests.index',
+                'active' => 'inventory.material-requests.*',
+            ],
+            [
+                'label' => 'Materials',
+                'icon' => 'bi-box-seam',
+                'area' => \App\Support\RoleAccess::INVENTORY,
+                'route' => 'inventory.materials-page',
+                'active' => 'inventory.materials-page',
+            ],
+            [
+                'label' => 'Inventory',
+                'icon' => 'bi-boxes',
+                'area' => \App\Support\RoleAccess::INVENTORY,
+                'route' => 'inventory.index',
+                'active' => 'inventory.index',
+            ],
+            [
+                'label' => 'Movements',
+                'icon' => 'bi-arrow-left-right',
+                'area' => \App\Support\RoleAccess::INVENTORY,
+                'route' => 'inventory.movements',
+                'active' => 'inventory.movements',
+            ],
+            [
+                'label' => 'Configuration',
+                'icon' => 'bi-sliders',
+                // Both sides: a Purchasing Admin keeps Inventory Settings here.
+                'area' => [\App\Support\RoleAccess::SCHEDULING, \App\Support\RoleAccess::INVENTORY],
+                'route' => 'super-admin.configuration.index',
+                'active' => 'super-admin.configuration.*',
+            ],
+        ])
+            ->filter(fn (array $item): bool => collect((array) $item['area'])
+                ->contains(fn (string $area): bool => (bool) $user?->canReach($area))
+                && ! (isset($item['unless_area']) && $user?->canReach($item['unless_area'])))
+            ->map(fn (array $item): array => $item + [
+                'url' => route($item['route']),
+                'is_active' => request()->routeIs($item['active']),
+            ]);
     @endphp
 
     <div class="admin-shell" data-admin-shell>
@@ -94,11 +144,11 @@ href="https://cdn.datatables.net/2.3.8/css/dataTables.dataTables.css">
         </script>
 
         <aside class="admin-sidebar" aria-label="Admin navigation">
-            {{-- Home for this shell is the dashboard, for an Admin as much as
-                 a Super Admin - both land there after signing in. Named rather
-                 than written out: /admin/dashboard was a path this app has
-                 never served, so the logo answered with a 404. --}}
-            <a class="admin-brand" href="{{ route('super-admin.dashboard') }}">
+            {{-- Home for this shell is wherever this role lands after signing
+                 in - the dashboard, or Inventory for a Purchasing Admin, who
+                 cannot open the dashboard. PortalHome decides, so the logo
+                 and the sign-in redirect never disagree. --}}
+            <a class="admin-brand" href="{{ \App\Support\PortalHome::url($user) }}">
                 <img src="{{ asset('img/coliconstructlogor.png') }}" alt="Coliconstruct" class="admin-brand-logo">
                 <span>Coliconstruct</span>
             </a>
@@ -108,7 +158,7 @@ href="https://cdn.datatables.net/2.3.8/css/dataTables.dataTables.css">
 
                 <div class="admin-sidebar-nav">
                     @foreach ($adminNavItems as $item)
-                        <a href="{{ $item['url'] }}" class="admin-sidebar-link {{ $item['active'] ? 'active' : '' }}">
+                        <a href="{{ $item['url'] }}" class="admin-sidebar-link {{ $item['is_active'] ? 'active' : '' }}">
                             <i class="bi {{ $item['icon'] }}" aria-hidden="true"></i>
                             <span>{{ $item['label'] }}</span>
                         </a>
@@ -154,6 +204,7 @@ href="https://cdn.datatables.net/2.3.8/css/dataTables.dataTables.css">
     {{-- Before the page's own scripts, so every picker they build inherits
          the shared defaults and the Clear button. --}}
     <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js"></script>
+    @include('layouts.partials.booking-calendar')
     <script src="/js/datePicker.js"></script>
     <script>
         window.notificationRoutes = @json([

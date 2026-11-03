@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\Notification;
-use App\Models\User;
 use App\Support\BusinessTime;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -59,7 +58,7 @@ class NotificationController extends Controller
         // Each role reads this inside the shell it already lives in. A client
         // has no portal of its own, so theirs is the public website.
         $layout = match (true) {
-            in_array($user->role, User::ADMINISTRATOR_ROLES, true) => 'layouts.superadminNav',
+            $user->isOfficeStaff() => 'layouts.superadminNav',
             $user->isClient() => 'layouts.publicSite',
             default => 'layouts.portalNav',
         };

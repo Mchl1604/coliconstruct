@@ -10,10 +10,12 @@ use App\Models\Project;
 use App\Models\ProjectMaterial;
 use App\Models\ProjectMaterialEntry;
 use App\Models\ProjectTechnician;
+use App\Models\StockMovement;
 use App\Models\Technician;
 use App\Models\User;
 use App\Services\ProjectCompletion;
 use App\Services\ProjectMaterialLedger;
+use App\Services\StockLedger;
 use App\Support\BusinessTime;
 use App\Support\MaterialUnit;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -51,7 +53,7 @@ class ProjectMaterialLedgerTest extends TestCase
         parent::setUp();
 
         $this->superAdmin = $this->account('super_admin', 'owner@example.test');
-        $this->admin = $this->account('admin', 'admin@example.test');
+        $this->admin = $this->account('admin_officer', 'admin@example.test');
         $this->leadAccount = $this->account('lead_technician', 'lead@example.test');
         $this->mateAccount = $this->account('technician', 'mate@example.test');
 
@@ -117,7 +119,7 @@ class ProjectMaterialLedgerTest extends TestCase
     {
         $bracket = Material::factory()->create(['name' => 'Outdoor Bracket', 'unit' => MaterialUnit::Set]);
 
-        $this->addMaterial($this->leadAccount, $bracket, '2', 'technician')->assertRedirect();
+        $this->addMaterial($this->admin, $bracket, '2')->assertRedirect();
 
         $line = ProjectMaterial::query()->where('material_id', $bracket->material_id)->firstOrFail();
 
@@ -353,14 +355,20 @@ class ProjectMaterialLedgerTest extends TestCase
             ]);
     }
 
+    /**
+     * With plenty delivered first, so the warehouse - which these tests
+     * otherwise leave empty - can cover it. ProjectMaterialStockTest covers
+     * additions it cannot.
+     */
     private function addMaterial(User $user, Material $material, string $quantity, string $portal = 'super-admin')
     {
+        app(StockLedger::class)->receive($material, StockMovement::TYPE_STOCK_IN, 100, BusinessTime::today(), [], $this->superAdmin);
+
         return $this->actingAs($user)
             ->from(route($portal.'.projects.show', $this->project->project_id))
             ->post(route($portal.'.projects.materials.add', $this->project->project_id), [
                 'material_id' => $material->material_id,
                 'quantity' => $quantity,
-                'entry_date' => BusinessTime::today()->toDateString(),
             ]);
     }
 

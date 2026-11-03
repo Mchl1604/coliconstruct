@@ -1,0 +1,141 @@
+/*
+ * A generated progress report or a structured incident report: on its
+ * printable page, and in the lead's preview before it is filed.
+ */
+
+.report-doc-heading {
+    margin: 1rem 0 .4rem;
+    font-size: .8rem;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: #1b5688;
+}
+
+/* Printed - or saved as a PDF from the print dialog - without the portal
+   around it. */
+@media print {
+    .admin-sidebar,
+    .admin-topbar,
+    .no-print {
+        display: none !important;
+    }
+
+    .admin-content {
+        margin: 0 !important;
+    }
+}
+
+/* ---------- The report forms ---------- */
+
+.report-form-banner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+    margin-bottom: 1rem;
+    padding: 1.1rem 1.35rem;
+    border-radius: .85rem;
+    color: #fff;
+}
+
+.report-form-banner.is-progress { background: linear-gradient(120deg, #1b5688, #2f86c9); }
+.report-form-banner.is-incident { background: linear-gradient(120deg, #a32a1c, #d9532f); }
+
+.report-form-back {
+    display: inline-flex;
+    align-items: center;
+    padding: .4rem .85rem;
+    border-radius: .5rem;
+    background: #fff;
+    color: #1b3a52;
+    font-size: .85rem;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.report-form-back:hover {
+    background: #eef5fc;
+    color: #1b3a52;
+}
+
+.report-form-banner-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, .18);
+    font-size: 1.3rem;
+}
+
+.report-form-section {
+    --report-accent: #1b5688;
+    --report-tint: #eef5fc;
+    margin-bottom: 1rem;
+    padding: 1.15rem 1.25rem;
+    border-top: 4px solid var(--report-accent);
+    border-radius: .75rem;
+    background: #fff;
+    box-shadow: 0 3px 14px rgba(27, 86, 136, .07);
+}
+
+.report-form-section-title {
+    display: flex;
+    align-items: center;
+    gap: .55rem;
+    margin-bottom: 1rem;
+    font-weight: 700;
+    color: var(--report-accent);
+}
+
+.report-form-section-title .bi {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.9rem;
+    height: 1.9rem;
+    border-radius: .5rem;
+    background: var(--report-tint);
+}
+
+.is-blue { --report-accent: #1b5688; --report-tint: #e6f1fb; }
+.is-teal { --report-accent: #0f766e; --report-tint: #dcf5f1; }
+.is-green { --report-accent: #15803d; --report-tint: #dcfce7; }
+.is-red { --report-accent: #b42318; --report-tint: #fee4e2; }
+.is-orange { --report-accent: #c2500c; --report-tint: #ffedd5; }
+.is-amber { --report-accent: #a16207; --report-tint: #fef3c7; }
+.is-purple { --report-accent: #6d28d9; --report-tint: #ede9fe; }
+
+.report-form-section .form-control:focus,
+.report-form-section .form-select:focus {
+    border-color: var(--report-accent);
+    box-shadow: 0 0 0 .2rem var(--report-tint);
+}
+
+.report-form-tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+    gap: .75rem;
+    margin-bottom: 1rem;
+}
+
+.report-form-tile {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: .5rem;
+    padding: .75rem 1rem;
+    border-radius: .75rem;
+    background: var(--report-tint);
+    color: var(--report-accent);
+    font-size: .82rem;
+    font-weight: 600;
+}
+
+.report-form-tile strong {
+    font-size: 1.4rem;
+    font-weight: 800;
+}

@@ -268,6 +268,39 @@ class TaskScheduleRules
      *
      * @param  array<int, array{start: string, end: string}>  $ranges
      */
+    /**
+     * What a new task may not start on: today or any day before it. Work is
+     * planned at least a day ahead, so a task cannot be raised for the day it
+     * is raised. Read off the office's clock.
+     *
+     * New tasks only - an existing task keeps whatever dates it has.
+     */
+    public const NEW_TASK_REFUSAL = 'New tasks start tomorrow or later.';
+
+    public function startsTooSoon(?string $startDate): bool
+    {
+        return $startDate !== null
+            && $startDate !== ''
+            && $startDate <= BusinessTime::today()->toDateString();
+    }
+
+    /**
+     * Add the "a new task starts tomorrow at the earliest" check to a
+     * validator - see NEW_TASK_REFUSAL.
+     */
+    public function attachNewTaskStart(Validator $validator): void
+    {
+        $validator->after(function (Validator $validator): void {
+            if ($validator->errors()->has('start_date')) {
+                return;
+            }
+
+            if ($this->startsTooSoon($validator->getData()['start_date'] ?? null)) {
+                $validator->errors()->add('start_date', self::NEW_TASK_REFUSAL);
+            }
+        });
+    }
+
     public function attach(Validator $validator, array $ranges): void
     {
         $validator->after(function (Validator $validator) use ($ranges): void {

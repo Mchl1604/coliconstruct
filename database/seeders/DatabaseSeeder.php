@@ -21,6 +21,9 @@ class DatabaseSeeder extends Seeder
         // Installation, Repair and Cleaning detail forms - see DetailFormSeeder.
         $this->call(DetailFormSeeder::class);
 
+        // The Philippines' proclaimed non-working days, which bookings skip.
+        $this->call(PhilippineNonWorkingDaySeeder::class);
+
         // User::factory(10)->create();
 
         User::factory()->create([

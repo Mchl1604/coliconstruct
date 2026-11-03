@@ -1,4 +1,4 @@
-{{-- One row of System Settings -> Materials, rendered by
+{{-- One row of Inventory -> Materials, rendered by
      MaterialController::index() for serverTable.js. --}}
 @php
     $isUsed = (int) $material->project_materials_count > 0;
@@ -15,13 +15,18 @@
         @endif
     </td>
     <td>
-        @if ($material->brand)
-            <span class="material-brand ms-0">{{ $material->brand }}</span>
+        @if ($material->brandName())
+            <span class="material-brand ms-0">{{ $material->brandName() }}</span>
         @else
             <span class="text-secondary small">&ndash;</span>
         @endif
     </td>
-    <td class="small">{{ $material->type?->type_name }}</td>
+    <td class="small">
+        {{ $material->type?->type_name }}
+        @if ($material->subtypeName())
+            <div class="material-meta">{{ $material->subtypeName() }}</div>
+        @endif
+    </td>
     <td><span class="material-unit-chip" title="{{ $material->unit->label() }}">{{ $material->unit->value }}</span></td>
     <td class="text-center text-nowrap">
         <button type="button" class="btn btn-sm btn-outline-primary py-1 px-2"

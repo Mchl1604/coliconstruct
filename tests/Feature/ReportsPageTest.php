@@ -193,7 +193,7 @@ class ReportsPageTest extends TestCase
         $response->assertOk();
         $response->assertSee('Technician Reports');
         $response->assertSee('System Reports');
-        $response->assertSee('Create Report');
+        $response->assertSee(route('super-admin.progress-reports.create'), false);
         // Generating a system report now produces a preview to read, not a
         // file to open - Print and PDF are chosen from that preview.
         $response->assertSee('Generate Report');

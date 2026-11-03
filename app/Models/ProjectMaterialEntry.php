@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
  * One movement of a project's material after setup.
@@ -86,6 +87,15 @@ class ProjectMaterialEntry extends Model
     public function projectMaterial(): BelongsTo
     {
         return $this->belongsTo(ProjectMaterial::class, 'project_material_id', 'project_material_id');
+    }
+
+    /**
+     * The stock movement this entry caused in the warehouse, when it caused
+     * one: Added from the warehouse, Returned, and Unused at close-out.
+     */
+    public function stockMovement(): HasOne
+    {
+        return $this->hasOne(StockMovement::class, 'project_material_entry_id', 'material_entry_id');
     }
 
     public function recorder(): BelongsTo

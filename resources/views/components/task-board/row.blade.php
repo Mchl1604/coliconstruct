@@ -96,6 +96,15 @@
                 <i class="bi bi-eye" aria-hidden="true"></i>
             </button>
 
+            @can('postUpdate', $task)
+                <button type="button" class="btn btn-sm btn-info py-1 px-2"
+                    data-bs-toggle="modal"
+                    data-bs-target="#taskUpdateModal{{ $task->task_id }}"
+                    title="Add today's update">
+                    <i class="bi bi-journal-plus" aria-hidden="true"></i>
+                </button>
+            @endcan
+
             @if ($canComplete)
                 <button type="button" class="btn btn-sm btn-success py-1 px-2"
                     data-bs-toggle="modal"

@@ -402,6 +402,7 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     const calendar = new window.FullCalendar.Calendar(calendarEl, {
+        ...window.calendarHeader.nonWorkingDays(),
         initialView: "dayGridMonth",
         headerToolbar: window.calendarHeader.toolbar(),
         height: "auto",

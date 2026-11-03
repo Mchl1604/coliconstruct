@@ -6,6 +6,7 @@ use App\Models\Document;
 use App\Models\Project;
 use App\Models\ProjectCompletionPhoto;
 use App\Models\TaskImage;
+use App\Models\TaskUpdateImage;
 use App\Models\TechnicianReportImage;
 use App\Models\User;
 use App\Services\ClientProjects;
@@ -100,6 +101,25 @@ class UploadedFileController extends Controller
         return $this->stream($image->image_path);
     }
 
+    /**
+     * A photograph from one day's progress on a task, on the same terms as
+     * the task's own completion photographs.
+     */
+    public function taskUpdateImage(Request $request, TaskUpdateImage $image): StreamedResponse
+    {
+        $task = $image->taskUpdate?->task;
+
+        abort_if($request->user()?->isClient(), 403);
+
+        $this->authorizeProject($request, $task?->project);
+
+        if ($task !== null && $request->user()?->needsTechnicianRecord()) {
+            abort_unless(Gate::forUser($request->user())->allows('view', $task), 403);
+        }
+
+        return $this->stream($image->image_path);
+    }
+
     public function reportImage(Request $request, TechnicianReportImage $image): StreamedResponse
     {
         $this->authorizeProject($request, $image->report?->project);
@@ -146,7 +166,10 @@ class UploadedFileController extends Controller
 
         abort_unless($user !== null && $user->canLogin(), 403);
 
-        if ($user->isEmployee() && ! $user->needsTechnicianRecord()) {
+        // The office here is the part of it that works projects. A
+        // Purchasing Admin reaches no project page, so none of a project's
+        // files either.
+        if (in_array($user->role, User::ADMINISTRATOR_ROLES, true)) {
             return;
         }
 

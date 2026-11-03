@@ -6,7 +6,10 @@ use App\Models\ActivityLog;
 use App\Models\Client;
 use App\Models\Document;
 use App\Models\DocumentHistory;
+use App\Models\IncidentPerson;
+use App\Models\IncidentReport;
 use App\Models\Material;
+use App\Models\MaterialRequest;
 use App\Models\Project;
 use App\Models\ProjectCompletionPhoto;
 use App\Models\ProjectMaterial;
@@ -17,14 +20,19 @@ use App\Models\ProjectType;
 use App\Models\Schedule;
 use App\Models\ScheduleTechnician;
 use App\Models\Skill;
+use App\Models\StockMovement;
 use App\Models\Task;
 use App\Models\TaskImage;
+use App\Models\TaskUpdate;
 use App\Models\TechnicianReport;
 use App\Models\TechnicianReportImage;
 use App\Models\User;
 use App\Services\PhaseTemplateMerger;
+use App\Services\ProgressReportBuilder;
+use App\Services\ProjectAddressSplitter;
 use App\Services\ProjectCompletion;
 use App\Services\ProjectTypeCatalog;
+use App\Services\StockAvailability;
 use App\Services\SystemContentService;
 use App\Services\TargetDateChange;
 use App\Services\UserAccountService;
@@ -79,6 +87,11 @@ use Throwable;
  *     photos in database/seeders/demo-photos go on completed work, on the
  *     last task of each finished stage and on every technician report. Every
  *     file is kept under 50 KB.
+ *   - The warehouse follows the work: materials released to a started project,
+ *     what came back from it, a delivery so every material has stock (a few
+ *     deliberately low or out), and a few lead requests awaiting a decision.
+ *   - Progress reports carry the generated snapshot, and incident reports the
+ *     structured details, the way the lead's two forms file them.
  *   - Nothing is emailed or notified. Every step is written straight to the
  *     tables, the way the wizard and the lifecycle actions write them, with
  *     the audit trail to match.
@@ -121,6 +134,12 @@ class DemoDataSeeder extends Seeder
     private CarbonImmutable $today;
 
     private string $passwordHash;
+
+    private ?User $projectCreator = null;
+
+    private ?User $buyer = null;
+
+    private int $requestCounter = 0;
 
     /**
      * Every seeded account, by the local part of its email address.
@@ -230,6 +249,8 @@ class DemoDataSeeder extends Seeder
                         $this->seedProject($spec, $index);
                         $added++;
                     }
+
+                    $this->stockTheWarehouse();
                 }
 
                 $this->writeActivity();
@@ -522,7 +543,7 @@ class DemoDataSeeder extends Seeder
             'status' => 'unscheduled',
             'quotation' => $spec['quotation'],
             'target_end_date' => $this->date($spec['target']),
-            'address' => $spec['address'] ?? $clientSpec['address'],
+            ...app(ProjectAddressSplitter::class)->split($spec['address'] ?? $clientSpec['address']),
             'description' => $spec['description'],
             'first_viewed_at' => ($spec['new'] ?? false) ? null : $createdAt->addMinutes(35),
             'created_at' => $createdAt,
@@ -557,7 +578,7 @@ class DemoDataSeeder extends Seeder
         $team = $this->assignTeam($project, $spec, $schedules, $admin, $createdAt);
         $lead = $team[0]['user'];
 
-        $this->recordCreation($project, $spec, $admin, $createdAt, count($team) - 1);
+        $this->recordCreation($project, $spec, $this->projectCreator($admin), $createdAt, count($team) - 1);
 
         if ($this->withFiles) {
             $this->attachDocuments($project, $spec, $clientSpec, $client, $profile, $admin, $lead, $createdAt);
@@ -567,6 +588,28 @@ class DemoDataSeeder extends Seeder
         $this->seedMaterials($project, $spec, $team, $createdAt);
         $this->fileReports($project, $spec, $profile, $lead, $team);
         $this->applyOutcome($project, $spec, $profile, $client, $admin, $lead, $createdAt);
+    }
+
+    /**
+     * Who created the project: an HR Admin may not, so an Admin Officer or the
+     * Super Admin, with the given administrator only where neither exists.
+     */
+    private function projectCreator(User $fallback): User
+    {
+        return $this->projectCreator ??= User::query()
+            ->whereIn('role', [User::ROLE_ADMIN_OFFICER, User::ROLE_SUPER_ADMIN])
+            ->orderByRaw('role = ? desc', [User::ROLE_ADMIN_OFFICER])
+            ->orderBy('id')
+            ->first() ?? $fallback;
+    }
+
+    /**
+     * Who works the warehouse: a Purchasing Admin, or else the project creator.
+     */
+    private function buyer(): User
+    {
+        return $this->buyer ??= User::query()->where('role', User::ROLE_PURCHASING_ADMIN)->orderBy('id')->first()
+            ?? $this->projectCreator($this->admins[0]);
     }
 
     /**
@@ -1047,6 +1090,22 @@ class DemoDataSeeder extends Seeder
                     'updated_at' => $completedAt ?? $finalizedAt,
                 ]);
 
+                // The daily update the holder posts once work is under way.
+                if ($holder !== null && in_array($state, ['ongoing', 'completed'], true) && $start['date'] <= $this->today->toDateString()) {
+                    $updatedAt = $this->moment($this->offsetOf($start['date']), '16:00');
+
+                    TaskUpdate::forceCreate([
+                        'task_id' => $task->task_id,
+                        'technician_id' => $holder['technician_id'],
+                        'update_date' => $start['date'],
+                        'notes' => $state === 'completed' ? 'Finished as planned.' : 'Under way. Continuing tomorrow.',
+                        'posted_by' => $holder['user']->id,
+                        'posted_by_name' => $holder['user']->fullName(),
+                        'created_at' => $updatedAt,
+                        'updated_at' => $updatedAt,
+                    ]);
+                }
+
                 // The photo a technician attaches when closing off the last
                 // task of a stage.
                 if ($completedAt !== null && $taskIndex === array_key_last($phaseSpec['tasks']) && $this->withFiles) {
@@ -1154,6 +1213,7 @@ class DemoDataSeeder extends Seeder
         };
         $planned = 0;
         $leftovers = 0;
+        $firstLine = null;
 
         foreach ($lines as $index => [$name, $brand, $unitValue, $quantity]) {
             $material = $this->material($name, $brand, $unitValue);
@@ -1171,10 +1231,14 @@ class DemoDataSeeder extends Seeder
                 'updated_at' => $plannedAt,
             ]);
             $planned++;
+            $firstLine ??= $line;
 
             if ($share === 0.0 || $worked === []) {
                 continue;
             }
+
+            // Purchasing released the plan when the work began.
+            $this->stockMovement($material, StockMovement::TYPE_STOCK_OUT, -$quantity, $worked[0], $this->buyer(), $project);
 
             $fractional = $material->unit->allowsFractions();
             // A finished job uses about all of it; one line in three comes in
@@ -1200,13 +1264,15 @@ class DemoDataSeeder extends Seeder
             // Half the leftovers of a finished job go back to the office; the
             // rest are still on site when it closes.
             if ($finished && $left > 0 && ($project->project_id + $index) % 2 === 0) {
-                $this->materialEntry($line, ProjectMaterialEntry::TYPE_RETURNED, $left, end($worked), $lead);
+                $entry = $this->materialEntry($line, ProjectMaterialEntry::TYPE_RETURNED, $left, end($worked), $lead);
+                $this->stockMovement($material, StockMovement::TYPE_RETURNED, $left, end($worked), $lead, $project, $entry, 'Returned from site');
                 $left = 0.0;
             }
 
             if ($closedOn !== null && $left > 0) {
-                $this->materialEntry($line, ProjectMaterialEntry::TYPE_UNUSED, $left, $closedOn, null,
+                $entry = $this->materialEntry($line, ProjectMaterialEntry::TYPE_UNUSED, $left, $closedOn, null,
                     $outcome === 'cancelled' ? 'Left over at cancellation.' : 'Left over at completion.');
+                $this->stockMovement($material, StockMovement::TYPE_RETURNED, $left, $closedOn, null, $project, $entry, 'Left over at close-out');
                 $leftovers++;
             }
         }
@@ -1219,6 +1285,10 @@ class DemoDataSeeder extends Seeder
             record: $project
         );
 
+        if ($firstLine !== null && in_array($outcome, ['ongoing', 'overdue'], true) && $worked !== []) {
+            $this->seedMaterialRequest($project, $firstLine, $lead, end($worked));
+        }
+
         if ($leftovers > 0) {
             $this->log(
                 ActivityLog::PROJECT_MATERIALS_CLOSED_OUT,
@@ -1230,13 +1300,104 @@ class DemoDataSeeder extends Seeder
         }
     }
 
-    private function materialEntry(ProjectMaterial $line, string $type, float $quantity, string $date, ?User $by, ?string $notes = null): void
+    /**
+     * A lead asking for more on running work: by turns still pending, rejected
+     * and approved, so the Material Requests page has each to show.
+     */
+    private function seedMaterialRequest(Project $project, ProjectMaterial $line, User $lead, string $date): void
+    {
+        $material = $line->material;
+        $at = $this->moment($this->offsetOf($date), '10:15');
+        $decidedAt = $at->addHours(3)->min($this->now());
+        $status = [MaterialRequest::STATUS_PENDING, MaterialRequest::STATUS_REJECTED, MaterialRequest::STATUS_APPROVED][$this->requestCounter++ % 3];
+        $entry = null;
+
+        if ($status === MaterialRequest::STATUS_APPROVED) {
+            $entry = $this->materialEntry($line, ProjectMaterialEntry::TYPE_ADDED, 2, $date, $this->buyer());
+            $this->stockMovement($material, StockMovement::TYPE_STOCK_OUT, -2, $date, $this->buyer(), $project, $entry, 'Added on site');
+        }
+
+        MaterialRequest::forceCreate([
+            'project_id' => $project->project_id,
+            'material_id' => $material->material_id,
+            'quantity' => 2,
+            'status' => $status,
+            'requested_by' => $lead->id,
+            'decided_by' => $status === MaterialRequest::STATUS_PENDING ? null : $this->buyer()->id,
+            'decided_at' => $status === MaterialRequest::STATUS_PENDING ? null : $decidedAt,
+            'rejection_reason' => $status === MaterialRequest::STATUS_REJECTED ? 'Use what is on site first.' : null,
+            'project_material_entry_id' => $entry?->material_entry_id,
+            'created_at' => $at,
+            'updated_at' => $status === MaterialRequest::STATUS_PENDING ? $at : $decidedAt,
+        ]);
+
+        $this->log(
+            ActivityLog::MATERIAL_REQUESTED,
+            $at,
+            $lead,
+            sprintf('Requested 2 %s of %s for %s.', $material->unit->value, $material->displayName(), $project->reference_no),
+            record: $project
+        );
+    }
+
+    /**
+     * Written straight onto the row, signed as StockLedger signs it.
+     */
+    private function stockMovement(Material $material, string $type, float|int $quantity, string $date, ?User $by, ?Project $project = null, ?ProjectMaterialEntry $entry = null, ?string $notes = null): void
+    {
+        $at = CarbonImmutable::parse($date.' 08:00', Schedule::BUSINESS_TIMEZONE)
+            ->setTimezone(config('app.timezone'))
+            ->min($this->now());
+
+        StockMovement::forceCreate([
+            'material_id' => $material->material_id,
+            'movement_type' => $type,
+            'quantity' => $quantity,
+            'movement_date' => $date,
+            'project_id' => $project?->project_id,
+            'project_material_entry_id' => $entry?->material_entry_id,
+            'notes' => $notes,
+            'recorded_by' => $by?->id,
+            'recorded_by_name' => $by?->fullName() ?? 'System',
+            'created_at' => $at,
+            'updated_at' => $at,
+        ]);
+    }
+
+    /**
+     * A delivery that covers everything the projects took and still reserve,
+     * and leaves most materials with stock to spare. Every ninth has none to
+     * spare, and the next only what its reorder level asks for, or two.
+     */
+    private function stockTheWarehouse(): void
+    {
+        $materials = Material::query()->active()->orderBy('material_id')->get();
+        $figures = app(StockAvailability::class)->forMaterials($materials->pluck('material_id')->all());
+
+        foreach ($materials as $index => $material) {
+            $figure = $figures[(int) $material->material_id];
+
+            $spare = match ($index % 9) {
+                0 => 0.0,
+                1 => (float) ($material->reorder_level ?? 2),
+                default => (float) (20 + ($index % 5) * 10),
+            };
+
+            $wanted = ceil($figure['reserved'] + $spare) - $figure['on_hand'];
+
+            if ($wanted > 0) {
+                $this->stockMovement($material, StockMovement::TYPE_STOCK_IN, $wanted, $this->date(-400), $this->buyer(), notes: 'Opening stock');
+            }
+        }
+    }
+
+    private function materialEntry(ProjectMaterial $line, string $type, float $quantity, string $date, ?User $by, ?string $notes = null): ProjectMaterialEntry
     {
         $at = CarbonImmutable::parse($date.' 17:00', Schedule::BUSINESS_TIMEZONE)
             ->setTimezone(config('app.timezone'))
             ->min($this->now());
 
-        ProjectMaterialEntry::forceCreate([
+        return ProjectMaterialEntry::forceCreate([
             'project_id' => $line->project_id,
             'project_material_id' => $line->project_material_id,
             'entry_type' => $type,
@@ -1258,7 +1419,7 @@ class DemoDataSeeder extends Seeder
         if ($this->materials === null) {
             $this->materials = Material::query()
                 ->get()
-                ->keyBy(fn (Material $material): string => mb_strtolower($material->name).'|'.mb_strtolower((string) $material->brand).'|'.$material->unit->value);
+                ->keyBy(fn (Material $material): string => mb_strtolower($material->name).'|'.mb_strtolower((string) $material->brandName()).'|'.$material->unit->value);
         }
 
         return $this->materials->get(mb_strtolower($name).'|'.mb_strtolower((string) $brand).'|'.$unit);
@@ -1379,32 +1540,86 @@ class DemoDataSeeder extends Seeder
             return;
         }
 
+        $filedDays = [];
         $technicianId = $team[0]['technician_id'];
         $reportCount = $outcome === 'completed' ? 1 : min(2, count($profile['progress']));
 
         for ($report = 0; $report < $reportCount; $report++) {
             $day = $worked[intdiv(($report + 1) * $worked->count(), $reportCount + 1)] ?? $worked->last();
 
-            $this->report($project, $profile, $technicianId, $lead, 'progress', 'Progress Update', $profile['progress'][$report % count($profile['progress'])], $day);
+            // One generated report per project per day, as the builder allows.
+            if (in_array($day, $filedDays, true)) {
+                continue;
+            }
+
+            $filedDays[] = $day;
+            $remarks = $profile['progress'][$report % count($profile['progress'])];
+
+            $this->report($project, $profile, $technicianId, $lead, 'progress', sprintf('Progress Report - %s', CarbonImmutable::parse($day)->format(BusinessTime::DATE)), $remarks, $day, app(ProgressReportBuilder::class)->gather($project, $day) + [
+                'remarks' => $remarks,
+                'issues' => null,
+                'next_plan' => null,
+                'filed_by' => $lead->fullName(),
+                'filed_at' => $this->moment($this->offsetOf($day), '17:45')->setTimezone(Schedule::BUSINESS_TIMEZONE)->format(BusinessTime::DATE.' g:i A'),
+            ]);
         }
 
         if (isset($spec['incident'])) {
-            $this->report($project, $profile, $technicianId, $lead, 'incident', $spec['incident']['title'], $spec['incident']['description'], $worked[intdiv($worked->count(), 2)]);
+            $this->incident($this->report($project, $profile, $technicianId, $lead, 'incident', $spec['incident']['title'], $spec['incident']['description'], $worked[intdiv($worked->count(), 2)]), $outcome, $technicianId, $lead);
         }
 
         if (isset($spec['delay'])) {
-            $this->report($project, $profile, $technicianId, $lead, 'incident', 'Schedule Delay', $spec['delay'], $worked->last());
+            $this->incident($this->report($project, $profile, $technicianId, $lead, 'incident', 'Schedule Delay', $spec['delay'], $worked->last()), $outcome, $technicianId, $lead);
         }
 
         if (isset($spec['hold_reason'])) {
-            $this->report($project, $profile, $technicianId, $lead, 'incident', 'Work Paused', $spec['hold_reason'], $worked->last());
+            $this->incident($this->report($project, $profile, $technicianId, $lead, 'incident', 'Work Paused', $spec['hold_reason'], $worked->last()), $outcome, $technicianId, $lead);
         }
     }
 
     /**
-     * @param  array<string, mixed>  $profile
+     * The structured details an incident report carries, read off its title. A
+     * finished job's are closed; a running one's are still open.
      */
-    private function report(Project $project, array $profile, int $technicianId, User $lead, string $type, string $title, string $description, string $date): void
+    private function incident(TechnicianReport $report, string $outcome, int $technicianId, User $lead): void
+    {
+        $title = mb_strtolower($report->report_title.' '.$report->report_description);
+
+        $type = match (true) {
+            str_contains($title, 'leak') || str_contains($title, 'refrigerant') => 'refrigerant_leak',
+            str_contains($title, 'damage') || str_contains($title, 'crack') => 'property_damage',
+            str_contains($title, 'electric') || str_contains($title, 'breaker') || str_contains($title, 'wiring') => 'electrical',
+            str_contains($title, 'complain') => 'complaint',
+            str_contains($title, 'tool') || str_contains($title, 'equipment') => 'equipment_damage',
+            default => 'other',
+        };
+
+        $incident = IncidentReport::forceCreate([
+            'technician_report_id' => $report->id,
+            'incident_type' => $type,
+            'occurred_at' => $this->moment($this->offsetOf($report->report_date->toDateString()), '14:20'),
+            'location' => 'indoor_unit',
+            'refrigerant_type' => $type === 'refrigerant_leak' ? 'R32' : null,
+            'immediate_action' => 'Made the area safe and told the office.',
+            'status' => in_array($outcome, ['awaiting', 'completed'], true) ? IncidentReport::STATUS_CLOSED : IncidentReport::STATUS_OPEN,
+            'created_at' => $report->created_at,
+            'updated_at' => $report->created_at,
+        ]);
+
+        IncidentPerson::forceCreate([
+            'incident_report_id' => $incident->incident_report_id,
+            'technician_id' => $technicianId,
+            'name' => $lead->fullName(),
+            'person_type' => 'team',
+            'involvement' => 'witness',
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $profile
+     * @param  array<string, mixed>|null  $snapshot  a generated progress report's frozen data
+     */
+    private function report(Project $project, array $profile, int $technicianId, User $lead, string $type, string $title, string $description, string $date, ?array $snapshot = null): TechnicianReport
     {
         $at = $this->moment($this->offsetOf($date), '17:45');
 
@@ -1415,6 +1630,7 @@ class DemoDataSeeder extends Seeder
             'report_type' => $type,
             'report_title' => $title,
             'report_description' => $description,
+            'report_data' => $snapshot,
             'report_date' => $date,
             'is_archived' => false,
             'created_at' => $at,
@@ -1429,6 +1645,8 @@ class DemoDataSeeder extends Seeder
                 'updated_at' => $at,
             ]);
         }
+
+        return $report;
     }
 
     // ------------------------------------------------------------------

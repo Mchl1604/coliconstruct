@@ -6,7 +6,7 @@
     <link href="/css/super-admin/projects.css" rel="stylesheet">
     <link href="/css/super-admin/technicians.css" rel="stylesheet">
     <link href="/css/super-admin/configuration.css" rel="stylesheet">
-    {{-- System Settings -> Materials. --}}
+    {{-- Inventory Settings: the type, sub-type and brand tables. --}}
     <link href="/css/materials.css" rel="stylesheet">
     {{-- The user search in the Export Logs dialog, shared with the
          Technicians page. --}}
@@ -18,18 +18,32 @@
         // Archiving - and everything that hangs off it - belongs to the Super
         // Admin. An Admin creates, reads, edits, activates and deactivates.
         $isSuperAdmin = (bool) auth()->user()?->isSuperAdmin();
+
+        // Which parts of Configuration this reader gets - see RoleAccess. The
+        // scheduling side is accounts, logs, settings and inquiries; the
+        // inventory side is Inventory Settings. A Purchasing Admin has only
+        // the second, an HR Admin only the first.
+        $canSchedule = (bool) auth()->user()?->canReach(\App\Support\RoleAccess::SCHEDULING);
+        $canStock = (bool) auth()->user()?->canReach(\App\Support\RoleAccess::INVENTORY);
     @endphp
 
     <div class="d-flex justify-content-between align-items-center mb-3">
         <div>
             <h4 class="fw-bold mb-1">Configuration</h4>
             <p class="text-secondary small mb-0">
-                {{ $isSuperAdmin ? 'Accounts, audit history and system-wide settings.' : 'Accounts and audit history.' }}
+                @if ($isSuperAdmin)
+                    Accounts, audit history and system-wide settings.
+                @elseif ($canSchedule)
+                    Accounts and audit history.
+                @else
+                    Material types, sub-types and brands.
+                @endif
             </p>
         </div>
     </div>
 
     <ul class="nav nav-tabs technician-tabs mb-3" role="tablist">
+        @if ($canSchedule)
         <li class="nav-item" role="presentation">
             <button class="nav-link active" id="userManagementTab" data-bs-toggle="tab"
                 data-bs-target="#userManagementPane" type="button" role="tab" aria-controls="userManagementPane"
@@ -45,6 +59,7 @@
                 Activity Logs
             </button>
         </li>
+        @endif
         @if ($isSuperAdmin)
             <li class="nav-item" role="presentation">
                 <button class="nav-link" id="systemSettingsTab" data-bs-toggle="tab"
@@ -55,6 +70,17 @@
                 </button>
             </li>
         @endif
+        @if ($canStock)
+            <li class="nav-item" role="presentation">
+                <button class="nav-link {{ $canSchedule ? '' : 'active' }}" id="inventorySettingsTab" data-bs-toggle="tab"
+                    data-bs-target="#inventorySettingsPane" type="button" role="tab"
+                    aria-controls="inventorySettingsPane" aria-selected="{{ $canSchedule ? 'false' : 'true' }}">
+                    <i class="bi bi-box-seam me-1" aria-hidden="true"></i>
+                    Inventory Settings
+                </button>
+            </li>
+        @endif
+        @if ($canSchedule)
         <li class="nav-item" role="presentation">
             <button class="nav-link" id="inquiriesTab" data-bs-toggle="tab" data-bs-target="#inquiriesPane"
                 type="button" role="tab" aria-controls="inquiriesPane" aria-selected="false">
@@ -65,10 +91,12 @@
                 <span class="badge rounded-pill bg-danger ms-1 d-none" data-inquiry-new-count></span>
             </button>
         </li>
+        @endif
     </ul>
 
     <div class="tab-content">
 
+        @if ($canSchedule)
         {{-- ==================== TAB 1: USER MANAGEMENT ==================== --}}
         <div class="tab-pane fade show active" id="userManagementPane" role="tabpanel"
             aria-labelledby="userManagementTab">
@@ -490,6 +518,8 @@
             </div>
         </div>
 
+        @endif
+
         {{-- ==================== TAB 3: SYSTEM SETTINGS ==================== --}}
         {{-- Super Admin only. An Admin's Configuration is User Management and
              Activity Logs, so the whole pane goes rather than being emptied.
@@ -516,7 +546,6 @@
                 \App\Models\SystemContent::SECTION_FOOTER => 'bi-layout-text-window-reverse',
                 'project_types' => 'bi-diagram-3',
                 'phase_templates' => 'bi-list-check',
-                'materials' => 'bi-box-seam',
             ];
 
             // Every entry in a category's list. Most are catalogue sections,
@@ -533,8 +562,6 @@
                 if ($key === \App\Models\SystemContent::SECTION_PROJECT_SETTINGS) {
                     $generalTypes['project_types'] = ['label' => 'Project Types', 'panel' => true];
                     $generalTypes['phase_templates'] = ['label' => 'Default Phases & Tasks', 'panel' => true];
-                    // The list a project's materials are picked from.
-                    $generalTypes['materials'] = ['label' => 'Materials', 'panel' => true];
                 }
             }
 
@@ -764,8 +791,50 @@
                             </div>
                         </div>
 
-                        <div data-content-extra="materials" hidden>
-                            @include('super-admin.partials.materials-panel')
+                        {{-- Part of Project Settings: shown beneath its fields, with
+                             its own saving. --}}
+                        <div class="mt-4 pt-4 border-top" data-content-extra="{{ \App\Models\SystemContent::SECTION_PROJECT_SETTINGS }}" data-holidays-panel hidden>
+                            <h5 class="fw-bold mb-1">
+                                <i class="bi bi-calendar-x me-1" aria-hidden="true"></i>
+                                Non-Working Days
+                            </h5>
+                            <p class="text-secondary small mb-3">Bookings skip these days. Bookings already made stay.</p>
+
+                            <div class="alert alert-danger d-none" role="alert" data-holiday-error></div>
+                            <div class="alert alert-success d-none" role="alert" data-holiday-success></div>
+
+                            <form class="row g-2 align-items-end mb-3" novalidate data-holiday-form>
+                                <div class="col-sm-4">
+                                    <label class="form-label small fw-semibold mb-1" for="holidayDate">Date</label>
+                                    <input type="date" class="form-control" id="holidayDate" name="holiday_date" required>
+                                </div>
+                                <div class="col-sm-5">
+                                    <label class="form-label small fw-semibold mb-1" for="holidayName">Name</label>
+                                    <input type="text" class="form-control" id="holidayName" name="name" maxlength="100"
+                                        placeholder="e.g. Bonifacio Day" required>
+                                </div>
+                                <div class="col-sm-3">
+                                    <button type="submit" class="btn btn-primary w-100">
+                                        <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
+                                        Add Non-Working Day
+                                    </button>
+                                </div>
+                            </form>
+
+                            <div class="table-responsive">
+                                <table class="table table-hover align-middle mb-0" id="holidaysTable">
+                                    <thead class="table-info">
+                                        <tr>
+                                            <th>Date</th>
+                                            <th>Name</th>
+                                            <th class="text-center">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    {{-- Filled a page at a time by serverTable.js from
+                                         HolidayController::index(). --}}
+                                    <tbody></tbody>
+                                </table>
+                            </div>
                         </div>
 
                         <div data-content-extra="phase_templates" hidden>
@@ -1062,6 +1131,22 @@
         </div>
         @endif
 
+        {{-- ==================== INVENTORY SETTINGS ==================== --}}
+        {{-- Material types with their sub-types, and brands. Super Admin,
+             Admin Officer and Purchasing Admin - whoever reaches Inventory.
+             The only tab a Purchasing Admin has, so it opens on it. --}}
+        @if ($canStock)
+            <div class="tab-pane fade {{ $canSchedule ? '' : 'show active' }}" id="inventorySettingsPane" role="tabpanel"
+                aria-labelledby="inventorySettingsTab">
+                <div class="card shadow-sm border-0 rounded-2">
+                    <div class="card-body p-4">
+                        @include('super-admin.partials.material-settings-panel')
+                    </div>
+                </div>
+            </div>
+        @endif
+
+        @if ($canSchedule)
         {{-- ==================== TAB 4: INQUIRIES ==================== --}}
         {{-- Messages written in from the public Contact page. Admin and Super
              Admin both work this list; only the archive is the Super Admin's,
@@ -1156,8 +1241,20 @@
                 </div>
             </div>
         </div>
+        @endif
     </div>
 
+    @if ($canStock)
+        @include('super-admin.partials.material-settings-modals')
+
+        {{-- Configuration's own confirmation dialog belongs to the scheduling
+             side, below. A reader without it asks with the shared one. --}}
+        @unless ($canSchedule)
+            <x-confirm-dialog />
+        @endunless
+    @endif
+
+    @if ($canSchedule)
     {{-- ==================== ADD / EDIT USER MODAL ==================== --}}
     <div class="modal fade" id="userFormModal" tabindex="-1" aria-hidden="true" data-user-modal>
         <div class="modal-dialog modal-lg modal-dialog-scrollable">
@@ -1893,10 +1990,6 @@
     @endif
 
     @if ($isSuperAdmin)
-        {{-- Add / Edit Material, for System Settings -> Materials. Out here
-             with the page's other dialogs rather than inside the panel, which
-             is hidden whenever another settings entry is open. --}}
-        @include('super-admin.partials.material-modal')
         @include('super-admin.partials.detail-form-modal')
     @endif
 
@@ -1988,7 +2081,27 @@
         </div>
     </div>
 
+    @endif
+
     @push('scripts')
+        @if ($canStock)
+            <script>
+                window.materialSettingsRoutes = {
+                    materialTypes: @json(route('inventory.materials.types.index')),
+                    subtypes: @json(url('inventory/materials/subtypes')),
+                    brands: @json(route('inventory.materials.brands.index')),
+                };
+            </script>
+            @unless ($canSchedule)
+                <script src="/js/confirmDialog.js"></script>
+            @endunless
+            <script src="/js/super-admin/materialSettings.js"></script>
+            {{-- Inventory's "Edit types and brands" arrives on
+                 #inventorySettingsPane. --}}
+            <script src="/js/tabFromHash.js"></script>
+        @endif
+
+        @if ($canSchedule)
         {{-- Keeps the contact number field to digits only. --}}
         <script src="/js/registerForm.js"></script>
         {{-- The client picker on Add New User, searching on the server. --}}
@@ -2033,8 +2146,6 @@
                     detailForms: @json(route('super-admin.configuration.detail-forms.index')),
                     phaseTemplates: @json(route('super-admin.configuration.phase-templates.index')),
                     phaseTemplateBase: @json(url('super-admin/configuration/phase-templates')),
-                    materials: @json(route('super-admin.configuration.materials.index')),
-                    materialTypes: @json(route('super-admin.configuration.materials.types.index')),
                     archivedInquiries: @json(route('super-admin.configuration.inquiries.archived')),
                     backups: @json(route('super-admin.configuration.backups.index')),
                     backupUpload: @json(route('super-admin.configuration.backups.upload')),
@@ -2071,10 +2182,14 @@
             <script src="/js/super-admin/systemContents.js"></script>
             <script src="/js/super-admin/detailForms.js"></script>
             <script src="/js/super-admin/projectTypes.js"></script>
+            <script>
+                window.holidayRoutes = { base: @json(route('super-admin.configuration.holidays.index')) };
+            </script>
+            <script src="/js/super-admin/holidays.js"></script>
             <script src="/js/super-admin/phaseTemplates.js"></script>
-            <script src="/js/super-admin/materials.js"></script>
             <script src="/js/super-admin/databaseBackups.js"></script>
             <script src="/js/super-admin/systemSettingsNav.js"></script>
+        @endif
         @endif
     @endpush
 @endsection

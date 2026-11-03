@@ -2,7 +2,9 @@
 
 namespace Database\Seeders;
 
+use App\Models\Brand;
 use App\Models\Material;
+use App\Models\MaterialSubtype;
 use App\Models\MaterialType;
 use App\Support\MaterialUnit;
 use Illuminate\Database\Seeder;
@@ -27,8 +29,8 @@ class MaterialSeeder extends Seeder
     {
         DB::transaction(function (): void {
             $existing = Material::query()
-                ->get(['name', 'brand', 'unit'])
-                ->map(fn (Material $material): string => self::key($material->name, $material->brand, $material->unit->value))
+                ->get(['name', 'brand_id', 'unit'])
+                ->map(fn (Material $material): string => self::key($material->name, $material->brandName(), $material->unit->value))
                 ->flip();
 
             $added = 0;
@@ -44,8 +46,8 @@ class MaterialSeeder extends Seeder
 
                     Material::create([
                         'material_type_id' => $type->material_type_id,
+                        'brand_id' => $brand === null ? null : self::brand($brand)->brand_id,
                         'name' => $name,
-                        'brand' => $brand,
                         'unit' => $unit,
                         'description' => $description,
                         'is_active' => true,
@@ -55,8 +57,21 @@ class MaterialSeeder extends Seeder
                 }
             }
 
-            $this->command?->info(sprintf('Material list ready: %d materials added.', $added));
+            // Sub-types last, so the materials just added are filed too.
+            $filed = MaterialSubtype::applyStartingList();
+
+            $this->command?->info(sprintf('Material list ready: %d materials added, %d filed under a sub-type.', $added, $filed));
         });
+    }
+
+    /**
+     * The brand by this name, whatever its casing, added if the list does not
+     * have it yet.
+     */
+    private static function brand(string $name): Brand
+    {
+        return Brand::query()->whereRaw('LOWER(brand_name) = ?', [mb_strtolower($name)])->first()
+            ?? Brand::create(['brand_name' => $name]);
     }
 
     /**

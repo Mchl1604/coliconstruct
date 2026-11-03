@@ -3,9 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Models\ActivityLog;
+use App\Models\Brand;
 use App\Models\Material;
+use App\Models\MaterialSubtype;
 use App\Models\MaterialType;
-use App\Models\User;
 use App\Services\ActivityLogger;
 use App\Services\MaterialCatalog;
 use App\Support\MaterialUnit;
@@ -18,13 +19,13 @@ use Illuminate\Validation\Rule;
 use RuntimeException;
 
 /**
- * Configuration -> System Settings -> Materials: the material list and its
- * groups.
+ * Inventory -> Materials: the material list, its groups and their sub-types,
+ * and its brands.
  *
- * Super Admin only, checked here rather than on the route group for the same
- * reason Project Types does it: the Configuration page is shared with Admin,
- * and System Settings is not theirs. Every write goes through MaterialCatalog,
- * the same service a project's Add to List goes through.
+ * Who reaches it is the `area:inventory` middleware on the route group - a
+ * Super Admin, Admin Officer or Purchasing Admin, see RoleAccess - so nothing
+ * here asks again. Every write goes through MaterialCatalog, the same service
+ * a project's Add to List goes through.
  */
 class MaterialController extends Controller
 {
@@ -38,16 +39,16 @@ class MaterialController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $this->authorizeSuperAdmin($request);
-
         $table = ServerTable::fromRequest($request);
         $typeId = $request->integer('type') ?: null;
+        $subtypeId = $request->integer('subtype') ?: null;
         $status = (string) $request->query('status', 'all');
 
         $query = Material::query()
             ->with('type')
             ->withCount('projectMaterials')
             ->when($typeId, fn (Builder $builder) => $builder->where('material_type_id', $typeId))
+            ->when($subtypeId, fn (Builder $builder) => $builder->where('material_subtype_id', $subtypeId))
             ->when($status === 'active', fn (Builder $builder) => $builder->where('is_active', true))
             ->when($status === 'inactive', fn (Builder $builder) => $builder->where('is_active', false));
 
@@ -55,7 +56,12 @@ class MaterialController extends Controller
             $query,
             [
                 0 => 'name',
-                1 => 'brand',
+                1 => fn (Builder $builder, string $dir) => $builder->orderBy(
+                    Brand::query()
+                        ->select('brand_name')
+                        ->whereColumn('tbl_brands.brand_id', 'tbl_materials.brand_id'),
+                    $dir
+                ),
                 2 => fn (Builder $builder, string $dir) => $builder->orderBy(
                     MaterialType::query()
                         ->select('type_name')
@@ -66,9 +72,10 @@ class MaterialController extends Controller
             ],
             fn (Builder $builder, string $word, string $like) => $builder
                 ->where('name', 'like', $like)
-                ->orWhere('brand', 'like', $like)
+                ->orWhereHas('brand', fn (Builder $brand) => $brand->where('brand_name', 'like', $like))
                 ->orWhere('description', 'like', $like)
-                ->orWhereHas('type', fn (Builder $type) => $type->where('type_name', 'like', $like)),
+                ->orWhereHas('type', fn (Builder $type) => $type->where('type_name', 'like', $like))
+                ->orWhereHas('subtype', fn (Builder $subtype) => $subtype->where('subtype_name', 'like', $like)),
             [[2, 'asc'], [0, 'asc']],
         );
 
@@ -82,8 +89,6 @@ class MaterialController extends Controller
 
     public function store(Request $request): JsonResponse
     {
-        $this->authorizeSuperAdmin($request);
-
         $validator = $this->validateMaterial($request);
 
         if ($validator->fails()) {
@@ -110,8 +115,6 @@ class MaterialController extends Controller
 
     public function update(Request $request, Material $material): JsonResponse
     {
-        $this->authorizeSuperAdmin($request);
-
         $validator = $this->validateMaterial($request);
 
         if ($validator->fails()) {
@@ -145,8 +148,6 @@ class MaterialController extends Controller
      */
     public function setStatus(Request $request, Material $material): JsonResponse
     {
-        $this->authorizeSuperAdmin($request);
-
         $active = $request->boolean('is_active');
 
         $material = $this->catalog->setActive($material, $active);
@@ -166,10 +167,8 @@ class MaterialController extends Controller
         ]);
     }
 
-    public function destroy(Request $request, Material $material): JsonResponse
+    public function destroy(Material $material): JsonResponse
     {
-        $this->authorizeSuperAdmin($request);
-
         $name = $material->displayName();
 
         try {
@@ -191,20 +190,16 @@ class MaterialController extends Controller
     // Types
     // ------------------------------------------------------------------
 
-    public function types(Request $request): JsonResponse
+    public function types(): JsonResponse
     {
-        $this->authorizeSuperAdmin($request);
-
         return response()->json(['types' => $this->catalog->types()->all()]);
     }
 
     /**
      * The materials in one type, for its View dialog.
      */
-    public function showType(Request $request, MaterialType $materialType): JsonResponse
+    public function showType(MaterialType $materialType): JsonResponse
     {
-        $this->authorizeSuperAdmin($request);
-
         $materials = $materialType->materials()
             ->with('type')
             ->orderBy('name')
@@ -219,8 +214,6 @@ class MaterialController extends Controller
 
     public function storeType(Request $request): JsonResponse
     {
-        $this->authorizeSuperAdmin($request);
-
         $validator = $this->validateTypeName($request);
 
         if ($validator->fails()) {
@@ -247,8 +240,6 @@ class MaterialController extends Controller
 
     public function updateType(Request $request, MaterialType $materialType): JsonResponse
     {
-        $this->authorizeSuperAdmin($request);
-
         $validator = $this->validateTypeName($request);
 
         if ($validator->fails()) {
@@ -275,10 +266,8 @@ class MaterialController extends Controller
         ]);
     }
 
-    public function destroyType(Request $request, MaterialType $materialType): JsonResponse
+    public function destroyType(MaterialType $materialType): JsonResponse
     {
-        $this->authorizeSuperAdmin($request);
-
         $name = $materialType->type_name;
 
         try {
@@ -300,6 +289,175 @@ class MaterialController extends Controller
     }
 
     // ------------------------------------------------------------------
+    // Sub-types
+    //
+    // Each answers with the whole type list, sub-types included, because
+    // the counts on the Material Types table move with them.
+    // ------------------------------------------------------------------
+
+    public function storeSubtype(Request $request, MaterialType $materialType): JsonResponse
+    {
+        $validator = $this->validateSubtypeName($request);
+
+        if ($validator->fails()) {
+            return response()->json(['error' => $validator->errors()->first()], 422);
+        }
+
+        try {
+            $subtype = $this->catalog->addSubtype($materialType, (string) $request->input('subtype_name'));
+        } catch (RuntimeException $exception) {
+            return response()->json(['error' => $exception->getMessage()], 422);
+        }
+
+        $this->activityLogger->record(
+            ActivityLog::MATERIAL_SUBTYPE_CREATED,
+            null,
+            sprintf("Added the sub-type '%s' to %s.", $subtype->subtype_name, $materialType->type_name)
+        );
+
+        return response()->json([
+            'message' => sprintf('%s added.', $subtype->subtype_name),
+            'types' => $this->catalog->types()->all(),
+        ]);
+    }
+
+    public function updateSubtype(Request $request, MaterialSubtype $materialSubtype): JsonResponse
+    {
+        $validator = $this->validateSubtypeName($request);
+
+        if ($validator->fails()) {
+            return response()->json(['error' => $validator->errors()->first()], 422);
+        }
+
+        $previous = $materialSubtype->subtype_name;
+
+        try {
+            $subtype = $this->catalog->renameSubtype($materialSubtype, (string) $request->input('subtype_name'));
+        } catch (RuntimeException $exception) {
+            return response()->json(['error' => $exception->getMessage()], 422);
+        }
+
+        $this->activityLogger->record(
+            ActivityLog::MATERIAL_SUBTYPE_UPDATED,
+            null,
+            sprintf("Renamed the sub-type '%s' to '%s' in %s.", $previous, $subtype->subtype_name, $subtype->type?->type_name)
+        );
+
+        return response()->json([
+            'message' => sprintf('Renamed to %s.', $subtype->subtype_name),
+            'types' => $this->catalog->types()->all(),
+        ]);
+    }
+
+    public function destroySubtype(MaterialSubtype $materialSubtype): JsonResponse
+    {
+        $name = $materialSubtype->subtype_name;
+        $typeName = $materialSubtype->type?->type_name;
+
+        try {
+            $this->catalog->removeSubtype($materialSubtype);
+        } catch (RuntimeException $exception) {
+            return response()->json(['error' => $exception->getMessage()], 422);
+        }
+
+        $this->activityLogger->record(
+            ActivityLog::MATERIAL_SUBTYPE_DELETED,
+            null,
+            sprintf("Removed the sub-type '%s' from %s.", $name, $typeName)
+        );
+
+        return response()->json([
+            'message' => sprintf('%s removed.', $name),
+            'types' => $this->catalog->types()->all(),
+        ]);
+    }
+
+    // ------------------------------------------------------------------
+    // Brands
+    // ------------------------------------------------------------------
+
+    public function brands(): JsonResponse
+    {
+        return response()->json(['brands' => $this->catalog->brands()->all()]);
+    }
+
+    public function storeBrand(Request $request): JsonResponse
+    {
+        $validator = $this->validateBrandName($request);
+
+        if ($validator->fails()) {
+            return response()->json(['error' => $validator->errors()->first()], 422);
+        }
+
+        try {
+            $brand = $this->catalog->addBrand((string) $request->input('brand_name'));
+        } catch (RuntimeException $exception) {
+            return response()->json(['error' => $exception->getMessage()], 422);
+        }
+
+        $this->activityLogger->record(
+            ActivityLog::BRAND_CREATED,
+            null,
+            sprintf("Added the brand '%s'.", $brand->brand_name)
+        );
+
+        return response()->json([
+            'message' => sprintf('%s added.', $brand->brand_name),
+            'brands' => $this->catalog->brands()->all(),
+        ]);
+    }
+
+    public function updateBrand(Request $request, Brand $brand): JsonResponse
+    {
+        $validator = $this->validateBrandName($request);
+
+        if ($validator->fails()) {
+            return response()->json(['error' => $validator->errors()->first()], 422);
+        }
+
+        $previous = $brand->brand_name;
+
+        try {
+            $brand = $this->catalog->renameBrand($brand, (string) $request->input('brand_name'));
+        } catch (RuntimeException $exception) {
+            return response()->json(['error' => $exception->getMessage()], 422);
+        }
+
+        $this->activityLogger->record(
+            ActivityLog::BRAND_UPDATED,
+            null,
+            sprintf("Renamed the brand '%s' to '%s'.", $previous, $brand->brand_name)
+        );
+
+        return response()->json([
+            'message' => sprintf('Renamed to %s.', $brand->brand_name),
+            'brands' => $this->catalog->brands()->all(),
+        ]);
+    }
+
+    public function destroyBrand(Brand $brand): JsonResponse
+    {
+        $name = $brand->brand_name;
+
+        try {
+            $this->catalog->removeBrand($brand);
+        } catch (RuntimeException $exception) {
+            return response()->json(['error' => $exception->getMessage()], 422);
+        }
+
+        $this->activityLogger->record(
+            ActivityLog::BRAND_DELETED,
+            null,
+            sprintf("Removed the brand '%s'.", $name)
+        );
+
+        return response()->json([
+            'message' => sprintf('%s removed.', $name),
+            'brands' => $this->catalog->brands()->all(),
+        ]);
+    }
+
+    // ------------------------------------------------------------------
     // Internals
     // ------------------------------------------------------------------
 
@@ -312,19 +470,45 @@ class MaterialController extends Controller
     {
         return Validator::make($request->all(), [
             'material_type_id' => ['required', 'integer', 'exists:tbl_material_types,material_type_id'],
+            // Checked against the type by MaterialCatalog.
+            'material_subtype_id' => ['nullable', 'integer'],
+            'brand_id' => ['nullable', 'integer', 'exists:tbl_brands,brand_id'],
             'name' => ['required', 'string', 'max:150'],
-            'brand' => ['nullable', 'string', 'max:100'],
             'unit' => ['required', 'string', Rule::enum(MaterialUnit::class)],
             'description' => ['nullable', 'string', 'max:255'],
+            // Checked against the unit by MaterialCatalog.
+            'reorder_level' => ['nullable', 'numeric', 'min:0'],
         ], [
             'material_type_id.required' => 'Choose a material type.',
             'material_type_id.exists' => 'Choose a material type.',
+            'brand_id.exists' => 'Choose a brand from the list.',
             'name.required' => 'Enter a material name.',
             'name.max' => 'Name is too long.',
-            'brand.max' => 'Brand is too long.',
             'unit.required' => 'Choose a unit.',
             'unit.enum' => 'Choose a unit.',
             'description.max' => 'Description is too long.',
+            'reorder_level.numeric' => 'Enter a reorder level of zero or more.',
+            'reorder_level.min' => 'Enter a reorder level of zero or more.',
+        ]);
+    }
+
+    private function validateSubtypeName(Request $request): \Illuminate\Validation\Validator
+    {
+        return Validator::make($request->all(), [
+            'subtype_name' => ['required', 'string', 'max:100'],
+        ], [
+            'subtype_name.required' => 'Enter a sub-type name.',
+            'subtype_name.max' => 'Sub-type name is too long.',
+        ]);
+    }
+
+    private function validateBrandName(Request $request): \Illuminate\Validation\Validator
+    {
+        return Validator::make($request->all(), [
+            'brand_name' => ['required', 'string', 'max:100'],
+        ], [
+            'brand_name.required' => 'Enter a brand name.',
+            'brand_name.max' => 'Brand name is too long.',
         ]);
     }
 
@@ -336,10 +520,5 @@ class MaterialController extends Controller
             'type_name.required' => 'Enter a type name.',
             'type_name.max' => 'Type name is too long.',
         ]);
-    }
-
-    private function authorizeSuperAdmin(Request $request): void
-    {
-        abort_unless($request->user()?->role === User::ROLE_SUPER_ADMIN, 403);
     }
 }

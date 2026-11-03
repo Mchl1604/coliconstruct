@@ -594,11 +594,10 @@
                             </form>
 
                             @if ($canSubmitReport)
-                                <button type="button" class="btn btn-primary" data-bs-toggle="modal"
-                                    data-bs-target="#addReportModal">
-                                    <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
-                                    Add Report
-                                </button>
+                                {{-- A progress report is gathered from the day's
+                                     work, an incident report filled in with the
+                                     structured form - both on pages of their own. --}}
+                                <x-create-report-button portal="technician" :project="$project->project_id" />
                             @elseif ($reportWaitsForScheduledDay)
                                 {{-- Not a scheduled day: left in place, disabled,
                                      saying why. It comes back on its own on the
@@ -607,7 +606,7 @@
                                     title="{{ \App\Http\Controllers\TechnicianPortalController::REPORT_NOT_SCHEDULED_TODAY }}">
                                     <button type="button" class="btn btn-primary" disabled>
                                         <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
-                                        Add Report
+                                        Create Report
                                     </button>
                                 </span>
                             @endif
@@ -660,7 +659,13 @@
                                 </div>
 
                                 <div class="card-body">
-                                    <p>{{ $report->report_description }}</p>
+                                    <p style="white-space: pre-line">{{ $report->report_description }}</p>
+
+                                    @if ($report->documentUrl())
+                                        <a href="{{ $report->documentUrl() }}" class="btn btn-sm btn-outline-primary mb-3">
+                                            View Full Report
+                                        </a>
+                                    @endif
 
                                     @if ($report->images->count())
                                         <h6>Pictures</h6>
@@ -783,7 +788,7 @@
         <div class="tab-pane fade" id="project-materials" role="tabpanel"
             aria-labelledby="projectSectionTabs">
             <x-project-materials :project="$project" :summary="$materialSummary"
-                :can-record="$canRecordMaterials" portal="technician"
+                :abilities="$materialAbilities" portal="technician"
                 :quick-add="$materialQuickAdd" />
         </div>{{-- /#project-materials --}}
 
@@ -844,8 +849,10 @@
                         <div class="row" data-task-date-row data-schedule-ranges='@json($scheduleRanges)'>
                             <div class="col-md-6 mb-3">
                                 <label class="form-label fw-semibold" for="newTaskStartDate">Start Date</label>
+                                {{-- New tasks start tomorrow at the earliest. --}}
                                 <input type="text" class="form-control" id="newTaskStartDate" name="start_date"
-                                    placeholder="Select start date" data-task-start required>
+                                    placeholder="Select start date" data-task-start required
+                                    data-not-before="{{ \App\Support\BusinessTime::today()->addDay()->toDateString() }}">
                             </div>
 
                             <div class="col-md-6 mb-3">

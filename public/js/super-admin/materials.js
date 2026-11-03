@@ -1,25 +1,24 @@
 /**
- * Configuration -> System Settings -> Materials.
+ * The Materials page.
  *
- * The list a project's materials are picked from, and its groups. Every write
- * goes to the server and the list is redrawn from what it answers, so what is
- * on screen is always what was saved.
+ * The list a project's materials are picked from. Every write goes to the
+ * server and the list is redrawn from what it answers, so what is on screen is
+ * always what was saved.
  *
- * Nothing is loaded until the panel is first shown: it sits hidden behind the
- * settings sidebar, and a DataTable built while hidden measures its columns
- * as zero wide.
+ * The types, sub-types and brands a material is filed under are kept in
+ * Configuration -> Inventory Settings (materialSettings.js). This page only
+ * reads them, for its filters and for the choices in its dialog.
  */
 document.addEventListener("DOMContentLoaded", function () {
     "use strict";
 
     const pane = document.getElementById("materialsPane");
-    const routes = window.configurationRoutes || {};
+    const routes = window.inventoryRoutes || {};
 
     if (!pane || !routes.materials) {
         return;
     }
 
-    const holder = pane.closest("[data-content-extra]");
     const modalEl = document.querySelector("[data-material-modal]");
     const modalForm = modalEl.querySelector("[data-material-form]");
     const modalError = modalEl.querySelector("[data-material-modal-error]");
@@ -27,21 +26,15 @@ document.addEventListener("DOMContentLoaded", function () {
     const saveButton = modalEl.querySelector("[data-material-save]");
     const saveSpinner = modalEl.querySelector("[data-material-save-spinner]");
     const unitLocked = modalEl.querySelector("[data-material-unit-locked]");
-    const typesBar = pane.querySelector("[data-material-types]");
     const typeFilter = pane.querySelector("[data-materials-type-filter]");
-    const typeAddForm = pane.querySelector("[data-material-type-add-form]");
-    const typeNameInput = pane.querySelector("[data-material-type-name]");
+    const subtypeFilter = pane.querySelector("[data-materials-subtype-filter]");
     const errorBox = pane.querySelector("[data-materials-error]");
     const successBox = pane.querySelector("[data-materials-success]");
-    const viewModalEl = document.querySelector("[data-material-type-view-modal]");
-    const viewTitle = viewModalEl.querySelector("[data-material-type-view-title]");
-    const viewRows = viewModalEl.querySelector("[data-material-type-view-rows]");
     const token = document.querySelector('meta[name="csrf-token"]')?.content || "";
 
     let table = null;
     let types = [];
-    let renamingId = null;
-    let started = false;
+    let brands = [];
 
     function field(name) {
         return modalEl.querySelector('[data-material-field="' + name + '"]');
@@ -91,281 +84,74 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     // ------------------------------------------------------------------
-    // Types
+    // Choices: types, their sub-types, and brands
     // ------------------------------------------------------------------
 
-    function fillTypeSelects() {
-        const filterValue = typeFilter.value;
-        const modalSelect = field("material_type_id");
-        const modalValue = modalSelect.value;
-
-        [typeFilter, modalSelect].forEach(function (select) {
-            const first = select.options[0];
-
-            select.replaceChildren(first);
-
-            types.forEach(function (type) {
-                const option = document.createElement("option");
-
-                option.value = String(type.material_type_id);
-                option.textContent = type.type_name;
-                select.appendChild(option);
-            });
+    function subtypesOf(typeId) {
+        const type = types.find(function (each) {
+            return String(each.material_type_id) === String(typeId);
         });
 
-        typeFilter.value = filterValue;
-        modalSelect.value = modalValue;
+        return type ? type.subtypes || [] : [];
     }
 
-    function iconButton(className, icon, title) {
-        const button = document.createElement("button");
+    /**
+     * Refill a select from a list, keeping the choice when it is still in it.
+     */
+    function fillSelect(select, items, valueKey, labelKey) {
+        const value = select.value;
 
-        button.type = "button";
-        button.className = "btn btn-sm py-1 px-2 " + className;
-        button.title = title;
-        button.innerHTML = '<i class="bi ' + icon + '" aria-hidden="true"></i>';
+        select.replaceChildren(select.options[0]);
 
-        return button;
-    }
+        items.forEach(function (item) {
+            const option = document.createElement("option");
 
-    function messageRow(body, columns, text) {
-        const row = document.createElement("tr");
-        const cell = document.createElement("td");
-
-        cell.colSpan = columns;
-        cell.className = "text-secondary small";
-        cell.textContent = text;
-        row.appendChild(cell);
-        body.appendChild(row);
-    }
-
-    function renderTypes() {
-        typesBar.replaceChildren();
-
-        if (!types.length) {
-            messageRow(typesBar, 3, "No types yet.");
-        }
-
-        types.forEach(function (type) {
-            const row = document.createElement("tr");
-            const nameCell = document.createElement("td");
-            const countCell = document.createElement("td");
-            const actions = document.createElement("td");
-
-            actions.className = "text-center text-nowrap";
-
-            if (renamingId === type.material_type_id) {
-                const input = document.createElement("input");
-                const save = iconButton("btn-outline-success me-1", "bi-check-lg", "Save");
-                const cancel = iconButton("btn-outline-secondary", "bi-x-lg", "Cancel");
-
-                input.type = "text";
-                input.maxLength = 100;
-                input.value = type.type_name;
-                input.className = "form-control form-control-sm";
-                input.setAttribute("aria-label", "Type name");
-                input.dataset.materialTypeInput = "";
-
-                save.dataset.materialTypeSave = String(type.material_type_id);
-                cancel.dataset.materialTypeCancel = "";
-
-                nameCell.appendChild(input);
-                actions.append(save, cancel);
-
-                setTimeout(function () {
-                    input.focus();
-                    input.select();
-                });
-            } else {
-                const view = iconButton("btn-outline-info me-1", "bi-eye", "View");
-                const rename = iconButton("btn-outline-primary me-1", "bi-pencil", "Edit");
-                const remove = iconButton("btn-outline-danger", "bi-trash3", type.material_count ? "Has materials" : "Remove");
-
-                nameCell.className = "fw-semibold";
-                nameCell.textContent = type.type_name;
-
-                view.dataset.materialTypeView = String(type.material_type_id);
-                rename.dataset.materialTypeRename = String(type.material_type_id);
-                remove.dataset.materialTypeRemove = String(type.material_type_id);
-                remove.dataset.materialTypeLabel = type.type_name;
-                remove.disabled = type.material_count > 0;
-
-                actions.append(view, rename, remove);
-            }
-
-            countCell.textContent = String(type.material_count);
-
-            row.append(nameCell, countCell, actions);
-            typesBar.appendChild(row);
+            option.value = String(item[valueKey]);
+            option.textContent = item[labelKey];
+            select.appendChild(option);
         });
 
-        fillTypeSelects();
+        select.value = items.some(function (item) {
+            return String(item[valueKey]) === value;
+        })
+            ? value
+            : "";
     }
 
-    function viewType(id) {
-        viewTitle.textContent = "Materials";
-        viewRows.replaceChildren();
-        messageRow(viewRows, 3, "Loading materials…");
+    /**
+     * A sub-type select offers one type's own, and is disabled when there is
+     * nothing to choose.
+     */
+    function fillSubtypeSelect(select, typeId) {
+        const subtypes = subtypesOf(typeId);
 
-        bootstrap.Modal.getOrCreateInstance(viewModalEl).show();
+        fillSelect(select, subtypes, "material_subtype_id", "subtype_name");
+        select.disabled = !subtypes.length;
+    }
 
-        request(routes.materialTypes + "/" + id, "GET").then(function (result) {
-            viewRows.replaceChildren();
+    function fillChoices() {
+        fillSelect(typeFilter, types, "material_type_id", "type_name");
+        fillSelect(field("material_type_id"), types, "material_type_id", "type_name");
+        fillSubtypeSelect(subtypeFilter, typeFilter.value);
+        fillSubtypeSelect(field("material_subtype_id"), field("material_type_id").value);
+        fillSelect(field("brand_id"), brands, "brand_id", "brand_name");
+    }
 
-            if (!result.ok) {
-                messageRow(viewRows, 3, result.body.error || "Unable to load materials.");
+    function loadChoices() {
+        return Promise.all([request(routes.materialTypes, "GET"), request(routes.brands, "GET")]).then(
+            function (results) {
+                if (!results[0].ok || !results[1].ok) {
+                    showError("Unable to load types and brands.");
 
-                return;
-            }
-
-            viewTitle.textContent = result.body.type_name;
-
-            const materials = result.body.materials || [];
-
-            if (!materials.length) {
-                messageRow(viewRows, 3, "No materials yet.");
-            }
-
-            materials.forEach(function (material) {
-                const row = document.createElement("tr");
-                const name = document.createElement("td");
-                const brand = document.createElement("td");
-                const unit = document.createElement("td");
-
-                if (!material.is_active) {
-                    row.className = "text-secondary";
+                    return;
                 }
 
-                name.textContent = material.name;
-                brand.textContent = material.brand || "–";
-                unit.textContent = material.unit_label;
-
-                row.append(name, brand, unit);
-                viewRows.appendChild(row);
-            });
-        });
+                types = results[0].body.types || [];
+                brands = results[1].body.brands || [];
+                fillChoices();
+            },
+        );
     }
-
-    function loadTypes() {
-        return request(routes.materialTypes, "GET").then(function (result) {
-            if (!result.ok) {
-                showError(result.body.error || "Unable to load types.");
-
-                return;
-            }
-
-            types = result.body.types || [];
-            renderTypes();
-        });
-    }
-
-    function handleTypes(result) {
-        if (!result.ok) {
-            showError(result.body.error || "Unable to save type.");
-
-            return false;
-        }
-
-        showError("");
-        showSuccess(result.body.message || "");
-        renamingId = null;
-        types = result.body.types || [];
-        renderTypes();
-        redraw();
-
-        return true;
-    }
-
-    typeAddForm.addEventListener("submit", function (event) {
-        event.preventDefault();
-
-        const name = typeNameInput.value.trim();
-
-        if (!name) {
-            showError("Enter a type name.");
-
-            return;
-        }
-
-        request(routes.materialTypes, "POST", { type_name: name }).then(function (result) {
-            if (handleTypes(result)) {
-                typeNameInput.value = "";
-            }
-        });
-    });
-
-    typesBar.addEventListener("click", function (event) {
-        const view = event.target.closest("[data-material-type-view]");
-
-        if (view) {
-            viewType(view.dataset.materialTypeView);
-
-            return;
-        }
-
-        const rename = event.target.closest("[data-material-type-rename]");
-
-        if (rename) {
-            renamingId = Number(rename.dataset.materialTypeRename);
-            renderTypes();
-
-            return;
-        }
-
-        if (event.target.closest("[data-material-type-cancel]")) {
-            renamingId = null;
-            renderTypes();
-
-            return;
-        }
-
-        const save = event.target.closest("[data-material-type-save]");
-
-        if (save) {
-            const input = typesBar.querySelector("[data-material-type-input]");
-
-            request(routes.materialTypes + "/" + save.dataset.materialTypeSave, "PUT", {
-                type_name: input ? input.value.trim() : "",
-            }).then(handleTypes);
-
-            return;
-        }
-
-        const remove = event.target.closest("[data-material-type-remove]");
-
-        if (remove && !remove.disabled && window.configurationConfirm) {
-            const url = routes.materialTypes + "/" + remove.dataset.materialTypeRemove;
-
-            window.configurationConfirm({
-                title: 'Remove "' + remove.dataset.materialTypeLabel + '"?',
-                body: "Only empty types can be removed.",
-                label: "Remove Type",
-                variant: "btn-danger",
-                onConfirm: function () {
-                    return request(url, "DELETE");
-                },
-                onSuccess: function (body) {
-                    handleTypes({ ok: true, body: body });
-                },
-            });
-        }
-    });
-
-    typesBar.addEventListener("keydown", function (event) {
-        if (!event.target.matches("[data-material-type-input]")) {
-            return;
-        }
-
-        if (event.key === "Enter") {
-            event.preventDefault();
-            typesBar.querySelector("[data-material-type-save]")?.click();
-        }
-
-        if (event.key === "Escape") {
-            renamingId = null;
-            renderTypes();
-        }
-    });
 
     // ------------------------------------------------------------------
     // The list
@@ -379,7 +165,7 @@ document.addEventListener("DOMContentLoaded", function () {
         table = window.serverTable("#materialsTable", {
             url: routes.materials,
             params: function () {
-                return { type: typeFilter.value };
+                return { type: typeFilter.value, subtype: subtypeFilter.value };
             },
             autoWidth: false,
             pageLength: 10,
@@ -395,9 +181,27 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     typeFilter.addEventListener("change", function () {
+        subtypeFilter.value = "";
+        fillSubtypeSelect(subtypeFilter, typeFilter.value);
+
         if (table) {
             table.draw();
         }
+    });
+
+    subtypeFilter.addEventListener("change", function () {
+        if (table) {
+            table.draw();
+        }
+    });
+
+    // ------------------------------------------------------------------
+    // Add / Edit
+    // ------------------------------------------------------------------
+
+    // The dialog's sub-types follow its type.
+    field("material_type_id").addEventListener("change", function () {
+        fillSubtypeSelect(field("material_subtype_id"), field("material_type_id").value);
     });
 
     function openModal(material) {
@@ -406,10 +210,17 @@ document.addEventListener("DOMContentLoaded", function () {
 
         field("material_id").value = material ? material.material_id : "";
         field("name").value = material ? material.name : "";
-        field("brand").value = material && material.brand ? material.brand : "";
+        field("brand_id").value = material && material.brand_id ? String(material.brand_id) : "";
         field("material_type_id").value = material ? String(material.material_type_id) : "";
+        fillSubtypeSelect(field("material_subtype_id"), field("material_type_id").value);
+        field("material_subtype_id").value =
+            material && material.material_subtype_id ? String(material.material_subtype_id) : "";
         field("unit").value = material ? material.unit : "";
         field("description").value = material && material.description ? material.description : "";
+        field("reorder_level").value =
+            material && material.reorder_level !== null && material.reorder_level !== undefined
+                ? String(material.reorder_level)
+                : "";
 
         // The server refuses a unit change on a used material; saying so
         // here saves the round trip.
@@ -437,10 +248,12 @@ document.addEventListener("DOMContentLoaded", function () {
         const id = field("material_id").value;
         const payload = {
             name: field("name").value.trim(),
-            brand: field("brand").value.trim(),
+            brand_id: field("brand_id").value,
             material_type_id: field("material_type_id").value,
+            material_subtype_id: field("material_subtype_id").value,
             unit: field("unit").value,
             description: field("description").value.trim(),
+            reorder_level: field("reorder_level").value.trim(),
         };
 
         saveButton.disabled = true;
@@ -462,7 +275,6 @@ document.addEventListener("DOMContentLoaded", function () {
                 showError("");
                 showSuccess(result.body.message || "");
                 redraw();
-                loadTypes();
             },
         );
     });
@@ -482,55 +294,30 @@ document.addEventListener("DOMContentLoaded", function () {
 
         const remove = event.target.closest("[data-material-delete]");
 
-        if (remove && !remove.disabled && window.configurationConfirm) {
+        if (remove && !remove.disabled && window.confirmDialog) {
             const url = routes.materials + "/" + remove.dataset.materialDelete;
 
-            window.configurationConfirm({
-                title: 'Remove "' + remove.dataset.materialLabel + '"?',
-                body: "Unused materials only.",
-                label: "Remove Material",
-                variant: "btn-danger",
-                onConfirm: function () {
-                    return request(url, "DELETE");
-                },
-                onSuccess: function (body) {
+            window
+                .confirmDialog({
+                    title: 'Remove "' + remove.dataset.materialLabel + '"?',
+                    body: "Unused materials only.",
+                    label: "Remove Material",
+                    onConfirm: function () {
+                        return request(url, "DELETE");
+                    },
+                })
+                .then(function (body) {
+                    if (!body) {
+                        return;
+                    }
+
                     showError("");
                     showSuccess(body.message || "");
                     redraw();
-                    loadTypes();
-                },
-            });
+                });
         }
     });
 
-    // ------------------------------------------------------------------
-    // First shown
-    // ------------------------------------------------------------------
-
-    function start() {
-        if (holder && holder.hidden) {
-            return;
-        }
-
-        if (!started) {
-            started = true;
-            loadTypes();
-            startTable();
-
-            return;
-        }
-
-        if (table) {
-            table.columns.adjust();
-        }
-    }
-
-    if (holder) {
-        new MutationObserver(start).observe(holder, { attributes: true, attributeFilter: ["hidden"] });
-    }
-
-    // The Configuration tab itself may open later than the panel is unhidden.
-    document.addEventListener("shown.bs.tab", start);
-
-    start();
+    loadChoices();
+    startTable();
 });

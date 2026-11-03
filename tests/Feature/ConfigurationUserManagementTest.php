@@ -143,12 +143,12 @@ class ConfigurationUserManagementTest extends TestCase
         $this->makeEmployee('admin');
         $this->makeClient();
 
-        // Filtered to Admin so the signed-in super admin, which is itself an
+        // Filtered to HR Admin so the signed-in super admin, which is itself an
         // employee account, does not join the count.
         $employees = $this->getJson(route('super-admin.configuration.users.employees', ['role' => 'admin']));
         $employees->assertOk();
         $employees->assertJsonCount(1, 'rows');
-        $employees->assertJsonPath('rows.0.role_label', 'Admin');
+        $employees->assertJsonPath('rows.0.role_label', 'HR Admin');
 
         $clients = $this->getJson(route('super-admin.configuration.users.clients'));
         $clients->assertOk();
@@ -971,7 +971,7 @@ class ConfigurationUserManagementTest extends TestCase
         $response = $this->putJson(route('super-admin.configuration.users.password.reset', $owner));
 
         $response->assertStatus(422);
-        $response->assertJsonPath('error', 'An Admin or Super Admin password can only be reset by a Super Admin.');
+        $response->assertJsonPath('error', 'Only a Super Admin can reset this password.');
 
         $this->assertTrue(Hash::check('the-old-password', $owner->refresh()->password));
     }
@@ -1000,7 +1000,7 @@ class ConfigurationUserManagementTest extends TestCase
 
         $this->putJson(route('super-admin.configuration.users.password.reset', $peer))
             ->assertStatus(422)
-            ->assertJsonPath('error', 'An Admin or Super Admin password can only be reset by a Super Admin.');
+            ->assertJsonPath('error', 'Only a Super Admin can reset this password.');
 
         $this->postJson(route('super-admin.configuration.users.employees.update', $peer), $this->employeePayload([
             'email' => 'taken-over@example.test',

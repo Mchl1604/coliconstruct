@@ -205,6 +205,14 @@ class PhaseSetupTaskRules
             return $errors;
         }
 
+        // A drafted task becomes a new task when setup is finalized, so it
+        // is held to the same "tomorrow at the earliest" a new one is.
+        if ($this->scheduleRules->startsTooSoon($task['start_date'])) {
+            $errors['start_date'] = $where.': '.lcfirst(TaskScheduleRules::NEW_TASK_REFUSAL);
+
+            return $errors;
+        }
+
         if ($ranges === []) {
             $errors['start_date'] = 'No schedule yet, so tasks cannot have dates.';
 

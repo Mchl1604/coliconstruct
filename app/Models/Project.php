@@ -284,6 +284,11 @@ class Project extends Model
         'quotation',
         'target_end_date',
         'address',
+        'address_province',
+        'address_municipality',
+        'address_barangay',
+        'address_street',
+        'address_house_no',
         'description',
         'on_hold',
         'held_on',
@@ -607,6 +612,11 @@ class Project extends Model
     public function materials(): HasMany
     {
         return $this->hasMany(ProjectMaterial::class, 'project_id', 'project_id');
+    }
+
+    public function materialRequests(): HasMany
+    {
+        return $this->hasMany(MaterialRequest::class, 'project_id', 'project_id');
     }
 
     /**

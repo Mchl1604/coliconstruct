@@ -197,7 +197,7 @@ class TechnicianController extends Controller
      * Apply a technician's pending specialty request.
      *
      * Only an administrator reaches this - the whole Super Admin group is
-     * behind `role:super_admin,admin` - and the change is the only thing that
+     * behind `area:scheduling` - and the change is the only thing that
      * moves a technician's specialties short of editing them here directly.
      */
     public function approveSpecialtyRequest(Request $request, SpecialtyRequest $specialtyRequest)
@@ -1422,6 +1422,10 @@ class TechnicianController extends Controller
 
             if ($day->lt(Schedule::businessToday())) {
                 throw new RuntimeException('A technician can only be added to a day still to come.');
+            }
+
+            if ($day->lt(Schedule::earliestBookable($request->user()))) {
+                throw new RuntimeException('Choose tomorrow or later.');
             }
 
             $this->assertProjectAcceptsTechnicians($project);

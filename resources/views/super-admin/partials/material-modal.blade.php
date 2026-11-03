@@ -1,5 +1,5 @@
 {{--
-    Add / Edit Material, for System Settings -> Materials. One dialog for both:
+    Add / Edit Material, for Inventory -> Materials. One dialog for both:
     materials.js fills it from the row being edited, or empties it for a new
     one. Sent as JSON, so the fields carry data attributes rather than relying
     on a form submit.
@@ -27,13 +27,23 @@
                         </div>
                         <div class="col-sm-6">
                             <label class="form-label small fw-semibold mb-1" for="materialBrand">Brand</label>
-                            <input type="text" class="form-control" id="materialBrand" maxlength="100"
-                                placeholder="Optional" data-material-field="brand">
+                            {{-- Filled from the Brands list by materials.js. --}}
+                            <select class="form-select" id="materialBrand" data-material-field="brand_id">
+                                <option value="">No brand</option>
+                            </select>
                         </div>
                         <div class="col-sm-6">
                             <label class="form-label small fw-semibold mb-1" for="materialType">Type</label>
                             <select class="form-select" id="materialType" required data-material-field="material_type_id">
                                 <option value="">Choose type</option>
+                            </select>
+                        </div>
+                        <div class="col-sm-6">
+                            <label class="form-label small fw-semibold mb-1" for="materialSubtype">Sub-type</label>
+                            {{-- Refilled from the chosen type's own sub-types by
+                                 materials.js; disabled for a type with none. --}}
+                            <select class="form-select" id="materialSubtype" data-material-field="material_subtype_id">
+                                <option value="">None</option>
                             </select>
                         </div>
                         <div class="col-sm-6">
@@ -51,6 +61,12 @@
                             <input type="text" class="form-control" id="materialDescription" maxlength="255"
                                 placeholder="Size, model, notes" data-material-field="description">
                         </div>
+                        <div class="col-sm-6">
+                            <label class="form-label small fw-semibold mb-1" for="materialReorderLevel">Reorder At</label>
+                            <input type="number" class="form-control" id="materialReorderLevel" min="0" step="0.01"
+                                placeholder="Optional" data-material-field="reorder_level">
+                            <div class="form-text">Low Stock at or below this.</div>
+                        </div>
                     </div>
                 </div>
 
@@ -63,40 +79,6 @@
                     </button>
                 </div>
             </form>
-        </div>
-    </div>
-</div>
-
-
-{{-- View Type: the materials in one type, filled by materials.js from
-     materials.types.show. --}}
-<div class="modal fade" id="materialTypeViewModal" tabindex="-1" aria-hidden="true"
-    aria-labelledby="materialTypeViewTitle" data-material-type-view-modal>
-    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="materialTypeViewTitle" data-material-type-view-title>Materials</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-
-            <div class="modal-body">
-                <div class="table-responsive">
-                    <table class="table align-middle mb-0">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Material</th>
-                                <th>Brand</th>
-                                <th>Unit</th>
-                            </tr>
-                        </thead>
-                        <tbody data-material-type-view-rows></tbody>
-                    </table>
-                </div>
-            </div>
-
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-            </div>
         </div>
     </div>
 </div>

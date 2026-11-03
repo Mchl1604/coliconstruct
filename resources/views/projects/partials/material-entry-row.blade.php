@@ -10,8 +10,8 @@
     <td class="text-nowrap">{{ $entry->entry_date?->format(\App\Support\BusinessTime::DATE) }}</td>
     <td>
         <span class="material-name material-entry-strike">{{ $material?->name ?? 'Material' }}</span>
-        @if ($material?->brand)
-            <span class="material-brand">{{ $material->brand }}</span>
+        @if ($material?->brandName())
+            <span class="material-brand">{{ $material->brandName() }}</span>
         @endif
     </td>
     <td>

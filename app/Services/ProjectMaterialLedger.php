@@ -26,10 +26,19 @@ use RuntimeException;
  *
  * Quantities are added up in hundredths - integers - because the columns hold
  * two decimals and floating-point sums of 0.1 m lengths do not come out even.
+ *
+ * The warehouse follows the site: an addition taken from stock comes off the
+ * shelf, a return and the leftovers at close-out go back on it - see
+ * StockLedger. Each of those writes in the same transaction as its entry, so
+ * one is never saved without the other.
  */
 class ProjectMaterialLedger
 {
-    public function __construct(private readonly ActivityLogger $activityLogger) {}
+    public function __construct(
+        private readonly ActivityLogger $activityLogger,
+        private readonly StockLedger $stock,
+        private readonly StockAvailability $availability,
+    ) {}
 
     /**
      * Every material on the project with its figures, in the order they were
@@ -38,17 +47,19 @@ class ProjectMaterialLedger
      * A line added after setup whose only entry was voided is left out: it
      * carries nothing but zeros and was a mistake somebody already undid.
      *
-     * @return Collection<int, array{line: ProjectMaterial, material: Material, needed: float, added: float, used: float, returned: float, unused: float, on_site: float}>
+     * @return Collection<int, array{line: ProjectMaterial, material: Material, needed: float, added: float, used: float, returned: float, unused: float, on_site: float, available: float}>
      */
     public function summary(Project $project): Collection
     {
         $totals = $this->totals($project);
-
-        return $project->materials()
+        $lines = $project->materials()
             ->with('material.type')
             ->orderBy('project_material_id')
-            ->get()
-            ->map(function (ProjectMaterial $line) use ($totals): array {
+            ->get();
+        $stock = $this->availability->forMaterials($lines->pluck('material_id')->all());
+
+        return $lines
+            ->map(function (ProjectMaterial $line) use ($totals, $stock): array {
                 $figures = $totals[$line->project_material_id] ?? [];
                 $needed = $this->hundredths($line->quantity_needed);
                 $added = $figures[ProjectMaterialEntry::TYPE_ADDED] ?? 0;
@@ -65,6 +76,7 @@ class ProjectMaterialLedger
                     'returned' => $returned / 100,
                     'unused' => $unused / 100,
                     'on_site' => ($needed + $added - $used - $returned - $unused) / 100,
+                    'available' => $stock[(int) $line->material_id]['available'] ?? 0.0,
                 ];
             })
             ->reject(fn (array $row): bool => $row['needed'] == 0
@@ -87,13 +99,17 @@ class ProjectMaterialLedger
      * More of a material brought in - or one the plan did not have at all,
      * which gets a line of its own with nothing planned against it.
      *
+     * From the warehouse unless said otherwise: then it comes off the shelf,
+     * and is refused past what is available. Material bought straight from a
+     * supplier for the job ($fromStock false) touches no stock.
+     *
      * @throws RuntimeException
      */
-    public function add(Project $project, Material $material, float|int|string $quantity, CarbonInterface|string $date, ?string $notes, User $by): ProjectMaterialEntry
+    public function add(Project $project, Material $material, float|int|string $quantity, CarbonInterface|string $date, ?string $notes, User $by, bool $fromStock = true): ProjectMaterialEntry
     {
         $this->assertQuantity($material, $quantity);
 
-        return DB::transaction(function () use ($project, $material, $quantity, $date, $notes, $by): ProjectMaterialEntry {
+        return DB::transaction(function () use ($project, $material, $quantity, $date, $notes, $by, $fromStock): ProjectMaterialEntry {
             $line = ProjectMaterial::query()
                 ->where('project_id', $project->project_id)
                 ->where('material_id', $material->material_id)
@@ -113,6 +129,10 @@ class ProjectMaterialLedger
             }
 
             $entry = $this->write($line, ProjectMaterialEntry::TYPE_ADDED, $quantity, $date, $notes, $by);
+
+            if ($fromStock) {
+                $this->stock->issueForEntry($entry, $material, $by);
+            }
 
             $this->activityLogger->record(
                 ActivityLog::PROJECT_MATERIAL_ADDED,
@@ -167,6 +187,11 @@ class ProjectMaterialLedger
             }
 
             $entry = $this->write($line, $type, $quantity, $date, $notes, $by);
+
+            // A return goes back to the warehouse.
+            if ($type === ProjectMaterialEntry::TYPE_RETURNED) {
+                $this->stock->returnForEntry($entry, $material, $quantity, $by);
+            }
 
             $this->activityLogger->record(
                 $type === ProjectMaterialEntry::TYPE_USED
@@ -223,6 +248,10 @@ class ProjectMaterialLedger
                 throw new RuntimeException('Already used. Void later entries first.');
             }
 
+            // The warehouse movement goes with it - refused, and the whole
+            // void with it, when stock it brought back has since gone out.
+            $this->stock->voidForEntry($entry, $by);
+
             $entry->forceFill([
                 'voided_at' => now(),
                 'voided_by' => $by->id,
@@ -246,7 +275,7 @@ class ProjectMaterialLedger
 
     /**
      * Record whatever is still on site as unused, once the project has
-     * closed for good.
+     * closed for good, and put it back in the warehouse.
      *
      * No warning and no refusal: a job often ends with a few meters of tube
      * left, and that is a fact to keep, not a problem to stop the close on.
@@ -254,6 +283,10 @@ class ProjectMaterialLedger
      * Awaiting Client Confirmation, which can still be reopened. Running it
      * twice writes nothing the second time, because the first left nothing
      * on site.
+     *
+     * Only what the warehouse actually handed the project goes back on the
+     * shelf. A plan nobody released is "on site" in this ledger's sums but
+     * was never off the shelf, and returning it would invent stock.
      *
      * @return int How many materials had something left over.
      */
@@ -275,7 +308,7 @@ class ProjectMaterialLedger
                 continue;
             }
 
-            ProjectMaterialEntry::create([
+            $entry = ProjectMaterialEntry::create([
                 'project_id' => $project->project_id,
                 'project_material_id' => $line->project_material_id,
                 'entry_type' => ProjectMaterialEntry::TYPE_UNUSED,
@@ -285,6 +318,12 @@ class ProjectMaterialLedger
                 'recorded_by' => null,
                 'recorded_by_name' => 'System',
             ]);
+
+            $returnable = min($onSite / 100, $this->availability->heldBy($project, $line->material));
+
+            if ($returnable > 0) {
+                $this->stock->returnForEntry($entry, $line->material, $returnable, null);
+            }
 
             $written++;
         }

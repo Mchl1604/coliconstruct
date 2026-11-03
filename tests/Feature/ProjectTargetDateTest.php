@@ -124,7 +124,7 @@ class ProjectTargetDateTest extends TestCase
         return $this->put(route('super-admin.projects.update', $project->project_id), array_merge([
             'first_name' => 'Maria',
             'last_name' => 'Santos',
-            'address' => $project->address,
+            ...$this->luzonAddress(),
             'contact_number' => '09123456789',
             'email_address' => 'maria@example.test',
             'quotation' => '1000',
@@ -161,7 +161,7 @@ class ProjectTargetDateTest extends TestCase
             'firstname' => 'Maria',
             'client_email' => 'maria@example.test',
             'client_phone' => '09123456789',
-            'project_address' => '123 Sample Street',
+            ...$this->luzonAddress(),
             'quotation_amount' => '1250.00',
             'project_types' => ['Aircon Installation'],
             'assessment_report' => [UploadedFile::fake()->create('assessment.pdf', 12, 'application/pdf')],

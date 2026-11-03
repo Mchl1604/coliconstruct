@@ -82,7 +82,7 @@ class ProjectDocumentUploadTest extends TestCase
             'first_name' => 'Juan',
             'last_name' => 'Dela Cruz',
             'company_name' => 'Acme Corp',
-            'address' => $project->address,
+            ...$this->luzonAddress(),
             'contact_number' => '09123456789',
             'email_address' => 'juan@example.test',
             'quotation' => '1000',

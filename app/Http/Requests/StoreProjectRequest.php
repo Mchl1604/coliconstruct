@@ -8,10 +8,12 @@ use App\Models\Project;
 use App\Models\ProjectType;
 use App\Models\Schedule;
 use App\Services\ProjectDetailForms;
+use App\Services\ProjectMaterialPlan;
 use App\Services\ProjectTeamRules;
 use App\Services\ScheduleModeRules;
 use App\Services\TargetDateChange;
 use App\Services\TechnicianAvailabilityService;
+use App\Support\ProjectAddress;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Collection;
@@ -62,7 +64,7 @@ class StoreProjectRequest extends FormRequest
         return [
             // Existing client or New client - see ChoosesClient.
             ...$this->clientRules(),
-            'project_address' => ['required', 'string', 'max:500'],
+            ...ProjectAddress::rules($this->all()),
             'quotation_amount' => ['required', 'numeric', 'min:0', 'max:'.Project::MAX_QUOTATION],
             'project_types' => ['required', 'array', 'min:1'],
             'project_types.*' => ['required', 'string', Rule::in($projectTypes)],
@@ -86,12 +88,23 @@ class StoreProjectRequest extends FormRequest
             ...app(ScheduleModeRules::class)->rules(),
             // The Units step: whatever each chosen type's form asks for.
             ...app(ProjectDetailForms::class)->rules($this->chosenProjectTypes()),
+            // The Materials step: optional, and each line's quantity is held
+            // to its unit by ProjectMaterialPlan in after(). Whether there is
+            // enough in stock is a warning, never a refusal.
+            'materials' => ['nullable', 'array', 'max:'.ProjectMaterialPlan::MAX_LINES],
+            'materials.*.material_id' => ['required', 'integer'],
+            'materials.*.quantity' => ['required', 'numeric'],
         ];
     }
 
     public function messages(): array
     {
         return [
+            ...ProjectAddress::messages(),
+            'materials.max' => 'At most '.ProjectMaterialPlan::MAX_LINES.' materials.',
+            'materials.*.material_id.required' => 'Choose a material.',
+            'materials.*.quantity.required' => 'Enter a quantity for every material.',
+            'materials.*.quantity.numeric' => 'Enter a quantity for every material.',
             ...$this->clientMessages(),
             'quotation_amount.numeric' => 'The quotation amount must be a valid number.',
             'quotation_amount.min' => 'The quotation amount must be at least zero.',
@@ -152,6 +165,14 @@ class StoreProjectRequest extends FormRequest
     {
         return [
             function ($validator): void {
+                // The material lines: a listed, active material, once each, in a
+                // quantity its unit allows.
+                if (! $validator->errors()->has('materials*') && is_array($this->input('materials'))) {
+                    foreach (app(ProjectMaterialPlan::class)->errors(array_values($this->input('materials'))) as $key => $message) {
+                        $validator->errors()->add($key, $message);
+                    }
+                }
+
                 // Who the team may be made of - a real Lead Technician, only
                 // one of them, and nobody whose account has been switched off.
                 // Run before the availability check so a team that could never

@@ -39,11 +39,15 @@ class ActivityLog extends Model
     public const MODULE_TASKS = 'Tasks';
 
     /**
-     * The material list and every project's materials. Took the place of the
-     * Inventory placeholder, which nothing ever logged to: materials are a
-     * reference list and a per-project record, not stock.
+     * The material list - its materials, types and brands - and every
+     * project's materials.
      */
     public const MODULE_MATERIALS = 'Materials';
+
+    /**
+     * Stock: what came in, what went out, and counts set right.
+     */
+    public const MODULE_INVENTORY = 'Inventory';
 
     public const MODULE_PURCHASE_ORDERS = 'Purchase Orders';
 
@@ -89,6 +93,7 @@ class ActivityLog extends Model
         self::MODULE_PROJECTS,
         self::MODULE_TASKS,
         self::MODULE_MATERIALS,
+        self::MODULE_INVENTORY,
         self::MODULE_PURCHASE_ORDERS,
         self::MODULE_REPORTS,
         self::MODULE_CONFIGURATION,
@@ -378,6 +383,11 @@ class ActivityLog extends Model
 
     public const TASK_COMPLETED = 'Task Completed';
 
+    /**
+     * A day's progress on a task, before it is completed - see TaskProgress.
+     */
+    public const TASK_PROGRESS_POSTED = 'Task Progress Posted';
+
     public const TASK_CANCELLED = 'Task Cancelled';
 
     public const TASK_IMAGE_UPLOADED = 'Task Image Uploaded';
@@ -389,6 +399,11 @@ class ActivityLog extends Model
     // ------------------------------------------------------------------
 
     public const REPORT_GENERATED = 'Report Generated';
+
+    /**
+     * An incident report moved through its review - see IncidentReporting.
+     */
+    public const INCIDENT_REVIEWED = 'Incident Reviewed';
 
     public const REPORT_EXPORTED = 'Report Exported';
 
@@ -442,6 +457,10 @@ class ActivityLog extends Model
     public const INQUIRY_RESTORED = 'Inquiry Restored';
 
     public const PROJECT_TYPE_CREATED = 'Project Type Created';
+
+    public const HOLIDAY_ADDED = 'Non-Working Day Added';
+
+    public const HOLIDAY_REMOVED = 'Non-Working Day Removed';
 
     public const PROJECT_TYPE_UPDATED = 'Project Type Renamed';
 
@@ -507,6 +526,18 @@ class ActivityLog extends Model
 
     public const MATERIAL_TYPE_DELETED = 'Material Type Removed';
 
+    public const MATERIAL_SUBTYPE_CREATED = 'Material Sub-type Added';
+
+    public const MATERIAL_SUBTYPE_UPDATED = 'Material Sub-type Renamed';
+
+    public const MATERIAL_SUBTYPE_DELETED = 'Material Sub-type Removed';
+
+    public const BRAND_CREATED = 'Brand Added';
+
+    public const BRAND_UPDATED = 'Brand Renamed';
+
+    public const BRAND_DELETED = 'Brand Removed';
+
     /**
      * The plan a project was set up with, written when its setup is
      * finalized.
@@ -514,6 +545,12 @@ class ActivityLog extends Model
     public const PROJECT_MATERIALS_PLANNED = 'Project Materials Planned';
 
     public const PROJECT_MATERIAL_ADDED = 'Project Material Added';
+
+    public const MATERIAL_REQUESTED = 'Material Requested';
+
+    public const MATERIAL_REQUEST_APPROVED = 'Material Request Approved';
+
+    public const MATERIAL_REQUEST_REJECTED = 'Material Request Rejected';
 
     public const PROJECT_MATERIAL_USED = 'Project Material Used';
 
@@ -525,6 +562,20 @@ class ActivityLog extends Model
      * What was still on site when the project closed, recorded as unused.
      */
     public const PROJECT_MATERIALS_CLOSED_OUT = 'Project Materials Closed Out';
+
+    // ------------------------------------------------------------------
+    // Inventory
+    // ------------------------------------------------------------------
+
+    public const STOCK_RECEIVED = 'Stock Received';
+
+    public const STOCK_ISSUED = 'Stock Issued';
+
+    public const STOCK_RETURNED = 'Stock Returned';
+
+    public const STOCK_ADJUSTED = 'Stock Adjusted';
+
+    public const STOCK_MOVEMENT_VOIDED = 'Stock Entry Voided';
 
     /**
      * Which module each action belongs to.
@@ -614,11 +665,13 @@ class ActivityLog extends Model
         self::TASK_ASSIGNED => self::MODULE_TASKS,
         self::TASK_REASSIGNED => self::MODULE_TASKS,
         self::TASK_COMPLETED => self::MODULE_TASKS,
+        self::TASK_PROGRESS_POSTED => self::MODULE_TASKS,
         self::TASK_CANCELLED => self::MODULE_TASKS,
         self::TASK_IMAGE_UPLOADED => self::MODULE_TASKS,
         self::TASK_ARCHIVED => self::MODULE_TASKS,
 
         self::REPORT_GENERATED => self::MODULE_REPORTS,
+        self::INCIDENT_REVIEWED => self::MODULE_REPORTS,
         self::REPORT_EXPORTED => self::MODULE_REPORTS,
         self::REPORT_PRINTED => self::MODULE_REPORTS,
         self::REPORT_ARCHIVED => self::MODULE_REPORTS,
@@ -632,12 +685,26 @@ class ActivityLog extends Model
         self::MATERIAL_TYPE_CREATED => self::MODULE_MATERIALS,
         self::MATERIAL_TYPE_UPDATED => self::MODULE_MATERIALS,
         self::MATERIAL_TYPE_DELETED => self::MODULE_MATERIALS,
+        self::MATERIAL_SUBTYPE_CREATED => self::MODULE_MATERIALS,
+        self::MATERIAL_SUBTYPE_UPDATED => self::MODULE_MATERIALS,
+        self::MATERIAL_SUBTYPE_DELETED => self::MODULE_MATERIALS,
+        self::BRAND_CREATED => self::MODULE_MATERIALS,
+        self::BRAND_UPDATED => self::MODULE_MATERIALS,
+        self::BRAND_DELETED => self::MODULE_MATERIALS,
         self::PROJECT_MATERIALS_PLANNED => self::MODULE_MATERIALS,
         self::PROJECT_MATERIAL_ADDED => self::MODULE_MATERIALS,
+        self::MATERIAL_REQUESTED => self::MODULE_MATERIALS,
+        self::MATERIAL_REQUEST_APPROVED => self::MODULE_MATERIALS,
+        self::MATERIAL_REQUEST_REJECTED => self::MODULE_MATERIALS,
         self::PROJECT_MATERIAL_USED => self::MODULE_MATERIALS,
         self::PROJECT_MATERIAL_RETURNED => self::MODULE_MATERIALS,
         self::PROJECT_MATERIAL_ENTRY_VOIDED => self::MODULE_MATERIALS,
         self::PROJECT_MATERIALS_CLOSED_OUT => self::MODULE_MATERIALS,
+        self::STOCK_RECEIVED => self::MODULE_INVENTORY,
+        self::STOCK_ISSUED => self::MODULE_INVENTORY,
+        self::STOCK_RETURNED => self::MODULE_INVENTORY,
+        self::STOCK_ADJUSTED => self::MODULE_INVENTORY,
+        self::STOCK_MOVEMENT_VOIDED => self::MODULE_INVENTORY,
 
         self::SYSTEM_SETTINGS_UPDATED => self::MODULE_CONFIGURATION,
         self::ACTIVITY_LOGS_EXPORTED => self::MODULE_CONFIGURATION,
@@ -647,6 +714,8 @@ class ActivityLog extends Model
         self::INQUIRY_ARCHIVED => self::MODULE_CONFIGURATION,
         self::INQUIRY_RESTORED => self::MODULE_CONFIGURATION,
         self::PROJECT_TYPE_CREATED => self::MODULE_CONFIGURATION,
+        self::HOLIDAY_ADDED => self::MODULE_CONFIGURATION,
+        self::HOLIDAY_REMOVED => self::MODULE_CONFIGURATION,
         self::PROJECT_TYPE_UPDATED => self::MODULE_CONFIGURATION,
         self::PROJECT_TYPE_DELETED => self::MODULE_CONFIGURATION,
         self::DETAIL_FORM_CREATED => self::MODULE_CONFIGURATION,
@@ -696,6 +765,8 @@ class ActivityLog extends Model
     public const ROLE_BADGE_CLASSES = [
         'super_admin' => 'bg-danger',
         'admin' => 'bg-primary',
+        'admin_officer' => 'bg-info text-dark',
+        'purchasing_admin' => 'bg-warning text-dark',
         'lead_technician' => 'badge-role-lead',
         'technician' => 'bg-success',
         'client' => 'bg-secondary',
@@ -803,10 +874,10 @@ class ActivityLog extends Model
     /**
      * The entries one account is allowed to read.
      *
-     * A Super Admin sees everything. An Admin sees their own trail and that of
-     * everyone below them, but not another administrator's - an audit trail
-     * that one peer can quietly read is not much of a check on the other.
-     * Anyone else sees nothing; the page is not theirs.
+     * A Super Admin sees everything. An HR Admin or Admin Officer sees their
+     * own trail and that of everyone below them, but not another office
+     * account's - an audit trail that one peer can quietly read is not much of
+     * a check on the other. Anyone else sees nothing; the page is not theirs.
      */
     public function scopeVisibleTo(Builder $query, ?User $viewer): Builder
     {
@@ -814,13 +885,13 @@ class ActivityLog extends Model
             return $query;
         }
 
-        if ($viewer?->role !== 'admin') {
+        if (! in_array($viewer?->role, User::ADMINISTRATOR_ROLES, true)) {
             return $query->whereRaw('1 = 0');
         }
 
         return $query->where(function (Builder $outer) use ($viewer): void {
             $outer->where('actor_id', $viewer->id)
-                ->orWhereNotIn('actor_role', ['super_admin', 'admin'])
+                ->orWhereNotIn('actor_role', User::OFFICE_ROLES)
                 // An entry with no role recorded predates this column; it can
                 // only have come from User Management, which was administrator
                 // -only, so it stays with the administrators.

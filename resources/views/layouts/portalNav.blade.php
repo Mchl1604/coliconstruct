@@ -133,6 +133,7 @@
     {{-- Before the page's own scripts, so every picker they build inherits
          the shared defaults and the Clear button. --}}
     <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js"></script>
+    @include('layouts.partials.booking-calendar')
     <script src="/js/datePicker.js"></script>
     <script src="/js/technician/portal.js"></script>
     <script>

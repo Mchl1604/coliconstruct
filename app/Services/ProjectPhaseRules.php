@@ -32,6 +32,7 @@ class ProjectPhaseRules
     public const SETUP_ROLES = [
         User::ROLE_SUPER_ADMIN,
         User::ROLE_ADMIN,
+        User::ROLE_ADMIN_OFFICER,
         User::ROLE_LEAD_TECHNICIAN,
     ];
 

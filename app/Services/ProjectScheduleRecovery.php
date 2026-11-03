@@ -213,7 +213,7 @@ class ProjectScheduleRecovery
             'blocked' => $blocked,
             'ranges' => $ranges,
             'message' => $blocked ? $this->summaryMessage($flow, $allConflicts) : null,
-            'earliest_date' => $today->toDateString(),
+            'earliest_date' => $today->max(Schedule::earliestBookable(auth()->user()))->toDateString(),
             'checked_at' => now()->toIso8601String(),
         ];
     }
@@ -366,6 +366,8 @@ class ProjectScheduleRecovery
             'end_datetime' => $range['end'],
             'scheduling_mode' => $range['mode'],
         ]);
+
+        app(HolidayCalendar::class)->skip($schedule);
 
         // Ranges that now run into each other are one booking, which is the
         // existing system's own rule about what counts as a separate range;

@@ -3,6 +3,8 @@
 use App\Http\Middleware\EnsureAccountIsActive;
 use App\Http\Middleware\EnsurePasswordIsChanged;
 use App\Http\Middleware\EnsureTermsAreAccepted;
+use App\Http\Middleware\EnsureUserCanReachArea;
+use App\Http\Middleware\EnsureUserHasCapability;
 use App\Http\Middleware\EnsureUserHasRole;
 use App\Http\Middleware\PreventCachingSignedInPages;
 use App\Support\PortalErrorRedirect;
@@ -45,6 +47,8 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->alias([
             'role' => EnsureUserHasRole::class,
+            'area' => EnsureUserCanReachArea::class,
+            'capability' => EnsureUserHasCapability::class,
             'password.changed' => EnsurePasswordIsChanged::class,
         ]);
 
