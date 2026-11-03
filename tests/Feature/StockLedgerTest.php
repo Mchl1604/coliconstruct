@@ -242,17 +242,163 @@ class StockLedgerTest extends TestCase
             ->assertSee('data-stock-action="out"', false);
     }
 
+    public function test_several_materials_are_received_together(): void
+    {
+        $this->postJson(route('inventory.stock.receive-many'), [
+            'items' => [
+                ['material_id' => $this->aircon->material_id, 'quantity' => 4],
+                ['material_id' => $this->copper->material_id, 'quantity' => 2.5],
+            ],
+            'movement_type' => StockMovement::TYPE_STOCK_IN,
+            'movement_date' => now()->toDateString(),
+            'supplier' => 'Ignored',
+            'reference_no' => 'Ignored',
+        ])->assertOk()->assertJsonPath('message', '2 materials received.');
+
+        $this->assertSame(4.0, $this->aircon->fresh()->onHand());
+        $this->assertSame(2.5, $this->copper->fresh()->onHand());
+        $this->assertSame(0, StockMovement::query()->whereNotNull('supplier')->orWhereNotNull('reference_no')->count());
+    }
+
+    public function test_several_materials_are_issued_together(): void
+    {
+        $project = $this->project('REF-STK-BULK');
+        $this->receive($this->aircon, 10);
+        $this->receive($this->copper, 10);
+
+        $this->postJson(route('inventory.stock.issue-many'), [
+            'items' => [
+                ['material_id' => $this->aircon->material_id, 'quantity' => 2],
+                ['material_id' => $this->copper->material_id, 'quantity' => 3.5],
+            ],
+            'movement_date' => now()->toDateString(),
+            'project_id' => $project->project_id,
+        ])->assertOk()->assertJsonPath('message', '2 materials issued.');
+
+        $this->assertSame(8.0, $this->aircon->fresh()->onHand());
+        $this->assertSame(6.5, $this->copper->fresh()->onHand());
+        $this->assertSame(2, StockMovement::query()->where('project_id', $project->project_id)->count());
+    }
+
+    public function test_one_line_past_what_is_on_hand_refuses_the_whole_stock_out(): void
+    {
+        $this->receive($this->aircon, 10);
+        $this->receive($this->copper, 1);
+
+        $this->postJson(route('inventory.stock.issue-many'), [
+            'items' => [
+                ['material_id' => $this->aircon->material_id, 'quantity' => 8],
+                ['material_id' => $this->copper->material_id, 'quantity' => 3],
+            ],
+            'movement_date' => now()->toDateString(),
+        ])->assertStatus(422)->assertJsonPath('error', 'Only 1 m of Copper Tube 1/4 on hand.');
+
+        $this->assertSame(10.0, $this->aircon->fresh()->onHand());
+        $this->assertSame(1.0, $this->copper->fresh()->onHand());
+        $this->assertSame(0, Notification::query()->where('title', 'Low Stock')->count());
+    }
+
+    public function test_one_bad_quantity_refuses_the_whole_stock_in(): void
+    {
+        $this->postJson(route('inventory.stock.receive-many'), [
+            'items' => [
+                ['material_id' => $this->copper->material_id, 'quantity' => 2],
+                ['material_id' => $this->aircon->material_id, 'quantity' => 1.5],
+            ],
+            'movement_type' => StockMovement::TYPE_STOCK_IN,
+            'movement_date' => now()->toDateString(),
+        ])->assertStatus(422)->assertJsonPath('error', 'Split-Type Inverter 1.5 HP (Daikin): Whole numbers only for unit.');
+
+        $this->assertSame(0, StockMovement::count());
+    }
+
+    public function test_a_batch_needs_materials_listed_once_and_an_open_project(): void
+    {
+        $this->receive($this->copper, 5);
+        $line = ['material_id' => $this->copper->material_id, 'quantity' => 1];
+        $date = now()->toDateString();
+
+        $this->postJson(route('inventory.stock.issue-many'), ['items' => [], 'movement_date' => $date])
+            ->assertStatus(422)->assertJsonPath('error', 'Add a material.');
+
+        $this->postJson(route('inventory.stock.issue-many'), ['items' => [$line, $line], 'movement_date' => $date])
+            ->assertStatus(422)->assertJsonPath('error', 'A material is listed twice.');
+
+        $this->postJson(route('inventory.stock.issue-many'), [
+            'items' => [$line],
+            'movement_date' => $date,
+            'project_id' => $this->project('REF-STK-DONE', 'completed')->project_id,
+        ])->assertStatus(422)->assertJsonPath('error', 'Choose a project still in progress.');
+
+        $this->assertSame(5.0, $this->copper->fresh()->onHand());
+    }
+
+    public function test_the_dialog_search_answers_with_stock_figures(): void
+    {
+        $this->receive($this->copper, 25);
+
+        $this->getJson(route('inventory.stock.options', ['q' => 'copper']))
+            ->assertOk()
+            ->assertJsonPath('materials.0.name', 'Copper Tube 1/4')
+            ->assertJsonPath('materials.0.on_hand', 25)
+            ->assertJsonPath('materials.0.available', 25);
+    }
+
+    public function test_only_inventory_staff_reach_the_batch_endpoints(): void
+    {
+        $this->actingAs($this->account(User::ROLE_ADMIN));
+
+        $this->getJson(route('inventory.stock.options'))->assertForbidden();
+        $this->postJson(route('inventory.stock.receive-many'), [])->assertForbidden();
+        $this->postJson(route('inventory.stock.issue-many'), [])->assertForbidden();
+    }
+
+    public function test_the_stock_tab_offers_bulk_buttons_and_no_adjust_count(): void
+    {
+        $this->get(route('inventory.index'))
+            ->assertOk()
+            ->assertSee('data-stock-bulk="in"', false)
+            ->assertSee('data-stock-bulk="out"', false)
+            ->assertSee('data-stock-search', false)
+            ->assertDontSee('data-stock-field="supplier"', false)
+            ->assertDontSee('data-stock-field="reference_no"', false)
+            ->assertSee('/js/materialPicker.js', false);
+
+        $this->getTablePage(route('inventory.stock.index'))
+            ->assertSee('data-stock-action="in"', false)
+            ->assertDontSee('Adjust Count')
+            ->assertDontSee('data-stock-action="adjust"', false);
+    }
+
+    public function test_movements_hide_an_old_reference_and_supplier(): void
+    {
+        $this->receive($this->aircon, 4, ['supplier' => 'Old Supplier', 'reference_no' => 'OLD-REF', 'notes' => 'Kept note']);
+
+        $this->getTablePage(route('inventory.stock.movements'))
+            ->assertSee('Kept note')
+            ->assertDontSee('Old Supplier')
+            ->assertDontSee('OLD-REF');
+
+        $this->getTablePage(route('inventory.stock.movements'), ['search' => 'OLD-REF'])
+            ->assertDontSee('Kept note');
+
+        $this->getTablePage(route('inventory.stock.movements'), ['search' => 'Old Supplier'])
+            ->assertDontSee('Kept note');
+
+        $this->assertSame('OLD-REF', StockMovement::query()->value('reference_no'));
+    }
+
     public function test_history_narrows_movements_to_one_material(): void
     {
-        $this->receive($this->aircon, 4, ['reference_no' => 'DR-AIRCON']);
-        $this->receive($this->copper, 30, ['reference_no' => 'DR-COPPER']);
+        $this->receive($this->aircon, 4, ['notes' => 'NOTE-AIRCON']);
+        $this->receive($this->copper, 30, ['notes' => 'NOTE-COPPER']);
 
         $this->getTablePage(route('inventory.stock.movements'), ['material' => $this->copper->material_id])
-            ->assertSee('DR-COPPER')
-            ->assertDontSee('DR-AIRCON');
+            ->assertSee('NOTE-COPPER')
+            ->assertDontSee('NOTE-AIRCON');
 
         $this->getTablePage(route('inventory.stock.movements'), ['type' => StockMovement::TYPE_STOCK_OUT])
-            ->assertDontSee('DR-COPPER');
+            ->assertDontSee('NOTE-COPPER');
     }
 
     public function test_an_hr_admin_cannot_move_stock(): void
@@ -274,9 +420,36 @@ class StockLedgerTest extends TestCase
         $this->get(route('inventory.index', ['stock' => Material::STOCK_LOW]))
             ->assertOk()
             ->assertSee('id="stockTable"', false)
-            ->assertSee('id="movementsTable"', false)
             ->assertSee('<option value="low_stock" selected>', false)
             ->assertSee('data-stock-modal', false);
+    }
+
+    public function test_movements_have_their_own_page(): void
+    {
+        $this->get(route('inventory.index'))
+            ->assertOk()
+            ->assertDontSee('id="movementsTable"', false)
+            ->assertDontSee('data-bs-toggle="tab"', false);
+
+        $this->get(route('inventory.movements'))
+            ->assertOk()
+            ->assertSee('id="movementsTable"', false)
+            ->assertSee('data-app-confirm', false)
+            ->assertSee('/js/super-admin/movements.js', false)
+            ->assertDontSee('data-movement-material-chip', false);
+    }
+
+    public function test_history_on_a_stock_row_opens_movements_for_that_material(): void
+    {
+        $url = route('inventory.movements', ['material' => $this->copper->material_id]);
+
+        $this->getTablePage(route('inventory.stock.index'), ['search' => 'copper'])
+            ->assertSee('href="'.$url.'"', false);
+
+        $this->get($url)
+            ->assertOk()
+            ->assertSee('data-movement-material="'.$this->copper->material_id.'"', false)
+            ->assertSee('Copper Tube 1/4');
     }
 
     // ------------------------------------------------------------------

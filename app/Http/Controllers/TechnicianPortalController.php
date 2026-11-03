@@ -23,6 +23,7 @@ use App\Services\ProjectMaterialLedger;
 use App\Services\ProjectMaterialRules;
 use App\Services\ProjectPhaseProgress;
 use App\Services\ProjectPhaseRules;
+use App\Services\ProjectStatusRules;
 use App\Services\TaskAssignmentGaps;
 use App\Services\TaskAssignmentRules;
 use App\Services\TaskBoard;
@@ -241,6 +242,21 @@ class TechnicianPortalController extends Controller
     }
 
     /**
+     * A first day that has arrived makes a Pending project Ongoing. The
+     * office's listing notices too, but the crew should not have to wait for
+     * somebody there to open it before they can finish the job. Forward only:
+     * moving a project back is for whoever changes its dates.
+     */
+    private function startIfFirstDayHasCome(Project $project): void
+    {
+        $rules = app(ProjectStatusRules::class);
+
+        if ($project->status === 'pending' && $rules->statusFor($project) === 'ongoing') {
+            $rules->apply($project);
+        }
+    }
+
+    /**
      * One project, in full.
      *
      * The Super Admin project details page as a lead sees it: the same
@@ -251,6 +267,8 @@ class TechnicianPortalController extends Controller
     public function showProject(Request $request, Project $project)
     {
         $this->authorize('viewAssigned', $project);
+
+        $this->startIfFirstDayHasCome($project);
 
         $project->load([
             'client',
@@ -310,7 +328,7 @@ class TechnicianPortalController extends Controller
             ->forProject($project->project_id);
 
         $user = $request->user();
-        $canRecordMaterials = app(ProjectMaterialRules::class)->canRecord($user, $project);
+        $materialAbilities = app(ProjectMaterialRules::class)->abilities($user, $project);
 
         return view('technician.projectDetails', [
             'project' => $project,
@@ -366,8 +384,9 @@ class TechnicianPortalController extends Controller
             // The Materials tab, read by the whole crew and recorded by the
             // lead - see ProjectMaterialRules, which the endpoints ask again.
             'materialSummary' => app(ProjectMaterialLedger::class)->summary($project),
-            'canRecordMaterials' => $canRecordMaterials,
-            'materialQuickAdd' => $canRecordMaterials
+            'materialAbilities' => $materialAbilities,
+            // A lead requests from the list; they do not add to it.
+            'materialQuickAdd' => $materialAbilities['add']
                 ? ProjectMaterialController::quickAddOptions()
                 : ['types' => [], 'units' => []],
         ]);
@@ -1011,6 +1030,17 @@ class TechnicianPortalController extends Controller
         ], app(TaskPhaseRules::class)->messages());
 
         $this->scheduleRules->attach($validator, $ranges);
+        // Dates left as they stand are not a new assignment; a start being
+        // moved is, and it starts tomorrow at the earliest like any other.
+        $validator->after(function ($validator) use ($task): void {
+            $start = $validator->getData()['start_date'] ?? null;
+
+            if (! $validator->errors()->has('start_date')
+                && $start !== optional($task->start_date, fn ($date) => CarbonImmutable::parse($date)->toDateString())
+                && $this->scheduleRules->startsTooSoon($start)) {
+                $validator->errors()->add('start_date', 'Tasks start tomorrow or later.');
+            }
+        });
         // Whoever holds the task may keep it: editing its wording or its dates
         // re-submits the owner, and refusing that would make an inactive
         // technician's work uneditable - including the handover off them.
@@ -1277,6 +1307,8 @@ class TechnicianPortalController extends Controller
     public function completeProject(Request $request, Project $project)
     {
         $this->authorize('viewAssigned', $project);
+
+        $this->startIfFirstDayHasCome($project);
 
         $blockers = $this->projectPolicy->blockerDetailsFor($project);
 

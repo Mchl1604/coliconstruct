@@ -129,6 +129,7 @@
             data-save-url="{{ $saveUrl }}" data-finalize-url="{{ $finalizeUrl }}"
             data-min-phases="{{ $minPhases }}" data-max-phases="{{ $maxPhases }}"
             data-max-tasks="{{ $maxTasksPerPhase }}"
+            data-tasks-locked="{{ $tasksLocked ? '1' : '0' }}"
             data-schedule-ranges='@json($scheduleRanges)'
             data-technicians='@json($technicians)'
             data-reassign-targets='@json($reassignTargets)'>

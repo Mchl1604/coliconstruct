@@ -34,14 +34,7 @@
             {{-- A progress report is gathered from the day's work, an incident
                  report filled in with the structured form - both on pages of
                  their own. --}}
-            <a href="{{ route('technician.progress-reports.create') }}" class="btn btn-sm btn-primary">
-                <i class="bi bi-clipboard-data me-1" aria-hidden="true"></i>
-                Progress Report
-            </a>
-            <a href="{{ route('technician.incident-reports.create') }}" class="btn btn-sm btn-outline-danger">
-                <i class="bi bi-exclamation-triangle me-1" aria-hidden="true"></i>
-                Incident Report
-            </a>
+            <x-create-report-button portal="technician" size="btn-sm" />
         </div>
     </div>
 

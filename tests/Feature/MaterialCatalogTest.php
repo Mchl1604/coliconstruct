@@ -220,11 +220,15 @@ class MaterialCatalogTest extends TestCase
             ->assertDontSee('THHN Wire');
     }
 
-    public function test_the_list_is_on_inventory_and_its_types_and_brands_in_configuration(): void
+    public function test_the_list_has_its_own_page_and_its_types_and_brands_in_configuration(): void
     {
         $this->actingAsSuperAdmin();
 
         $this->get(route('inventory.index'))
+            ->assertOk()
+            ->assertDontSee('id="materialsPane"', false);
+
+        $this->get(route('inventory.materials-page'))
             ->assertOk()
             ->assertSee('id="materialsPane"', false)
             ->assertSee('data-app-confirm', false)

@@ -47,17 +47,19 @@ class ProjectMaterialLedger
      * A line added after setup whose only entry was voided is left out: it
      * carries nothing but zeros and was a mistake somebody already undid.
      *
-     * @return Collection<int, array{line: ProjectMaterial, material: Material, needed: float, added: float, used: float, returned: float, unused: float, on_site: float}>
+     * @return Collection<int, array{line: ProjectMaterial, material: Material, needed: float, added: float, used: float, returned: float, unused: float, on_site: float, available: float}>
      */
     public function summary(Project $project): Collection
     {
         $totals = $this->totals($project);
-
-        return $project->materials()
+        $lines = $project->materials()
             ->with('material.type')
             ->orderBy('project_material_id')
-            ->get()
-            ->map(function (ProjectMaterial $line) use ($totals): array {
+            ->get();
+        $stock = $this->availability->forMaterials($lines->pluck('material_id')->all());
+
+        return $lines
+            ->map(function (ProjectMaterial $line) use ($totals, $stock): array {
                 $figures = $totals[$line->project_material_id] ?? [];
                 $needed = $this->hundredths($line->quantity_needed);
                 $added = $figures[ProjectMaterialEntry::TYPE_ADDED] ?? 0;
@@ -74,6 +76,7 @@ class ProjectMaterialLedger
                     'returned' => $returned / 100,
                     'unused' => $unused / 100,
                     'on_site' => ($needed + $added - $used - $returned - $unused) / 100,
+                    'available' => $stock[(int) $line->material_id]['available'] ?? 0.0,
                 ];
             })
             ->reject(fn (array $row): bool => $row['needed'] == 0
@@ -97,8 +100,8 @@ class ProjectMaterialLedger
      * which gets a line of its own with nothing planned against it.
      *
      * From the warehouse unless said otherwise: then it comes off the shelf,
-     * and is refused when the shelf does not hold it. Material bought straight
-     * from a supplier for the job ($fromStock false) touches no stock.
+     * and is refused past what is available. Material bought straight from a
+     * supplier for the job ($fromStock false) touches no stock.
      *
      * @throws RuntimeException
      */

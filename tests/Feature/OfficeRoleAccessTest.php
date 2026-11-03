@@ -59,9 +59,11 @@ class OfficeRoleAccessTest extends TestCase
             ? $this->get(route('super-admin.configuration.index'))->assertOk()
             : $this->get(route('super-admin.configuration.index'))->assertRedirect($home);
 
-        $inventory
-            ? $this->get(route('inventory.index'))->assertOk()
-            : $this->get(route('inventory.index'))->assertRedirect($home);
+        foreach (['inventory.index', 'inventory.movements', 'inventory.materials-page'] as $page) {
+            $inventory
+                ? $this->get(route($page))->assertOk()
+                : $this->get(route($page))->assertRedirect($home);
+        }
 
         $inventory
             ? $this->getJson(route('inventory.materials.index'))->assertOk()
@@ -95,6 +97,8 @@ class OfficeRoleAccessTest extends TestCase
         $this->get(route('inventory.index'))
             ->assertOk()
             ->assertSee('href="'.route('inventory.index').'"', false)
+            ->assertSee('href="'.route('inventory.movements').'"', false)
+            ->assertSee('href="'.route('inventory.materials-page').'"', false)
             ->assertSee('href="'.route('super-admin.configuration.index').'"', false)
             ->assertDontSee('href="'.route('super-admin.dashboard').'"', false)
             ->assertDontSee('href="'.route('super-admin.projects').'"', false);

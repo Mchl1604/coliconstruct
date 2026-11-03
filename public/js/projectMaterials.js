@@ -143,7 +143,7 @@
 
         modal.querySelector("[data-add-material-id]").value = material ? material.material_id : "";
         modal.querySelector("[data-add-material-submit]").disabled = !material;
-        modal.querySelector("[data-add-material-new]").classList.add("d-none");
+        modal.querySelector("[data-add-material-new]")?.classList.add("d-none");
 
         if (!material) {
             chosen.classList.add("d-none");
@@ -157,6 +157,16 @@
         modal.querySelector("[data-add-material-meta]").textContent = window.materialPicker.metaLine(material);
         modal.querySelector("[data-add-material-unit]").textContent = material.unit;
         qtyRules(modal.querySelector("[data-add-material-qty]"), !!material.allows_fractions);
+
+        const available = Number(material.available || 0);
+        const availableLine = modal.querySelector("[data-add-material-available]");
+        // A request may ask for more than is there; adding it may not.
+        const isRequest = modal.dataset.addMaterialRequests === "1";
+
+        availableLine.textContent = "Available: " + window.materialPicker.formatQty(available) + " " + material.unit;
+        availableLine.classList.toggle("text-danger", available <= 0);
+        modal.querySelector("[data-add-material-qty]").max = isRequest ? "" : available;
+        modal.querySelector("[data-add-material-submit]").disabled = !isRequest && available <= 0;
 
         chosen.classList.remove("d-none");
         searchWrap.classList.add("d-none");
@@ -208,9 +218,11 @@
                     choose(modal, material);
                     modal.querySelector("[data-add-material-qty]").focus();
                 },
-                onAddNew: function (typedName) {
-                    openNew(modal, typedName);
-                },
+                onAddNew: host.dataset.quickAddUrl
+                    ? function (typedName) {
+                          openNew(modal, typedName);
+                      }
+                    : undefined,
             });
         }
     });

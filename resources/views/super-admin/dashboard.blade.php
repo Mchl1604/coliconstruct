@@ -28,10 +28,12 @@
                 </p>
             </div>
 
-            <a class="dash-primary-btn" href="{{ route('super-admin.projects.create') }}">
-                <i class="bi bi-plus-lg" aria-hidden="true"></i>
-                New Project
-            </a>
+            @if (\App\Support\RoleAccess::can(auth()->user(), \App\Support\RoleAccess::CREATE_PROJECTS))
+                <a class="dash-primary-btn" href="{{ route('super-admin.projects.create') }}">
+                    <i class="bi bi-plus-lg" aria-hidden="true"></i>
+                    New Project
+                </a>
+            @endif
         </header>
 
         {{-- ============================== THE FIGURES ============================== --}}

@@ -39,6 +39,10 @@ use Throwable;
  *                                       back past today
  *   locked   ended before today         nothing may change
  *
+ * New dates start tomorrow for everyone but a Super Admin, and no booking may
+ * start or end on a holiday - see Schedule::earliestBookable() and
+ * HolidayCalendar. A row left as it stands is never refused for either.
+ *
  * A Super Admin may set those aside for a booking they have confirmed they
  * mean to correct. Nothing else is set aside with them: an overridden booking
  * is still checked for overlaps, for partial-day eligibility and for the
@@ -47,6 +51,8 @@ use Throwable;
  */
 class ScheduleModeRules
 {
+    public function __construct(private readonly HolidayCalendar $holidays) {}
+
     /**
      * Shape-only rules. Whether a field is required depends on the mode, so
      * that part is decided per entry in validateEntry() where the mode is
@@ -151,10 +157,10 @@ class ScheduleModeRules
     /**
      * The same bounds for a range that has not been saved yet.
      *
-     * A new booking is a promise about work still to come, so the floor is
-     * today at both ends - validateDateBased() and validatePartialDay() refuse
-     * a past date on a new row, and a picker that offers one is offering a
-     * date the save will bounce. The editor used to hand its new rows no floor
+     * A new booking is a promise about work still to come, so the floor is the
+     * first day this account may book, at both ends - validateDateBased() and
+     * validatePartialDay() refuse anything sooner on a new row, and a picker
+     * that offers it is offering a date the save will bounce. The editor used to hand its new rows no floor
      * at all, so last month was there to be clicked.
      *
      * A Super Admin gets no floor, because for them a past date on a new row
@@ -171,13 +177,13 @@ class ScheduleModeRules
      */
     public function limitsForNewRange(bool $mayCorrectHistory = false): array
     {
-        $today = Schedule::businessToday();
+        $earliest = Schedule::earliestBookable(auth()->user());
 
         return [
             'editable' => true,
             'startFrozen' => false,
-            'earliestStart' => $mayCorrectHistory ? null : $today,
-            'earliestEnd' => $mayCorrectHistory ? null : $today,
+            'earliestStart' => $mayCorrectHistory ? null : $earliest,
+            'earliestEnd' => $mayCorrectHistory ? null : $earliest,
         ];
     }
 
@@ -233,7 +239,7 @@ class ScheduleModeRules
             default => [
                 'editable' => true,
                 'startFrozen' => false,
-                'earliestStart' => $today,
+                'earliestStart' => Schedule::earliestBookable(auth()->user()),
                 'earliestEnd' => null,
             ],
         };
@@ -283,6 +289,22 @@ class ScheduleModeRules
             && $existing->startsOn()->equalTo($startDate)
             && $existing->endsOn()->equalTo($endDate);
 
+        // A confirmed correction records what happened, and a screening endpoint
+        // is only asking; neither promises new work on a holiday. Of a saved
+        // row, only the end being moved is asked about.
+        if (! $unchanged && ! $mayOverrideLock && ! ($isExisting && $existing === null)) {
+            $newStart = $existing === null || ! $startDate->equalTo($existing->startsOn());
+            $newEnd = $existing === null || ! $endDate->equalTo($existing->endsOn());
+
+            if ($newStart && $this->refuseHoliday($validator, $startDate, $keyPrefix.'start_date')) {
+                return null;
+            }
+
+            if ($newEnd && $this->refuseHoliday($validator, $endDate, $keyPrefix.'end_date')) {
+                return null;
+            }
+        }
+
         if ($existing !== null && ! $unchanged) {
             if (! $this->assertMayChange($validator, $existing, $keyPrefix, 'start_date', $mayOverrideLock)) {
                 return null;
@@ -302,10 +324,7 @@ class ScheduleModeRules
             }
 
             if ($limits['earliestStart'] && $startDate->lt($limits['earliestStart'])) {
-                $validator->errors()->add(
-                    $keyPrefix.'start_date',
-                    'Choose a start date of today or later.'
-                );
+                $validator->errors()->add($keyPrefix.'start_date', $this->tooSoonMessage());
 
                 return null;
             }
@@ -343,6 +362,12 @@ class ScheduleModeRules
         // naming who could would be an offer nothing there can honour.
         if (! $mayKeepPastDates && $startDate->lt(Schedule::businessToday())) {
             $validator->errors()->add($keyPrefix.'start_date', 'The start date cannot be in the past.');
+
+            return null;
+        }
+
+        if (! $mayKeepPastDates && $startDate->lt(Schedule::earliestBookable(auth()->user()))) {
+            $validator->errors()->add($keyPrefix.'start_date', $this->tooSoonMessage());
 
             return null;
         }
@@ -469,6 +494,16 @@ class ScheduleModeRules
         $mayKeepPastDates = $unchanged || $mayOverrideLock || ($isExisting && $existing === null);
 
         if (! $mayKeepPastDates) {
+            if ($this->refuseHoliday($validator, $date, $keyPrefix.'project_date')) {
+                return null;
+            }
+
+            if ($date->gte(Schedule::businessToday()) && $date->lt(Schedule::earliestBookable(auth()->user()))) {
+                $validator->errors()->add($keyPrefix.'project_date', $this->tooSoonMessage());
+
+                return null;
+            }
+
             if ($date->lt(Schedule::businessToday())) {
                 $validator->errors()->add(
                     $keyPrefix.'project_date',
@@ -493,6 +528,27 @@ class ScheduleModeRules
             'start' => $start,
             'end' => $end,
         ];
+    }
+
+    private function tooSoonMessage(): string
+    {
+        return Schedule::earliestBookable(auth()->user())->gt(Schedule::businessToday())
+            ? 'Choose tomorrow or later.'
+            : 'Choose a start date of today or later.';
+    }
+
+    /**
+     * @return bool whether the date was refused
+     */
+    private function refuseHoliday(Validator $validator, CarbonImmutable $date, string $key): bool
+    {
+        $refusal = $this->holidays->refusalFor($date);
+
+        if ($refusal !== null) {
+            $validator->errors()->add($key, $refusal);
+        }
+
+        return $refusal !== null;
     }
 
     /**

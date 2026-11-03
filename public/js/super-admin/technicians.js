@@ -825,6 +825,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         calendar = new window.FullCalendar.Calendar(calendarEl, {
+            ...window.calendarHeader.nonWorkingDays(),
             initialView: "dayGridMonth",
             headerToolbar: window.calendarHeader.toolbar(),
             height: "auto",

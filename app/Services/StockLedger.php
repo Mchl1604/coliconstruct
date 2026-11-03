@@ -34,6 +34,7 @@ class StockLedger
     public function __construct(
         private readonly ActivityLogger $activityLogger,
         private readonly NotificationService $notifications,
+        private readonly StockAvailability $availability,
     ) {}
 
     public function onHand(Material $material): float
@@ -139,6 +140,58 @@ class StockLedger
             $this->alertIfRunningLow($material, $before, $before - $wanted);
 
             return $movement;
+        });
+    }
+
+    /**
+     * Several materials received as one delivery or return - all of them or
+     * none of them.
+     *
+     * @param  array<int, array{material: Material, quantity: float|int|string}>  $lines
+     * @param  array{project_id?: int|null, notes?: string|null}  $details
+     *
+     * @throws RuntimeException
+     */
+    public function receiveMany(array $lines, string $type, CarbonInterface|string $date, array $details, User $by): void
+    {
+        $this->assertLineQuantities($lines);
+
+        DB::transaction(function () use ($lines, $type, $date, $details, $by): void {
+            foreach ($this->inLockOrder($lines) as $line) {
+                $this->receive($line['material'], $type, $line['quantity'], $date, $details, $by);
+            }
+        });
+    }
+
+    /**
+     * Several materials issued together - all of them or none of them.
+     *
+     * Every line is checked before anything is written, so a refused line
+     * sends no low stock notice for the lines ahead of it.
+     *
+     * @param  array<int, array{material: Material, quantity: float|int|string}>  $lines
+     * @param  array{project_id?: int|null, notes?: string|null}  $details
+     *
+     * @throws RuntimeException
+     */
+    public function issueMany(array $lines, CarbonInterface|string $date, array $details, User $by): void
+    {
+        $this->assertLineQuantities($lines);
+
+        foreach ($lines as $line) {
+            $before = $this->onHandHundredths($line['material']);
+
+            if ($this->hundredths($line['quantity']) > $before) {
+                throw new RuntimeException($before <= 0
+                    ? sprintf('No %s on hand.', $line['material']->displayName())
+                    : sprintf('Only %s of %s on hand.', $this->amount($line['material'], $before / 100), $line['material']->displayName()));
+            }
+        }
+
+        DB::transaction(function () use ($lines, $date, $details, $by): void {
+            foreach ($this->inLockOrder($lines) as $line) {
+                $this->issue($line['material'], $line['quantity'], $date, $details, $by);
+            }
         });
     }
 
@@ -255,10 +308,10 @@ class StockLedger
     /**
      * Take an Added entry's quantity out of stock.
      *
-     * Refused when the warehouse does not hold that much - the entry is
-     * refused with it, so the site and the shelf never disagree. Material
-     * bought straight from a supplier is recorded without this - see
-     * ProjectMaterialLedger::add().
+     * Refused past what is available, so it never takes stock a live project
+     * has reserved - the entry is refused with it, so the site and the shelf
+     * never disagree. Material bought straight from a supplier is recorded
+     * without this - see ProjectMaterialLedger::add().
      *
      * @throws RuntimeException
      */
@@ -271,11 +324,12 @@ class StockLedger
 
             $before = $this->onHandHundredths($material);
             $wanted = $this->hundredths($entry->quantity);
+            $available = $this->hundredths($this->availability->forMaterial($material)['available']);
 
-            if ($wanted > $before) {
-                throw new RuntimeException($before <= 0
-                    ? 'None in stock. Ask Purchasing.'
-                    : sprintf('Only %s in stock. Ask Purchasing.', $this->amount($material, $before / 100)));
+            if ($wanted > $available) {
+                throw new RuntimeException($available <= 0
+                    ? 'None available. Ask Purchasing.'
+                    : sprintf('Only %s available. Ask Purchasing.', $this->amount($material, $available / 100)));
             }
 
             $movement = $this->write($material, StockMovement::TYPE_STOCK_OUT, -$wanted, $entry->entry_date, [
@@ -444,6 +498,36 @@ class StockLedger
         if ($problem !== null) {
             throw new RuntimeException($problem);
         }
+    }
+
+    /**
+     * @param  array<int, array{material: Material, quantity: float|int|string}>  $lines
+     *
+     * @throws RuntimeException naming the material, among several
+     */
+    private function assertLineQuantities(array $lines): void
+    {
+        foreach ($lines as $line) {
+            $problem = $line['material']->unit->quantityProblem($line['quantity']);
+
+            if ($problem !== null) {
+                throw new RuntimeException(sprintf('%s: %s', $line['material']->displayName(), $problem));
+            }
+        }
+    }
+
+    /**
+     * Always the same order, so two batches sharing materials wait for each
+     * other's locks rather than deadlocking on them.
+     *
+     * @param  array<int, array{material: Material, quantity: float|int|string}>  $lines
+     * @return array<int, array{material: Material, quantity: float|int|string}>
+     */
+    private function inLockOrder(array $lines): array
+    {
+        usort($lines, fn (array $a, array $b): int => $a['material']->material_id <=> $b['material']->material_id);
+
+        return $lines;
     }
 
     /**

@@ -20,7 +20,6 @@
             </div>
         </div>
         <div class="text-end">
-            <span class="badge {{ $incident->severityBadgeClass() }}">{{ $incident->label('SEVERITIES', 'severity') }}</span>
             <span class="badge {{ $incident->statusBadgeClass() }}">{{ $incident->label('STATUSES', 'status') }}</span>
         </div>
     </div>
@@ -34,21 +33,16 @@
 
     <div class="row g-3 mb-3">
         {!! $field('When', \App\Support\BusinessTime::at($incident->occurred_at)?->format(\App\Support\BusinessTime::DATE.' g:i A')) !!}
-        {!! $field('Where', $incident->label('LOCATIONS', 'location').($incident->location_details ? ' - '.$incident->location_details : '')) !!}
+        {!! $field('Where', $incident->label('LOCATIONS', 'location')) !!}
         {!! $field('Phase', $incident->phase?->title) !!}
-        {!! $field('Task', $incident->task?->task_title) !!}
         {!! $field('Cause', $incident->label('CAUSES', 'cause')) !!}
-        {!! $field('Work stopped', $incident->work_stopped ? 'Yes' : 'No') !!}
-        {!! $field('Client notified', $incident->client_notified ? 'Yes' : 'No') !!}
         @if ($incident->incident_type === 'injury')
             {!! $field('Body part', $incident->label('BODY_PARTS', 'injury_body_part')) !!}
             {!! $field('Injury', $incident->label('INJURY_TYPES', 'injury_type')) !!}
             {!! $field('Treatment', $incident->label('TREATMENTS', 'injury_treatment')) !!}
         @endif
-        @if ($incident->damage_description || $incident->damage_owner || $incident->damage_cost !== null)
+        @if ($incident->damage_description)
             {!! $field('Damage', $incident->damage_description) !!}
-            {!! $field('Owner', $incident->label('DAMAGE_OWNERS', 'damage_owner')) !!}
-            {!! $field('Estimated cost', $incident->damage_cost !== null ? 'PHP '.number_format((float) $incident->damage_cost, 2) : null) !!}
         @endif
         @if ($incident->incident_type === 'refrigerant_leak')
             {!! $field('Refrigerant', $incident->label('REFRIGERANTS', 'refrigerant_type')) !!}
@@ -62,11 +56,6 @@
     @if ($incident->immediate_action)
         <h6 class="report-doc-heading">Immediate Action</h6>
         <p class="small" style="white-space: pre-line">{{ $incident->immediate_action }}</p>
-    @endif
-
-    @if ($incident->preventive_action)
-        <h6 class="report-doc-heading">To Prevent It</h6>
-        <p class="small" style="white-space: pre-line">{{ $incident->preventive_action }}</p>
     @endif
 
     <h6 class="report-doc-heading">People Involved</h6>

@@ -44,12 +44,19 @@ class IncidentReport extends Model
     ];
 
     /**
-     * The severities the administrators are told about the moment the
-     * report is filed.
+     * The lists whose Other asks what, each with the incident type it belongs
+     * to where it only applies to one.
      *
-     * @var array<int, string>
+     * @var array<string, string|null>
      */
-    public const URGENT_SEVERITIES = ['serious', 'critical'];
+    public const OTHER_FIELDS = [
+        'incident_type' => null,
+        'location' => null,
+        'injury_body_part' => 'injury',
+        'injury_type' => 'injury',
+        'refrigerant_type' => 'refrigerant_leak',
+        'cause' => null,
+    ];
 
     /**
      * @var array<string, string>
@@ -198,6 +205,7 @@ class IncidentReport extends Model
         'preventive_action',
         'work_stopped',
         'client_notified',
+        'other_details',
         'status',
         'resolution_notes',
         'reviewed_by',
@@ -210,6 +218,7 @@ class IncidentReport extends Model
         'refrigerant_amount' => 'decimal:2',
         'work_stopped' => 'boolean',
         'client_notified' => 'boolean',
+        'other_details' => 'array',
         'reviewed_at' => 'datetime',
     ];
 
@@ -246,12 +255,11 @@ class IncidentReport extends Model
     {
         $value = $this->getAttribute($attribute);
 
-        return $value === null ? null : (constant(self::class.'::'.$list)[$value] ?? ucfirst((string) $value));
-    }
+        if ($value === 'other' && filled($this->other_details[$attribute] ?? null)) {
+            return $this->other_details[$attribute];
+        }
 
-    public function isUrgent(): bool
-    {
-        return in_array($this->severity, self::URGENT_SEVERITIES, true);
+        return $value === null ? null : (constant(self::class.'::'.$list)[$value] ?? ucfirst((string) $value));
     }
 
     /**
@@ -262,16 +270,6 @@ class IncidentReport extends Model
     public function mayNeedDoleReport(): bool
     {
         return $this->incident_type === 'injury' && $this->injury_treatment === 'lost_time';
-    }
-
-    public function severityBadgeClass(): string
-    {
-        return match ($this->severity) {
-            'critical' => 'bg-danger',
-            'serious' => 'bg-warning text-dark',
-            'moderate' => 'bg-info text-dark',
-            default => 'bg-secondary',
-        };
     }
 
     public function statusBadgeClass(): string

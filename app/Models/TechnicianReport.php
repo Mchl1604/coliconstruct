@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use RuntimeException;
 
 class TechnicianReport extends Model
 {
@@ -311,6 +312,29 @@ class TechnicianReport extends Model
     public function archiver(): BelongsTo
     {
         return $this->belongsTo(User::class, 'archived_by', 'id');
+    }
+
+    /**
+     * The technician a report is filed under: its author when they are one, or
+     * else the project's lead, then anybody on its team. A Super Admin carries
+     * no technician record, and submitted_by says who actually filed it.
+     *
+     * @throws RuntimeException when the project has nobody to file it under
+     */
+    public static function technicianIdFor(Project $project, User $by): int
+    {
+        if ($by->needsTechnicianRecord()) {
+            return (int) $by->technicianRecord()->technician_id;
+        }
+
+        $team = $project->projectTechnicians()->with('technician.account')->get();
+        $member = $team->first(fn ($assignment) => $assignment->technician?->account?->isLeadTechnician()) ?? $team->first();
+
+        if ($member === null) {
+            throw new RuntimeException('Assign a team first.');
+        }
+
+        return (int) $member->technician_id;
     }
 
     /**

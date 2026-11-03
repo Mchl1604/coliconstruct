@@ -458,6 +458,10 @@ class ActivityLog extends Model
 
     public const PROJECT_TYPE_CREATED = 'Project Type Created';
 
+    public const HOLIDAY_ADDED = 'Non-Working Day Added';
+
+    public const HOLIDAY_REMOVED = 'Non-Working Day Removed';
+
     public const PROJECT_TYPE_UPDATED = 'Project Type Renamed';
 
     public const PROJECT_TYPE_DELETED = 'Project Type Removed';
@@ -541,6 +545,12 @@ class ActivityLog extends Model
     public const PROJECT_MATERIALS_PLANNED = 'Project Materials Planned';
 
     public const PROJECT_MATERIAL_ADDED = 'Project Material Added';
+
+    public const MATERIAL_REQUESTED = 'Material Requested';
+
+    public const MATERIAL_REQUEST_APPROVED = 'Material Request Approved';
+
+    public const MATERIAL_REQUEST_REJECTED = 'Material Request Rejected';
 
     public const PROJECT_MATERIAL_USED = 'Project Material Used';
 
@@ -683,6 +693,9 @@ class ActivityLog extends Model
         self::BRAND_DELETED => self::MODULE_MATERIALS,
         self::PROJECT_MATERIALS_PLANNED => self::MODULE_MATERIALS,
         self::PROJECT_MATERIAL_ADDED => self::MODULE_MATERIALS,
+        self::MATERIAL_REQUESTED => self::MODULE_MATERIALS,
+        self::MATERIAL_REQUEST_APPROVED => self::MODULE_MATERIALS,
+        self::MATERIAL_REQUEST_REJECTED => self::MODULE_MATERIALS,
         self::PROJECT_MATERIAL_USED => self::MODULE_MATERIALS,
         self::PROJECT_MATERIAL_RETURNED => self::MODULE_MATERIALS,
         self::PROJECT_MATERIAL_ENTRY_VOIDED => self::MODULE_MATERIALS,
@@ -701,6 +714,8 @@ class ActivityLog extends Model
         self::INQUIRY_ARCHIVED => self::MODULE_CONFIGURATION,
         self::INQUIRY_RESTORED => self::MODULE_CONFIGURATION,
         self::PROJECT_TYPE_CREATED => self::MODULE_CONFIGURATION,
+        self::HOLIDAY_ADDED => self::MODULE_CONFIGURATION,
+        self::HOLIDAY_REMOVED => self::MODULE_CONFIGURATION,
         self::PROJECT_TYPE_UPDATED => self::MODULE_CONFIGURATION,
         self::PROJECT_TYPE_DELETED => self::MODULE_CONFIGURATION,
         self::DETAIL_FORM_CREATED => self::MODULE_CONFIGURATION,

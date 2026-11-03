@@ -2,14 +2,13 @@
 
 namespace App\Services;
 
-use App\Models\IncidentReport;
 use App\Models\Material;
+use App\Models\MaterialRequest;
 use App\Models\Notification;
 use App\Models\Project;
 use App\Models\Schedule;
 use App\Models\SpecialtyRequest;
 use App\Models\Task;
-use App\Models\TechnicianReport;
 use App\Models\User;
 use App\Support\BusinessTime;
 use App\Support\RoleAccess;
@@ -1620,27 +1619,6 @@ class NotificationService
         );
     }
 
-    /**
-     * A Serious or Critical incident, told to the administrators the moment
-     * it is filed - on top of the ordinary "report filed" notice.
-     */
-    public function urgentIncident(Project $project, TechnicianReport $report, IncidentReport $incident): void
-    {
-        $this->deliver(
-            $this->administrators(),
-            $incident->severity === 'critical' ? 'Critical Incident' : 'Serious Incident',
-            sprintf(
-                '%s on %s: %s.',
-                $incident->label('SEVERITIES', 'severity'),
-                $this->projectLabel($project),
-                $incident->label('TYPES', 'incident_type')
-            ),
-            Notification::MODULE_REPORTS,
-            $report,
-            route('reports.document', $report->getKey(), false)
-        );
-    }
-
     public function reportExported(string $label): void
     {
         $this->deliver(
@@ -1684,6 +1662,50 @@ class NotificationService
             Notification::MODULE_INVENTORY,
             $material,
             route('inventory.index', ['stock' => $status], false)
+        );
+    }
+
+    /**
+     * A lead has asked for material. Whoever can decide hears it.
+     */
+    public function materialRequested(MaterialRequest $materialRequest): void
+    {
+        $this->deliver(
+            $this->inventoryStaff(),
+            'Material Requested',
+            sprintf(
+                '%s requested %s %s of %s for %s.',
+                $this->actorName(),
+                $materialRequest->material->unit->format($materialRequest->quantity),
+                $materialRequest->material->unit->value,
+                $materialRequest->material->displayName(),
+                $this->projectLabel($materialRequest->project)
+            ),
+            Notification::MODULE_INVENTORY,
+            $materialRequest->project,
+            route('inventory.material-requests.index', [], false)
+        );
+    }
+
+    /**
+     * Tell the lead what became of what they asked for.
+     */
+    public function materialRequestDecided(MaterialRequest $materialRequest): void
+    {
+        $approved = $materialRequest->status === MaterialRequest::STATUS_APPROVED;
+
+        $this->deliver(
+            $materialRequest->requester,
+            $approved ? 'Material Request Approved' : 'Material Request Rejected',
+            sprintf(
+                '%s for %s was %s.',
+                $materialRequest->material->displayName(),
+                $this->projectLabel($materialRequest->project),
+                $approved ? 'approved' : 'rejected: '.$materialRequest->rejection_reason
+            ),
+            Notification::MODULE_INVENTORY,
+            $materialRequest->project,
+            route('technician.projects.show', $materialRequest->project_id, false).'#project-materials'
         );
     }
 

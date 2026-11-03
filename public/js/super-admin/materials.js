@@ -1,5 +1,5 @@
 /**
- * Inventory -> Materials.
+ * The Materials page.
  *
  * The list a project's materials are picked from. Every write goes to the
  * server and the list is redrawn from what it answers, so what is on screen is
@@ -8,9 +8,6 @@
  * The types, sub-types and brands a material is filed under are kept in
  * Configuration -> Inventory Settings (materialSettings.js). This page only
  * reads them, for its filters and for the choices in its dialog.
- *
- * Nothing is loaded until the panel is first shown: a DataTable built while
- * hidden measures its columns as zero wide.
  */
 document.addEventListener("DOMContentLoaded", function () {
     "use strict";
@@ -38,7 +35,6 @@ document.addEventListener("DOMContentLoaded", function () {
     let table = null;
     let types = [];
     let brands = [];
-    let started = false;
 
     function field(name) {
         return modalEl.querySelector('[data-material-field="' + name + '"]');
@@ -279,7 +275,6 @@ document.addEventListener("DOMContentLoaded", function () {
                 showError("");
                 showSuccess(result.body.message || "");
                 redraw();
-                document.dispatchEvent(new CustomEvent("materials:changed"));
             },
         );
     });
@@ -319,31 +314,10 @@ document.addEventListener("DOMContentLoaded", function () {
                     showError("");
                     showSuccess(body.message || "");
                     redraw();
-                    document.dispatchEvent(new CustomEvent("materials:changed"));
                 });
         }
     });
 
-    // ------------------------------------------------------------------
-    // First shown
-    // ------------------------------------------------------------------
-
-    function start() {
-        if (!started) {
-            started = true;
-            loadChoices();
-            startTable();
-
-            return;
-        }
-
-        if (table) {
-            table.columns.adjust();
-        }
-    }
-
-    // The Materials tab may open later than the page.
-    document.addEventListener("shown.bs.tab", start);
-
-    start();
+    loadChoices();
+    startTable();
 });

@@ -13,7 +13,7 @@
 <div class="report-doc">
     <div class="d-flex flex-wrap justify-content-between gap-2 mb-3">
         <div>
-            <div class="fw-bold fs-5">{{ $snapshot['project']['reference_no'] }} &middot; {{ $snapshot['project']['name'] }}</div>
+            <div class="fw-bold fs-5">@unless (str_contains((string) $snapshot['project']['name'], (string) $snapshot['project']['reference_no'])){{ $snapshot['project']['reference_no'] }} &middot; @endunless{{ $snapshot['project']['name'] }}</div>
             <div class="text-secondary small">{{ $snapshot['project']['client'] }} &middot; {{ $snapshot['project']['address'] }}</div>
         </div>
         <div class="text-end">
@@ -47,6 +47,13 @@
     </p>
 
     {!! $section('Task Updates') !!}
+    @foreach ($snapshot['in_progress_tasks'] ?? [] as $task)
+        <div class="small mb-2">
+            <span class="fw-semibold">{{ $task['task'] }}</span>
+            <span class="text-secondary">&middot; {{ $task['technician'] }}</span>
+            <span class="badge text-bg-info ms-1">In Progress</span>
+        </div>
+    @endforeach
     @forelse ($snapshot['task_updates'] as $update)
         <div class="small mb-2">
             <span class="fw-semibold">{{ $update['task'] }}</span>
@@ -54,7 +61,9 @@
             <div style="white-space: pre-line">{{ $update['notes'] }}</div>
         </div>
     @empty
-        <p class="small text-secondary mb-3">No updates posted.</p>
+        @if (($snapshot['in_progress_tasks'] ?? []) === [])
+            <p class="small text-secondary mb-3">No updates posted.</p>
+        @endif
     @endforelse
 
     <div class="row g-3 mt-1">
@@ -99,7 +108,7 @@
     {!! $section('Incidents') !!}
     <p class="small mb-3">
         @forelse ($snapshot['incidents'] as $incident)
-            {{ $incident['code'] }} &middot; {{ $incident['title'] }}@if (! empty($incident['severity'])) ({{ $incident['severity'] }})@endif{{ ! $loop->last ? ';' : '' }}
+            {{ $incident['code'] }} &middot; {{ $incident['title'] }}{{ ! $loop->last ? ';' : '' }}
         @empty
             <span class="text-secondary">None reported.</span>
         @endforelse

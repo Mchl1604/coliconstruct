@@ -303,6 +303,12 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function tasksMarkup(row, index) {
+        // The office reads tasks; a lead drafts them. The server keeps what
+        // has been drafted whatever this form leaves out.
+        if (form.dataset.tasksLocked === "1") {
+            return "";
+        }
+
         const drafts = row.tasks
             .map(function (task, taskIndex) {
                 return taskMarkup(task, index, taskIndex);

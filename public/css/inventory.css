@@ -143,8 +143,25 @@ button.inventory-stat:hover {
 
 /* ---------- Stock dialog ---------- */
 
-.stock-modal-material {
-    padding: .65rem .85rem;
+.stock-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .5rem .75rem;
+    padding: .55rem .75rem;
     border-radius: .6rem;
     background: #f4f9fe;
+}
+
+.stock-line + .stock-line {
+    margin-top: .5rem;
+}
+
+.stock-line-name {
+    flex: 1 1 14rem;
+    min-width: 0;
+}
+
+.stock-line-qty {
+    flex: 0 1 10rem;
 }

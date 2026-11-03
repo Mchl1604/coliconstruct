@@ -679,7 +679,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (startPicker && startPicker.selectedDates[0]) {
                 endPicker.set('minDate', startPicker.selectedDates[0]);
             } else {
-                endPicker.set('minDate', 'today');
+                endPicker.set('minDate', window.bookingCalendar.earliest);
             }
         }
 
@@ -687,7 +687,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // selected and on the mode in force.
         [startPicker, endPicker, projectDatePicker].forEach(function(picker) {
             if (picker) {
-                picker.set('disable', [isDateBlocked]);
+                picker.set('disable', [isDateBlocked, window.bookingCalendar.blocks(picker.input)]);
             }
         });
 
@@ -730,7 +730,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 altInput: true,
                 altInputClass: 'form-control flatpickr-alt-input',
                 allowInput: true,
-                minDate: 'today',
+                minDate: window.bookingCalendar.earliest,
+                disable: [window.bookingCalendar.blocks(startDateInput)],
                 onChange: function() {
                     if (endPicker) {
                         endPicker.clear(false);
@@ -748,7 +749,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 altInput: true,
                 altInputClass: 'form-control flatpickr-alt-input',
                 allowInput: true,
-                minDate: 'today',
+                minDate: window.bookingCalendar.earliest,
+                disable: [window.bookingCalendar.blocks(endDateInput)],
                 onChange: afterChange,
             });
         }
@@ -762,7 +764,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 altInput: true,
                 altInputClass: 'form-control flatpickr-alt-input',
                 allowInput: true,
-                minDate: 'today',
+                minDate: window.bookingCalendar.earliest,
+                disable: [window.bookingCalendar.blocks(projectDateInput)],
                 onChange: function() {
                     // The hours on offer belong to the date just chosen.
                     if (startTimeSelect) {

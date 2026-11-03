@@ -597,16 +597,7 @@
                                 {{-- A progress report is gathered from the day's
                                      work, an incident report filled in with the
                                      structured form - both on pages of their own. --}}
-                                <a href="{{ route('technician.progress-reports.create', ['project' => $project->project_id]) }}"
-                                    class="btn btn-primary">
-                                    <i class="bi bi-clipboard-data me-1" aria-hidden="true"></i>
-                                    Progress Report
-                                </a>
-                                <a href="{{ route('technician.incident-reports.create', ['project' => $project->project_id]) }}"
-                                    class="btn btn-outline-danger">
-                                    <i class="bi bi-exclamation-triangle me-1" aria-hidden="true"></i>
-                                    Incident Report
-                                </a>
+                                <x-create-report-button portal="technician" :project="$project->project_id" />
                             @elseif ($reportWaitsForScheduledDay)
                                 {{-- Not a scheduled day: left in place, disabled,
                                      saying why. It comes back on its own on the
@@ -615,7 +606,7 @@
                                     title="{{ \App\Http\Controllers\TechnicianPortalController::REPORT_NOT_SCHEDULED_TODAY }}">
                                     <button type="button" class="btn btn-primary" disabled>
                                         <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
-                                        Add Report
+                                        Create Report
                                     </button>
                                 </span>
                             @endif
@@ -797,7 +788,7 @@
         <div class="tab-pane fade" id="project-materials" role="tabpanel"
             aria-labelledby="projectSectionTabs">
             <x-project-materials :project="$project" :summary="$materialSummary"
-                :can-record="$canRecordMaterials" portal="technician"
+                :abilities="$materialAbilities" portal="technician"
                 :quick-add="$materialQuickAdd" />
         </div>{{-- /#project-materials --}}
 

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Project;
 use App\Models\ProjectPhase;
+use App\Models\ProjectPhaseDraftTask;
 use App\Models\ProjectTechnician;
 use App\Models\Technician;
 use App\Models\User;
@@ -14,6 +15,7 @@ use App\Services\ProjectPhaseProgress;
 use App\Services\ProjectPhaseRules;
 use App\Services\ProjectPhaseSetup;
 use App\Services\TaskScheduleRules;
+use App\Support\RoleAccess;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -110,6 +112,7 @@ class ProjectPhaseController extends Controller
             // refused. The server enforces the same rule on the way in.
             'scheduleRanges' => $ranges,
             'maxTasksPerPhase' => $this->taskRules->maxTasksPerPhase(),
+            'tasksLocked' => ! $this->writesDraftTasks($request),
             'projectUrl' => $this->projectUrl($request, $project),
             'saveUrl' => $this->actionUrl($request, $project, 'save'),
             'finalizeUrl' => $this->actionUrl($request, $project, 'finalize'),
@@ -342,7 +345,7 @@ class ProjectPhaseController extends Controller
                     : null,
                 'title' => (string) $row['title'],
                 'description' => (string) $row['description'],
-                'tasks' => collect($row['tasks'] ?? [])
+                'tasks' => collect($this->submittedTasks($request, $row))
                     ->map(fn (array $task): array => $this->taskRules->normalise($task))
                     // A row with nothing typed in it is somebody who pressed
                     // Add Task and changed their mind, not an error to refuse
@@ -360,6 +363,44 @@ class ProjectPhaseController extends Controller
             ->all();
 
         return [$rows, $reassignments];
+    }
+
+    /**
+     * The draft tasks a submitted phase carries. The office reads tasks
+     * rather than writing them, so what an Admin Officer or HR Admin saves
+     * keeps whatever the lead has already drafted under that phase.
+     *
+     * @param  array<string, mixed>  $row
+     * @return array<int, array<string, mixed>>
+     */
+    private function submittedTasks(Request $request, array $row): array
+    {
+        if ($this->writesDraftTasks($request)) {
+            return $row['tasks'] ?? [];
+        }
+
+        if (! isset($row['phase_id'])) {
+            return [];
+        }
+
+        return ProjectPhaseDraftTask::query()
+            ->where('phase_id', (int) $row['phase_id'])
+            ->inOrder()
+            ->get(['title', 'description', 'technician_id', 'start_date', 'due_date'])
+            ->map(fn (ProjectPhaseDraftTask $task): array => [
+                'title' => $task->title,
+                'description' => $task->description,
+                'technician_id' => $task->technician_id,
+                'start_date' => $task->start_date,
+                'due_date' => $task->due_date,
+            ])
+            ->all();
+    }
+
+    private function writesDraftTasks(Request $request): bool
+    {
+        return (bool) $request->user()?->isLeadTechnician()
+            || RoleAccess::can($request->user(), RoleAccess::MANAGE_TASKS);
     }
 
     /**

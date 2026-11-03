@@ -94,8 +94,10 @@ class DailyReportsTest extends TestCase
         $this->dayOfWork();
 
         $this->actingAs($this->leadAccount)
-            ->get(route('technician.progress-reports.create', ['project' => $this->project->project_id, 'date' => $this->day(0)]))
+            ->get(route('technician.progress-reports.create', ['project' => $this->project->project_id]))
             ->assertOk()
+            ->assertDontSee('Gather')
+            ->assertDontSee('name="date"', false)
             ->assertSee('Wired the indoor unit.')
             ->assertSee('Copper Tube 1/4')
             ->assertSee('Used')
@@ -138,23 +140,144 @@ class DailyReportsTest extends TestCase
         $this->assertNotNull($task);
     }
 
-    public function test_no_report_for_a_future_or_unscheduled_day(): void
+    public function test_a_report_is_always_for_today_and_only_on_a_scheduled_day(): void
     {
-        $this->actingAs($this->leadAccount)
-            ->post(route('technician.progress-reports.store'), [
-                'project_id' => $this->project->project_id,
-                'report_date' => $this->day(2),
-            ])
-            ->assertSessionHas('error', 'The date cannot be in the future.');
-
+        // A date sent with the form is ignored.
         $this->actingAs($this->leadAccount)
             ->post(route('technician.progress-reports.store'), [
                 'project_id' => $this->project->project_id,
                 'report_date' => $this->day(-5),
             ])
+            ->assertSessionHas('success');
+
+        $this->assertSame($this->day(0), TechnicianReport::query()->firstOrFail()->report_date->toDateString());
+
+        $this->project->schedules()->delete();
+        TechnicianReport::query()->delete();
+
+        $this->actingAs($this->leadAccount)
+            ->post(route('technician.progress-reports.store'), ['project_id' => $this->project->project_id])
             ->assertSessionHas('error', 'Reports only on scheduled days.');
 
         $this->assertSame(0, TechnicianReport::count());
+    }
+
+    public function test_tasks_in_progress_show_among_the_task_updates(): void
+    {
+        $task = $this->dayOfWork();
+
+        Task::create([
+            'project_id' => $this->project->project_id,
+            'phase_id' => $this->defaultPhaseId($this->project),
+            'technician_id' => $this->mate->technician_id,
+            'task_title' => 'Mount the bracket',
+            'task_description' => 'Mount it',
+            'start_date' => $this->day(-1),
+            'due_date' => $this->day(3),
+            'status' => 'ongoing',
+        ]);
+
+        $this->actingAs($this->leadAccount)
+            ->get(route('technician.progress-reports.create', ['project' => $this->project->project_id]))
+            ->assertOk()
+            ->assertSee('Mount the bracket')
+            ->assertSee('In Progress');
+
+        $this->actingAs($this->leadAccount)->post(route('technician.progress-reports.store'), [
+            'project_id' => $this->project->project_id,
+        ])->assertSessionHas('success');
+
+        $snapshot = TechnicianReport::query()->firstOrFail()->report_data;
+
+        // Listed once: a task with an update today is among the updates.
+        $this->assertSame(['Mount the bracket'], array_column($snapshot['in_progress_tasks'], 'task'));
+        $this->assertSame($task->task_title, $snapshot['task_updates'][0]['task']);
+    }
+
+    public function test_opened_from_a_project_it_asks_for_no_project_and_returns_there(): void
+    {
+        $this->dayOfWork();
+        $id = $this->project->project_id;
+        $back = route('technician.projects.show', $id).'#reports';
+
+        $this->actingAs($this->leadAccount);
+
+        foreach (['progress', 'incident'] as $kind) {
+            $this->get(route('technician.'.$kind.'-reports.create', ['project' => $id, 'from' => 'project']))
+                ->assertOk()
+                ->assertSee('Back to Project')
+                ->assertSee('href="'.$back.'"', false)
+                ->assertDontSee('name="project"', false)
+                ->assertDontSee('Continue');
+
+            $this->get(route('technician.'.$kind.'-reports.create'))
+                ->assertOk()
+                ->assertSee('Back to Reports')
+                ->assertSee('name="project"', false)
+                ->assertDontSee('Continue')
+                ->assertDontSee('Gather');
+        }
+
+        $this->post(route('technician.progress-reports.store'), ['project_id' => $id, 'from' => 'project'])
+            ->assertRedirect($back);
+
+        $this->post(route('technician.incident-reports.store'), $this->incidentPayload(['from' => 'project']))
+            ->assertRedirect($back);
+    }
+
+    public function test_the_project_page_offers_one_create_report_button(): void
+    {
+        $this->actingAs($this->leadAccount)
+            ->get(route('technician.projects.show', $this->project->project_id))
+            ->assertOk()
+            ->assertSee('Create Report')
+            ->assertSee(e(route('technician.progress-reports.create', ['project' => $this->project->project_id, 'from' => 'project'])), false)
+            ->assertSee(e(route('technician.incident-reports.create', ['project' => $this->project->project_id, 'from' => 'project'])), false);
+    }
+
+    public function test_the_incident_form_drops_what_was_removed(): void
+    {
+        $response = $this->actingAs($this->leadAccount)
+            ->get(route('technician.incident-reports.create', ['project' => $this->project->project_id, 'from' => 'project']))
+            ->assertOk();
+
+        foreach (['severity', 'location_details', 'task_id', 'damage_owner', 'damage_cost', 'preventive_action', 'work_stopped', 'client_notified'] as $field) {
+            $response->assertDontSee('name="'.$field.'"', false);
+        }
+    }
+
+    public function test_other_asks_what_and_reads_back_as_what_was_typed(): void
+    {
+        $base = ['incident_type' => 'other', 'location' => 'other', 'cause' => 'other'];
+
+        $this->actingAs($this->leadAccount)
+            ->post(route('technician.incident-reports.store'), $this->incidentPayload($base))
+            ->assertSessionHas('error', 'Please specify.');
+
+        $this->assertSame(0, TechnicianReport::count());
+
+        $this->post(route('technician.incident-reports.store'), $this->incidentPayload($base + [
+            'incident_type_other' => 'Stray dog on site',
+            'location_other' => 'Client garage',
+            'cause_other' => 'Open gate',
+        ]))->assertSessionHas('success');
+
+        $report = TechnicianReport::query()->firstOrFail();
+
+        $this->assertSame('Incident: Stray dog on site', $report->report_title);
+        $this->assertSame('Client garage', $report->incident->label('LOCATIONS', 'location'));
+
+        $this->get($report->documentUrl())
+            ->assertOk()
+            ->assertSee('Stray dog on site')
+            ->assertSee('Client garage')
+            ->assertSee('Open gate');
+
+        // An injury's Other is not asked for on another kind of incident.
+        $this->post(route('technician.incident-reports.store'), $this->incidentPayload([
+            'incident_type' => 'near_miss',
+            'injury_body_part' => 'other',
+        ]))->assertSessionHas('success');
     }
 
     public function test_the_filed_report_reads_on_its_own_page_for_the_crew_and_the_office(): void
@@ -193,7 +316,6 @@ class DailyReportsTest extends TestCase
 
         $this->actingAs($this->leadAccount)
             ->post(route('technician.incident-reports.store'), $this->incidentPayload([
-                'severity' => 'serious',
                 'persons' => [
                     ['technician_id' => $this->mate->technician_id, 'person_type' => 'team', 'involvement' => 'injured'],
                     ['name' => 'Mrs. Santos', 'person_type' => 'client', 'involvement' => 'witness'],
@@ -214,7 +336,7 @@ class DailyReportsTest extends TestCase
         $this->assertSame(2, $incident->persons()->count());
         $this->assertSame('team', $incident->persons()->where('technician_id', $this->mate->technician_id)->value('person_type'));
 
-        $this->assertSame(1, Notification::query()->where('title', 'Serious Incident')->where('user_id', $admin->id)->count());
+        $this->assertSame(1, Notification::query()->where('title', 'Technician Report Filed')->where('user_id', $admin->id)->count());
 
         $this->actingAs($admin)
             ->get($report->documentUrl())
@@ -292,8 +414,7 @@ class DailyReportsTest extends TestCase
         $this->actingAs($this->leadAccount)
             ->get(route('technician.progress-reports.create', ['project' => $this->project->project_id, 'date' => $this->day(0)]))
             ->assertOk()
-            ->assertSee('Incident: Injury')
-            ->assertSee('(Minor)');
+            ->assertSee('Incident: Injury');
     }
 
     // ------------------------------------------------------------------
@@ -353,7 +474,6 @@ class DailyReportsTest extends TestCase
         return array_merge([
             'project_id' => $this->project->project_id,
             'incident_type' => 'injury',
-            'severity' => 'moderate',
             'occurred_date' => $this->day(0),
             'occurred_time' => '00:01',
             'location' => 'outdoor_unit',
@@ -363,8 +483,6 @@ class DailyReportsTest extends TestCase
             'injury_treatment' => 'lost_time',
             'immediate_action' => 'First aid on site.',
             'cause' => 'unsafe_condition',
-            'work_stopped' => '1',
-            'client_notified' => '0',
         ], $overrides);
     }
 

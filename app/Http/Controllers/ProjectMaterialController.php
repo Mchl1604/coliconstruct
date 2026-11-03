@@ -29,9 +29,9 @@ use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 /**
  * A project's Materials tab, and the create wizard's material search.
  *
- * One controller for both portals, as ProjectPhaseController is: an Admin and
- * a Lead Technician record materials through the same rules, and only the
- * page they are sent back to differs.
+ * One controller for every portal, as ProjectPhaseController is: the office,
+ * the inventory side and a Lead Technician record through the same rules, and
+ * only the page they are sent back to differs.
  *
  * Recording answers with a redirect, like every other save on Project
  * Details - projectWorkspace.js redraws the administrator's page in place and
@@ -55,7 +55,6 @@ class ProjectMaterialController extends Controller
 
         $table = ServerTable::fromRequest($request);
         $user = $request->user();
-        $canRecord = $this->rules->canRecord($user, $project);
 
         $page = $table->paginate(
             ProjectMaterialEntry::query()
@@ -87,23 +86,29 @@ class ProjectMaterialController extends Controller
             $page,
             fn (ProjectMaterialEntry $entry): string => view('projects.partials.material-entry-row', [
                 'entry' => $entry,
-                'canVoid' => $canRecord && $this->rules->canVoid($user, $project, $entry),
+                'canVoid' => $this->rules->canVoid($user, $project, $entry),
                 'voidUrl' => $this->actionUrl($request, $project, 'void', ['entry' => $entry->material_entry_id]),
             ])->render(),
         );
     }
 
     /**
-     * The picker's matches for what was typed.
+     * The picker's matches for what was typed, each with its stock figures.
      */
-    public function suggest(Request $request, Project $project): JsonResponse
+    public function suggest(Request $request, Project $project, StockAvailability $availability): JsonResponse
     {
-        $this->authorizeCatalogUse($request, $project);
+        if (! $this->rules->canManage($request->user(), $project) && ! $this->rules->canRequest($request->user(), $project)) {
+            throw new AccessDeniedHttpException('You cannot change materials on this project.');
+        }
 
         $query = mb_substr((string) $request->query('q', ''), 0, 100);
+        $materials = $this->catalog->suggest($query, $project);
+        $figures = $availability->forMaterials($materials->pluck('material_id')->all());
 
         return response()->json([
-            'materials' => $this->catalog->suggest($query, $project)->all(),
+            'materials' => $materials
+                ->map(fn (array $material): array => $material + ($figures[$material['material_id']] ?? []))
+                ->all(),
         ]);
     }
 
@@ -170,24 +175,24 @@ class ProjectMaterialController extends Controller
 
         return response()->json([
             'message' => sprintf('%s added to list.', $material->displayName()),
-            'material' => $material->toOption(),
+            // Just listed, so none of it has been received yet.
+            'material' => $material->toOption() + ['available' => 0],
         ]);
     }
 
     /**
-     * More of a material on site, or a material the plan did not have - from
-     * the warehouse, which takes it off the shelf, or bought directly.
+     * More of a material on site, or a material the plan did not have - taken
+     * off the warehouse shelf today, up to what is available.
      */
     public function add(Request $request, Project $project): RedirectResponse
     {
-        $this->authorizeRecord($request, $project);
+        if (! $this->rules->canManage($request->user(), $project)) {
+            throw new AccessDeniedHttpException('You cannot add materials to this project.');
+        }
 
         $validator = Validator::make($request->all(), [
             'material_id' => ['required', 'integer'],
-            'source' => ['nullable', Rule::in(['warehouse', 'direct'])],
             'quantity' => ['required', 'numeric'],
-            'entry_date' => ['required', 'date', 'before_or_equal:'.BusinessTime::today()->toDateString()],
-            'notes' => ['nullable', 'string', 'max:255'],
         ], $this->messages());
 
         if ($validator->fails()) {
@@ -206,10 +211,9 @@ class ProjectMaterialController extends Controller
                 $project,
                 $material,
                 $data['quantity'],
-                $data['entry_date'],
-                $data['notes'] ?? null,
-                $request->user(),
-                ($data['source'] ?? 'warehouse') !== 'direct'
+                BusinessTime::today(),
+                null,
+                $request->user()
             );
         } catch (RuntimeException $exception) {
             return $this->refused($request, $project, $exception->getMessage());
@@ -228,8 +232,6 @@ class ProjectMaterialController extends Controller
      */
     public function record(Request $request, Project $project): RedirectResponse
     {
-        $this->authorizeRecord($request, $project);
-
         $validator = Validator::make($request->all(), [
             'project_material_id' => ['required', 'integer'],
             'entry_type' => ['required', Rule::in(ProjectMaterialEntry::DRAWING_TYPES)],
@@ -243,6 +245,11 @@ class ProjectMaterialController extends Controller
         }
 
         $data = $validator->validated();
+
+        if (! $this->rules->canRecordType($request->user(), $project, $data['entry_type'])) {
+            throw new AccessDeniedHttpException('You cannot record materials on this project.');
+        }
+
         $line = ProjectMaterial::query()
             ->with('material')
             ->where('project_id', $project->project_id)
@@ -335,18 +342,11 @@ class ProjectMaterialController extends Controller
      */
     private function authorizeView(Request $request, Project $project): void
     {
-        if ($this->inAdminPortal($request)) {
+        if ($this->portal($request) !== 'technician') {
             return;
         }
 
         $this->authorize('viewAssigned', $project);
-    }
-
-    private function authorizeRecord(Request $request, Project $project): void
-    {
-        if (! $this->rules->canRecord($request->user(), $project)) {
-            throw new AccessDeniedHttpException('You cannot record materials on this project.');
-        }
     }
 
     private function authorizeCatalogUse(Request $request, Project $project): void
@@ -360,16 +360,20 @@ class ProjectMaterialController extends Controller
      * Which portal this request came through - read from the route name, as
      * ProjectPhaseController does.
      */
-    private function inAdminPortal(Request $request): bool
+    private function portal(Request $request): string
     {
-        return str_starts_with((string) $request->route()?->getName(), 'super-admin.');
+        $name = (string) $request->route()?->getName();
+
+        return match (true) {
+            str_starts_with($name, 'super-admin.') => 'super-admin',
+            str_starts_with($name, 'inventory.') => 'inventory',
+            default => 'technician',
+        };
     }
 
     private function projectUrl(Request $request, Project $project): string
     {
-        return $this->inAdminPortal($request)
-            ? route('super-admin.projects.show', $project->project_id)
-            : route('technician.projects.show', $project->project_id);
+        return route($this->portal($request).'.projects.show', $project->project_id);
     }
 
     /**
@@ -377,9 +381,7 @@ class ProjectMaterialController extends Controller
      */
     private function actionUrl(Request $request, Project $project, string $action, array $parameters = []): string
     {
-        $prefix = $this->inAdminPortal($request) ? 'super-admin' : 'technician';
-
-        return route(sprintf('%s.projects.materials.%s', $prefix, $action), ['project' => $project->project_id] + $parameters);
+        return route(sprintf('%s.projects.materials.%s', $this->portal($request), $action), ['project' => $project->project_id] + $parameters);
     }
 
     /**

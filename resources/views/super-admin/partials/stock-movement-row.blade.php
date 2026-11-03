@@ -29,16 +29,10 @@
         @if ($movement->project)
             <div><i class="bi bi-folder2-open me-1" aria-hidden="true"></i>{{ $movement->project->reference_no }}</div>
         @endif
-        @if ($movement->supplier)
-            <div><i class="bi bi-truck me-1" aria-hidden="true"></i>{{ $movement->supplier }}</div>
-        @endif
-        @if ($movement->reference_no)
-            <div class="text-secondary">Ref {{ $movement->reference_no }}</div>
-        @endif
         @if ($movement->notes)
             <div class="text-secondary">{{ $movement->notes }}</div>
         @endif
-        @if (! $movement->project && ! $movement->supplier && ! $movement->reference_no && ! $movement->notes)
+        @if (! $movement->project && ! $movement->notes)
             <span class="text-secondary">&ndash;</span>
         @endif
     </td>

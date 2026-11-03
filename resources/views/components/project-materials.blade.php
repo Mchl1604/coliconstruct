@@ -2,9 +2,10 @@
     'project',
     // ProjectMaterialLedger::summary() - one row per material with its figures.
     'summary',
-    // ProjectMaterialRules::canRecord(), asked again by every endpoint.
-    'canRecord' => false,
-    // Which portal's routes the forms post to: 'super-admin' or 'technician'.
+    // ProjectMaterialRules::abilities(), asked again by every endpoint.
+    'abilities' => ['add' => false, 'use' => false, 'return' => false, 'request' => false],
+    // Which portal's routes the forms post to: 'super-admin', 'inventory' or
+    // 'technician'.
     'portal' => 'super-admin',
     // ProjectMaterialController::quickAddOptions(), for Add to List.
     'quickAdd' => ['types' => [], 'brands' => [], 'units' => []],
@@ -20,20 +21,29 @@
     the project closed, whatever was still on site was recorded as Unused, and
     that column appears only once there is something in it.
 
-    The three dialogs are ordinary forms. On the administrators' page
-    projectWorkspace.js sends them and redraws the tab in place; on the
-    technicians' page they post and reload onto #project-materials.
+    The dialogs are ordinary forms. On the administrators' page
+    projectWorkspace.js sends them and redraws the tab in place; elsewhere they
+    post and reload onto #project-materials. A lead's Add Material dialog is
+    Request Material: the same form, asking for it rather than taking it.
 --}}
 @php
     $routePrefix = $portal.'.projects.materials.';
     $showsUnused = $summary->contains(fn (array $row): bool => $row['unused'] > 0);
     $today = \App\Support\BusinessTime::today()->toDateString();
     $hasOnSite = $summary->contains(fn (array $row): bool => $row['on_site'] > 0);
+    $canRecord = $abilities['use'] || $abilities['return'];
+    $canAskForMore = $abilities['add'] || $abilities['request'];
+    $hasActions = $canRecord || $canAskForMore;
+    $moreLabel = $abilities['add'] ? 'Add Material' : 'Request Material';
+    $moreAction = $abilities['add']
+        ? route($routePrefix.'add', $project->project_id)
+        : ($abilities['request'] ? route($routePrefix.'requests.store', $project->project_id) : '');
+    $materialRequests = $project->materialRequests()->with(['material', 'requester'])->latest('material_request_id')->limit(50)->get();
 @endphp
 
 <div class="card shadow-sm border-0 rounded-2 mb-4" data-project-materials
-    data-suggest-url="{{ $canRecord ? route($routePrefix.'suggest', $project->project_id) : '' }}"
-    data-quick-add-url="{{ $canRecord ? route($routePrefix.'quick-add', $project->project_id) : '' }}">
+    data-suggest-url="{{ $canAskForMore ? route($routePrefix.'suggest', $project->project_id) : '' }}"
+    data-quick-add-url="{{ $abilities['add'] ? route($routePrefix.'quick-add', $project->project_id) : '' }}">
     <div class="card-body p-3 p-md-4">
 
         <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
@@ -42,25 +52,31 @@
                 <p class="text-secondary small mb-0">Planned, used and returned.</p>
             </div>
 
-            @if ($canRecord)
+            @if ($hasActions)
                 <div class="d-flex flex-wrap gap-2">
-                    <button type="button" class="btn btn-outline-success" data-bs-toggle="modal"
-                        data-bs-target="#recordMaterialModal" data-material-entry-type="used"
-                        @disabled(! $hasOnSite)>
-                        <i class="bi bi-tools me-1" aria-hidden="true"></i>
-                        Record Use
-                    </button>
-                    <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal"
-                        data-bs-target="#recordMaterialModal" data-material-entry-type="returned"
-                        @disabled(! $hasOnSite)>
-                        <i class="bi bi-arrow-return-left me-1" aria-hidden="true"></i>
-                        Record Return
-                    </button>
-                    <button type="button" class="btn btn-primary" data-bs-toggle="modal"
-                        data-bs-target="#addMaterialModal">
-                        <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
-                        Add Material
-                    </button>
+                    @if ($abilities['use'])
+                        <button type="button" class="btn btn-outline-success" data-bs-toggle="modal"
+                            data-bs-target="#recordMaterialModal" data-material-entry-type="used"
+                            @disabled(! $hasOnSite)>
+                            <i class="bi bi-tools me-1" aria-hidden="true"></i>
+                            Record Use
+                        </button>
+                    @endif
+                    @if ($abilities['return'])
+                        <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal"
+                            data-bs-target="#recordMaterialModal" data-material-entry-type="returned"
+                            @disabled(! $hasOnSite)>
+                            <i class="bi bi-arrow-return-left me-1" aria-hidden="true"></i>
+                            Record Return
+                        </button>
+                    @endif
+                    @if ($canAskForMore)
+                        <button type="button" class="btn btn-primary" data-bs-toggle="modal"
+                            data-bs-target="#addMaterialModal">
+                            <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
+                            {{ $moreLabel }}
+                        </button>
+                    @endif
                 </div>
             @endif
         </div>
@@ -84,7 +100,7 @@
                                 <th class="text-end">Unused</th>
                             @endif
                             <th class="text-end">Remaining</th>
-                            @if ($canRecord)
+                            @if ($hasActions)
                                 <th class="text-center">Actions</th>
                             @endif
                         </tr>
@@ -126,29 +142,35 @@
                                 <td class="text-end material-qty {{ $row['on_site'] > 0 ? 'material-on-site' : 'is-zero' }}">
                                     {{ $unit->format($row['on_site']) }}
                                 </td>
-                                @if ($canRecord)
+                                @if ($hasActions)
                                     <td class="text-center">
                                         <div class="material-row-actions">
-                                            <button type="button" class="btn btn-sm btn-outline-success py-1 px-2"
-                                                data-bs-toggle="modal" data-bs-target="#recordMaterialModal"
-                                                data-material-entry-type="used"
-                                                data-material-line="{{ $row['line']->project_material_id }}"
-                                                title="Record use" @disabled($row['on_site'] <= 0)>
-                                                <i class="bi bi-tools" aria-hidden="true"></i>
-                                            </button>
-                                            <button type="button" class="btn btn-sm btn-outline-primary py-1 px-2"
-                                                data-bs-toggle="modal" data-bs-target="#recordMaterialModal"
-                                                data-material-entry-type="returned"
-                                                data-material-line="{{ $row['line']->project_material_id }}"
-                                                title="Record return" @disabled($row['on_site'] <= 0)>
-                                                <i class="bi bi-arrow-return-left" aria-hidden="true"></i>
-                                            </button>
-                                            <button type="button" class="btn btn-sm btn-outline-secondary py-1 px-2"
-                                                data-bs-toggle="modal" data-bs-target="#addMaterialModal"
-                                                data-material-add='@json($row['material']->toOption())'
-                                                title="Add more">
-                                                <i class="bi bi-plus-lg" aria-hidden="true"></i>
-                                            </button>
+                                            @if ($abilities['use'])
+                                                <button type="button" class="btn btn-sm btn-outline-success py-1 px-2"
+                                                    data-bs-toggle="modal" data-bs-target="#recordMaterialModal"
+                                                    data-material-entry-type="used"
+                                                    data-material-line="{{ $row['line']->project_material_id }}"
+                                                    title="Record use" @disabled($row['on_site'] <= 0)>
+                                                    <i class="bi bi-tools" aria-hidden="true"></i>
+                                                </button>
+                                            @endif
+                                            @if ($abilities['return'])
+                                                <button type="button" class="btn btn-sm btn-outline-primary py-1 px-2"
+                                                    data-bs-toggle="modal" data-bs-target="#recordMaterialModal"
+                                                    data-material-entry-type="returned"
+                                                    data-material-line="{{ $row['line']->project_material_id }}"
+                                                    title="Record return" @disabled($row['on_site'] <= 0)>
+                                                    <i class="bi bi-arrow-return-left" aria-hidden="true"></i>
+                                                </button>
+                                            @endif
+                                            @if ($canAskForMore)
+                                                <button type="button" class="btn btn-sm btn-outline-secondary py-1 px-2"
+                                                    data-bs-toggle="modal" data-bs-target="#addMaterialModal"
+                                                    data-material-add='@json($row['material']->toOption() + ['available' => $row['available']])'
+                                                    title="{{ $abilities['add'] ? 'Add more' : 'Request more' }}">
+                                                    <i class="bi bi-plus-lg" aria-hidden="true"></i>
+                                                </button>
+                                            @endif
                                         </div>
                                     </td>
                                 @endif
@@ -160,6 +182,47 @@
         @endif
     </div>
 </div>
+
+@if ($materialRequests->isNotEmpty())
+    <div class="card shadow-sm border-0 rounded-2 mb-4" data-material-requests-panel>
+        <div class="card-body p-3 p-md-4">
+            <h5 class="fw-bold mb-3">Material Requests</h5>
+
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-info">
+                        <tr>
+                            <th>Date</th>
+                            <th>Material</th>
+                            <th class="text-end">Qty</th>
+                            <th>By</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach ($materialRequests as $materialRequest)
+                            <tr>
+                                <td class="text-nowrap">{{ \App\Support\BusinessTime::at($materialRequest->created_at)?->format(\App\Support\BusinessTime::DATE) }}</td>
+                                <td><span class="material-name">{{ $materialRequest->material?->displayName() }}</span></td>
+                                <td class="text-end material-qty">
+                                    {{ $materialRequest->material?->unit->format($materialRequest->quantity) }}
+                                    {{ $materialRequest->material?->unit->value }}
+                                </td>
+                                <td class="small">{{ $materialRequest->requester?->fullName() }}</td>
+                                <td>
+                                    <span class="material-request-status is-{{ $materialRequest->status }}">{{ $materialRequest->statusLabel() }}</span>
+                                    @if ($materialRequest->rejection_reason)
+                                        <div class="material-meta">{{ $materialRequest->rejection_reason }}</div>
+                                    @endif
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+@endif
 
 @if ($project->hasCompletedInitialSetup())
     <div class="card shadow-sm border-0 rounded-2">
@@ -191,7 +254,8 @@
 
 @if ($canRecord)
     {{-- Record Use / Record Return. One dialog for both, switched by the
-         toggle at the top; the button that opened it chooses which. --}}
+         toggle at the top; the button that opened it chooses which. A Purchasing
+         Admin has the one choice. --}}
     <div class="modal fade" id="recordMaterialModal" tabindex="-1" aria-hidden="true"
         aria-labelledby="recordMaterialTitle" data-record-material-modal>
         <div class="modal-dialog modal-dialog-centered">
@@ -199,18 +263,22 @@
                 <form method="POST" action="{{ route($routePrefix.'record', $project->project_id) }}">
                     @csrf
                     <div class="modal-header">
-                        <h5 class="modal-title" id="recordMaterialTitle" data-record-material-title>Record Use</h5>
+                        <h5 class="modal-title" id="recordMaterialTitle" data-record-material-title>{{ $abilities['use'] ? 'Record Use' : 'Record Return' }}</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                     </div>
 
                     <div class="modal-body">
                         <div class="btn-group w-100 mb-3" role="group" aria-label="Entry">
-                            <input type="radio" class="btn-check" name="entry_type" id="recordMaterialUsed"
-                                value="used" checked data-record-material-type>
-                            <label class="btn btn-outline-success" for="recordMaterialUsed">Used</label>
-                            <input type="radio" class="btn-check" name="entry_type" id="recordMaterialReturned"
-                                value="returned" data-record-material-type>
-                            <label class="btn btn-outline-primary" for="recordMaterialReturned">Returned</label>
+                            @if ($abilities['use'])
+                                <input type="radio" class="btn-check" name="entry_type" id="recordMaterialUsed"
+                                    value="used" checked data-record-material-type>
+                                <label class="btn btn-outline-success" for="recordMaterialUsed">Used</label>
+                            @endif
+                            @if ($abilities['return'])
+                                <input type="radio" class="btn-check" name="entry_type" id="recordMaterialReturned"
+                                    value="returned" @checked(! $abilities['use']) data-record-material-type>
+                                <label class="btn btn-outline-primary" for="recordMaterialReturned">Returned</label>
+                            @endif
                         </div>
 
                         <div class="mb-3">
@@ -266,20 +334,24 @@
             </div>
         </div>
     </div>
+@endif
 
+@if ($canAskForMore)
     {{-- Add Material: more of one already here, or one the plan did not
          have. The picker fills material_id; Add to List opens beneath it for
-         a material the list does not have yet. --}}
+         a material the list does not have yet. A lead sees Request Material,
+         which may ask for more than is available: Purchasing can bring it in. --}}
     <div class="modal fade" id="addMaterialModal" tabindex="-1" aria-hidden="true"
-        aria-labelledby="addMaterialTitle" data-add-material-modal>
+        aria-labelledby="addMaterialTitle" data-add-material-modal
+        data-add-material-requests="{{ $abilities['add'] ? '0' : '1' }}">
         <div class="modal-dialog modal-dialog-centered modal-lg">
             <div class="modal-content">
-                <form method="POST" action="{{ route($routePrefix.'add', $project->project_id) }}">
+                <form method="POST" action="{{ $moreAction }}">
                     @csrf
                     <input type="hidden" name="material_id" value="" data-add-material-id>
 
                     <div class="modal-header">
-                        <h5 class="modal-title" id="addMaterialTitle">Add Material</h5>
+                        <h5 class="modal-title" id="addMaterialTitle">{{ $moreLabel }}</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                     </div>
 
@@ -297,65 +369,46 @@
                             <div>
                                 <div class="material-name" data-add-material-label></div>
                                 <div class="material-meta" data-add-material-meta></div>
+                                <div class="small fw-semibold mt-1" data-add-material-available></div>
                             </div>
                             <button type="button" class="btn btn-sm btn-outline-secondary" data-add-material-change>
                                 Change
                             </button>
                         </div>
 
-                        <div class="border rounded-3 p-3 mb-3 d-none" data-add-material-new>
-                            <div class="d-flex justify-content-between align-items-center mb-2">
-                                <h6 class="fw-bold mb-0">Add to Material List</h6>
-                                <button type="button" class="btn btn-sm btn-link" data-add-material-new-cancel>
-                                    Cancel
-                                </button>
-                            </div>
+                        @if ($abilities['add'])
+                            <div class="border rounded-3 p-3 mb-3 d-none" data-add-material-new>
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <h6 class="fw-bold mb-0">Add to Material List</h6>
+                                    <button type="button" class="btn btn-sm btn-link" data-add-material-new-cancel>
+                                        Cancel
+                                    </button>
+                                </div>
 
-                            @include('projects.partials.material-quick-add-fields', [
-                                'types' => $quickAdd['types'],
-                                'brands' => $quickAdd['brands'],
-                                'units' => $quickAdd['units'],
-                                'idPrefix' => 'projectQuickAdd',
-                            ])
+                                @include('projects.partials.material-quick-add-fields', [
+                                    'types' => $quickAdd['types'],
+                                    'brands' => $quickAdd['brands'] ?? [],
+                                    'units' => $quickAdd['units'],
+                                    'idPrefix' => 'projectQuickAdd',
+                                ])
 
-                            <div class="text-end mt-2">
-                                <button type="button" class="btn btn-sm btn-primary" data-quick-add-save>
-                                    Add to List
-                                </button>
-                            </div>
-                        </div>
-
-                        <div class="row g-2">
-                            <div class="col-sm-6">
-                                <label class="form-label fw-semibold" for="addMaterialQuantity">Quantity</label>
-                                <div class="input-group">
-                                    <input type="number" class="form-control" id="addMaterialQuantity"
-                                        name="quantity" min="0.01" step="0.01" required data-add-material-qty>
-                                    <span class="input-group-text" data-add-material-unit>&ndash;</span>
+                                <div class="text-end mt-2">
+                                    <button type="button" class="btn btn-sm btn-primary" data-quick-add-save>
+                                        Add to List
+                                    </button>
                                 </div>
                             </div>
-                            <div class="col-sm-6">
-                                <label class="form-label fw-semibold" for="addMaterialDate">Date</label>
-                                <input type="date" class="form-control" id="addMaterialDate" name="entry_date"
-                                    value="{{ $today }}" max="{{ $today }}" required>
+                        @endif
+
+                        {{-- Added, it comes off the warehouse shelf today, and is
+                             refused past what is available. --}}
+                        <div>
+                            <label class="form-label fw-semibold" for="addMaterialQuantity">Quantity</label>
+                            <div class="input-group">
+                                <input type="number" class="form-control" id="addMaterialQuantity"
+                                    name="quantity" min="0.01" step="0.01" required data-add-material-qty>
+                                <span class="input-group-text" data-add-material-unit>&ndash;</span>
                             </div>
-                        </div>
-
-                        {{-- From the warehouse takes it off the shelf, and is
-                             refused when the shelf does not hold it. Bought
-                             directly touches no stock. --}}
-                        <div class="mt-3">
-                            <label class="form-label fw-semibold" for="addMaterialSource">Source</label>
-                            <select class="form-select" id="addMaterialSource" name="source">
-                                <option value="warehouse">From the warehouse</option>
-                                <option value="direct">Bought directly</option>
-                            </select>
-                        </div>
-
-                        <div class="mt-3">
-                            <label class="form-label fw-semibold" for="addMaterialNotes">Notes</label>
-                            <input type="text" class="form-control" id="addMaterialNotes" name="notes"
-                                maxlength="255" placeholder="Optional">
                         </div>
                     </div>
 
@@ -363,7 +416,7 @@
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                         <button type="submit" class="btn btn-primary" data-add-material-submit disabled>
                             <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
-                            Add Material
+                            {{ $moreLabel }}
                         </button>
                     </div>
                 </form>
@@ -371,6 +424,9 @@
         </div>
     </div>
 
+@endif
+
+@if ($hasActions)
     {{-- Void Entry. The form's action is set by projectMaterials.js from the
          history row that opened it. --}}
     <div class="modal fade" id="voidMaterialEntryModal" tabindex="-1" aria-hidden="true"

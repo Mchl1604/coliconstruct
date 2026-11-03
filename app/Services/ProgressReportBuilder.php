@@ -8,7 +8,6 @@ use App\Models\ProjectMaterialEntry;
 use App\Models\ProjectTechnician;
 use App\Models\Task;
 use App\Models\TaskUpdate;
-use App\Models\Technician;
 use App\Models\TechnicianReport;
 use App\Models\TechnicianReportImage;
 use App\Models\User;
@@ -48,7 +47,7 @@ class ProgressReportBuilder
      */
     public function refusal(?User $user, Project $project, string $date): ?string
     {
-        if ($user === null || ! $user->isLeadTechnician() || ! $this->projects->reportsOn($user, $project)) {
+        if ($user === null || ! $this->projects->reportsOn($user, $project)) {
             return 'Only the project\'s lead files progress reports.';
         }
 
@@ -137,6 +136,25 @@ class ProgressReportBuilder
                     'photos' => $update->images->count(),
                 ])
                 ->all(),
+            // Started, not finished, and nothing posted on it this day - so a
+            // task under way still shows when nobody wrote an update.
+            'in_progress_tasks' => Task::query()
+                ->with('technician.account')
+                ->where('project_id', $project->project_id)
+                ->whereIn('status', Task::ACTIVE_STATUSES)
+                ->whereNotNull('start_date')
+                ->whereDate('start_date', '<=', $date)
+                ->whereNotIn('task_id', TaskUpdate::query()
+                    ->whereIn('task_id', $taskIds)
+                    ->whereDate('update_date', $date)
+                    ->select('task_id'))
+                ->orderBy('start_date')
+                ->get()
+                ->map(fn (Task $task): array => [
+                    'task' => $task->task_title,
+                    'technician' => $task->technician?->name,
+                ])
+                ->all(),
             'completed_tasks' => Task::query()
                 ->with('technician.account')
                 ->where('project_id', $project->project_id)
@@ -193,7 +211,6 @@ class ProgressReportBuilder
                 ->map(fn (TechnicianReport $report): array => [
                     'title' => $report->report_title,
                     'code' => $report->displayCode(),
-                    'severity' => $report->incident?->label('SEVERITIES', 'severity'),
                 ])
                 ->all(),
         ];
@@ -223,12 +240,12 @@ class ProgressReportBuilder
             'filed_at' => BusinessTime::now()->format(BusinessTime::DATE.' g:i A'),
         ];
 
-        $technician = Technician::query()->where('account_id', $by->id)->firstOrFail();
+        $technicianId = TechnicianReport::technicianIdFor($project, $by);
 
-        $report = DB::transaction(function () use ($project, $date, $snapshot, $images, $by, $technician): TechnicianReport {
+        $report = DB::transaction(function () use ($project, $date, $snapshot, $images, $by, $technicianId): TechnicianReport {
             $report = TechnicianReport::create([
                 'project_id' => $project->project_id,
-                'technician_id' => $technician->technician_id,
+                'technician_id' => $technicianId,
                 'submitted_by' => $by->id,
                 'report_type' => 'progress',
                 'report_title' => sprintf('Progress Report - %s', $snapshot['date_label']),

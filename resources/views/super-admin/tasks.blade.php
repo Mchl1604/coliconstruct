@@ -28,11 +28,13 @@
                 {{ $totalTasks }} {{ \Illuminate\Support\Str::plural('task', $totalTasks) }}
             </span>
 
-            <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal"
-                data-bs-target="#addTaskModal">
-                <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
-                Add New Task
-            </button>
+            @if ($canManageTasks)
+                <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal"
+                    data-bs-target="#addTaskModal">
+                    <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
+                    Add New Task
+                </button>
+            @endif
         </div>
     </div>
 
@@ -62,9 +64,11 @@
         project-route="super-admin.projects.show"
         empty-message="No active projects to show." />
 
-    <x-task-create-modal :projects="$schedulableProjects"
-        :form-data-url="route('super-admin.projects.task-form-data', ['id' => '__ID__'])"
-        :store-url="route('super-admin.task.store', ['id' => '__ID__'])" />
+    @if ($canManageTasks)
+        <x-task-create-modal :projects="$schedulableProjects"
+            :form-data-url="route('super-admin.projects.task-form-data', ['id' => '__ID__'])"
+            :store-url="route('super-admin.task.store', ['id' => '__ID__'])" />
+    @endif
 
     @push('scripts')
         <script src="/js/super-admin/taskDatePickers.js"></script>

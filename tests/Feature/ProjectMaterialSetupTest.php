@@ -295,12 +295,12 @@ class ProjectMaterialSetupTest extends TestCase
         $this->assertSame(1, $materials[0]['used_on']);
     }
 
-    public function test_a_lead_can_add_a_missing_material_to_the_list(): void
+    public function test_the_office_can_add_a_missing_material_to_the_list(): void
     {
         $this->submit('finalize');
 
-        $this->actingAs($this->leadAccount)
-            ->postJson(route('technician.projects.materials.quick-add', $this->project->project_id), [
+        $this->actingAs($this->superAdmin)
+            ->postJson(route('super-admin.projects.materials.quick-add', $this->project->project_id), [
                 'name' => 'Ceiling Cassette 3.0 HP',
                 'brand_id' => Brand::factory()->create(['brand_name' => 'Daikin'])->brand_id,
                 'material_type_id' => $this->type->material_type_id,
@@ -312,7 +312,7 @@ class ProjectMaterialSetupTest extends TestCase
         $material = Material::query()->where('name', 'Ceiling Cassette 3.0 HP')->firstOrFail();
 
         $this->assertSame($this->project->project_id, $material->created_from_project_id);
-        $this->assertSame($this->leadAccount->id, $material->created_by);
+        $this->assertSame($this->superAdmin->id, $material->created_by);
     }
 
     public function test_the_same_material_cannot_be_listed_twice(): void
@@ -335,11 +335,15 @@ class ProjectMaterialSetupTest extends TestCase
         $this->submit('finalize');
 
         $this->actingAs($this->mateAccount)
-            ->postJson(route('technician.projects.materials.quick-add', $this->project->project_id), [
+            ->postJson(route('super-admin.projects.materials.quick-add', $this->project->project_id), [
                 'name' => 'Anything',
                 'material_type_id' => $this->type->material_type_id,
                 'unit' => 'pc',
             ]);
+
+        $this->actingAs($this->mateAccount)
+            ->getJson(route('technician.projects.materials.suggest', [$this->project->project_id, 'q' => 'split']))
+            ->assertForbidden();
 
         $this->assertFalse(Material::query()->where('name', 'Anything')->exists());
     }

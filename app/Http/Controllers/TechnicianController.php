@@ -1424,6 +1424,10 @@ class TechnicianController extends Controller
                 throw new RuntimeException('A technician can only be added to a day still to come.');
             }
 
+            if ($day->lt(Schedule::earliestBookable($request->user()))) {
+                throw new RuntimeException('Choose tomorrow or later.');
+            }
+
             $this->assertProjectAcceptsTechnicians($project);
 
             if (! $project->isScheduledOn($day->toDateString())) {

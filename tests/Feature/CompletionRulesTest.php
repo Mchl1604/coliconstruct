@@ -140,7 +140,7 @@ class CompletionRulesTest extends TestCase
 
     public function test_an_administrator_can_complete_a_task_without_an_image(): void
     {
-        foreach (['super_admin', 'admin'] as $role) {
+        foreach (['super_admin'] as $role) {
             $task = $this->task($this->mate, 'Fit the unit '.$role, startsIn: -1);
 
             $this->actingAs($this->employee($role, $role.'@example.test'));

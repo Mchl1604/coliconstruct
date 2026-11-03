@@ -14,12 +14,15 @@ use Illuminate\Support\Facades\DB;
  *
  *     Reserved  = for each live project, what it planned less what the
  *                 warehouse has released to it - never below zero
- *     Available = On Hand - Reserved
+ *     Available = On Hand - Reserved - never below zero
  *
  * A project's plan reserves stock from the moment it is saved, so a second
  * project cannot be promised the same ten units. The reservation shrinks as
  * Purchasing releases the materials with a Stock Out against the project,
  * and ends when the project closes or is archived.
+ *
+ * A plan may reserve more than is on hand - the wizard warns and still saves.
+ * Reserved keeps the whole claim, and Available simply reads zero.
  *
  * Only movements made by hand count as a release. One the project's Materials
  * tab wrote - extra brought to site, a return, leftovers at close-out - is
@@ -57,7 +60,7 @@ class StockAvailability
             $figures[$materialId] = [
                 'on_hand' => round($held / 100, 2),
                 'reserved' => round($claimed / 100, 2),
-                'available' => round(($held - $claimed) / 100, 2),
+                'available' => round(max(0, $held - $claimed) / 100, 2),
             ];
         }
 

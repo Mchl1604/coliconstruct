@@ -757,7 +757,7 @@ class ProjectCompletionHistoryTest extends TestCase
      * Live work still gets it, or the fix above would have taken the feature
      * away rather than narrowed it.
      */
-    public function test_an_ongoing_project_still_offers_the_add_report_button(): void
+    public function test_an_ongoing_project_still_offers_the_report_forms(): void
     {
         $this->actingAsSuperAdmin();
 
@@ -767,7 +767,7 @@ class ProjectCompletionHistoryTest extends TestCase
 
         $this->get(route('super-admin.projects.show', $project->project_id))
             ->assertOk()
-            ->assertSee('addTechnicianReportModal');
+            ->assertSee(route('super-admin.progress-reports.create', ['project' => $project->project_id]), false);
     }
 
     /**

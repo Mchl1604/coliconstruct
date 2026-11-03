@@ -31,8 +31,8 @@ href="https://cdn.datatables.net/2.3.8/css/dataTables.dataTables.css">
         $user = auth()->user();
         // Each entry names the part of the portal it belongs to, and only
         // the parts this role reaches are drawn - see RoleAccess. A
-        // Purchasing Admin sees Inventory and Configuration; an HR Admin
-        // everything but Inventory.
+        // Purchasing Admin sees Materials, Inventory, Movements and
+        // Configuration; an HR Admin everything but those first three.
         $adminNavItems = collect([
             [
                 'label' => 'Dashboard',
@@ -77,11 +77,41 @@ href="https://cdn.datatables.net/2.3.8/css/dataTables.dataTables.css">
                 'active' => 'super-admin.reports.*',
             ],
             [
-                'label' => 'Inventory',
+                // The scheduling roles have the full Projects page above.
+                'label' => 'Projects',
+                'icon' => 'bi-folder2-open',
+                'area' => \App\Support\RoleAccess::INVENTORY,
+                'unless_area' => \App\Support\RoleAccess::SCHEDULING,
+                'route' => 'inventory.projects',
+                'active' => 'inventory.projects*',
+            ],
+            [
+                'label' => 'Material Requests',
+                'icon' => 'bi-inbox',
+                'area' => \App\Support\RoleAccess::INVENTORY,
+                'route' => 'inventory.material-requests.index',
+                'active' => 'inventory.material-requests.*',
+            ],
+            [
+                'label' => 'Materials',
                 'icon' => 'bi-box-seam',
                 'area' => \App\Support\RoleAccess::INVENTORY,
+                'route' => 'inventory.materials-page',
+                'active' => 'inventory.materials-page',
+            ],
+            [
+                'label' => 'Inventory',
+                'icon' => 'bi-boxes',
+                'area' => \App\Support\RoleAccess::INVENTORY,
                 'route' => 'inventory.index',
-                'active' => 'inventory.*',
+                'active' => 'inventory.index',
+            ],
+            [
+                'label' => 'Movements',
+                'icon' => 'bi-arrow-left-right',
+                'area' => \App\Support\RoleAccess::INVENTORY,
+                'route' => 'inventory.movements',
+                'active' => 'inventory.movements',
             ],
             [
                 'label' => 'Configuration',
@@ -93,7 +123,8 @@ href="https://cdn.datatables.net/2.3.8/css/dataTables.dataTables.css">
             ],
         ])
             ->filter(fn (array $item): bool => collect((array) $item['area'])
-                ->contains(fn (string $area): bool => (bool) $user?->canReach($area)))
+                ->contains(fn (string $area): bool => (bool) $user?->canReach($area))
+                && ! (isset($item['unless_area']) && $user?->canReach($item['unless_area'])))
             ->map(fn (array $item): array => $item + [
                 'url' => route($item['route']),
                 'is_active' => request()->routeIs($item['active']),
@@ -173,6 +204,7 @@ href="https://cdn.datatables.net/2.3.8/css/dataTables.dataTables.css">
     {{-- Before the page's own scripts, so every picker they build inherits
          the shared defaults and the Clear button. --}}
     <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js"></script>
+    @include('layouts.partials.booking-calendar')
     <script src="/js/datePicker.js"></script>
     <script>
         window.notificationRoutes = @json([

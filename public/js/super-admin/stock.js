@@ -1,15 +1,10 @@
 /**
- * Inventory -> Stock and Movements.
+ * The Inventory page: every material with how many are on hand.
  *
- * The Stock table lists every material with how many are on hand; its row
- * buttons open one dialog for Stock In, Stock Out and Adjust Count, and
- * History narrows the Movements table to that material. Every write goes to
- * the server, which answers with fresh figures for the cards above the tabs,
- * and both tables are redrawn from it - so what is on screen is always what
- * was saved.
- *
- * The Movements table is built the first time its tab is shown: a DataTable
- * built while hidden measures its columns as zero wide.
+ * The buttons above the table and on its rows open one dialog for Stock In and
+ * Stock Out, which takes several materials at once. Every write goes to the
+ * server, which answers with fresh figures for the cards above the table, and
+ * the table is redrawn from it - so what is on screen is always what was saved.
  */
 document.addEventListener("DOMContentLoaded", function () {
     "use strict";
@@ -28,31 +23,21 @@ document.addEventListener("DOMContentLoaded", function () {
     const statusFilter = document.querySelector("[data-stock-status-filter]");
     const typeFilter = document.querySelector("[data-stock-type-filter]");
     const subtypeFilter = document.querySelector("[data-stock-subtype-filter]");
-    const movementTypeFilter = document.querySelector("[data-movement-type-filter]");
-    const materialChip = document.querySelector("[data-movement-material-chip]");
-    const materialChipLabel = document.querySelector("[data-movement-material-label]");
-    const movementsTabEl = document.getElementById("movementsTab");
-    const stockTabEl = document.getElementById("stockTab");
 
     const modalEl = document.querySelector("[data-stock-modal]");
     const modalForm = modalEl.querySelector("[data-stock-form]");
     const modalTitle = modalEl.querySelector("[data-stock-modal-title]");
-    const modalMaterial = modalEl.querySelector("[data-stock-modal-material]");
-    const modalOnHand = modalEl.querySelector("[data-stock-modal-on-hand]");
-    const modalUnit = modalEl.querySelector("[data-stock-modal-unit]");
     const modalError = modalEl.querySelector("[data-stock-modal-error]");
-    const quantityLabel = modalEl.querySelector("[data-stock-quantity-label]");
-    const notesLabel = modalEl.querySelector("[data-stock-notes-label]");
+    const searchInput = modalEl.querySelector("[data-stock-search]");
+    const linesEl = modalEl.querySelector("[data-stock-lines]");
+    const linesEmpty = modalEl.querySelector("[data-stock-lines-empty]");
     const saveButton = modalEl.querySelector("[data-stock-save]");
     const saveSpinner = modalEl.querySelector("[data-stock-save-spinner]");
 
-    const TITLES = { in: "Stock In", out: "Stock Out", adjust: "Adjust Count" };
+    const TITLES = { in: "Stock In", out: "Stock Out" };
 
     let stockTable = null;
-    let movementsTable = null;
-    let movementMaterialId = "";
     let mode = "in";
-    let current = null;
     const types = options.types || [];
 
     function field(name) {
@@ -123,7 +108,6 @@ document.addEventListener("DOMContentLoaded", function () {
     document.querySelectorAll("[data-stat-filter]").forEach(function (button) {
         button.addEventListener("click", function () {
             statusFilter.value = button.dataset.statFilter;
-            window.bootstrap?.Tab.getOrCreateInstance(stockTabEl).show();
             redrawStock(true);
         });
     });
@@ -135,12 +119,6 @@ document.addEventListener("DOMContentLoaded", function () {
     function redrawStock(fromStart) {
         if (stockTable) {
             stockTable.draw(fromStart ? undefined : false);
-        }
-    }
-
-    function redrawMovements(fromStart) {
-        if (movementsTable) {
-            movementsTable.draw(fromStart ? undefined : false);
         }
     }
 
@@ -163,30 +141,6 @@ document.addEventListener("DOMContentLoaded", function () {
                 search: "",
                 searchPlaceholder: "Search stock...",
                 emptyTable: "No materials yet.",
-                zeroRecords: "Nothing matches.",
-            },
-        });
-    }
-
-    function startMovementsTable() {
-        if (movementsTable || !window.serverTable) {
-            return;
-        }
-
-        movementsTable = window.serverTable("#movementsTable", {
-            url: routes.movements,
-            params: function () {
-                return { type: movementTypeFilter.value, material: movementMaterialId };
-            },
-            autoWidth: false,
-            pageLength: 10,
-            lengthMenu: [10, 25, 50, 100],
-            order: [[0, "desc"]],
-            columnDefs: [{ targets: [4, 5, 6], orderable: false }],
-            language: {
-                search: "",
-                searchPlaceholder: "Search movements...",
-                emptyTable: "No movements yet.",
                 zeroRecords: "Nothing matches.",
             },
         });
@@ -235,55 +189,13 @@ document.addEventListener("DOMContentLoaded", function () {
         redrawStock(true);
     });
 
-    movementTypeFilter.addEventListener("change", function () {
-        redrawMovements(true);
-    });
-
-    movementsTabEl.addEventListener("shown.bs.tab", function () {
-        if (movementsTable) {
-            movementsTable.columns.adjust();
-
-            return;
-        }
-
-        startMovementsTable();
-    });
-
-    stockTabEl.addEventListener("shown.bs.tab", function () {
-        stockTable?.columns.adjust();
-    });
-
-    function filterMovementsTo(materialId, label) {
-        movementMaterialId = materialId ? String(materialId) : "";
-        materialChipLabel.textContent = label || "";
-        materialChip.classList.toggle("d-none", !movementMaterialId);
-
-        if (movementsTabEl.classList.contains("active")) {
-            redrawMovements(true);
-        } else {
-            // Built, or redrawn, by the shown handler above.
-            window.bootstrap?.Tab.getOrCreateInstance(movementsTabEl).show();
-            redrawMovements(true);
-        }
-    }
-
-    document.querySelector("[data-movement-material-clear]").addEventListener("click", function () {
-        filterMovementsTo("", "");
-    });
-
-    // A material added, edited or removed on the Materials tab - a new row,
-    // a new reorder level - changes the Stock table too.
-    document.addEventListener("materials:changed", function () {
-        redrawStock(false);
-    });
-
     // ------------------------------------------------------------------
     // The dialog
     // ------------------------------------------------------------------
 
     /**
      * Show the fields this mode uses. "in" splits again on Received As: a
-     * delivery has a supplier, a return names the project it came from.
+     * return names the project it came from, a delivery has none.
      */
     function applyMode() {
         const incoming = field("movement_type").value === "returned" ? "in-return" : "in-delivery";
@@ -313,41 +225,141 @@ document.addEventListener("DOMContentLoaded", function () {
         if (project.selectedOptions[0]?.disabled) {
             project.value = "";
         }
-
-        quantityLabel.textContent = mode === "adjust" ? "Counted" : "Quantity";
-        notesLabel.textContent = mode === "adjust" ? "Reason" : "Notes";
-        field("notes").placeholder = mode === "adjust" ? "Why it changed" : "Optional";
-        field("notes").required = mode === "adjust";
     }
+
+    function listedIds() {
+        return Array.from(linesEl.querySelectorAll("[data-stock-line]")).map(function (line) {
+            return Number(line.dataset.stockLine);
+        });
+    }
+
+    function refreshLines() {
+        const count = linesEl.children.length;
+
+        linesEmpty.classList.toggle("d-none", count > 0);
+        linesEl.classList.toggle("d-none", count === 0);
+        saveButton.disabled = count === 0;
+    }
+
+    /**
+     * One material on the list, written with textContent so its name can
+     * never become markup.
+     */
+    function addLine(material) {
+        if (listedIds().indexOf(Number(material.material_id)) !== -1) {
+            return null;
+        }
+
+        const line = document.createElement("div");
+        const name = document.createElement("div");
+        const label = document.createElement("div");
+        const figures = document.createElement("div");
+        const group = document.createElement("div");
+        const quantity = document.createElement("input");
+        const unit = document.createElement("span");
+        const remove = document.createElement("button");
+
+        line.className = "stock-line";
+        line.dataset.stockLine = String(material.material_id);
+
+        name.className = "stock-line-name";
+        label.className = "fw-semibold";
+        label.textContent = material.label;
+        figures.className = "small text-secondary";
+        figures.textContent =
+            "On hand " + formatQuantity(material.on_hand) + " · Available " + formatQuantity(material.available) + " " + material.unit;
+        name.append(label, figures);
+
+        group.className = "input-group input-group-sm stock-line-qty";
+        quantity.type = "number";
+        quantity.className = "form-control";
+        quantity.min = material.allows_fractions ? "0.01" : "1";
+        quantity.step = material.allows_fractions ? "0.01" : "1";
+        quantity.required = true;
+        quantity.setAttribute("aria-label", "Quantity of " + material.label);
+        quantity.dataset.stockLineQty = "";
+
+        if (mode === "out") {
+            quantity.max = String(material.on_hand);
+        }
+
+        unit.className = "input-group-text";
+        unit.textContent = material.unit;
+        group.append(quantity, unit);
+
+        remove.type = "button";
+        remove.className = "btn btn-sm btn-outline-danger py-1 px-2";
+        remove.title = "Remove";
+        remove.setAttribute("aria-label", "Remove " + material.label);
+        remove.dataset.stockLineRemove = "";
+        remove.innerHTML = '<i class="bi bi-x-lg" aria-hidden="true"></i>';
+
+        line.append(name, group, remove);
+        linesEl.appendChild(line);
+        refreshLines();
+
+        return quantity;
+    }
+
+    linesEl.addEventListener("click", function (event) {
+        const remove = event.target.closest("[data-stock-line-remove]");
+
+        if (remove) {
+            remove.closest("[data-stock-line]").remove();
+            refreshLines();
+            searchInput.focus();
+        }
+    });
 
     function openModal(action, material) {
         mode = action;
-        current = material;
 
         modalForm.reset();
         modalError.classList.add("d-none");
+        linesEl.replaceChildren();
 
         modalTitle.textContent = TITLES[mode];
-        modalMaterial.textContent = material.label;
-        modalOnHand.textContent = formatQuantity(material.on_hand) + " " + material.unit;
-        modalUnit.textContent = material.unit;
-
-        const quantity = field("quantity");
-
-        quantity.step = material.allows_fractions ? "0.01" : "1";
-        quantity.value = mode === "adjust" ? String(material.on_hand) : "";
         field("movement_date").value = options.today || "";
 
         applyMode();
 
+        if (material) {
+            addLine(material);
+        }
+
+        refreshLines();
+
         window.bootstrap.Modal.getOrCreateInstance(modalEl).show();
     }
+
+    window.materialPicker.attach(searchInput, {
+        url: routes.stockOptions,
+        exclude: listedIds,
+        onPick: function (material) {
+            addLine(material)?.focus();
+        },
+    });
+
+    // The picker takes Enter while its list is open. Closed, Enter would
+    // send the form from an empty search.
+    searchInput.addEventListener("keydown", function (event) {
+        if (event.key === "Enter") {
+            event.preventDefault();
+        }
+    });
 
     field("movement_type").addEventListener("change", applyMode);
 
     modalEl.addEventListener("shown.bs.modal", function () {
-        field("quantity").focus();
-        field("quantity").select();
+        const firstQuantity = linesEl.querySelector("[data-stock-line-qty]");
+
+        (firstQuantity || searchInput).focus();
+    });
+
+    document.querySelectorAll("[data-stock-bulk]").forEach(function (button) {
+        button.addEventListener("click", function () {
+            openModal(button.dataset.stockBulk, null);
+        });
     });
 
     stockTableEl.addEventListener("click", function (event) {
@@ -359,37 +371,24 @@ document.addEventListener("DOMContentLoaded", function () {
             } catch (error) {
                 showError("Unable to open that material.");
             }
-
-            return;
-        }
-
-        const history = event.target.closest("[data-stock-history]");
-
-        if (history) {
-            filterMovementsTo(history.dataset.stockHistory, history.dataset.stockLabel);
         }
     });
 
     function payload() {
         const base = {
-            material_id: current.material_id,
+            items: Array.from(linesEl.querySelectorAll("[data-stock-line]")).map(function (line) {
+                return {
+                    material_id: Number(line.dataset.stockLine),
+                    quantity: line.querySelector("[data-stock-line-qty]").value,
+                };
+            }),
             movement_date: field("movement_date").value,
             notes: field("notes").value.trim(),
-        };
-
-        if (mode === "adjust") {
-            return Object.assign(base, { counted: field("quantity").value });
-        }
-
-        Object.assign(base, {
-            quantity: field("quantity").value,
-            reference_no: field("reference_no").value.trim(),
             project_id: field("project_id").value,
-        });
+        };
 
         if (mode === "in") {
             base.movement_type = field("movement_type").value;
-            base.supplier = field("supplier").value.trim();
         }
 
         return base;
@@ -398,11 +397,11 @@ document.addEventListener("DOMContentLoaded", function () {
     modalForm.addEventListener("submit", function (event) {
         event.preventDefault();
 
-        if (!current) {
+        if (!linesEl.children.length) {
             return;
         }
 
-        const url = { in: routes.receive, out: routes.issue, adjust: routes.adjust }[mode];
+        const url = mode === "in" ? routes.receiveMany : routes.issueMany;
 
         saveButton.disabled = true;
         saveSpinner.classList.remove("d-none");
@@ -423,44 +422,7 @@ document.addEventListener("DOMContentLoaded", function () {
             showSuccess(result.body.message || "");
             updateSummary(result.body.summary);
             redrawStock(false);
-            redrawMovements(false);
         });
-    });
-
-    // ------------------------------------------------------------------
-    // Voiding
-    // ------------------------------------------------------------------
-
-    document.getElementById("movementsTable").addEventListener("click", function (event) {
-        const button = event.target.closest("[data-stock-void]");
-
-        if (!button || !window.confirmDialog) {
-            return;
-        }
-
-        const url = routes.movementBase + "/" + button.dataset.stockVoid + "/void";
-
-        window
-            .confirmDialog({
-                title: "Void this entry?",
-                body: button.dataset.stockVoidLabel,
-                detail: "It stays on the list, struck through, and stops counting.",
-                label: "Void Entry",
-                onConfirm: function () {
-                    return request(url, "POST");
-                },
-            })
-            .then(function (body) {
-                if (!body) {
-                    return;
-                }
-
-                showError("");
-                showSuccess(body.message || "");
-                updateSummary(body.summary);
-                redrawStock(false);
-                redrawMovements(false);
-            });
     });
 
     startStockTable();

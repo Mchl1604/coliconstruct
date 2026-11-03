@@ -24,8 +24,7 @@ use RuntimeException;
  *
  * The report row (tbl_technician_reports) keeps the title, description, date
  * and photographs, so every list of reports keeps working; the choices hang
- * off it as an IncidentReport. A Serious or Critical incident reaches the
- * administrators the moment it is filed.
+ * off it as an IncidentReport.
  */
 class IncidentReporting
 {
@@ -37,11 +36,11 @@ class IncidentReporting
 
     /**
      * Why this account may not file an incident report on this project, or
-     * null when it may. Only the project's lead files them.
+     * null when it may. The project's lead files them, or a Super Admin.
      */
     public function refusal(?User $user, Project $project): ?string
     {
-        if ($user === null || ! $user->isLeadTechnician() || ! $this->projects->reportsOn($user, $project)) {
+        if ($user === null || ! $this->projects->reportsOn($user, $project)) {
             return 'Only the project\'s lead files incident reports.';
         }
 
@@ -76,13 +75,15 @@ class IncidentReporting
         }
 
         $persons = $this->people($project, $persons);
-        $technician = Technician::query()->where('account_id', $by->id)->firstOrFail();
-        $typeLabel = IncidentReport::TYPES[$data['incident_type']];
+        $technicianId = TechnicianReport::technicianIdFor($project, $by);
+        $typeLabel = $data['incident_type'] === 'other' && filled($data['incident_type_other'] ?? null)
+            ? trim((string) $data['incident_type_other'])
+            : IncidentReport::TYPES[$data['incident_type']];
 
-        [$report, $incident] = DB::transaction(function () use ($project, $data, $persons, $images, $by, $technician, $typeLabel, $occurredAt): array {
+        [$report, $incident] = DB::transaction(function () use ($project, $data, $persons, $images, $by, $technicianId, $typeLabel, $occurredAt): array {
             $report = TechnicianReport::create([
                 'project_id' => $project->project_id,
-                'technician_id' => $technician->technician_id,
+                'technician_id' => $technicianId,
                 'submitted_by' => $by->id,
                 'report_type' => 'incident',
                 'report_title' => sprintf('Incident: %s', $typeLabel),
@@ -93,26 +94,19 @@ class IncidentReporting
             $incident = IncidentReport::create([
                 'technician_report_id' => $report->id,
                 'incident_type' => $data['incident_type'],
-                'severity' => $data['severity'],
                 'occurred_at' => $occurredAt,
                 'phase_id' => $data['phase_id'] ?? null,
-                'task_id' => $data['task_id'] ?? null,
                 'location' => $data['location'],
-                'location_details' => $this->text($data['location_details'] ?? null, 255),
                 // Kept only for the kind of incident they describe.
                 'injury_body_part' => $data['incident_type'] === 'injury' ? ($data['injury_body_part'] ?? null) : null,
                 'injury_type' => $data['incident_type'] === 'injury' ? ($data['injury_type'] ?? null) : null,
                 'injury_treatment' => $data['incident_type'] === 'injury' ? ($data['injury_treatment'] ?? null) : null,
                 'damage_description' => $this->text($data['damage_description'] ?? null, 255),
-                'damage_owner' => $data['damage_owner'] ?? null,
-                'damage_cost' => filled($data['damage_cost'] ?? null) ? $data['damage_cost'] : null,
                 'refrigerant_type' => $data['incident_type'] === 'refrigerant_leak' ? ($data['refrigerant_type'] ?? null) : null,
                 'refrigerant_amount' => $data['incident_type'] === 'refrigerant_leak' && filled($data['refrigerant_amount'] ?? null) ? $data['refrigerant_amount'] : null,
                 'immediate_action' => $this->text($data['immediate_action'] ?? null, 2000),
                 'cause' => $data['cause'] ?? null,
-                'preventive_action' => $this->text($data['preventive_action'] ?? null, 2000),
-                'work_stopped' => (bool) ($data['work_stopped'] ?? false),
-                'client_notified' => (bool) ($data['client_notified'] ?? false),
+                'other_details' => $this->otherDetails($data) ?: null,
                 'status' => IncidentReport::STATUS_OPEN,
             ]);
 
@@ -133,17 +127,35 @@ class IncidentReporting
         $this->activityLogger->record(
             ActivityLog::REPORT_GENERATED,
             null,
-            sprintf('Filed a %s incident report (%s) on %s.', strtolower($incident->label('SEVERITIES', 'severity')), $typeLabel, $project->reference_no),
+            sprintf('Filed an incident report (%s) on %s.', $typeLabel, $project->reference_no),
             $report
         );
 
         $this->notifications->technicianReportFiled($project, 'incident report');
 
-        if ($incident->isUrgent()) {
-            $this->notifications->urgentIncident($project, $report, $incident);
+        return $report;
+    }
+
+    /**
+     * What was typed for each list answered Other, and only those.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, string>
+     */
+    private function otherDetails(array $data): array
+    {
+        $details = [];
+
+        foreach (IncidentReport::OTHER_FIELDS as $field => $onlyForType) {
+            $typed = $this->text($data[$field.'_other'] ?? null, 150);
+
+            if (($data[$field] ?? null) === 'other' && $typed !== null
+                && ($onlyForType === null || $data['incident_type'] === $onlyForType)) {
+                $details[$field] = $typed;
+            }
         }
 
-        return $report;
+        return $details;
     }
 
     /**

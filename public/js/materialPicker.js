@@ -196,6 +196,10 @@
                     meta.className = "material-picker-option-meta";
                     meta.textContent = metaLine(item.material);
 
+                    if (item.material.available !== undefined) {
+                        meta.textContent += " · " + formatQty(item.material.available) + " " + item.material.unit + " available";
+                    }
+
                     option.append(label, meta);
                 }
 

@@ -22,6 +22,7 @@ use App\Services\ActivityLogger;
 use App\Services\ClientRecords;
 use App\Services\CompletionConfirmability;
 use App\Services\DocumentHistoryLog;
+use App\Services\HolidayCalendar;
 use App\Services\ImportableTeamSources;
 use App\Services\NotificationService;
 use App\Services\ProjectCompletion;
@@ -54,6 +55,7 @@ use App\Services\TechnicianTaskLoad;
 use App\Support\BusinessTime;
 use App\Support\PersonName;
 use App\Support\ProjectAddress;
+use App\Support\RoleAccess;
 use App\Support\ServerTable;
 use App\Support\UploadStore;
 use Carbon\CarbonImmutable;
@@ -577,7 +579,7 @@ class ProjectController extends Controller
                 // The dates are written first so that attaching each technician
                 // books them onto this schedule in the same step, through the
                 // one path that always writes both rows.
-                Schedule::create([
+                $schedule = Schedule::create([
                     'project_id' => $project->project_id,
                     'start_datetime' => $scheduleEntry['start'],
                     'end_datetime' => $scheduleEntry['end'],
@@ -585,6 +587,8 @@ class ProjectController extends Controller
                     'status' => 'scheduled',
                     'remarks' => 'Created from project wizard',
                 ]);
+
+                app(HolidayCalendar::class)->skip($schedule);
 
                 $createdBy = $request->user()?->id;
 
@@ -1571,8 +1575,10 @@ class ProjectController extends Controller
         // ledger, and whether this reader may record is asked of the same
         // rules the endpoints ask again.
         $materialSummary = app(ProjectMaterialLedger::class)->summary($project);
-        $canRecordMaterials = app(ProjectMaterialRules::class)->canRecord($request->user(), $project);
-        $materialQuickAdd = $canRecordMaterials
+        $materialAbilities = app(ProjectMaterialRules::class)->abilities($request->user(), $project);
+        $canManageTasks = RoleAccess::can($request->user(), RoleAccess::MANAGE_TASKS);
+        $canFileReports = RoleAccess::can($request->user(), RoleAccess::FILE_REPORTS);
+        $materialQuickAdd = $materialAbilities['add']
             ? ProjectMaterialController::quickAddOptions()
             : ['types' => [], 'units' => []];
 
@@ -1608,7 +1614,9 @@ class ProjectController extends Controller
             'taskTechnicians',
             'technicianPeriods',
             'materialSummary',
-            'canRecordMaterials',
+            'materialAbilities',
+            'canManageTasks',
+            'canFileReports',
             'materialQuickAdd'
         ));
 
@@ -1631,7 +1639,7 @@ class ProjectController extends Controller
         $isReadOnly = $project->isReadOnly();
         // A locked project's task history is a record, and a paused one takes
         // no work until it is resumed - see show().
-        $canTakeWork = ! $isReadOnly && ! $project->on_hold;
+        $canTakeWork = ! $isReadOnly && ! $project->on_hold && RoleAccess::can($request->user(), RoleAccess::MANAGE_TASKS);
         $taskTechnicians = $this->taskTechnicians($project);
 
         return $table->respond(

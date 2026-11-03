@@ -791,6 +791,52 @@
                             </div>
                         </div>
 
+                        {{-- Part of Project Settings: shown beneath its fields, with
+                             its own saving. --}}
+                        <div class="mt-4 pt-4 border-top" data-content-extra="{{ \App\Models\SystemContent::SECTION_PROJECT_SETTINGS }}" data-holidays-panel hidden>
+                            <h5 class="fw-bold mb-1">
+                                <i class="bi bi-calendar-x me-1" aria-hidden="true"></i>
+                                Non-Working Days
+                            </h5>
+                            <p class="text-secondary small mb-3">Bookings skip these days. Bookings already made stay.</p>
+
+                            <div class="alert alert-danger d-none" role="alert" data-holiday-error></div>
+                            <div class="alert alert-success d-none" role="alert" data-holiday-success></div>
+
+                            <form class="row g-2 align-items-end mb-3" novalidate data-holiday-form>
+                                <div class="col-sm-4">
+                                    <label class="form-label small fw-semibold mb-1" for="holidayDate">Date</label>
+                                    <input type="date" class="form-control" id="holidayDate" name="holiday_date" required>
+                                </div>
+                                <div class="col-sm-5">
+                                    <label class="form-label small fw-semibold mb-1" for="holidayName">Name</label>
+                                    <input type="text" class="form-control" id="holidayName" name="name" maxlength="100"
+                                        placeholder="e.g. Bonifacio Day" required>
+                                </div>
+                                <div class="col-sm-3">
+                                    <button type="submit" class="btn btn-primary w-100">
+                                        <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
+                                        Add Non-Working Day
+                                    </button>
+                                </div>
+                            </form>
+
+                            <div class="table-responsive">
+                                <table class="table table-hover align-middle mb-0" id="holidaysTable">
+                                    <thead class="table-info">
+                                        <tr>
+                                            <th>Date</th>
+                                            <th>Name</th>
+                                            <th class="text-center">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    {{-- Filled a page at a time by serverTable.js from
+                                         HolidayController::index(). --}}
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                        </div>
+
                         <div data-content-extra="phase_templates" hidden>
                             {{-- Default Phases & Tasks.
                                  =====================================
@@ -2136,6 +2182,10 @@
             <script src="/js/super-admin/systemContents.js"></script>
             <script src="/js/super-admin/detailForms.js"></script>
             <script src="/js/super-admin/projectTypes.js"></script>
+            <script>
+                window.holidayRoutes = { base: @json(route('super-admin.configuration.holidays.index')) };
+            </script>
+            <script src="/js/super-admin/holidays.js"></script>
             <script src="/js/super-admin/phaseTemplates.js"></script>
             <script src="/js/super-admin/databaseBackups.js"></script>
             <script src="/js/super-admin/systemSettingsNav.js"></script>

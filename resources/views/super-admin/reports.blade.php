@@ -57,11 +57,10 @@
                         View Archived Reports
                     </a>
 
-                    <button type="button" class="btn btn-primary" data-bs-toggle="modal"
-                        data-bs-target="#createReportModal">
-                        <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
-                        Create Report
-                    </button>
+                    {{-- The same two reports a lead files, on the same forms. --}}
+                    @if (\App\Support\RoleAccess::can(auth()->user(), \App\Support\RoleAccess::FILE_REPORTS))
+                        <x-create-report-button portal="super-admin" />
+                    @endif
                 </div>
             </div>
 
@@ -480,96 +479,6 @@
                     </div>
                 </section>
             @endforeach
-        </div>
-    </div>
-
-    {{-- ==================== CREATE REPORT MODAL ==================== --}}
-    <div class="modal fade" id="createReportModal" tabindex="-1" aria-hidden="true" data-create-report-modal>
-        <div class="modal-dialog modal-lg modal-dialog-scrollable">
-            {{-- Posts to the same endpoint the Project Details form uses; the
-                 action is filled in once a project is chosen. --}}
-            <form method="POST" enctype="multipart/form-data" data-create-report-form action="">
-                @csrf
-
-                <div class="modal-content">
-                    <div class="modal-header bg-primary text-white">
-                        <h5 class="modal-title">
-                            <i class="bi bi-file-earmark-plus me-2" aria-hidden="true"></i>
-                            Create Technician Report
-                        </h5>
-                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                    </div>
-
-                    <div class="modal-body">
-                        {{-- Step 1 --}}
-                        <div class="mb-4">
-                            <label class="form-label fw-semibold" for="createReportProject">
-                                Project
-                            </label>
-                            <select id="createReportProject" class="form-select" data-create-project required>
-                                <option value="" selected disabled>Select a project&hellip;</option>
-                                @foreach ($reportableProjects as $project)
-                                    <option value="{{ $project->project_id }}">{{ $project->reference_no }} &mdash; {{ $project->name }} ({{ $project->statusLabel() }})</option>
-                                @endforeach
-                            </select>
-                            <div class="form-text">
-                                Closed projects take no reports.
-                            </div>
-                            @if ($reportableProjects->isEmpty())
-                                <div class="alert alert-warning mt-2 mb-0">
-                                    There are no projects currently open for reporting.
-                                </div>
-                            @endif
-                        </div>
-
-                        {{-- Step 2: the existing report form, revealed after a project is chosen --}}
-                        <div class="d-none" data-create-fields>
-                            <hr class="mb-4">
-
-                            <div class="mb-3">
-                                <label class="form-label fw-semibold">Report Type</label>
-                                <select class="form-select" name="report_type" required>
-                                    <option value="">Select Report Type</option>
-                                    @foreach ($reportTypes as $value => $label)
-                                        <option value="{{ $value }}">{{ $label }}</option>
-                                    @endforeach
-                                </select>
-                            </div>
-
-                            <div class="mb-3">
-                                <label class="form-label fw-semibold">Report Title</label>
-                                <input type="text" class="form-control" name="report_title"
-                                    placeholder="Enter report title" required>
-                            </div>
-
-                            <div class="mb-3">
-                                <label class="form-label fw-semibold">Report Description</label>
-                                <textarea class="form-control" name="report_description" rows="5"
-                                    placeholder="Describe the work completed or incident..." required></textarea>
-                            </div>
-
-                            <div class="mb-3">
-                                <label class="form-label fw-semibold">Upload Images</label>
-                                <input type="file" class="form-control" name="images[]" accept="image/*" multiple
-                                    data-create-images>
-                                <small class="text-muted">Optional. JPG or PNG, max 5 MB.</small>
-                            </div>
-
-                            <div class="row g-2" data-create-preview></div>
-                        </div>
-
-                        <div class="alert alert-danger mt-3 mb-0 d-none" role="alert" data-create-error></div>
-                    </div>
-
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                        <button type="submit" class="btn btn-primary" data-create-submit disabled>
-                            <i class="bi bi-save me-1" aria-hidden="true"></i>
-                            Submit Report
-                        </button>
-                    </div>
-                </div>
-            </form>
         </div>
     </div>
 

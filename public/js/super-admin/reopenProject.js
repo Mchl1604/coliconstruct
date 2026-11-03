@@ -130,7 +130,7 @@
                 dateFormat: 'Y-m-d',
                 allowInput: false,
                 minDate: startInput.value || earliest,
-                disable: [function (date) {
+                disable: [window.bookingCalendar.blocks(endInput), function (date) {
                     return wholeDayBlocked(date, startInput.value);
                 }],
                 onChange: function () {
@@ -151,7 +151,7 @@
                 allowInput: false,
                 minDate: earliest,
                 maxDate: endInput.value || null,
-                disable: [function (date) {
+                disable: [window.bookingCalendar.blocks(startInput), function (date) {
                     return wholeDayBlocked(date, endInput.value);
                 }],
                 onChange: function (selectedDates, dateString) {
@@ -169,7 +169,7 @@
                 dateFormat: 'Y-m-d',
                 allowInput: false,
                 minDate: earliest,
-                disable: [function (date) {
+                disable: [window.bookingCalendar.blocks(projectDateInput), function (date) {
                     const dateString = toDateString(date);
 
                     return Boolean(dateString && blockedPartialDay[dateString]);

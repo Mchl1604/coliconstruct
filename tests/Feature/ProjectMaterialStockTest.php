@@ -15,6 +15,7 @@ use App\Models\Technician;
 use App\Models\User;
 use App\Services\ProjectMaterialLedger;
 use App\Services\StockAvailability;
+use App\Support\BusinessTime;
 use App\Support\MaterialUnit;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -93,6 +94,20 @@ class ProjectMaterialStockTest extends TestCase
 
         $this->assertStringContainsString('needs more Split-Type Inverter 1.5 HP (Daikin) than is available', $notice->message);
         $this->assertSame(Notification::MODULE_INVENTORY, $notice->module);
+    }
+
+    public function test_available_stock_never_goes_below_zero(): void
+    {
+        $this->plan($this->project('REF-RES-4'), $this->aircon, 3);
+        $this->stockIn($this->aircon, 1);
+
+        $this->assertSame(
+            ['on_hand' => 1.0, 'reserved' => 3.0, 'available' => 0.0],
+            app(StockAvailability::class)->forMaterial($this->aircon)
+        );
+
+        $this->getTablePage(route('inventory.stock.index'), ['search' => 'split'])
+            ->assertSee('text-danger fw-semibold">0</span>', false);
     }
 
     public function test_a_wizard_line_its_unit_refuses_sends_the_wizard_back(): void
@@ -227,14 +242,30 @@ class ProjectMaterialStockTest extends TestCase
             app(ProjectMaterialLedger::class)->add($project, $this->copper, 3, today(), null, $this->admin);
             $this->fail('An addition past what is in stock was allowed.');
         } catch (RuntimeException $exception) {
-            $this->assertSame('Only 1 m in stock. Ask Purchasing.', $exception->getMessage());
+            $this->assertSame('Only 1 m available. Ask Purchasing.', $exception->getMessage());
         }
 
         $this->assertSame(0, ProjectMaterialEntry::count());
         $this->assertSame(1.0, $this->copper->fresh()->onHand());
     }
 
-    public function test_the_project_form_offers_the_source(): void
+    public function test_an_addition_cannot_take_stock_another_project_reserved(): void
+    {
+        $project = $this->project('REF-TAB-7');
+        $this->plan($this->project('REF-TAB-8'), $this->copper, 8);
+        $this->stockIn($this->copper, 10);
+        $this->finalizePhases($project);
+
+        $this->post(route('super-admin.projects.materials.add', $project->project_id), [
+            'material_id' => $this->copper->material_id,
+            'quantity' => 3,
+        ])->assertSessionHas('error', 'Only 2 m available. Ask Purchasing.');
+
+        $this->assertSame(0, ProjectMaterialEntry::count());
+        $this->assertSame(10.0, $this->copper->fresh()->onHand());
+    }
+
+    public function test_the_project_form_takes_from_stock_today_with_no_notes(): void
     {
         $project = $this->project('REF-TAB-4');
         $this->stockIn($this->copper, 5);
@@ -244,10 +275,46 @@ class ProjectMaterialStockTest extends TestCase
             'material_id' => $this->copper->material_id,
             'source' => 'direct',
             'quantity' => 2,
-            'entry_date' => now()->toDateString(),
+            'entry_date' => BusinessTime::today()->subDays(3)->toDateString(),
+            'notes' => 'Ignored',
         ])->assertSessionHas('success');
 
-        $this->assertSame(5.0, $this->copper->fresh()->onHand());
+        $entry = ProjectMaterialEntry::query()->firstOrFail();
+
+        $this->assertSame(3.0, $this->copper->fresh()->onHand());
+        $this->assertSame(BusinessTime::today()->toDateString(), $entry->entry_date->toDateString());
+        $this->assertNull($entry->notes);
+    }
+
+    public function test_the_add_material_dialog_asks_only_for_material_and_quantity(): void
+    {
+        $project = $this->project('REF-TAB-9');
+        $this->finalizePhases($project);
+
+        $this->get(route('super-admin.projects.show', $project->project_id))
+            ->assertOk()
+            ->assertSee('data-add-material-available', false)
+            ->assertDontSee('id="addMaterialDate"', false)
+            ->assertDontSee('id="addMaterialSource"', false)
+            ->assertDontSee('id="addMaterialNotes"', false);
+    }
+
+    public function test_the_project_picker_and_add_more_show_available_stock(): void
+    {
+        $project = $this->project('REF-TAB-10');
+        $this->plan($project, $this->copper, 4);
+        $this->stockIn($this->copper, 10);
+        $this->finalizePhases($project);
+
+        $this->getJson(route('super-admin.projects.materials.suggest', [$project->project_id, 'q' => 'copper']))
+            ->assertOk()
+            ->assertJsonPath('materials.0.available', 6);
+
+        $this->assertSame(6.0, app(ProjectMaterialLedger::class)->summary($project->fresh())->first()['available']);
+
+        $this->get(route('super-admin.projects.show', $project->project_id))
+            ->assertOk()
+            ->assertSee('"available":6', false);
     }
 
     public function test_a_return_goes_back_to_stock_and_voiding_it_takes_it_away(): void

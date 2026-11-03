@@ -6,6 +6,7 @@ use App\Models\Material;
 use App\Models\MaterialType;
 use App\Models\Project;
 use App\Models\StockMovement;
+use App\Services\MaterialCatalog;
 use App\Services\StockAvailability;
 use App\Services\StockLedger;
 use App\Support\BusinessTime;
@@ -112,9 +113,7 @@ class StockController extends Controller
                 3 => 'quantity',
             ],
             fn (Builder $builder, string $word, string $like) => $builder
-                ->where('reference_no', 'like', $like)
-                ->orWhere('supplier', 'like', $like)
-                ->orWhere('notes', 'like', $like)
+                ->where('notes', 'like', $like)
                 ->orWhere('recorded_by_name', 'like', $like)
                 ->orWhereHas('material', fn (Builder $material) => $material->where('name', 'like', $like))
                 ->orWhereHas('project', fn (Builder $project) => $project
@@ -129,6 +128,82 @@ class StockController extends Controller
                 'movement' => $movement,
             ])->render(),
         );
+    }
+
+    /**
+     * The dialog's material search: what matches what was typed, each with
+     * how many are on hand, reserved by live projects, and available.
+     */
+    public function options(Request $request, MaterialCatalog $catalog): JsonResponse
+    {
+        $materials = $catalog->suggest(mb_substr((string) $request->query('q', ''), 0, 100));
+        $figures = $this->availability->forMaterials($materials->pluck('material_id')->all());
+
+        return response()->json([
+            'materials' => $materials
+                ->map(fn (array $material): array => $material + ($figures[$material['material_id']] ?? []))
+                ->all(),
+        ]);
+    }
+
+    /**
+     * Stock In for several materials at once, all saved or none.
+     */
+    public function receiveMany(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), $this->batchRules() + [
+            'movement_type' => ['required', Rule::in(StockMovement::INCOMING_TYPES)],
+        ], $this->batchMessages());
+
+        if ($validator->fails()) {
+            return response()->json(['error' => $validator->errors()->first()], 422);
+        }
+
+        $data = $validator->validated();
+        $lines = $this->batchLines($data['items']);
+
+        if ($lines === null) {
+            return response()->json(['error' => 'That material is no longer listed.'], 422);
+        }
+
+        try {
+            $this->ledger->receiveMany($lines, $data['movement_type'], $data['movement_date'], $data, $request->user());
+        } catch (RuntimeException $exception) {
+            return response()->json(['error' => $exception->getMessage()], 422);
+        }
+
+        return $this->done(sprintf('%d %s received.', count($lines), count($lines) === 1 ? 'material' : 'materials'));
+    }
+
+    /**
+     * Stock Out for several materials at once, all saved or none.
+     */
+    public function issueMany(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), $this->batchRules(), $this->batchMessages());
+
+        if ($validator->fails()) {
+            return response()->json(['error' => $validator->errors()->first()], 422);
+        }
+
+        $data = $validator->validated();
+        $lines = $this->batchLines($data['items']);
+
+        if ($lines === null) {
+            return response()->json(['error' => 'That material is no longer listed.'], 422);
+        }
+
+        if (! $this->canTakeStock($data['project_id'] ?? null)) {
+            return response()->json(['error' => 'Choose a project still in progress.'], 422);
+        }
+
+        try {
+            $this->ledger->issueMany($lines, $data['movement_date'], $data, $request->user());
+        } catch (RuntimeException $exception) {
+            return response()->json(['error' => $exception->getMessage()], 422);
+        }
+
+        return $this->done(sprintf('%d %s issued.', count($lines), count($lines) === 1 ? 'material' : 'materials'));
     }
 
     /**
@@ -192,14 +267,8 @@ class StockController extends Controller
             return response()->json(['error' => 'That material is no longer listed.'], 422);
         }
 
-        // Stock goes out to work still being done. A closed or archived
-        // project takes nothing more off the shelf.
-        if (filled($data['project_id'] ?? null)) {
-            $project = Project::query()->find($data['project_id']);
-
-            if ($project === null || $project->isReadOnly() || $project->isArchived()) {
-                return response()->json(['error' => 'Choose a project still in progress.'], 422);
-            }
+        if (! $this->canTakeStock($data['project_id'] ?? null)) {
+            return response()->json(['error' => 'Choose a project still in progress.'], 422);
         }
 
         try {
@@ -277,6 +346,83 @@ class StockController extends Controller
     // ------------------------------------------------------------------
     // Internals
     // ------------------------------------------------------------------
+
+    /**
+     * Stock goes out to work still being done. A closed or archived project
+     * takes nothing more off the shelf.
+     */
+    private function canTakeStock(mixed $projectId): bool
+    {
+        if (! filled($projectId)) {
+            return true;
+        }
+
+        $project = Project::query()->find($projectId);
+
+        return $project !== null && ! $project->isReadOnly() && ! $project->isArchived();
+    }
+
+    /**
+     * What Stock In and Stock Out for several materials share: the list, and
+     * the details that apply to every line of it.
+     *
+     * @return array<string, array<int, string>>
+     */
+    private function batchRules(): array
+    {
+        return [
+            'items' => ['required', 'array', 'min:1', 'max:100'],
+            'items.*.material_id' => ['required', 'integer', 'distinct'],
+            'items.*.quantity' => ['required', 'numeric'],
+            'movement_date' => $this->dateRules(),
+            'project_id' => ['nullable', 'integer'],
+            'notes' => ['nullable', 'string', 'max:255'],
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function batchMessages(): array
+    {
+        return $this->messages() + [
+            'items.required' => 'Add a material.',
+            'items.min' => 'Add a material.',
+            'items.max' => 'Too many materials at once.',
+            'items.*.material_id.required' => 'Choose a material.',
+            'items.*.material_id.distinct' => 'A material is listed twice.',
+            'items.*.quantity.required' => 'Enter every quantity.',
+            'items.*.quantity.numeric' => 'Enter every quantity.',
+        ];
+    }
+
+    /**
+     * The submitted items with their materials, or null when one is gone.
+     *
+     * @param  array<int, array{material_id: int|string, quantity: float|int|string}>  $items
+     * @return array<int, array{material: Material, quantity: float|int|string}>|null
+     */
+    private function batchLines(array $items): ?array
+    {
+        $materials = Material::query()
+            ->whereIn('material_id', array_column($items, 'material_id'))
+            ->get()
+            ->keyBy('material_id');
+
+        $lines = [];
+
+        foreach ($items as $item) {
+            $material = $materials->get((int) $item['material_id']);
+
+            if ($material === null) {
+                return null;
+            }
+
+            $lines[] = ['material' => $material, 'quantity' => $item['quantity']];
+        }
+
+        return $lines;
+    }
 
     private function done(string $message): JsonResponse
     {

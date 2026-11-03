@@ -1015,7 +1015,7 @@ document.addEventListener("DOMContentLoaded", function () {
             const endPicker = window.flatpickr(endInput, {
                 ...FRIENDLY_DATE,
                 minDate: earliestEnd,
-                disable: [endBlocked],
+                disable: [endBlocked, window.bookingCalendar.blocks(endInput)],
                 onOpen: function (selectedDates, dateString, instance) {
                     // Rows may have been edited since this calendar was built,
                     // so the answers are thrown away and the days redrawn
@@ -1050,7 +1050,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     // a date after it cannot be picked in the first place.
                     // Empty means the row has no end yet and nothing to cap.
                     maxDate: endInput.value || null,
-                    disable: [startBlocked],
+                    disable: [startBlocked, window.bookingCalendar.blocks(startInput)],
                     onOpen: function (selectedDates, dateString, instance) {
                         blockedDayCache.clear();
                         instance.redraw();
@@ -1084,7 +1084,7 @@ document.addEventListener("DOMContentLoaded", function () {
             window.flatpickr(projectDateInput, {
                 ...FRIENDLY_DATE,
                 minDate: earliestStart,
-                disable: [partialDayBlocked],
+                disable: [partialDayBlocked, window.bookingCalendar.blocks(dateInput)],
                 onChange: function () {
                     // The hours on offer belong to the date just chosen.
                     const startTime = row.querySelector("[data-range-start-time]");
@@ -3572,7 +3572,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 [startInput, endInput, dateInput].forEach(function (input) {
                     if (input) {
                         input.type = "date";
-                        input.min = normalizeDateString(new Date());
+                        input.min = window.bookingCalendar.earliest;
                     }
                 });
 
@@ -3585,8 +3585,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
             const endPicker = window.flatpickr(endInput, {
                 ...FRIENDLY_DATE,
-                minDate: "today",
-                disable: [endBlocked],
+                minDate: window.bookingCalendar.earliest,
+                disable: [endBlocked, window.bookingCalendar.blocks(endInput)],
                 onOpen: function (selectedDates, dateString, instance) {
                     instance.redraw();
                 },
@@ -3604,14 +3604,14 @@ document.addEventListener("DOMContentLoaded", function () {
 
             startPicker = window.flatpickr(startInput, {
                 ...FRIENDLY_DATE,
-                minDate: "today",
+                minDate: window.bookingCalendar.earliest,
                 maxDate: endInput.value || null,
-                disable: [startBlocked],
+                disable: [startBlocked, window.bookingCalendar.blocks(startInput)],
                 onOpen: function (selectedDates, dateString, instance) {
                     instance.redraw();
                 },
                 onChange: function (selectedDates) {
-                    endPicker.set("minDate", selectedDates[0] || "today");
+                    endPicker.set("minDate", selectedDates[0] || window.bookingCalendar.earliest);
                     endPicker.redraw();
                     showError("");
                 },
@@ -3619,8 +3619,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
             const datePicker = window.flatpickr(dateInput, {
                 ...FRIENDLY_DATE,
-                minDate: "today",
-                disable: [partialDayBlocked],
+                minDate: window.bookingCalendar.earliest,
+                disable: [partialDayBlocked, window.bookingCalendar.blocks(dateInput)],
                 onChange: function () {
                     // The hours on offer belong to the date just chosen.
                     [startTimeSelect, endTimeSelect].forEach(function (select) {
@@ -4025,6 +4025,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     if (calendarEl && window.FullCalendar) {
         const calendar = new window.FullCalendar.Calendar(calendarEl, {
+            ...window.calendarHeader.nonWorkingDays(),
             initialView: "dayGridMonth",
             initialDate: rememberedMonth(),
             // getDate() is the month the view is on, not the first cell of

@@ -13,6 +13,7 @@
         'unit' => $unit->value,
         'allows_fractions' => $unit->allowsFractions(),
         'on_hand' => $onHand,
+        'available' => $available,
     ];
 @endphp
 <tr class="{{ $material->is_active ? '' : 'text-secondary' }}">
@@ -37,7 +38,7 @@
     </td>
     <td class="text-nowrap small {{ $reserved > 0 ? '' : 'text-secondary' }}">{{ $unit->format($reserved) }}</td>
     <td class="text-nowrap">
-        <span class="material-qty {{ $available < 0 ? 'text-danger fw-semibold' : '' }}">{{ $unit->format($available) }}</span>
+        <span class="material-qty {{ $reserved > $onHand ? 'text-danger fw-semibold' : '' }}">{{ $unit->format($available) }}</span>
     </td>
     <td class="text-nowrap small">
         @if ($material->reorder_level !== null)
@@ -57,14 +58,9 @@
             @if ($onHand <= 0) disabled title="None on hand." @else title="Stock Out" @endif>
             <i class="bi bi-box-arrow-up" aria-hidden="true"></i>
         </button>
-        <button type="button" class="btn btn-sm btn-outline-secondary py-1 px-2"
-            data-stock-action="adjust" data-stock-material='@json($payload)' title="Adjust Count">
-            <i class="bi bi-sliders" aria-hidden="true"></i>
-        </button>
-        <button type="button" class="btn btn-sm btn-outline-info py-1 px-2"
-            data-stock-history="{{ $material->material_id }}" data-stock-label="{{ $material->displayName() }}"
-            title="History">
+        <a class="btn btn-sm btn-outline-info py-1 px-2"
+            href="{{ route('inventory.movements', ['material' => $material->material_id]) }}" title="History">
             <i class="bi bi-clock-history" aria-hidden="true"></i>
-        </button>
+        </a>
     </td>
 </tr>

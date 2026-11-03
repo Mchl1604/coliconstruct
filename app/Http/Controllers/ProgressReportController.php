@@ -7,6 +7,7 @@ use App\Models\TechnicianReport;
 use App\Policies\ProjectPolicy;
 use App\Services\ProgressReportBuilder;
 use App\Support\BusinessTime;
+use App\Support\ReportFormContext;
 use App\Support\RoleAccess;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
@@ -18,9 +19,10 @@ use RuntimeException;
  * A lead's generated daily progress report, and the printable page every
  * structured report is read on.
  *
- * Generating is the technician portal's, and the lead's alone: choose a
- * project and a day, read what the system gathered, add remarks, submit. Who
- * may, and for which day, is ProgressReportBuilder's decision.
+ * Generating is a lead's, in the technician portal, and a Super Admin's on the
+ * same form in the office's: choose a project, read what the system gathered
+ * today, add remarks, submit. Who may, and for which day, is
+ * ProgressReportBuilder's decision.
  */
 class ProgressReportController extends Controller
 {
@@ -36,23 +38,26 @@ class ProgressReportController extends Controller
     public function create(Request $request): View
     {
         $user = $request->user();
-        $technician = $user->technicianRecord();
 
         $projects = Project::query()
-            ->whereHas('projectTechnicians', fn ($query) => $query->where('technician_id', $technician->technician_id))
+            ->when($user->needsTechnicianRecord(), fn ($query) => $query
+                ->whereHas('projectTechnicians', fn ($team) => $team->where('technician_id', $user->technicianRecord()->technician_id)))
             ->where('is_archived', false)
             ->orderByDesc('project_id')
             ->get()
             ->filter(fn (Project $project): bool => $this->projects->reportsOn($user, $project))
             ->values();
 
-        $date = (string) $request->query('date', BusinessTime::today()->toDateString());
-        $date = preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) ? $date : BusinessTime::today()->toDateString();
+        // Always today: a report describes the day it is filed on.
+        $date = BusinessTime::today()->toDateString();
         $project = $projects->firstWhere('project_id', $request->integer('project'));
 
         $refusal = $project ? $this->builder->refusal($user, $project, $date) : null;
 
         return view('technician.progress-report-create', [
+            'portal' => ReportFormContext::portal($request),
+            'fromProject' => ReportFormContext::cameFromProject($request),
+            'backUrl' => ReportFormContext::backUrl($request, $project),
             'projects' => $projects,
             'project' => $project,
             'date' => $date,
@@ -66,7 +71,6 @@ class ProgressReportController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'project_id' => ['required', 'integer'],
-            'report_date' => ['required', 'date_format:Y-m-d'],
             'remarks' => ['nullable', 'string', 'max:2000'],
             'issues' => ['nullable', 'string', 'max:2000'],
             'next_plan' => ['nullable', 'string', 'max:2000'],
@@ -74,7 +78,6 @@ class ProgressReportController extends Controller
             'images.*' => ['image', 'mimes:jpg,jpeg,png', 'max:5120'],
         ], [
             'project_id.required' => 'Choose a project.',
-            'report_date.required' => 'Choose a date.',
             'images.max' => 'At most 5 photos.',
             'images.*.image' => 'Photos must be JPG or PNG.',
             'images.*.mimes' => 'Photos must be JPG or PNG.',
@@ -93,12 +96,14 @@ class ProgressReportController extends Controller
         }
 
         try {
-            $this->builder->file($project, $data['report_date'], $data, $request->file('images') ?? [], $request->user());
+            $this->builder->file($project, BusinessTime::today()->toDateString(), $data, $request->file('images') ?? [], $request->user());
         } catch (RuntimeException $exception) {
             return back()->withInput()->with('error', $exception->getMessage());
         }
 
-        return redirect()->route('technician.reports')->with('success', 'Progress report filed.');
+        return redirect()
+            ->to(ReportFormContext::backUrl($request, $project))
+            ->with('success', 'Progress report filed.');
     }
 
     /**

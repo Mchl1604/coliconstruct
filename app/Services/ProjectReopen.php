@@ -91,6 +91,8 @@ class ProjectReopen
         // together - see ProjectTeam.
         $this->projectTeam->linkScheduleToTeam($schedule, $project);
 
+        app(HolidayCalendar::class)->skip($schedule);
+
         // Before the status moves. The snapshot reads the project's completion
         // columns and its status as they stand now, and 'ongoing' would put
         // the wrong answer to "what was it when this report was superseded?".

@@ -796,15 +796,15 @@ class ScheduleLockTest extends TestCase
         $response = $this->get(route('super-admin.schedules.index'));
         $response->assertOk();
 
-        $today = Schedule::businessToday()->toDateString();
+        $tomorrow = Schedule::businessToday()->addDay()->toDateString();
 
         // This project has no saved bookings, so the only rows on the page are
         // the two the editor clones for a new range - the whole-day one and
-        // the partial-day one. Both carry the floor at both ends.
+        // the partial-day one. Both carry the floor at both ends: tomorrow.
         $content = $response->getContent();
 
-        $this->assertSame(2, substr_count($content, 'data-earliest-start="'.$today.'"'));
-        $this->assertSame(2, substr_count($content, 'data-earliest-end="'.$today.'"'));
+        $this->assertSame(2, substr_count($content, 'data-earliest-start="'.$tomorrow.'"'));
+        $this->assertSame(2, substr_count($content, 'data-earliest-end="'.$tomorrow.'"'));
 
         // And nothing on the page offers an unbounded start.
         $this->assertSame(0, substr_count($content, 'data-earliest-start=""'));
@@ -840,14 +840,14 @@ class ScheduleLockTest extends TestCase
 
         $limits = app(ScheduleModeRules::class)->limitsForNewRange();
 
-        $this->assertTrue($limits['earliestStart']->equalTo(Schedule::businessToday()));
-        $this->assertTrue($limits['earliestEnd']->equalTo(Schedule::businessToday()));
+        $this->assertTrue($limits['earliestStart']->equalTo(Schedule::businessToday()->addDay()));
+        $this->assertTrue($limits['earliestEnd']->equalTo(Schedule::businessToday()->addDay()));
 
         // A date one day below that floor is what the save refuses, so the
         // picker and the validator are drawing the same line.
         $this->save($project, [[
             'scheduling_mode' => Schedule::MODE_DATE_BASED,
-            'start_date' => $this->day(-1),
+            'start_date' => $this->day(0),
             'end_date' => $this->day(3),
         ]]);
 

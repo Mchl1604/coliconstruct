@@ -16,15 +16,33 @@ use App\Models\User;
  *     reports and Configuration.
  *   - Inventory: the material list, and the stock kept against it.
  *
- * What each role may do inside a part it reaches is still decided where it
- * always was - a Super Admin archives, an HR Admin does not - so this is the
- * door, not the whole of the permission model.
+ * Inside those parts, a few powers are not given to everyone who reaches them.
+ * Those are the capabilities below, asked by the routes and the pages alike:
+ *
+ *   - Super Admin: all of them, including booking work for today - everybody
+ *     else books from tomorrow.
+ *   - Admin Officer: creates projects and manages a project's materials.
+ *   - HR Admin: none. Runs the scheduling side, but creates no projects.
+ *   - Purchasing Admin: manages a project's materials.
+ *
+ * Tasks and reports are otherwise the crew's: the office reads them. A lead's
+ * own powers are decided per project, by ProjectPolicy and the rules services.
  */
 class RoleAccess
 {
     public const SCHEDULING = 'scheduling';
 
     public const INVENTORY = 'inventory';
+
+    public const CREATE_PROJECTS = 'create-projects';
+
+    public const MANAGE_TASKS = 'manage-tasks';
+
+    public const FILE_REPORTS = 'file-reports';
+
+    public const MANAGE_PROJECT_MATERIALS = 'manage-project-materials';
+
+    public const BOOK_TODAY = 'book-today';
 
     /**
      * @var array<string, array<int, string>>
@@ -34,6 +52,15 @@ class RoleAccess
         User::ROLE_ADMIN => [self::SCHEDULING],
         User::ROLE_ADMIN_OFFICER => [self::SCHEDULING, self::INVENTORY],
         User::ROLE_PURCHASING_ADMIN => [self::INVENTORY],
+    ];
+
+    /**
+     * @var array<string, array<int, string>>
+     */
+    private const CAPABILITIES = [
+        User::ROLE_SUPER_ADMIN => [self::CREATE_PROJECTS, self::MANAGE_TASKS, self::FILE_REPORTS, self::MANAGE_PROJECT_MATERIALS, self::BOOK_TODAY],
+        User::ROLE_ADMIN_OFFICER => [self::CREATE_PROJECTS, self::MANAGE_PROJECT_MATERIALS],
+        User::ROLE_PURCHASING_ADMIN => [self::MANAGE_PROJECT_MATERIALS],
     ];
 
     /**
@@ -50,6 +77,11 @@ class RoleAccess
     public static function allows(?User $user, string $area): bool
     {
         return in_array($area, self::areasFor($user), true);
+    }
+
+    public static function can(?User $user, string $capability): bool
+    {
+        return in_array($capability, self::CAPABILITIES[$user?->role] ?? [], true);
     }
 
     /**

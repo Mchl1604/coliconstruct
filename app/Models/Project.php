@@ -614,6 +614,11 @@ class Project extends Model
         return $this->hasMany(ProjectMaterial::class, 'project_id', 'project_id');
     }
 
+    public function materialRequests(): HasMany
+    {
+        return $this->hasMany(MaterialRequest::class, 'project_id', 'project_id');
+    }
+
     /**
      * Every material movement recorded on this project since setup.
      */

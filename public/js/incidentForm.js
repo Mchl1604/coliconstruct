@@ -1,6 +1,6 @@
 /**
- * The incident report form: the sections that only fit some incidents, and
- * the People Involved rows.
+ * The incident report form: the sections that only fit some incidents, the
+ * box that asks what when a list says Other, and the People Involved rows.
  *
  * An injury's fields show for an injury, a refrigerant's for a refrigerant
  * leak; the server keeps them only for that type either way. Each person row
@@ -25,7 +25,31 @@ document.addEventListener("DOMContentLoaded", function () {
         form.querySelectorAll("[data-incident-for]").forEach(function (section) {
             section.classList.toggle("d-none", section.dataset.incidentFor !== type.value);
         });
+
+        showOtherBoxes();
     }
+
+    /**
+     * A box in a hidden section is not asked for, or the browser would refuse
+     * the form over a field nobody can see.
+     */
+    function showOtherBoxes() {
+        form.querySelectorAll("[data-other-for]").forEach(function (box) {
+            const list = form.querySelector('[name="' + box.dataset.otherFor + '"]');
+            const input = box.querySelector("input");
+            const asked = list.value === "other" && !list.closest(".d-none");
+
+            box.classList.toggle("d-none", !asked);
+            input.required = asked;
+            input.disabled = !asked;
+        });
+    }
+
+    form.addEventListener("change", function (event) {
+        if (event.target.matches("select")) {
+            showOtherBoxes();
+        }
+    });
 
     function renumber() {
         const rows = holder.querySelectorAll("[data-incident-person]");

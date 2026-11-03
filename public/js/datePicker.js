@@ -66,6 +66,16 @@
         let ownsClasses = false;
 
         return {
+            // Non-working days read red in every picker - see
+            // layouts/partials/booking-calendar.
+            onDayCreate: function (selected, value, picker, dayElement) {
+                const name = window.bookingCalendar?.nameOf(dayElement.dateObj);
+
+                if (name) {
+                    dayElement.classList.add("is-non-working");
+                    dayElement.title = name;
+                }
+            },
             onReady: function () {
                 instance.calendarContainer.classList.add("app-picker");
 
