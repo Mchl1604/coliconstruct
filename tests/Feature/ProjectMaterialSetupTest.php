@@ -12,9 +12,12 @@ use App\Models\ProjectMaterial;
 use App\Models\ProjectPhase;
 use App\Models\ProjectTechnician;
 use App\Models\ProjectType;
+use App\Models\StockMovement;
 use App\Models\Technician;
 use App\Models\User;
 use App\Services\ProjectMaterialPlan;
+use App\Services\StockLedger;
+use App\Support\BusinessTime;
 use App\Support\MaterialUnit;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -215,29 +218,71 @@ class ProjectMaterialSetupTest extends TestCase
     // The Materials tab before setup
     // ------------------------------------------------------------------
 
-    public function test_the_materials_tab_shows_the_plan_before_setup(): void
+    public function test_the_materials_tab_follows_each_roles_access_before_setup(): void
     {
         $this->plan([['material_id' => $this->aircon->material_id, 'quantity' => '2']]);
 
-        foreach ([
-            [$this->superAdmin, 'super-admin.projects.show'],
-            [$this->leadAccount, 'technician.projects.show'],
-        ] as [$account, $route]) {
-            $this->actingAs($account)
-                ->get(route($route, $this->project->project_id))
-                ->assertOk()
-                ->assertSee('Split-Type Inverter 2.0 HP')
-                ->assertDontSee('Set up the project first.')
-                ->assertDontSee('data-bs-target="#addMaterialModal"', false);
-        }
+        $this->actingAs($this->superAdmin)
+            ->get(route('super-admin.projects.show', $this->project->project_id))
+            ->assertOk()
+            ->assertSee('Split-Type Inverter 2.0 HP')
+            ->assertSee('data-bs-target="#addMaterialModal"', false)
+            ->assertSee('Add Material')
+            ->assertSee('Record Return');
+
+        // A lead uses and asks; they add nothing and return nothing.
+        $this->actingAs($this->leadAccount)
+            ->get(route('technician.projects.show', $this->project->project_id))
+            ->assertOk()
+            ->assertSee('Split-Type Inverter 2.0 HP')
+            ->assertSee('Record Use')
+            ->assertSee('Request Material')
+            ->assertDontSee('Record Return');
+
+        // An HR Admin reads the tab.
+        $this->actingAs($this->admin)
+            ->get(route('super-admin.projects.show', $this->project->project_id))
+            ->assertOk()
+            ->assertSee('Split-Type Inverter 2.0 HP')
+            ->assertDontSee('data-bs-target="#addMaterialModal"', false)
+            ->assertDontSee('data-bs-target="#recordMaterialModal"', false);
+
+        // A plain technician too.
+        $this->actingAs($this->mateAccount)
+            ->get(route('technician.projects.show', $this->project->project_id))
+            ->assertOk()
+            ->assertSee('Split-Type Inverter 2.0 HP')
+            ->assertDontSee('data-bs-target="#recordMaterialModal"', false)
+            ->assertDontSee('data-bs-target="#addMaterialModal"', false);
     }
 
-    public function test_an_empty_materials_tab_asks_for_setup_first(): void
+    public function test_materials_can_be_added_before_setup_and_a_read_only_role_is_refused(): void
+    {
+        app(StockLedger::class)->receive($this->copper, StockMovement::TYPE_STOCK_IN, 20, BusinessTime::today(), [], $this->superAdmin);
+
+        $payload = ['material_id' => $this->copper->material_id, 'quantity' => '5', 'entry_date' => BusinessTime::today()->toDateString()];
+        $page = route('super-admin.projects.show', $this->project->project_id);
+
+        $this->actingAs($this->admin)->from($page)
+            ->post(route('super-admin.projects.materials.add', $this->project->project_id), $payload);
+
+        $this->assertNull($this->line($this->copper));
+
+        $this->actingAs($this->superAdmin)->from($page)
+            ->post(route('super-admin.projects.materials.add', $this->project->project_id), $payload)
+            ->assertSessionHas('success');
+
+        $this->assertNotNull($this->line($this->copper));
+        $this->assertTrue($this->project->fresh()->awaitingInitialSetup());
+        $this->assertSame(15.0, $this->copper->fresh()->onHand());
+    }
+
+    public function test_an_empty_materials_tab_says_so(): void
     {
         $this->actingAs($this->superAdmin)
             ->get(route('super-admin.projects.show', $this->project->project_id))
             ->assertOk()
-            ->assertSee('Set up the project first.');
+            ->assertSee('No materials listed.');
     }
 
     public function test_recording_opens_on_the_materials_tab_once_setup_is_finished(): void
@@ -352,14 +397,23 @@ class ProjectMaterialSetupTest extends TestCase
     // Set Up Now
     // ------------------------------------------------------------------
 
-    public function test_a_project_never_set_up_offers_only_set_up_now(): void
+    public function test_a_project_never_set_up_offers_set_up_now_beside_view(): void
     {
-        $this->actingAs($this->admin);
+        $this->actingAs($this->superAdmin);
 
         $this->getTablePage(route('super-admin.projects.table'))
             ->assertSee('Set Up Now')
             ->assertSee(route('super-admin.projects.phases.setup', $this->project->project_id))
-            ->assertDontSee("window.location='".route('super-admin.projects.show', $this->project->project_id)."'", false);
+            ->assertSee("window.location='".route('super-admin.projects.show', $this->project->project_id)."'", false);
+    }
+
+    public function test_an_admin_is_offered_view_but_not_set_up_now(): void
+    {
+        $this->actingAs($this->admin);
+
+        $this->getTablePage(route('super-admin.projects.table'))
+            ->assertDontSee('Set Up Now')
+            ->assertSee("window.location='".route('super-admin.projects.show', $this->project->project_id)."'", false);
     }
 
     public function test_a_set_up_project_gets_its_ordinary_actions_back(): void
@@ -393,7 +447,7 @@ class ProjectMaterialSetupTest extends TestCase
 
         $this->getTablePage(route('technician.projects.table'))
             ->assertSee('Set Up Now')
-            ->assertDontSee('href="'.route('technician.projects.show', $this->project->project_id).'"', false);
+            ->assertSee('href="'.route('technician.projects.show', $this->project->project_id).'"', false);
 
         $this->actingAs($this->mateAccount);
 

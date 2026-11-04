@@ -65,7 +65,7 @@ document.addEventListener("DOMContentLoaded", function () {
         pageLength: 10,
         lengthMenu: [10, 25, 50, 100],
         order: [[0, "desc"]],
-        columnDefs: [{ targets: [1, 2, 4, 6], orderable: false }],
+        columnDefs: [{ targets: [1, 2, 4, 5, 7], orderable: false }],
         language: {
             search: "",
             searchPlaceholder: "Search requests...",

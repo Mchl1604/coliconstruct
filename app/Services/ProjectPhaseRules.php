@@ -23,13 +23,25 @@ class ProjectPhaseRules
 {
     /**
      * The roles that may settle a project's phase structure in the first
-     * place. A Lead Technician is included because they are the person who
-     * knows what the stages of the job actually are - but only for a project
-     * they are actually on, which reach() checks separately.
+     * place: the Super Admin, and a Lead Technician because they are the person
+     * who knows what the stages of the job actually are - but only for a
+     * project they are actually on, which reach() checks separately. An HR
+     * Admin or Admin Officer reads the project and waits for them.
      *
      * @var array<int, string>
      */
     public const SETUP_ROLES = [
+        User::ROLE_SUPER_ADMIN,
+        User::ROLE_LEAD_TECHNICIAN,
+    ];
+
+    /**
+     * The roles that run a project once it is set up, closing its phases as
+     * the work finishes.
+     *
+     * @var array<int, string>
+     */
+    public const RUNNING_ROLES = [
         User::ROLE_SUPER_ADMIN,
         User::ROLE_ADMIN,
         User::ROLE_ADMIN_OFFICER,
@@ -43,7 +55,7 @@ class ProjectPhaseRules
      *
      * Three things have to be true: the project's structure is still open, the
      * project is one work could still be done on, and the reader is one of the
-     * three roles - on the project, if they are a technician.
+     * setup roles - on the project, if they are a technician.
      *
      * A read-only or archived project is refused outright. Setting up phases
      * for a project that is finished is not a job anybody has; more to the
@@ -54,7 +66,7 @@ class ProjectPhaseRules
         return $project->needsPhaseSetup()
             && ! $project->isReadOnly()
             && ! $project->isArchived()
-            && $this->reach($user, $project);
+            && $this->reach($user, $project, self::SETUP_ROLES);
     }
 
     /**
@@ -102,7 +114,7 @@ class ProjectPhaseRules
             && ! $project->isReadOnly()
             && ! $project->isArchived()
             && ! $project->on_hold
-            && $this->reach($user, $project);
+            && $this->reach($user, $project, self::RUNNING_ROLES);
     }
 
     /**
@@ -126,14 +138,16 @@ class ProjectPhaseRules
      * and only a lead among them has any business shaping the structure - a
      * plain technician is refused here, which is what keeps the setup screen
      * and every phase action out of their portal.
+     *
+     * @param  array<int, string>  $roles
      */
-    private function reach(?User $user, Project $project): bool
+    private function reach(?User $user, Project $project, array $roles): bool
     {
         if ($user === null || ! $user->canLogin()) {
             return false;
         }
 
-        if (! in_array($user->role, self::SETUP_ROLES, true)) {
+        if (! in_array($user->role, $roles, true)) {
             return false;
         }
 

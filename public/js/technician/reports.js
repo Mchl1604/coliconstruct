@@ -194,7 +194,14 @@ document.addEventListener("DOMContentLoaded", function () {
             report.type_badge_class +
             '">' +
             portal.escapeHtml(report.type_label) +
-            "</span>";
+            "</span>" +
+            (report.review_status
+                ? ' <span class="badge ' +
+                  report.review_status.badge +
+                  '">' +
+                  portal.escapeHtml(report.review_status.label) +
+                  "</span>"
+                : "");
         viewEl.querySelector("[data-report-view-submitted-by]").textContent =
             report.submitted_by || "—";
         viewEl.querySelector("[data-report-view-date]").textContent =

@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Client;
 use App\Models\Material;
+use App\Models\MaterialRequest;
 use App\Models\Notification;
 use App\Models\Project;
 use App\Models\ProjectMaterial;
@@ -76,24 +77,92 @@ class ProjectMaterialStockTest extends TestCase
             app(StockAvailability::class)->forMaterial($this->aircon)
         );
 
-        // Nobody is told: the warehouse covers it.
-        $this->assertSame(0, Notification::query()->where('title', 'Materials Short')->count());
+        // Nothing to ask for: the warehouse covers it.
+        $this->assertSame(0, MaterialRequest::count());
     }
 
-    public function test_a_shortage_is_saved_and_purchasing_is_told(): void
+    public function test_a_line_over_the_limit_falls_to_what_is_available_and_asks_for_nothing(): void
     {
         $buyer = $this->account(User::ROLE_PURCHASING_ADMIN);
 
-        $this->stockIn($this->aircon, 1);
+        $this->stockIn($this->aircon, 5);
 
         $this->post(route('super-admin.projects.create.store'), $this->wizardPayload([
-            ['material_id' => $this->aircon->material_id, 'quantity' => 3],
+            ['material_id' => $this->aircon->material_id, 'quantity' => 8],
+        ]))
+            ->assertRedirect(route('super-admin.projects'))
+            ->assertSessionHas('success', 'Project created. Materials were limited to what is available.');
+
+        $this->assertSame(5.0, (float) Project::query()->firstOrFail()->materials()->value('quantity_needed'));
+        $this->assertSame(0, MaterialRequest::count());
+        $this->assertSame(0, Notification::query()->where('user_id', $buyer->id)->where('title', 'Material Requested')->count());
+    }
+
+    public function test_the_limit_is_what_is_available_not_what_is_on_hand(): void
+    {
+        $this->stockIn($this->aircon, 5);
+        $this->plan($this->project('REF-RES-LIMIT'), $this->aircon, 3);
+
+        $this->post(route('super-admin.projects.create.store'), $this->wizardPayload([
+            ['material_id' => $this->aircon->material_id, 'quantity' => 5],
         ]))->assertRedirect(route('super-admin.projects'));
 
-        $notice = Notification::query()->where('title', 'Materials Short')->where('user_id', $buyer->id)->firstOrFail();
+        $this->assertSame(2.0, (float) Project::query()->latest('project_id')->firstOrFail()->materials()->value('quantity_needed'));
+    }
 
-        $this->assertStringContainsString('needs more Split-Type Inverter 1.5 HP (Daikin) than is available', $notice->message);
-        $this->assertSame(Notification::MODULE_INVENTORY, $notice->module);
+    public function test_the_checkbox_requests_the_remaining_and_purchasing_is_told(): void
+    {
+        $buyer = $this->account(User::ROLE_PURCHASING_ADMIN);
+
+        $this->stockIn($this->aircon, 5);
+
+        $this->post(route('super-admin.projects.create.store'), $this->wizardPayload([
+            ['material_id' => $this->aircon->material_id, 'quantity' => 5, 'request_remaining' => 3],
+        ]))
+            ->assertRedirect(route('super-admin.projects'))
+            ->assertSessionHas('success', 'Project created successfully.');
+
+        $project = Project::query()->firstOrFail();
+        $materialRequest = MaterialRequest::query()->firstOrFail();
+
+        $this->assertSame(5.0, (float) $project->materials()->value('quantity_needed'));
+        $this->assertSame(3.0, (float) $materialRequest->quantity);
+        $this->assertSame(MaterialRequest::STATUS_PENDING, $materialRequest->status);
+        $this->assertSame($project->project_id, $materialRequest->project_id);
+        $this->assertSame(1, Notification::query()->where('user_id', $buyer->id)->where('title', 'Material Requested')->count());
+    }
+
+    public function test_stock_taken_while_the_form_was_open_adds_to_what_is_requested(): void
+    {
+        $this->stockIn($this->aircon, 2);
+
+        $this->post(route('super-admin.projects.create.store'), $this->wizardPayload([
+            ['material_id' => $this->aircon->material_id, 'quantity' => 5, 'request_remaining' => 3],
+        ]))->assertRedirect(route('super-admin.projects'));
+
+        $this->assertSame(2.0, (float) Project::query()->firstOrFail()->materials()->value('quantity_needed'));
+        $this->assertSame(6.0, (float) MaterialRequest::query()->value('quantity'));
+    }
+
+    public function test_a_material_with_none_available_can_only_be_requested(): void
+    {
+        $this->post(route('super-admin.projects.create.store'), $this->wizardPayload([
+            ['material_id' => $this->aircon->material_id, 'quantity' => 0, 'request_remaining' => 4],
+        ]))->assertRedirect(route('super-admin.projects'));
+
+        $this->assertSame(0, ProjectMaterial::count());
+        $this->assertSame(4.0, (float) MaterialRequest::query()->value('quantity'));
+    }
+
+    public function test_a_requested_amount_its_unit_refuses_sends_the_wizard_back(): void
+    {
+        $this->stockIn($this->aircon, 5);
+
+        $this->post(route('super-admin.projects.create.store'), $this->wizardPayload([
+            ['material_id' => $this->aircon->material_id, 'quantity' => 5, 'request_remaining' => 1.5],
+        ]))->assertSessionHasErrors('materials.0.request_remaining');
+
+        $this->assertSame(0, Project::count());
     }
 
     public function test_available_stock_never_goes_below_zero(): void

@@ -61,7 +61,6 @@ class StockController extends Controller
                     $dir
                 ),
                 2 => 'on_hand',
-                5 => 'reorder_level',
             ],
             fn (Builder $builder, string $word, string $like) => $builder
                 ->where('name', 'like', $like)

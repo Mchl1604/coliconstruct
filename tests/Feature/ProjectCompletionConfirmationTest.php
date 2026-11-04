@@ -19,6 +19,7 @@ use App\Services\TechnicianAvailabilityService;
 use App\Support\BusinessTime;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Concerns\ProjectsAreAlreadySetUp;
 use Tests\TestCase;
 
 /**
@@ -36,6 +37,7 @@ use Tests\TestCase;
  */
 class ProjectCompletionConfirmationTest extends TestCase
 {
+    use ProjectsAreAlreadySetUp;
     use RefreshDatabase;
 
     private const CLIENT_EMAIL = 'owner@example.test';

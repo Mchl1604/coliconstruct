@@ -96,18 +96,15 @@
                 <div class="row g-3">
                     <div class="col-md-6">{!! $select('incident_type', 'Type', IncidentReport::TYPES, true) !!}</div>
                     <div class="col-md-6">{!! $select('location', 'Where', IncidentReport::LOCATIONS, true) !!}</div>
-                    <div class="col-md-3 col-6">
+                    <div class="col-6">
                         <label class="form-label fw-semibold" for="incident_occurred_date">Date</label>
                         <input type="date" class="form-control" id="incident_occurred_date" name="occurred_date"
                             value="{{ old('occurred_date', $today) }}" max="{{ $today }}" required>
                     </div>
-                    <div class="col-md-3 col-6">
+                    <div class="col-6">
                         <label class="form-label fw-semibold" for="incident_occurred_time">Time</label>
                         <input type="time" class="form-control" id="incident_occurred_time" name="occurred_time"
                             value="{{ old('occurred_time', $now) }}" required>
-                    </div>
-                    <div class="col-md-6">
-                        {!! $select('phase_id', 'Phase', $phases->pluck('title', 'phase_id')->all(), false, 'None') !!}
                     </div>
                     <div class="col-12">
                         <label class="form-label fw-semibold" for="incident_description">What happened</label>

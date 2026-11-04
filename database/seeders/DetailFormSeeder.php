@@ -103,10 +103,6 @@ class DetailFormSeeder extends Seeder
                     self::field('Work', DetailFieldType::Dropdown, DetailFieldScope::Project, true, ['Installation', 'Relocation']),
                     ...$unit,
                     self::field('Quantity', DetailFieldType::Number, DetailFieldScope::Unit),
-                    self::field('Model', DetailFieldType::Text, DetailFieldScope::Unit),
-                    self::field('Equipment tag', DetailFieldType::Text, DetailFieldScope::Unit),
-                    self::field('Indoor serial no.', DetailFieldType::Text, DetailFieldScope::Unit),
-                    self::field('Outdoor serial no.', DetailFieldType::Text, DetailFieldScope::Unit),
                 ],
             ],
             'Repair' => [
@@ -116,8 +112,6 @@ class DetailFormSeeder extends Seeder
                     self::field('Warranty', DetailFieldType::Dropdown, DetailFieldScope::Project, false, ['None', 'Under warranty', 'Free check-up']),
                     self::field('PO no.', DetailFieldType::Text, DetailFieldScope::Project),
                     ...$unit,
-                    self::field('Model', DetailFieldType::Text, DetailFieldScope::Unit),
-                    self::field('Serial no.', DetailFieldType::Text, DetailFieldScope::Unit),
                 ],
             ],
             'Cleaning' => [
@@ -125,7 +119,6 @@ class DetailFormSeeder extends Seeder
                 'fields' => [
                     ...$unit,
                     self::field('Quantity', DetailFieldType::Number, DetailFieldScope::Unit),
-                    self::field('Equipment tag', DetailFieldType::Text, DetailFieldScope::Unit),
                 ],
             ],
             'Ducting' => [

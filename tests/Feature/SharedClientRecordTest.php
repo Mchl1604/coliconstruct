@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\ClientProjects;
 use App\Services\UserAccountService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Concerns\ProjectsAreAlreadySetUp;
 use Tests\TestCase;
 
 /**
@@ -22,6 +23,7 @@ use Tests\TestCase;
  */
 class SharedClientRecordTest extends TestCase
 {
+    use ProjectsAreAlreadySetUp;
     use RefreshDatabase;
 
     private static int $sequence = 0;

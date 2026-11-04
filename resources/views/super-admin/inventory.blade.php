@@ -84,7 +84,6 @@
                             <th>On Hand</th>
                             <th title="Planned by live projects, not yet released">Reserved</th>
                             <th title="On hand less reserved">Available</th>
-                            <th>Reorder At</th>
                             <th>Status</th>
                             <th class="text-center">Actions</th>
                         </tr>

@@ -9,6 +9,8 @@ use App\Models\Material;
 use App\Models\MaterialRequest;
 use App\Models\Project;
 use App\Models\ProjectCompletionPhoto;
+use App\Models\ProjectDetail;
+use App\Models\ProjectMaterialEntry;
 use App\Models\ProjectTechnician;
 use App\Models\ProjectType;
 use App\Models\Schedule;
@@ -20,9 +22,12 @@ use App\Models\TechnicianReport;
 use App\Models\TechnicianReportImage;
 use App\Models\User;
 use App\Services\PhaseTemplateMerger;
+use App\Services\ProjectDetailForms;
 use App\Services\ProjectStatusRules;
 use App\Services\ProjectTeam;
+use App\Support\DetailFieldScope;
 use App\Support\UploadStore;
+use Carbon\CarbonImmutable;
 use Database\Seeders\DemoDataCatalog;
 use Database\Seeders\DemoDataSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -142,7 +147,7 @@ class DemoDataSeederTest extends TestCase
         $seeded = User::query()->where('email', 'like', '%@'.DemoDataCatalog::EMAIL_DOMAIN)->get();
 
         $this->assertSame(
-            ['admin' => 5, 'client' => 20, 'lead_technician' => 10, 'technician' => 15],
+            ['admin' => 5, 'admin_officer' => 5, 'client' => 20, 'lead_technician' => 10, 'purchasing_admin' => 5, 'technician' => 15],
             $seeded->countBy('role')->sortKeys()->all()
         );
 
@@ -165,8 +170,8 @@ class DemoDataSeederTest extends TestCase
             }
         }
 
-        $this->assertSame(50, $seeded->pluck('email')->unique()->count());
-        $this->assertCount(50, DemoDataSeeder::accountList());
+        $this->assertSame(60, $seeded->pluck('email')->unique()->count());
+        $this->assertCount(60, DemoDataSeeder::accountList());
     }
 
     public function test_it_covers_every_status_with_a_full_team(): void
@@ -330,11 +335,71 @@ class DemoDataSeederTest extends TestCase
 
         $this->assertLessThanOrEqual(3, $counts->max(), 'A calendar day shows more than three projects.');
 
-        // Three is the exception: a full day is rare, two is the busy norm.
+        // Three is the exception: a full day is uncommon, two is the busy norm.
+        // The first days after seeding are full on purpose.
         $this->assertGreaterThan(
-            $counts->filter(fn (int $count): bool => $count === 3)->count() * 10,
+            $counts->filter(fn (int $count): bool => $count === 3)->count() * 5,
             $counts->filter(fn (int $count): bool => $count === 2)->count()
         );
+    }
+
+    public function test_three_projects_are_active_on_each_of_the_next_five_days(): void
+    {
+        $this->runSeeder();
+
+        foreach (range(0, 5) as $offset) {
+            $this->travelTo(CarbonImmutable::now()->addDays($offset));
+
+            $this->assertGreaterThanOrEqual(3, Project::query()->activeToday()->count(), 'Day +'.$offset);
+
+            $this->travelBack();
+        }
+    }
+
+    public function test_every_project_has_its_detail_form_filled_in(): void
+    {
+        $this->runSeeder();
+
+        $forms = app(ProjectDetailForms::class);
+        $checked = 0;
+
+        foreach (Project::query()->with('projectTypes')->get() as $project) {
+            foreach ($forms->withForms($project->projectTypes) as $type) {
+                $rows = ProjectDetail::query()->where('project_id', $project->project_id)->where('type_id', $type->type_id)->get();
+                $form = $type->detailForm;
+
+                if ($form->hasUnits()) {
+                    $this->assertGreaterThan(0, $rows->where('scope', DetailFieldScope::Unit)->count(), $project->name);
+                }
+
+                foreach ($rows as $row) {
+                    $fields = $row->scope === DetailFieldScope::Unit ? $form->unitFields() : $form->projectFields();
+
+                    foreach ($fields->where('is_required', true) as $field) {
+                        $this->assertTrue(filled(((array) $row->values)[$field->field_key] ?? null), $project->name.': '.$field->label);
+                    }
+
+                    $this->assertEmpty(array_intersect(['Model', 'Equipment tag', 'Serial no.', 'Indoor serial no.', 'Outdoor serial no.'], array_values((array) $row->labels)));
+                }
+
+                $checked++;
+            }
+        }
+
+        $this->assertGreaterThan(40, $checked);
+    }
+
+    public function test_a_lead_never_records_a_return(): void
+    {
+        $this->runSeeder();
+
+        $returns = ProjectMaterialEntry::query()->with('recorder')->where('entry_type', ProjectMaterialEntry::TYPE_RETURNED)->get();
+
+        $this->assertNotEmpty($returns);
+
+        foreach ($returns as $entry) {
+            $this->assertFalse((bool) $entry->recorder?->isLeadTechnician());
+        }
     }
 
     public function test_the_statuses_still_hold_fourteen_days_later(): void

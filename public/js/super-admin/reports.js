@@ -236,7 +236,15 @@ document.addEventListener("DOMContentLoaded", function () {
                     report.type_badge_class +
                     "'>" +
                     escapeHtml(report.type_label) +
-                    "</span></td>" +
+                    "</span>" +
+                    (report.review_status
+                        ? " <span class='badge " +
+                          report.review_status.badge +
+                          "'>" +
+                          escapeHtml(report.review_status.label) +
+                          "</span>"
+                        : "") +
+                    "</td>" +
                     "<td>" +
                     submitterCell(report) +
                     "</td>" +
@@ -505,7 +513,14 @@ document.addEventListener("DOMContentLoaded", function () {
                 report.type_badge_class +
                 '">' +
                 escapeHtml(report.type_label) +
-                "</span>";
+                "</span>" +
+                (report.review_status
+                    ? ' <span class="badge ' +
+                      report.review_status.badge +
+                      '">' +
+                      escapeHtml(report.review_status.label) +
+                      "</span>"
+                    : "");
             submittedByEl.textContent = report.submitted_by;
             dateEl.textContent = report.report_date_label;
             descriptionEl.textContent = report.description || "—";

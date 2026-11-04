@@ -316,7 +316,8 @@ class DashboardMetrics
         // done the project takes no tasks, so booking dates and a crew for it
         // only gets so far.
         //
-        // The link goes straight to the setup screen when there is only one -
+        // The link goes straight to the project when there is only one, whose
+        // page offers setup to whoever may do it -
         // which is the case this entry exists for, a project created this
         // morning - and to the projects table's Phase Setup Required tab when
         // there are several. The same shape the specialty queue uses.
@@ -331,18 +332,15 @@ class DashboardMetrics
                 'detail' => $awaitingPhaseSetup->count() === 1
                     ? 'This project has not been configured with its project phases.'
                     : 'These projects have not been configured with their project phases.',
-                // The only entry whose link is not just "go and look": it
-                // names the thing to do, because the destination is a screen
-                // that does one job.
-                'action' => 'Set Up Phases',
+                'action' => 'Open Project',
                 'icon' => 'bi-diagram-3',
-                // Straight to the setup screen when there is only one, which
+                // Straight to the project when there is only one, which
                 // is the case this entry exists for - a project created this
                 // morning. With several it opens the projects table, where
                 // each of them is flagged on its own row rather than hidden
                 // behind a tab. See Project::attentionTabKeys().
                 'url' => $awaitingPhaseSetup->count() === 1
-                    ? route('super-admin.projects.phases.setup', $awaitingPhaseSetup->first()->project_id)
+                    ? route('super-admin.projects.show', $awaitingPhaseSetup->first()->project_id)
                     : $projects,
             ],
             [

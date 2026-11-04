@@ -14,6 +14,7 @@
 @props([
     'project',
     'editTarget' => null,
+    'editDisabled' => false,
 ])
 
 @php
@@ -28,7 +29,7 @@
 
         @if ($editTarget)
             <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2" data-bs-toggle="modal"
-                data-bs-target="#{{ $editTarget }}" title="Edit description">
+                data-bs-target="#{{ $editTarget }}" title="{{ $editDisabled ? \App\Models\Project::SET_UP_FIRST : 'Edit description' }}" @disabled($editDisabled)>
                 <i class="bi bi-pencil" aria-hidden="true"></i>
             </button>
         @endif

@@ -227,6 +227,7 @@ class ProjectMaterialLedgerTest extends TestCase
             ->get(route('technician.projects.show', $this->project->project_id))
             ->assertOk()
             ->assertSee('Record Use')
+            ->assertDontSee('Record Return')
             ->assertSee('Split-Type Inverter 1.5 HP');
 
         $this->actingAs($this->admin)

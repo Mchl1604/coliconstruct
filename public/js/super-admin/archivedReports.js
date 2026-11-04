@@ -105,7 +105,14 @@ document.addEventListener("DOMContentLoaded", function () {
             report.type_badge_class +
             '">' +
             escapeHtml(report.type_label) +
-            "</span>";
+            "</span>" +
+            (report.review_status
+                ? ' <span class="badge ' +
+                  report.review_status.badge +
+                  '">' +
+                  escapeHtml(report.review_status.label) +
+                  "</span>"
+                : "");
         modal.querySelector("[data-view-submitted-by]").textContent =
             report.submitted_by;
         modal.querySelector("[data-view-date]").textContent =

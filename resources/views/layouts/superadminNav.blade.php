@@ -31,7 +31,7 @@ href="https://cdn.datatables.net/2.3.8/css/dataTables.dataTables.css">
         $user = auth()->user();
         // Each entry names the part of the portal it belongs to, and only
         // the parts this role reaches are drawn - see RoleAccess. A
-        // Purchasing Admin sees Materials, Inventory, Movements and
+        // Purchasing Admin sees Materials, Inventory, Stock Movements and
         // Configuration; an HR Admin everything but those first three.
         $adminNavItems = collect([
             [
@@ -107,7 +107,7 @@ href="https://cdn.datatables.net/2.3.8/css/dataTables.dataTables.css">
                 'active' => 'inventory.index',
             ],
             [
-                'label' => 'Movements',
+                'label' => 'Stock Movements',
                 'icon' => 'bi-arrow-left-right',
                 'area' => \App\Support\RoleAccess::INVENTORY,
                 'route' => 'inventory.movements',

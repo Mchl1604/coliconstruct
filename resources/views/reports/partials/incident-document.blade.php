@@ -34,7 +34,6 @@
     <div class="row g-3 mb-3">
         {!! $field('When', \App\Support\BusinessTime::at($incident->occurred_at)?->format(\App\Support\BusinessTime::DATE.' g:i A')) !!}
         {!! $field('Where', $incident->label('LOCATIONS', 'location')) !!}
-        {!! $field('Phase', $incident->phase?->title) !!}
         {!! $field('Cause', $incident->label('CAUSES', 'cause')) !!}
         @if ($incident->incident_type === 'injury')
             {!! $field('Body part', $incident->label('BODY_PARTS', 'injury_body_part')) !!}

@@ -388,10 +388,10 @@ Route::prefix('super-admin')
         // Moving a project to another client, picked from those on record or
         // typed in new. Admin and Super Admin, as the group above admits; the
         // request asks the project's own questions again.
-        Route::put('/projects/{id}/client', [ProjectClientController::class, 'change'])
+        Route::put('/projects/{id}/client', [ProjectClientController::class, 'change'])->middleware('project.setup')
             ->name('projects.client.change');
 
-        Route::put('/projects/{id}/hold', [ProjectController::class, 'putOnHold'])->name('projects.hold');
+        Route::put('/projects/{id}/hold', [ProjectController::class, 'putOnHold'])->middleware('project.setup')->name('projects.hold');
         Route::put('/projects/{id}/resume', [ProjectController::class, 'resume'])->name('projects.resume');
 
         // What stands between a held project and the schedule it kept, and how
@@ -411,7 +411,7 @@ Route::prefix('super-admin')
             ->name('projects.resume-conflicts');
         Route::put('/projects/{id}/resume-schedule', [ProjectController::class, 'updateResumeSchedule'])
             ->name('projects.resume-schedule');
-        Route::post('/projects/{id}/complete', [ProjectController::class, 'complete'])->name('projects.complete');
+        Route::post('/projects/{id}/complete', [ProjectController::class, 'complete'])->middleware('project.setup')->name('projects.complete');
 
         // The confirmation that did not come through the website: the client
         // said so by telephone, in person or on paper, and an administrator is
@@ -426,7 +426,7 @@ Route::prefix('super-admin')
         // - a completed project is refused by ProjectReopen itself, so the
         // rule does not depend on which page drew the button.
         Route::post('/projects/{id}/reopen', [ProjectController::class, 'reopen'])->name('projects.reopen');
-        Route::post('/projects/{id}/cancel', [ProjectController::class, 'cancel'])->name('projects.cancel');
+        Route::post('/projects/{id}/cancel', [ProjectController::class, 'cancel'])->middleware('project.setup')->name('projects.cancel');
         Route::post('/projects/{id}/archive', [ProjectController::class, 'archive'])
             ->middleware('role:super_admin')
             ->name('projects.archive');
@@ -454,12 +454,12 @@ Route::prefix('super-admin')
         Route::get('/projects/{id}/documents/{document}', [ProjectController::class, 'previewDocument'])
             ->whereNumber('document')
             ->name('projects.documents.preview');
-        Route::delete('/projects/{id}/documents/{document}', [ProjectController::class, 'destroyDocument'])
+        Route::delete('/projects/{id}/documents/{document}', [ProjectController::class, 'destroyDocument'])->middleware('project.setup')
             ->whereNumber('document')
             ->name('projects.documents.destroy');
-        Route::put('/projects/{id}', [ProjectController::class, 'update'])->name('projects.update');
+        Route::put('/projects/{id}', [ProjectController::class, 'update'])->middleware('project.setup')->name('projects.update');
         // Edit Description: what each type's detail form was filled in with.
-        Route::put('/projects/{id}/details', [ProjectDetailController::class, 'update'])->name('projects.details.update');
+        Route::put('/projects/{id}/details', [ProjectDetailController::class, 'update'])->middleware('project.setup')->name('projects.details.update');
         Route::put('/projects/{id}/team', [ProjectController::class, 'updateAssignedTeam'])->name('projects.team.update');
         // What a team change would do before it is saved - its refusals and the
         // tasks it would strand. Read by the Edit Assigned Team dialog.
@@ -470,7 +470,7 @@ Route::prefix('super-admin')
             ->name('projects.team.scheduled.cancel');
         // The office reads tasks and reports. A Super Admin alone may write
         // them - see RoleAccess.
-        Route::post('/projects/{id}/reports', [TechnicianReportController::class, 'store'])
+        Route::post('/projects/{id}/reports', [TechnicianReportController::class, 'store'])->middleware('project.setup')
             ->middleware('capability:'.RoleAccess::FILE_REPORTS)
             ->name('technician.reports.store');
         Route::post('/projects/{id}/task', [TaskController::class, 'store'])
@@ -919,13 +919,13 @@ Route::prefix('technician')
             Route::get('/reports/archived/table', [TechnicianPortalController::class, 'archivedReportsTable'])
                 ->name('reports.archived.table');
 
-            Route::post('/projects/{project}/complete', [TechnicianPortalController::class, 'completeProject'])
+            Route::post('/projects/{project}/complete', [TechnicianPortalController::class, 'completeProject'])->middleware('project.setup')
                 ->name('projects.complete');
             Route::get('/projects/{project}/task-form-data', [TechnicianPortalController::class, 'taskFormData'])
                 ->name('projects.task-form-data');
             Route::post('/projects/{project}/tasks', [TechnicianPortalController::class, 'storeTask'])
                 ->name('tasks.store');
-            Route::post('/projects/{project}/reports', [TechnicianPortalController::class, 'storeReport'])
+            Route::post('/projects/{project}/reports', [TechnicianPortalController::class, 'storeReport'])->middleware('project.setup')
                 ->name('reports.store');
             Route::post('/tasks/{task}', [TechnicianPortalController::class, 'updateTask'])
                 ->name('tasks.update');
@@ -970,6 +970,13 @@ Route::get('/report-documents/{report}', [ProgressReportController::class, 'show
     ->middleware(['auth', 'password.changed'])
     ->whereNumber('report')
     ->name('reports.document');
+
+// A project's progress from its start to today, generated when opened, for
+// the same readers.
+Route::get('/project-progress/{project}', [ProgressReportController::class, 'overall'])
+    ->middleware(['auth', 'password.changed'])
+    ->whereNumber('project')
+    ->name('reports.project-progress');
 
 // Archiving a technician report, and putting it back.
 //

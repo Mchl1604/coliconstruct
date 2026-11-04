@@ -115,14 +115,12 @@ class ProjectPhaseSetupTest extends TestCase
     /**
      * The setup screen is the only phase interface an unfinalized project has.
      */
-    public function test_the_three_authorized_roles_can_open_the_setup_screen(): void
+    public function test_the_super_admin_and_the_lead_can_open_the_setup_screen(): void
     {
-        foreach ([$this->superAdmin, $this->admin] as $viewer) {
-            $this->actingAs($viewer)
-                ->get(route('super-admin.projects.phases.setup', $this->project->project_id))
-                ->assertOk()
-                ->assertSee('Set Up Project');
-        }
+        $this->actingAs($this->superAdmin)
+            ->get(route('super-admin.projects.phases.setup', $this->project->project_id))
+            ->assertOk()
+            ->assertSee('Set Up Project');
 
         $this->actingAs($this->leadAccount)
             ->get(route('technician.projects.phases.setup', $this->project->project_id))
@@ -176,7 +174,7 @@ class ProjectPhaseSetupTest extends TestCase
 
     public function test_finalizing_locks_the_structure_and_records_who_did_it(): void
     {
-        $this->actingAs($this->admin)
+        $this->actingAs($this->superAdmin)
             ->post(route('super-admin.projects.phases.finalize', $this->project->project_id), [
                 'phases' => $this->structure(),
             ])
@@ -186,7 +184,7 @@ class ProjectPhaseSetupTest extends TestCase
 
         $this->assertTrue($project->phasesAreFinalized());
         $this->assertSame(4, $project->phase_count);
-        $this->assertSame($this->admin->id, $project->phase_setup_finalized_by);
+        $this->assertSame($this->superAdmin->id, $project->phase_setup_finalized_by);
         $this->assertNotNull($project->phase_setup_finalized_at);
 
         $phases = $project->phases()->get();
@@ -211,7 +209,7 @@ class ProjectPhaseSetupTest extends TestCase
      */
     public function test_saving_without_finalizing_keeps_the_project_in_setup(): void
     {
-        $this->actingAs($this->admin)
+        $this->actingAs($this->superAdmin)
             ->post(route('super-admin.projects.phases.save', $this->project->project_id), [
                 'phases' => $this->structure(),
             ])
@@ -226,7 +224,7 @@ class ProjectPhaseSetupTest extends TestCase
 
     public function test_a_structure_with_no_phases_is_refused(): void
     {
-        $this->actingAs($this->admin)
+        $this->actingAs($this->superAdmin)
             ->post(route('super-admin.projects.phases.finalize', $this->project->project_id), [
                 'phases' => [],
             ])
@@ -237,7 +235,7 @@ class ProjectPhaseSetupTest extends TestCase
 
     public function test_a_phase_without_a_description_is_refused(): void
     {
-        $this->actingAs($this->admin)
+        $this->actingAs($this->superAdmin)
             ->post(route('super-admin.projects.phases.finalize', $this->project->project_id), [
                 'phases' => [['title' => 'Site Preparation', 'description' => '']],
             ])
@@ -1175,11 +1173,11 @@ class ProjectPhaseSetupTest extends TestCase
 
         $this->assertNotNull($action);
         $this->assertSame(1, $action['count']);
-        $this->assertSame('Set Up Phases', $action['action']);
-        // One project, so the link is the setup screen itself rather than a
-        // list to search.
+        $this->assertSame('Open Project', $action['action']);
+        // One project, so the link is that project rather than a list to
+        // search. Its page offers setup to whoever may do it.
         $this->assertSame(
-            route('super-admin.projects.phases.setup', $this->project->project_id),
+            route('super-admin.projects.show', $this->project->project_id),
             $action['url']
         );
     }

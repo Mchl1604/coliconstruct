@@ -1709,28 +1709,6 @@ class NotificationService
         );
     }
 
-    /**
-     * A new project whose material plan the warehouse cannot cover from what
-     * is available - on hand, less what other live projects have reserved.
-     *
-     * @param  Collection<int, Material>  $materials  the ones that are short
-     */
-    public function projectMaterialsShort(Project $project, Collection $materials): void
-    {
-        $count = $materials->count();
-
-        $this->deliver(
-            $this->inventoryStaff(),
-            'Materials Short',
-            $count === 1
-                ? sprintf('%s needs more %s than is available.', $project->reference_no, $materials->first()->displayName())
-                : sprintf('%s needs more of %d materials than is available.', $project->reference_no, $count),
-            Notification::MODULE_INVENTORY,
-            $project,
-            route('inventory.index', [], false)
-        );
-    }
-
     // ------------------------------------------------------------------
     // User management
     // ------------------------------------------------------------------

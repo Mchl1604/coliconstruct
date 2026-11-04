@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\EnsureAccountIsActive;
 use App\Http\Middleware\EnsurePasswordIsChanged;
+use App\Http\Middleware\EnsureProjectIsSetUp;
 use App\Http\Middleware\EnsureTermsAreAccepted;
 use App\Http\Middleware\EnsureUserCanReachArea;
 use App\Http\Middleware\EnsureUserHasCapability;
@@ -50,6 +51,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'area' => EnsureUserCanReachArea::class,
             'capability' => EnsureUserHasCapability::class,
             'password.changed' => EnsurePasswordIsChanged::class,
+            'project.setup' => EnsureProjectIsSetUp::class,
         ]);
 
         // Guests are sent to the sign-in page rather than a named `login`

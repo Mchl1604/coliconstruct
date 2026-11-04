@@ -1727,6 +1727,12 @@ class Project extends Model
     // ------------------------------------------------------------------
 
     /**
+     * Why a control is disabled, and why an endpoint refused, until the project
+     * has been set up. See EnsureProjectIsSetUp.
+     */
+    public const SET_UP_FIRST = 'Set up the project first.';
+
+    /**
      * Whether this project's phase structure is still being decided.
      *
      * The one question everything about phases hangs off: it decides which of

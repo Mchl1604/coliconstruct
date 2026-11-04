@@ -14,7 +14,7 @@
 {{--
     The Materials tab: what was planned when the project was created, what was
     added, used and returned since, and what remains. Readable from the moment
-    the project exists; recording opens once its setup is finished.
+    the project exists, and open to whoever has access, set up or not.
 
     Every figure comes from ProjectMaterialLedger, summed from the entries
     listed in the history below - nothing on this tab is a stored total. When
@@ -49,7 +49,7 @@
         <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
             <div>
                 <h4 class="fw-bold mb-1">Materials</h4>
-                <p class="text-secondary small mb-0">Planned, used and returned.</p>
+                <p class="text-secondary small mb-0">Initial, used and returned.</p>
             </div>
 
             @if ($hasActions)
@@ -83,7 +83,7 @@
 
         @if ($summary->isEmpty())
             <div class="material-plan-empty">
-                {{ $project->awaitingInitialSetup() ? 'Set up the project first.' : 'No materials listed.' }}
+                No materials listed.
             </div>
         @else
             <div class="table-responsive">
@@ -224,33 +224,31 @@
     </div>
 @endif
 
-@if ($project->hasCompletedInitialSetup())
-    <div class="card shadow-sm border-0 rounded-2">
-        <div class="card-body p-3 p-md-4">
-            <h5 class="fw-bold mb-3">Material History</h5>
+<div class="card shadow-sm border-0 rounded-2">
+    <div class="card-body p-3 p-md-4">
+        <h5 class="fw-bold mb-3">Material History</h5>
 
-            <div class="table-responsive">
-                <table id="materialEntriesTable" class="table table-hover align-middle mb-0"
-                    data-server-table-url="{{ route($routePrefix.'table', $project->project_id) }}">
-                    <thead class="table-info">
-                        <tr>
-                            <th>Date</th>
-                            <th>Material</th>
-                            <th>Entry</th>
-                            <th class="text-end">Qty</th>
-                            <th>By</th>
-                            <th>Notes</th>
-                            <th class="text-center">Actions</th>
-                        </tr>
-                    </thead>
-                    {{-- Filled a page at a time by serverTable.js from
-                         ProjectMaterialController::table(). --}}
-                    <tbody></tbody>
-                </table>
-            </div>
+        <div class="table-responsive">
+            <table id="materialEntriesTable" class="table table-hover align-middle mb-0"
+                data-server-table-url="{{ route($routePrefix.'table', $project->project_id) }}">
+                <thead class="table-info">
+                    <tr>
+                        <th>Date</th>
+                        <th>Material</th>
+                        <th>Entry</th>
+                        <th class="text-end">Qty</th>
+                        <th>By</th>
+                        <th>Notes</th>
+                        <th class="text-center">Actions</th>
+                    </tr>
+                </thead>
+                {{-- Filled a page at a time by serverTable.js from
+                     ProjectMaterialController::table(). --}}
+                <tbody></tbody>
+            </table>
         </div>
     </div>
-@endif
+</div>
 
 @if ($canRecord)
     {{-- Record Use / Record Return. One dialog for both, switched by the

@@ -146,17 +146,14 @@ class IncidentReport extends Model
 
     public const STATUS_OPEN = 'open';
 
-    public const STATUS_UNDER_REVIEW = 'under_review';
-
     public const STATUS_CLOSED = 'closed';
 
     /**
      * @var array<string, string>
      */
     public const STATUSES = [
-        self::STATUS_OPEN => 'Open',
-        self::STATUS_UNDER_REVIEW => 'Under Review',
-        self::STATUS_CLOSED => 'Closed',
+        self::STATUS_OPEN => 'Unresolved',
+        self::STATUS_CLOSED => 'Resolved',
     ];
 
     /**
@@ -274,10 +271,6 @@ class IncidentReport extends Model
 
     public function statusBadgeClass(): string
     {
-        return match ($this->status) {
-            self::STATUS_CLOSED => 'bg-success',
-            self::STATUS_UNDER_REVIEW => 'bg-primary',
-            default => 'bg-secondary',
-        };
+        return $this->status === self::STATUS_CLOSED ? 'bg-success' : 'bg-danger';
     }
 }

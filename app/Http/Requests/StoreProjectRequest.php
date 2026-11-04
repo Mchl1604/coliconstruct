@@ -94,6 +94,7 @@ class StoreProjectRequest extends FormRequest
             'materials' => ['nullable', 'array', 'max:'.ProjectMaterialPlan::MAX_LINES],
             'materials.*.material_id' => ['required', 'integer'],
             'materials.*.quantity' => ['required', 'numeric'],
+            'materials.*.request_remaining' => ['nullable', 'numeric', 'min:0'],
         ];
     }
 

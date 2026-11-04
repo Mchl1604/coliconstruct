@@ -7,6 +7,7 @@ use App\Models\MaterialRequest;
 use App\Models\Project;
 use App\Services\MaterialRequests;
 use App\Services\ProjectMaterialRules;
+use App\Services\StockAvailability;
 use App\Support\ServerTable;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
@@ -29,6 +30,7 @@ class MaterialRequestController extends Controller
     public function __construct(
         private readonly MaterialRequests $requests,
         private readonly ProjectMaterialRules $rules,
+        private readonly StockAvailability $availability,
     ) {}
 
     public function store(Request $request, Project $project): RedirectResponse
@@ -90,7 +92,7 @@ class MaterialRequestController extends Controller
             [
                 0 => 'created_at',
                 3 => 'quantity',
-                5 => 'status',
+                6 => 'status',
             ],
             fn (Builder $builder, string $word, string $like) => $builder
                 ->whereHas('material', fn (Builder $material) => $material->where('name', 'like', $like))
@@ -100,10 +102,15 @@ class MaterialRequestController extends Controller
             [[0, 'desc']],
         );
 
+        // Available for the rows on this page only, the figure approving is
+        // held to.
+        $figures = $this->availability->forMaterials($page->items->pluck('material_id')->all());
+
         return $table->respond(
             $page,
             fn (MaterialRequest $materialRequest): string => view('super-admin.partials.material-request-row', [
                 'materialRequest' => $materialRequest,
+                'available' => $figures[(int) $materialRequest->material_id]['available'] ?? null,
             ])->render(),
         );
     }

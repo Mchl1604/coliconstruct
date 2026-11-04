@@ -136,7 +136,7 @@ document.addEventListener("DOMContentLoaded", function () {
             pageLength: 10,
             lengthMenu: [10, 25, 50, 100],
             order: [[0, "asc"]],
-            columnDefs: [{ targets: [3, 4, 6, 7], orderable: false }],
+            columnDefs: [{ targets: [3, 4, 5, 6], orderable: false }],
             language: {
                 search: "",
                 searchPlaceholder: "Search stock...",

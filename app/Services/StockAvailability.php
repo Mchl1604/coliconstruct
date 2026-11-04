@@ -21,8 +21,10 @@ use Illuminate\Support\Facades\DB;
  * Purchasing releases the materials with a Stock Out against the project,
  * and ends when the project closes or is archived.
  *
- * A plan may reserve more than is on hand - the wizard warns and still saves.
- * Reserved keeps the whole claim, and Available simply reads zero.
+ * The wizard holds a new plan to what is available - see
+ * ProjectMaterialPlan::limitToAvailable(). A plan saved before that may still
+ * reserve more than is on hand: Reserved keeps the whole claim, and Available
+ * simply reads zero.
  *
  * Only movements made by hand count as a release. One the project's Materials
  * tab wrote - extra brought to site, a return, leftovers at close-out - is

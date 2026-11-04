@@ -1,6 +1,6 @@
 @extends('layouts.superadminNav')
 
-@section('title', 'Movements')
+@section('title', 'Stock Movements')
 
 @push('styles')
     <link href="/css/materials.css" rel="stylesheet">
@@ -10,7 +10,7 @@
 @section('content')
     <div class="d-flex justify-content-between align-items-center mb-3">
         <div>
-            <h4 class="fw-bold mb-1">Movements</h4>
+            <h4 class="fw-bold mb-1">Stock Movements</h4>
             <p class="text-secondary small mb-0">Every stock change.</p>
         </div>
     </div>

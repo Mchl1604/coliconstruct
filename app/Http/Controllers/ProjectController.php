@@ -24,6 +24,7 @@ use App\Services\CompletionConfirmability;
 use App\Services\DocumentHistoryLog;
 use App\Services\HolidayCalendar;
 use App\Services\ImportableTeamSources;
+use App\Services\MaterialRequests;
 use App\Services\NotificationService;
 use App\Services\ProjectCompletion;
 use App\Services\ProjectDetailForms;
@@ -388,37 +389,6 @@ class ProjectController extends Controller
     }
 
     /**
-     * Tell Purchasing what a new project needs that the warehouse cannot
-     * cover - one notice for the project, naming how many materials are
-     * short. A warning, not a refusal: the project is booked either way.
-     *
-     * Follow-up like announceNewProject(), so it swallows its own faults.
-     */
-    private function announceMaterialShortfall(Project $project): void
-    {
-        try {
-            $lines = $project->materials()->with('material')->get();
-
-            if ($lines->isEmpty()) {
-                return;
-            }
-
-            $figures = app(StockAvailability::class)->forMaterials($lines->pluck('material_id')->all(), $project);
-
-            $short = $lines
-                ->filter(fn ($line): bool => (float) $line->quantity_needed > (float) ($figures[(int) $line->material_id]['available'] ?? 0))
-                ->map(fn ($line) => $line->material)
-                ->values();
-
-            if ($short->isNotEmpty()) {
-                $this->notifications->projectMaterialsShort($project, $short);
-            }
-        } catch (Throwable $exception) {
-            report($exception);
-        }
-    }
-
-    /**
      * The teams that could be imported onto a project, screened against the
      * dates that project will hold.
      *
@@ -515,10 +485,11 @@ class ProjectController extends Controller
         // and the times are read once and interpreted once.
         $scheduleEntry = $request->scheduleEntry();
         $created = null;
+        $materialsLowered = false;
 
         try {
 
-            DB::transaction(function () use ($validated, $request, $scheduleEntry, &$created): void {
+            DB::transaction(function () use ($validated, $request, $scheduleEntry, &$created, &$materialsLowered): void {
 
                 // An existing client is used exactly as stored - the wizard's
                 // copy of their details is display only. A new one is written
@@ -564,9 +535,17 @@ class ProjectController extends Controller
                 );
 
                 // The Materials step: the plan, which reserves stock from now
-                // on. The setup screen opens on it and may still change it
-                // until setup is finalized.
-                app(ProjectMaterialPlan::class)->save($project, $validated['materials'] ?? [], $request->user());
+                // on, held to what is available. Whatever the wizard ticked to
+                // request goes to Purchasing with it.
+                $plan = app(ProjectMaterialPlan::class);
+                $limited = $plan->limitToAvailable($validated['materials'] ?? []);
+                $materialsLowered = $limited['lowered'];
+
+                $plan->save($project, $limited['rows'], $request->user());
+
+                foreach ($limited['requests'] as $materialRequest) {
+                    app(MaterialRequests::class)->request($project, $materialRequest['material'], $materialRequest['quantity'], $request->user());
+                }
 
                 $selectedTechnicianIds = collect([
                     $validated['lead_tech'],
@@ -634,11 +613,12 @@ class ProjectController extends Controller
             // reports as failed. announceNewProject() therefore swallows its
             // own faults rather than letting them reach the catch below.
             $this->announceNewProject($created, count($validated['technicians']));
-            $this->announceMaterialShortfall($created);
 
             return redirect()
                 ->route('super-admin.projects')
-                ->with('success', 'Project created successfully.');
+                ->with('success', $materialsLowered
+                    ? 'Project created. Materials were limited to what is available.'
+                    : 'Project created successfully.');
         } catch (Throwable $exception) {
             // Nothing reached the tables: the whole of the work above runs in
             // one transaction, so a failure anywhere in it leaves no
@@ -1428,7 +1408,7 @@ class ProjectController extends Controller
         // active record, and an archived report is read on the Archived
         // Reports page - the same rule the Reports listing follows, so a
         // report archived from either place disappears from both.
-        $reports = TechnicianReport::with(['images', 'submitter', 'technician.account'])
+        $reports = TechnicianReport::with(['images', 'submitter', 'technician.account', 'incident'])
             ->active()
             ->where('project_id', $id);
 

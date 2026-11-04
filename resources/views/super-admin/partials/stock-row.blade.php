@@ -40,13 +40,6 @@
     <td class="text-nowrap">
         <span class="material-qty {{ $reserved > $onHand ? 'text-danger fw-semibold' : '' }}">{{ $unit->format($available) }}</span>
     </td>
-    <td class="text-nowrap small">
-        @if ($material->reorder_level !== null)
-            {{ $unit->format($material->reorder_level) }} {{ $unit->value }}
-        @else
-            <span class="text-secondary">&ndash;</span>
-        @endif
-    </td>
     <td><span class="stock-status is-{{ $status }}">{{ \App\Models\Material::STOCK_STATUSES[$status] }}</span></td>
     <td class="text-center text-nowrap">
         <button type="button" class="btn btn-sm btn-outline-success py-1 px-2"

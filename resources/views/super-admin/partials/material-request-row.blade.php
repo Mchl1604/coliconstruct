@@ -13,6 +13,17 @@
     </td>
     <td><span class="material-name">{{ $material?->displayName() }}</span></td>
     <td class="text-nowrap material-qty">{{ $amount }}</td>
+    {{-- What approving is held to, right now; a decided request has no use for it. --}}
+    <td class="text-nowrap">
+        @if ($materialRequest->isPending() && $available !== null)
+            <span class="material-qty fw-semibold {{ $available < (float) $materialRequest->quantity ? 'text-danger' : 'text-success' }}">{{ $material?->unit->format($available) }} {{ $material?->unit->value }}</span>
+            @if ($available < (float) $materialRequest->quantity)
+                <div class="material-meta text-danger">Not enough</div>
+            @endif
+        @else
+            <span class="text-secondary">&ndash;</span>
+        @endif
+    </td>
     <td class="small">{{ $materialRequest->requester?->fullName() }}</td>
     <td>
         <span class="material-request-status is-{{ $materialRequest->status }}">{{ $materialRequest->statusLabel() }}</span>

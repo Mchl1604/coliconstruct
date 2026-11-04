@@ -101,22 +101,25 @@
             // the system already treats as locked.
             $isReadOnly = $project->isReadOnly();
 
-            // A project nobody has set up yet has one thing to do: set it
-            // up - phases, then materials. Every other action waits until
-            // that is done; the details page stays reachable from the setup
-            // screen's Back to Project. Only for whoever can actually do it.
-            $offersSetUpOnly = $project->awaitingInitialSetup()
+            // A project nobody has set up can be opened and read by anyone
+            // here. Every other action waits, drawn disabled; Set Up Now is
+            // only for whoever can actually do it.
+            $awaitingSetup = $project->awaitingInitialSetup();
+            $offersSetUp = $awaitingSetup
                 && app(\App\Services\ProjectPhaseRules::class)->canSetUp(auth()->user(), $project);
+            $setupFirst = \App\Models\Project::SET_UP_FIRST;
         @endphp
         <div class="projects-action-buttons">
-            @if ($offersSetUpOnly)
+            @if ($offersSetUp)
                 <a class="btn btn-sm btn-warning py-1 px-2 fw-semibold text-nowrap"
                     href="{{ route('super-admin.projects.phases.setup', $project->project_id) }}"
                     title="Set up phases">
                     <i class="bi bi-sliders me-1" aria-hidden="true"></i>Set Up Now
                 </a>
-            @else
+            @endif
+
             <button class="btn btn-sm btn-primary py-1 px-2"
+                title="View project"
                 onclick="window.location='{{ route('super-admin.projects.show', $project->project_id) }}'">
                 <i class="bi bi-eye"></i>
             </button>
@@ -124,7 +127,8 @@
             @if (! $isReadOnly)
                 @if ($project->on_hold !== true && $project->status !== 'unscheduled')
                     <button class="btn btn-sm btn-warning py-1 px-2" data-bs-toggle="modal"
-                        data-bs-target="#onHoldModal{{ $project->project_id }}">
+                        data-bs-target="#onHoldModal{{ $project->project_id }}"
+                        @disabled($awaitingSetup) title="{{ $awaitingSetup ? $setupFirst : 'Put on Hold' }}">
                         <i class="bi bi-pause"></i>
                     </button>
                 @endif
@@ -145,7 +149,7 @@
                 @if ($project->isCompletableBy(auth()->user()))
                     <button class="btn btn-sm btn-success py-1 px-2" data-bs-toggle="modal"
                         data-bs-target="#completeProjectModal{{ $project->project_id }}"
-                        title="Complete Project">
+                        @disabled($awaitingSetup) title="{{ $awaitingSetup ? $setupFirst : 'Complete Project' }}">
                         <i class="bi bi-check-lg"></i>
                     </button>
                 @endif
@@ -167,7 +171,6 @@
                     title="Archive Project">
                     <i class="bi bi-archive"></i>
                 </button>
-            @endif
             @endif
         </div>
     </td>
