@@ -407,6 +407,21 @@ class ProjectMaterialSetupTest extends TestCase
             ->assertSee("window.location='".route('super-admin.projects.show', $this->project->project_id)."'", false);
     }
 
+    public function test_set_up_now_in_the_action_column_is_an_icon_only(): void
+    {
+        $this->actingAs($this->superAdmin);
+
+        $this->getTablePage(route('super-admin.projects.table'))
+            ->assertSee('aria-label="Set Up Now"', false)
+            ->assertDontSee('</i>Set Up Now', false);
+
+        $this->actingAs($this->leadAccount);
+
+        $this->getTablePage(route('technician.projects.table'))
+            ->assertSee('aria-label="Set Up Now"', false)
+            ->assertDontSee('</i>Set Up Now', false);
+    }
+
     public function test_an_admin_is_offered_view_but_not_set_up_now(): void
     {
         $this->actingAs($this->admin);

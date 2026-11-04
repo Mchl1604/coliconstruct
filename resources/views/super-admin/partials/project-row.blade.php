@@ -111,10 +111,10 @@
         @endphp
         <div class="projects-action-buttons">
             @if ($offersSetUp)
-                <a class="btn btn-sm btn-warning py-1 px-2 fw-semibold text-nowrap"
+                <a class="btn btn-sm btn-warning py-1 px-2"
                     href="{{ route('super-admin.projects.phases.setup', $project->project_id) }}"
-                    title="Set up phases">
-                    <i class="bi bi-sliders me-1" aria-hidden="true"></i>Set Up Now
+                    title="Set Up Now" aria-label="Set Up Now">
+                    <i class="bi bi-sliders" aria-hidden="true"></i>
                 </a>
             @endif
 
