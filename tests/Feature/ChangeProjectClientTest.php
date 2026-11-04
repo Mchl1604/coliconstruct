@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Services\ClientProjects;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Concerns\ProjectsAreAlreadySetUp;
 use Tests\TestCase;
 
 /**
@@ -21,6 +22,7 @@ use Tests\TestCase;
  */
 class ChangeProjectClientTest extends TestCase
 {
+    use ProjectsAreAlreadySetUp;
     use RefreshDatabase;
 
     private static int $sequence = 0;

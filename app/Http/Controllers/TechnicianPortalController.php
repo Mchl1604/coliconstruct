@@ -300,7 +300,7 @@ class TechnicianPortalController extends Controller
         // takes it out of both.
         $reports = TechnicianReport::query()
             ->active()
-            ->with(['images', 'technician.account', 'submitter', 'project.client'])
+            ->with(['images', 'technician.account', 'submitter', 'project.client', 'incident'])
             ->where('project_id', $project->project_id)
             ->when(
                 $request->filled('report_type'),
@@ -699,7 +699,7 @@ class TechnicianPortalController extends Controller
             defaultOrder: [[5, 'desc']],
         );
 
-        $reports = $page->items->load(['project.client', 'images', 'technician.account', 'submitter']);
+        $reports = $page->items->load(['project.client', 'images', 'technician.account', 'submitter', 'incident']);
         $user = $request->user();
 
         return $table->respond(
@@ -755,7 +755,7 @@ class TechnicianPortalController extends Controller
             defaultOrder: [[5, 'desc']],
         );
 
-        $reports = $page->items->load(['project.client', 'images', 'technician.account', 'submitter', 'archiver']);
+        $reports = $page->items->load(['project.client', 'images', 'technician.account', 'submitter', 'archiver', 'incident']);
         $user = $request->user();
 
         return $table->respond(
@@ -872,7 +872,7 @@ class TechnicianPortalController extends Controller
 
         $reports = TechnicianReport::query()
             ->active()
-            ->with(['images', 'technician.account', 'submitter', 'project.client'])
+            ->with(['images', 'technician.account', 'submitter', 'project.client', 'incident'])
             ->where('project_id', $project->project_id)
             ->orderByDesc('report_date')
             ->orderByDesc('id')
@@ -1813,6 +1813,7 @@ class TechnicianPortalController extends Controller
             'type_label' => $report->typeLabel(),
             'type_badge_class' => $report->typeBadgeClass(),
             'type_accent_class' => $report->typeAccentClass(),
+            'review_status' => $report->reviewStatus(),
             'submitted_by' => $report->submitterName(),
             'submitted_by_avatar' => $report->submitterAvatarUrl(),
             'date' => $report->report_date?->toDateString(),

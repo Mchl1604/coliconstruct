@@ -225,10 +225,10 @@ class PortalAccessMatrixTest extends TestCase
     public function test_the_sidebar_of_each_office_role_is_its_own(): void
     {
         $expected = [
-            User::ROLE_SUPER_ADMIN => ['Dashboard', 'Projects', 'Schedules', 'Task', 'Technicians', 'Reports', 'Material Requests', 'Materials', 'Inventory', 'Movements', 'Configuration'],
-            User::ROLE_ADMIN_OFFICER => ['Dashboard', 'Projects', 'Schedules', 'Task', 'Technicians', 'Reports', 'Material Requests', 'Materials', 'Inventory', 'Movements', 'Configuration'],
+            User::ROLE_SUPER_ADMIN => ['Dashboard', 'Projects', 'Schedules', 'Task', 'Technicians', 'Reports', 'Material Requests', 'Materials', 'Inventory', 'Stock Movements', 'Configuration'],
+            User::ROLE_ADMIN_OFFICER => ['Dashboard', 'Projects', 'Schedules', 'Task', 'Technicians', 'Reports', 'Material Requests', 'Materials', 'Inventory', 'Stock Movements', 'Configuration'],
             User::ROLE_ADMIN => ['Dashboard', 'Projects', 'Schedules', 'Task', 'Technicians', 'Reports', 'Configuration'],
-            User::ROLE_PURCHASING_ADMIN => ['Projects', 'Material Requests', 'Materials', 'Inventory', 'Movements', 'Configuration'],
+            User::ROLE_PURCHASING_ADMIN => ['Projects', 'Material Requests', 'Materials', 'Inventory', 'Stock Movements', 'Configuration'],
         ];
 
         foreach ($expected as $role => $labels) {

@@ -20,7 +20,7 @@ use RuntimeException;
 
 /**
  * Incident reports: filed by the project's lead with a structured form, and
- * reviewed by the office - Open, Under Review, Closed.
+ * reviewed by the office - Unresolved or Resolved.
  *
  * The report row (tbl_technician_reports) keeps the title, description, date
  * and photographs, so every list of reports keeps working; the choices hang
@@ -95,7 +95,6 @@ class IncidentReporting
                 'technician_report_id' => $report->id,
                 'incident_type' => $data['incident_type'],
                 'occurred_at' => $occurredAt,
-                'phase_id' => $data['phase_id'] ?? null,
                 'location' => $data['location'],
                 // Kept only for the kind of incident they describe.
                 'injury_body_part' => $data['incident_type'] === 'injury' ? ($data['injury_body_part'] ?? null) : null,
@@ -172,7 +171,7 @@ class IncidentReporting
         $notes = $this->text($notes, 2000);
 
         if ($status === IncidentReport::STATUS_CLOSED && $notes === null && $incident->resolution_notes === null) {
-            throw new RuntimeException('Say how it was resolved before closing it.');
+            throw new RuntimeException('Say how it was resolved.');
         }
 
         $incident->update([

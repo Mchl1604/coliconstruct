@@ -16,6 +16,7 @@ use App\Support\DetailFieldScope;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Tests\Concerns\ProjectsAreAlreadySetUp;
 use Tests\TestCase;
 
 /**
@@ -26,6 +27,7 @@ use Tests\TestCase;
  */
 class ProjectDescriptionFormsTest extends TestCase
 {
+    use ProjectsAreAlreadySetUp;
     use RefreshDatabase;
 
     private ProjectType $installation;

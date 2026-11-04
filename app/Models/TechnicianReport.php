@@ -79,6 +79,24 @@ class TechnicianReport extends Model
     }
 
     /**
+     * How the office's review of an incident stands, for wherever the report
+     * is listed. Null for anything without a review.
+     *
+     * @return array{label: string, badge: string}|null
+     */
+    public function reviewStatus(): ?array
+    {
+        if ($this->report_type !== 'incident' || $this->incident === null) {
+            return null;
+        }
+
+        return [
+            'label' => $this->incident->label('STATUSES', 'status'),
+            'badge' => $this->incident->statusBadgeClass(),
+        ];
+    }
+
+    /**
      * The structured details of an incident report - see IncidentReport.
      */
     public function incident(): HasOne

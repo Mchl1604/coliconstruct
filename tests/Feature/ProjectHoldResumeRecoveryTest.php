@@ -13,6 +13,7 @@ use App\Services\ProjectStatusRules;
 use App\Services\TechnicianAvailabilityService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Concerns\ProjectsAreAlreadySetUp;
 use Tests\TestCase;
 
 /**
@@ -40,6 +41,7 @@ use Tests\TestCase;
  */
 class ProjectHoldResumeRecoveryTest extends TestCase
 {
+    use ProjectsAreAlreadySetUp;
     use RefreshDatabase;
 
     private static int $sequence = 0;

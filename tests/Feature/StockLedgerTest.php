@@ -242,6 +242,17 @@ class StockLedgerTest extends TestCase
             ->assertSee('data-stock-action="out"', false);
     }
 
+    public function test_the_stock_table_has_no_reorder_column_but_still_flags_low_stock(): void
+    {
+        $this->get(route('inventory.index'))
+            ->assertOk()
+            ->assertSee('Available')
+            ->assertDontSee('Reorder At');
+
+        $this->getTablePage(route('inventory.stock.index'), ['stock' => Material::STOCK_LOW])
+            ->assertOk();
+    }
+
     public function test_several_materials_are_received_together(): void
     {
         $this->postJson(route('inventory.stock.receive-many'), [

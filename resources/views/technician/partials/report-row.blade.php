@@ -15,6 +15,7 @@
     </td>
     <td>
         <span class="badge {{ $report->typeBadgeClass() }}">{{ $report->typeLabel() }}</span>
+        <x-report-review-status :report="$report" />
     </td>
     <td>
         <div class="d-flex align-items-center gap-2">

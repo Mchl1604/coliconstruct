@@ -15,6 +15,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
+use Tests\Concerns\ProjectsAreAlreadySetUp;
 use Tests\TestCase;
 
 /**
@@ -35,6 +36,7 @@ use Tests\TestCase;
  */
 class QuotationSyncTest extends TestCase
 {
+    use ProjectsAreAlreadySetUp;
     use RefreshDatabase;
 
     private User $admin;

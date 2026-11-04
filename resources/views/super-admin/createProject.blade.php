@@ -399,9 +399,8 @@
 
                 {{-- ==================== MATERIALS ====================
                      What the job needs, checked against the warehouse as it
-                     is typed. Optional, and a shortage is a warning rather
-                     than a refusal: the project can be booked before the
-                     stock arrives, and Purchasing is told. Driven by
+                     is typed. Optional, and limited to what is available; a
+                     checkbox requests the rest from Purchasing. Driven by
                      projectWizardMaterials.js; each line posts as
                      materials[n][material_id] and materials[n][quantity]. --}}
                 <section class="wizard-step" data-wizard-step="3" hidden data-wizard-materials>
@@ -432,9 +431,6 @@
                     </div>
 
                     <p class="text-secondary small mt-2 mb-0" data-wizard-material-empty>No materials yet.</p>
-                    <div class="alert alert-warning small py-2 mt-3 mb-0 d-none" role="alert" data-wizard-material-short>
-                        Some materials are short. Purchasing will be told.
-                    </div>
                 </section>
 
                 <section class="wizard-step" data-wizard-step="4" hidden>

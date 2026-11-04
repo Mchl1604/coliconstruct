@@ -13,6 +13,7 @@
     </td>
     <td>
         <span class="badge {{ $report->typeBadgeClass() }}">{{ $report->typeLabel() }}</span>
+        <x-report-review-status :report="$report" />
     </td>
     <td>
         {{ $report->report_date?->format(\App\Support\BusinessTime::DATE) ?? '—' }}

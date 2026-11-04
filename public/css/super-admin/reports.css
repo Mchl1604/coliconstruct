@@ -385,35 +385,45 @@
 /* ---- Report viewer: tinted by report type ---- */
 
 /*
- * The same two accents in both portals, so a report looks the same whoever
- * opens it. The tint is on the header and a left edge rather than the whole
- * dialog, which would fight the text.
+ * The same two accents in both portals, and the same as the report cards on a
+ * project's page: blue for progress, red for an incident.
  */
-.report-accent-progress .modal-header,
-.report-accent-incident .modal-header {
-    border-bottom-width: 0;
-}
-
 .report-accent-progress {
-    border-left: 5px solid #2d8de1;
-}
-
-.report-accent-progress .modal-header {
-    background: #eaf4fd;
-}
-
-.report-accent-progress .schedule-modal-eyebrow {
-    color: #1b5688;
+    --bs-modal-bg: var(--bs-primary-bg-subtle);
+    border: 1px solid var(--bs-primary);
+    background-color: var(--bs-primary-bg-subtle);
 }
 
 .report-accent-incident {
-    border-left: 5px solid #15803d;
+    --bs-modal-bg: var(--bs-danger-bg-subtle);
+    border: 1px solid var(--bs-danger);
+    background-color: var(--bs-danger-bg-subtle);
 }
 
+.report-accent-progress .modal-header,
 .report-accent-incident .modal-header {
-    background: #eafaf0;
+    background: rgba(0, 0, 0, .03);
+}
+
+.report-accent-progress .modal-header,
+.report-accent-progress .modal-footer {
+    border-color: var(--bs-primary);
+}
+
+.report-accent-incident .modal-header,
+.report-accent-incident .modal-footer {
+    border-color: var(--bs-danger);
+}
+
+.report-accent-progress .schedule-modal-eyebrow {
+    color: var(--bs-primary-text-emphasis);
 }
 
 .report-accent-incident .schedule-modal-eyebrow {
-    color: #14532d;
+    color: var(--bs-danger-text-emphasis);
+}
+
+.report-accent-progress .report-description,
+.report-accent-incident .report-description {
+    background: #fff;
 }

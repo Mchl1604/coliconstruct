@@ -18,6 +18,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
+use Tests\Concerns\ProjectsAreAlreadySetUp;
 use Tests\TestCase;
 
 /**
@@ -27,6 +28,7 @@ use Tests\TestCase;
  */
 class ProjectTargetDateTest extends TestCase
 {
+    use ProjectsAreAlreadySetUp;
     use RefreshDatabase;
 
     private static int $sequence = 0;

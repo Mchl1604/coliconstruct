@@ -3,9 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Models\Project;
+use App\Models\TaskUpdateImage;
 use App\Models\TechnicianReport;
+use App\Models\User;
 use App\Policies\ProjectPolicy;
 use App\Services\ProgressReportBuilder;
+use App\Services\ProjectProgressOverview;
 use App\Support\BusinessTime;
 use App\Support\ReportFormContext;
 use App\Support\RoleAccess;
@@ -21,7 +24,7 @@ use RuntimeException;
  *
  * Generating is a lead's, in the technician portal, and a Super Admin's on the
  * same form in the office's: choose a project, read what the system gathered
- * today, add remarks, submit. Who may, and for which day, is
+ * today, add any additional remarks, submit. Who may, and for which day, is
  * ProgressReportBuilder's decision.
  */
 class ProgressReportController extends Controller
@@ -53,6 +56,7 @@ class ProgressReportController extends Controller
         $project = $projects->firstWhere('project_id', $request->integer('project'));
 
         $refusal = $project ? $this->builder->refusal($user, $project, $date) : null;
+        $snapshot = $project && $refusal === null ? $this->builder->gather($project, $date) : null;
 
         return view('technician.progress-report-create', [
             'portal' => ReportFormContext::portal($request),
@@ -63,7 +67,8 @@ class ProgressReportController extends Controller
             'date' => $date,
             'today' => BusinessTime::today()->toDateString(),
             'refusal' => $refusal,
-            'snapshot' => $project && $refusal === null ? $this->builder->gather($project, $date) : null,
+            'snapshot' => $snapshot,
+            'viewablePhotoIds' => $snapshot ? $this->builder->viewablePhotoIds($user, $snapshot) : [],
         ]);
     }
 
@@ -72,8 +77,6 @@ class ProgressReportController extends Controller
         $validator = Validator::make($request->all(), [
             'project_id' => ['required', 'integer'],
             'remarks' => ['nullable', 'string', 'max:2000'],
-            'issues' => ['nullable', 'string', 'max:2000'],
-            'next_plan' => ['nullable', 'string', 'max:2000'],
             'images' => ['nullable', 'array', 'max:5'],
             'images.*' => ['image', 'mimes:jpg,jpeg,png', 'max:5120'],
         ], [
@@ -116,17 +119,40 @@ class ProgressReportController extends Controller
     public function show(Request $request, TechnicianReport $report): View
     {
         $user = $request->user();
-        $project = $report->project;
 
-        $allowed = $user->canReach(RoleAccess::SCHEDULING)
-            || ($project !== null && $user->needsTechnicianRecord() && $this->projects->viewAssigned($user, $project));
-
-        abort_unless($allowed && ($report->isGenerated() || $report->hasIncidentDetails()), 404);
+        abort_unless($this->canRead($user, $report->project) && ($report->isGenerated() || $report->hasIncidentDetails()), 404);
 
         return view('reports.document', [
             'report' => $report->load(['project.client', 'images', 'incident.persons.technician.account']),
             'backUrl' => url()->previous(),
             'canReview' => $user->canReach(RoleAccess::SCHEDULING) && $report->hasIncidentDetails(),
+            'viewablePhotoIds' => $report->isGenerated() ? $this->builder->viewablePhotoIds($user, $report->report_data) : [],
         ]);
+    }
+
+    /**
+     * A project's progress from its start to today, worked out when opened
+     * and never saved. Nothing to fill in or file: printing is how it is kept.
+     */
+    public function overall(Request $request, Project $project, ProjectProgressOverview $overview): View
+    {
+        $user = $request->user();
+
+        abort_unless($this->canRead($user, $project), 404);
+
+        $progress = $overview->build($project);
+
+        return view('reports.project-progress', [
+            'progress' => $progress,
+            'viewablePhotoIds' => TaskUpdateImage::idsViewableBy($user, $progress['photo_ids']),
+            'generatedBy' => $user->fullName(),
+            'backUrl' => url()->previous(),
+        ]);
+    }
+
+    private function canRead(User $user, ?Project $project): bool
+    {
+        return $user->canReach(RoleAccess::SCHEDULING)
+            || ($project !== null && $user->needsTechnicianRecord() && $this->projects->viewAssigned($user, $project));
     }
 }

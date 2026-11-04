@@ -13,7 +13,7 @@ use App\Support\RoleAccess;
  *
  *   Add, and void an addition: Super Admin, Admin Officer, Purchasing Admin.
  *   Record use:                Super Admin, Admin Officer, the project's lead.
- *   Record a return:           the same, and Purchasing Admin.
+ *   Record a return:           Super Admin, Admin Officer, Purchasing Admin.
  *   Request more:              the project's lead, who adds nothing themselves.
  *
  * An HR Admin reads the tab. The same two-sided use as ProjectPhaseRules: the
@@ -51,8 +51,8 @@ class ProjectMaterialRules
     }
 
     /**
-     * Whether this account may record this kind of entry. A lead records on a
-     * project they run today, and a Purchasing Admin records only what comes
+     * Whether this account may record this kind of entry. A lead records use on
+     * a project they run today, and a Purchasing Admin records only what comes
      * back to the warehouse.
      */
     public function canRecordType(?User $user, Project $project, string $type): bool
@@ -62,7 +62,7 @@ class ProjectMaterialRules
         }
 
         if ($this->isLeadOn($user, $project)) {
-            return true;
+            return $type === ProjectMaterialEntry::TYPE_USED;
         }
 
         if ($user->role === User::ROLE_PURCHASING_ADMIN) {
@@ -114,14 +114,14 @@ class ProjectMaterialRules
     }
 
     /**
-     * Open once the project has been set up and while it is live. A hold does
-     * not stop it - leftovers often go back when a job pauses. A project
-     * waiting on its client, completed, cancelled or archived is a record.
+     * Open while the project is live, set up or not: setup only settles phases
+     * and tasks. A hold does not stop it - leftovers often go back when a job
+     * pauses. A project waiting on its client, completed, cancelled or archived
+     * is a record.
      */
     private function isOpen(Project $project): bool
     {
-        return $project->hasCompletedInitialSetup()
-            && ! $project->isReadOnly()
+        return ! $project->isReadOnly()
             && ! $project->isArchived();
     }
 

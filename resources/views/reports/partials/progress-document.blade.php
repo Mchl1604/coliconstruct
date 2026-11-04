@@ -4,7 +4,7 @@
     is filed, and by the printable report page after.
 
     Expects $snapshot (ProgressReportBuilder::gather(), plus remarks once
-    filed).
+    filed) and $viewablePhotoIds (ProgressReportBuilder::viewablePhotoIds()).
 --}}
 @php
     $section = fn (string $title) => '<h6 class="report-doc-heading">'.e($title).'</h6>';
@@ -52,13 +52,15 @@
             <span class="fw-semibold">{{ $task['task'] }}</span>
             <span class="text-secondary">&middot; {{ $task['technician'] }}</span>
             <span class="badge text-bg-info ms-1">In Progress</span>
+            @include('reports.partials.task-update-photos', ['imageIds' => $task['images'] ?? []])
         </div>
     @endforeach
     @forelse ($snapshot['task_updates'] as $update)
         <div class="small mb-2">
             <span class="fw-semibold">{{ $update['task'] }}</span>
-            <span class="text-secondary">&middot; {{ $update['technician'] }}@if ($update['photos']) &middot; {{ $update['photos'] }} photo(s)@endif</span>
+            <span class="text-secondary">&middot; {{ $update['technician'] }}@if ($update['photos'] ?? 0) &middot; {{ $update['photos'] }} photo(s)@endif</span>
             <div style="white-space: pre-line">{{ $update['notes'] }}</div>
+            @include('reports.partials.task-update-photos', ['imageIds' => $update['images'] ?? []])
         </div>
     @empty
         @if (($snapshot['in_progress_tasks'] ?? []) === [])
@@ -71,7 +73,10 @@
             {!! $section('Completed') !!}
             <ul class="small ps-3 mb-0">
                 @forelse ($snapshot['completed_tasks'] as $task)
-                    <li>{{ $task['task'] }} <span class="text-secondary">&middot; {{ $task['technician'] }}</span></li>
+                    <li>
+                        {{ $task['task'] }} <span class="text-secondary">&middot; {{ $task['technician'] }}</span>
+                        @include('reports.partials.task-update-photos', ['imageIds' => $task['images'] ?? []])
+                    </li>
                 @empty
                     <li class="text-secondary list-unstyled ms-n3">None.</li>
                 @endforelse
@@ -114,7 +119,8 @@
         @endforelse
     </p>
 
-    @foreach (['remarks' => 'Remarks', 'issues' => 'Issues / Delays', 'next_plan' => 'Plan for Tomorrow'] as $key => $label)
+    {{-- Issues and the plan for tomorrow are no longer asked; only reports filed before then have them. --}}
+    @foreach (['remarks' => 'Additional Remarks', 'issues' => 'Issues / Delays', 'next_plan' => 'Plan for Tomorrow'] as $key => $label)
         @if (filled($snapshot[$key] ?? null))
             {!! $section($label) !!}
             <p class="small mb-3" style="white-space: pre-line">{{ $snapshot[$key] }}</p>

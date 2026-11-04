@@ -120,6 +120,7 @@ class ProjectPolicy
     {
         return (RoleAccess::can($user, RoleAccess::FILE_REPORTS)
                 || ($user->isLeadTechnician() && $this->worksOn($user, $project)))
+            && $project->hasCompletedInitialSetup()
             && ! $project->isArchived()
             && ! $project->on_hold
             && in_array($project->status, self::REPORTABLE_STATUSES, true);

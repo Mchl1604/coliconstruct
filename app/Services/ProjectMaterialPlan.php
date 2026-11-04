@@ -24,7 +24,10 @@ class ProjectMaterialPlan
      */
     public const MAX_LINES = 200;
 
-    public function __construct(private readonly ActivityLogger $activityLogger) {}
+    public function __construct(
+        private readonly ActivityLogger $activityLogger,
+        private readonly StockAvailability $availability,
+    ) {}
 
     /**
      * Submitted rows as the create wizard redraws them after a refusal, so the
@@ -46,7 +49,9 @@ class ProjectMaterialPlan
                 $material = is_array($row) ? $materials->get((int) ($row['material_id'] ?? 0)) : null;
 
                 return $material
-                    ? $this->row($material, $row['quantity'] ?? '', $row['notes'] ?? null)
+                    ? $this->row($material, $row['quantity'] ?? '', $row['notes'] ?? null) + [
+                        'request_remaining' => (float) ($row['request_remaining'] ?? 0),
+                    ]
                     : null;
             })
             ->filter()
@@ -93,6 +98,21 @@ class ProjectMaterialPlan
 
             $seen[$material->material_id] = true;
 
+            $wantsRemaining = (float) ($row['request_remaining'] ?? 0) > 0;
+
+            if ($wantsRemaining) {
+                $problem = $material->unit->quantityProblem($row['request_remaining']);
+
+                if ($problem !== null) {
+                    $errors['materials.'.$index.'.request_remaining'] = sprintf('%s: %s', $material->displayName(), $problem);
+                }
+            }
+
+            // Zero is a line asking only for the rest: nothing is available.
+            if ($wantsRemaining && is_numeric($row['quantity'] ?? null) && (float) $row['quantity'] === 0.0) {
+                continue;
+            }
+
             $problem = $material->unit->quantityProblem($row['quantity'] ?? null);
 
             if ($problem !== null) {
@@ -101,6 +121,52 @@ class ProjectMaterialPlan
         }
 
         return $errors;
+    }
+
+    /**
+     * Hold submitted lines to what is available now, which can be less than
+     * the form was showing when it was opened.
+     *
+     * A line over the limit is lowered to it, and one with nothing available
+     * leaves the plan. What is left over is only requested when the line asked
+     * for that. Locked so two projects saved at once cannot both claim the same
+     * stock; call it inside the transaction that saves the plan.
+     *
+     * @param  array<int, array<string, mixed>>  $rows
+     * @return array{rows: array<int, array<string, mixed>>, requests: array<int, array{material: Material, quantity: float}>, lowered: bool}
+     */
+    public function limitToAvailable(array $rows): array
+    {
+        $materials = Material::query()
+            ->whereKey(collect($rows)->pluck('material_id')->all())
+            ->lockForUpdate()
+            ->get()
+            ->keyBy('material_id');
+
+        $figures = $this->availability->forMaterials($materials->modelKeys());
+        $limited = ['rows' => [], 'requests' => [], 'lowered' => false];
+
+        foreach ($rows as $row) {
+            $material = $materials->get((int) $row['material_id']);
+            $asked = round((float) $row['quantity'], 2);
+            $quantity = min($asked, (float) ($figures[(int) $row['material_id']]['available'] ?? 0));
+            $remaining = round((float) ($row['request_remaining'] ?? 0), 2);
+
+            if ($asked > $quantity) {
+                $limited['lowered'] = true;
+            }
+
+            if ($remaining > 0) {
+                $limited['requests'][] = ['material' => $material, 'quantity' => round($remaining + $asked - $quantity, 2)];
+            }
+
+            if ($quantity > 0) {
+                unset($row['request_remaining']);
+                $limited['rows'][] = ['quantity' => $quantity] + $row;
+            }
+        }
+
+        return $limited;
     }
 
     /**

@@ -161,7 +161,7 @@ class ReportController extends Controller
             defaultOrder: [[6, 'desc']],
         );
 
-        $reports = $page->items->load(['project.client', 'technician.account', 'submitter', 'images', 'archiver']);
+        $reports = $page->items->load(['project.client', 'technician.account', 'submitter', 'images', 'archiver', 'incident']);
         $user = $request->user();
 
         return $table->respond(
@@ -240,7 +240,7 @@ class ReportController extends Controller
         // Reports page - see archivedIndex().
         $query = TechnicianReport::query()
             ->active()
-            ->with(['project.client', 'technician.account', 'submitter', 'images'])
+            ->with(['project.client', 'technician.account', 'submitter', 'images', 'incident'])
             ->when(! empty($filters['project_id']), fn ($q) => $q->where('project_id', $filters['project_id']))
             ->when(
                 ! empty($filters['report_type']) && $filters['report_type'] !== 'all',
@@ -750,6 +750,7 @@ class ReportController extends Controller
             'type_label' => $report->typeLabel(),
             'type_badge_class' => $report->typeBadgeClass(),
             'type_accent_class' => $report->typeAccentClass(),
+            'review_status' => $report->reviewStatus(),
             'submitted_by' => $report->submitterName(),
             'submitted_by_avatar' => $report->submitterAvatarUrl(),
             // Where the submitter's name leads: their details on the

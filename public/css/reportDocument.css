@@ -12,6 +12,20 @@
     color: #1b5688;
 }
 
+.report-doc-photos {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .4rem;
+    margin-top: .35rem;
+}
+
+.report-doc-photos img {
+    width: 5rem;
+    height: 5rem;
+    border-radius: .35rem;
+    object-fit: cover;
+}
+
 /* Printed - or saved as a PDF from the print dialog - without the portal
    around it. */
 @media print {
@@ -67,6 +81,7 @@
     width: 2.75rem;
     height: 2.75rem;
     border-radius: 50%;
+    flex-shrink: 0;
     background: rgba(255, 255, 255, .18);
     font-size: 1.3rem;
 }
@@ -108,6 +123,7 @@
 .is-orange { --report-accent: #c2500c; --report-tint: #ffedd5; }
 .is-amber { --report-accent: #a16207; --report-tint: #fef3c7; }
 .is-purple { --report-accent: #6d28d9; --report-tint: #ede9fe; }
+.is-gray { --report-accent: #475467; --report-tint: #f2f4f7; }
 
 .report-form-section .form-control:focus,
 .report-form-section .form-select:focus {
@@ -138,4 +154,167 @@
 .report-form-tile strong {
     font-size: 1.4rem;
     font-weight: 800;
+}
+
+/* ---------- The overall progress page ---------- */
+
+.overall-eyebrow {
+    margin-bottom: .15rem;
+    font-size: .72rem;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    opacity: .85;
+}
+
+.overall-banner-side {
+    margin-left: auto;
+    text-align: right;
+}
+
+.overall-status {
+    display: inline-block;
+    margin-top: .25rem;
+    padding: .1rem .6rem;
+    border-radius: 1rem;
+    background: rgba(255, 255, 255, .2);
+    font-size: .75rem;
+    font-weight: 600;
+}
+
+.overall-section-note {
+    margin-left: auto;
+    padding: .1rem .6rem;
+    border-radius: 1rem;
+    background: var(--report-tint);
+    font-size: .75rem;
+    font-weight: 600;
+}
+
+.overall-bar {
+    height: .7rem;
+    border-radius: 1rem;
+    background: #e6f1fb;
+}
+
+.overall-bar .progress-bar {
+    background: linear-gradient(90deg, #1b5688, #2f86c9);
+}
+
+.overall-phase {
+    margin-top: .85rem;
+    padding: .85rem 1rem;
+    border-left: 5px solid var(--report-accent);
+    border-radius: .6rem;
+    background: var(--report-tint);
+}
+
+.overall-phase-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .6rem;
+}
+
+.overall-phase-number {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.7rem;
+    height: 1.7rem;
+    border-radius: 50%;
+    background: var(--report-accent);
+    color: #fff;
+    font-size: .8rem;
+    font-weight: 700;
+}
+
+.overall-phase-bar {
+    height: .35rem;
+    margin: .55rem 0 .6rem;
+    overflow: hidden;
+    border-radius: 1rem;
+    background: rgba(255, 255, 255, .8);
+}
+
+.overall-phase-bar span {
+    display: block;
+    height: 100%;
+    background: var(--report-accent);
+}
+
+.overall-pill {
+    display: inline-block;
+    padding: .12rem .6rem;
+    border-radius: 1rem;
+    background: var(--report-accent);
+    color: #fff;
+    font-size: .72rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.overall-task {
+    margin-top: .45rem;
+    padding: .55rem .75rem;
+    border-radius: .5rem;
+    background: #fff;
+    font-size: .875rem;
+    box-shadow: 0 1px 3px rgba(16, 24, 40, .06);
+}
+
+.overall-task-dot {
+    display: inline-block;
+    width: .55rem;
+    height: .55rem;
+    margin-right: .25rem;
+    border-radius: 50%;
+    background: var(--report-accent);
+}
+
+.overall-update {
+    margin: .45rem 0 0 .25rem;
+    padding-left: .7rem;
+    border-left: 2px solid var(--report-tint);
+}
+
+.overall-update-date {
+    padding: .05rem .45rem;
+    border-radius: .3rem;
+    background: var(--report-tint);
+    color: var(--report-accent);
+    font-size: .75rem;
+    font-weight: 600;
+}
+
+.overall-table thead th {
+    background: var(--report-tint);
+    color: var(--report-accent);
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.overall-report-row {
+    display: flex;
+    gap: .75rem;
+    padding: .35rem 0;
+    border-bottom: 1px solid #f2f4f7;
+    font-size: .875rem;
+}
+
+.overall-report-row:last-child {
+    border-bottom: 0;
+}
+
+/* Keep the colors on paper and in a saved PDF. */
+@media print {
+    .overall-progress,
+    .overall-progress * {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+
+    .overall-task {
+        break-inside: avoid;
+    }
 }

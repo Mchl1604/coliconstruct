@@ -96,23 +96,15 @@
 
                     <h6 class="report-form-section-title">
                         <i class="bi bi-pencil-square" aria-hidden="true"></i>
-                        Your Remarks
+                        Additional Remarks
                     </h6>
 
                     <div class="mb-3">
-                        <label class="form-label fw-semibold" for="progressRemarks">How the day went</label>
-                        <textarea class="form-control" id="progressRemarks" name="remarks" rows="3" maxlength="2000">{{ old('remarks') }}</textarea>
+                        <label class="visually-hidden" for="progressRemarks">Additional Remarks</label>
+                        <textarea class="form-control" id="progressRemarks" name="remarks" rows="5" maxlength="2000">{{ old('remarks') }}</textarea>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label fw-semibold" for="progressIssues">Issues or delays</label>
-                        <textarea class="form-control" id="progressIssues" name="issues" rows="2" maxlength="2000">{{ old('issues') }}</textarea>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label fw-semibold" for="progressNext">Plan for tomorrow</label>
-                        <textarea class="form-control" id="progressNext" name="next_plan" rows="2" maxlength="2000">{{ old('next_plan') }}</textarea>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label fw-semibold" for="progressPhotos">Photos</label>
+                        <label class="form-label fw-semibold" for="progressPhotos">Image</label>
                         <input type="file" class="form-control" id="progressPhotos" name="images[]"
                             accept="image/jpeg,image/png" multiple>
                         <div class="form-text">Optional. Up to 5 JPG or PNG.</div>

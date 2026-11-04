@@ -1,6 +1,6 @@
 @props([
     'project',
-    // Whether this viewer is one of the three roles that may do something
+    // Whether this viewer is one of the roles that may do something
     // about it. A plain technician sees the state without being handed a
     // button they cannot use.
     'canSetUp' => false,
@@ -30,7 +30,7 @@
                 @if ($canSetUp)
                     Set the phases to start.
                 @else
-                    An Admin or Lead Technician must set up phases.
+                    A Super Admin or Lead Technician must set it up.
                 @endif
             </p>
         </div>

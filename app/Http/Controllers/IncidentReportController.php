@@ -30,7 +30,7 @@ class IncidentReportController extends Controller
     ) {}
 
     /**
-     * Choose the project; once chosen, the form - its phases, tasks and team
+     * Choose the project; once chosen, the form - its tasks and team
      * offered as the choices they are.
      */
     public function create(Request $request): View
@@ -54,7 +54,6 @@ class IncidentReportController extends Controller
             'backUrl' => ReportFormContext::backUrl($request, $project),
             'projects' => $projects,
             'project' => $project,
-            'phases' => $project?->phases()->orderBy('sequence')->get(['phase_id', 'title']) ?? collect(),
             'team' => $project
                 ? ProjectTechnician::query()
                     ->with('technician.account')
@@ -82,7 +81,6 @@ class IncidentReportController extends Controller
             'incident_type' => ['required', Rule::in(array_keys(IncidentReport::TYPES))],
             'occurred_date' => ['required', 'date_format:Y-m-d', 'before_or_equal:'.BusinessTime::today()->toDateString()],
             'occurred_time' => ['required', 'date_format:H:i'],
-            'phase_id' => ['nullable', 'integer', Rule::exists('tbl_project_phases', 'phase_id')->where('project_id', $project->project_id)],
             'location' => ['required', Rule::in(array_keys(IncidentReport::LOCATIONS))],
             'description' => ['required', 'string', 'max:5000'],
             'injury_body_part' => ['nullable', 'required_if:incident_type,injury', Rule::in(array_keys(IncidentReport::BODY_PARTS))],
@@ -146,7 +144,7 @@ class IncidentReportController extends Controller
     }
 
     /**
-     * The office's review: Open, Under Review, Closed, with notes.
+     * The office's review: Unresolved or Resolved, with notes.
      */
     public function updateStatus(Request $request, IncidentReport $incidentReport): RedirectResponse
     {

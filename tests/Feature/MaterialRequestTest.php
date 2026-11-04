@@ -234,6 +234,56 @@ class MaterialRequestTest extends TestCase
             ->assertDontSee('Copper Tube 1/4');
     }
 
+    public function test_a_pending_request_shows_what_is_available_now(): void
+    {
+        $this->stock(10);
+        $this->requestMaterial(4);
+
+        $this->actingAs($this->buyer)
+            ->get(route('inventory.material-requests.index'))
+            ->assertSee('>Available</th>', false);
+
+        $this->getTablePage(route('inventory.material-requests.table'))
+            ->assertSee('text-success">10 m</span>', false)
+            ->assertDontSee('Not enough');
+    }
+
+    public function test_a_pending_request_over_what_is_available_says_so(): void
+    {
+        $this->stock(1);
+        $this->requestMaterial(4);
+
+        $this->actingAs($this->buyer);
+
+        $this->getTablePage(route('inventory.material-requests.table'))
+            ->assertSee('text-danger">1 m</span>', false)
+            ->assertSee('Not enough');
+    }
+
+    public function test_a_decided_request_shows_no_available_figure(): void
+    {
+        $this->stock(10);
+        $this->requestMaterial(4);
+
+        $this->actingAs($this->buyer)
+            ->postJson(route('inventory.material-requests.approve', MaterialRequest::query()->firstOrFail()))
+            ->assertOk();
+
+        $this->getTablePage(route('inventory.material-requests.table'))
+            ->assertDontSee('text-success">', false)
+            ->assertDontSee('Not enough');
+    }
+
+    public function test_the_table_still_sorts_by_status(): void
+    {
+        $this->requestMaterial(4);
+
+        $this->actingAs($this->buyer);
+
+        $this->getTablePage(route('inventory.material-requests.table'), ['order' => [['column' => 6, 'dir' => 'asc']]])
+            ->assertSee('Copper Tube 1/4');
+    }
+
     private function requestMaterial(float|int $quantity)
     {
         return $this->actingAs($this->lead)

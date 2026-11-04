@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\Gate;
 
 /**
  * A photograph attached to one day's progress on a task.
@@ -26,6 +27,25 @@ class TaskUpdateImage extends Model
     public function url(): string
     {
         return route('media.task-update-image', ['image' => $this->getKey()]);
+    }
+
+    /**
+     * Those of these images this account may open, on the media route's own
+     * terms: a plain technician reads their own tasks only, so a page leaves
+     * a colleague's photo out rather than drawing it broken.
+     *
+     * @param  array<int, int>  $imageIds
+     * @return array<int, int>
+     */
+    public static function idsViewableBy(User $user, array $imageIds): array
+    {
+        return self::query()
+            ->with('taskUpdate.task')
+            ->whereKey($imageIds)
+            ->get()
+            ->filter(fn (self $image): bool => ! $user->needsTechnicianRecord()
+                || ($image->taskUpdate?->task !== null && Gate::forUser($user)->allows('view', $image->taskUpdate->task)))
+            ->modelKeys();
     }
 
     /**

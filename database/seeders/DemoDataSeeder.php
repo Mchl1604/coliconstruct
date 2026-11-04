@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use App\Models\ActivityLog;
 use App\Models\Client;
+use App\Models\DetailFormField;
 use App\Models\Document;
 use App\Models\DocumentHistory;
 use App\Models\IncidentPerson;
@@ -31,6 +32,7 @@ use App\Services\PhaseTemplateMerger;
 use App\Services\ProgressReportBuilder;
 use App\Services\ProjectAddressSplitter;
 use App\Services\ProjectCompletion;
+use App\Services\ProjectDetailForms;
 use App\Services\ProjectTypeCatalog;
 use App\Services\StockAvailability;
 use App\Services\SystemContentService;
@@ -38,6 +40,7 @@ use App\Services\TargetDateChange;
 use App\Services\UserAccountService;
 use App\Support\BusinessTime;
 use App\Support\CompanyBranding;
+use App\Support\DetailFieldType;
 use App\Support\PasswordPolicy;
 use App\Support\ReportPdf;
 use App\Support\UploadStore;
@@ -53,7 +56,7 @@ use RuntimeException;
 use Throwable;
 
 /**
- * Demonstration data: fifty accounts and fifty projects covering every status.
+ * Demonstration data: sixty accounts and fifty projects covering every status.
  *
  * Run on its own - it is deliberately not part of DatabaseSeeder:
  *
@@ -217,7 +220,7 @@ class DemoDataSeeder extends Seeder
         $this->call(BackupTableSeeder::class);
 
         // Nothing here sends anything, but should a future change make it do
-        // so, the fifty example.com addresses are not where it should go.
+        // so, the sixty example.com addresses are not where it should go.
         config(['mail.default' => 'array']);
 
         $this->today = Schedule::businessToday();
@@ -358,6 +361,7 @@ class DemoDataSeeder extends Seeder
 
         foreach (DemoDataCatalog::employees() as $index => $person) {
             $isAdmin = $person['role'] === User::ROLE_ADMIN;
+            $isOffice = in_array($person['role'], User::OFFICE_ROLES, true);
 
             // Staff were all on the books before the oldest project.
             $createdAt = $this->moment(-420 + $index * 2, '09:30');
@@ -370,7 +374,7 @@ class DemoDataSeeder extends Seeder
                 'role' => $person['role'],
                 'contact_number' => $this->contactNumber($index),
                 'birthdate' => $this->birthdate($index, 24, 28),
-            ], 'EMP', $createdAt, $isAdmin ? $owner : ($this->admins[0] ?? $owner), ActivityLog::EMPLOYEE_CREATED);
+            ], 'EMP', $createdAt, $isOffice ? $owner : ($this->admins[0] ?? $owner), ActivityLog::EMPLOYEE_CREATED);
 
             if ($isAdmin) {
                 $this->admins[] = $user;
@@ -419,8 +423,8 @@ class DemoDataSeeder extends Seeder
                 'middle_name' => $client['middle_name'],
                 'last_name' => $client['last_name'],
                 'role' => User::ROLE_CLIENT,
-                'contact_number' => $this->contactNumber(30 + $index),
-                'birthdate' => $this->birthdate(30 + $index, 29, 34),
+                'contact_number' => $this->contactNumber(count(DemoDataCatalog::employees()) + $index),
+                'birthdate' => $this->birthdate(count(DemoDataCatalog::employees()) + $index, 29, 34),
                 'company_name' => $commercial ? $client['company_name'] : null,
                 'company_address' => $commercial ? $client['address'] : null,
                 'terms_accepted_version' => $termsVersion,
@@ -565,6 +569,8 @@ class DemoDataSeeder extends Seeder
 
         $project->projectTypes()->sync(collect($spec['types'])->map(fn (string $type): int => $this->typeIds[$type])->all());
 
+        $this->seedDetails($project, $spec);
+
         $schedules = collect([...$spec['ranges'], ...($spec['preserved'] ?? [])])
             ->map(fn (array $range): Schedule => Schedule::create([
                 'project_id' => $project->project_id,
@@ -588,6 +594,68 @@ class DemoDataSeeder extends Seeder
         $this->seedMaterials($project, $spec, $team, $createdAt);
         $this->fileReports($project, $spec, $profile, $lead, $team);
         $this->applyOutcome($project, $spec, $profile, $client, $admin, $lead, $createdAt);
+    }
+
+    /**
+     * The wizard's Units step: each type's detail form filled in, with one to
+     * three units where the form asks for them.
+     *
+     * @param  array<string, mixed>  $spec
+     */
+    private function seedDetails(Project $project, array $spec): void
+    {
+        $forms = app(ProjectDetailForms::class);
+        $types = $project->projectTypes()->get();
+        $input = [];
+
+        foreach ($forms->withForms($types) as $type) {
+            $form = $type->detailForm;
+            $unitCount = $form->hasUnits() ? 1 + $project->project_id % 3 : 0;
+
+            $input[$type->type_id] = [
+                'project' => $this->detailRow($form->projectFields(), $spec, (int) $project->project_id),
+                'units' => array_map(
+                    fn (int $unit): array => $this->detailRow($form->unitFields(), $spec, (int) $project->project_id + $unit),
+                    $unitCount > 0 ? range(0, $unitCount - 1) : []
+                ),
+            ];
+        }
+
+        $forms->sync($project, $types, $input);
+    }
+
+    /**
+     * @param  Collection<int, DetailFormField>  $fields
+     * @param  array<string, mixed>  $spec
+     * @return array<string, mixed>
+     */
+    private function detailRow($fields, array $spec, int $seed): array
+    {
+        $areas = ['Living room', 'Master bedroom', 'Main office', 'Conference room', 'Lobby', 'Server room'];
+
+        return $fields->mapWithKeys(function (DetailFormField $field) use ($spec, $seed, $areas): array {
+            $label = mb_strtolower($field->label);
+            $options = array_values(array_filter($field->optionList(), fn (string $option): bool => $option !== 'Others'));
+
+            return [$field->field_key => match ($field->input_type) {
+                DetailFieldType::LongText => mb_substr((string) $spec['description'], 0, 2000),
+                DetailFieldType::Number => match (true) {
+                    str_contains($label, 'capacity') => [1, 1.5, 2, 2.5][$seed % 4],
+                    str_contains($label, 'length') => 10 + $seed % 30,
+                    default => 1 + $seed % 3,
+                },
+                DetailFieldType::Dropdown => $options[$seed % max(1, count($options))] ?? null,
+                DetailFieldType::Checkboxes => array_slice($options, 0, 1 + $seed % 2),
+                DetailFieldType::YesNo => $seed % 2 === 0 ? 'Yes' : 'No',
+                DetailFieldType::Date => $this->today->toDateString(),
+                default => match (true) {
+                    str_contains($label, 'area') => $areas[$seed % count($areas)],
+                    str_contains($label, 'duct size') => '600 x 400 mm',
+                    str_contains($label, 'po') => sprintf('PO-%05d', 1000 + $seed),
+                    default => null,
+                },
+            }];
+        })->all();
     }
 
     /**
@@ -1264,8 +1332,9 @@ class DemoDataSeeder extends Seeder
             // Half the leftovers of a finished job go back to the office; the
             // rest are still on site when it closes.
             if ($finished && $left > 0 && ($project->project_id + $index) % 2 === 0) {
-                $entry = $this->materialEntry($line, ProjectMaterialEntry::TYPE_RETURNED, $left, end($worked), $lead);
-                $this->stockMovement($material, StockMovement::TYPE_RETURNED, $left, end($worked), $lead, $project, $entry, 'Returned from site');
+                // A lead records use only; Purchasing takes the return.
+                $entry = $this->materialEntry($line, ProjectMaterialEntry::TYPE_RETURNED, $left, end($worked), $this->buyer());
+                $this->stockMovement($material, StockMovement::TYPE_RETURNED, $left, end($worked), $this->buyer(), $project, $entry, 'Returned from site');
                 $left = 0.0;
             }
 
@@ -1557,8 +1626,6 @@ class DemoDataSeeder extends Seeder
 
             $this->report($project, $profile, $technicianId, $lead, 'progress', sprintf('Progress Report - %s', CarbonImmutable::parse($day)->format(BusinessTime::DATE)), $remarks, $day, app(ProgressReportBuilder::class)->gather($project, $day) + [
                 'remarks' => $remarks,
-                'issues' => null,
-                'next_plan' => null,
                 'filed_by' => $lead->fullName(),
                 'filed_at' => $this->moment($this->offsetOf($day), '17:45')->setTimezone(Schedule::BUSINESS_TIMEZONE)->format(BusinessTime::DATE.' g:i A'),
             ]);

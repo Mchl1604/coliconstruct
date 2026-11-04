@@ -3,14 +3,16 @@
  * warehouse as it is typed.
  *
  * Each picked material becomes a line with its quantity and its stock figures
- * - available is on hand less what other live projects have reserved - and a
- * badge saying whether the warehouse can cover it. A shortage is a warning:
- * the line still posts, the project is still booked, and Purchasing is told
- * once it is saved.
+ * - available is on hand less what other live projects have reserved. A line
+ * cannot take more than is available: a larger number falls back to the most
+ * it can have, and a checkbox offers to request the rest from Purchasing.
  *
- * The lines post with the wizard's own form as materials[n][material_id] and
- * materials[n][quantity]. A failed save comes back with them in
- * window.projectWizardMaterials.rows, read again with today's figures.
+ * The lines post with the wizard's own form as materials[n][material_id],
+ * materials[n][quantity] and, when ticked, materials[n][request_remaining]. A
+ * line with nothing available and nothing requested does not post at all. A
+ * failed save comes back with them in window.projectWizardMaterials.rows, read
+ * again with today's figures. ProjectMaterialPlan::limitToAvailable() holds the
+ * server to the same limit.
  *
  * Every value from the server is written with textContent.
  */
@@ -27,12 +29,18 @@ document.addEventListener("DOMContentLoaded", function () {
     const search = step.querySelector("[data-wizard-material-search]");
     const rowsBody = step.querySelector("[data-wizard-material-rows]");
     const empty = step.querySelector("[data-wizard-material-empty]");
-    const shortAlert = step.querySelector("[data-wizard-material-short]");
     const review = document.querySelector("[data-wizard-material-review]");
 
-    /** @type {Array<{material: Object, quantity: string}>} */
+    /** @type {Array<{material: Object, quantity: string, remaining: number, requested: boolean}>} */
     const lines = (settings.rows || []).map(function (row) {
-        return { material: row, quantity: row.quantity !== undefined ? String(row.quantity) : "" };
+        const remaining = Number(row.request_remaining || 0);
+
+        return {
+            material: row,
+            quantity: row.quantity !== undefined ? String(row.quantity) : "",
+            remaining: remaining,
+            requested: remaining > 0,
+        };
     });
 
     function formatQty(value) {
@@ -45,29 +53,107 @@ document.addEventListener("DOMContentLoaded", function () {
         return number.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
     }
 
+    function availableFor(line) {
+        return Number(line.material.available || 0);
+    }
+
     /**
-     * How much more the line needs than is available; zero when it is
-     * covered.
+     * How much of what was asked for is over the limit; zero when it fits.
      */
-    function shortBy(line) {
+    function overBy(needed, line) {
+        return isFinite(needed) && needed > 0 ? Math.max(0, Math.round((needed - availableFor(line)) * 100) / 100) : 0;
+    }
+
+    /**
+     * A number over the limit falls back to the limit, and the rest is
+     * remembered for the checkbox to offer.
+     */
+    function applyLimit(line) {
         const needed = Number(line.quantity);
-        const available = Number(line.material.available || 0);
+        const over = overBy(needed, line);
 
-        if (!isFinite(needed) || needed <= 0) {
-            return 0;
+        line.remaining = over;
+        line.requested = over > 0 && line.requested;
+
+        if (over > 0) {
+            line.quantity = String(availableFor(line));
         }
-
-        return Math.max(0, Math.round((needed - available) * 100) / 100);
     }
 
     function badgeFor(line) {
         const badge = document.createElement("span");
-        const short = shortBy(line);
+        const available = availableFor(line);
+        const limited = line.remaining > 0 || overBy(Number(line.quantity), line) > 0;
 
-        badge.className = "stock-status " + (short > 0 ? "is-out_of_stock" : "is-in_stock");
-        badge.textContent = short > 0 ? "Short " + formatQty(short) : "In Stock";
+        if (available <= 0) {
+            badge.className = "stock-status is-out_of_stock";
+            badge.textContent = "Unavailable";
+        } else if (limited) {
+            badge.className = "stock-status is-low_stock";
+            badge.textContent = "Limited";
+        } else {
+            badge.className = "stock-status is-in_stock";
+            badge.textContent = "In Stock";
+        }
 
         return badge;
+    }
+
+    /**
+     * "Only 50 available", and the offer to request the rest.
+     */
+    function noteFor(line, index) {
+        const note = document.createDocumentFragment();
+        const available = availableFor(line);
+        const over = overBy(Number(line.quantity), line);
+
+        if (line.remaining <= 0 && over <= 0 && available > 0) {
+            return note;
+        }
+
+        const message = document.createElement("div");
+
+        message.className = "small text-danger mt-1";
+        message.textContent = available > 0 ? "Only " + formatQty(available) + " " + line.material.unit + " available." : "Unavailable.";
+        note.appendChild(message);
+
+        if (line.remaining > 0) {
+            const check = document.createElement("div");
+            const box = document.createElement("input");
+            const label = document.createElement("label");
+
+            check.className = "form-check small mt-1";
+            box.type = "checkbox";
+            box.className = "form-check-input";
+            box.id = "wizardMaterialRequest" + index;
+            box.name = "materials[" + index + "][request_remaining]";
+            box.value = String(line.remaining);
+            box.checked = line.requested;
+            box.dataset.wizardMaterialRequest = String(index);
+            label.className = "form-check-label";
+            label.htmlFor = box.id;
+            label.textContent = "Request remaining " + formatQty(line.remaining) + " " + line.material.unit;
+            check.append(box, label);
+            note.appendChild(check);
+        }
+
+        return note;
+    }
+
+    /**
+     * A line with nothing available and nothing requested is not part of the
+     * plan, so it posts nothing.
+     */
+    function syncPosting(index) {
+        const line = lines[index];
+        const id = rowsBody.querySelector('[data-wizard-material-id="' + index + '"]');
+        const qty = rowsBody.querySelector('[data-wizard-material-qty="' + index + '"]');
+        const posts = Number(line.quantity) > 0 || line.requested || availableFor(line) > 0;
+
+        if (id && qty) {
+            id.name = posts ? "materials[" + index + "][material_id]" : "";
+            qty.name = posts ? "materials[" + index + "][quantity]" : "";
+        }
     }
 
     function render() {
@@ -103,6 +189,7 @@ document.addEventListener("DOMContentLoaded", function () {
             id.type = "hidden";
             id.name = "materials[" + index + "][material_id]";
             id.value = String(material.material_id);
+            id.dataset.wizardMaterialId = String(index);
             nameCell.appendChild(id);
 
             // Needed
@@ -115,7 +202,7 @@ document.addEventListener("DOMContentLoaded", function () {
             qty.type = "number";
             qty.className = "form-control";
             qty.name = "materials[" + index + "][quantity]";
-            qty.min = material.allows_fractions ? "0.01" : "1";
+            qty.min = availableFor(line) <= 0 ? "0" : material.allows_fractions ? "0.01" : "1";
             qty.step = material.allows_fractions ? "0.01" : "1";
             qty.required = true;
             qty.value = line.quantity;
@@ -125,6 +212,12 @@ document.addEventListener("DOMContentLoaded", function () {
             unit.textContent = material.unit;
             group.append(qty, unit);
             qtyCell.appendChild(group);
+
+            const note = document.createElement("div");
+
+            note.dataset.wizardMaterialNote = String(index);
+            note.appendChild(noteFor(line, index));
+            qtyCell.appendChild(note);
 
             // Available
             const availableCell = document.createElement("td");
@@ -176,14 +269,9 @@ document.addEventListener("DOMContentLoaded", function () {
             if (cell) {
                 cell.replaceChildren(badgeFor(line));
             }
-        });
 
-        shortAlert.classList.toggle(
-            "d-none",
-            !lines.some(function (line) {
-                return shortBy(line) > 0;
-            }),
-        );
+            syncPosting(index);
+        });
 
         if (!review) {
             return;
@@ -198,8 +286,6 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         lines.forEach(function (line, index) {
-            const short = shortBy(line);
-
             if (index > 0) {
                 review.appendChild(document.createElement("br"));
             }
@@ -211,7 +297,7 @@ document.addEventListener("DOMContentLoaded", function () {
                         (line.quantity ? formatQty(line.quantity) : "?") +
                         " " +
                         line.material.unit +
-                        (short > 0 ? " (short " + formatQty(short) + ")" : ""),
+                        (line.requested ? " (request " + formatQty(line.remaining) + " more)" : ""),
                 ),
             );
         });
@@ -225,7 +311,12 @@ document.addEventListener("DOMContentLoaded", function () {
             });
         },
         onPick: function (material) {
-            lines.push({ material: material, quantity: material.allows_fractions ? "" : "1" });
+            lines.push({
+                material: material,
+                quantity: Number(material.available || 0) <= 0 ? "0" : material.allows_fractions ? "" : "1",
+                remaining: 0,
+                requested: false,
+            });
             search.value = "";
             render();
 
@@ -246,6 +337,31 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         lines[Number(index)].quantity = event.target.value;
+        refresh();
+    });
+
+    // Once the number is finished: falls back to the limit if it is over.
+    rowsBody.addEventListener("change", function (event) {
+        const requestIndex = event.target.dataset.wizardMaterialRequest;
+
+        if (requestIndex !== undefined && lines[Number(requestIndex)]) {
+            lines[Number(requestIndex)].requested = event.target.checked;
+            refresh();
+
+            return;
+        }
+
+        const index = event.target.dataset.wizardMaterialQty;
+
+        if (index === undefined || !lines[Number(index)]) {
+            return;
+        }
+
+        const line = lines[Number(index)];
+
+        applyLimit(line);
+        event.target.value = line.quantity;
+        rowsBody.querySelector('[data-wizard-material-note="' + index + '"]').replaceChildren(noteFor(line, Number(index)));
         refresh();
     });
 

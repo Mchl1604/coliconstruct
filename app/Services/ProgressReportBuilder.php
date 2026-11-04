@@ -8,6 +8,7 @@ use App\Models\ProjectMaterialEntry;
 use App\Models\ProjectTechnician;
 use App\Models\Task;
 use App\Models\TaskUpdate;
+use App\Models\TaskUpdateImage;
 use App\Models\TechnicianReport;
 use App\Models\TechnicianReportImage;
 use App\Models\User;
@@ -25,8 +26,8 @@ use RuntimeException;
  * For one project and one day the system collects what it already knows -
  * where the project stands in its phases, who was on the team, what each task
  * moved, what was finished and what is late, the materials recorded and any
- * incident filed - and the lead adds the remarks only they can: how the day
- * went, what held it up, what happens tomorrow.
+ * incident filed - and the lead adds whatever else needs saying, in one box of
+ * additional remarks, and any images.
  *
  * The gathered part is frozen into the report when it is submitted, so a task
  * edited or an entry voided afterwards never changes a report already filed.
@@ -95,6 +96,18 @@ class ProgressReportBuilder
             BusinessTime::toStored($date.' 23:59:59'),
         ];
 
+        // A task with nothing posted this day still shows its latest photos.
+        $earlierPhotos = TaskUpdate::query()
+            ->with('images')
+            ->whereIn('task_id', $taskIds)
+            ->whereDate('update_date', '<', $date)
+            ->whereHas('images')
+            ->orderByDesc('update_date')
+            ->orderByDesc('task_update_id')
+            ->get()
+            ->unique('task_id')
+            ->mapWithKeys(fn (TaskUpdate $update): array => [$update->task_id => $update->images->modelKeys()]);
+
         return [
             'date' => $date,
             'date_label' => CarbonImmutable::parse($date)->format(BusinessTime::DATE),
@@ -133,7 +146,9 @@ class ProgressReportBuilder
                     'task' => $update->task?->task_title,
                     'technician' => $update->technician?->name,
                     'notes' => $update->notes,
-                    'photos' => $update->images->count(),
+                    'images' => $update->task?->status === 'completed' || in_array($update->task?->status, Task::ACTIVE_STATUSES, true)
+                        ? $update->images->modelKeys()
+                        : [],
                 ])
                 ->all(),
             // Started, not finished, and nothing posted on it this day - so a
@@ -153,6 +168,7 @@ class ProgressReportBuilder
                 ->map(fn (Task $task): array => [
                     'task' => $task->task_title,
                     'technician' => $task->technician?->name,
+                    'images' => $earlierPhotos->get($task->task_id, []),
                 ])
                 ->all(),
             'completed_tasks' => Task::query()
@@ -165,6 +181,7 @@ class ProgressReportBuilder
                 ->map(fn (Task $task): array => [
                     'task' => $task->task_title,
                     'technician' => $task->technician?->name,
+                    'images' => $earlierPhotos->get($task->task_id, []),
                 ])
                 ->all(),
             'overdue_tasks' => Task::query()
@@ -217,9 +234,23 @@ class ProgressReportBuilder
     }
 
     /**
-     * File the report: what was gathered, frozen now, and the lead's remarks.
+     * The task update photos in a report this account may open.
      *
-     * @param  array{remarks?: string|null, issues?: string|null, next_plan?: string|null}  $notes
+     * @param  array<string, mixed>  $snapshot
+     * @return array<int, int>
+     */
+    public function viewablePhotoIds(User $user, array $snapshot): array
+    {
+        $rows = array_merge($snapshot['task_updates'], $snapshot['in_progress_tasks'] ?? [], $snapshot['completed_tasks']);
+
+        return TaskUpdateImage::idsViewableBy($user, array_merge(...array_column($rows, 'images')));
+    }
+
+    /**
+     * File the report: what was gathered, frozen now, and the lead's additional
+     * remarks.
+     *
+     * @param  array{remarks?: string|null}  $notes
      * @param  array<int, UploadedFile>  $images
      *
      * @throws RuntimeException
@@ -234,8 +265,6 @@ class ProgressReportBuilder
 
         $snapshot = $this->gather($project, $date) + [
             'remarks' => $this->text($notes['remarks'] ?? null),
-            'issues' => $this->text($notes['issues'] ?? null),
-            'next_plan' => $this->text($notes['next_plan'] ?? null),
             'filed_by' => $by->fullName(),
             'filed_at' => BusinessTime::now()->format(BusinessTime::DATE.' g:i A'),
         ];
@@ -308,10 +337,8 @@ class ProgressReportBuilder
             ));
         }
 
-        foreach (['remarks' => 'Remarks', 'issues' => 'Issues', 'next_plan' => 'Next'] as $key => $label) {
-            if (filled($snapshot[$key] ?? null)) {
-                $lines[] = $label.': '.$snapshot[$key];
-            }
+        if (filled($snapshot['remarks'] ?? null)) {
+            $lines[] = 'Additional Remarks: '.$snapshot['remarks'];
         }
 
         return implode("\n", $lines);

@@ -118,6 +118,18 @@ final class DemoDataCatalog
             $crew('technician', 'Rey', 'Castro', 'Lacson', 'rey.lacson', 'Service Technician', [self::AIRCON_CLEANING, self::AIRCON_REPAIR]),
             $crew('technician', 'Dexter', 'Ramos', 'Quiambao', 'dexter.quiambao', 'Ventilation Technician', [self::HEATING_VENTILATION, self::DUCTING_INSTALLATION]),
             $crew('technician', 'Joel', 'Santos', 'Esguerra', 'joel.esguerra', 'HVAC Technician', [self::AIRCON_INSTALLATION, self::AIRCON_CLEANING, self::HEATING_VENTILATION]),
+
+            // The other two office roles, after the crew so nobody above moves.
+            $crew('admin_officer', 'Marites', 'Lopez', 'Salazar', 'marites.salazar', 'Admin Officer', []),
+            $crew('admin_officer', 'Rodel', 'Aquino', 'Domingo', 'rodel.domingo', 'Admin Officer', []),
+            $crew('admin_officer', 'Sheila', 'Navarro', 'Pascua', 'sheila.pascua', 'Admin Officer', []),
+            $crew('admin_officer', 'Arnel', 'Gomez', 'Tolentino', 'arnel.tolentino', 'Admin Officer', []),
+            $crew('admin_officer', 'Liza', 'Fernandez', 'Bautista', 'liza.bautista', 'Admin Officer', []),
+            $crew('purchasing_admin', 'Vincent', 'Rivera', 'Ocampo', 'vincent.ocampo', 'Purchasing Officer', []),
+            $crew('purchasing_admin', 'Janice', 'Mendoza', 'Sarmiento', 'janice.sarmiento', 'Purchasing Officer', []),
+            $crew('purchasing_admin', 'Ronnie', 'Flores', 'Gutierrez', 'ronnie.gutierrez', 'Purchasing Officer', []),
+            $crew('purchasing_admin', 'Maricel', 'Santiago', 'Villegas', 'maricel.villegas', 'Purchasing Officer', []),
+            $crew('purchasing_admin', 'Allan', 'Pineda', 'Corpuz', 'allan.corpuz', 'Warehouse Officer', []),
         ];
     }
 
@@ -653,7 +665,9 @@ final class DemoDataCatalog
                 'description' => 'Fresh-air supply and exhaust ducting for the clinic annex, including a negative-pressure isolation room, to meet the Department of Health air change requirements. The trunk lines are in; the remaining runs go in once the annex ceiling framing is finished.',
                 'quotation' => 890000,
                 'created' => -25,
-                'ranges' => [[-17, -13], [20, 23]],
+                // The middle stretch keeps three projects active for the
+                // first days after seeding - see DemoDataSeederTest.
+                'ranges' => [[-17, -13], [0, 5], [20, 23]],
                 'target' => 28,
                 'technicians' => 2,
             ],

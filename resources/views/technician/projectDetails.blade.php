@@ -46,6 +46,9 @@
          client's own project page; the layout below is unchanged. --}}
     <div class="container-fluid py-2 project-details-page">
 
+        <x-project-not-set-up :project="$project" :can-set-up="$canSetUpPhases"
+            setup-route="technician.projects.phases.setup" />
+
         {{-- Paused. Everything below stays readable, which is the point of
              keeping it - what is unavailable is the work: adding a report,
              editing a task, and closing the project. The controls for those
@@ -77,7 +80,9 @@
             <div class="d-flex gap-2">
                 @if ($canCloseProject)
                     <button type="button" class="btn btn-success project-header-action" data-bs-toggle="modal"
-                        data-bs-target="#completeProjectModal" aria-label="Complete Project" title="Complete Project">
+                        data-bs-target="#completeProjectModal" aria-label="Complete Project"
+                        title="{{ $project->awaitingInitialSetup() ? \App\Models\Project::SET_UP_FIRST : 'Complete Project' }}"
+                        @disabled($project->awaitingInitialSetup())>
                         <i class="bi bi-check-circle" aria-hidden="true"></i>
                     </button>
                 @endif
@@ -593,23 +598,35 @@
                                 </select>
                             </form>
 
-                            @if ($canSubmitReport)
-                                {{-- A progress report is gathered from the day's
-                                     work, an incident report filled in with the
-                                     structured form - both on pages of their own. --}}
-                                <x-create-report-button portal="technician" :project="$project->project_id" />
-                            @elseif ($reportWaitsForScheduledDay)
-                                {{-- Not a scheduled day: left in place, disabled,
-                                     saying why. It comes back on its own on the
-                                     project's next booked day. --}}
-                                <span class="d-inline-block" tabindex="0"
-                                    title="{{ \App\Http\Controllers\TechnicianPortalController::REPORT_NOT_SCHEDULED_TODAY }}">
-                                    <button type="button" class="btn btn-primary" disabled>
+                            <div class="d-flex flex-wrap gap-2">
+                                <a href="{{ route('reports.project-progress', $project->project_id) }}" class="btn btn-outline-primary">
+                                    <i class="bi bi-graph-up me-1" aria-hidden="true"></i>
+                                    Overall Progress
+                                </a>
+
+                                @if ($canSubmitReport)
+                                    {{-- A progress report is gathered from the day's
+                                         work, an incident report filled in with the
+                                         structured form - both on pages of their own. --}}
+                                    <x-create-report-button portal="technician" :project="$project->project_id" />
+                                @elseif ($project->awaitingInitialSetup() && ! $project->isReadOnly() && auth()->user()->isLeadTechnician())
+                                    <button type="button" class="btn btn-primary" disabled title="{{ \App\Models\Project::SET_UP_FIRST }}">
                                         <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
                                         Create Report
                                     </button>
-                                </span>
-                            @endif
+                                @elseif ($reportWaitsForScheduledDay)
+                                    {{-- Not a scheduled day: left in place, disabled,
+                                         saying why. It comes back on its own on the
+                                         project's next booked day. --}}
+                                    <span class="d-inline-block" tabindex="0"
+                                        title="{{ \App\Http\Controllers\TechnicianPortalController::REPORT_NOT_SCHEDULED_TODAY }}">
+                                        <button type="button" class="btn btn-primary" disabled>
+                                            <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
+                                            Create Report
+                                        </button>
+                                    </span>
+                                @endif
+                            </div>
                         </div>
 
                         @forelse ($reports as $report)
@@ -620,6 +637,7 @@
                                         <span class="badge {{ $report->typeBadgeClass() }}">
                                             {{ $report->typeLabel() }}
                                         </span>
+                                        <x-report-review-status :report="$report" />
                                         <h5 class="mt-2 mb-0">{{ $report->report_title }}</h5>
 
                                         {{-- Who filed it, beside their picture,
@@ -745,6 +763,11 @@
                                         <i class="bi bi-sliders me-1" aria-hidden="true"></i>
                                         Set Up Now
                                     </a>
+                                @elseif ($canManageTasks)
+                                    <button type="button" class="btn btn-primary" disabled title="{{ \App\Models\Project::SET_UP_FIRST }}">
+                                        <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
+                                        Add Task
+                                    </button>
                                 @endif
                             @elseif ($canManageTasks)
                                 <button type="button" class="btn btn-primary" data-bs-toggle="modal"

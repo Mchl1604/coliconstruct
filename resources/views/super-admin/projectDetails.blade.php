@@ -64,6 +64,10 @@
         // banner below asks for.
         $canComplete = $project->isCompletableBy(auth()->user());
 
+        // Readable before setup, changeable after it - see EnsureProjectIsSetUp.
+        $awaitingSetup = $project->awaitingInitialSetup();
+        $setupFirst = \App\Models\Project::SET_UP_FIRST;
+
         // Every file change, by document type. Each type's history button and
         // dialog are drawn only once that type has something in its history.
         $documentHistoryByType = $project->documentHistory->groupBy('document_type');
@@ -126,14 +130,14 @@
                      both in the header at once. --}}
                 @if (! $isReadOnly && ! $isOnHold && $project->status !== 'unscheduled')
                     <button type="button" class="btn btn-warning project-header-action" data-bs-toggle="modal"
-                        data-bs-target="#onHoldModal" aria-label="Put on Hold" title="Put on Hold">
+                        data-bs-target="#onHoldModal" aria-label="Put on Hold" title="{{ $awaitingSetup ? $setupFirst : 'Put on Hold' }}" @disabled($awaitingSetup)>
                         <i class="bi bi-pause-circle" aria-hidden="true"></i>
                     </button>
                 @endif
 
                 @if ($canComplete && ! $project->isOverdue())
                     <button type="button" class="btn btn-success project-header-action" data-bs-toggle="modal"
-                        data-bs-target="#completeProjectModal" aria-label="Complete Project" title="Complete Project">
+                        data-bs-target="#completeProjectModal" aria-label="Complete Project" title="{{ $awaitingSetup ? $setupFirst : 'Complete Project' }}" @disabled($awaitingSetup)>
                         <i class="bi bi-check-circle" aria-hidden="true"></i>
                     </button>
                 @endif
@@ -147,6 +151,9 @@
 
             </div>
         </div>
+
+        <x-project-not-set-up :project="$project" :can-set-up="$canSetUpPhases"
+            setup-route="super-admin.projects.phases.setup" />
 
         {{-- A save the server refused. Without this a refused one - a file of
              the wrong type, a quotation change nobody confirmed - came back to
@@ -837,7 +844,7 @@
 
                             @if ($canComplete)
                                 <button type="button" class="btn btn-sm btn-success" data-bs-toggle="modal"
-                                    data-bs-target="#completeProjectModal">
+                                    data-bs-target="#completeProjectModal" @disabled($awaitingSetup)>
                                     <i class="bi bi-check-circle me-1" aria-hidden="true"></i>
                                     Mark as Complete
                                 </button>
@@ -917,7 +924,8 @@
 
                             @unless ($isReadOnly)
                                 <button class="btn btn-outline-info border btn-sm ms-2" data-bs-toggle="modal"
-                                    data-bs-target="#editProjectDetailsModal">
+                                    data-bs-target="#editProjectDetailsModal" @disabled($awaitingSetup)
+                                    title="{{ $awaitingSetup ? $setupFirst : 'Edit project' }}">
                                     <i class="bi bi-pencil-square"></i>
                                 </button>
                             @endunless
@@ -927,7 +935,8 @@
                                  moves the one project to someone else. --}}
                             @if ($canChangeClient)
                                 <button type="button" class="btn btn-outline-secondary border btn-sm ms-2"
-                                    data-bs-toggle="modal" data-bs-target="#changeClientModal" data-change-client-open>
+                                    data-bs-toggle="modal" data-bs-target="#changeClientModal" data-change-client-open @disabled($awaitingSetup)
+                                    title="{{ $awaitingSetup ? $setupFirst : 'Change client' }}">
                                     <i class="bi bi-person-gear me-1" aria-hidden="true"></i>
                                     Change client
                                 </button>
@@ -1231,7 +1240,7 @@
                                         <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2"
                                             data-document-remove="{{ route('super-admin.projects.documents.destroy', ['id' => $project->project_id, 'document' => $document->document_id]) }}"
                                             data-document-label="{{ $document->document_name }}"
-                                            title="Remove this file">
+                                            title="{{ $awaitingSetup ? $setupFirst : 'Remove this file' }}" @disabled($awaitingSetup)>
                                             <i class="bi bi-trash3" aria-hidden="true"></i>
                                         </button>
                                     @endunless
@@ -1288,7 +1297,7 @@
                 </div>
                 {{-- Each type's detail form, folded, then the Notes. --}}
                 <x-project-description :project="$project"
-                    :edit-target="$isReadOnly ? null : 'editProjectDescriptionModal'" />
+                    :edit-target="$isReadOnly ? null : 'editProjectDescriptionModal'" :edit-disabled="$awaitingSetup" />
 
             </div>
         </div>
@@ -1638,19 +1647,28 @@
 
                             </form>
 
-                            {{-- The same two reports a lead files, on the same forms. Not on a
-                                 closed project. A hold keeps a button, disabled:
-                                 that project is coming back, and the tooltip says
-                                 what to do about it. --}}
-                            @if ($canFileReports && ! $isReadOnly && $isOnHold)
-                                <button class="btn btn-primary" disabled
-                                    title="This project is on hold. Resume it before adding reports.">
-                                    <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
-                                    Create Report
-                                </button>
-                            @elseif ($canFileReports && ! $isReadOnly)
-                                <x-create-report-button portal="super-admin" :project="$project->project_id" />
-                            @endif
+                            <div class="d-flex flex-wrap gap-2">
+                                @if (auth()->user()->canReach(\App\Support\RoleAccess::SCHEDULING))
+                                    <a href="{{ route('reports.project-progress', $project->project_id) }}" class="btn btn-outline-primary">
+                                        <i class="bi bi-graph-up me-1" aria-hidden="true"></i>
+                                        Overall Progress
+                                    </a>
+                                @endif
+
+                                {{-- The same two reports a lead files, on the same forms. Not on a
+                                     closed project. A hold keeps a button, disabled:
+                                     that project is coming back, and the tooltip says
+                                     what to do about it. --}}
+                                @if ($canFileReports && ! $isReadOnly && ($isOnHold || $awaitingSetup))
+                                    <button class="btn btn-primary" disabled
+                                        title="{{ $awaitingSetup ? $setupFirst : 'This project is on hold. Resume it before adding reports.' }}">
+                                        <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
+                                        Create Report
+                                    </button>
+                                @elseif ($canFileReports && ! $isReadOnly)
+                                    <x-create-report-button portal="super-admin" :project="$project->project_id" />
+                                @endif
+                            </div>
 
                         </div>
 
@@ -1679,6 +1697,7 @@
                                         <span class="badge {{ $report->typeBadgeClass() }}">
                                             {{ $report->typeLabel() }}
                                         </span>
+                                        <x-report-review-status :report="$report" />
 
                                         <h5 class="mt-2 mb-0">
                                             {{ $report->report_title }}
@@ -1914,7 +1933,8 @@
 
     @unless ($isReadOnly)
         <div class="d-flex justify-content-end mt-3 mb-4">
-            <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#cancelProjectModal">
+            <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#cancelProjectModal"
+                @disabled($awaitingSetup) @if ($awaitingSetup) title="{{ $setupFirst }}" @endif>
                 <i class="bi bi-x-circle me-1"></i>
                 Cancel Project
             </button>
