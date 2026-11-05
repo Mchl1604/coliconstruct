@@ -6,6 +6,7 @@ use App\Models\ActivityLog;
 use App\Models\Project;
 use App\Services\ActivityLogger;
 use App\Services\ProjectDetailForms;
+use App\Services\ServiceReport;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -24,7 +25,8 @@ class ProjectDetailController extends Controller
 
     public function __construct(
         private readonly ProjectDetailForms $detailForms,
-        private readonly ActivityLogger $activityLogger
+        private readonly ActivityLogger $activityLogger,
+        private readonly ServiceReport $serviceReport
     ) {}
 
     public function update(Request $request, int $id): RedirectResponse
@@ -41,13 +43,27 @@ class ProjectDetailController extends Controller
 
         $validated = Validator::make(
             $request->all(),
-            $this->detailForms->rules($types),
+            [
+                ...$this->detailForms->rules($types),
+                'report_performed_by' => ['nullable', 'string', 'max:150'],
+                'report_witnessed_by' => ['nullable', 'string', 'max:150'],
+                'report_remarks' => ['nullable', 'string', 'max:2000'],
+            ],
             $this->detailForms->messages($types),
             $this->detailForms->attributes($types)
         )->validateWithBag(self::ERROR_BAG);
 
         DB::transaction(function () use ($project, $types, $validated): void {
             $this->detailForms->sync($project, $types, $validated['details'] ?? []);
+
+            // Only asked of a project with a Service Report.
+            if ($this->serviceReport->reportTypes($project)->isNotEmpty()) {
+                $project->update([
+                    'report_performed_by' => $validated['report_performed_by'] ?? null,
+                    'report_witnessed_by' => $validated['report_witnessed_by'] ?? null,
+                    'report_remarks' => $validated['report_remarks'] ?? null,
+                ]);
+            }
         });
 
         $this->activityLogger->record(

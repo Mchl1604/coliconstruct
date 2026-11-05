@@ -1,7 +1,7 @@
 {{--
-    A project's description as every portal shows it: a one-line summary of
-    each type's detail form, the details themselves folded away until asked
-    for, and the free-text Notes.
+    A project's description as every portal shows it: the Service Report for its
+    aircon types, a one-line summary of any other type's detail form with the
+    details folded away until asked for, and the free-text Notes.
 
     Folded rather than laid out in full, because a job with a dozen units
     would otherwise push the rest of the page out of sight. Read as saved -
@@ -18,22 +18,30 @@
 ])
 
 @php
-    $summary = app(\App\Services\ProjectDetailForms::class)->summary($project);
+    $serviceReport = app(\App\Services\ServiceReport::class);
+    $hasServiceReport = $serviceReport->reportTypes($project)->isNotEmpty();
+    $summary = app(\App\Services\ProjectDetailForms::class)->summary($project)
+        ->reject(fn (array $entry): bool => $serviceReport->isReportType($entry['type']))
+        ->values();
     $collapseId = 'projectDescriptionDetails'.$project->project_id;
     $notes = trim((string) $project->description);
 @endphp
 
 <div class="mt-3 project-description">
-    <div class="d-flex align-items-center gap-2 mb-1">
-        <span class="fw-bold">Project Description:</span>
-
-        @if ($editTarget)
-            <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2" data-bs-toggle="modal"
-                data-bs-target="#{{ $editTarget }}" title="{{ $editDisabled ? \App\Models\Project::SET_UP_FIRST : 'Edit description' }}" @disabled($editDisabled)>
-                <i class="bi bi-pencil" aria-hidden="true"></i>
+    @if ($hasServiceReport)
+        <div class="mb-2">
+            <x-service-report-modal :project="$project" :edit-target="$editTarget" :edit-disabled="$editDisabled" />
+        </div>
+    @elseif ($editTarget && $project->projectTypes->isNotEmpty())
+        {{-- A type without a report has no dialog to edit from, so its way in
+             stays here. --}}
+        <div class="mb-2">
+            <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal"
+                data-bs-target="#{{ $editTarget }}" @disabled($editDisabled)>
+                Edit Details
             </button>
-        @endif
-    </div>
+        </div>
+    @endif
 
     @if ($summary->isNotEmpty())
         <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
@@ -91,12 +99,8 @@
 
     @if ($notes !== '')
         <div class="mt-2">
-            @if ($summary->isNotEmpty())
-                <div class="small text-secondary">Notes</div>
-            @endif
+            <div class="small text-secondary">Notes</div>
             <p class="mb-0">{!! nl2br(e($notes)) !!}</p>
         </div>
-    @elseif ($summary->isEmpty())
-        <p class="mb-0">N/A</p>
     @endif
 </div>

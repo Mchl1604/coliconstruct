@@ -117,7 +117,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const currentStep = {
         value: 1
     };
-    const SCHEDULE_STEP = 4;
+    const QUOTATION_STEP = 3;
+    const SCHEDULE_STEP = 5;
     // The project description: one detail form per ticked type.
     const detailsHolder = form.querySelector('[data-project-details]');
     const detailSections = detailsHolder ? Array.from(detailsHolder.querySelectorAll('[data-details-type]')) : [];
@@ -1631,6 +1632,41 @@ document.addEventListener('DOMContentLoaded', function() {
             .join(' to ');
     }
 
+    // The quotation total and lines, for the review step.
+    document.addEventListener('quotation-lines:changed', function(event) {
+        if (!event.target.closest('[data-wizard-quotation]')) {
+            return;
+        }
+
+        const money = function(value) {
+            return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        };
+
+        quotationAmountInput.value = event.detail.lines.length ? money(event.detail.total) : '';
+
+        const review = document.querySelector('[data-quotation-review]');
+
+        if (review) {
+            review.replaceChildren();
+            review.textContent = event.detail.lines.length ? '' : 'None';
+
+            event.detail.lines.forEach(function(line, index) {
+                if (index > 0) {
+                    review.appendChild(document.createElement('br'));
+                }
+
+                const name = line.material ? line.material.label : (line.description || '?');
+                const unit = line.material ? line.material.unit : (line.unit || '');
+
+                review.appendChild(document.createTextNode(
+                    name + ' - ' + (line.quantity || '?') + (unit ? ' ' + unit : '') + ' @ ₱ ' + money(Number(line.unit_price) || 0)
+                ));
+            });
+        }
+
+        updateSummary();
+    });
+
     function updateSummary() {
         const clientFirstName = form.querySelector('[data-summary-input="firstname"]');
         const clientMiddleName = form.querySelector('[data-summary-input="middle_name"]');
@@ -1753,6 +1789,18 @@ document.addEventListener('DOMContentLoaded', function() {
         // The lead is a dropdown rather than a <select> now, so its "you have
         // to pick one" is checked here instead of by the browser - exactly as
         // the technicians picker below it has always been checked.
+        if (currentStep.value === QUOTATION_STEP) {
+            const quotationLines = activeStep.querySelectorAll('[data-quotation-rows] tr').length;
+            const quotationError = activeStep.querySelector('[data-quotation-error]');
+
+            quotationError.textContent = quotationLines ? '' : 'Add at least one quotation line.';
+            quotationError.classList.toggle('d-none', quotationLines > 0);
+
+            if (!quotationLines) {
+                return false;
+            }
+        }
+
         if (currentStep.value === SCHEDULE_STEP && !selectedLeadTechnician()) {
             showScheduleError('Choose a lead technician for this project.');
 

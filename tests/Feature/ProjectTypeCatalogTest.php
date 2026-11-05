@@ -9,15 +9,16 @@ use App\Models\ProjectType;
 use App\Models\Skill;
 use App\Models\Technician;
 use App\Models\User;
+use App\Services\ProjectTypeCatalog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 /**
  * Project Types: the catalogue of work the company does.
  *
- * A project type and a technician specialty are the same entry wearing two
- * hats, so every write to one has to land on the other - that is the whole
- * point of managing them from one screen.
+ * A fixed list: read on screen, written only from code. A project type and a
+ * technician specialty are the same entry wearing two hats, so adding one has
+ * to land on the other.
  */
 class ProjectTypeCatalogTest extends TestCase
 {
@@ -52,129 +53,41 @@ class ProjectTypeCatalogTest extends TestCase
         return Skill::query()->where('skill_name', $name)->first();
     }
 
-    public function test_adding_a_project_type_also_adds_the_matching_specialty(): void
-    {
-        $this->actingAsSuperAdmin();
-
-        $response = $this->postJson(
-            route('super-admin.configuration.project-types.store'),
-            ['type_name' => 'Heating Installation', 'form_id' => DetailForm::factory()->create()->form_id]
-        );
-
-        $response->assertOk();
-
-        $this->assertNotNull(ProjectType::query()->where('type_name', 'Heating Installation')->first());
-        $this->assertNotNull($this->skillNamed('Heating Installation'));
-
-        // And it comes back in the list the screen renders.
-        $names = collect($response->json('types'))->pluck('type_name')->all();
-        $this->assertContains('Heating Installation', $names);
-    }
-
     /**
      * The specialty pickers read tbl_skills, so this is the whole of "it also
      * shows up as a specialty" as far as the interface is concerned.
      */
-    public function test_a_new_type_is_offered_on_the_technicians_page(): void
+    public function test_adding_a_type_from_code_also_adds_the_matching_specialty(): void
     {
-        $this->actingAsSuperAdmin();
-        $this->technician('Ana Mendoza');
+        $type = app(ProjectTypeCatalog::class)->add('Equipment Check-up');
 
-        $this->postJson(
-            route('super-admin.configuration.project-types.store'),
-            ['type_name' => 'Heating Installation', 'form_id' => DetailForm::factory()->create()->form_id]
-        )->assertOk();
-
-        $response = $this->get(route('super-admin.technicians.index'));
-
-        $response->assertOk();
-        $response->assertSee('Heating Installation');
+        $this->assertSame('Equipment Check-up', $type->type_name);
+        $this->assertNotNull($this->skillNamed('Equipment Check-up'));
     }
 
-    public function test_renaming_a_type_renames_its_specialty(): void
+    public function test_the_list_shows_each_type_with_its_form(): void
     {
         $this->actingAsSuperAdmin();
+        ProjectType::create(['type_name' => 'Equipment Repair', 'form_id' => DetailForm::factory()->create(['name' => 'Repair Form'])->form_id]);
 
-        $type = ProjectType::create(['type_name' => 'Heating Installation']);
-        Skill::create(['skill_name' => 'Heating Installation']);
-
-        $this->putJson(
-            route('super-admin.configuration.project-types.update', $type->type_id),
-            ['type_name' => 'Heating Repair']
-        )->assertOk();
-
-        $this->assertSame('Heating Repair', $type->fresh()->type_name);
-        $this->assertNotNull($this->skillNamed('Heating Repair'));
-        $this->assertNull($this->skillNamed('Heating Installation'));
+        $this->getJson(route('super-admin.configuration.project-types.index'))
+            ->assertOk()
+            ->assertJsonPath('types.0.type_name', 'Equipment Repair')
+            ->assertJsonPath('types.0.form_name', 'Repair Form');
     }
 
-    public function test_removing_an_unused_type_removes_its_specialty(): void
+    public function test_the_type_cannot_be_added_renamed_or_removed_on_screen(): void
     {
         $this->actingAsSuperAdmin();
+        $type = ProjectType::create(['type_name' => 'Equipment Repair']);
+        $url = route('super-admin.configuration.project-types.index');
 
-        $type = ProjectType::create(['type_name' => 'Heating Installation']);
-        Skill::create(['skill_name' => 'Heating Installation']);
+        $this->postJson($url, ['type_name' => 'Solar Panels'])->assertStatus(405);
+        $this->putJson($url.'/'.$type->type_id, ['type_name' => 'Renamed'])->assertStatus(405);
+        $this->deleteJson($url.'/'.$type->type_id)->assertStatus(405);
+        $this->putJson($url.'/'.$type->type_id.'/form', ['form_id' => 1])->assertStatus(405);
 
-        $this->deleteJson(
-            route('super-admin.configuration.project-types.destroy', $type->type_id)
-        )->assertOk();
-
-        $this->assertNull(ProjectType::query()->find($type->type_id));
-        $this->assertNull($this->skillNamed('Heating Installation'));
-    }
-
-    public function test_a_type_used_by_a_project_cannot_be_removed(): void
-    {
-        $this->actingAsSuperAdmin();
-
-        $type = ProjectType::create(['type_name' => 'Heating Installation']);
-        Skill::create(['skill_name' => 'Heating Installation']);
-
-        $this->project('Some Project')->projectTypes()->attach($type->type_id);
-
-        $response = $this->deleteJson(
-            route('super-admin.configuration.project-types.destroy', $type->type_id)
-        );
-
-        $response->assertStatus(422);
-        $this->assertStringContainsString('cannot be removed', (string) $response->json('error'));
-
-        // Neither half was touched.
-        $this->assertNotNull(ProjectType::query()->find($type->type_id));
-        $this->assertNotNull($this->skillNamed('Heating Installation'));
-    }
-
-    public function test_a_specialty_held_by_a_technician_cannot_be_removed(): void
-    {
-        $this->actingAsSuperAdmin();
-
-        $type = ProjectType::create(['type_name' => 'Heating Installation']);
-        $skill = Skill::create(['skill_name' => 'Heating Installation']);
-
-        $this->technician('Ana Mendoza')->skills()->attach($skill->skill_id);
-
-        $response = $this->deleteJson(
-            route('super-admin.configuration.project-types.destroy', $type->type_id)
-        );
-
-        $response->assertStatus(422);
-        $this->assertStringContainsString('specialty', (string) $response->json('error'));
-        $this->assertNotNull($this->skillNamed('Heating Installation'));
-    }
-
-    public function test_a_duplicate_name_is_refused_whatever_its_casing(): void
-    {
-        $this->actingAsSuperAdmin();
-
-        ProjectType::create(['type_name' => 'Heating Installation']);
-
-        $response = $this->postJson(
-            route('super-admin.configuration.project-types.store'),
-            ['type_name' => '  heating   installation  ', 'form_id' => DetailForm::factory()->create()->form_id]
-        );
-
-        $response->assertStatus(422);
-        $this->assertSame(1, ProjectType::query()->count());
+        $this->assertSame(['Equipment Repair'], ProjectType::query()->pluck('type_name')->all());
     }
 
     public function test_an_admin_cannot_reach_the_project_type_endpoints(): void
@@ -194,11 +107,5 @@ class ProjectTypeCatalogTest extends TestCase
         $this->actingAs($admin);
 
         $this->getJson(route('super-admin.configuration.project-types.index'))->assertStatus(403);
-        $this->postJson(
-            route('super-admin.configuration.project-types.store'),
-            ['type_name' => 'Heating Installation']
-        )->assertStatus(403);
-
-        $this->assertSame(0, ProjectType::query()->count());
     }
 }

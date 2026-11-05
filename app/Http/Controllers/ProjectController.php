@@ -34,6 +34,7 @@ use App\Services\ProjectMaterialPlan;
 use App\Services\ProjectMaterialRules;
 use App\Services\ProjectPhaseProgress;
 use App\Services\ProjectPhaseRules;
+use App\Services\ProjectQuotation;
 use App\Services\ProjectReopen;
 use App\Services\ProjectScheduleRecovery;
 use App\Services\ProjectStatusRules;
@@ -357,6 +358,7 @@ class ProjectController extends Controller
         // A failed save comes back with its material lines, read again with
         // today's stock figures.
         $wizardMaterials = $this->wizardMaterialRows((array) old('materials', []));
+        $wizardQuotation = app(ProjectQuotation::class)->editorRows((array) old('quotation_items', []));
 
         return view('super-admin.createProject', compact(
             'projectTypes',
@@ -366,7 +368,8 @@ class ProjectController extends Controller
             'workingHours',
             'partialDayHours',
             'selectedClient',
-            'wizardMaterials'
+            'wizardMaterials',
+            'wizardQuotation'
         ));
     }
 
@@ -502,7 +505,7 @@ class ProjectController extends Controller
                     'client_id' => $client->client_id,
                     'name' => $client->primaryName(),
                     'status' => 'unscheduled',
-                    'quotation' => $validated['quotation_amount'],
+                    'quotation' => app(ProjectQuotation::class)->total(array_values($validated['quotation_items'])),
                     'target_end_date' => $validated['target_end_date'],
                     ...ProjectAddress::columns($validated),
                     'description' => $validated['project_description'] ?? null,
@@ -533,6 +536,9 @@ class ProjectController extends Controller
                     $project->projectTypes()->get(),
                     $validated['details'] ?? []
                 );
+
+                // The Quotation step: free of stock. Only the plan below is not.
+                app(ProjectQuotation::class)->save($project, array_values($validated['quotation_items']));
 
                 // The Materials step: the plan, which reserves stock from now
                 // on, held to what is available. Whatever the wizard ticked to
@@ -1797,6 +1803,11 @@ class ProjectController extends Controller
         // the amount or the file on its own is only allowed when the person
         // said which half to keep. Asked before anything is written, so a
         // refusal saves nothing at all.
+        // A project with a breakdown takes its total from the lines alone.
+        if ($project->quotationItems()->exists()) {
+            $validated['quotation'] = $project->quotation;
+        }
+
         $quotationFiles = $this->uploadedFiles($request->file('quotationDocument'));
         $replacesQuotationFile = $quotationFiles->isNotEmpty();
 

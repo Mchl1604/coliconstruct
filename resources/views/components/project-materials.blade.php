@@ -28,6 +28,10 @@
 --}}
 @php
     $routePrefix = $portal.'.projects.materials.';
+    // Quantities only: prices stay on the quotation.
+    $quotedMaterials = app(\App\Services\ProjectQuotation::class)->quotedMaterials($project);
+    $plannedIds = $summary->map(fn (array $row): int => (int) $row['material']->material_id)->all();
+    $quotedNotPlanned = array_diff_key($quotedMaterials, array_flip($plannedIds));
     $showsUnused = $summary->contains(fn (array $row): bool => $row['unused'] > 0);
     $today = \App\Support\BusinessTime::today()->toDateString();
     $hasOnSite = $summary->contains(fn (array $row): bool => $row['on_site'] > 0);
@@ -81,6 +85,15 @@
             @endif
         </div>
 
+        @if ($quotedNotPlanned !== [])
+            <div class="alert alert-warning small py-2" role="alert">
+                <span class="fw-semibold">Quoted, not planned:</span>
+                @foreach ($quotedNotPlanned as $quoted)
+                    {{ $quoted['label'] }} ({{ rtrim(rtrim(number_format($quoted['quantity'], 2, '.', ''), '0'), '.') }} {{ $quoted['unit'] }})@unless ($loop->last), @endunless
+                @endforeach
+            </div>
+        @endif
+
         @if ($summary->isEmpty())
             <div class="material-plan-empty">
                 No materials listed.
@@ -93,6 +106,9 @@
                             <th>Material</th>
                             <th>Type</th>
                             <th>Unit</th>
+                            @if ($quotedMaterials !== [])
+                                <th class="text-end">Quoted</th>
+                            @endif
                             <th class="text-end">Added</th>
                             <th class="text-end">Used</th>
                             <th class="text-end">Returned</th>
@@ -125,6 +141,12 @@
                                 <td><span class="material-unit-chip" title="{{ $unit->label() }}">{{ $unit->value }}</span></td>
                                 {{-- Added counts the setup plan too, so the columns
                                      still add up to Remaining. --}}
+                                @if ($quotedMaterials !== [])
+                                    @php($quotedLine = $quotedMaterials[(int) $row['material']->material_id] ?? null)
+                                    <td class="text-end material-qty {{ $quotedLine ? '' : 'is-zero' }}">
+                                        {{ $unit->format($quotedLine['quantity'] ?? 0) }}
+                                    </td>
+                                @endif
                                 @php($added = $row['needed'] + $row['added'])
                                 <td class="text-end material-qty {{ $added == 0 ? 'is-zero' : '' }}">
                                     {{ $unit->format($added) }}

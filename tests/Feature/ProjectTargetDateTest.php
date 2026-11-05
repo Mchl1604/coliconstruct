@@ -164,7 +164,7 @@ class ProjectTargetDateTest extends TestCase
             'client_email' => 'maria@example.test',
             'client_phone' => '09123456789',
             ...$this->luzonAddress(),
-            'quotation_amount' => '1250.00',
+            'quotation_items' => [['kind' => 'other', 'description' => 'Aircon works', 'quantity' => 1, 'unit_price' => '1250.00']],
             'project_types' => ['Aircon Installation'],
             'assessment_report' => [UploadedFile::fake()->create('assessment.pdf', 12, 'application/pdf')],
             'approved_quotation' => [UploadedFile::fake()->create('quotation.pdf', 12, 'application/pdf')],

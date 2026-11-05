@@ -243,6 +243,10 @@ class ActivityLog extends Model
 
     public const PROJECT_DESCRIPTION_UPDATED = 'Project Description Updated';
 
+    public const PROJECT_CHECKLIST_UPDATED = 'Project Checklist Updated';
+
+    public const PROJECT_QUOTATION_UPDATED = 'Project Quotation Updated';
+
     public const PROJECT_COMPLETED = 'Project Completed';
 
     /**
@@ -632,6 +636,8 @@ class ActivityLog extends Model
         self::PROJECT_CREATED => self::MODULE_PROJECTS,
         self::PROJECT_UPDATED => self::MODULE_PROJECTS,
         self::PROJECT_DESCRIPTION_UPDATED => self::MODULE_PROJECTS,
+        self::PROJECT_CHECKLIST_UPDATED => self::MODULE_PROJECTS,
+        self::PROJECT_QUOTATION_UPDATED => self::MODULE_PROJECTS,
         self::PROJECT_COMPLETED => self::MODULE_PROJECTS,
         self::PROJECT_COMPLETION_REQUESTED => self::MODULE_PROJECTS,
         self::PROJECT_COMPLETION_OVERRIDDEN => self::MODULE_PROJECTS,

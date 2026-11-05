@@ -65,7 +65,7 @@ class NewProjectClientStepTest extends TestCase
             'client_email' => 'juan.dela.cruz@example.test',
             'client_phone' => '09123456789',
             ...$this->luzonAddress(),
-            'quotation_amount' => '1250.00',
+            'quotation_items' => [['kind' => 'other', 'description' => 'Aircon works', 'quantity' => 1, 'unit_price' => '1250.00']],
             'project_types' => ['Aircon Installation'],
             'assessment_report' => [UploadedFile::fake()->create('assessment.pdf', 12, 'application/pdf')],
             'approved_quotation' => [UploadedFile::fake()->create('quotation.pdf', 12, 'application/pdf')],
@@ -215,10 +215,10 @@ class NewProjectClientStepTest extends TestCase
                 'client_id' => $client->client_id,
                 // Notes are optional now, so the refusal comes from the
                 // quotation instead.
-                'quotation_amount' => '-5',
+                'quotation_items' => [['kind' => 'other', 'description' => 'Aircon works', 'quantity' => 1, 'unit_price' => '-5']],
             ]))
             ->assertRedirect(route('super-admin.projects.create'))
-            ->assertSessionHasErrors('quotation_amount');
+            ->assertSessionHasErrors('quotation_items.0.unit_price');
 
         $this->get(route('super-admin.projects.create'))
             ->assertOk()

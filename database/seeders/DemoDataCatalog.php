@@ -33,7 +33,9 @@ final class DemoDataCatalog
 
     public const AIRCON_INSTALLATION = 'Aircon Installation';
 
-    public const AIRCON_REPAIR = 'Aircon Repair';
+    public const AIRCON_REPAIR = 'Equipment Repair';
+
+    public const EQUIPMENT_CHECK_UP = 'Equipment Check-up';
 
     public const AIRCON_CLEANING = 'Aircon Cleaning';
 
@@ -41,20 +43,18 @@ final class DemoDataCatalog
 
     public const DUCTING_INSTALLATION = 'Ducting Installation';
 
-    public const HEATING_VENTILATION = 'Heating Ventilation';
-
     /**
-     * The six project types, which are also the six technician specialties.
+     * The project types, which are also the technician specialties.
      *
      * @var array<int, string>
      */
     public const PROJECT_TYPES = [
         self::AIRCON_INSTALLATION,
+        self::EQUIPMENT_CHECK_UP,
         self::AIRCON_REPAIR,
         self::AIRCON_CLEANING,
         self::DUCTING_FABRICATION,
         self::DUCTING_INSTALLATION,
-        self::HEATING_VENTILATION,
     ];
 
     /**
@@ -92,32 +92,32 @@ final class DemoDataCatalog
             // Opens the client accounts - see DemoDataSeeder::seedAccounts().
             $admin('Hazel', 'Torres', 'Manalo', 'hazel.manalo', 'Customer Relations Officer'),
 
-            $crew('lead_technician', 'Ramon', 'Cruz', 'Dela Cruz', 'ramon.delacruz', 'Lead HVAC Technician', [self::AIRCON_INSTALLATION, self::AIRCON_REPAIR, self::DUCTING_INSTALLATION]),
-            $crew('lead_technician', 'Eduardo', 'Valdez', 'Soriano', 'eduardo.soriano', 'Lead Ducting Technician', [self::DUCTING_FABRICATION, self::DUCTING_INSTALLATION, self::HEATING_VENTILATION]),
-            $crew('lead_technician', 'Marlon', 'Agustin', 'Bernardo', 'marlon.bernardo', 'Lead HVAC Technician', [self::AIRCON_INSTALLATION, self::AIRCON_CLEANING, self::AIRCON_REPAIR]),
-            $crew('lead_technician', 'Rogelio', 'Panganiban', 'Tolentino', 'rogelio.tolentino', 'Lead Ventilation Technician', [self::HEATING_VENTILATION, self::DUCTING_INSTALLATION, self::AIRCON_INSTALLATION]),
-            $crew('lead_technician', 'Jayson', 'Lim', 'Robles', 'jayson.robles', 'Lead Service Technician', [self::AIRCON_REPAIR, self::AIRCON_CLEANING, self::AIRCON_INSTALLATION]),
+            $crew('lead_technician', 'Ramon', 'Cruz', 'Dela Cruz', 'ramon.delacruz', 'Lead HVAC Technician', [self::AIRCON_INSTALLATION, self::AIRCON_REPAIR, self::EQUIPMENT_CHECK_UP, self::DUCTING_INSTALLATION]),
+            $crew('lead_technician', 'Eduardo', 'Valdez', 'Soriano', 'eduardo.soriano', 'Lead Ducting Technician', [self::DUCTING_FABRICATION, self::DUCTING_INSTALLATION]),
+            $crew('lead_technician', 'Marlon', 'Agustin', 'Bernardo', 'marlon.bernardo', 'Lead HVAC Technician', [self::AIRCON_INSTALLATION, self::AIRCON_CLEANING, self::AIRCON_REPAIR, self::EQUIPMENT_CHECK_UP]),
+            $crew('lead_technician', 'Rogelio', 'Panganiban', 'Tolentino', 'rogelio.tolentino', 'Lead Ventilation Technician', [self::DUCTING_INSTALLATION, self::AIRCON_INSTALLATION]),
+            $crew('lead_technician', 'Jayson', 'Lim', 'Robles', 'jayson.robles', 'Lead Service Technician', [self::AIRCON_REPAIR, self::EQUIPMENT_CHECK_UP, self::AIRCON_CLEANING, self::AIRCON_INSTALLATION]),
             $crew('lead_technician', 'Danilo', 'Ocampo', 'Fajardo', 'danilo.fajardo', 'Lead Ducting Technician', [self::DUCTING_FABRICATION, self::DUCTING_INSTALLATION, self::AIRCON_INSTALLATION]),
-            $crew('lead_technician', 'Ricardo', 'Morales', 'Evangelista', 'ricardo.evangelista', 'Lead HVAC Technician', [self::AIRCON_INSTALLATION, self::HEATING_VENTILATION, self::AIRCON_REPAIR]),
-            $crew('lead_technician', 'Alvin', 'Cabrera', 'Macaraeg', 'alvin.macaraeg', 'Lead Service Technician', [self::AIRCON_CLEANING, self::AIRCON_REPAIR, self::DUCTING_INSTALLATION]),
-            $crew('lead_technician', 'Gilbert', 'Rivera', 'Estrada', 'gilbert.estrada', 'Lead Ventilation Technician', [self::HEATING_VENTILATION, self::DUCTING_FABRICATION, self::AIRCON_INSTALLATION]),
-            $crew('lead_technician', 'Romeo', 'Del Rosario', 'Ignacio', 'romeo.ignacio', 'Lead HVAC Technician', [self::AIRCON_INSTALLATION, self::AIRCON_REPAIR, self::AIRCON_CLEANING]),
+            $crew('lead_technician', 'Ricardo', 'Morales', 'Evangelista', 'ricardo.evangelista', 'Lead HVAC Technician', [self::AIRCON_INSTALLATION, self::AIRCON_REPAIR, self::EQUIPMENT_CHECK_UP]),
+            $crew('lead_technician', 'Alvin', 'Cabrera', 'Macaraeg', 'alvin.macaraeg', 'Lead Service Technician', [self::AIRCON_CLEANING, self::AIRCON_REPAIR, self::EQUIPMENT_CHECK_UP, self::DUCTING_INSTALLATION]),
+            $crew('lead_technician', 'Gilbert', 'Rivera', 'Estrada', 'gilbert.estrada', 'Lead Ventilation Technician', [self::DUCTING_FABRICATION, self::AIRCON_INSTALLATION]),
+            $crew('lead_technician', 'Romeo', 'Del Rosario', 'Ignacio', 'romeo.ignacio', 'Lead HVAC Technician', [self::AIRCON_INSTALLATION, self::AIRCON_REPAIR, self::EQUIPMENT_CHECK_UP, self::AIRCON_CLEANING]),
 
             $crew('technician', 'Mark Anthony', 'Gomez', 'Perez', 'markanthony.perez', 'HVAC Technician', [self::AIRCON_INSTALLATION, self::AIRCON_CLEANING]),
-            $crew('technician', 'John Paul', 'Rosales', 'Medina', 'johnpaul.medina', 'Service Technician', [self::AIRCON_REPAIR, self::AIRCON_CLEANING, self::AIRCON_INSTALLATION]),
+            $crew('technician', 'John Paul', 'Rosales', 'Medina', 'johnpaul.medina', 'Service Technician', [self::AIRCON_REPAIR, self::EQUIPMENT_CHECK_UP, self::AIRCON_CLEANING, self::AIRCON_INSTALLATION]),
             $crew('technician', 'Christian', 'Valencia', 'Aguilar', 'christian.aguilar', 'Ducting Fabricator', [self::DUCTING_FABRICATION, self::DUCTING_INSTALLATION]),
-            $crew('technician', 'Jerald', 'Manuel', 'Cortez', 'jerald.cortez', 'Ducting Installer', [self::DUCTING_INSTALLATION, self::HEATING_VENTILATION]),
-            $crew('technician', 'Kevin', 'Samonte', 'Dizon', 'kevin.dizon', 'HVAC Technician', [self::AIRCON_INSTALLATION, self::AIRCON_REPAIR]),
-            $crew('technician', 'Ronald', 'Abad', 'Francisco', 'ronald.francisco', 'Ventilation Technician', [self::HEATING_VENTILATION, self::DUCTING_INSTALLATION, self::AIRCON_INSTALLATION]),
-            $crew('technician', 'Jomar', 'Velasco', 'Santos', 'jomar.santos', 'Service Technician', [self::AIRCON_CLEANING, self::AIRCON_REPAIR, self::AIRCON_INSTALLATION]),
-            $crew('technician', 'Ariel', 'Tan', 'Buenaventura', 'ariel.buenaventura', 'Ducting Fabricator', [self::DUCTING_FABRICATION, self::HEATING_VENTILATION]),
+            $crew('technician', 'Jerald', 'Manuel', 'Cortez', 'jerald.cortez', 'Ducting Installer', [self::DUCTING_INSTALLATION]),
+            $crew('technician', 'Kevin', 'Samonte', 'Dizon', 'kevin.dizon', 'HVAC Technician', [self::AIRCON_INSTALLATION, self::AIRCON_REPAIR, self::EQUIPMENT_CHECK_UP]),
+            $crew('technician', 'Ronald', 'Abad', 'Francisco', 'ronald.francisco', 'Ventilation Technician', [self::DUCTING_INSTALLATION, self::AIRCON_INSTALLATION]),
+            $crew('technician', 'Jomar', 'Velasco', 'Santos', 'jomar.santos', 'Service Technician', [self::AIRCON_CLEANING, self::AIRCON_REPAIR, self::EQUIPMENT_CHECK_UP, self::AIRCON_INSTALLATION]),
+            $crew('technician', 'Ariel', 'Tan', 'Buenaventura', 'ariel.buenaventura', 'Ducting Fabricator', [self::DUCTING_FABRICATION]),
             $crew('technician', 'Nestor', 'Galang', 'Pineda', 'nestor.pineda', 'HVAC Technician', [self::AIRCON_INSTALLATION, self::DUCTING_INSTALLATION]),
-            $crew('technician', 'Raymond', 'Lopez', 'Andrada', 'raymond.andrada', 'Service Technician', [self::AIRCON_REPAIR, self::AIRCON_CLEANING, self::HEATING_VENTILATION]),
-            $crew('technician', 'Jericho', 'Mendoza', 'Villafuerte', 'jericho.villafuerte', 'HVAC Technician', [self::AIRCON_INSTALLATION, self::AIRCON_REPAIR]),
+            $crew('technician', 'Raymond', 'Lopez', 'Andrada', 'raymond.andrada', 'Service Technician', [self::AIRCON_REPAIR, self::EQUIPMENT_CHECK_UP, self::AIRCON_CLEANING]),
+            $crew('technician', 'Jericho', 'Mendoza', 'Villafuerte', 'jericho.villafuerte', 'HVAC Technician', [self::AIRCON_INSTALLATION, self::AIRCON_REPAIR, self::EQUIPMENT_CHECK_UP]),
             $crew('technician', 'Allan', 'Reyes', 'Magbanua', 'allan.magbanua', 'Ducting Installer', [self::DUCTING_INSTALLATION, self::DUCTING_FABRICATION]),
-            $crew('technician', 'Rey', 'Castro', 'Lacson', 'rey.lacson', 'Service Technician', [self::AIRCON_CLEANING, self::AIRCON_REPAIR]),
-            $crew('technician', 'Dexter', 'Ramos', 'Quiambao', 'dexter.quiambao', 'Ventilation Technician', [self::HEATING_VENTILATION, self::DUCTING_INSTALLATION]),
-            $crew('technician', 'Joel', 'Santos', 'Esguerra', 'joel.esguerra', 'HVAC Technician', [self::AIRCON_INSTALLATION, self::AIRCON_CLEANING, self::HEATING_VENTILATION]),
+            $crew('technician', 'Rey', 'Castro', 'Lacson', 'rey.lacson', 'Service Technician', [self::AIRCON_CLEANING, self::AIRCON_REPAIR, self::EQUIPMENT_CHECK_UP]),
+            $crew('technician', 'Dexter', 'Ramos', 'Quiambao', 'dexter.quiambao', 'Ventilation Technician', [self::DUCTING_INSTALLATION]),
+            $crew('technician', 'Joel', 'Santos', 'Esguerra', 'joel.esguerra', 'HVAC Technician', [self::AIRCON_INSTALLATION, self::AIRCON_CLEANING]),
 
             // The other two office roles, after the crew so nobody above moves.
             $crew('admin_officer', 'Marites', 'Lopez', 'Salazar', 'marites.salazar', 'Admin Officer', []),
@@ -242,7 +242,7 @@ final class DemoDataCatalog
             [
                 'name' => 'Kitchen Exhaust and Make-Up Air System - Kusina ni Lola',
                 'client' => 'melanie.tiongson',
-                'types' => [self::HEATING_VENTILATION, self::DUCTING_FABRICATION],
+                'types' => [self::DUCTING_FABRICATION],
                 'scenario' => 'completed',
                 'description' => 'Design, fabrication and installation of a stainless-steel kitchen hood exhaust with a 2 HP centrifugal fan and a fresh-air make-up unit to keep the dining area free of smoke and cooking odor.',
                 'quotation' => 685000,
@@ -282,12 +282,12 @@ final class DemoDataCatalog
                 'method' => 'client_confirmed',
             ],
             [
-                'name' => 'Compressor Repair - Vergara Residence',
+                'name' => 'Aircon Check-up - Vergara Residence',
                 'client' => 'gregorio.vergara',
-                'types' => [self::AIRCON_REPAIR],
+                'types' => [self::EQUIPMENT_CHECK_UP],
                 'scenario' => 'completed',
-                'description' => 'Diagnosis and repair of a 2.0 HP split-type unit that trips the breaker on start-up. Replacement of the run capacitor and contactor, and a refrigerant top-up.',
-                'quotation' => 18500,
+                'description' => 'Check-up of a 2.0 HP split-type unit that trips the breaker on start-up, with findings and a recommendation for the client.',
+                'quotation' => 2500,
                 'created' => -208,
                 'ranges' => [[-205, -205]],
                 'target' => -203,
@@ -297,7 +297,7 @@ final class DemoDataCatalog
             [
                 'name' => 'Warehouse Ventilation Upgrade - Pacific Crest Logistics',
                 'client' => 'fernando.co',
-                'types' => [self::HEATING_VENTILATION, self::DUCTING_INSTALLATION],
+                'types' => [self::DUCTING_INSTALLATION],
                 'scenario' => 'completed',
                 'description' => 'Installation of six roof-mounted exhaust fans and galvanized intake ducting for the 2,400 sqm storage area to bring down afternoon heat build-up around the racking.',
                 'quotation' => 940000,
@@ -455,7 +455,7 @@ final class DemoDataCatalog
             [
                 'name' => 'Range Hood Exhaust Ducting - Bustamante Residence',
                 'client' => 'wilfredo.bustamante',
-                'types' => [self::DUCTING_INSTALLATION, self::HEATING_VENTILATION],
+                'types' => [self::DUCTING_INSTALLATION],
                 'scenario' => 'archived',
                 'archived_from' => 'completed',
                 'description' => 'Installation of a 6-inch exhaust duct from the kitchen range hood to the outside wall with a weatherproof louver and backdraft damper.',
@@ -470,7 +470,7 @@ final class DemoDataCatalog
             [
                 'name' => 'Rooftop Exhaust Fan Installation - Kusina ni Lola',
                 'client' => 'melanie.tiongson',
-                'types' => [self::HEATING_VENTILATION],
+                'types' => [self::DUCTING_INSTALLATION],
                 'scenario' => 'archived',
                 'archived_from' => 'cancelled',
                 'description' => 'Installation of two rooftop exhaust fans over the dishwashing area.',
@@ -519,12 +519,12 @@ final class DemoDataCatalog
                 'remarks' => 'Fabricated ducts were turned over to the client for storage. Work stopped after the main trunk line was hung.',
             ],
             [
-                'name' => 'Aircon Repair - Fuentes Residence',
+                'name' => 'Aircon Check-up - Fuentes Residence',
                 'client' => 'dennis.fuentes',
-                'types' => [self::AIRCON_REPAIR],
+                'types' => [self::EQUIPMENT_CHECK_UP],
                 'scenario' => 'cancelled',
-                'description' => 'Repair of a 1.5 HP split-type unit with a noisy indoor blower.',
-                'quotation' => 7500,
+                'description' => 'Check-up of a 1.5 HP split-type unit with a noisy indoor blower.',
+                'quotation' => 1500,
                 'created' => -75,
                 'ranges' => [[-70, -70]],
                 'target' => -69,
@@ -555,7 +555,7 @@ final class DemoDataCatalog
             [
                 'name' => 'Locker Room Ventilation - Sta. Rosa Fitness Hub',
                 'client' => 'mark.javier',
-                'types' => [self::HEATING_VENTILATION, self::DUCTING_INSTALLATION],
+                'types' => [self::DUCTING_INSTALLATION],
                 'scenario' => 'on_hold',
                 'description' => 'Exhaust ventilation for the men\'s and women\'s locker rooms and shower areas, with inline fans and moisture-resistant ducting.',
                 'quotation' => 265000,
@@ -585,7 +585,7 @@ final class DemoDataCatalog
             [
                 'name' => 'Production Area Ventilation - Carmona Fresh Foods',
                 'client' => 'antonio.saldana',
-                'types' => [self::HEATING_VENTILATION],
+                'types' => [self::DUCTING_INSTALLATION],
                 'scenario' => 'on_hold',
                 'description' => 'General ventilation for the food processing area: wall-mounted supply fans with filtered intakes and roof exhaust to keep the area within food-safety temperature limits.',
                 'quotation' => 560000,
@@ -617,7 +617,7 @@ final class DemoDataCatalog
             [
                 'name' => 'Function Hall Ducting Rerouting - Calamba Bay Hotel',
                 'client' => 'rosario.herrera',
-                'types' => [self::DUCTING_INSTALLATION, self::HEATING_VENTILATION],
+                'types' => [self::DUCTING_INSTALLATION],
                 'scenario' => 'overdue',
                 'description' => 'Rerouting of the function hall supply ducts around the new stage truss and adding two return-air grilles.',
                 'quotation' => 430000,
@@ -660,7 +660,7 @@ final class DemoDataCatalog
             [
                 'name' => 'Exhaust and Fresh Air Ducting - Southwoods Medical Clinic Annex',
                 'client' => 'teresa.villareal',
-                'types' => [self::DUCTING_FABRICATION, self::DUCTING_INSTALLATION, self::HEATING_VENTILATION],
+                'types' => [self::DUCTING_FABRICATION, self::DUCTING_INSTALLATION],
                 'scenario' => 'ongoing',
                 'description' => 'Fresh-air supply and exhaust ducting for the clinic annex, including a negative-pressure isolation room, to meet the Department of Health air change requirements. The trunk lines are in; the remaining runs go in once the annex ceiling framing is finished.',
                 'quotation' => 890000,
@@ -699,7 +699,7 @@ final class DemoDataCatalog
             [
                 'name' => 'Kitchen Ventilation Hood and Ducting - Vergara Residence',
                 'client' => 'gregorio.vergara',
-                'types' => [self::HEATING_VENTILATION, self::DUCTING_INSTALLATION],
+                'types' => [self::DUCTING_INSTALLATION],
                 'scenario' => 'ongoing',
                 'description' => 'Installation of a range hood with ducting to the outside wall for the newly renovated kitchen. Ducting is being installed now; the hood will be mounted after the cabinets are delivered.',
                 'quotation' => 64000,
@@ -752,7 +752,7 @@ final class DemoDataCatalog
             [
                 'name' => 'Classroom Ventilation Fans - Bright Minds Learning Center',
                 'client' => 'josephine.alcantara',
-                'types' => [self::HEATING_VENTILATION],
+                'types' => [self::DUCTING_INSTALLATION],
                 'scenario' => 'awaiting',
                 'description' => 'Installation of wall-mounted ventilation fans and exhaust grilles in six ground-floor classrooms.',
                 'quotation' => 148000,
@@ -779,12 +779,12 @@ final class DemoDataCatalog
                 'phases' => true,
             ],
             [
-                'name' => 'Gym Aircon Preventive Maintenance - Sta. Rosa Fitness Hub',
+                'name' => 'Gym Aircon Check-up - Sta. Rosa Fitness Hub',
                 'client' => 'mark.javier',
-                'types' => [self::AIRCON_CLEANING],
+                'types' => [self::EQUIPMENT_CHECK_UP],
                 'scenario' => 'pending',
-                'description' => 'Quarterly preventive maintenance of the two ducted units serving the workout floor and the four wall-mounted units in the offices.',
-                'quotation' => 38000,
+                'description' => 'Check-up of the two ducted units serving the workout floor, which are not cooling evenly.',
+                'quotation' => 4500,
                 'created' => -10,
                 'ranges' => [[26, 27]],
                 'target' => 30,
@@ -820,7 +820,7 @@ final class DemoDataCatalog
             [
                 'name' => 'Range Hood and Exhaust Ducting - Abella Residence',
                 'client' => 'josefina.abella',
-                'types' => [self::DUCTING_INSTALLATION, self::HEATING_VENTILATION],
+                'types' => [self::DUCTING_INSTALLATION],
                 'scenario' => 'pending',
                 'description' => 'Exhaust ducting from the new range hood to the side wall with a backdraft damper and a weatherproof hood.',
                 'quotation' => 32500,
@@ -876,7 +876,7 @@ final class DemoDataCatalog
             [
                 'name' => 'Branch Kitchen Exhaust System - Kusina ni Lola (Tagaytay)',
                 'client' => 'melanie.tiongson',
-                'types' => [self::HEATING_VENTILATION, self::DUCTING_FABRICATION],
+                'types' => [self::DUCTING_FABRICATION],
                 'scenario' => 'unscheduled',
                 'description' => 'Kitchen hood exhaust and make-up air for the new Tagaytay branch, following the same design as the Silang kitchen. Dates are set once the branch\'s building permit is released.',
                 'address' => 'Aguinaldo Highway, Brgy. Maharlika West, Tagaytay City, Cavite',
@@ -916,7 +916,7 @@ final class DemoDataCatalog
             [
                 'name' => 'Attic Ventilation Installation - Vergara Residence',
                 'client' => 'gregorio.vergara',
-                'types' => [self::HEATING_VENTILATION],
+                'types' => [self::DUCTING_INSTALLATION],
                 'scenario' => 'unscheduled',
                 'description' => 'Two solar-powered attic exhaust fans and soffit vents to bring down second-floor heat. To be scheduled after the kitchen ventilation project is finished.',
                 'quotation' => 45000,
@@ -941,7 +941,6 @@ final class DemoDataCatalog
         'Site Preparation' => 'Survey the site and prepare the work area.',
         'Fabrication' => 'Fabricate the duct sections and fittings.',
         'Installation' => 'Install the equipment, piping and wiring.',
-        'Ventilation Works' => 'Install the fans, ducting and controls.',
         'Repair' => 'Replace the faulty parts and restore the system.',
         'Cleaning' => 'Clean and service the units.',
         'Testing' => 'Test the completed work.',
@@ -1042,21 +1041,15 @@ final class DemoDataCatalog
                     ['Final walkthrough and as-built handover', 'Walk the client through the system and hand over the as-built drawings and balancing report.'],
                 ],
             ],
-            self::HEATING_VENTILATION => [
+            self::EQUIPMENT_CHECK_UP => [
                 'Site Preparation' => [
-                    ['Survey fan and opening locations', 'Confirm fan, louver and intake positions with the client and check the structural supports.'],
-                    ['Prepare openings and supports', 'Cut the wall and roof openings and install the fan bases and curbs.'],
-                ],
-                'Ventilation Works' => [
-                    ['Install exhaust and supply fans', 'Set the fans on their bases, fit the vibration isolators and weatherproof the openings.'],
-                    ['Connect ducting and hoods', 'Connect the exhaust ducting to the hoods and fans with sealed, fire-rated joints where needed.'],
-                    ['Wire fan controls', 'Wire the fan starters, speed controllers and wall switches.'],
+                    ['Confirm the units and access', 'Confirm which units are to be checked and arrange access with the client.'],
                 ],
                 'Testing' => [
-                    ['Airflow and noise test', 'Run every fan and measure its airflow, rotation and noise level against the design values.'],
+                    ['Check up each unit', 'Run each unit, inspect it and record the trouble found.'],
                 ],
                 'Final Inspection' => [
-                    ['Turnover and maintenance briefing', 'Walk the client through the controls and brief their staff on cleaning and maintenance.'],
+                    ['Findings and recommendations', 'Explain the findings to the client and recommend the work needed.'],
                 ],
             ],
         ];
@@ -1274,9 +1267,8 @@ final class DemoDataCatalog
     {
         return match ($type) {
             self::AIRCON_CLEANING => 'cleaning',
-            self::AIRCON_REPAIR => 'repair',
+            self::AIRCON_REPAIR, self::EQUIPMENT_CHECK_UP => 'repair',
             self::DUCTING_FABRICATION, self::DUCTING_INSTALLATION => 'ducting',
-            self::HEATING_VENTILATION => 'ventilation',
             default => 'installation',
         };
     }

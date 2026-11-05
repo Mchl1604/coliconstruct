@@ -19,19 +19,131 @@ use Illuminate\Support\Facades\DB;
  *     php artisan db:seed --class=MaterialSeeder --force
  *
  * Add-only. A type or a material already on the list - same name, brand and
- * unit, whatever the casing - is left exactly as it is, so running this on a
- * site whose list has been edited changes nothing that was edited.
+ * unit, whatever the casing - is left as it is, except that a blank price is
+ * filled from PRICES, so nothing edited on the site is changed.
  * DemoDataSeeder runs it before it sets its projects' materials up.
  */
 class MaterialSeeder extends Seeder
 {
+    /**
+     * What each material on the starting list sells for, in pesos, by
+     * "name|brand". Fills a blank price only: one set in Inventory stays.
+     *
+     * @var array<string, float|int>
+     */
+    public const PRICES = [
+        'Split-Type Inverter 1.0 HP|Daikin' => 32500,
+        'Split-Type Inverter 1.5 HP|Daikin' => 41500,
+        'Split-Type Inverter 2.0 HP|Daikin' => 52000,
+        'Split-Type Inverter 1.0 HP|Carrier' => 29500,
+        'Split-Type Inverter 1.5 HP|Carrier' => 37500,
+        'Split-Type Inverter 2.5 HP|Carrier' => 58000,
+        'Split-Type Inverter 1.0 HP|Panasonic' => 30500,
+        'Split-Type Inverter 1.5 HP|Panasonic' => 39000,
+        'Split-Type Inverter 1.5 HP|LG' => 36500,
+        'Split-Type Inverter 2.0 HP|LG' => 46500,
+        'Split-Type Inverter 1.5 HP|Samsung' => 38500,
+        'Split-Type Inverter 1.0 HP|Koppel' => 25500,
+        'Split-Type Inverter 1.5 HP|Koppel' => 32000,
+        'Split-Type Inverter 1.0 HP|Midea' => 22500,
+        'Split-Type Non-Inverter 1.5 HP|Kolin' => 24500,
+        'Split-Type Inverter 1.0 HP|Aux' => 21500,
+        'Window-Type Inverter 1.0 HP|Condura' => 19500,
+        'Window-Type Inverter 1.5 HP|Carrier' => 26500,
+        'Window-Type Non-Inverter 0.75 HP|Kolin' => 12500,
+        'Ceiling Cassette Inverter 2.5 HP|Daikin' => 78000,
+        'Ceiling Cassette Inverter 3.0 HP|Carrier' => 86000,
+        'Ceiling Cassette Inverter 4.0 HP|Midea' => 92000,
+        'Floor-Mounted 3.0 TR|Carrier' => 165000,
+        'Floor-Mounted 5.0 TR|Koppel' => 215000,
+        'Ceiling-Suspended 3.0 TR|Daikin' => 158000,
+        'Ducted Split 5.0 TR|Daikin' => 245000,
+        'Ducted Split 7.5 TR|Carrier' => 335000,
+        'VRF Outdoor Unit 10 HP|Mitsubishi Electric' => 425000,
+        'VRF Indoor Unit 1.5 HP|Mitsubishi Electric' => 38500,
+        'Refrigerant R32|Chemours' => 1150,
+        'Refrigerant R410A|Honeywell' => 950,
+        'Refrigerant R22|Honeywell' => 1250,
+        'Nitrogen, Dry|' => 1800,
+        'Copper Tube 1/4"|Mueller' => 165,
+        'Copper Tube 3/8"|Mueller' => 235,
+        'Copper Tube 1/2"|Mueller' => 310,
+        'Copper Tube 5/8"|Mueller' => 395,
+        'Copper Tube 3/4"|Kembla' => 485,
+        'Flare Nut 1/4"|' => 45,
+        'Flare Nut 1/2"|' => 85,
+        'Copper Elbow 5/8"|' => 95,
+        'Brazing Rod 15% Silver|Harris' => 185,
+        'Rubber Foam Insulation 3/8" x 3/4"|Armaflex' => 145,
+        'Rubber Foam Insulation 5/8" x 3/4"|Armaflex' => 195,
+        'Rubber Foam Insulation 1/2" x 3/4"|K-Flex' => 165,
+        'Insulation Tape 2"|Armaflex' => 225,
+        'Fiberglass Duct Wrap 1"|Owens Corning' => 4850,
+        'THHN Wire 2.0 mm²|Phelps Dodge' => 28,
+        'THHN Wire 3.5 mm²|Phelps Dodge' => 42,
+        'THHN Wire 5.5 mm²|Phelps Dodge' => 65,
+        'THHN Wire 3.5 mm²|Columbia' => 38,
+        'Control Cable 4-Core|' => 75,
+        'Circuit Breaker 2P 20A|Schneider Electric' => 485,
+        'Circuit Breaker 2P 30A|Schneider Electric' => 545,
+        'Safety Switch 30A|GE' => 1450,
+        'Flexible Conduit 1/2"|' => 55,
+        'PVC Electrical Conduit 1/2"|Neltex' => 95,
+        'Electrical Tape|3M' => 85,
+        'PVC Pipe 3/4"|Neltex' => 165,
+        'PVC Pipe 1"|Atlanta' => 225,
+        'PVC Elbow 3/4"|Neltex' => 25,
+        'Drain Hose 5/8"|' => 45,
+        'PVC Solvent Cement 100cc|Neltex' => 95,
+        'G.I. Sheet Gauge 24|' => 1250,
+        'G.I. Sheet Gauge 26|' => 950,
+        'Flexible Duct 8"|' => 285,
+        'Flexible Duct 10"|' => 345,
+        'Canvas Connector|' => 420,
+        'Volume Damper 10"|' => 1350,
+        'Duct Sealant Mastic|Hardcast' => 1650,
+        'Aluminum Foil Tape 2"|3M' => 385,
+        'Threaded Rod 3/8"|' => 185,
+        'Square Ceiling Diffuser 12" x 12"|' => 1250,
+        'Linear Slot Diffuser 4 ft|' => 3450,
+        'Return Air Grille 24" x 12"|' => 1650,
+        'Exhaust Grille 10" x 10"|' => 750,
+        'Ceiling Exhaust Fan 10"|Panasonic' => 2850,
+        'Wall Exhaust Fan 12"|Hanabishi' => 1950,
+        'Inline Duct Fan 8"|KDK' => 6500,
+        'Centrifugal Fan 2 HP|' => 38500,
+        'Fresh Air Louver 24" x 24"|' => 2450,
+        'Outdoor Unit Wall Bracket 1.0-2.0 HP|' => 650,
+        'Outdoor Unit Wall Bracket 2.5-3.0 HP|' => 950,
+        'Anti-Vibration Rubber Pad|' => 350,
+        'Expansion Anchor Bolt 3/8"|' => 35,
+        'Plastic Anchor with Screw|' => 185,
+        'Tek Screw 1"|' => 225,
+        'Blind Rivet 1/8"|' => 650,
+        'Cable Tie 8"|' => 95,
+        'Run Capacitor 35+5 µF|' => 450,
+        'Indoor Fan Motor, Split-Type|' => 2850,
+        'Rotary Compressor 1.5 HP|GMCC' => 9500,
+        'PCB Control Board, Split-Type|' => 3250,
+        'Universal Aircon Remote|' => 450,
+        'Filter Drier 1/4"|Danfoss' => 650,
+        'Thermostat, Digital|Honeywell' => 3850,
+        'Coil Cleaner, Alkaline|Nu-Calgon' => 1250,
+        'Evaporator Coil Cleaner Spray|Nu-Calgon' => 485,
+        'Aircon Cleaning Bag|' => 650,
+        'Washable Air Filter|' => 185,
+        'Duct Tape 2"|' => 125,
+        'Teflon Tape|' => 25,
+        'Silicone Sealant, Clear|Bostik' => 245,
+        'Cotton Rags|' => 75,
+    ];
+
     public function run(): void
     {
         DB::transaction(function (): void {
             $existing = Material::query()
-                ->get(['name', 'brand_id', 'unit'])
-                ->map(fn (Material $material): string => self::key($material->name, $material->brandName(), $material->unit->value))
-                ->flip();
+                ->get()
+                ->keyBy(fn (Material $material): string => self::key($material->name, $material->brandName(), $material->unit->value));
 
             $added = 0;
 
@@ -40,7 +152,15 @@ class MaterialSeeder extends Seeder
                     ?? MaterialType::create(['type_name' => $typeName]);
 
                 foreach ($materials as [$name, $brand, $unit, $description]) {
-                    if ($existing->has(self::key($name, $brand, $unit->value))) {
+                    $price = self::PRICES[$name.'|'.$brand] ?? null;
+                    $listed = $existing->get(self::key($name, $brand, $unit->value));
+
+                    if ($listed) {
+                        // Only a blank price: one set in Inventory stays.
+                        if ($listed->unit_price === null && $price !== null) {
+                            $listed->update(['unit_price' => $price]);
+                        }
+
                         continue;
                     }
 
@@ -50,6 +170,7 @@ class MaterialSeeder extends Seeder
                         'name' => $name,
                         'unit' => $unit,
                         'description' => $description,
+                        'unit_price' => $price,
                         'is_active' => true,
                     ]);
 

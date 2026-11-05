@@ -478,6 +478,7 @@ class MaterialController extends Controller
             'description' => ['nullable', 'string', 'max:255'],
             // Checked against the unit by MaterialCatalog.
             'reorder_level' => ['nullable', 'numeric', 'min:0'],
+            'unit_price' => ['nullable', 'numeric', 'min:0', 'max:9999999999'],
         ], [
             'material_type_id.required' => 'Choose a material type.',
             'material_type_id.exists' => 'Choose a material type.',
@@ -489,6 +490,9 @@ class MaterialController extends Controller
             'description.max' => 'Description is too long.',
             'reorder_level.numeric' => 'Enter a reorder level of zero or more.',
             'reorder_level.min' => 'Enter a reorder level of zero or more.',
+            'unit_price.numeric' => 'Enter a price of zero or more.',
+            'unit_price.min' => 'Enter a price of zero or more.',
+            'unit_price.max' => 'That price is too high.',
         ]);
     }
 

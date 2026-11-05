@@ -1264,6 +1264,9 @@
                         ₱ {{ number_format($project->quotation, 2) }}
                     </span>
 
+                    <x-project-quotation-modal :project="$project"
+                        :can-edit="! $isReadOnly && \App\Support\RoleAccess::can(auth()->user(), \App\Support\RoleAccess::CREATE_PROJECTS)" />
+
                     {{-- Only once there is something to show: an amount that
                          has changed, or a quotation file change. The icon
                          alone, as the team and schedule history buttons are. --}}
@@ -1297,7 +1300,7 @@
                 </div>
                 {{-- Each type's detail form, folded, then the Notes. --}}
                 <x-project-description :project="$project"
-                    :edit-target="$isReadOnly ? null : 'editProjectDescriptionModal'" :edit-disabled="$awaitingSetup" />
+                    :edit-target="$isReadOnly ? null : 'editProjectDescriptionModal'" />
 
             </div>
         </div>
@@ -1615,9 +1618,25 @@
                         </button>
                     </li>
 
+                    @if (app(\App\Services\ServiceReport::class)->checklistTypes($project)->isNotEmpty())
+                        <li class="nav-item">
+                            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#checklist">
+
+                                Checklist
+
+                            </button>
+                        </li>
+                    @endif
+
                 </ul>
 
                 <div class="tab-content">
+
+                    @if (app(\App\Services\ServiceReport::class)->checklistTypes($project)->isNotEmpty())
+                        <div class="tab-pane fade" id="checklist">
+                            <x-project-checklist :project="$project" />
+                        </div>
+                    @endif
 
                     <!-- Technician Reports -->
                     <div class="tab-pane fade show active" id="reports">
@@ -2209,7 +2228,8 @@
 
                                 <input type="text" class="form-control" inputmode="decimal"
                                     autocomplete="off" value="{{ $project->quotation }}" required
-                                    aria-label="Quotation amount" data-money-input>
+                                    aria-label="Quotation amount" data-money-input
+                                    @readonly($project->quotationItems->isNotEmpty())>
 
                                 <input type="hidden" name="quotation" value="{{ $project->quotation }}"
                                     data-money-value>
@@ -2217,7 +2237,7 @@
                             </div>
 
                             <div class="form-text">
-                                You will be asked about the file.
+                                {{ $project->quotationItems->isNotEmpty() ? 'Set by the quotation details.' : 'You will be asked about the file.' }}
                             </div>
 
                         </div>

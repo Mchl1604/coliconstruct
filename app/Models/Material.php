@@ -34,6 +34,7 @@ class Material extends Model
         'unit',
         'description',
         'reorder_level',
+        'unit_price',
         'is_active',
         'created_by',
         'created_from_project_id',
@@ -78,6 +79,7 @@ class Material extends Model
     protected $casts = [
         'unit' => MaterialUnit::class,
         'reorder_level' => 'decimal:2',
+        'unit_price' => 'decimal:2',
         'is_active' => 'boolean',
     ];
 
