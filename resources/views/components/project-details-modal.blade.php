@@ -2,7 +2,7 @@
     Project Details -> Edit Description. Draws each of the project's types
     through project-details-editor, the same sections the create wizard uses,
     filled with what was saved - or with what was typed, reopened on its own
-    error bag after a refused save. Opened from project-description's pencil.
+    error bag after a refused save. Opened from the Service Report dialog or Edit Details.
     Notes stay in the Edit Project dialog, beside the project's other text.
 --}}
 @props([
@@ -43,6 +43,28 @@
                                     @endforeach
                                 </ul>
                             </div>
+                        @endif
+
+                        @if (app(\App\Services\ServiceReport::class)->reportTypes($project)->isNotEmpty())
+                            <section class="border rounded-3 p-3 mb-3">
+                                <div class="row g-2">
+                                    <div class="col-md-6">
+                                        <label class="form-label small mb-1" for="reportPerformedBy">Performed By</label>
+                                        <input type="text" class="form-control form-control-sm" id="reportPerformedBy" name="report_performed_by"
+                                            maxlength="150" value="{{ $reopen ? old('report_performed_by') : $project->report_performed_by }}">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label small mb-1" for="reportWitnessedBy">Witnessed and Accepted By</label>
+                                        <input type="text" class="form-control form-control-sm" id="reportWitnessedBy" name="report_witnessed_by"
+                                            maxlength="150" value="{{ $reopen ? old('report_witnessed_by') : $project->report_witnessed_by }}">
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label small mb-1" for="reportRemarks">Remarks</label>
+                                        <textarea class="form-control form-control-sm" id="reportRemarks" name="report_remarks" rows="2"
+                                            maxlength="2000">{{ $reopen ? old('report_remarks') : $project->report_remarks }}</textarea>
+                                    </div>
+                                </div>
+                            </section>
                         @endif
 
                         @foreach ($detailTypes as $type)

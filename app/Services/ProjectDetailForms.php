@@ -163,7 +163,7 @@ class ProjectDetailForms
                 [$values, $labels] = $this->rowFor($form->unitFields(), $row, $previous);
 
                 if (! $this->isBlank($values)) {
-                    $this->store($project, $type, $form, DetailFieldScope::Unit, $values, $labels, $position);
+                    $this->store($project, $type, $form, DetailFieldScope::Unit, $values, $labels, $position, $previous?->checklist);
                 }
             }
         }
@@ -248,8 +248,9 @@ class ProjectDetailForms
     /**
      * @param  array<string, mixed>  $values
      * @param  array<string, string>  $labels
+     * @param  array<int, string>|null  $checklist  the ticks an edited unit keeps
      */
-    private function store(Project $project, ProjectType $type, DetailForm $form, DetailFieldScope $scope, array $values, array $labels, int $position): void
+    private function store(Project $project, ProjectType $type, DetailForm $form, DetailFieldScope $scope, array $values, array $labels, int $position, ?array $checklist = null): void
     {
         ProjectDetail::create([
             'project_id' => $project->project_id,
@@ -259,6 +260,7 @@ class ProjectDetailForms
             'values' => $values,
             'labels' => $labels,
             'sort_order' => $position,
+            'checklist' => $checklist,
         ]);
     }
 

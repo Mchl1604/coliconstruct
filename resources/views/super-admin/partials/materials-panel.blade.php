@@ -60,6 +60,7 @@
                             <th>Brand</th>
                             <th>Type</th>
                             <th>Unit</th>
+                            <th class="text-end">Price</th>
                             <th class="text-center">Actions</th>
                         </tr>
                     </thead>

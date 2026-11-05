@@ -14,6 +14,11 @@
  * again with today's figures. ProjectMaterialPlan::limitToAvailable() holds the
  * server to the same limit.
  *
+ * The lines also fill themselves from the Quotation step: a quoted material
+ * arrives at its quoted quantity, held to what is available, with the rest
+ * ticked to request. Once somebody changes a line by hand, the quotation only
+ * updates its Quoted note; a line they removed stays removed while it is quoted.
+ *
  * Every value from the server is written with textContent.
  */
 document.addEventListener("DOMContentLoaded", function () {
@@ -40,8 +45,12 @@ document.addEventListener("DOMContentLoaded", function () {
             quantity: row.quantity !== undefined ? String(row.quantity) : "",
             remaining: remaining,
             requested: remaining > 0,
+            // Came back from a failed save: what it says is what was chosen.
+            edited: true,
+            quoted: null,
         };
     });
+    const dismissed = new Set();
 
     function formatQty(value) {
         const number = Number(value);
@@ -186,6 +195,14 @@ document.addEventListener("DOMContentLoaded", function () {
             meta.textContent = [material.type, material.subtype].filter(Boolean).join(" · ");
             nameCell.appendChild(meta);
 
+            if (line.quoted !== null) {
+                const quoted = document.createElement("div");
+
+                quoted.className = "material-meta fw-semibold";
+                quoted.textContent = "Quoted " + formatQty(line.quoted) + " " + material.unit;
+                nameCell.appendChild(quoted);
+            }
+
             id.type = "hidden";
             id.name = "materials[" + index + "][material_id]";
             id.value = String(material.material_id);
@@ -316,6 +333,8 @@ document.addEventListener("DOMContentLoaded", function () {
                 quantity: Number(material.available || 0) <= 0 ? "0" : material.allows_fractions ? "" : "1",
                 remaining: 0,
                 requested: false,
+                edited: true,
+                quoted: null,
             });
             search.value = "";
             render();
@@ -337,6 +356,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         lines[Number(index)].quantity = event.target.value;
+        lines[Number(index)].edited = true;
         refresh();
     });
 
@@ -346,6 +366,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
         if (requestIndex !== undefined && lines[Number(requestIndex)]) {
             lines[Number(requestIndex)].requested = event.target.checked;
+            lines[Number(requestIndex)].edited = true;
             refresh();
 
             return;
@@ -372,7 +393,71 @@ document.addEventListener("DOMContentLoaded", function () {
             return;
         }
 
-        lines.splice(Number(remove.dataset.wizardMaterialRemove), 1);
+        const removed = lines.splice(Number(remove.dataset.wizardMaterialRemove), 1)[0];
+
+        if (removed.quoted !== null) {
+            dismissed.add(removed.material.material_id);
+        }
+
+        render();
+    });
+
+    /**
+     * Bring the lines in step with the quotation, without touching any line a
+     * person has already changed.
+     */
+    document.addEventListener("quotation-lines:changed", function (event) {
+        if (!event.target.closest("[data-wizard-quotation]")) {
+            return;
+        }
+
+        const quoted = new Map();
+
+        event.detail.materials.forEach(function (item) {
+            quoted.set(item.material.material_id, item);
+        });
+
+        dismissed.forEach(function (id) {
+            if (!quoted.has(id)) {
+                dismissed.delete(id);
+            }
+        });
+
+        for (let index = lines.length - 1; index >= 0; index--) {
+            const line = lines[index];
+
+            if (!quoted.has(line.material.material_id)) {
+                if (line.quoted !== null && !line.edited) {
+                    lines.splice(index, 1);
+                } else {
+                    line.quoted = null;
+                }
+            }
+        }
+
+        quoted.forEach(function (item, id) {
+            let line = lines.find(function (candidate) {
+                return candidate.material.material_id === id;
+            });
+
+            if (!line) {
+                if (dismissed.has(id)) {
+                    return;
+                }
+
+                line = { material: item.material, quantity: "", remaining: 0, requested: true, edited: false, quoted: null };
+                lines.push(line);
+            }
+
+            line.quoted = item.quantity;
+
+            if (!line.edited) {
+                line.quantity = String(item.quantity);
+                line.requested = true;
+                applyLimit(line);
+            }
+        });
+
         render();
     });
 

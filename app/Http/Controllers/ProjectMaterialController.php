@@ -16,6 +16,7 @@ use App\Services\ProjectMaterialRules;
 use App\Services\StockAvailability;
 use App\Support\BusinessTime;
 use App\Support\MaterialUnit;
+use App\Support\RoleAccess;
 use App\Support\ServerTable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -104,10 +105,16 @@ class ProjectMaterialController extends Controller
         $query = mb_substr((string) $request->query('q', ''), 0, 100);
         $materials = $this->catalog->suggest($query, $project);
         $figures = $availability->forMaterials($materials->pluck('material_id')->all());
+        // Prices stay with those who write quotations.
+        $prices = RoleAccess::can($request->user(), RoleAccess::CREATE_PROJECTS)
+            ? Material::query()->whereKey($materials->pluck('material_id')->all())->pluck('unit_price', 'material_id')
+            : collect();
 
         return response()->json([
             'materials' => $materials
-                ->map(fn (array $material): array => $material + ($figures[$material['material_id']] ?? []))
+                ->map(fn (array $material): array => $material
+                    + ($figures[$material['material_id']] ?? [])
+                    + ($prices->has($material['material_id']) ? ['unit_price' => $prices[$material['material_id']]] : []))
                 ->all(),
         ]);
     }
@@ -124,10 +131,16 @@ class ProjectMaterialController extends Controller
         $query = mb_substr((string) $request->query('q', ''), 0, 100);
         $materials = $this->catalog->suggest($query);
         $figures = $availability->forMaterials($materials->pluck('material_id')->all());
+        // Prices stay with those who write quotations.
+        $prices = RoleAccess::can($request->user(), RoleAccess::CREATE_PROJECTS)
+            ? Material::query()->whereKey($materials->pluck('material_id')->all())->pluck('unit_price', 'material_id')
+            : collect();
 
         return response()->json([
             'materials' => $materials
-                ->map(fn (array $material): array => $material + ($figures[$material['material_id']] ?? []))
+                ->map(fn (array $material): array => $material
+                    + ($figures[$material['material_id']] ?? [])
+                    + ($prices->has($material['material_id']) ? ['unit_price' => $prices[$material['material_id']]] : []))
                 ->all(),
         ]);
     }

@@ -5,6 +5,7 @@
     $payload = $material->toOption() + [
         'material_type_id' => (int) $material->material_type_id,
         'is_used' => $isUsed,
+        'unit_price' => $material->unit_price === null ? null : (float) $material->unit_price,
     ];
 @endphp
 <tr class="{{ $material->is_active ? '' : 'text-secondary' }}">
@@ -28,6 +29,13 @@
         @endif
     </td>
     <td><span class="material-unit-chip" title="{{ $material->unit->label() }}">{{ $material->unit->value }}</span></td>
+    <td class="text-end text-nowrap">
+        @if ($material->unit_price !== null)
+            &#8369; {{ number_format((float) $material->unit_price, 2) }}
+        @else
+            <span class="text-secondary small">&ndash;</span>
+        @endif
+    </td>
     <td class="text-center text-nowrap">
         <button type="button" class="btn btn-sm btn-outline-primary py-1 px-2"
             data-material-edit='@json($payload)' title="Edit">

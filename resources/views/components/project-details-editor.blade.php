@@ -8,18 +8,26 @@
     $project: the saved project values, keyed by field_key.
     $units: [['values' => [...], 'detail_id' => ?int], ...]. Empty draws one
     blank unit, because a form with unit fields always asks for at least one.
+    $creating: leaves out the fields only known once the work has started.
 --}}
 @props([
     'type',
     'project' => [],
     'units' => [],
     'hidden' => false,
+    'creating' => false,
 ])
 
 @php
     $form = $type->detailForm;
     $projectFields = $form->projectFields();
     $unitFields = $form->unitFields();
+
+    if ($creating) {
+        $projectFields = $projectFields->reject(fn ($field) => \App\Support\ServiceReportForms::isFilledDuringWork($type->type_name, $field->field_key))->values();
+        $unitFields = $unitFields->reject(fn ($field) => \App\Support\ServiceReportForms::isFilledDuringWork($type->type_name, $field->field_key))->values();
+    }
+
     $units = array_values($units) ?: [['values' => [], 'detail_id' => null]];
     $base = 'details['.$type->type_id.']';
 @endphp
@@ -29,7 +37,9 @@
     @if ($hidden) hidden @endif>
     <h6 class="fw-bold mb-3">
         {{ $type->type_name }}
-        <span class="text-secondary small fw-normal">&middot; {{ $form->name }}</span>
+        @if ($form->name !== $type->type_name)
+            <span class="text-secondary small fw-normal">&middot; {{ $form->name }}</span>
+        @endif
     </h6>
 
     @if ($projectFields->isNotEmpty())

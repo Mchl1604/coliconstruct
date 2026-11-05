@@ -51,6 +51,7 @@ class PortalAccessMatrixTest extends TestCase
         'super-admin.projects.create' => [User::ROLE_SUPER_ADMIN, User::ROLE_ADMIN_OFFICER],
         'super-admin.projects.create.store' => [User::ROLE_SUPER_ADMIN, User::ROLE_ADMIN_OFFICER],
         'super-admin.task.store' => [User::ROLE_SUPER_ADMIN],
+        'super-admin.projects.checklist.update' => [User::ROLE_SUPER_ADMIN],
         'super-admin.tasks.update' => [User::ROLE_SUPER_ADMIN],
         'super-admin.tasks.complete' => [User::ROLE_SUPER_ADMIN],
         'super-admin.tasks.destroy' => [User::ROLE_SUPER_ADMIN],
@@ -78,6 +79,7 @@ class PortalAccessMatrixTest extends TestCase
         'technician.tasks.destroy',
         'technician.projects.complete',
         'technician.projects.task-form-data',
+        'technician.projects.checklist.',
         'technician.projects.phases.',
         'technician.projects.materials.suggest',
         'technician.projects.materials.requests.',
@@ -436,6 +438,8 @@ class PortalAccessMatrixTest extends TestCase
                 ->whereHas('projectTechnicians', fn ($team) => $team->where('technician_id', $user->technicianRecord()->technician_id)))
             ->where('is_archived', false)
             ->whereNotIn('status', Project::READ_ONLY_STATUSES)
+            ->where('on_hold', false)
+            ->whereHas('schedules')
             ->orderByDesc('project_id')
             ->value('project_id');
     }

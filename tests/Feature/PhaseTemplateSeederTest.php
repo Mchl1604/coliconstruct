@@ -31,7 +31,6 @@ class PhaseTemplateSeederTest extends TestCase
         DemoDataCatalog::AIRCON_CLEANING => 'Cleaning',
         DemoDataCatalog::DUCTING_FABRICATION => 'Fabrication',
         DemoDataCatalog::DUCTING_INSTALLATION => 'Installation',
-        DemoDataCatalog::HEATING_VENTILATION => 'Ventilation Works',
     ];
 
     private function seedTypes(): void
@@ -93,12 +92,12 @@ class PhaseTemplateSeederTest extends TestCase
 
     public function test_a_misspelled_type_on_the_site_still_gets_its_template(): void
     {
-        $type = ProjectType::create(['type_name' => 'Heating Ventillation']);
+        $type = ProjectType::create(['type_name' => 'Aircon Instalation']);
 
         $this->seed(PhaseTemplateSeeder::class);
 
         $this->assertSame(4, $type->stages()->count());
-        $this->assertTrue($type->stages()->where('name', 'Ventilation Works')->exists());
+        $this->assertTrue($type->stages()->where('name', 'Installation')->exists());
     }
 
     public function test_a_stage_the_site_added_itself_stays_after_the_defaults(): void

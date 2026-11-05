@@ -579,9 +579,23 @@
                             Tasks
                         </button>
                     </li>
+                    @if (app(\App\Services\ServiceReport::class)->checklistTypes($project)->isNotEmpty())
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#checklist" type="button"
+                                role="tab">
+                                Checklist
+                            </button>
+                        </li>
+                    @endif
                 </ul>
 
                 <div class="tab-content">
+
+                    @if (app(\App\Services\ServiceReport::class)->checklistTypes($project)->isNotEmpty())
+                        <div class="tab-pane fade" id="checklist" role="tabpanel">
+                            <x-project-checklist :project="$project" />
+                        </div>
+                    @endif
 
                     <!-- Technician Reports -->
                     <div class="tab-pane fade show active" id="reports" role="tabpanel">

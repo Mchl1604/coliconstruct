@@ -19,11 +19,13 @@ use App\Http\Controllers\PhaseTemplateController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ProgressReportController;
 use App\Http\Controllers\ProjectAddressController;
+use App\Http\Controllers\ProjectChecklistController;
 use App\Http\Controllers\ProjectClientController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ProjectDetailController;
 use App\Http\Controllers\ProjectMaterialController;
 use App\Http\Controllers\ProjectPhaseController;
+use App\Http\Controllers\ProjectQuotationController;
 use App\Http\Controllers\ProjectTypeController;
 use App\Http\Controllers\PublicSiteController;
 use App\Http\Controllers\ReportController;
@@ -459,7 +461,13 @@ Route::prefix('super-admin')
             ->name('projects.documents.destroy');
         Route::put('/projects/{id}', [ProjectController::class, 'update'])->middleware('project.setup')->name('projects.update');
         // Edit Description: what each type's detail form was filled in with.
-        Route::put('/projects/{id}/details', [ProjectDetailController::class, 'update'])->middleware('project.setup')->name('projects.details.update');
+        Route::put('/projects/{id}/details', [ProjectDetailController::class, 'update'])->name('projects.details.update');
+        Route::put('/projects/{id}/quotation', [ProjectQuotationController::class, 'update'])
+            ->middleware('capability:'.RoleAccess::CREATE_PROJECTS)
+            ->name('projects.quotation.update');
+        Route::post('/projects/{project}/checklist', [ProjectChecklistController::class, 'update'])
+            ->middleware('role:super_admin')
+            ->name('projects.checklist.update');
         Route::put('/projects/{id}/team', [ProjectController::class, 'updateAssignedTeam'])->name('projects.team.update');
         // What a team change would do before it is saved - its refusals and the
         // tasks it would strand. Read by the Edit Assigned Team dialog.
@@ -662,10 +670,6 @@ Route::prefix('super-admin')
             // away by the controller on the same terms as System Contents.
             Route::prefix('project-types')->name('project-types.')->group(function () {
                 Route::get('/', [ProjectTypeController::class, 'index'])->name('index');
-                Route::post('/', [ProjectTypeController::class, 'store'])->name('store');
-                Route::put('/{projectType}', [ProjectTypeController::class, 'update'])->name('update');
-                Route::put('/{projectType}/form', [ProjectTypeController::class, 'updateForm'])->name('form');
-                Route::delete('/{projectType}', [ProjectTypeController::class, 'destroy'])->name('destroy');
             });
 
             // Holidays: the days bookings skip. What they do is HolidayCalendar's.
@@ -682,10 +686,7 @@ Route::prefix('super-admin')
             // controller on the same terms as Project Types.
             Route::prefix('detail-forms')->name('detail-forms.')->group(function () {
                 Route::get('/', [DetailFormController::class, 'index'])->name('index');
-                Route::post('/', [DetailFormController::class, 'store'])->name('store');
                 Route::get('/{detailForm}', [DetailFormController::class, 'show'])->name('show');
-                Route::put('/{detailForm}', [DetailFormController::class, 'update'])->name('update');
-                Route::delete('/{detailForm}', [DetailFormController::class, 'destroy'])->name('destroy');
             });
 
             // Phase Templates: the default phases each kind of job goes
@@ -921,6 +922,8 @@ Route::prefix('technician')
 
             Route::post('/projects/{project}/complete', [TechnicianPortalController::class, 'completeProject'])->middleware('project.setup')
                 ->name('projects.complete');
+            Route::post('/projects/{project}/checklist', [ProjectChecklistController::class, 'update'])
+                ->name('projects.checklist.update');
             Route::get('/projects/{project}/task-form-data', [TechnicianPortalController::class, 'taskFormData'])
                 ->name('projects.task-form-data');
             Route::post('/projects/{project}/tasks', [TechnicianPortalController::class, 'storeTask'])

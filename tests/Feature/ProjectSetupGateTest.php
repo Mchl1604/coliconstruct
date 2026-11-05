@@ -3,8 +3,12 @@
 namespace Tests\Feature;
 
 use App\Models\Client;
+use App\Models\DetailForm;
+use App\Models\DetailFormField;
 use App\Models\Project;
+use App\Models\ProjectDetail;
 use App\Models\ProjectTechnician;
+use App\Models\ProjectType;
 use App\Models\Technician;
 use App\Models\User;
 use Database\Seeders\DetailFormSeeder;
@@ -180,6 +184,24 @@ class ProjectSetupGateTest extends TestCase
         $this->assertTrue($this->project->fresh()->awaitingInitialSetup());
     }
 
+    public function test_the_service_report_stays_editable_before_setup(): void
+    {
+        $type = ProjectType::create(['type_name' => 'Solar Panels', 'form_id' => DetailForm::factory()->create()->form_id]);
+        $field = DetailFormField::factory()->for($type->detailForm, 'form')->forProject()->create(['label' => 'Scope', 'field_key' => 'scope']);
+        $this->project->projectTypes()->sync([$type->type_id]);
+        $id = $this->project->project_id;
+
+        $this->assertTrue($this->project->fresh()->awaitingInitialSetup());
+
+        $this->actingAs($this->superAdmin)
+            ->put(route('super-admin.projects.details.update', $id), [
+                'details' => [$type->type_id => ['project' => [$field->field_key => 'Filled in before setup']]],
+            ])
+            ->assertSessionHas('success', 'Description saved.');
+
+        $this->assertSame('Filled in before setup', ProjectDetail::query()->where('project_id', $id)->sole()->values['scope']);
+    }
+
     public function test_the_gate_opens_once_set_up(): void
     {
         $this->finalizePhases($this->project);
@@ -195,18 +217,19 @@ class ProjectSetupGateTest extends TestCase
             ->assertSessionMissing('error');
     }
 
-    public function test_the_removed_fields_are_gone_from_the_shipped_forms(): void
+    public function test_the_shipped_forms_follow_the_paper_service_report(): void
     {
         $labels = collect(DetailFormSeeder::forms())
             ->flatMap(fn (array $form): array => array_column($form['fields'], 'label'))
             ->map(fn (string $label): string => mb_strtolower($label));
 
-        foreach (['model', 'equipment tag', 'indoor serial no.', 'outdoor serial no.', 'serial no.'] as $removed) {
-            $this->assertNotContains($removed, $labels);
+        foreach (['model', 'equip. tagging', 'indoor serial no.', 'outdoor serial no.', 'serial no.', 'findings'] as $kept) {
+            $this->assertContains($kept, $labels);
         }
 
-        $this->assertContains('capacity (hp)', $labels);
-        $this->assertContains('quantity', $labels);
+        foreach (['capacity (hp)', 'quantity', 'voltage', 'rated load ampere', 'filters', 'performed by', 'summary'] as $left) {
+            $this->assertNotContains($left, $labels);
+        }
     }
 
     private function account(string $role, ?string $email = null): User

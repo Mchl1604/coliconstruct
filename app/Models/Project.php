@@ -282,6 +282,9 @@ class Project extends Model
         'name',
         'status',
         'quotation',
+        'report_performed_by',
+        'report_witnessed_by',
+        'report_remarks',
         'target_end_date',
         'address',
         'address_province',
@@ -394,6 +397,16 @@ class Project extends Model
         return $this->hasMany(DocumentHistory::class, 'project_id', 'project_id')
             ->orderByDesc('created_at')
             ->orderByDesc('document_history_id');
+    }
+
+    /**
+     * The quotation breakdown, in the order it was written.
+     */
+    public function quotationItems(): HasMany
+    {
+        return $this->hasMany(QuotationItem::class, 'project_id', 'project_id')
+            ->orderBy('sort_order')
+            ->orderBy('quotation_item_id');
     }
 
     /**

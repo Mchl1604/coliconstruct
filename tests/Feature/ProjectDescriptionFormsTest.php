@@ -52,7 +52,7 @@ class ProjectDescriptionFormsTest extends TestCase
         DetailFormField::factory()->for($ductingForm, 'form')->forProject()->required()
             ->create(['label' => 'Scope of work', 'field_key' => 'scope_of_work']);
 
-        $this->installation = ProjectType::create(['type_name' => 'Aircon Installation', 'form_id' => $installationForm->form_id]);
+        $this->installation = ProjectType::create(['type_name' => 'Solar Installation', 'form_id' => $installationForm->form_id]);
         $this->ducting = ProjectType::create(['type_name' => 'Ducting Fabrication', 'form_id' => $ductingForm->form_id]);
     }
 
@@ -60,9 +60,9 @@ class ProjectDescriptionFormsTest extends TestCase
     {
         $page = $this->get(route('super-admin.projects.create'))->assertOk();
 
-        // Client, Project Details, Materials, Initial Schedule, Review.
-        $page->assertSee('Step <span data-step-counter>1</span> of 5', false);
-        $page->assertSee('data-details-type-name="Aircon Installation"', false);
+        // Client, Project Details, Quotation, Materials, Initial Schedule, Review.
+        $page->assertSee('Step <span data-step-counter>1</span> of 6', false);
+        $page->assertSee('data-details-type-name="Solar Installation"', false);
         $page->assertSee('data-details-type-name="Ducting Fabrication"', false);
         $page->assertSee('name="details['.$this->installation->type_id.'][project][work]"', false);
         $page->assertSee('name="details['.$this->installation->type_id.'][units][0][brand]"', false);
@@ -74,7 +74,7 @@ class ProjectDescriptionFormsTest extends TestCase
     public function test_a_project_with_two_types_saves_project_fields_and_units_apart(): void
     {
         $this->post(route('super-admin.projects.create.store'), $this->payload([
-            'project_types' => ['Aircon Installation', 'Ducting Fabrication'],
+            'project_types' => ['Solar Installation', 'Ducting Fabrication'],
             'project_description' => '',
             'details' => [
                 $this->installation->type_id => [
@@ -114,7 +114,7 @@ class ProjectDescriptionFormsTest extends TestCase
                 'project' => ['work' => ''],
                 'units' => [['brand' => 'LG']],
             ]],
-        ]))->assertSessionHasErrors(['details.'.$this->installation->type_id.'.project.work' => 'The Aircon Installation: Work field is required.']);
+        ]))->assertSessionHasErrors(['details.'.$this->installation->type_id.'.project.work' => 'The Solar Installation: Work field is required.']);
 
         $this->assertDatabaseCount('tbl_projects', 0);
     }
@@ -135,7 +135,7 @@ class ProjectDescriptionFormsTest extends TestCase
     {
         $this->post(route('super-admin.projects.create.store'), $this->payload([
             'details' => [$this->installation->type_id => ['project' => ['work' => 'Installation']]],
-        ]))->assertSessionHasErrors(['details.'.$this->installation->type_id.'.units' => 'Add at least one unit for Aircon Installation.']);
+        ]))->assertSessionHasErrors(['details.'.$this->installation->type_id.'.units' => 'Add at least one unit for Solar Installation.']);
     }
 
     public function test_a_form_with_only_project_fields_asks_for_no_units(): void
@@ -200,7 +200,7 @@ class ProjectDescriptionFormsTest extends TestCase
             ->assertOk()
             ->assertSee('Edit Description')
             ->assertSee('data-bs-toggle="collapse"', false)
-            ->assertSeeInOrder(['Project Description:', 'Aircon Installation', '1 unit', 'Show details', 'Unit 1', 'Brand', 'LG', 'Old label', 'Kept value', 'Notes', 'Bring a ladder.']);
+            ->assertSeeInOrder(['Solar Installation', '1 unit', 'Show details', 'Unit 1', 'Brand', 'LG', 'Old label', 'Kept value', 'Notes', 'Bring a ladder.']);
     }
 
     public function test_a_projects_own_notes_still_show_when_it_has_no_details(): void
@@ -225,7 +225,7 @@ class ProjectDescriptionFormsTest extends TestCase
         $this->actingAs($technician->account)
             ->get(route('technician.projects.show', $project))
             ->assertOk()
-            ->assertSeeInOrder(['Project Description:', 'Aircon Installation', 'Show details', 'Brand', 'Daikin', 'Bring a ladder.'])
+            ->assertSeeInOrder(['Solar Installation', 'Show details', 'Brand', 'Daikin', 'Bring a ladder.'])
             ->assertDontSee('editProjectDescriptionModal');
     }
 
@@ -248,7 +248,7 @@ class ProjectDescriptionFormsTest extends TestCase
         $this->actingAs($account)
             ->get(route('public.projects.show', $project->project_id))
             ->assertOk()
-            ->assertSeeInOrder(['Project Description:', 'Aircon Installation', 'Show details', 'Brand', 'Daikin'])
+            ->assertSeeInOrder(['Solar Installation', 'Show details', 'Brand', 'Daikin'])
             ->assertDontSee('editProjectDescriptionModal');
     }
 
@@ -337,8 +337,8 @@ class ProjectDescriptionFormsTest extends TestCase
             'client_email' => 'juan.dela.cruz@example.test',
             'client_phone' => '09123456789',
             ...$this->luzonAddress(),
-            'quotation_amount' => '1250.00',
-            'project_types' => ['Aircon Installation'],
+            'quotation_items' => [['kind' => 'other', 'description' => 'Aircon works', 'quantity' => 1, 'unit_price' => '1250.00']],
+            'project_types' => ['Solar Installation'],
             'details' => [$this->installation->type_id => [
                 'project' => ['work' => 'Installation'],
                 'units' => [['brand' => 'LG']],

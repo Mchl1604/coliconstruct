@@ -19,12 +19,12 @@ use RuntimeException;
  *
  * So they are kept in step instead, and this is the only place that writes
  * either of them: add a project type here and the matching specialty appears
- * for technicians, rename one and both names change, remove one and both go.
+ * for technicians. The list is fixed on screen - see ProjectTypeController.
  */
 class ProjectTypeCatalog
 {
     /**
-     * Every type, with the counts that decide whether it may be removed.
+     * Every type, with how much is using it.
      *
      * @return Collection<int, array<string, mixed>>
      */
@@ -38,6 +38,7 @@ class ProjectTypeCatalog
             ]);
 
         return ProjectType::query()
+            ->with('detailForm')
             ->withCount('projects')
             ->orderBy('type_name')
             ->get()
@@ -46,6 +47,7 @@ class ProjectTypeCatalog
                 'type_name' => $type->type_name,
                 // Which detail form the type asks for - null is "None".
                 'form_id' => $type->form_id,
+                'form_name' => $type->detailForm?->name,
                 'project_count' => $type->projects_count,
                 'technician_count' => $technicianCounts[$this->key($type->type_name)] ?? 0,
             ])
@@ -67,75 +69,6 @@ class ProjectTypeCatalog
             $this->ensureSkill($name);
 
             return $type;
-        });
-    }
-
-    /**
-     * Rename a type, and the specialty that mirrors it.
-     */
-    public function rename(ProjectType $type, string $name): ProjectType
-    {
-        $name = $this->clean($name);
-
-        $this->assertNameIsFree($name, $type);
-
-        return DB::transaction(function () use ($type, $name): ProjectType {
-            $skill = $this->skillNamed($type->type_name);
-
-            $type->update(['type_name' => $name]);
-
-            // Nothing to rename onto: some other specialty already carries the
-            // new name, so the list is already right and moving this one would
-            // only duplicate it.
-            if ($skill && ! $this->skillNamed($name)) {
-                $skill->update(['skill_name' => $name]);
-            }
-
-            $this->ensureSkill($name);
-
-            return $type->refresh();
-        });
-    }
-
-    /**
-     * Remove a type and its specialty.
-     *
-     * Refused while either half is in use. A project's type is part of what it
-     * says it is, and a technician's specialty was approved for them - neither
-     * is something to strip out from under a record as a side effect of
-     * tidying a list.
-     *
-     * @throws RuntimeException
-     */
-    public function remove(ProjectType $type): void
-    {
-        $projectCount = $type->projects()->count();
-
-        if ($projectCount > 0) {
-            throw new RuntimeException(sprintf(
-                "'%s' is the project type of %d %s, so it cannot be removed. Change those projects first.",
-                $type->type_name,
-                $projectCount,
-                $projectCount === 1 ? 'project' : 'projects'
-            ));
-        }
-
-        $skill = $this->skillNamed($type->type_name);
-        $technicianCount = $skill ? $skill->technicians()->count() : 0;
-
-        if ($technicianCount > 0) {
-            throw new RuntimeException(sprintf(
-                "'%s' is an approved specialty of %d %s, so it cannot be removed. Take it off them first.",
-                $type->type_name,
-                $technicianCount,
-                $technicianCount === 1 ? 'technician' : 'technicians'
-            ));
-        }
-
-        DB::transaction(function () use ($type, $skill): void {
-            $type->delete();
-
-            $skill?->delete();
         });
     }
 

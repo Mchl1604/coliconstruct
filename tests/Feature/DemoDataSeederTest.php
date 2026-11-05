@@ -10,9 +10,11 @@ use App\Models\MaterialRequest;
 use App\Models\Project;
 use App\Models\ProjectCompletionPhoto;
 use App\Models\ProjectDetail;
+use App\Models\ProjectMaterial;
 use App\Models\ProjectMaterialEntry;
 use App\Models\ProjectTechnician;
 use App\Models\ProjectType;
+use App\Models\QuotationItem;
 use App\Models\Schedule;
 use App\Models\StockMovement;
 use App\Models\Task;
@@ -26,10 +28,12 @@ use App\Services\ProjectDetailForms;
 use App\Services\ProjectStatusRules;
 use App\Services\ProjectTeam;
 use App\Support\DetailFieldScope;
+use App\Support\ServiceReportForms;
 use App\Support\UploadStore;
 use Carbon\CarbonImmutable;
 use Database\Seeders\DemoDataCatalog;
 use Database\Seeders\DemoDataSeeder;
+use Database\Seeders\MaterialSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use RuntimeException;
@@ -356,6 +360,107 @@ class DemoDataSeederTest extends TestCase
         }
     }
 
+    public function test_every_listed_material_has_a_price(): void
+    {
+        foreach (MaterialSeeder::catalog() as $materials) {
+            foreach ($materials as [$name, $brand]) {
+                $this->assertArrayHasKey($name.'|'.$brand, MaterialSeeder::PRICES, $name);
+                $this->assertGreaterThan(0, MaterialSeeder::PRICES[$name.'|'.$brand], $name);
+            }
+        }
+
+        $this->seed(MaterialSeeder::class);
+
+        $this->assertSame(0, Material::query()->whereNull('unit_price')->count());
+    }
+
+    public function test_seeding_fills_a_blank_price_and_keeps_one_set_in_inventory(): void
+    {
+        $this->seed(MaterialSeeder::class);
+
+        $blank = Material::query()->where('name', 'Teflon Tape')->sole();
+        $edited = Material::query()->where('name', 'Cotton Rags')->sole();
+        $blank->update(['unit_price' => null]);
+        $edited->update(['unit_price' => 1]);
+
+        $this->seed(MaterialSeeder::class);
+
+        $this->assertSame(25.0, (float) $blank->fresh()->unit_price);
+        $this->assertSame(1.0, (float) $edited->fresh()->unit_price);
+    }
+
+    public function test_every_project_quotes_through_lines_that_add_up_and_plan_from_them(): void
+    {
+        $this->runSeeder();
+
+        $this->assertSame(50, Project::count());
+        $this->assertSame(6, ProjectType::count());
+        $this->assertGreaterThan(0, Project::query()->whereHas('projectTypes', fn ($type) => $type->where('type_name', 'Equipment Check-up'))->count());
+
+        foreach (Project::query()->with(['quotationItems', 'materials', 'projectTypes'])->get() as $project) {
+            $this->assertNotEmpty($project->quotationItems, $project->name);
+            $this->assertTrue($project->quotationItems->contains('kind', QuotationItem::KIND_LABOR), $project->name);
+            $this->assertEqualsWithDelta(
+                (float) $project->quotation,
+                $project->quotationItems->sum(fn (QuotationItem $item): float => $item->amount()),
+                0.01,
+                $project->name
+            );
+
+            $quoted = $project->quotationItems->whereNotNull('material_id')->keyBy('material_id');
+
+            $this->assertSame(
+                $quoted->keys()->sort()->values()->all(),
+                $project->materials->pluck('material_id')->map(fn ($id): int => (int) $id)->sort()->values()->all(),
+                $project->name
+            );
+
+            foreach ($project->materials as $line) {
+                $this->assertGreaterThanOrEqual((float) $line->quantity_needed, (float) $quoted[$line->material_id]->quantity, $project->name);
+            }
+        }
+
+        $this->assertTrue(
+            QuotationItem::query()->whereNotNull('material_id')->get()->contains(function (QuotationItem $item): bool {
+                $planned = ProjectMaterial::query()->where('project_id', $item->project_id)->where('material_id', $item->material_id)->value('quantity_needed');
+
+                return $planned !== null && (float) $item->quantity > (float) $planned;
+            }),
+            'No line quotes past its plan.'
+        );
+    }
+
+    public function test_on_site_fields_and_checklists_only_fill_once_work_has_started(): void
+    {
+        $this->runSeeder();
+
+        $reportTypes = array_keys(ServiceReportForms::SECTION_BY_TYPE);
+        $checked = 0;
+
+        foreach (Project::query()->with(['details.projectType', 'schedules'])->get() as $project) {
+            $notStarted = in_array($project->status, ['pending', 'unscheduled'], true)
+                && ! $project->tasks()->where('status', 'completed')->exists();
+
+            foreach ($project->details as $detail) {
+                if ($detail->scope !== DetailFieldScope::Unit || ! in_array($detail->projectType->type_name, $reportTypes, true)) {
+                    continue;
+                }
+
+                if ($notStarted) {
+                    foreach (ServiceReportForms::FILLED_DURING_WORK as $key) {
+                        $this->assertFalse(filled(((array) $detail->values)[$key] ?? null), $project->name.': '.$key);
+                    }
+
+                    $this->assertEmpty((array) $detail->checklist, $project->name);
+                    $checked++;
+                }
+            }
+        }
+
+        $this->assertGreaterThan(0, $checked);
+        $this->assertGreaterThan(0, ProjectDetail::query()->whereNotNull('checklist')->count());
+    }
+
     public function test_every_project_has_its_detail_form_filled_in(): void
     {
         $this->runSeeder();
@@ -379,7 +484,6 @@ class DemoDataSeederTest extends TestCase
                         $this->assertTrue(filled(((array) $row->values)[$field->field_key] ?? null), $project->name.': '.$field->label);
                     }
 
-                    $this->assertEmpty(array_intersect(['Model', 'Equipment tag', 'Serial no.', 'Indoor serial no.', 'Outdoor serial no.'], array_values((array) $row->labels)));
                 }
 
                 $checked++;
@@ -565,12 +669,12 @@ class DemoDataSeederTest extends TestCase
 
     public function test_it_reuses_a_project_type_the_site_already_has(): void
     {
-        ProjectType::create(['type_name' => 'Heating Ventillation']);
+        ProjectType::create(['type_name' => 'Aircon Instalation']);
 
         $this->runSeeder();
 
         $this->assertSame(6, ProjectType::count());
-        $this->assertTrue(ProjectType::query()->where('type_name', 'Heating Ventillation')->exists());
+        $this->assertTrue(ProjectType::query()->where('type_name', 'Aircon Instalation')->exists());
     }
 
     public function test_every_project_carries_its_documents_and_photos_under_fifty_kilobytes(): void

@@ -217,6 +217,10 @@ document.addEventListener("DOMContentLoaded", function () {
             material && material.material_subtype_id ? String(material.material_subtype_id) : "";
         field("unit").value = material ? material.unit : "";
         field("description").value = material && material.description ? material.description : "";
+        field("unit_price").value =
+            material && material.unit_price !== null && material.unit_price !== undefined
+                ? String(material.unit_price)
+                : "";
         field("reorder_level").value =
             material && material.reorder_level !== null && material.reorder_level !== undefined
                 ? String(material.reorder_level)
@@ -254,6 +258,7 @@ document.addEventListener("DOMContentLoaded", function () {
             unit: field("unit").value,
             description: field("description").value.trim(),
             reorder_level: field("reorder_level").value.trim(),
+            unit_price: field("unit_price").value.trim(),
         };
 
         saveButton.disabled = true;

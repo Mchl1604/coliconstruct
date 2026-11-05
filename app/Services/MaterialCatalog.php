@@ -474,6 +474,10 @@ class MaterialCatalog
             $values['reorder_level'] = $this->reorderLevel($unit, $attributes['reorder_level']);
         }
 
+        if (array_key_exists('unit_price', $attributes)) {
+            $values['unit_price'] = filled($attributes['unit_price']) ? round((float) $attributes['unit_price'], 2) : null;
+        }
+
         if (array_key_exists('material_subtype_id', $attributes)) {
             $values['material_subtype_id'] = $this->subtypeOf($values['material_type_id'], $attributes['material_subtype_id']);
         }

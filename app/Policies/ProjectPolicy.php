@@ -94,6 +94,18 @@ class ProjectPolicy
     }
 
     /**
+     * The Super Admin, or a lead on the project, ticks the unit checklists while
+     * the work is live. Everyone else reads them.
+     */
+    public function updateChecklist(User $user, Project $project): bool
+    {
+        return ($user->isSuperAdmin() || ($user->isLeadTechnician() && $this->worksOn($user, $project)))
+            && ! $project->isReadOnly()
+            && ! $project->isArchived()
+            && ! $project->awaitingInitialSetup();
+    }
+
+    /**
      * Filing a report is a lead's job or a Super Admin's, and only on live work.
      *
      * A hold is asked about separately because it does not change the stored

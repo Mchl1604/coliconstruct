@@ -24,7 +24,7 @@
             </p>
         </div>
         <div class="create-project-step-counter text-secondary small">
-            Step <span data-step-counter>1</span> of 5
+            Step <span data-step-counter>1</span> of 6
         </div>
     </div>
 
@@ -46,13 +46,20 @@
 
             <div class="client-progress-step" data-progress-step="3">
                 <div class="client-progress-circle">3</div>
-                <div class="client-progress-label">Materials</div>
+                <div class="client-progress-label">Quotation</div>
             </div>
 
             <div class="client-progress-line" aria-hidden="true"></div>
 
             <div class="client-progress-step" data-progress-step="4">
                 <div class="client-progress-circle">4</div>
+                <div class="client-progress-label">Materials</div>
+            </div>
+
+            <div class="client-progress-line" aria-hidden="true"></div>
+
+            <div class="client-progress-step" data-progress-step="5">
+                <div class="client-progress-circle">5</div>
                 {{-- Named for what the step collects, so the rail does not
                      promise a fuller schedule than the step asks for. --}}
                 <div class="client-progress-label">Initial Schedule</div>
@@ -60,8 +67,8 @@
 
             <div class="client-progress-line" aria-hidden="true"></div>
 
-            <div class="client-progress-step" data-progress-step="5">
-                <div class="client-progress-circle">5</div>
+            <div class="client-progress-step" data-progress-step="6">
+                <div class="client-progress-circle">6</div>
                 <div class="client-progress-label">Review</div>
             </div>
         </div>
@@ -262,26 +269,6 @@
                             <x-project-address-fields />
                         </div>
 
-                        <div class="col-md-6">
-                            <label for="quotationAmount" class="form-label">Quotation Amount</label>
-
-                            {{-- Grouped as it is typed - see moneyInput.js.
-                                 The visible field carries the commas and so
-                                 cannot be submitted; the hidden one beside it
-                                 carries the raw number and the name, which is
-                                 what keeps `numeric` validation seeing exactly
-                                 what it always saw. --}}
-                            <div class="input-group" data-money-field>
-                                <span class="input-group-text">&#8369;</span>
-                                <input type="text" id="quotationAmount" class="form-control"
-                                    inputmode="decimal" autocomplete="off"
-                                    placeholder="Enter quotation amount" data-money-input
-                                    data-summary-input="quotation_amount" required>
-                                <input type="hidden" name="quotation_amount" value="{{ old('quotation_amount') }}"
-                                    data-money-value>
-                            </div>
-                        </div>
-
                         {{-- The promised finish, not a booking. Checked against
                              the schedule's last day once Step 3 is filled in. --}}
                         <div class="col-md-6">
@@ -378,7 +365,7 @@
 
                             <div data-project-details>
                                 @foreach ($detailTypes as $detailType)
-                                    <x-project-details-editor :type="$detailType" :hidden="true"
+                                    <x-project-details-editor :type="$detailType" :hidden="true" :creating="true"
                                         :project="(array) old('details.'.$detailType->type_id.'.project', [])"
                                         :units="collect((array) old('details.'.$detailType->type_id.'.units', []))
                                             ->filter(fn ($row) => is_array($row))
@@ -397,16 +384,33 @@
                     </div>
                 </section>
 
+                {{-- ==================== QUOTATION ====================
+                     The breakdown, and where its total comes from. Not limited
+                     by stock. Its materials fill in the next step, so nothing
+                     is typed twice. See quotationLines.js. --}}
+                <section class="wizard-step" data-wizard-step="3" hidden data-wizard-quotation>
+                    <div class="wizard-step-header">
+                        <h5 class="mb-1">Quotation</h5>
+                        <p class="text-secondary small mb-0">Materials added here fill the next step.</p>
+                    </div>
+
+                    <x-project-quotation-editor :rows="$wizardQuotation"
+                        :material-url="route('super-admin.projects.material-options')" />
+
+                    {{-- Read by the review step. The total is never typed. --}}
+                    <input type="hidden" data-summary-input="quotation_amount" data-quotation-review-total>
+                </section>
+
                 {{-- ==================== MATERIALS ====================
                      What the job needs, checked against the warehouse as it
                      is typed. Optional, and limited to what is available; a
                      checkbox requests the rest from Purchasing. Driven by
                      projectWizardMaterials.js; each line posts as
                      materials[n][material_id] and materials[n][quantity]. --}}
-                <section class="wizard-step" data-wizard-step="3" hidden data-wizard-materials>
+                <section class="wizard-step" data-wizard-step="4" hidden data-wizard-materials>
                     <div class="wizard-step-header">
                         <h5 class="mb-1">Materials</h5>
-                        <p class="text-secondary small mb-0">What the job needs. Optional.</p>
+                        <p class="text-secondary small mb-0">Filled from the quotation, limited to stock.</p>
                     </div>
 
                     <div class="mb-3">
@@ -433,7 +437,7 @@
                     <p class="text-secondary small mt-2 mb-0" data-wizard-material-empty>No materials yet.</p>
                 </section>
 
-                <section class="wizard-step" data-wizard-step="4" hidden>
+                <section class="wizard-step" data-wizard-step="5" hidden>
                     {{-- "Initial", not "Schedule", and said before any date is
                          typed. A project takes as many booked ranges as the
                          work needs, added afterwards from the Schedules page -
@@ -626,7 +630,7 @@
                     </div>
                 </section>
 
-                <section class="wizard-step" data-wizard-step="5" hidden>
+                <section class="wizard-step" data-wizard-step="6" hidden>
                     <div class="wizard-step-header">
                         <h5 class="mb-1">Review</h5>
                         <p class="text-secondary small mb-0">Check the captured details before saving the project.</p>
@@ -684,8 +688,12 @@
                                     <span class="review-item-value" data-summary-target="project_address">Not filled
                                         yet</span>
                                 </div>
+                                <div class="review-item review-item-full">
+                                    <span class="review-item-label">Quotation Lines</span>
+                                    <span class="review-item-value" data-quotation-review>None</span>
+                                </div>
                                 <div class="review-item">
-                                    <span class="review-item-label">Quotation Amount</span>
+                                    <span class="review-item-label">Quotation Total</span>
                                     <span class="review-item-value" data-summary-target="quotation_amount">Not filled
                                         yet</span>
                                 </div>
@@ -806,5 +814,7 @@
         <script src="/js/addressFields.js"></script>
         <script src="/js/projectDetailsForm.js"></script>
         <script src="/js/super-admin/createProject.js"></script>
+        {{-- Last, so every step is listening when it announces its lines. --}}
+        <script src="/js/quotationLines.js"></script>
     @endpush
 @endsection

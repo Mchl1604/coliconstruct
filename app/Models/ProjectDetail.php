@@ -28,6 +28,7 @@ class ProjectDetail extends Model
         'values',
         'labels',
         'sort_order',
+        'checklist',
     ];
 
     protected function casts(): array
@@ -35,6 +36,7 @@ class ProjectDetail extends Model
         return [
             'scope' => DetailFieldScope::class,
             'values' => 'array',
+            'checklist' => 'array',
         ];
     }
 

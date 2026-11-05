@@ -310,7 +310,7 @@ class HighSeverityAuditFixesTest extends TestCase
             'client_phone' => '09123456789',
             ...$this->luzonAddress(),
             'project_description' => 'Description',
-            'quotation_amount' => 1000,
+            'quotation_items' => [['kind' => 'other', 'description' => 'Aircon works', 'quantity' => 1, 'unit_price' => 1000]],
             'project_types' => ['Aircon Installation'],
             'lead_tech' => $plainA->technician_id,
             'technicians' => [$plainB->technician_id],

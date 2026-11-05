@@ -722,42 +722,10 @@
                                                 Project Types
                                             </h5>
                                             <p class="text-secondary small mb-0">
-                                                Project types double as technician specialties.
+                                                Fixed list. Also used as technician specialties.
                                             </p>
                                         </div>
                                     </div>
-
-                                    <form class="row g-2 align-items-end mb-3 project-types-add" data-project-type-add-form
-                                        novalidate>
-                                        <div class="col-sm">
-                                            <label class="form-label small fw-semibold mb-1" for="projectTypeName">
-                                                Add a project type
-                                            </label>
-                                            <input type="text" class="form-control" id="projectTypeName"
-                                                placeholder="e.g. Heating Installation" maxlength="255"
-                                                data-project-type-name required>
-                                        </div>
-                                        {{-- The detail form the new type asks for in the
-                                             create wizard - required, every type has
-                                             one. "+ New form" opens the builder and
-                                             picks the form it saves. --}}
-                                        <div class="col-sm-4">
-                                            <label class="form-label small fw-semibold mb-1" for="projectTypeForm">
-                                                Form
-                                            </label>
-                                            <select class="form-select" id="projectTypeForm" data-project-type-form required>
-                                                <option value="">Choose form</option>
-                                            </select>
-                                        </div>
-                                        <div class="col-sm-auto">
-                                            <button type="submit" class="btn btn-primary px-4" data-project-type-add>
-                                                <span class="spinner-border spinner-border-sm me-1 d-none" role="status"
-                                                    aria-hidden="true" data-project-type-add-spinner></span>
-                                                <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
-                                                Add
-                                            </button>
-                                        </div>
-                                    </form>
 
                                     <div class="text-secondary small py-3 px-1" data-project-type-loading>
                                         <span class="spinner-border spinner-border-sm me-2" role="status"
@@ -773,7 +741,6 @@
                                                     <th>Form</th>
                                                     <th>Projects</th>
                                                     <th>Technicians</th>
-                                                    <th class="text-center">Actions</th>
                                                 </tr>
                                             </thead>
                                             <tbody data-project-type-body></tbody>
@@ -785,7 +752,6 @@
                                     </div>
 
                                     <div class="alert alert-danger mt-3 mb-0 d-none" role="alert" data-project-type-error></div>
-                                    <div class="alert alert-success mt-3 mb-0 d-none" role="alert" data-project-type-success></div>
 
                                     @include('super-admin.partials.detail-forms-panel')
                             </div>

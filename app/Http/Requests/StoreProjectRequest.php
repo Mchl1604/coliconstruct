@@ -9,6 +9,7 @@ use App\Models\ProjectType;
 use App\Models\Schedule;
 use App\Services\ProjectDetailForms;
 use App\Services\ProjectMaterialPlan;
+use App\Services\ProjectQuotation;
 use App\Services\ProjectTeamRules;
 use App\Services\ScheduleModeRules;
 use App\Services\TargetDateChange;
@@ -65,7 +66,8 @@ class StoreProjectRequest extends FormRequest
             // Existing client or New client - see ChoosesClient.
             ...$this->clientRules(),
             ...ProjectAddress::rules($this->all()),
-            'quotation_amount' => ['required', 'numeric', 'min:0', 'max:'.Project::MAX_QUOTATION],
+            // The breakdown: its total becomes the project's quotation.
+            ...app(ProjectQuotation::class)->rules(),
             'project_types' => ['required', 'array', 'min:1'],
             'project_types.*' => ['required', 'string', Rule::in($projectTypes)],
             'assessment_report' => array_merge(['required'], $documentRules, ['min:1']),
@@ -107,9 +109,7 @@ class StoreProjectRequest extends FormRequest
             'materials.*.quantity.required' => 'Enter a quantity for every material.',
             'materials.*.quantity.numeric' => 'Enter a quantity for every material.',
             ...$this->clientMessages(),
-            'quotation_amount.numeric' => 'The quotation amount must be a valid number.',
-            'quotation_amount.min' => 'The quotation amount must be at least zero.',
-            'quotation_amount.max' => Project::MAX_QUOTATION_MESSAGE,
+            ...app(ProjectQuotation::class)->messages(),
             'assessment_report.required' => 'Upload at least one assessment report file.',
             'assessment_report.min' => 'Upload at least one assessment report file.',
             'assessment_report.max' => 'Upload at most '.Document::MAX_FILES.' assessment report files.',
@@ -166,6 +166,14 @@ class StoreProjectRequest extends FormRequest
     {
         return [
             function ($validator): void {
+                // The quotation lines: free of stock, but each material listed
+                // and quoted once, in a quantity its unit allows.
+                if (! $validator->errors()->has('quotation_items*') && is_array($this->input('quotation_items'))) {
+                    foreach (app(ProjectQuotation::class)->errors(array_values($this->input('quotation_items'))) as $key => $message) {
+                        $validator->errors()->add($key, $message);
+                    }
+                }
+
                 // The material lines: a listed, active material, once each, in a
                 // quantity its unit allows.
                 if (! $validator->errors()->has('materials*') && is_array($this->input('materials'))) {
@@ -300,7 +308,8 @@ class StoreProjectRequest extends FormRequest
 
         return [
             'Aircon Installation',
-            'Aircon Repair',
+            'Equipment Check-up',
+            'Equipment Repair',
             'Aircon Cleaning',
             'Ducting Fabrication',
             'Ducting Installation',

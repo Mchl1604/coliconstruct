@@ -13,11 +13,13 @@ use App\Models\Material;
 use App\Models\MaterialRequest;
 use App\Models\Project;
 use App\Models\ProjectCompletionPhoto;
+use App\Models\ProjectDetail;
 use App\Models\ProjectMaterial;
 use App\Models\ProjectMaterialEntry;
 use App\Models\ProjectPhase;
 use App\Models\ProjectTechnician;
 use App\Models\ProjectType;
+use App\Models\QuotationItem;
 use App\Models\Schedule;
 use App\Models\ScheduleTechnician;
 use App\Models\Skill;
@@ -33,16 +35,20 @@ use App\Services\ProgressReportBuilder;
 use App\Services\ProjectAddressSplitter;
 use App\Services\ProjectCompletion;
 use App\Services\ProjectDetailForms;
+use App\Services\ProjectQuotation;
 use App\Services\ProjectTypeCatalog;
+use App\Services\ServiceReport;
 use App\Services\StockAvailability;
 use App\Services\SystemContentService;
 use App\Services\TargetDateChange;
 use App\Services\UserAccountService;
 use App\Support\BusinessTime;
 use App\Support\CompanyBranding;
+use App\Support\DetailFieldScope;
 use App\Support\DetailFieldType;
 use App\Support\PasswordPolicy;
 use App\Support\ReportPdf;
+use App\Support\ServiceReportForms;
 use App\Support\UploadStore;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\CarbonImmutable;
@@ -90,6 +96,11 @@ use Throwable;
  *     photos in database/seeders/demo-photos go on completed work, on the
  *     last task of each finished stage and on every technician report. Every
  *     file is kept under 50 KB.
+ *   - The quotation comes first, as in the wizard: every project has its lines,
+ *     from the Inventory prices with labor making up the rest, and the plan is
+ *     what it quoted. Now and then a line quotes past the plan.
+ *   - Service Report fields only known on site, and the checklists, are filled
+ *     only as far as the work has gone.
  *   - The warehouse follows the work: materials released to a started project,
  *     what came back from it, a delivery so every material has stock (a few
  *     deliberately low or out), and a few lead requests awaiting a decision.
@@ -569,7 +580,7 @@ class DemoDataSeeder extends Seeder
 
         $project->projectTypes()->sync(collect($spec['types'])->map(fn (string $type): int => $this->typeIds[$type])->all());
 
-        $this->seedDetails($project, $spec);
+        $this->seedDetails($project, $spec, $profile, $createdAt);
 
         $schedules = collect([...$spec['ranges'], ...($spec['preserved'] ?? [])])
             ->map(fn (array $range): Schedule => Schedule::create([
@@ -586,61 +597,124 @@ class DemoDataSeeder extends Seeder
 
         $this->recordCreation($project, $spec, $this->projectCreator($admin), $createdAt, count($team) - 1);
 
+        $this->buildWorkPlan($project, $spec, $profile, $team, $createdAt);
+        $this->seedQuotation($project, $spec);
+
         if ($this->withFiles) {
             $this->attachDocuments($project, $spec, $clientSpec, $client, $profile, $admin, $lead, $createdAt);
         }
 
-        $this->buildWorkPlan($project, $spec, $profile, $team, $createdAt);
         $this->seedMaterials($project, $spec, $team, $createdAt);
         $this->fileReports($project, $spec, $profile, $lead, $team);
         $this->applyOutcome($project, $spec, $profile, $client, $admin, $lead, $createdAt);
+
+        // Signed off at the end of the job, so only a finished one has names.
+        $outcome = $spec['scenario'] === 'archived' ? $spec['archived_from'] : $spec['scenario'];
+
+        if (in_array($outcome, ['awaiting', 'completed'], true) && app(ServiceReport::class)->reportTypes($project->fresh())->isNotEmpty()) {
+            $project->forceFill([
+                'report_performed_by' => $lead->fullName(),
+                'report_witnessed_by' => $outcome === 'completed' ? $client->fullName() : null,
+                'report_remarks' => $profile['remarks'],
+            ])->save();
+        }
     }
 
     /**
-     * The wizard's Units step: each type's detail form filled in, with one to
-     * three units where the form asks for them.
+     * The wizard's detail step: each type's form filled in, with one to three
+     * units where the form asks for them. What is only known on site waits for
+     * the work to start, and so do the checklists.
      *
      * @param  array<string, mixed>  $spec
+     * @param  array<string, mixed>  $profile
      */
-    private function seedDetails(Project $project, array $spec): void
+    private function seedDetails(Project $project, array $spec, array $profile, CarbonImmutable $createdAt): void
     {
         $forms = app(ProjectDetailForms::class);
         $types = $project->projectTypes()->get();
+        $started = $this->hasStarted($spec);
         $input = [];
 
         foreach ($forms->withForms($types) as $type) {
             $form = $type->detailForm;
             $unitCount = $form->hasUnits() ? 1 + $project->project_id % 3 : 0;
+            $row = fn ($fields, int $seed): array => $this->detailRow($fields, $spec, $profile, $seed, $type->type_name, $started);
 
             $input[$type->type_id] = [
-                'project' => $this->detailRow($form->projectFields(), $spec, (int) $project->project_id),
+                'project' => $row($form->projectFields(), (int) $project->project_id),
                 'units' => array_map(
-                    fn (int $unit): array => $this->detailRow($form->unitFields(), $spec, (int) $project->project_id + $unit),
+                    fn (int $unit): array => $row($form->unitFields(), (int) $project->project_id + $unit),
                     $unitCount > 0 ? range(0, $unitCount - 1) : []
                 ),
             ];
         }
 
         $forms->sync($project, $types, $input);
+
+        $outcome = $spec['scenario'] === 'archived' ? $spec['archived_from'] : $spec['scenario'];
+        $finished = in_array($outcome, ['awaiting', 'completed'], true);
+        $items = array_keys(ServiceReportForms::checklistItems());
+        $ticked = match (true) {
+            ! $started => null,
+            $finished => $items,
+            default => array_slice($items, 0, intdiv(count($items), 2)),
+        };
+        $worked = array_column($this->workDays($spec), 'date');
+        $today = $this->today->toDateString();
+        $doneDays = array_values(array_filter($worked, fn (string $date): bool => $date <= $today));
+        // As the report would read: last touched on the last day worked.
+        $modifiedAt = $started && $doneDays !== [] ? $this->moment($this->offsetOf(end($doneDays)), '17:00') : $createdAt;
+
+        ProjectDetail::query()
+            ->where('project_id', $project->project_id)
+            ->update(['created_at' => $createdAt, 'updated_at' => $modifiedAt]);
+
+        ProjectDetail::query()
+            ->where('project_id', $project->project_id)
+            ->where('scope', DetailFieldScope::Unit->value)
+            ->whereIn('type_id', $types->whereIn('type_name', ServiceReportForms::CHECKLIST_TYPES)->pluck('type_id'))
+            ->update(['checklist' => $ticked === null ? null : json_encode($ticked), 'updated_at' => $modifiedAt]);
+    }
+
+    /**
+     * Whether the crew has been on site yet.
+     *
+     * @param  array<string, mixed>  $spec
+     */
+    private function hasStarted(array $spec): bool
+    {
+        $today = $this->today->toDateString();
+
+        return in_array($spec['scenario'], ['pending', 'unscheduled'], true)
+            ? false
+            : collect($this->workDays($spec))->contains(fn (array $day): bool => $day['date'] <= $today);
     }
 
     /**
      * @param  Collection<int, DetailFormField>  $fields
      * @param  array<string, mixed>  $spec
+     * @param  array<string, mixed>  $profile
      * @return array<string, mixed>
      */
-    private function detailRow($fields, array $spec, int $seed): array
+    private function detailRow($fields, array $spec, array $profile, int $seed, string $typeName, bool $started): array
     {
         $areas = ['Living room', 'Master bedroom', 'Main office', 'Conference room', 'Lobby', 'Server room'];
 
-        return $fields->mapWithKeys(function (DetailFormField $field) use ($spec, $seed, $areas): array {
+        return $fields->mapWithKeys(function (DetailFormField $field) use ($spec, $profile, $seed, $areas, $typeName, $started): array {
+            if (! $started && ServiceReportForms::isFilledDuringWork($typeName, $field->field_key)) {
+                return [$field->field_key => $field->input_type === DetailFieldType::Checkboxes ? [] : null];
+            }
+
             $label = mb_strtolower($field->label);
             $options = array_values(array_filter($field->optionList(), fn (string $option): bool => $option !== 'Others'));
 
             return [$field->field_key => match ($field->input_type) {
-                DetailFieldType::LongText => mb_substr((string) $spec['description'], 0, 2000),
+                DetailFieldType::LongText => match ($field->field_key) {
+                    'findings' => $profile['findings'][$seed % count($profile['findings'])],
+                    'remarks' => $profile['remarks'],
+                    default => mb_substr((string) $spec['description'], 0, 2000),
+                },
                 DetailFieldType::Number => match (true) {
-                    str_contains($label, 'capacity') => [1, 1.5, 2, 2.5][$seed % 4],
                     str_contains($label, 'length') => 10 + $seed % 30,
                     default => 1 + $seed % 3,
                 },
@@ -648,14 +722,106 @@ class DemoDataSeeder extends Seeder
                 DetailFieldType::Checkboxes => array_slice($options, 0, 1 + $seed % 2),
                 DetailFieldType::YesNo => $seed % 2 === 0 ? 'Yes' : 'No',
                 DetailFieldType::Date => $this->today->toDateString(),
-                default => match (true) {
-                    str_contains($label, 'area') => $areas[$seed % count($areas)],
-                    str_contains($label, 'duct size') => '600 x 400 mm',
-                    str_contains($label, 'po') => sprintf('PO-%05d', 1000 + $seed),
+                default => match ($field->field_key) {
+                    'area_served' => $areas[$seed % count($areas)],
+                    'duct_size' => '600 x 400 mm',
+                    'model' => sprintf('FT%04d', 2500 + ($seed * 7) % 500),
+                    'serial_no', 'indoor_serial_no' => sprintf('IN-%06d', 100000 + $seed * 37),
+                    'outdoor_serial_no' => sprintf('OUT-%06d', 100000 + $seed * 37),
+                    'equipment_tagging' => sprintf('AC-%02d', 1 + $seed % 40),
                     default => null,
                 },
             }];
         })->all();
+    }
+
+    /**
+     * The materials a job quotes and plans: the ones its budget has room for,
+     * and none on a check-up, which only charges for the visit.
+     *
+     * @param  array<string, mixed>  $spec
+     * @return array<int, array{0: string, 1: string|null, 2: string, 3: float|int, 4: Material}>
+     */
+    private function materialLines(Project $project, array $spec): array
+    {
+        if ($spec['types'][0] === DemoDataCatalog::EQUIPMENT_CHECK_UP) {
+            return [];
+        }
+
+        $kind = DemoDataCatalog::kindOf($spec['types'][0]);
+        $lines = DemoDataCatalog::projectMaterials()[$kind] ?? [];
+
+        if ($kind === 'installation' && $lines !== []) {
+            $brands = DemoDataCatalog::INSTALLATION_BRANDS;
+            $lines[0][1] = $brands[$project->project_id % count($brands)];
+        }
+
+        $budget = (float) $spec['quotation'] * 0.75;
+        $spent = 0.0;
+        $chosen = [];
+
+        foreach ($lines as [$name, $brand, $unit, $quantity]) {
+            $material = $this->material($name, $brand, $unit);
+
+            if ($material === null) {
+                continue;
+            }
+
+            $cost = (float) $quantity * (float) $material->unit_price;
+
+            if ($chosen !== [] && $spent + $cost > $budget) {
+                continue;
+            }
+
+            $spent += $cost;
+            $chosen[] = [$name, $brand, $unit, $quantity, $material];
+        }
+
+        return $chosen;
+    }
+
+    /**
+     * The quotation lines, written through the wizard's own service. Materials
+     * at their Inventory price, with labor making up the rest of the figure;
+     * every seventh project quotes one more of its first material than it plans.
+     *
+     * @param  array<string, mixed>  $spec
+     */
+    private function seedQuotation(Project $project, array &$spec): void
+    {
+        $rows = [];
+        $spec['material_lines'] = $this->materialLines($project, $spec);
+
+        foreach ($spec['material_lines'] as $index => [, , , $quantity, $material]) {
+            $rows[] = [
+                'kind' => QuotationItem::KIND_MATERIAL,
+                'material_id' => $material->material_id,
+                'quantity' => $index === 0 && $project->project_id % 7 === 0 ? $quantity + 1 : $quantity,
+                'unit_price' => (float) $material->unit_price,
+            ];
+        }
+
+        $quotation = app(ProjectQuotation::class);
+        $materials = $quotation->total($rows);
+        $isCheckUp = $spec['types'][0] === DemoDataCatalog::EQUIPMENT_CHECK_UP;
+
+        $rows[] = [
+            'kind' => QuotationItem::KIND_LABOR,
+            'description' => $isCheckUp ? 'Check-up service fee' : 'Labor cost',
+            'unit' => 'lot',
+            'quantity' => 1,
+            'unit_price' => max(round((float) $spec['quotation'] - $materials, 2), round($materials * 0.15, 2)),
+        ];
+
+        $quotation->save($project, $rows);
+
+        $total = $quotation->total($rows);
+        $spec['quotation'] = $total;
+        $spec['quotation_items'] = $project->quotationItems()->get()
+            ->map(fn (QuotationItem $item): array => ['description' => $item->description, 'amount' => $item->amount()])
+            ->all();
+
+        $project->forceFill(['quotation' => $total])->save();
     }
 
     /**
@@ -886,7 +1052,7 @@ class DemoDataSeeder extends Seeder
                 ],
                 'types' => implode(', ', $spec['types']),
                 'targetDate' => CarbonImmutable::parse($this->date($spec['target']))->format(BusinessTime::DATE),
-                'items' => $this->costBreakdown($profile['quotation'], (float) $spec['quotation']),
+                'items' => $spec['quotation_items'],
                 'total' => (float) $spec['quotation'],
                 'findings' => $profile['findings'],
                 'recommendation' => $profile['recommendation'],
@@ -1020,27 +1186,6 @@ class DemoDataSeeder extends Seeder
         $this->uploaded[] = $path;
 
         return $path;
-    }
-
-    /**
-     * The quotation split into its lines, the last line taking the rounding
-     * so the lines always add up to the quoted total.
-     *
-     * @param  array<int, array{0: string, 1: float}>  $lines
-     * @return array<int, array{description: string, amount: float}>
-     */
-    private function costBreakdown(array $lines, float $total): array
-    {
-        $items = [];
-        $remaining = $total;
-
-        foreach ($lines as $index => [$description, $share]) {
-            $amount = $index === array_key_last($lines) ? $remaining : round($total * $share, 2);
-            $remaining = round($remaining - $amount, 2);
-            $items[] = ['description' => $description, 'amount' => $amount];
-        }
-
-        return $items;
     }
 
     /**
@@ -1240,20 +1385,11 @@ class DemoDataSeeder extends Seeder
      */
     private function seedMaterials(Project $project, array $spec, array $team, CarbonImmutable $createdAt): void
     {
-        if (! $this->isPlanned($spec)) {
-            return;
-        }
-
-        $kind = DemoDataCatalog::kindOf($spec['types'][0]);
-        $lines = DemoDataCatalog::projectMaterials()[$kind] ?? [];
+        // Exactly what was quoted: picked once, in seedQuotation().
+        $lines = $spec['material_lines'] ?? [];
 
         if ($lines === []) {
             return;
-        }
-
-        if ($kind === 'installation') {
-            $brands = DemoDataCatalog::INSTALLATION_BRANDS;
-            $lines[0][1] = $brands[$project->project_id % count($brands)];
         }
 
         $lead = $team[0]['user'];
@@ -1283,13 +1419,7 @@ class DemoDataSeeder extends Seeder
         $leftovers = 0;
         $firstLine = null;
 
-        foreach ($lines as $index => [$name, $brand, $unitValue, $quantity]) {
-            $material = $this->material($name, $brand, $unitValue);
-
-            if ($material === null) {
-                continue;
-            }
-
+        foreach ($lines as $index => [, , , $quantity, $material]) {
             $line = ProjectMaterial::forceCreate([
                 'project_id' => $project->project_id,
                 'material_id' => $material->material_id,

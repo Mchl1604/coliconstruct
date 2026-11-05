@@ -74,7 +74,7 @@ class CreateProjectTest extends TestCase
             'client_email' => 'juan.dela.cruz@example.test',
             'client_phone' => '09123456789',
             ...$this->luzonAddress(),
-            'quotation_amount' => '1250.00',
+            'quotation_items' => [['kind' => 'other', 'description' => 'Aircon works', 'quantity' => 1, 'unit_price' => '1250.00']],
             'project_types' => ['Aircon Installation'],
             // Each document type takes an array of files, which is what the
             // wizard's inputs now post.
@@ -158,19 +158,12 @@ class CreateProjectTest extends TestCase
      * them: the visible field carries the commas and the hidden one carries
      * the number, so `numeric` validation is handed what it always was.
      */
-    public function test_the_quotation_field_is_paired_for_grouped_input(): void
+    public function test_the_quotation_total_is_worked_out_from_lines_not_typed(): void
     {
         $page = $this->get(route('super-admin.projects.create'))->assertOk();
 
-        $page->assertSee('data-money-field', false);
-        $page->assertSee('data-money-input', false);
-        $page->assertSee('data-money-value', false);
-        $page->assertSee('/js/moneyInput.js', false);
-
-        // The name is on the hidden half, and the visible half has none - or
-        // the browser would submit the comma-formatted text instead.
-        $page->assertSee('<input type="hidden" name="quotation_amount"', false);
-        $page->assertDontSee('type="number" name="quotation_amount"', false);
+        $page->assertSee('data-quotation-lines', false);
+        $page->assertDontSee('name="quotation_amount"', false);
     }
 
     /**
@@ -460,11 +453,11 @@ class CreateProjectTest extends TestCase
         ]);
 
         $payload = $this->baseProjectPayload($leadTechnician, $technician);
-        $payload['quotation_amount'] = '-10';
+        $payload['quotation_items'][0]['unit_price'] = '-10';
 
         $response = $this->post(route('super-admin.projects.create.store'), $payload);
 
-        $response->assertSessionHasErrors(['quotation_amount']);
+        $response->assertSessionHasErrors(['quotation_items.0.unit_price']);
         $this->assertDatabaseCount('tbl_projects', 0);
     }
 

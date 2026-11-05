@@ -67,6 +67,15 @@
                                 placeholder="Optional" data-material-field="reorder_level">
                             <div class="form-text">Low Stock at or below this.</div>
                         </div>
+                        <div class="col-sm-6">
+                            <label class="form-label small fw-semibold mb-1" for="materialUnitPrice">Unit Price</label>
+                            <div class="input-group">
+                                <span class="input-group-text">&#8369;</span>
+                                <input type="number" class="form-control" id="materialUnitPrice" min="0" step="0.01"
+                                    placeholder="Optional" data-material-field="unit_price">
+                            </div>
+                            <div class="form-text">Fills in on quotations.</div>
+                        </div>
                     </div>
                 </div>
 

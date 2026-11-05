@@ -228,6 +228,10 @@
                         </div>
                     @endif
 
+                    <div class="mb-3">
+                        <x-project-quotation-modal :project="$project" />
+                    </div>
+
                     {{-- Project documents, in the grouped cards the Super Admin
                          project page uses. A row of loose buttons stopped
                          reading as anything once a document could run to

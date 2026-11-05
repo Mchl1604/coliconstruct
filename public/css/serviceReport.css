@@ -1,0 +1,310 @@
+/*
+ * The Service Report: a copy of the company's paper form. Black lines on white
+ * and sizes in points, so the dialog and the printed A4 page read the same.
+ */
+
+.sr-modal-body {
+    background: #e9ecef;
+}
+
+.sr-sheet {
+    width: 100%;
+    max-width: 194mm;
+    margin: 0 auto;
+    padding: 6mm;
+    background: #fff;
+    color: #000;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 8pt;
+    line-height: 1.25;
+}
+
+.sr-letterhead {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5mm;
+}
+
+.sr-logo {
+    width: 20mm;
+    height: 20mm;
+    object-fit: contain;
+}
+
+.sr-company {
+    text-align: center;
+}
+
+.sr-company-name {
+    font-size: 15pt;
+    font-weight: 700;
+}
+
+.sr-company-line {
+    font-size: 9pt;
+    font-weight: 700;
+}
+
+.sr-company-small {
+    font-size: 7.5pt;
+}
+
+.sr-title {
+    margin: 1.5mm 0;
+    font-size: 10pt;
+    font-weight: 700;
+    text-align: center;
+}
+
+.sr-label {
+    font-weight: 400;
+    font-size: 7pt;
+}
+
+.sr-sub {
+    margin-left: 2mm;
+}
+
+.sr-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+
+.sr-table td {
+    padding: .8mm 1.2mm;
+    border: .75pt solid #000;
+    vertical-align: top;
+    overflow-wrap: anywhere;
+}
+
+.sr-times > div + div {
+    margin-top: .4mm;
+    padding-top: .4mm;
+    border-top: .75pt solid #000;
+}
+
+.sr-tall {
+    height: 11mm;
+}
+
+.sr-joined {
+    margin-top: -.75pt;
+}
+
+.sr-equipment-row {
+    display: flex;
+    gap: 0;
+    margin-top: 2mm;
+}
+
+.sr-equipment {
+    flex: 1 1 0;
+    min-width: 0;
+}
+
+.sr-equipment-title {
+    margin: 0 0 .8mm 1mm;
+}
+
+.sr-tick {
+    display: inline-flex;
+    align-items: center;
+    vertical-align: middle;
+    gap: .8mm;
+    margin-right: 1.6mm;
+    font-size: 7pt;
+    white-space: nowrap;
+}
+
+.sr-box {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.8mm;
+    height: 2.8mm;
+    border: .75pt solid #000;
+    font-size: 7pt;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.sr-grid {
+    display: grid;
+    gap: .5mm 1.5mm;
+    margin-top: .6mm;
+}
+
+.sr-grid-1 { grid-template-columns: 1fr; }
+.sr-grid-2 { grid-template-columns: repeat(2, 1fr); }
+.sr-grid-3 { grid-template-columns: repeat(3, 1fr); }
+.sr-grid-4 { grid-template-columns: repeat(4, 1fr); }
+
+.sr-section-name {
+    vertical-align: middle !important;
+}
+
+.sr-section-name .sr-tick {
+    white-space: normal;
+}
+
+.sr-divider {
+    margin: 2mm 0;
+    border-top: 1.25pt dashed #000;
+}
+
+.sr-material-groups {
+    display: grid;
+    grid-template-columns: repeat(6, auto);
+    justify-content: space-between;
+    gap: 1mm;
+    margin-top: .6mm;
+}
+
+.sr-material-group .sr-label {
+    font-size: 6.5pt;
+}
+
+.sr-material-group .sr-grid {
+    grid-auto-columns: auto;
+    justify-content: start;
+}
+
+.sr-material-group .sr-grid-3 { grid-template-columns: repeat(3, auto); }
+.sr-material-group .sr-grid-2 { grid-template-columns: repeat(2, auto); }
+.sr-material-group .sr-grid-1 { grid-template-columns: auto; }
+
+.sr-material-group .sr-tick {
+    margin-right: 0;
+    font-size: 6.5pt;
+}
+
+.sr-material-group + .sr-material-group {
+    padding-left: 1mm;
+    border-left: .75pt solid #000;
+}
+
+/* A phone gets the sheet at its real width, scrolled sideways, because the
+   paper layout does not fold. */
+@media (max-width: 767.98px) {
+    .sr-modal-body {
+        overflow-x: auto;
+    }
+
+    .sr-sheet {
+        width: 194mm;
+    }
+}
+
+/* ---------- Printing: the sheet alone ---------- */
+
+body.sr-printing {
+    overflow: visible !important;
+    height: auto !important;
+    padding: 0 !important;
+    background: #fff !important;
+}
+
+body.sr-printing > *:not(#serviceReportPrint) {
+    display: none !important;
+}
+
+#serviceReportPrint .sr-sheet {
+    max-width: none;
+    width: 100%;
+    padding: 0;
+}
+
+.sr-keep {
+    break-inside: avoid;
+}
+
+@media print {
+    @page {
+        size: A4 portrait;
+        margin: 8mm;
+    }
+
+    .sr-sheet,
+    .sr-sheet * {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+}
+
+/* The rows that share their width with the checklists. */
+.sr-joined .sr-tick {
+    margin-right: 0;
+    font-size: 6.5pt;
+    white-space: normal;
+    align-items: flex-start;
+}
+
+.sr-joined .sr-box {
+    flex: none;
+}
+
+.sr-joined .sr-grid-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.sr-joined td > .sr-label + .sr-tick {
+    margin-left: 1mm;
+}
+
+/* ---------- The quotation sheet ---------- */
+
+.qt-lines {
+    margin-top: 3mm;
+}
+
+.qt-lines thead th {
+    padding: .8mm 1.2mm;
+    border: .75pt solid #000;
+    font-size: 7pt;
+    font-weight: 700;
+}
+
+.qt-number {
+    text-align: right;
+}
+
+.qt-group td {
+    font-size: 7pt;
+    font-weight: 700;
+}
+
+.qt-total td {
+    font-weight: 700;
+    text-align: right;
+}
+
+.qt-lines tr {
+    break-inside: avoid;
+}
+
+.qt-lines thead th {
+    text-align: left;
+}
+
+.qt-lines thead th.qt-number {
+    text-align: right;
+}
+
+.sr-signatory-label {
+    font-weight: 700;
+}
+
+.sr-signatory-name {
+    min-height: 7mm;
+    padding-top: 2mm;
+    border-bottom: .75pt solid #000;
+    text-align: center;
+}
+
+.sr-signatory-role {
+    margin-top: .6mm;
+    font-size: 7pt;
+    text-align: center;
+}
