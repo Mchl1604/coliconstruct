@@ -23,6 +23,7 @@ use App\Models\TaskUpdate;
 use App\Models\TechnicianReport;
 use App\Models\TechnicianReportImage;
 use App\Models\User;
+use App\Policies\ProjectPolicy;
 use App\Services\PhaseTemplateMerger;
 use App\Services\ProjectDetailForms;
 use App\Services\ProjectStatusRules;
@@ -35,6 +36,7 @@ use Database\Seeders\DemoDataCatalog;
 use Database\Seeders\DemoDataSeeder;
 use Database\Seeders\MaterialSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Hash;
 use RuntimeException;
 use Tests\TestCase;
@@ -56,12 +58,12 @@ class DemoDataSeederTest extends TestCase
      */
     private const EXPECTED_STATUSES = [
         'unscheduled' => 4,
-        'pending' => 8,
-        'ongoing' => 5,
+        'pending' => 11,
+        'ongoing' => 8,
         'overdue' => 3,
         'on_hold' => 3,
         Project::STATUS_AWAITING_CLIENT_CONFIRMATION => 4,
-        'completed' => 15,
+        'completed' => 19,
         'cancelled' => 4,
         'archived' => 4,
     ];
@@ -182,7 +184,7 @@ class DemoDataSeederTest extends TestCase
     {
         $this->runSeeder();
 
-        $this->assertSame(50, Project::count());
+        $this->assertSame(60, Project::count());
         $this->assertSame(collect(self::EXPECTED_STATUSES)->sortKeys()->all(), $this->statusCounts());
 
         $leadIds = User::query()->where('role', User::ROLE_LEAD_TECHNICIAN)->pluck('id');
@@ -236,7 +238,7 @@ class DemoDataSeederTest extends TestCase
         $clients = Client::query()->withCount('projects')->get();
 
         $this->assertCount(20, $clients);
-        $this->assertSame(50, (int) $clients->sum('projects_count'));
+        $this->assertSame(60, (int) $clients->sum('projects_count'));
         $this->assertGreaterThan(0, $clients->where('projects_count', '>', 1)->count());
         $this->assertSame(20, $clients->pluck('user_id')->filter()->unique()->count());
     }
@@ -335,14 +337,17 @@ class DemoDataSeederTest extends TestCase
             }
         }
 
-        $counts = collect($projectsByDay)->map(fn (array $projects): int => count($projects));
+        $demoIds = $this->demoProjects()->pluck('project_id')->flip();
+        $counts = collect($projectsByDay)->map(fn (array $projects): int => count(array_diff_key($projects, $demoIds->all())));
 
         $this->assertLessThanOrEqual(3, $counts->max(), 'A calendar day shows more than three projects.');
+        // The demo-day projects add at most their own three.
+        $this->assertLessThanOrEqual(6, collect($projectsByDay)->map(fn (array $projects): int => count($projects))->max());
 
         // Three is the exception: a full day is uncommon, two is the busy norm.
         // The first days after seeding are full on purpose.
         $this->assertGreaterThan(
-            $counts->filter(fn (int $count): bool => $count === 3)->count() * 5,
+            $counts->filter(fn (int $count): bool => $count === 3)->count() * 4,
             $counts->filter(fn (int $count): bool => $count === 2)->count()
         );
     }
@@ -393,7 +398,7 @@ class DemoDataSeederTest extends TestCase
     {
         $this->runSeeder();
 
-        $this->assertSame(50, Project::count());
+        $this->assertSame(60, Project::count());
         $this->assertSame(6, ProjectType::count());
         $this->assertGreaterThan(0, Project::query()->whereHas('projectTypes', fn ($type) => $type->where('type_name', 'Equipment Check-up'))->count());
 
@@ -506,13 +511,48 @@ class DemoDataSeederTest extends TestCase
         }
     }
 
+    public function test_three_projects_are_ready_to_complete_on_the_demo_day(): void
+    {
+        $this->runSeeder();
+
+        $demoDay = CarbonImmutable::parse(DemoDataCatalog::DEMO_DAY);
+        $this->travelTo($demoDay->max(CarbonImmutable::now())->setTime(9, 0));
+
+        $policy = app(ProjectPolicy::class);
+        $officer = User::query()->where('role', User::ROLE_ADMIN_OFFICER)->firstOrFail();
+        $ready = $this->demoProjects();
+
+        $this->assertCount(3, $ready);
+
+        foreach ($ready as $project) {
+            $project->refresh();
+            $this->assertSame('ongoing', $project->status, $project->name);
+            $this->assertSame([], $policy->blockersFor($project, $officer), $project->name);
+        }
+
+        $active = Project::query()->where('status', 'ongoing')->get()
+            ->filter(fn (Project $project): bool => $project->schedules->contains(
+                fn ($schedule): bool => $schedule->startsOn()->lte($demoDay) && $schedule->endsOn()->gte($demoDay)
+            ));
+
+        $this->assertGreaterThanOrEqual(5, $active->count());
+    }
+
     public function test_the_statuses_still_hold_fourteen_days_later(): void
     {
         $this->runSeeder();
 
+        // The demo-day projects are finished work waiting on Complete Project;
+        // left alone for a fortnight they would rightly read as overdue.
+        $demo = $this->demoProjects();
+        $demo->each->delete();
+
         $this->travel(14)->days();
 
-        $this->assertSame(collect(self::EXPECTED_STATUSES)->sortKeys()->all(), $this->statusCounts());
+        $expected = self::EXPECTED_STATUSES;
+        $expected['ongoing'] -= $demo->count();
+
+        $this->assertSame(collect($expected)->sortKeys()->all(), $this->statusCounts());
 
         $statusRules = app(ProjectStatusRules::class);
 
@@ -545,7 +585,7 @@ class DemoDataSeederTest extends TestCase
         $this->assertSame(4, Project::query()->where('status', Project::STATUS_AWAITING_CLIENT_CONFIRMATION)->whereNotNull('completion_requested_at')->count());
         $this->assertSame(3, Project::query()->where('on_hold', true)->whereNotNull('held_on')->count());
         $this->assertSame(4, Project::query()->whereNotNull('cancelled_at')->where('is_archived', false)->count());
-        $this->assertTrue(ActivityLog::query()->where('action', ActivityLog::PROJECT_CREATED)->count() === 50);
+        $this->assertTrue(ActivityLog::query()->where('action', ActivityLog::PROJECT_CREATED)->count() === 60);
     }
 
     public function test_it_follows_the_current_inventory_and_report_forms(): void
@@ -687,7 +727,7 @@ class DemoDataSeederTest extends TestCase
                 ->orWhere('pre_archive_status', 'completed')
                 ->pluck('project_id');
 
-            $this->assertCount(22, $finished);
+            $this->assertCount(26, $finished);
 
             foreach ($finished as $projectId) {
                 $this->assertSame(2, ProjectCompletionPhoto::query()->where('project_id', $projectId)->count());
@@ -742,5 +782,15 @@ class DemoDataSeederTest extends TestCase
                 ->concat(TaskImage::query()->pluck('image_path'))
                 ->each(fn (string $path) => UploadStore::remove($path));
         }
+    }
+
+    /**
+     * @return Collection<int, Project>
+     */
+    private function demoProjects(): Collection
+    {
+        $descriptions = collect(DemoDataCatalog::projects())->where('demo', true)->pluck('description')->all();
+
+        return Project::query()->whereIn('description', $descriptions)->get();
     }
 }

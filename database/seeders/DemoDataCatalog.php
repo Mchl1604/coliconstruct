@@ -31,6 +31,14 @@ final class DemoDataCatalog
 {
     public const EMAIL_DOMAIN = 'example.com';
 
+    /**
+     * The day the demonstration is given. Projects marked 'demo' have their
+     * dates counted from it, so they are under way on that day whenever the
+     * data is seeded before it. Seeded on the day or later, they count from
+     * the seeding day instead.
+     */
+    public const DEMO_DAY = '2026-11-09';
+
     public const AIRCON_INSTALLATION = 'Aircon Installation';
 
     public const AIRCON_REPAIR = 'Equipment Repair';
@@ -707,6 +715,142 @@ final class DemoDataCatalog
                 'ranges' => [[-11, -10], [18, 19]],
                 'target' => 22,
                 'technicians' => 1,
+            ],
+
+            // ---------------------------------------------------------------
+            // Demo day: three with every phase and task done, ready for
+            // Complete Project. Dates count from DEMO_DAY. The ongoing work
+            // above is under way on that day too.
+            // ---------------------------------------------------------------
+            [
+                'name' => 'Office Aircon General Cleaning - Greenfield Business Suites',
+                'client' => 'patricia.yap',
+                'types' => [self::AIRCON_CLEANING],
+                'scenario' => 'ready',
+                'demo' => true,
+                'description' => 'General cleaning of the wall-mounted units on the fifth floor. The work is done; the report is ready to sign off.',
+                'quotation' => 18500,
+                'created' => -12,
+                'ranges' => [[-8, 2]],
+                'target' => 6,
+                'technicians' => 2,
+            ],
+            [
+                'name' => 'Server Room Aircon Repair - Sta. Rosa Fitness Hub',
+                'client' => 'mark.javier',
+                'types' => [self::AIRCON_REPAIR],
+                'scenario' => 'ready',
+                'demo' => true,
+                'description' => 'Repair of a split-type unit that tripped its breaker. The capacitor was replaced and the unit has run cleanly since.',
+                'quotation' => 9800,
+                'created' => -10,
+                'ranges' => [[-7, 1]],
+                'target' => 5,
+                'technicians' => 1,
+            ],
+            [
+                'name' => 'Bedroom Aircon Installation - Tan Residence',
+                'client' => 'charmaine.tan',
+                'types' => [self::AIRCON_INSTALLATION],
+                'scenario' => 'ready',
+                'demo' => true,
+                'description' => 'Installation of a 1.5 HP inverter split-type unit in the master bedroom. Installed and tested; awaiting sign-off.',
+                'quotation' => 52000,
+                'created' => -14,
+                'ranges' => [[-9, 3]],
+                'target' => 7,
+                'technicians' => 2,
+            ],
+            [
+                'name' => 'Lobby Ducting Installation - Calamba Bay Hotel',
+                'client' => 'rosario.herrera',
+                'types' => [self::DUCTING_INSTALLATION],
+                'scenario' => 'pending',
+                'description' => 'Supply ducting for the lobby\'s new ceiling diffusers, hung along the corridor ceiling.',
+                'quotation' => 410000,
+                'created' => -5,
+                'ranges' => [[35, 39]],
+                'target' => 45,
+                'technicians' => 2,
+                'phases' => true,
+            ],
+            [
+                'name' => 'Clinic Aircon Cleaning (12 Units) - Southwoods Medical Clinic',
+                'client' => 'teresa.villareal',
+                'types' => [self::AIRCON_CLEANING],
+                'scenario' => 'completed',
+                'description' => 'Quarterly cleaning of twelve units across the clinic\'s consultation rooms, done room by room around patient hours.',
+                'quotation' => 27600,
+                'created' => -90,
+                'ranges' => [[-84, -83]],
+                'target' => -80,
+                'technicians' => 2,
+                'method' => 'client_confirmed',
+            ],
+            [
+                'name' => 'Restaurant Aircon Check-up - Kusina ni Lola',
+                'client' => 'melanie.tiongson',
+                'types' => [self::EQUIPMENT_CHECK_UP],
+                'scenario' => 'completed',
+                'description' => 'Check-up of the dining area units, which were struggling during the lunch rush.',
+                'quotation' => 3500,
+                'created' => -40,
+                'ranges' => [[-35, -35]],
+                'target' => -32,
+                'technicians' => 1,
+                'method' => 'client_confirmed',
+            ],
+            [
+                'name' => 'Warehouse Exhaust Ducting - Pacific Crest Logistics',
+                'client' => 'fernando.co',
+                'types' => [self::DUCTING_FABRICATION],
+                'scenario' => 'pending',
+                'description' => 'Fabrication of galvanised exhaust ducting for the warehouse forklift charging bay.',
+                'quotation' => 275000,
+                'created' => -4,
+                'ranges' => [[24, 28]],
+                'target' => 34,
+                'technicians' => 2,
+                'phases' => true,
+            ],
+            [
+                'name' => 'Living Room Aircon Installation - Abella Residence',
+                'client' => 'josefina.abella',
+                'types' => [self::AIRCON_INSTALLATION],
+                'scenario' => 'pending',
+                'description' => 'Installation of a 2.0 HP inverter split-type unit in the living room.',
+                'quotation' => 61000,
+                'created' => -3,
+                'ranges' => [[29, 29]],
+                'target' => 33,
+                'technicians' => 1,
+                'phases' => true,
+            ],
+            [
+                'name' => 'Office Aircon Repair - Gutierrez Law Office',
+                'client' => 'emmanuel.gutierrez',
+                'types' => [self::AIRCON_REPAIR],
+                'scenario' => 'completed',
+                'description' => 'Repair of a leaking ceiling cassette over the reception area. The drain line was cleared and re-pitched.',
+                'quotation' => 7500,
+                'created' => -120,
+                'ranges' => [[-112, -112]],
+                'target' => -108,
+                'technicians' => 1,
+                'method' => 'client_confirmed',
+            ],
+            [
+                'name' => 'Bedroom Aircon Cleaning - Padilla Residence',
+                'client' => 'rowena.padilla',
+                'types' => [self::AIRCON_CLEANING],
+                'scenario' => 'completed',
+                'description' => 'General cleaning of three bedroom split-type units before the summer months.',
+                'quotation' => 4500,
+                'created' => -60,
+                'ranges' => [[-54, -54]],
+                'target' => -50,
+                'technicians' => 1,
+                'method' => 'client_confirmed',
             ],
 
             // ---------------------------------------------------------------

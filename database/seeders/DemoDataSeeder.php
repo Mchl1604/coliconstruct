@@ -513,7 +513,15 @@ class DemoDataSeeder extends Seeder
      */
     private function projectsInOrder(): array
     {
+        // How far ahead the demonstration is; nothing is moved once it has come.
+        $shift = max(0, (int) $this->today->diffInDays(CarbonImmutable::parse(DemoDataCatalog::DEMO_DAY, Schedule::BUSINESS_TIMEZONE)->startOfDay(), false));
+
         return collect(DemoDataCatalog::projects())
+            ->map(fn (array $spec): array => ($spec['demo'] ?? false) ? [
+                ...$spec,
+                'ranges' => array_map(fn (array $range): array => [$range[0] + $shift, $range[1] + $shift], $spec['ranges']),
+                'target' => $spec['target'] + $shift,
+            ] : $spec)
             ->sortBy(fn (array $spec): int => $spec['ranges'][0][0] ?? PHP_INT_MAX)
             ->values()
             ->all();
@@ -652,7 +660,7 @@ class DemoDataSeeder extends Seeder
         $forms->sync($project, $types, $input);
 
         $outcome = $spec['scenario'] === 'archived' ? $spec['archived_from'] : $spec['scenario'];
-        $finished = in_array($outcome, ['awaiting', 'completed'], true);
+        $finished = in_array($outcome, ['awaiting', 'completed', 'ready'], true);
         $items = array_keys(ServiceReportForms::checklistItems());
         $ticked = match (true) {
             ! $started => null,
@@ -1245,6 +1253,12 @@ class DemoDataSeeder extends Seeder
         $crew = count($team) > 1 ? array_slice($team, 1) : $team;
         $finalizedAt = $createdAt->addDay()->min($this->now());
         $days = $this->workDays($spec);
+
+        // Finished early: the work fits in the days already gone.
+        if ($spec['scenario'] === 'ready') {
+            $days = array_values(array_filter($days, fn (array $day): bool => $day['date'] < $this->today->toDateString()));
+        }
+
         $phases = $this->phasesFromTemplates($project);
         $outcome = $spec['scenario'] === 'archived' ? $spec['archived_from'] : $spec['scenario'];
         $taskTotal = (int) collect($phases)->sum(fn (array $phase): int => count($phase['tasks']));
@@ -1689,7 +1703,7 @@ class DemoDataSeeder extends Seeder
         $today = $this->today->toDateString();
 
         return match ($outcome) {
-            'completed', 'awaiting' => 'completed',
+            'completed', 'awaiting', 'ready' => 'completed',
             'ongoing' => $due < $today ? 'completed' : 'pending',
             // Late work: the first part got done, the rest ran out of dates.
             'overdue' => $taskNumber < (int) ceil($taskTotal * 0.6) ? 'completed' : 'pending',
@@ -1726,7 +1740,7 @@ class DemoDataSeeder extends Seeder
     {
         $outcome = $spec['scenario'] === 'archived' ? $spec['archived_from'] : $spec['scenario'];
 
-        if (! in_array($outcome, ['ongoing', 'overdue', 'on_hold', 'awaiting', 'completed'], true)) {
+        if (! in_array($outcome, ['ongoing', 'ready', 'overdue', 'on_hold', 'awaiting', 'completed'], true)) {
             return;
         }
 
@@ -1866,6 +1880,13 @@ class DemoDataSeeder extends Seeder
             case 'ongoing':
             case 'overdue':
                 $project->forceFill(['status' => $outcome === 'pending' ? 'pending' : 'ongoing'])->save();
+                break;
+
+                // Every phase and task done, the checklist ticked and the photos
+                // in: Complete Project is all that is left.
+            case 'ready':
+                $project->forceFill(['status' => 'ongoing'])->save();
+                $this->attachCompletionPhotos($project, $profile, $this->moment(-1, '16:00'));
                 break;
 
             case 'on_hold':
