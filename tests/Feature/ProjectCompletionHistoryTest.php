@@ -138,9 +138,14 @@ class ProjectCompletionHistoryTest extends TestCase
      */
     private function requestCompletion(Project $project, string $summary): Project
     {
+        $this->makeCompletable($project);
+
         $this->post(route('super-admin.projects.complete', $project->project_id), [
             'completion_date' => CarbonImmutable::today()->toDateString(),
             'completion_summary' => $summary,
+            'report_performed_by' => 'Ramon Cruz',
+            'report_witnessed_by' => 'Maria Santos',
+            'report_remarks' => $summary,
         ])->assertRedirect();
 
         return $project->refresh();

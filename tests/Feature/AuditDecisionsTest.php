@@ -124,7 +124,7 @@ class AuditDecisionsTest extends TestCase
             $stored->startsOn()->toDateString(),
             'The booking stayed where it was.'
         );
-        $this->assertStringContainsString('Choose a start date of today or later.', (string) session('error'));
+        $this->assertStringContainsString('Choose tomorrow or later.', (string) session('error'));
     }
 
     /**

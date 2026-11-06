@@ -37,40 +37,18 @@ use Illuminate\Validation\Rule;
 class ProjectCompletion
 {
     /**
-     * The completion report both portals collect.
-     *
-     * One rule set rather than two: the Super Admin modal and the technician's
-     * dialog write the same columns, and a difference between them would mean
-     * the same project could be closed out to two different standards.
-     *
-     * `$photosRequired` is the one deliberate difference. A lead is on site,
-     * so the photographs are the evidence and are required of them; an
-     * administrator closing a project from the office may not have any.
+     * Completion photos, added on Project Details ahead of completing.
      *
      * @return array<string, array<int, string>>
      */
-    public function rules(bool $photosRequired = false): array
+    public function photoRules(): array
     {
         return [
-            // No completion date: it is always the office's today - see
-            // requestCompletion().
-            'completion_summary' => ['required', 'string'],
-            'completion_remarks' => ['nullable', 'string'],
-            'completion_photos' => $photosRequired
-                ? ['required', 'array', 'min:1', 'max:20']
-                : ['nullable', 'array', 'max:20'],
+            'completion_photos' => ['required', 'array', 'min:1', 'max:20'],
             // Matched to every other photo upload in the system, so a phone
             // picture is always accepted and nothing arrives that the browser
             // then struggles to show.
             'completion_photos.*' => ['file', 'mimes:jpg,jpeg,png', 'max:5120'],
-
-            // Only ever filled in when the completion rules objected and an
-            // administrator went ahead anyway. Optional here because the rules
-            // are what decide whether it is needed - see
-            // ProjectController::complete(), which requires it once it knows
-            // there is something to override. A lead technician never sends
-            // it: their route refuses a project with blockers outright.
-            'completion_override_reason' => ['nullable', 'string', 'min:10', 'max:500'],
         ];
     }
 
@@ -80,8 +58,9 @@ class ProjectCompletion
     public function messages(): array
     {
         return [
-            'completion_photos.required' => 'At least one completion photo is required.',
-            'completion_photos.min' => 'At least one completion photo is required.',
+            'completion_photos.required' => 'Choose at least one photo.',
+            'completion_photos.min' => 'Choose at least one photo.',
+            'completion_photos.*.mimes' => 'Photos must be JPG or PNG.',
             'completion_photos.max' => 'Up to 20 completion photos can be uploaded at once.',
             'completion_photos.*.max' => 'Each completion photo must be 5 MB or smaller.',
         ];

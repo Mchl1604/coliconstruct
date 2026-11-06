@@ -81,9 +81,9 @@
                         <tr>
                             <th>Material</th>
                             <th>Type</th>
-                            <th>On Hand</th>
+                            <th title="Reserved plus available">Total</th>
                             <th title="Planned by live projects, not yet released">Reserved</th>
-                            <th title="On hand less reserved">Available</th>
+                            <th title="Free for new projects">Available</th>
                             <th>Status</th>
                             <th class="text-center">Actions</th>
                         </tr>

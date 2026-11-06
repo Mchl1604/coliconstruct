@@ -1,11 +1,12 @@
 {{-- One row of Inventory -> Stock, rendered by StockController::index() for
-     serverTable.js. On hand comes from the row's own withOnHand() column;
-     Reserved and Available from StockAvailability, as $figures. --}}
+     serverTable.js. Reserved and Available come from StockAvailability, as
+     $figures, and Total is the two together. The status reads Available. --}}
 @php
     $onHand = $material->onHand();
     $reserved = (float) ($figures['reserved'] ?? 0);
     $available = (float) ($figures['available'] ?? $onHand);
-    $status = $material->stockStatus($onHand);
+    $total = $reserved + $available;
+    $status = $material->stockStatus($available);
     $unit = $material->unit;
     $payload = [
         'material_id' => (int) $material->material_id,
@@ -13,6 +14,7 @@
         'unit' => $unit->value,
         'allows_fractions' => $unit->allowsFractions(),
         'on_hand' => $onHand,
+        'reserved' => $reserved,
         'available' => $available,
     ];
 @endphp
@@ -33,12 +35,12 @@
         @endif
     </td>
     <td class="text-nowrap">
-        <span class="material-qty fw-semibold {{ $onHand <= 0 ? 'is-zero' : '' }}">{{ $unit->format($onHand) }}</span>
+        <span class="material-qty fw-semibold {{ $total <= 0 ? 'is-zero' : '' }}">{{ $unit->format($total) }}</span>
         <span class="material-unit-chip" title="{{ $unit->label() }}">{{ $unit->value }}</span>
     </td>
     <td class="text-nowrap small {{ $reserved > 0 ? '' : 'text-secondary' }}">{{ $unit->format($reserved) }}</td>
     <td class="text-nowrap">
-        <span class="material-qty {{ $reserved > $onHand ? 'text-danger fw-semibold' : '' }}">{{ $unit->format($available) }}</span>
+        <span class="material-qty {{ $available <= 0 ? 'text-danger fw-semibold' : '' }}">{{ $unit->format($available) }}</span>
     </td>
     <td><span class="stock-status is-{{ $status }}">{{ \App\Models\Material::STOCK_STATUSES[$status] }}</span></td>
     <td class="text-center text-nowrap">

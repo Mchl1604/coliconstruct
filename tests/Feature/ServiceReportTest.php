@@ -142,14 +142,16 @@ class ServiceReportTest extends TestCase
         $header = fn (): array => app(ServiceReport::class)->for($project->fresh())['header'];
 
         $this->assertNotSame('', $header()['last_modified']);
-        $this->assertNotSame('', $header()['time_start']);
-        $this->assertNotSame('', $header()['time_end']);
+        $this->assertArrayNotHasKey('time_start', $header());
+        $this->assertArrayNotHasKey('time_end', $header());
 
-        $schedule->update(['scheduling_mode' => Schedule::MODE_DATE_BASED]);
+        $this->actingAsSuperAdmin();
 
-        $this->assertNotSame('', $header()['last_modified']);
-        $this->assertSame('', $header()['time_start']);
-        $this->assertSame('', $header()['time_end']);
+        $this->get(route('super-admin.projects.show', $project->project_id))
+            ->assertOk()
+            ->assertSee('LAST MODIFIED:')
+            ->assertDontSee('TIME START')
+            ->assertDontSee('TIME END');
     }
 
     public function test_a_type_outside_the_report_keeps_its_folded_details(): void
@@ -245,7 +247,7 @@ class ServiceReportTest extends TestCase
             ->assertSee('data-bs-target="#editProjectDescriptionModal"', false);
     }
 
-    public function test_ducting_stays_a_type_with_its_own_form_and_no_report(): void
+    public function test_ducting_has_its_own_form_on_the_report_sheet_and_no_checklist(): void
     {
         $project = $this->projectWith(['Ducting Installation']);
         $type = ProjectType::query()->where('type_name', 'Ducting Installation')->sole();
@@ -257,8 +259,12 @@ class ServiceReportTest extends TestCase
 
         $this->get(route('super-admin.projects.show', $project->project_id))
             ->assertOk()
-            ->assertSee('Edit Details')
-            ->assertDontSee('data-service-report-sheet', false)
+            ->assertSee('View Project Details')
+            ->assertSee('data-service-report-sheet', false)
+            ->assertSee('DUCTING INSTALLATION:')
+            ->assertSee('SCOPE OF WORK:')
+            ->assertSeeInOrder(['DUCTING INSTALLATION:', 'PERFORMED BY:'])
+            ->assertDontSee('Edit Details')
             ->assertDontSee('data-bs-target="#checklist"', false);
     }
 
@@ -361,6 +367,82 @@ class ServiceReportTest extends TestCase
             ->assertOk();
 
         $this->assertSame(['indoor_panel'], $detail->refresh()->checklist);
+    }
+
+    public function test_only_the_super_admin_admin_officer_and_lead_on_the_project_edit_the_report(): void
+    {
+        $project = $this->projectWith(['Equipment Repair']);
+        $this->unit($project, 'Equipment Repair', ['brand' => 'LG', 'equipment_type' => 'VRF', 'trouble_description' => 'Noisy']);
+        $detail = ProjectDetail::query()->where('project_id', $project->project_id)->sole();
+        $type = ProjectType::query()->where('type_name', 'Equipment Repair')->sole();
+        $payload = fn (string $name): array => [
+            'report_performed_by' => $name,
+            'details' => [$type->type_id => ['units' => [[
+                ProjectDetailForms::DETAIL_ID_KEY => $detail->detail_id,
+                'brand' => 'LG',
+                'equipment_type' => 'VRF',
+                'trouble_description' => 'Noisy',
+            ]]]],
+        ];
+        $account = function (string $role, string $email, bool $onProject = false) use ($project): User {
+            $user = User::factory()->create(['email' => $email]);
+            $user->forceFill(['role' => $role, 'status' => User::STATUS_ACTIVE, 'must_change_password' => false])->save();
+
+            if ($onProject) {
+                $technician = Technician::create(['account_id' => $user->id, 'role' => $role]);
+                ProjectTechnician::create(['project_id' => $project->project_id, 'technician_id' => $technician->technician_id]);
+            }
+
+            return $user;
+        };
+        $office = route('super-admin.projects.details.update', $project->project_id);
+        $field = route('technician.projects.details.update', $project->project_id);
+        $page = route('super-admin.projects.show', $project->project_id);
+
+        // View only: the sheet is there, the way to edit is not.
+        $this->actingAs($account(User::ROLE_ADMIN, 'hr@example.test'))
+            ->get($page)
+            ->assertOk()
+            ->assertSee('data-service-report-sheet', false)
+            ->assertDontSee('data-bs-target="#editProjectDescriptionModal"', false)
+            ->assertDontSee('name="report_performed_by"', false);
+        $this->put($office, $payload('Nobody'))->assertRedirect();
+
+        $plain = $account(User::ROLE_TECHNICIAN, 'plain@example.test', true);
+        $this->actingAs($plain)
+            ->get(route('technician.projects.show', $project))
+            ->assertOk()
+            ->assertSee('data-service-report-sheet', false)
+            ->assertDontSee('name="report_performed_by"', false);
+        $this->put($field, $payload('Nobody'))->assertRedirect();
+
+        $this->actingAs($account(User::ROLE_LEAD_TECHNICIAN, 'other-lead@example.test'))
+            ->put($field, $payload('Nobody'))
+            ->assertRedirect();
+
+        $this->assertNull($project->fresh()->report_performed_by);
+
+        // A lead on the project, from their own portal.
+        $lead = $account(User::ROLE_LEAD_TECHNICIAN, 'lead@example.test', true);
+        $this->actingAs($lead)
+            ->get(route('technician.projects.show', $project))
+            ->assertOk()
+            ->assertSee('data-bs-target="#editProjectDescriptionModal"', false)
+            ->assertSee('action="'.$field.'"', false);
+        $this->put($field, $payload('Lead Tech'))
+            ->assertRedirect(route('technician.projects.show', $project->project_id))
+            ->assertSessionHas('success');
+        $this->assertSame('Lead Tech', $project->fresh()->report_performed_by);
+
+        $this->actingAs($account(User::ROLE_ADMIN_OFFICER, 'officer@example.test'))
+            ->get($page)
+            ->assertSee('name="report_performed_by"', false);
+        $this->put($office, $payload('Officer'))->assertSessionHas('success');
+        $this->assertSame('Officer', $project->fresh()->report_performed_by);
+
+        $this->actingAsSuperAdmin();
+        $this->put($office, $payload('Owner'))->assertSessionHas('success');
+        $this->assertSame('Owner', $project->fresh()->report_performed_by);
     }
 
     public function test_an_office_role_below_super_admin_cannot_tick(): void

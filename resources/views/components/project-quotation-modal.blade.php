@@ -67,7 +67,7 @@
                                 </colgroup>
                                 <tr>
                                     <td><span class="sr-label">CLIENT NAME:</span> {{ $client?->primaryName() }}</td>
-                                    <td><span class="sr-label">PROJECT NO:</span> {{ $project->reference_no }}</td>
+                                    <td><span class="sr-label">PROJECT REF NO:</span> {{ $project->reference_no }}</td>
                                 </tr>
                                 <tr>
                                     <td><span class="sr-label">ADDRESS:</span> {{ $project->address }}</td>

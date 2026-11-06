@@ -27,6 +27,7 @@ use App\Services\ImportableTeamSources;
 use App\Services\MaterialRequests;
 use App\Services\NotificationService;
 use App\Services\ProjectCompletion;
+use App\Services\ProjectCompletionForm;
 use App\Services\ProjectDetailForms;
 use App\Services\ProjectEmails;
 use App\Services\ProjectMaterialLedger;
@@ -185,13 +186,6 @@ class ProjectController extends Controller
 
         // What only a drawn row needs, for the rows being drawn.
         $rows->load(['client.account', 'documents', 'schedule'])
-            // What the completion rules will object to, per project, as two
-            // subqueries rather than two queries per row - see
-            // ProjectPolicy::blockersFor(), which reads these when they are
-            // here. The completion dialog needs them: an administrator may
-            // complete a project the rules refuse, but only by saying why,
-            // and the dialog has to show what it is asking about before it
-            // asks.
             ->loadCount([
                 'tasks',
                 'tasks as open_tasks_count' => fn ($query) => $query->whereIn('status', Task::OPEN_STATUSES),
@@ -202,19 +196,8 @@ class ProjectController extends Controller
                 'phases as completed_phases_count' => fn ($query) => $query->whereNotNull('completed_at'),
             ]);
 
-        $policy = app(ProjectPolicy::class);
-
-        $completionBlockers = $rows
-            ->mapWithKeys(fn (Project $project): array => [
-                $project->project_id => $project->isReadOnly() ? [] : $policy->blockersFor($project, $request->user()),
-            ])
-            ->all();
-
-        // Whether anybody can confirm each project, for the two places the
-        // table needs it: the badge beside a project already waiting on its
-        // client, and the notice in the completion dialog of one about to be.
-        // Asked of every row rather than of the awaiting ones alone, because
-        // the dialog has to say so BEFORE the project starts waiting.
+        // Whether anybody can confirm each project, for the badge beside one
+        // already waiting on its client.
         $confirmability = $this->confirmability->statesFor($rows);
 
         // Archiving a project belongs to the Super Admin.
@@ -230,7 +213,6 @@ class ProjectController extends Controller
             view('super-admin.partials.project-dialogs', [
                 'projects' => $rows,
                 'confirmability' => $confirmability,
-                'completionBlockers' => $completionBlockers,
                 'canArchive' => $canArchive,
             ])->render(),
         );
@@ -1482,7 +1464,7 @@ class ProjectController extends Controller
         // asks for a reason.
         $completionBlockers = $project->isReadOnly()
             ? []
-            : app(ProjectPolicy::class)->blockersFor($project, $request->user());
+            : app(ProjectPolicy::class)->blockerDetailsFor($project, $request->user());
 
         // Archiving belongs to the Super Admin, and only to a project the
         // archive will accept - Project::isArchivable() is the same question
@@ -2454,51 +2436,28 @@ class ProjectController extends Controller
                 ));
         }
 
-        $completion = app(ProjectCompletion::class);
-
-        $validated = $request->validate($completion->rules(), $completion->messages());
-
-        // What the completion rules object to - open tasks, a project with no
-        // work recorded on it, one that is paused. A lead technician is simply
-        // refused; an administrator may go ahead, but only by saying why. The
-        // rules used to be asked on the technician's route and nowhere else,
-        // so from this page they were not applied at all.
         $policy = app(ProjectPolicy::class);
-        $blockerDetails = $policy->blockerDetailsFor($project, $request->user());
-        $blockers = array_column($blockerDetails, 'message');
-        // The same objections in a few words each, for the notification's
-        // title - see ProjectPolicy::blockerSummariesFor().
-        $blockerSummaries = array_column($blockerDetails, 'summary');
-        $overrideReason = trim((string) ($validated['completion_override_reason'] ?? ''));
 
-        if ($blockers !== [] && $overrideReason === '') {
+        $this->authorize('offersCompletion', $project);
+
+        // Nobody goes past these: phases, tasks and checklists come first.
+        $blockers = $policy->blockersFor($project, $request->user());
+
+        if ($blockers !== []) {
             return redirect()
                 ->route('super-admin.projects.show', $id)
-                ->withInput()
-                ->with('error', sprintf(
-                    'Not ready to complete. %s Add a reason to override.',
-                    implode(' ', $blockers)
-                ));
+                ->with('error', 'Not ready to complete. '.implode(' ', $blockers));
         }
 
-        try {
-            DB::transaction(function () use ($validated, $project, $request, $completion, $blockers): void {
-                $completion->requestCompletion(
-                    $project,
-                    $validated,
-                    $request->file('completion_photos'),
-                    $request->user(),
-                    $blockers
-                );
-            });
+        $completion = app(ProjectCompletion::class);
+        $form = app(ProjectCompletionForm::class);
+        $project->load('projectTypes');
+        $validated = $form->validate($request, $project);
 
-            $this->announceCompletionRequest(
-                $project,
-                $completion,
-                $blockers,
-                $overrideReason,
-                $blockerSummaries
-            );
+        try {
+            $form->complete($project, $validated, $request->user());
+
+            $this->announceCompletionRequest($project, $completion);
 
             return redirect()
                 ->route('super-admin.projects')

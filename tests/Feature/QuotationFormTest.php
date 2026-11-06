@@ -210,6 +210,23 @@ class QuotationFormTest extends TestCase
             ->assertDontSee('quotationModal'.$project->project_id);
     }
 
+    public function test_labor_has_no_unit_and_the_sheet_names_the_project_ref_no(): void
+    {
+        $project = $this->project(['quotation' => 1300.5]);
+        app(ProjectQuotation::class)->save($project, $this->lines($this->material()));
+
+        $this->assertNull($project->quotationItems()->where('kind', 'labor')->sole()->unit);
+
+        $this->actingAsSuperAdmin();
+
+        $this->get(route('super-admin.projects.show', $project->project_id))
+            ->assertOk()
+            ->assertSeeInOrder(['PROJECT REF NO:', $project->reference_no])
+            ->assertDontSee('PROJECT NO:')
+            ->assertDontSee('data-quotation-add="labor"', false)
+            ->assertSee('data-quotation-add="other"', false);
+    }
+
     public function test_only_those_who_create_projects_may_edit(): void
     {
         $project = $this->project();

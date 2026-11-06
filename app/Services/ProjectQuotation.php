@@ -136,7 +136,10 @@ class ProjectQuotation
                 'kind' => $row['kind'],
                 'material_id' => $material?->material_id,
                 'description' => $material?->displayName() ?? trim((string) $row['description']),
-                'unit' => $material?->unit->value ?? (trim((string) ($row['unit'] ?? '')) ?: null),
+                // Labor is a cost, not a count of anything.
+                'unit' => $row['kind'] === QuotationItem::KIND_LABOR
+                    ? null
+                    : ($material?->unit->value ?? (trim((string) ($row['unit'] ?? '')) ?: null)),
                 'quantity' => round((float) $row['quantity'], 2),
                 'unit_price' => round((float) $row['unit_price'], 2),
                 'sort_order' => $position,

@@ -27,6 +27,7 @@ class ProjectMaterialPlan
     public function __construct(
         private readonly ActivityLogger $activityLogger,
         private readonly StockAvailability $availability,
+        private readonly StockLedger $stock,
     ) {}
 
     /**
@@ -213,6 +214,8 @@ class ProjectMaterialPlan
                 ]
             );
         }
+
+        $this->stock->syncReservations($project, $by);
     }
 
     /**

@@ -301,6 +301,25 @@ class TaskScheduleRules
         });
     }
 
+    /**
+     * The same check when a task is edited. Dates left as they stand are not a
+     * new assignment; a start being moved is.
+     */
+    public function attachMovedTaskStart(Validator $validator, ?string $currentStart): void
+    {
+        $validator->after(function (Validator $validator) use ($currentStart): void {
+            if ($validator->errors()->has('start_date')) {
+                return;
+            }
+
+            $start = $validator->getData()['start_date'] ?? null;
+
+            if ($start !== $currentStart && $this->startsTooSoon($start)) {
+                $validator->errors()->add('start_date', 'Tasks start tomorrow or later.');
+            }
+        });
+    }
+
     public function attach(Validator $validator, array $ranges): void
     {
         $validator->after(function (Validator $validator) use ($ranges): void {

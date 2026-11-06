@@ -747,9 +747,14 @@ Payable within :days days to :company. Write to :contact.';
             'project_technician_id' => $assignment->project_technician_id,
         ]);
 
+        $this->makeCompletable($project);
+
         $this->post(route('super-admin.projects.complete', $project->project_id), [
             'completion_date' => CarbonImmutable::today()->toDateString(),
             'completion_summary' => 'Everything on site is finished.',
+            'report_performed_by' => 'Ramon Cruz',
+            'report_witnessed_by' => 'Maria Santos',
+            'report_remarks' => 'Everything on site is finished.',
         ])->assertRedirect();
 
         // Backdated afterwards: the clock starts when completion is requested,

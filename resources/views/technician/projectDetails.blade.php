@@ -39,7 +39,7 @@
         // ProjectPolicy::offersCompletion(), which refuses a Pending,
         // Unscheduled or paused project outright. A technician reads this page
         // and completes their own tasks on it, nothing more.
-        $canComplete = $canCloseProject && $completionBlockers === [];
+        $completeTarget = $completionBlockers === [] ? '#editProjectDescriptionModal' : '#completeBlockedModal';
     @endphp
 
     {{-- `project-details-page` is what applies the brand blue from the
@@ -80,7 +80,7 @@
             <div class="d-flex gap-2">
                 @if ($canCloseProject)
                     <button type="button" class="btn btn-success project-header-action" data-bs-toggle="modal"
-                        data-bs-target="#completeProjectModal" aria-label="Complete Project"
+                        data-bs-target="{{ $completeTarget }}" data-project-complete aria-label="Complete Project"
                         title="{{ $project->awaitingInitialSetup() ? \App\Models\Project::SET_UP_FIRST : 'Complete Project' }}"
                         @disabled($project->awaitingInitialSetup())>
                         <i class="bi bi-check-circle" aria-hidden="true"></i>
@@ -333,7 +333,10 @@
                      description, for the same reason the Quotation documents
                      are absent. --}}
                 {{-- The same folded description the office reads. --}}
-                <x-project-description :project="$project" />
+                <x-project-description :project="$project"
+                    :edit-target="auth()->user()->can('updateServiceReport', $project) ? 'editProjectDescriptionModal' : null" />
+
+                <x-project-completion-photos :project="$project" portal="technician" />
             </div>
         </div>
 
@@ -645,10 +648,10 @@
 
                         @forelse ($reports as $report)
                             <div
-                                class="card mb-3 {{ $report->report_type == 'progress' ? 'border-primary bg-primary-subtle' : 'border-danger bg-danger-subtle' }}">
+                                class="card mb-3 report-summary-card {{ $report->report_type == 'progress' ? '' : 'is-incident' }}">
                                 <div class="card-header d-flex justify-content-between">
                                     <div>
-                                        <span class="badge {{ $report->typeBadgeClass() }}">
+                                        <span class="report-summary-type">
                                             {{ $report->typeLabel() }}
                                         </span>
                                         <x-report-review-status :report="$report" />
@@ -1026,74 +1029,17 @@
 
     {{-- ============================ COMPLETE PROJECT ============================ --}}
     @if ($canCloseProject)
-        <div class="modal fade" id="completeProjectModal" tabindex="-1" aria-hidden="true">
-            <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
-                <form class="modal-content"
-                    action="{{ route('technician.projects.complete', $project->project_id) }}" method="POST"
-                    enctype="multipart/form-data">
-                    @csrf
-
-                    <div class="modal-header bg-success text-white">
-                        <h5 class="modal-title">
-                            <i class="bi bi-check-circle me-2" aria-hidden="true"></i>
-                            Complete Project
-                        </h5>
-                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
-                            aria-label="Close"></button>
-                    </div>
-
-                    <div class="modal-body">
-                        <p class="mb-1 text-secondary small">You are closing out</p>
-                        <h5 class="fw-bold mb-3">{{ $project->reference_no }}</h5>
-
-                        @if ($canComplete)
-                            <p class="mb-3">
-                                Sends it to the client for confirmation.
-                            </p>
-
-                            @include('technician.partials.completion-fields', ['suffix' => 'Details'])
-                        @else
-                            <div class="alert alert-warning mb-0">
-                                <p class="fw-semibold mb-2">
-                                    <i class="bi bi-exclamation-triangle me-1" aria-hidden="true"></i>
-                                    This project cannot be completed yet.
-                                </p>
-                                {{-- Each one with the way to deal with it. A
-                                     refusal that only says what is wrong
-                                     leaves the lead to go and find the tasks
-                                     themselves; the link puts them on the
-                                     tab that holds them. --}}
-                                <ul class="mb-0 ps-3">
-                                    @foreach ($completionBlockers as $blocker)
-                                        <li class="mb-1">
-                                            {{ $blocker['message'] }}
-                                            @if ($blocker['action'])
-                                                <a class="alert-link d-inline-flex align-items-center gap-1"
-                                                    href="{{ $blocker['action']['url'] }}">
-                                                    {{ $blocker['action']['label'] }}
-                                                    <i class="bi bi-arrow-right-short" aria-hidden="true"></i>
-                                                </a>
-                                            @endif
-                                        </li>
-                                    @endforeach
-                                </ul>
-                            </div>
-                        @endif
-                    </div>
-
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                        <button type="submit" class="btn btn-success" @disabled(! $canComplete)>
-                            <i class="bi bi-check-lg me-1" aria-hidden="true"></i>
-                            Mark as Completed
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
+        <x-project-complete-blocked :blockers="$completionBlockers" />
     @endif
 
+    @can('updateServiceReport', $project)
+        <x-project-details-modal :project="$project"
+            :action="route('technician.projects.details.update', $project->project_id)"
+            :complete-url="$canCloseProject ? route('technician.projects.complete', $project->project_id) : null" />
+    @endcan
+
     @push('scripts')
+        <script src="/js/projectTabLink.js"></script>
         {{-- The same range-aware task date pickers the Super Admin task forms use. --}}
         <script src="/js/super-admin/taskDatePickers.js"></script>
         <script src="/js/imagePreview.js"></script>

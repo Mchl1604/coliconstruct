@@ -83,13 +83,13 @@ class SchedulingCalendarRulesTest extends TestCase
         $this->assertSame(0, Schedule::count());
     }
 
-    public function test_a_super_admin_may_still_book_today(): void
+    public function test_a_super_admin_cannot_book_today_either(): void
     {
         $this->actingAs($this->superAdmin);
 
-        $this->assign($this->day(0), $this->day(1))->assertOk();
+        $this->assign($this->day(0), $this->day(1))->assertStatus(422);
 
-        $this->assertSame(1, Schedule::count());
+        $this->assertSame(0, Schedule::count());
     }
 
     public function test_a_technician_is_added_for_a_day_from_tomorrow(): void
@@ -316,7 +316,7 @@ class SchedulingCalendarRulesTest extends TestCase
 
         $this->get(route('super-admin.schedules.index'))
             ->assertOk()
-            ->assertSee('earliest: "'.$this->day(0).'"', false);
+            ->assertSee('earliest: "'.$this->day(1).'"', false);
     }
 
     public function test_the_philippine_days_seed_once_and_leave_edsa_a_working_day(): void

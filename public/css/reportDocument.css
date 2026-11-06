@@ -69,6 +69,10 @@
     text-decoration: none;
 }
 
+button.report-form-back {
+    border: 0;
+}
+
 .report-form-back:hover {
     background: #eef5fc;
     color: #1b3a52;
@@ -129,31 +133,6 @@
 .report-form-section .form-select:focus {
     border-color: var(--report-accent);
     box-shadow: 0 0 0 .2rem var(--report-tint);
-}
-
-.report-form-tiles {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
-    gap: .75rem;
-    margin-bottom: 1rem;
-}
-
-.report-form-tile {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: .5rem;
-    padding: .75rem 1rem;
-    border-radius: .75rem;
-    background: var(--report-tint);
-    color: var(--report-accent);
-    font-size: .82rem;
-    font-weight: 600;
-}
-
-.report-form-tile strong {
-    font-size: 1.4rem;
-    font-weight: 800;
 }
 
 /* ---------- The overall progress page ---------- */
@@ -308,6 +287,10 @@
 
 /* Keep the colors on paper and in a saved PDF. */
 @media print {
+    .report-form-banner,
+    .report-form-banner *,
+    .report-form-section,
+    .report-form-section *,
     .overall-progress,
     .overall-progress * {
         -webkit-print-color-adjust: exact;

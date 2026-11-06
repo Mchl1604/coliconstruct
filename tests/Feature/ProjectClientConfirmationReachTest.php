@@ -134,9 +134,14 @@ class ProjectClientConfirmationReachTest extends TestCase
 
     private function requestCompletion(Project $project): Project
     {
+        $this->makeCompletable($project);
+
         $this->post(route('super-admin.projects.complete', $project->project_id), [
             'completion_date' => BusinessTime::today()->toDateString(),
             'completion_summary' => 'Everything on site is finished.',
+            'report_performed_by' => 'Ramon Cruz',
+            'report_witnessed_by' => 'Maria Santos',
+            'report_remarks' => 'Everything on site is finished.',
         ])->assertRedirect();
 
         return $project->refresh();
@@ -211,6 +216,7 @@ class ProjectClientConfirmationReachTest extends TestCase
         $this->actingAsSuperAdmin();
 
         $project = $this->project();
+        $this->makeCompletable($project);
 
         $blockers = app(ProjectPolicy::class)->blockersFor($project, auth()->user());
 
@@ -529,11 +535,11 @@ class ProjectClientConfirmationReachTest extends TestCase
     {
         $this->actingAsSuperAdmin();
 
-        // Running today, so the project is Ongoing and the listing draws a
-        // completion dialog for it.
-        $this->schedule($this->project(), -2, 2);
+        // Running today, so the project is Ongoing and can be completed.
+        $project = $this->project();
+        $this->schedule($project, -2, 2);
 
-        $this->getTablePage(route('super-admin.projects.table'))
+        $this->get(route('super-admin.projects.show', $project->project_id))
             ->assertSee('No client account can currently confirm this project.', false);
     }
 
@@ -798,7 +804,8 @@ class ProjectClientConfirmationReachTest extends TestCase
 
         $this->get(route('super-admin.projects.show', $project->project_id))
             ->assertOk()
-            ->assertSee('id="completeProjectModal"', false)
+            ->assertSee('id="completeBlockedModal"', false)
+            ->assertSee('data-project-complete', false)
             ->assertSee(route('super-admin.projects.complete', $project->project_id), false);
     }
 
@@ -822,16 +829,15 @@ class ProjectClientConfirmationReachTest extends TestCase
         $response->assertSee('Mark as Complete');
         $this->assertSame(
             1,
-            substr_count($response->getContent(), 'id="completeProjectModal"')
+            substr_count($response->getContent(), 'id="editProjectDescriptionModal"')
         );
     }
 
     /**
-     * Whichever button opened it, it is the same dialog posting the same
-     * fields to the same endpoint as the one on the Projects page - so
-     * completing a project reads and behaves identically from either place.
+     * The Service Report form is what completes a project, and the listing
+     * only links to it.
      */
-    public function test_the_dialog_collects_what_the_projects_page_dialog_collects(): void
+    public function test_the_service_report_form_replaces_the_completion_dialog(): void
     {
         $this->actingAsSuperAdmin();
 
@@ -841,25 +847,16 @@ class ProjectClientConfirmationReachTest extends TestCase
         $details = $this->get(route('super-admin.projects.show', $project->project_id));
         $listing = $this->getTablePage(route('super-admin.projects.table'));
 
-        $details->assertOk();
+        $details->assertOk()
+            ->assertSee('name="report_performed_by"', false)
+            ->assertSee('name="report_witnessed_by"', false)
+            ->assertSee('name="report_remarks"', false)
+            ->assertSee('data-complete-url="'.route('super-admin.projects.complete', $project->project_id).'"', false)
+            ->assertDontSee('name="completion_summary"', false)
+            ->assertDontSee('completion_override_reason', false);
 
-        // No completion date: a project is always completed as of today.
-        $fields = [
-            'name="completion_summary"',
-            'name="completion_remarks"',
-            'name="completion_photos[]"',
-            'enctype="multipart/form-data"',
-        ];
-
-        foreach ($fields as $field) {
-            $details->assertSee($field, false);
-            $listing->assertSee($field, false);
-        }
-
-        // And both post to the one endpoint, which asks the completion rules
-        // again before it writes anything.
-        $details->assertSee(route('super-admin.projects.complete', $project->project_id), false);
-        $listing->assertSee(route('super-admin.projects.complete', $project->project_id), false);
+        $listing->assertSee(route('super-admin.projects.show', $project->project_id).'#complete', false)
+            ->assertDontSee('name="completion_summary"', false);
     }
 
     // ------------------------------------------------------------------

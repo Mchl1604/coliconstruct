@@ -3,11 +3,16 @@
     through project-details-editor, the same sections the create wizard uses,
     filled with what was saved - or with what was typed, reopened on its own
     error bag after a refused save. Opened from the Service Report dialog or Edit Details.
+    Complete Project opens the same form with its sign-off required, and posts
+    it to $completeUrl.
     Notes stay in the Edit Project dialog, beside the project's other text.
 --}}
 @props([
     'project',
     'id' => 'editProjectDescriptionModal',
+    'action' => null,
+    'completeUrl' => null,
+    'clientCannotConfirm' => false,
 ])
 
 @php
@@ -17,20 +22,26 @@
     $savedByType = $project->details->groupBy('type_id');
     $detailErrors = $errors->getBag(\App\Http\Controllers\ProjectDetailController::ERROR_BAG);
     $reopen = $detailErrors->any();
+    $completing = $reopen && $completeUrl && old('completing');
+    $hasReport = app(\App\Services\ServiceReport::class)->reportTypes($project)->isNotEmpty();
+    $saveUrl = $action ?? route('super-admin.projects.details.update', $project->project_id);
 @endphp
 
-@if ($detailTypes->isNotEmpty())
+@if ($detailTypes->isNotEmpty() || $completeUrl)
     <div class="modal fade" id="{{ $id }}" tabindex="-1" aria-hidden="true" aria-labelledby="{{ $id }}Title"
-        data-project-details-modal @if ($reopen) data-reopen="1" @endif>
+        data-project-details-modal @if ($reopen) data-reopen="1" @endif
+        data-save-url="{{ $saveUrl }}" data-complete-url="{{ $completeUrl }}" data-has-report="{{ $hasReport ? '1' : '0' }}"
+        @if ($completing) data-completing="1" @endif>
         <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content">
-                <form method="POST" action="{{ route('super-admin.projects.details.update', $project->project_id) }}"
-                    class="d-flex flex-column overflow-hidden" data-project-details-form>
+                <form method="POST" action="{{ $completing ? $completeUrl : $saveUrl }}"
+                    class="d-flex flex-column overflow-hidden" data-project-details-form @if ($completing) data-workspace-native @endif>
                     @csrf
-                    @method('PUT')
+                    <input type="hidden" name="_method" value="{{ $completing ? 'POST' : 'PUT' }}" data-form-method>
+                    <input type="hidden" name="completing" value="1" data-completing-input @disabled(! $completing)>
 
                     <div class="modal-header">
-                        <h5 class="modal-title" id="{{ $id }}Title">Edit Description</h5>
+                        <h5 class="modal-title" id="{{ $id }}Title" data-form-title>{{ $completing ? 'Complete Project' : 'Edit Description' }}</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                     </div>
 
@@ -45,8 +56,17 @@
                             </div>
                         @endif
 
-                        @if (app(\App\Services\ServiceReport::class)->reportTypes($project)->isNotEmpty())
-                            <section class="border rounded-3 p-3 mb-3">
+                        @if ($completeUrl)
+                            <div class="alert alert-success small py-2 {{ $completing ? '' : 'd-none' }}" role="status" data-complete-note>
+                                Fill in the sign-off to complete. Sends it to the client for confirmation.
+                                @if ($clientCannotConfirm)
+                                    <div class="mt-1">No client account can currently confirm this project. Auto-completes after {{ \App\Models\Project::completionConfirmationDays() }} days.</div>
+                                @endif
+                            </div>
+                        @endif
+
+                        @if ($hasReport || $completeUrl)
+                            <section class="border rounded-3 p-3 mb-3 {{ $hasReport || $completing ? '' : 'd-none' }}" data-signoff>
                                 <div class="row g-2">
                                     <div class="col-md-6">
                                         <label class="form-label small mb-1" for="reportPerformedBy">Performed By</label>
@@ -97,7 +117,7 @@
 
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                        <button type="submit" class="btn btn-primary">Save</button>
+                        <button type="submit" class="btn {{ $completing ? 'btn-success' : 'btn-primary' }}" data-form-submit>{{ $completing ? 'Complete Project' : 'Save' }}</button>
                     </div>
                 </form>
             </div>
@@ -115,6 +135,42 @@
                 }
 
                 window.projectDetailsForm.init(modal.querySelector('[data-project-details-editor]'));
+
+                const form = modal.querySelector('form');
+                const pick = (name) => modal.querySelector(name);
+
+                // The same form saves the details or completes the project,
+                // depending on which button opened it.
+                const setMode = function (completing) {
+                    const signOff = pick('[data-signoff]');
+                    const submit = pick('[data-form-submit]');
+
+                    form.action = completing ? modal.dataset.completeUrl : modal.dataset.saveUrl;
+                    form.toggleAttribute('data-workspace-native', completing);
+                    pick('[data-form-method]').value = completing ? 'POST' : 'PUT';
+                    pick('[data-form-title]').textContent = completing ? 'Complete Project' : 'Edit Description';
+                    submit.textContent = completing ? 'Complete Project' : 'Save';
+                    submit.classList.toggle('btn-success', completing);
+                    submit.classList.toggle('btn-primary', !completing);
+
+                    if (modal.dataset.completeUrl) {
+                        pick('[data-completing-input]').disabled = !completing;
+                        pick('[data-complete-note]').classList.toggle('d-none', !completing);
+                    }
+
+                    if (signOff) {
+                        signOff.classList.toggle('d-none', !completing && modal.dataset.hasReport !== '1');
+                        signOff.querySelectorAll('input, textarea').forEach(function (field) {
+                            field.required = completing;
+                        });
+                    }
+                };
+
+                modal.addEventListener('show.bs.modal', function (event) {
+                    setMode(event.relatedTarget
+                        ? event.relatedTarget.hasAttribute('data-project-complete')
+                        : modal.dataset.completing === '1');
+                });
 
                 // A refused save comes back with the dialog open on what was typed.
                 if (modal.dataset.reopen === '1') {

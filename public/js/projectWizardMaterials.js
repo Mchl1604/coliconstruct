@@ -3,7 +3,7 @@
  * warehouse as it is typed.
  *
  * Each picked material becomes a line with its quantity and its stock figures
- * - available is on hand less what other live projects have reserved. A line
+ * - available is what other live projects have not reserved. A line
  * cannot take more than is available: a larger number falls back to the most
  * it can have, and a checkbox offers to request the rest from Purchasing.
  *
@@ -245,7 +245,7 @@ document.addEventListener("DOMContentLoaded", function () {
             available.className = "material-qty fw-semibold";
             available.textContent = formatQty(material.available) + " " + material.unit;
             onHand.className = "material-meta";
-            onHand.textContent = "On hand " + formatQty(material.on_hand) + " · Reserved " + formatQty(material.reserved);
+            onHand.textContent = "Total " + formatQty((material.reserved || 0) + material.available) + " · Reserved " + formatQty(material.reserved);
             availableCell.append(available, onHand);
 
             // Stock

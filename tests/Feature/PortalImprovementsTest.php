@@ -186,15 +186,21 @@ class PortalImprovementsTest extends TestCase
      * project is stored as Ongoing - and closing it off is exactly what the
      * overdue banner asks for.
      */
-    public function test_both_administrative_roles_may_complete_work_under_way(): void
+    public function test_the_super_admin_and_admin_officer_may_complete_work_under_way(): void
     {
         $project = $this->project('c@example.test');
 
-        foreach (['admin' => 'a@example.test', 'super_admin' => 'o@example.test'] as $role => $email) {
+        $link = route('super-admin.projects.show', $project->project_id).'#complete';
+
+        foreach (['admin_officer' => 'a@example.test', 'super_admin' => 'o@example.test'] as $role => $email) {
             $this->actingAs($this->account($role, $email))
                 ->getTablePage(route('super-admin.projects.table'))
-                ->assertSee('data-bs-target="#completeProjectModal'.$project->project_id.'"', escape: false);
+                ->assertSee($link, escape: false);
         }
+
+        $this->actingAs($this->account('admin', 'hr@example.test'))
+            ->getTablePage(route('super-admin.projects.table'))
+            ->assertDontSee($link, escape: false);
     }
 
     /**
@@ -251,7 +257,7 @@ class PortalImprovementsTest extends TestCase
             'end_datetime' => now()->addDays(5),
         ]);
 
-        $target = 'data-bs-target="#completeProjectModal'.$project->project_id.'"';
+        $target = route('super-admin.projects.show', $project->project_id).'#complete';
 
         $this->actingAs($this->account('super_admin', 'o@example.test'))
             ->getTablePage(route('super-admin.projects.table'))

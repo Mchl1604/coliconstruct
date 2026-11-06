@@ -808,7 +808,6 @@ class DemoDataSeeder extends Seeder
         $rows[] = [
             'kind' => QuotationItem::KIND_LABOR,
             'description' => $isCheckUp ? 'Check-up service fee' : 'Labor cost',
-            'unit' => 'lot',
             'quantity' => 1,
             'unit_price' => max(round((float) $spec['quotation'] - $materials, 2), round($materials * 0.15, 2)),
         ];
@@ -1430,6 +1429,7 @@ class DemoDataSeeder extends Seeder
             ]);
             $planned++;
             $firstLine ??= $line;
+            $this->stockMovement($material, StockMovement::TYPE_STOCK_OUT, -$quantity, $plannedAt->toDateString(), $lead, $project, notes: 'Reserved', isReservation: true);
 
             if ($share === 0.0 || $worked === []) {
                 continue;
@@ -1542,7 +1542,7 @@ class DemoDataSeeder extends Seeder
     /**
      * Written straight onto the row, signed as StockLedger signs it.
      */
-    private function stockMovement(Material $material, string $type, float|int $quantity, string $date, ?User $by, ?Project $project = null, ?ProjectMaterialEntry $entry = null, ?string $notes = null): void
+    private function stockMovement(Material $material, string $type, float|int $quantity, string $date, ?User $by, ?Project $project = null, ?ProjectMaterialEntry $entry = null, ?string $notes = null, bool $isReservation = false): void
     {
         $at = CarbonImmutable::parse($date.' 08:00', Schedule::BUSINESS_TIMEZONE)
             ->setTimezone(config('app.timezone'))
@@ -1555,6 +1555,7 @@ class DemoDataSeeder extends Seeder
             'movement_date' => $date,
             'project_id' => $project?->project_id,
             'project_material_entry_id' => $entry?->material_entry_id,
+            'is_reservation' => $isReservation,
             'notes' => $notes,
             'recorded_by' => $by?->id,
             'recorded_by_name' => $by?->fullName() ?? 'System',

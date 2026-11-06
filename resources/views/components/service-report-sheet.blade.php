@@ -49,11 +49,7 @@
         </colgroup>
         <tr>
             <td><span class="sr-label">CLIENT NAME:</span> {{ $header['client_name'] }}</td>
-            <td><span class="sr-label">LAST MODIFIED:</span> {{ $header['last_modified'] }}</td>
-            <td class="sr-times">
-                <div><span class="sr-label">TIME START:</span> {{ $header['time_start'] }}</div>
-                <div><span class="sr-label">TIME END:</span> {{ $header['time_end'] }}</div>
-            </td>
+            <td colspan="2"><span class="sr-label">LAST MODIFIED:</span> {{ $header['last_modified'] }}</td>
         </tr>
         <tr>
             <td><span class="sr-label">ADDRESS:</span> {{ $header['address'] }}</td>
@@ -257,6 +253,55 @@
                 </tr>
             </table>
         </div>
+    @endforeach
+    @foreach ([['DUCTING FABRICATION:', 'ducting_fabrication'], ['DUCTING INSTALLATION:', 'ducting_installation']] as [$ductingTitle, $ductingSection])
+        @foreach ($sections[$ductingSection]['units'] ?? [] as $unit)
+            <div class="sr-divider"></div>
+            <div class="sr-keep">
+                <table class="sr-table sr-aircon-top">
+                    <colgroup>
+                        <col style="width: 25%">
+                        <col style="width: 25%">
+                        <col style="width: 25%">
+                        <col style="width: 25%">
+                    </colgroup>
+                    <tr>
+                        <td class="sr-section-name">{{ $tick($ductingTitle, true) }}</td>
+                        <td><span class="sr-label">AREA SERVE:</span><br>{{ $text($unit, 'area_served') }}</td>
+                        <td><span class="sr-label">DUCT SIZE:</span><br>{{ $text($unit, 'duct_size') }}</td>
+                        <td><span class="sr-label">LENGTH (M):</span><br>{{ $text($unit, 'length_m') }}</td>
+                    </tr>
+                </table>
+                <table class="sr-table sr-joined">
+                    <colgroup>
+                        <col style="width: 75%">
+                        <col style="width: 25%">
+                    </colgroup>
+                    <tr>
+                        <td>
+                            <span class="sr-label">DUCT MATERIAL</span>
+                            <div class="sr-grid sr-grid-4">
+                                @foreach (Forms::DUCT_MATERIALS as $option)
+                                    {{ $tick(mb_strtoupper($option), $has($unit, 'duct_material', $option)) }}
+                                @endforeach
+                            </div>
+                        </td>
+                        <td>
+                            <span class="sr-label">INSULATED</span>
+                            <div class="sr-grid sr-grid-2">
+                                {{ $tick('YES', $has($unit, 'insulated', 'Yes')) }}
+                                {{ $tick('NO', $has($unit, 'insulated', 'No')) }}
+                            </div>
+                        </td>
+                    </tr>
+                </table>
+                <table class="sr-table sr-joined">
+                    <tr>
+                        <td class="sr-tall"><span class="sr-label">SCOPE OF WORK:</span> {!! nl2br(e($text($unit, 'scope_of_work'))) !!}</td>
+                    </tr>
+                </table>
+            </div>
+        @endforeach
     @endforeach
     <div class="sr-divider"></div>
     <table class="sr-table sr-signatories sr-keep">

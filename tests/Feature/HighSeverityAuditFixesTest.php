@@ -4,7 +4,6 @@ namespace Tests\Feature;
 
 use App\Models\ActivityLog;
 use App\Models\Client;
-use App\Models\Notification;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
 use App\Models\ProjectType;
@@ -18,7 +17,6 @@ use App\Services\SystemReportService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
-use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 /**
@@ -144,6 +142,9 @@ class HighSeverityAuditFixesTest extends TestCase
         return array_merge([
             'completion_date' => CarbonImmutable::today()->toDateString(),
             'completion_summary' => 'The work on site is finished.',
+            'report_performed_by' => 'Ramon Cruz',
+            'report_witnessed_by' => 'Maria Santos',
+            'report_remarks' => 'The work on site is finished.',
         ], $overrides);
     }
 
@@ -348,7 +349,7 @@ class HighSeverityAuditFixesTest extends TestCase
         $this->assertSame('ongoing', $project->fresh()->status);
     }
 
-    public function test_an_administrator_may_complete_it_anyway_by_saying_why(): void
+    public function test_a_reason_no_longer_gets_past_the_rules(): void
     {
         $lead = $this->technician('Real Lead', 'lead_technician');
         $project = $this->project([$lead]);
@@ -364,105 +365,13 @@ class HighSeverityAuditFixesTest extends TestCase
 
         $this->post(route('super-admin.projects.complete', $project->project_id), $this->completionPayload([
             'completion_override_reason' => 'Client signed off on site; the remaining task was cancelled by them.',
-        ]))->assertSessionHas('success');
+        ]))->assertSessionHas('error');
 
         $project->refresh();
 
-        $this->assertSame(Project::STATUS_AWAITING_CLIENT_CONFIRMATION, $project->status);
-        $this->assertTrue($project->completionWasOverridden());
-        $this->assertStringContainsString('Client signed off on site', $project->completion_override_reason);
-        $this->assertNotNull($project->completion_overridden_by);
-
-        // What the rules objected to is kept as it read at the time, because
-        // the task it names may later be finished or deleted.
-        $this->assertNotEmpty($project->completion_override_blockers);
-        $this->assertStringContainsString('task is still open', implode(' ', $project->completion_override_blockers));
-    }
-
-    public function test_an_override_is_written_to_the_activity_log_and_told_to_the_administrators(): void
-    {
-        $other = User::create([
-            'user_code' => 'EMP-0500', 'name' => 'Other Admin', 'first_name' => 'Other',
-            'last_name' => 'Admin', 'email' => 'other.admin@example.test', 'role' => 'admin',
-            'status' => User::STATUS_ACTIVE, 'password' => 'secret-password',
-        ]);
-
-        $lead = $this->technician('Real Lead', 'lead_technician');
-        $project = $this->project([$lead]);
-        $this->book($project, 0, 4);
-
-        Task::create([
-            'project_id' => $project->project_id,
-            'technician_id' => $lead->technician_id,
-            'task_title' => 'Still to do',
-            'task_description' => 'Description',
-            'status' => 'pending',
-        ]);
-
-        $this->post(route('super-admin.projects.complete', $project->project_id), $this->completionPayload([
-            'completion_override_reason' => 'Client signed off on site; the remaining task was cancelled by them.',
-        ]))->assertSessionHas('success');
-
-        $entry = ActivityLog::where('action', ActivityLog::PROJECT_COMPLETION_OVERRIDDEN)->first();
-
-        $this->assertNotNull($entry, 'An override writes an entry of its own.');
-        $this->assertStringContainsString('task is still open', (string) $entry->description);
-        $this->assertStringContainsString('Client signed off on site', (string) $entry->description);
-
-        // The title carries the objection and the person who overrode it, so
-        // the entry says the whole thing without being opened.
-        $this->assertContains(
-            'Completed despite 1 open task by Test Administrator',
-            Notification::forUser($other)->get()->pluck('title')->all()
-        );
-    }
-
-    /**
-     * The title is built from the objections the policy raised, so it counts
-     * and it agrees with itself.
-     *
-     * @return array<string, array{0: int, 1: string}>
-     */
-    public static function overrideTitles(): array
-    {
-        return [
-            'one open task' => [1, 'Completed despite 1 open task by Test Administrator'],
-            'several open tasks' => [3, 'Completed despite 3 open tasks by Test Administrator'],
-            'no tasks at all' => [0, 'Completed despite no tasks by Test Administrator'],
-        ];
-    }
-
-    #[DataProvider('overrideTitles')]
-    public function test_the_override_notification_names_the_objection_and_the_person(int $openTasks, string $expected): void
-    {
-        $other = User::create([
-            'user_code' => 'EMP-0700', 'name' => 'Other Admin', 'first_name' => 'Other',
-            'last_name' => 'Admin', 'email' => 'other.admin@example.test', 'role' => 'admin',
-            'status' => User::STATUS_ACTIVE, 'password' => 'secret-password',
-        ]);
-
-        $lead = $this->technician('Real Lead', 'lead_technician');
-        $project = $this->project([$lead]);
-        $this->book($project, 0, 4);
-
-        for ($i = 0; $i < $openTasks; $i++) {
-            Task::create([
-                'project_id' => $project->project_id,
-                'technician_id' => $lead->technician_id,
-                'task_title' => 'Still to do '.$i,
-                'task_description' => 'Description',
-                'status' => 'pending',
-            ]);
-        }
-
-        $this->post(route('super-admin.projects.complete', $project->project_id), $this->completionPayload([
-            'completion_override_reason' => 'Client signed off on site; the rest was cancelled by them.',
-        ]))->assertSessionHas('success');
-
-        $this->assertContains(
-            $expected,
-            Notification::forUser($other)->get()->pluck('title')->all()
-        );
+        $this->assertSame('ongoing', $project->status);
+        $this->assertFalse($project->completionWasOverridden());
+        $this->assertSame(0, ActivityLog::where('action', ActivityLog::PROJECT_COMPLETION_OVERRIDDEN)->count());
     }
 
     /**
@@ -476,6 +385,7 @@ class HighSeverityAuditFixesTest extends TestCase
         $project = $this->project([$lead]);
         $this->book($project, 0, 4);
         $this->finishedWork($project);
+        $this->makeCompletable($project);
 
         $this->post(route('super-admin.projects.complete', $project->project_id), $this->completionPayload([
             // Sent even though nothing objects - there is nothing to override,
@@ -507,6 +417,7 @@ class HighSeverityAuditFixesTest extends TestCase
         $project = $this->project([$lead], 'pending');
         $this->book($project, 3, 5);
         $this->finishedWork($project);
+        $this->makeCompletable($project);
 
         $this->post(route('super-admin.projects.complete', $project->project_id), $this->completionPayload())
             ->assertSessionHas('success');
@@ -575,6 +486,7 @@ class HighSeverityAuditFixesTest extends TestCase
         $project = $this->project([$lead], 'pending');
         $this->book($project, 3, 5);
         $this->finishedWork($project);
+        $this->makeCompletable($project);
 
         $this->actingAs($admin)
             ->post(route('super-admin.projects.complete', $project->project_id), $this->completionPayload())
@@ -586,7 +498,7 @@ class HighSeverityAuditFixesTest extends TestCase
         $this->assertSame(1, Schedule::where('project_id', $project->project_id)->count());
     }
 
-    public function test_the_completion_dialog_shows_what_it_is_being_asked_to_override(): void
+    public function test_the_project_page_lists_what_stands_in_the_way(): void
     {
         $lead = $this->technician('Real Lead', 'lead_technician');
         $project = $this->project([$lead]);
@@ -600,11 +512,11 @@ class HighSeverityAuditFixesTest extends TestCase
             'status' => 'pending',
         ]);
 
-        $response = $this->getTablePage(route('super-admin.projects.table'));
-
-        $response->assertSee('This project is not ready to be completed');
-        $response->assertSee('1 task is still open. Every task has to be completed first.');
-        $response->assertSee('completion_override_reason', false);
+        $this->get(route('super-admin.projects.show', $project->project_id))
+            ->assertSee('Cannot Complete Yet')
+            ->assertSee('1 task is still open. Every task has to be completed first.')
+            ->assertSee(route('super-admin.projects.show', $project->project_id).'#tasks', false)
+            ->assertDontSee('completion_override_reason', false);
     }
 
     // ==================================================================

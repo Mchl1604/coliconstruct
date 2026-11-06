@@ -1161,3 +1161,27 @@
 .my-schedule-change i {
     color: #64748b;
 }
+
+/* ---------- A report on a project's page: colored left border and text ---------- */
+
+.card.report-summary-card {
+    --report-line: #1b5688;
+    border: 1px solid #eaecf0;
+    border-left: 5px solid var(--report-line);
+    background: #fff;
+}
+
+.card.report-summary-card.is-incident {
+    --report-line: #b42318;
+}
+
+.card.report-summary-card .card-header {
+    border-bottom: 0;
+    background: transparent;
+}
+
+.report-summary-type {
+    color: var(--report-line);
+    font-size: .8rem;
+    font-weight: 700;
+}

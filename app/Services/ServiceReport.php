@@ -5,7 +5,6 @@ namespace App\Services;
 use App\Models\Project;
 use App\Models\ProjectDetail;
 use App\Models\ProjectType;
-use App\Models\Schedule;
 use App\Support\BusinessTime;
 use App\Support\DetailFieldScope;
 use App\Support\ServiceReportForms;
@@ -13,8 +12,8 @@ use Illuminate\Support\Collection;
 
 /**
  * A project's Service Report as the printed sheet reads it: the header from
- * the project and its client, then the section of each air-conditioning type
- * the project has. Only those sections appear.
+ * the project and its client, then the section of each type the project has.
+ * Only those sections appear.
  */
 class ServiceReport
 {
@@ -85,7 +84,7 @@ class ServiceReport
      */
     public function for(Project $project): array
     {
-        $project->loadMissing(['client', 'details', 'schedules', 'projectTypes']);
+        $project->loadMissing(['client', 'details', 'projectTypes']);
 
         $sections = [];
 
@@ -118,12 +117,6 @@ class ServiceReport
      */
     private function header(Project $project): array
     {
-        $schedule = $project->schedules->sortBy('start_datetime')->first();
-        $start = BusinessTime::at($schedule?->start_datetime);
-        $end = BusinessTime::at($schedule?->end_datetime);
-        // Only an hourly booking states real hours. A full-day range ends on a
-        // boundary that means nothing on paper, so its times are left to write.
-        $hasHours = $schedule?->scheduling_mode === Schedule::MODE_PARTIAL_DAY;
         $client = $project->client;
         // The report's own rows: saving it or ticking its checklist. Until there
         // are any, the report is as old as the project.
@@ -137,8 +130,6 @@ class ServiceReport
             'contact_person' => (string) ($client?->fullname ?? ''),
             'contact_no' => (string) ($client?->contact_number ?? ''),
             'last_modified' => BusinessTime::format($lastModified, 'M j, Y', ''),
-            'time_start' => $hasHours ? (string) $start?->format('g:i A') : '',
-            'time_end' => $hasHours ? (string) $end?->format('g:i A') : '',
         ];
     }
 }

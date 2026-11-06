@@ -274,7 +274,7 @@
                         <div class="col-md-6">
                             <label for="targetEndDate" class="form-label">Target Completion Date</label>
                             <input type="date" name="target_end_date" id="targetEndDate" class="form-control"
-                                min="{{ \App\Models\Schedule::businessToday()->toDateString() }}"
+                                min="{{ \App\Models\Schedule::businessToday()->addDay()->toDateString() }}"
                                 value="{{ old('target_end_date') }}" data-summary-input="target_end_date" required>
                         </div>
 

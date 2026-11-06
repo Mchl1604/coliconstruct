@@ -52,7 +52,7 @@
                             <th>Material</th>
                             <th>Type</th>
                             <th>Quantity</th>
-                            <th>Details</th>
+                            <th>Project</th>
                             <th>Recorded By</th>
                             <th class="text-center">Actions</th>
                         </tr>

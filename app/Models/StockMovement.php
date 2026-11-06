@@ -76,6 +76,7 @@ class StockMovement extends Model
         'supplier',
         'project_id',
         'project_material_entry_id',
+        'is_reservation',
         'notes',
         'recorded_by',
         'recorded_by_name',
@@ -86,6 +87,7 @@ class StockMovement extends Model
     protected $casts = [
         'quantity' => 'decimal:2',
         'movement_date' => 'date',
+        'is_reservation' => 'boolean',
         'voided_at' => 'datetime',
     ];
 
@@ -125,6 +127,30 @@ class StockMovement extends Model
     public function scopeNotVoided(Builder $query): Builder
     {
         return $query->whereNull('voided_at');
+    }
+
+    /**
+     * The movements that change the count: not voided, and not a project's
+     * reservation, which records a claim while the stock stays on the shelf.
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeCounted(Builder $query): Builder
+    {
+        return $query->whereNull('voided_at')->where('is_reservation', false);
+    }
+
+    /**
+     * Stock a Used entry took straight off the shelf, from a plan nobody had
+     * released yet - see StockLedger::takeForUse().
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeUsedOnSite(Builder $query): Builder
+    {
+        return $query->whereHas('projectEntry', fn (Builder $entry) => $entry->where('entry_type', ProjectMaterialEntry::TYPE_USED));
     }
 
     public function isVoided(): bool

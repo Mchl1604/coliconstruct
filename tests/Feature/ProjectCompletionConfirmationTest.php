@@ -174,6 +174,9 @@ class ProjectCompletionConfirmationTest extends TestCase
         return [
             'completion_date' => $date ?? CarbonImmutable::today()->toDateString(),
             'completion_summary' => 'Everything on site is finished.',
+            'report_performed_by' => 'Ramon Cruz',
+            'report_witnessed_by' => 'Maria Santos',
+            'report_remarks' => 'Everything on site is finished.',
         ];
     }
 
@@ -184,6 +187,8 @@ class ProjectCompletionConfirmationTest extends TestCase
      */
     private function requestCompletion(Project $project, ?string $date = null): Project
     {
+        $this->makeCompletable($project);
+
         $this->post(
             route('super-admin.projects.complete', $project->project_id),
             $this->completionPayload($date)
@@ -312,6 +317,8 @@ class ProjectCompletionConfirmationTest extends TestCase
         $project = $this->project();
         $this->assign($project, $this->technician('Elle Tan'));
         $this->schedule($project, -2, 9);
+
+        $this->makeCompletable($project);
 
         $this->post(
             route('super-admin.projects.complete', $project->project_id),

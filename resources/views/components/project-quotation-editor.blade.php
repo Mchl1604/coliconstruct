@@ -20,10 +20,6 @@
                 aria-label="Add material" data-quotation-material-search>
         </div>
         <div class="col-md-auto">
-            <button type="button" class="btn btn-outline-primary" data-quotation-add="labor">
-                <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
-                Add Labor
-            </button>
             <button type="button" class="btn btn-outline-primary" data-quotation-add="other">
                 <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
                 Add Other

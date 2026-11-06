@@ -28,7 +28,8 @@ use RuntimeException;
  * two decimals and floating-point sums of 0.1 m lengths do not come out even.
  *
  * The warehouse follows the site: an addition taken from stock comes off the
- * shelf, a return and the leftovers at close-out go back on it - see
+ * shelf, so does a use of a plan nobody released, and a return and the
+ * leftovers at close-out go back on it - see
  * StockLedger. Each of those writes in the same transaction as its entry, so
  * one is never saved without the other.
  */
@@ -188,9 +189,13 @@ class ProjectMaterialLedger
 
             $entry = $this->write($line, $type, $quantity, $date, $notes, $by);
 
-            // A return goes back to the warehouse.
+            // A return goes back to the warehouse, or back to being free when
+            // it never left. A use of what was never released takes it off
+            // the shelf.
             if ($type === ProjectMaterialEntry::TYPE_RETURNED) {
-                $this->stock->returnForEntry($entry, $material, $quantity, $by);
+                $this->stock->returnFromSite($entry, $material, $quantity, $by);
+            } else {
+                $this->stock->takeForUse($entry, $material, $quantity, $by);
             }
 
             $this->activityLogger->record(

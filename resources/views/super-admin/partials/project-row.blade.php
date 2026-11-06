@@ -146,13 +146,13 @@
                      Admin additionally gets Pending work, which is theirs
                      to close out early. See Project::isCompletableBy(),
                      which ProjectController::complete() asks again. --}}
-                @if ($project->isCompletableBy(auth()->user()))
-                    <button class="btn btn-sm btn-success py-1 px-2" data-bs-toggle="modal"
-                        data-bs-target="#completeProjectModal{{ $project->project_id }}"
-                        @disabled($awaitingSetup) title="{{ $awaitingSetup ? $setupFirst : 'Complete Project' }}">
-                        <i class="bi bi-check-lg"></i>
-                    </button>
-                @endif
+                @can('offersCompletion', $project)
+                    <a class="btn btn-sm btn-success py-1 px-2 {{ $awaitingSetup ? 'disabled' : '' }}"
+                        href="{{ route('super-admin.projects.show', $project->project_id) }}#complete"
+                        title="{{ $awaitingSetup ? $setupFirst : 'Complete Project' }}" aria-label="Complete Project">
+                        <i class="bi bi-check-lg" aria-hidden="true"></i>
+                    </a>
+                @endcan
 
             @endif
 

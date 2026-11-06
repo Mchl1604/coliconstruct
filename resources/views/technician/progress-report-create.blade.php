@@ -55,25 +55,6 @@
     @endif
 
     @if ($snapshot)
-        <div class="report-form-tiles">
-            <div class="report-form-tile is-blue">
-                <span>Progress</span>
-                <strong>{{ $snapshot['phase']['percent'] }}%</strong>
-            </div>
-            <div class="report-form-tile is-teal">
-                <span>In Progress</span>
-                <strong>{{ count($snapshot['task_updates']) + count($snapshot['in_progress_tasks'] ?? []) }}</strong>
-            </div>
-            <div class="report-form-tile is-green">
-                <span>Completed</span>
-                <strong>{{ count($snapshot['completed_tasks']) }}</strong>
-            </div>
-            <div class="report-form-tile is-red">
-                <span>Overdue</span>
-                <strong>{{ count($snapshot['overdue_tasks']) }}</strong>
-            </div>
-        </div>
-
         <div class="row g-3">
             <div class="col-lg-7">
                 <div class="report-form-section is-blue h-100 mb-0">
