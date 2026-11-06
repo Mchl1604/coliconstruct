@@ -1446,6 +1446,7 @@ class ProjectController extends Controller
         // waiting for its client - the model settles which, so the button and
         // the endpoint cannot disagree about it.
         $canReopen = $project->canBeReopened()
+            && RoleAccess::can($request->user(), RoleAccess::MANAGE_PROJECTS)
             && (bool) $request->user()?->isEmployee()
             && in_array($request->user()?->role, User::ADMINISTRATOR_ROLES, true);
 
@@ -1486,13 +1487,17 @@ class ProjectController extends Controller
         // Recording a confirmation the client gave elsewhere. Administrators
         // only and only while the project is actually waiting on one - the
         // endpoint asks both questions again.
+        // Changing the project itself, rather than its team or schedule.
+        $canManageProjects = RoleAccess::can($request->user(), RoleAccess::MANAGE_PROJECTS);
+
         $canRecordClientConfirmation = $isAdministrator
+            && $canManageProjects
             && $project->isAwaitingClientConfirmation();
 
         // Moving the project to another client - the only way to make it
         // someone else's. Not on finished or archived work, which the edit
         // dialog refuses for the same reason.
-        $canChangeClient = $isAdministrator && ! $project->isReadOnly();
+        $canChangeClient = $isAdministrator && $canManageProjects && ! $project->isReadOnly();
 
         // Every completion cycle this project has been through, already
         // loaded. Never the current report: that one is read off the project.
@@ -1571,6 +1576,7 @@ class ProjectController extends Controller
             'confirmabilityState',
             'confirmabilityHint',
             'canRecordClientConfirmation',
+            'canManageProjects',
             'canChangeClient',
             'phaseSummary',
             'canSetUpPhases',

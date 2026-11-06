@@ -291,16 +291,16 @@ class ProjectTargetDateTest extends TestCase
         $this->assertSame($this->day(10), $project->fresh()->target_end_date->toDateString());
     }
 
-    public function test_an_admin_may_change_it(): void
+    public function test_an_admin_officer_may_change_it(): void
     {
         $project = $this->project();
 
-        $this->actingAs($this->account('admin', 'admin@example.test'));
+        $this->actingAs($this->account('admin_officer', 'admin@example.test'));
 
         $this->save($project, ['target_end_date' => $this->day(15), 'target_date_reason' => 'Client asked'])
             ->assertSessionHasNoErrors();
 
-        $this->assertSame('admin', TargetDateHistory::whereNotNull('previous_date')->sole()->actor_role);
+        $this->assertSame('admin_officer', TargetDateHistory::whereNotNull('previous_date')->sole()->actor_role);
     }
 
     public function test_technicians_and_clients_cannot_change_it(): void

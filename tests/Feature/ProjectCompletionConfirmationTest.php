@@ -1016,7 +1016,7 @@ class ProjectCompletionConfirmationTest extends TestCase
      * An Admin sees the same greyed-out calendar a Super Admin does: both may
      * reopen, so both have to be told the same thing about the dates.
      */
-    public function test_an_admin_gets_the_same_blocked_dates_as_a_super_admin(): void
+    public function test_an_admin_officer_gets_the_same_blocked_dates_as_a_super_admin(): void
     {
         $this->actingAsSuperAdmin();
 
@@ -1032,7 +1032,7 @@ class ProjectCompletionConfirmationTest extends TestCase
         $this->schedule($other, 10, 12);
 
         $admin = User::factory()->create(['email' => 'the.admin@example.test']);
-        $admin->forceFill(['role' => User::ROLE_ADMIN, 'status' => User::STATUS_ACTIVE])->save();
+        $admin->forceFill(['role' => User::ROLE_ADMIN_OFFICER, 'status' => User::STATUS_ACTIVE])->save();
 
         $response = $this->actingAs($admin)
             ->get(route('super-admin.projects.show', $project->project_id));

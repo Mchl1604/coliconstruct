@@ -16,6 +16,10 @@ document.addEventListener("DOMContentLoaded", function () {
         return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
 
+    function peso(value) {
+        return "\u20B1 " + money(value);
+    }
+
     function amountOf(line) {
         const amount = Number(line.quantity) * Number(line.unit_price);
 
@@ -28,6 +32,14 @@ document.addEventListener("DOMContentLoaded", function () {
         const totalText = root.querySelector("[data-quotation-total]");
         const search = root.querySelector("[data-quotation-material-search]");
         const lines = JSON.parse(root.dataset.rows || "[]");
+
+        // Labor is one amount: an older line with a count is folded into it.
+        lines.forEach(function (line) {
+            if (line.kind === "labor" && Number(line.quantity) !== 1 && line.unit_price !== "") {
+                line.unit_price = String(amountOf(line));
+                line.quantity = "1";
+            }
+        });
 
         function laborCount() {
             return lines.filter(function (line) {
@@ -131,6 +143,46 @@ document.addEventListener("DOMContentLoaded", function () {
                 note.textContent = stockNote(line);
                 nameCell.appendChild(note);
 
+                // Labor: the amount alone, typed where the amount shows.
+                if (line.kind === "labor") {
+                    const spacer = document.createElement("td");
+                    const laborAmount = document.createElement("td");
+                    const laborPrice = input("number", base + "[unit_price]", line.unit_price, {
+                        className: "form-control form-control-sm text-end",
+                        required: true,
+                        min: "0",
+                        step: "0.01",
+                        placeholder: "Amount",
+                    });
+                    const laborRemove = document.createElement("td");
+
+                    spacer.colSpan = 3;
+                    spacer.appendChild(input("hidden", base + "[quantity]", "1"));
+                    laborPrice.dataset.quotationField = "unit_price";
+                    laborPrice.dataset.quotationIndex = String(index);
+                    laborPrice.setAttribute("aria-label", "Labor amount");
+                    laborAmount.appendChild(laborPrice);
+                    laborAmount.dataset.quotationAmount = String(index);
+                    laborAmount.dataset.quotationLabor = "";
+
+                    if (laborCount() > 1) {
+                        const remove = document.createElement("button");
+
+                        laborRemove.className = "text-center";
+                        remove.type = "button";
+                        remove.className = "btn btn-sm btn-outline-danger py-1 px-2";
+                        remove.title = "Remove";
+                        remove.innerHTML = '<i class="bi bi-x-lg" aria-hidden="true"></i>';
+                        remove.dataset.quotationRemove = String(index);
+                        laborRemove.appendChild(remove);
+                    }
+
+                    row.append(nameCell, spacer, laborAmount, laborRemove);
+                    rowsBody.appendChild(row);
+
+                    return;
+                }
+
                 const qtyCell = document.createElement("td");
                 const qty = input("number", base + "[quantity]", line.quantity, {
                     className: "form-control form-control-sm",
@@ -178,7 +230,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
                 amountCell.className = "text-end text-nowrap";
                 amountCell.dataset.quotationAmount = String(index);
-                amountCell.textContent = money(amountOf(line));
+                amountCell.textContent = peso(amountOf(line));
 
                 const removeCell = document.createElement("td");
                 const remove = document.createElement("button");
@@ -210,7 +262,12 @@ document.addEventListener("DOMContentLoaded", function () {
             }
 
             lines[index][field] = event.target.value;
-            rowsBody.querySelector('[data-quotation-amount="' + index + '"]').textContent = money(amountOf(lines[index]));
+            const amountCell = rowsBody.querySelector('[data-quotation-amount="' + index + '"]');
+
+            if (!amountCell.hasAttribute("data-quotation-labor")) {
+                amountCell.textContent = peso(amountOf(lines[index]));
+            }
+
             rowsBody.querySelector('[data-quotation-note="' + index + '"]').textContent = stockNote(lines[index]);
             announce();
         });

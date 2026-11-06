@@ -578,7 +578,8 @@ class QuotationSyncTest extends TestCase
         $project = $this->project();
         $this->existingQuotation($project);
 
-        $this->actingAs($this->account(User::ROLE_ADMIN));
+        // HR Admin no longer edits the project itself - see HrAdminProjectAccessTest.
+        $this->actingAs($this->account(User::ROLE_ADMIN_OFFICER));
 
         $this->save($project, [
             'quotation' => '1500',

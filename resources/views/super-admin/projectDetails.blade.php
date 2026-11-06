@@ -129,7 +129,7 @@
                      not a project with no dates to release. Resuming is
                      offered by the hold banner below, so the pair is never
                      both in the header at once. --}}
-                @if (! $isReadOnly && ! $isOnHold && $project->status !== 'unscheduled')
+                @if ($canManageProjects && ! $isReadOnly && ! $isOnHold && $project->status !== 'unscheduled')
                     <button type="button" class="btn btn-warning project-header-action" data-bs-toggle="modal"
                         data-bs-target="#onHoldModal" aria-label="Put on Hold" title="{{ $awaitingSetup ? $setupFirst : 'Put on Hold' }}" @disabled($awaitingSetup)>
                         <i class="bi bi-pause-circle" aria-hidden="true"></i>
@@ -312,7 +312,7 @@
                             data-recovery-error></div>
                     </div>
 
-                    @unless ($isReadOnly)
+                    @if ($canManageProjects && ! $isReadOnly)
                         {{-- Sent with fetch so a clash opens the Schedule
                              Conflict dialog - the same one the archive's
                              Restore opens - rather than bouncing the page and
@@ -330,7 +330,7 @@
                                 Resume Project
                             </button>
                         </form>
-                    @endunless
+                    @endif
                 </div>
             </div>
         @endif
@@ -818,13 +818,13 @@
                                 {{ $headlineClient?->primaryName() ?? 'N/A' }}
                             </h2>
 
-                            @unless ($isReadOnly)
+                            @if ($canManageProjects && ! $isReadOnly)
                                 <button class="btn btn-outline-info border btn-sm ms-2" data-bs-toggle="modal"
                                     data-bs-target="#editProjectDetailsModal" @disabled($awaitingSetup)
                                     title="{{ $awaitingSetup ? $setupFirst : 'Edit project' }}">
                                     <i class="bi bi-pencil-square"></i>
                                 </button>
-                            @endunless
+                            @endif
 
                             {{-- Who the project is for. Editing the details
                                  above changes this client everywhere; this
@@ -1132,14 +1132,14 @@
                                         <span>{{ $document->document_name }}</span>
                                     </a>
 
-                                    @unless ($isReadOnly)
+                                    @if ($canManageProjects && ! $isReadOnly)
                                         <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2"
                                             data-document-remove="{{ route('super-admin.projects.documents.destroy', ['id' => $project->project_id, 'document' => $document->document_id]) }}"
                                             data-document-label="{{ $document->document_name }}"
                                             title="{{ $awaitingSetup ? $setupFirst : 'Remove this file' }}" @disabled($awaitingSetup)>
                                             <i class="bi bi-trash3" aria-hidden="true"></i>
                                         </button>
-                                    @endunless
+                                    @endif
                                 </div>
                             @empty
                                 <span class="text-muted small">No {{ strtolower($label) }} uploaded.</span>
@@ -1847,7 +1847,7 @@
         </div>{{-- /.tab-content --}}
     </div>
 
-    @unless ($isReadOnly)
+    @if ($canManageProjects && ! $isReadOnly)
         <div class="d-flex justify-content-end mt-3 mb-4">
             <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#cancelProjectModal"
                 @disabled($awaitingSetup) @if ($awaitingSetup) title="{{ $setupFirst }}" @endif>
@@ -1911,7 +1911,7 @@
                 </div>
             </div>
         </div>
-    @endunless
+    @endif
 
     <!-- EDIT PROJECT DETAILS MODAL -->
     <div class="modal fade" id="editProjectDetailsModal" tabindex="-1" aria-labelledby="editProjectDetailsModalLabel"

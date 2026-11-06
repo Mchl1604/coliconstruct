@@ -125,14 +125,14 @@
             </button>
 
             @if (! $isReadOnly)
-                @if ($project->on_hold !== true && $project->status !== 'unscheduled')
+                @if (\App\Support\RoleAccess::can(auth()->user(), \App\Support\RoleAccess::MANAGE_PROJECTS) && $project->on_hold !== true && $project->status !== 'unscheduled')
                     <button class="btn btn-sm btn-warning py-1 px-2" data-bs-toggle="modal"
                         data-bs-target="#onHoldModal{{ $project->project_id }}"
                         @disabled($awaitingSetup) title="{{ $awaitingSetup ? $setupFirst : 'Put on Hold' }}">
                         <i class="bi bi-pause"></i>
                     </button>
                 @endif
-                @if ($project->on_hold === true)
+                @if (\App\Support\RoleAccess::can(auth()->user(), \App\Support\RoleAccess::MANAGE_PROJECTS) && $project->on_hold === true)
                     <button class="btn btn-sm btn-success py-1 px-2" data-bs-toggle="modal"
                         data-bs-target="#resumeModal{{ $project->project_id }}">
                         <i class="bi bi-play"></i>

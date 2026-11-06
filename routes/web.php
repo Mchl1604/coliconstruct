@@ -392,10 +392,10 @@ Route::prefix('super-admin')
         // typed in new. Admin and Super Admin, as the group above admits; the
         // request asks the project's own questions again.
         Route::put('/projects/{id}/client', [ProjectClientController::class, 'change'])->middleware('project.setup')
-            ->name('projects.client.change');
+            ->middleware('capability:'.RoleAccess::MANAGE_PROJECTS)->name('projects.client.change');
 
-        Route::put('/projects/{id}/hold', [ProjectController::class, 'putOnHold'])->middleware('project.setup')->name('projects.hold');
-        Route::put('/projects/{id}/resume', [ProjectController::class, 'resume'])->name('projects.resume');
+        Route::put('/projects/{id}/hold', [ProjectController::class, 'putOnHold'])->middleware('project.setup')->middleware('capability:'.RoleAccess::MANAGE_PROJECTS)->name('projects.hold');
+        Route::put('/projects/{id}/resume', [ProjectController::class, 'resume'])->middleware('capability:'.RoleAccess::MANAGE_PROJECTS)->name('projects.resume');
 
         // What stands between a held project and the schedule it kept, and how
         // one range of that schedule is moved out of the way. The same pair
@@ -413,7 +413,7 @@ Route::prefix('super-admin')
         Route::get('/projects/{id}/resume-conflicts', [ProjectController::class, 'resumeConflicts'])
             ->name('projects.resume-conflicts');
         Route::put('/projects/{id}/resume-schedule', [ProjectController::class, 'updateResumeSchedule'])
-            ->name('projects.resume-schedule');
+            ->middleware('capability:'.RoleAccess::MANAGE_PROJECTS)->name('projects.resume-schedule');
         Route::post('/projects/{id}/completion-photos', [ProjectCompletionPhotoController::class, 'store'])
             ->whereNumber('id')
             ->name('projects.completion-photos.store');
@@ -428,14 +428,14 @@ Route::prefix('super-admin')
         // Awaiting Client Confirmation, beside Reopen - and like Reopen it
         // works on that one status only, which the controller asks again.
         Route::post('/projects/{id}/client-confirmation', [ProjectController::class, 'recordClientConfirmation'])
-            ->name('projects.client-confirmation');
+            ->middleware('capability:'.RoleAccess::MANAGE_PROJECTS)->name('projects.client-confirmation');
 
         // Putting a project that is waiting on its client back to work. The
         // only action allowed on a locked project, and only on that one status
         // - a completed project is refused by ProjectReopen itself, so the
         // rule does not depend on which page drew the button.
-        Route::post('/projects/{id}/reopen', [ProjectController::class, 'reopen'])->name('projects.reopen');
-        Route::post('/projects/{id}/cancel', [ProjectController::class, 'cancel'])->middleware('project.setup')->name('projects.cancel');
+        Route::post('/projects/{id}/reopen', [ProjectController::class, 'reopen'])->middleware('capability:'.RoleAccess::MANAGE_PROJECTS)->name('projects.reopen');
+        Route::post('/projects/{id}/cancel', [ProjectController::class, 'cancel'])->middleware('project.setup')->middleware('capability:'.RoleAccess::MANAGE_PROJECTS)->name('projects.cancel');
         Route::post('/projects/{id}/archive', [ProjectController::class, 'archive'])
             ->middleware('role:super_admin')
             ->name('projects.archive');
@@ -465,8 +465,8 @@ Route::prefix('super-admin')
             ->name('projects.documents.preview');
         Route::delete('/projects/{id}/documents/{document}', [ProjectController::class, 'destroyDocument'])->middleware('project.setup')
             ->whereNumber('document')
-            ->name('projects.documents.destroy');
-        Route::put('/projects/{id}', [ProjectController::class, 'update'])->middleware('project.setup')->name('projects.update');
+            ->middleware('capability:'.RoleAccess::MANAGE_PROJECTS)->name('projects.documents.destroy');
+        Route::put('/projects/{id}', [ProjectController::class, 'update'])->middleware('project.setup')->middleware('capability:'.RoleAccess::MANAGE_PROJECTS)->name('projects.update');
         // Edit Description: what each type's detail form was filled in with.
         Route::put('/projects/{id}/details', [ProjectDetailController::class, 'update'])->name('projects.details.update');
         Route::put('/projects/{id}/quotation', [ProjectQuotationController::class, 'update'])
