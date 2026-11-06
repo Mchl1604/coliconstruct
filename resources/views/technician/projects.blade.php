@@ -67,71 +67,10 @@
         </div>
     </div>
 
-    {{-- ============================ COMPLETE PROJECT MODAL ============================ --}}
-    <div class="modal fade" id="completeProjectModal" tabindex="-1" aria-hidden="true" data-complete-project-modal>
-        <div class="modal-dialog modal-dialog-centered">
-            <form class="modal-content" data-complete-project-form enctype="multipart/form-data">
-                @csrf
-
-                <div class="modal-header bg-success text-white">
-                    <h5 class="modal-title">
-                        <i class="bi bi-check-circle me-2" aria-hidden="true"></i>
-                        Complete Project
-                    </h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
-                        aria-label="Close"></button>
-                </div>
-
-                <div class="modal-body">
-                    <p class="mb-1 text-secondary small">You are closing out</p>
-                    <h5 class="fw-bold mb-3" data-complete-project-reference>&nbsp;</h5>
-
-                    <div class="text-secondary small py-2" data-complete-project-loading>
-                        <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-                        Checking whether anything is still outstanding&hellip;
-                    </div>
-
-                    {{-- Everything that still stands in the way, listed rather than
-                         collapsed into a single refusal. --}}
-                    <div class="d-none" data-complete-project-blocked>
-                        <div class="alert alert-warning mb-0">
-                            <p class="fw-semibold mb-2">
-                                <i class="bi bi-exclamation-triangle me-1" aria-hidden="true"></i>
-                                This project cannot be completed yet.
-                            </p>
-                            <ul class="mb-0 ps-3" data-complete-project-blockers></ul>
-                        </div>
-                    </div>
-
-                    <div class="d-none" data-complete-project-ready>
-                        <p class="mb-3">
-                            This makes the project view only.
-                        </p>
-
-                        @include('technician.partials.completion-fields', ['suffix' => 'List'])
-                    </div>
-
-                    <div class="alert alert-danger mt-3 mb-0 d-none" role="alert" data-complete-project-error></div>
-                </div>
-
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-success" data-complete-project-submit disabled>
-                        <span class="spinner-border spinner-border-sm me-1 d-none" role="status" aria-hidden="true"
-                            data-spinner></span>
-                        <i class="bi bi-check-lg me-1" aria-hidden="true"></i>
-                        Mark as Completed
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-
     @push('scripts')
         <script>
             window.portalRoutes = {
                 projectDetails: @json(route('technician.projects.details', ['project' => '__ID__'])),
-                completeProject: @json(route('technician.projects.complete', ['project' => '__ID__'])),
             };
         </script>
         <script>

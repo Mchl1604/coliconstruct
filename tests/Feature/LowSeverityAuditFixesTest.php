@@ -120,7 +120,6 @@ class LowSeverityAuditFixesTest extends TestCase
         $this->assertCount(1, $page['rows']);
         $this->assertStringNotContainsString('modal fade', $page['rows'][0]);
         $this->assertStringContainsString('onHoldModal'.$project->project_id, $page['extras']);
-        $this->assertStringContainsString('completeProjectModal'.$project->project_id, $page['extras']);
     }
 
     // ==================================================================

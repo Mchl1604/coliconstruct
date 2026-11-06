@@ -399,7 +399,7 @@ class OverdueProjectTest extends TestCase
         $response->assertDontSee('This project is overdue');
         $response->assertSee('Add New Schedule');
         $response->assertSee('Mark as Complete');
-        $response->assertSee('completeProjectModal', false);
+        $response->assertSee('data-bs-target="#completeBlockedModal" data-project-complete', false);
         $response->assertSee(route('super-admin.projects.complete', $late->project_id), false);
     }
 
@@ -541,9 +541,14 @@ class OverdueProjectTest extends TestCase
         $this->schedule($project, $this->day(-2), $this->day(4));
         $future = $this->schedule($project, $this->day(20), $this->day(25));
 
+        $this->makeCompletable($project);
+
         $this->post(route('super-admin.projects.complete', $project->project_id), [
             'completion_date' => CarbonImmutable::today()->toDateString(),
             'completion_summary' => 'Work finished ahead of schedule.',
+            'report_performed_by' => 'Ramon Cruz',
+            'report_witnessed_by' => 'Maria Santos',
+            'report_remarks' => 'Work finished ahead of schedule.',
         ])->assertRedirect();
 
         $project->refresh();
@@ -573,9 +578,14 @@ class OverdueProjectTest extends TestCase
             'schedule_id' => $future->schedule_id,
         ]);
 
+        $this->makeCompletable($project);
+
         $this->post(route('super-admin.projects.complete', $project->project_id), [
             'completion_date' => CarbonImmutable::today()->toDateString(),
             'completion_summary' => 'Done.',
+            'report_performed_by' => 'Ramon Cruz',
+            'report_witnessed_by' => 'Maria Santos',
+            'report_remarks' => 'Done.',
         ])->assertRedirect();
 
         $this->assertDatabaseMissing('tbl_schedule_technicians', [
@@ -592,9 +602,14 @@ class OverdueProjectTest extends TestCase
         $project = $this->project('Finished On Time');
         $this->schedule($project, $this->day(-10), $this->day(-1));
 
+        $this->makeCompletable($project);
+
         $this->post(route('super-admin.projects.complete', $project->project_id), [
             'completion_date' => CarbonImmutable::today()->toDateString(),
             'completion_summary' => 'Done.',
+            'report_performed_by' => 'Ramon Cruz',
+            'report_witnessed_by' => 'Maria Santos',
+            'report_remarks' => 'Done.',
         ])->assertRedirect();
 
         $project->refresh();

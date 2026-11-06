@@ -18,6 +18,7 @@ use App\Policies\TaskPolicy;
 use App\Services\ActivityLogger;
 use App\Services\NotificationService;
 use App\Services\ProjectCompletion;
+use App\Services\ProjectCompletionForm;
 use App\Services\ProjectEmails;
 use App\Services\ProjectMaterialLedger;
 use App\Services\ProjectMaterialRules;
@@ -366,7 +367,7 @@ class TechnicianPortalController extends Controller
             // status badge still reads Overdue for everyone; what is withheld
             // is the instruction, not the fact.
             'showsOverdueNotice' => ! $user->isTechnician(),
-            'completionBlockers' => $this->projectPolicy->blockerDetailsFor($project),
+            'completionBlockers' => $this->projectPolicy->blockerDetailsFor($project, $user),
             'reportTypes' => TechnicianReport::TYPES,
 
             // Project Phases. The same two states the administrative page
@@ -1030,17 +1031,10 @@ class TechnicianPortalController extends Controller
         ], app(TaskPhaseRules::class)->messages());
 
         $this->scheduleRules->attach($validator, $ranges);
-        // Dates left as they stand are not a new assignment; a start being
-        // moved is, and it starts tomorrow at the earliest like any other.
-        $validator->after(function ($validator) use ($task): void {
-            $start = $validator->getData()['start_date'] ?? null;
-
-            if (! $validator->errors()->has('start_date')
-                && $start !== optional($task->start_date, fn ($date) => CarbonImmutable::parse($date)->toDateString())
-                && $this->scheduleRules->startsTooSoon($start)) {
-                $validator->errors()->add('start_date', 'Tasks start tomorrow or later.');
-            }
-        });
+        $this->scheduleRules->attachMovedTaskStart(
+            $validator,
+            optional($task->start_date, fn ($date) => CarbonImmutable::parse($date)->toDateString())
+        );
         // Whoever holds the task may keep it: editing its wording or its dates
         // re-submits the owner, and refusing that would make an inactive
         // technician's work uneditable - including the handover off them.
@@ -1310,7 +1304,7 @@ class TechnicianPortalController extends Controller
 
         $this->startIfFirstDayHasCome($project);
 
-        $blockers = $this->projectPolicy->blockerDetailsFor($project);
+        $blockers = $this->projectPolicy->blockerDetailsFor($project, $request->user());
 
         if ($blockers !== [] || ! $this->projectPolicy->complete($request->user(), $project)) {
             if ($request->expectsJson()) {
@@ -1330,32 +1324,13 @@ class TechnicianPortalController extends Controller
             );
         }
 
-        // The same completion report the Super Admin portal collects, from the
-        // same rule set, with one difference: a lead is on site, so the
-        // photographs are the evidence and are required rather than optional.
         $completion = app(ProjectCompletion::class);
-
-        $validator = Validator::make(
-            $request->all(),
-            $completion->rules(photosRequired: true),
-            $completion->messages()
-        );
-
-        if ($validator->fails()) {
-            return $this->failed($request, $validator->errors()->first());
-        }
-
-        $validated = $validator->validated();
+        $form = app(ProjectCompletionForm::class);
+        $project->load('projectTypes');
+        $validated = $form->validate($request, $project);
 
         try {
-            DB::transaction(function () use ($request, $project, $validated, $completion): void {
-                $completion->requestCompletion(
-                    $project,
-                    $validated,
-                    $request->file('completion_photos'),
-                    $request->user()
-                );
-            });
+            $form->complete($project, $validated, $request->user());
         } catch (Throwable $e) {
             return $this->failed($request, $this->safeErrorMessage($e, 'Unable to save. Nothing was changed.'));
         }

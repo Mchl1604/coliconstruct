@@ -497,9 +497,9 @@ class RestoreScheduleConflictTest extends TestCase
         // A day nobody has a claim on stays open.
         $this->assertNotContains($this->day(40)->toDateString(), $blocked);
 
-        // And the floor the picker uses is today, never earlier.
-        $this->assertSame(Schedule::businessToday()->toDateString(), $ranges[1]['earliest_start']);
-        $this->assertSame(Schedule::businessToday()->toDateString(), $this->report($archived)['earliest_date']);
+        // And the floor the picker uses is tomorrow, never earlier.
+        $this->assertSame(Schedule::businessToday()->addDay()->toDateString(), $ranges[1]['earliest_start']);
+        $this->assertSame(Schedule::businessToday()->addDay()->toDateString(), $this->report($archived)['earliest_date']);
     }
 
     // ==================================================================

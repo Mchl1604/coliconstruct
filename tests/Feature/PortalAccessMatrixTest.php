@@ -49,6 +49,11 @@ class PortalAccessMatrixTest extends TestCase
      */
     private const NARROWER = [
         'super-admin.projects.create' => [User::ROLE_SUPER_ADMIN, User::ROLE_ADMIN_OFFICER],
+        'super-admin.projects.complete' => [User::ROLE_SUPER_ADMIN, User::ROLE_ADMIN_OFFICER],
+        'super-admin.projects.details.update' => [User::ROLE_SUPER_ADMIN, User::ROLE_ADMIN_OFFICER],
+        'super-admin.projects.quotation.update' => [User::ROLE_SUPER_ADMIN, User::ROLE_ADMIN_OFFICER],
+        'super-admin.projects.completion-photos.store' => [User::ROLE_SUPER_ADMIN, User::ROLE_ADMIN_OFFICER],
+        'super-admin.projects.completion-photos.destroy' => [User::ROLE_SUPER_ADMIN, User::ROLE_ADMIN_OFFICER],
         'super-admin.projects.create.store' => [User::ROLE_SUPER_ADMIN, User::ROLE_ADMIN_OFFICER],
         'super-admin.task.store' => [User::ROLE_SUPER_ADMIN],
         'super-admin.projects.checklist.update' => [User::ROLE_SUPER_ADMIN],
@@ -80,6 +85,8 @@ class PortalAccessMatrixTest extends TestCase
         'technician.projects.complete',
         'technician.projects.task-form-data',
         'technician.projects.checklist.',
+        'technician.projects.details.update',
+        'technician.projects.completion-photos.',
         'technician.projects.phases.',
         'technician.projects.materials.suggest',
         'technician.projects.materials.requests.',

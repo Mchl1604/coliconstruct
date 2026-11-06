@@ -250,9 +250,14 @@ class QaAuditFixesTest extends TestCase
     {
         [$project, , , $schedule] = $this->project(-3, 10);
 
+        $this->makeCompletable($project);
+
         $this->post(route('super-admin.projects.complete', $project->project_id), [
             'completion_date' => '2020-01-01',
             'completion_summary' => 'Done.',
+            'report_performed_by' => 'Ramon Cruz',
+            'report_witnessed_by' => 'Maria Santos',
+            'report_remarks' => 'Done.',
             'completion_override_reason' => 'Finishing it for the test.',
         ]);
 

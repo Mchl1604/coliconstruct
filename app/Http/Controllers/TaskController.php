@@ -18,6 +18,7 @@ use App\Services\TechnicianTaskLoad;
 use App\Support\RoleAccess;
 use App\Support\UploadStore;
 use Carbon\Carbon;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -403,6 +404,10 @@ class TaskController extends Controller
         ]);
 
         $this->attachRangeRule($validator, $ranges);
+        $this->scheduleRules->attachMovedTaskStart(
+            $validator,
+            optional($task->start_date, fn ($date) => CarbonImmutable::parse($date)->toDateString())
+        );
         // Whoever holds the task may keep it: editing its wording or its dates
         // re-submits the owner, and refusing that would make an inactive
         // technician's work uneditable - including the handover off them.

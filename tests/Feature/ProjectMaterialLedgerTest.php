@@ -205,6 +205,13 @@ class ProjectMaterialLedgerTest extends TestCase
         $this->assertSame(0, ProjectMaterialEntry::count());
     }
 
+    public function test_a_lead_cannot_record_a_return(): void
+    {
+        $this->record($this->leadAccount, $this->copperLine, 'returned', '1', portal: 'technician');
+
+        $this->assertSame(0, ProjectMaterialEntry::count());
+    }
+
     public function test_a_plain_technician_reads_but_does_not_record(): void
     {
         $this->actingAs($this->mateAccount)

@@ -133,12 +133,17 @@ class ProgressReportController extends Controller
     /**
      * A project's progress from its start to today, worked out when opened
      * and never saved. Nothing to fill in or file: printing is how it is kept.
+     * The crew reads it, and in the office the Super Admin and Admin Officer.
      */
     public function overall(Request $request, Project $project, ProjectProgressOverview $overview): View
     {
         $user = $request->user();
 
-        abort_unless($this->canRead($user, $project), 404);
+        abort_unless(
+            $this->canRead($user, $project)
+                && (! $user->canReach(RoleAccess::SCHEDULING) || RoleAccess::can($user, RoleAccess::OVERALL_PROGRESS)),
+            404
+        );
 
         $progress = $overview->build($project);
 

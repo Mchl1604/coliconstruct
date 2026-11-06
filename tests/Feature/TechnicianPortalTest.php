@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Http\Controllers\TechnicianPortalController;
 use App\Models\Client;
+use App\Models\Document;
 use App\Models\Project;
 use App\Models\ProjectTechnician;
 use App\Models\Schedule;
@@ -1165,6 +1166,9 @@ class TechnicianPortalTest extends TestCase
         return array_merge([
             'completion_date' => CarbonImmutable::today()->toDateString(),
             'completion_summary' => 'Everything on site is finished.',
+            'report_performed_by' => 'Ramon Cruz',
+            'report_witnessed_by' => 'Maria Santos',
+            'report_remarks' => 'Everything on site is finished.',
             'completion_photos' => [UploadedFile::fake()->image('handover.jpg')],
         ], $overrides);
     }
@@ -1178,6 +1182,7 @@ class TechnicianPortalTest extends TestCase
     {
         $this->task($this->mate, 'Done', 'completed');
         $this->completePhases($this->project);
+        $this->addCompletionPhoto($this->project);
 
         // The fixture schedule runs from day +10 to +20, entirely ahead.
         $this->assertSame(1, $this->project->schedules()->count());
@@ -1209,6 +1214,7 @@ class TechnicianPortalTest extends TestCase
         $this->schedule($this->project, -3, 20);
         $this->task($this->mate, 'Done', 'completed');
         $this->completePhases($this->project);
+        $this->addCompletionPhoto($this->project);
 
         $this->actingAs($this->leadAccount);
 
@@ -1233,7 +1239,7 @@ class TechnicianPortalTest extends TestCase
 
     /**
      * A lead is on site, so the photographs are the evidence that the work is
-     * done. Unlike the Super Admin form, they are not optional here.
+     * done. They are added on Project Details, ahead of completing.
      */
     public function test_completion_photos_are_required(): void
     {
@@ -1241,32 +1247,50 @@ class TechnicianPortalTest extends TestCase
         $this->schedule($this->project, -10, -1);
         $this->task($this->mate, 'Done', 'completed');
         $this->completePhases($this->project);
+        $this->addCompletionPhoto($this->project);
 
         $this->actingAs($this->leadAccount);
 
+        $this->project->completionPhotos()->delete();
+
         $response = $this->postJson(
             route('technician.projects.complete', $this->project),
-            $this->completionPayload(['completion_photos' => []])
+            $this->completionPayload()
         );
 
         $response->assertStatus(422);
-        $response->assertJsonPath('error', 'At least one completion photo is required.');
+        $response->assertJsonPath('blockers.0.message', 'Add at least one completion photo.');
         $this->assertSame('ongoing', $this->project->refresh()->status);
     }
 
-    public function test_a_completion_summary_is_required(): void
+    public function test_the_crew_cannot_fetch_the_quotation_file_by_its_id(): void
+    {
+        $quotation = Document::query()->forceCreate([
+            'project_id' => $this->project->project_id,
+            'document_type' => 'quotation',
+            'document_name' => 'quote.pdf',
+            'document_path' => 'documents/quote.pdf',
+        ]);
+
+        foreach ([$this->leadAccount, $this->mate->account] as $crew) {
+            $this->assertNotSame(200, $this->actingAs($crew)->get(route('media.document', $quotation->document_id))->getStatusCode());
+        }
+    }
+
+    public function test_the_report_remarks_are_required(): void
     {
         $this->project->schedules()->delete();
         $this->schedule($this->project, -10, -1);
         $this->task($this->mate, 'Done', 'completed');
         $this->completePhases($this->project);
+        $this->addCompletionPhoto($this->project);
 
         $this->actingAs($this->leadAccount);
 
-        $this->postJson(
+        $this->post(
             route('technician.projects.complete', $this->project),
-            $this->completionPayload(['completion_summary' => ''])
-        )->assertStatus(422);
+            $this->completionPayload(['report_remarks' => ''])
+        )->assertSessionHasErrorsIn('details', 'report_remarks');
 
         $this->assertSame('ongoing', $this->project->refresh()->status);
     }
@@ -1296,6 +1320,7 @@ class TechnicianPortalTest extends TestCase
         $this->schedule($this->project, -10, -1);
         $this->task($this->mate, 'Done', 'completed');
         $this->completePhases($this->project);
+        $this->addCompletionPhoto($this->project);
 
         $this->actingAs($this->leadAccount);
 
@@ -1306,7 +1331,6 @@ class TechnicianPortalTest extends TestCase
 
         $this->project->refresh();
         $this->assertSame(Project::STATUS_AWAITING_CLIENT_CONFIRMATION, $this->project->status);
-        $this->assertSame('Client walked the site.', $this->project->completion_remarks);
         $this->assertSame('Everything on site is finished.', $this->project->completion_summary);
         $this->assertCount(1, $this->project->completionPhotos);
     }
@@ -1358,14 +1382,14 @@ class TechnicianPortalTest extends TestCase
         $list = $this->getTablePage(route('technician.projects.table'));
 
         if ($offered) {
-            $details->assertSee('data-bs-target="#completeProjectModal"', false);
-            $list->assertSee('data-complete-project="'.$this->project->project_id.'"', false);
+            $details->assertSee('data-project-complete aria-label="Complete Project"', false);
+            $list->assertSee(route('technician.projects.show', $this->project->project_id).'#complete', false);
 
             return;
         }
 
-        $details->assertDontSee('data-bs-target="#completeProjectModal"', false);
-        $list->assertDontSee('data-complete-project="'.$this->project->project_id.'"', false);
+        $details->assertDontSee('data-project-complete aria-label="Complete Project"', false);
+        $list->assertDontSee(route('technician.projects.show', $this->project->project_id).'#complete', false);
     }
 
     public function test_a_project_on_hold_is_offered_no_complete_button(): void
@@ -1447,9 +1471,9 @@ class TechnicianPortalTest extends TestCase
             []
         )->assertStatus(422)->json('blockers');
 
-        // The open task and the phases it is holding up. Both are things the
-        // lead can go and deal with, so both carry a link.
-        $this->assertCount(2, $blockers);
+        // The open task, the phases it is holding up, and the missing photo. All
+        // are things the lead can go and deal with, so all carry a link.
+        $this->assertCount(3, $blockers);
         $this->assertSame(
             route('technician.projects.show', $this->project->project_id).'#phases',
             $blockers[0]['action']['url']

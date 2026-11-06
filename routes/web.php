@@ -21,6 +21,7 @@ use App\Http\Controllers\ProgressReportController;
 use App\Http\Controllers\ProjectAddressController;
 use App\Http\Controllers\ProjectChecklistController;
 use App\Http\Controllers\ProjectClientController;
+use App\Http\Controllers\ProjectCompletionPhotoController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ProjectDetailController;
 use App\Http\Controllers\ProjectMaterialController;
@@ -413,6 +414,12 @@ Route::prefix('super-admin')
             ->name('projects.resume-conflicts');
         Route::put('/projects/{id}/resume-schedule', [ProjectController::class, 'updateResumeSchedule'])
             ->name('projects.resume-schedule');
+        Route::post('/projects/{id}/completion-photos', [ProjectCompletionPhotoController::class, 'store'])
+            ->whereNumber('id')
+            ->name('projects.completion-photos.store');
+        Route::delete('/projects/{id}/completion-photos/{photo}', [ProjectCompletionPhotoController::class, 'destroy'])
+            ->whereNumber(['id', 'photo'])
+            ->name('projects.completion-photos.destroy');
         Route::post('/projects/{id}/complete', [ProjectController::class, 'complete'])->middleware('project.setup')->name('projects.complete');
 
         // The confirmation that did not come through the website: the client
@@ -924,6 +931,15 @@ Route::prefix('technician')
                 ->name('projects.complete');
             Route::post('/projects/{project}/checklist', [ProjectChecklistController::class, 'update'])
                 ->name('projects.checklist.update');
+            Route::post('/projects/{id}/completion-photos', [ProjectCompletionPhotoController::class, 'store'])
+                ->whereNumber('id')
+                ->name('projects.completion-photos.store');
+            Route::delete('/projects/{id}/completion-photos/{photo}', [ProjectCompletionPhotoController::class, 'destroy'])
+                ->whereNumber(['id', 'photo'])
+                ->name('projects.completion-photos.destroy');
+            Route::put('/projects/{id}/details', [ProjectDetailController::class, 'update'])
+                ->whereNumber('id')
+                ->name('projects.details.update');
             Route::get('/projects/{project}/task-form-data', [TechnicianPortalController::class, 'taskFormData'])
                 ->name('projects.task-form-data');
             Route::post('/projects/{project}/tasks', [TechnicianPortalController::class, 'storeTask'])
@@ -975,7 +991,7 @@ Route::get('/report-documents/{report}', [ProgressReportController::class, 'show
     ->name('reports.document');
 
 // A project's progress from its start to today, generated when opened, for
-// the same readers.
+// the same readers except an HR Admin.
 Route::get('/project-progress/{project}', [ProgressReportController::class, 'overall'])
     ->middleware(['auth', 'password.changed'])
     ->whereNumber('project')

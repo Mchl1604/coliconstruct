@@ -57,7 +57,7 @@ class DetailFormSeeder extends Seeder
                 'fields' => [
                     self::field('scope_of_work', 'Scope of work', DetailFieldType::LongText, true),
                     self::field('area_served', 'Area served', DetailFieldType::Text),
-                    self::field('duct_material', 'Duct material', DetailFieldType::Dropdown, false, ['GI sheet', 'Aluminum', 'Pre-insulated', 'Flexible', 'Others']),
+                    self::field('duct_material', 'Duct material', DetailFieldType::Dropdown, false, ServiceReportForms::DUCT_MATERIALS),
                     self::field('duct_size', 'Duct size', DetailFieldType::Text),
                     self::field('length_m', 'Length (m)', DetailFieldType::Number),
                     self::field('insulated', 'Insulated', DetailFieldType::YesNo),

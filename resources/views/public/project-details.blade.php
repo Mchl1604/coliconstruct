@@ -469,7 +469,7 @@
                          happened on site. The progress bar on the card already
                          carries the one thing the task list was telling them. --}}
 
-                    @if ($project->completionPhotos->isNotEmpty())
+                    @if ($project->hasCompletionReport() && $project->completionPhotos->isNotEmpty())
                         <hr class="my-4">
 
                         <h3 class="h6 fw-bold mb-2">Completion Photos</h3>

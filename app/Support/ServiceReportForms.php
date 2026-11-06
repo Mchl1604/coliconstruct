@@ -3,8 +3,9 @@
 namespace App\Support;
 
 /**
- * The company's paper Service Report, as the fixed forms its air-conditioning
- * project types ask for. Nobody edits these on screen: the paper is the design.
+ * The company's paper Service Report, as the fixed forms its project types ask
+ * for. Nobody edits these on screen: the paper is the design. Ducting is not on
+ * the paper; its section follows the same layout, with its own form.
  *
  * Field keys are stated rather than made from labels, because the printed
  * sheet places each value by its key - see service-report-sheet.
@@ -19,6 +20,10 @@ final class ServiceReportForms
 
     public const INSTALLATION_TYPE = 'Aircon Installation';
 
+    public const DUCTING_FABRICATION_TYPE = 'Ducting Fabrication';
+
+    public const DUCTING_INSTALLATION_TYPE = 'Ducting Installation';
+
     /**
      * Which report section each project type fills.
      *
@@ -29,7 +34,12 @@ final class ServiceReportForms
         self::REPAIR_TYPE => 'repair',
         self::CLEANING_TYPE => 'cleaning',
         self::INSTALLATION_TYPE => 'installation',
+        self::DUCTING_FABRICATION_TYPE => 'ducting_fabrication',
+        self::DUCTING_INSTALLATION_TYPE => 'ducting_installation',
     ];
+
+    /** @var array<int, string> */
+    public const DUCT_MATERIALS = ['GI sheet', 'Aluminum', 'Pre-insulated', 'Flexible', 'Others'];
 
     /** @var array<int, string> */
     public const WORK = ['Installation', 'Relocation'];

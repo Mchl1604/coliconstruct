@@ -221,9 +221,14 @@ class NotificationEventsTest extends TestCase
             'email_address' => $clientAccount->email,
         ]);
 
+        $this->makeCompletable($project);
+
         $this->post(route('super-admin.projects.complete', $project->project_id), [
             'completion_date' => CarbonImmutable::today()->toDateString(),
             'completion_summary' => 'All done.',
+            'report_performed_by' => 'Ramon Cruz',
+            'report_witnessed_by' => 'Maria Santos',
+            'report_remarks' => 'All done.',
         ]);
 
         // Completing no longer closes a project outright: it hands it to the

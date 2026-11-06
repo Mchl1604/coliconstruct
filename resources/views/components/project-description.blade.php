@@ -1,6 +1,6 @@
 {{--
     A project's description as every portal shows it: the Service Report for its
-    aircon types, a one-line summary of any other type's detail form with the
+    report types, a one-line summary of any other type's detail form with the
     details folded away until asked for, and the free-text Notes.
 
     Folded rather than laid out in full, because a job with a dozen units

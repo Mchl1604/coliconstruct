@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\StockAvailability;
 use App\Support\MaterialUnit;
 use Database\Factories\MaterialFactory;
 use Illuminate\Database\Eloquent\Builder;
@@ -148,32 +149,33 @@ class Material extends Model
         return $query->addSelect(['on_hand' => StockMovement::query()
             ->selectRaw('COALESCE(SUM(quantity), 0)')
             ->whereColumn('tbl_stock_movements.material_id', 'tbl_materials.material_id')
-            ->whereNull('tbl_stock_movements.voided_at'),
+            ->whereNull('tbl_stock_movements.voided_at')
+            ->where('tbl_stock_movements.is_reservation', false),
         ]);
     }
 
     /**
      * Only the materials in one stock status - see STOCK_STATUSES.
      *
-     * Asked of the same sum withOnHand() reads, written out again because a
-     * select's alias cannot be used in its own WHERE.
+     * Asked of what is available, the same sum StockAvailability works out,
+     * written as SQL so the table can filter and count by it.
      *
      * @param  Builder<self>  $query
      * @return Builder<self>
      */
     public function scopeInStockStatus(Builder $query, string $status): Builder
     {
-        $onHand = self::onHandSql();
+        $available = self::availableSql();
 
         return match ($status) {
-            self::STOCK_OUT => $query->whereRaw($onHand.' <= 0'),
-            self::STOCK_LOW => $query->whereRaw($onHand.' > 0')
+            self::STOCK_OUT => $query->whereRaw($available.' <= 0'),
+            self::STOCK_LOW => $query->whereRaw($available.' > 0')
                 ->whereNotNull('reorder_level')
-                ->whereRaw($onHand.' <= reorder_level'),
-            self::STOCK_IN => $query->whereRaw($onHand.' > 0')
+                ->whereRaw($available.' <= reorder_level'),
+            self::STOCK_IN => $query->whereRaw($available.' > 0')
                 ->where(fn (Builder $level) => $level
                     ->whereNull('reorder_level')
-                    ->orWhereRaw($onHand.' > reorder_level')),
+                    ->orWhereRaw($available.' > reorder_level')),
             default => $query,
         };
     }
@@ -188,22 +190,22 @@ class Material extends Model
             return round((float) $this->attributes['on_hand'], 2);
         }
 
-        return round((float) $this->stockMovements()->notVoided()->sum('quantity'), 2);
+        return round((float) $this->stockMovements()->counted()->sum('quantity'), 2);
     }
 
     /**
-     * A STOCK_STATUSES key for this material, at the given on-hand figure or
+     * A STOCK_STATUSES key for this material, at the given available figure or
      * at its current one.
      */
-    public function stockStatus(?float $onHand = null): string
+    public function stockStatus(?float $available = null): string
     {
-        $onHand ??= $this->onHand();
+        $available ??= app(StockAvailability::class)->forMaterial($this)['available'];
 
-        if ($onHand <= 0) {
+        if ($available <= 0) {
             return self::STOCK_OUT;
         }
 
-        if ($this->reorder_level !== null && $onHand <= (float) $this->reorder_level) {
+        if ($this->reorder_level !== null && $available <= (float) $this->reorder_level) {
             return self::STOCK_LOW;
         }
 
@@ -258,12 +260,51 @@ class Material extends Model
     }
 
     /**
-     * The on-hand sum as SQL, correlated to the material row being read.
+     * What is available as SQL, correlated to the material row being read:
+     * on hand less each live project's plan that has not been released.
      */
-    private static function onHandSql(): string
+    private static function availableSql(): string
     {
-        return '(SELECT COALESCE(SUM(quantity), 0) FROM tbl_stock_movements'
+        $onHand = '(SELECT COALESCE(SUM(quantity), 0) FROM tbl_stock_movements'
             .' WHERE tbl_stock_movements.material_id = tbl_materials.material_id'
-            .' AND tbl_stock_movements.voided_at IS NULL)';
+            .' AND tbl_stock_movements.voided_at IS NULL'
+            .' AND tbl_stock_movements.is_reservation = 0)';
+
+        $released = '(SELECT COALESCE(-SUM(released.quantity), 0) FROM tbl_stock_movements released'
+            .' WHERE released.project_id = plans.project_id'
+            .' AND released.material_id = plans.material_id'
+            .' AND released.voided_at IS NULL'
+            .' AND released.is_reservation = 0'
+            .' AND released.project_material_entry_id IS NULL)';
+
+        $givenBack = '(SELECT COALESCE(SUM(returned.quantity), 0) FROM tbl_stock_movements returned'
+            .' WHERE returned.project_id = plans.project_id'
+            .' AND returned.material_id = plans.material_id'
+            .' AND returned.voided_at IS NULL'
+            .' AND returned.is_reservation = 1'
+            .' AND returned.quantity > 0)';
+
+        $usedOffShelf = '(SELECT COALESCE(-SUM(used.quantity), 0) FROM tbl_stock_movements used'
+            .' INNER JOIN tbl_project_material_entries used_entry ON used_entry.material_entry_id = used.project_material_entry_id'
+            .' WHERE used.project_id = plans.project_id'
+            .' AND used.material_id = plans.material_id'
+            .' AND used.voided_at IS NULL'
+            .' AND used.is_reservation = 0'
+            ." AND used_entry.entry_type = 'used')";
+
+        $outstanding = "plans.quantity_needed - CASE WHEN {$released} > 0 THEN {$released} ELSE 0 END - {$givenBack} - {$usedOffShelf}";
+
+        $closed = collect(Project::READ_ONLY_STATUSES)->map(fn (string $status): string => "'{$status}'")->implode(', ');
+
+        $reserved = '(SELECT COALESCE(SUM(CASE'
+            ." WHEN {$outstanding} > 0 THEN {$outstanding}"
+            .' ELSE 0 END), 0)'
+            .' FROM tbl_project_materials plans'
+            .' INNER JOIN tbl_projects live ON live.project_id = plans.project_id'
+            .' WHERE plans.material_id = tbl_materials.material_id'
+            .' AND live.is_archived = 0'
+            ." AND live.status NOT IN ({$closed}))";
+
+        return "ROUND({$onHand} - {$reserved}, 2)";
     }
 }

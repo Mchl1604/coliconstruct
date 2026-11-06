@@ -90,12 +90,11 @@
                  close out and no button offered -
                  see Project::isCompletable(). --}}
             @if ($canCloseProjects && $project->isCompletable())
-                <button type="button" class="btn btn-sm btn-success py-1 px-2"
-                    data-complete-project="{{ $project->project_id }}"
-                    data-project-reference="{{ $project->reference_no }}"
-                    @disabled($awaitingSetup) title="{{ $awaitingSetup ? \App\Models\Project::SET_UP_FIRST : 'Complete project' }}">
+                <a class="btn btn-sm btn-success py-1 px-2 {{ $awaitingSetup ? 'disabled' : '' }}"
+                    href="{{ route('technician.projects.show', $project->project_id) }}#complete"
+                    title="{{ $awaitingSetup ? \App\Models\Project::SET_UP_FIRST : 'Complete project' }}" aria-label="Complete project">
                     <i class="bi bi-check-lg" aria-hidden="true"></i>
-                </button>
+                </a>
             @endif
         </div>
     </td>

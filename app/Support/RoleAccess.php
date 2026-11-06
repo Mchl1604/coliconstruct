@@ -42,7 +42,7 @@ class RoleAccess
 
     public const MANAGE_PROJECT_MATERIALS = 'manage-project-materials';
 
-    public const BOOK_TODAY = 'book-today';
+    public const OVERALL_PROGRESS = 'overall-progress';
 
     /**
      * @var array<string, array<int, string>>
@@ -58,8 +58,8 @@ class RoleAccess
      * @var array<string, array<int, string>>
      */
     private const CAPABILITIES = [
-        User::ROLE_SUPER_ADMIN => [self::CREATE_PROJECTS, self::MANAGE_TASKS, self::FILE_REPORTS, self::MANAGE_PROJECT_MATERIALS, self::BOOK_TODAY],
-        User::ROLE_ADMIN_OFFICER => [self::CREATE_PROJECTS, self::MANAGE_PROJECT_MATERIALS],
+        User::ROLE_SUPER_ADMIN => [self::CREATE_PROJECTS, self::MANAGE_TASKS, self::FILE_REPORTS, self::MANAGE_PROJECT_MATERIALS, self::OVERALL_PROGRESS],
+        User::ROLE_ADMIN_OFFICER => [self::CREATE_PROJECTS, self::MANAGE_PROJECT_MATERIALS, self::OVERALL_PROGRESS],
         User::ROLE_PURCHASING_ADMIN => [self::MANAGE_PROJECT_MATERIALS],
     ];
 

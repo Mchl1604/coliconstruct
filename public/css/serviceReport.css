@@ -79,12 +79,6 @@
     overflow-wrap: anywhere;
 }
 
-.sr-times > div + div {
-    margin-top: .4mm;
-    padding-top: .4mm;
-    border-top: .75pt solid #000;
-}
-
 .sr-tall {
     height: 11mm;
 }

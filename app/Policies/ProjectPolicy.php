@@ -5,8 +5,10 @@ namespace App\Policies;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\User;
+use App\Services\ServiceReport;
 use App\Support\BusinessTime;
 use App\Support\RoleAccess;
+use App\Support\ServiceReportForms;
 
 /**
  * What a technician may do with a project they are assigned to.
@@ -106,6 +108,20 @@ class ProjectPolicy
     }
 
     /**
+     * The Super Admin, the Admin Officer, or a lead on the project edits the
+     * Service Report and detail forms while the work is live. Everyone else
+     * reads them.
+     */
+    public function updateServiceReport(User $user, Project $project): bool
+    {
+        return ($user->isSuperAdmin()
+                || $user->role === User::ROLE_ADMIN_OFFICER
+                || ($user->isLeadTechnician() && $this->worksOn($user, $project)))
+            && ! $project->isReadOnly()
+            && ! $project->isArchived();
+    }
+
+    /**
      * Filing a report is a lead's job or a Super Admin's, and only on live work.
      *
      * A hold is asked about separately because it does not change the stored
@@ -139,46 +155,48 @@ class ProjectPolicy
     }
 
     /**
-     * Whether the Complete Project button is offered at all.
+     * Whether the Complete Project button is offered at all: the Super Admin,
+     * the Admin Officer, or a lead on the project, on work in a state a
+     * completion could be filed for.
      *
-     * Deliberately separate from complete(). This asks whether the project is
-     * in a state a completion could ever be filed for - a lead's own, live,
-     * running work - and it is what decides whether the button is drawn.
-     * complete() then asks whether the work recorded on it is actually
-     * finished, which is what decides whether pressing the button gets
-     * anywhere.
-     *
-     * Splitting the two is the difference between a button that is missing
-     * because the question does not arise (the project is Pending, Unscheduled
-     * or paused: nobody has been on site yet, or has been told to stop) and a
-     * dialog that explains what is still outstanding (tasks left open), which
-     * is a thing the lead can go and deal with.
+     * Deliberately separate from complete(). Pressing the button shows what is
+     * still outstanding, which the person can go and deal with.
      */
     public function offersCompletion(User $user, Project $project): bool
     {
-        return $user->isLeadTechnician()
-            && $this->worksOn($user, $project)
-            && $project->isCompletable();
+        return ($user->isSuperAdmin()
+                || $user->role === User::ROLE_ADMIN_OFFICER
+                || ($user->isLeadTechnician() && $this->worksOn($user, $project)))
+            && $project->isCompletableBy($user);
     }
 
     /**
-     * A lead may close out their own project once there is nothing left to
-     * do on it. blockersFor() spells out what "nothing left" means and is
-     * what the confirmation dialog shows when it isn't true yet.
+     * Completion photos go on ahead of completing, by whoever may complete the
+     * project, at any point while it is live.
+     */
+    public function manageCompletionPhotos(User $user, Project $project): bool
+    {
+        return ($user->isSuperAdmin()
+                || $user->role === User::ROLE_ADMIN_OFFICER
+                || ($user->isLeadTechnician() && $this->worksOn($user, $project)))
+            && ! $project->isReadOnly()
+            && ! $project->isArchived();
+    }
+
+    /**
+     * Whether this person may close the project out now. blockersFor() spells
+     * out what stands in the way, and nobody may go past it.
      */
     public function complete(User $user, Project $project): bool
     {
-        return $user->isLeadTechnician()
-            && $this->worksOn($user, $project)
+        return $this->offersCompletion($user, $project)
             && $this->blockersFor($project, $user) === [];
     }
 
     /**
      * Why this project cannot be marked complete yet, as sentences.
      *
-     * The Super Admin portal shows these as a warning it may override, so it
-     * wants the wording and nothing else. The technician portal wants the
-     * links as well and reads blockerDetailsFor() instead.
+     * For wherever only the wording is wanted; blockerDetailsFor() has the links.
      *
      * @param  User|null  $viewer  Who is asking. Only the status blocker
      *                             depends on it - see blockerDetailsFor().
@@ -200,13 +218,11 @@ class ProjectPolicy
      * screen that fixes it, and the two dialogs that close a project render
      * it as a link rather than reprinting the sentence.
      *
-     * Who is asking matters in two places. A Super Admin may close out a
-     * project that has not reached its first scheduled day, so "Not started
-     * yet" is not a refusal for them - see Project::isCompletableBy(). And the
-     * phases are a technician's refusal alone: see phaseBlockers(). Every
-     * other blocker below reads the work recorded on the project and is the
-     * same sentence for everybody, an administrator included: they may go
-     * ahead with it outstanding, but only by saying why.
+     * Who is asking matters in three places. A Super Admin may close out a
+     * project that has not reached its first scheduled day - see
+     * Project::isCompletableBy(). A lead must have added a completion photo.
+     * And the links go to the asker's own portal. Everything else reads the
+     * work recorded on the project and refuses everybody alike.
      *
      * @param  User|null  $viewer  Who is asking. Omitted where the answer is
      *                             wanted for the project rather than for a
@@ -215,11 +231,8 @@ class ProjectPolicy
      */
     public function blockerDetailsFor(Project $project, ?User $viewer = null): array
     {
-        // Every link here points into the technician portal, because a lead is
-        // the only person these are a refusal for. An administrator sees the
-        // same sentences through blockersFor() as something they may override,
-        // and never follows them anywhere.
-        $projectUrl = route('technician.projects.show', $project->project_id);
+        $portal = $viewer?->isOfficeStaff() ? 'super-admin' : 'technician';
+        $projectUrl = route($portal.'.projects.show', $project->project_id);
         $tasksUrl = $projectUrl.'#tasks';
 
         if ($project->isReadOnly() || $project->isArchived()) {
@@ -250,7 +263,7 @@ class ProjectPolicy
         // a structure: a project whose phases are not settled accepts no tasks
         // at all, so "No tasks yet" on one of those is a consequence rather
         // than a second thing to go and fix.
-        $phaseBlockers = $this->phaseBlockers($project, $viewer);
+        $phaseBlockers = $this->phaseBlockers($project, $portal);
 
         if ($phaseBlockers !== [] && $phaseBlockers[0]['summary'] === self::NO_PHASES_SUMMARY) {
             return $phaseBlockers;
@@ -289,6 +302,32 @@ class ProjectPolicy
             );
         }
 
+        $uncheckedUnits = collect(app(ServiceReport::class)->checklists($project->fresh()))
+            ->flatMap(fn (array $checklist): array => $checklist['units'])
+            ->filter(fn (array $unit): bool => count($unit['done']) < count(ServiceReportForms::checklistItems()))
+            ->count();
+
+        if ($uncheckedUnits > 0) {
+            $blockers[] = $this->blocker(
+                $uncheckedUnits === 1
+                    ? '1 unit has an incomplete checklist.'
+                    : $uncheckedUnits.' units have incomplete checklists.',
+                $uncheckedUnits === 1 ? '1 incomplete checklist' : $uncheckedUnits.' incomplete checklists',
+                'Go to the checklist',
+                $projectUrl.'#checklist'
+            );
+        }
+
+        // A lead is on site, so the photographs are the evidence.
+        if (($viewer === null || $viewer->isLeadTechnician()) && ! $project->completionPhotos()->exists()) {
+            $blockers[] = $this->blocker(
+                'Add at least one completion photo.',
+                'no completion photo',
+                'Go to Completion Photos',
+                $projectUrl.'#completion-photos'
+            );
+        }
+
         // A date range still to come is deliberately not a blocker. Work
         // finishing ahead of schedule is a good outcome, not something to
         // argue with - completing the project releases those dates instead
@@ -307,13 +346,6 @@ class ProjectPolicy
      * asked about first, and an empty phase list is a refusal in its own right
      * rather than a silent pass.
      *
-     * A lead technician's refusal alone. An Admin or a Super Admin closing a
-     * project on the team's behalf gets neither sentence: they may need to
-     * close out a job whose phases were never set up or never ticked off, and
-     * that allowance is the whole reason the two roles exist on this screen.
-     * A null viewer is read as the technician's case, which is the stricter
-     * of the two - see the note on $viewer above.
-     *
      * Read from the database on every call rather than from anything the page
      * had loaded. A phase closed in another tab, or reopened by a Super Admin
      * after this page was drawn, has to count: the whole point of the check is
@@ -321,12 +353,8 @@ class ProjectPolicy
      *
      * @return array<int, array{message: string, summary: string, action: array{label: string, url: string}|null}>
      */
-    private function phaseBlockers(Project $project, ?User $viewer): array
+    private function phaseBlockers(Project $project, string $portal): array
     {
-        if ($viewer !== null && ! $viewer->needsTechnicianRecord()) {
-            return [];
-        }
-
         // One query for both figures. Only the two columns the answer is made
         // of, because nothing here reads a phase's title or its notes.
         $phases = $project->phases()->get(['phase_id', 'completed_at']);
@@ -336,7 +364,7 @@ class ProjectPolicy
                 'Set up the project phases before completing the project.',
                 self::NO_PHASES_SUMMARY,
                 'Set up the phases',
-                route('technician.projects.phases.setup', $project->project_id)
+                route($portal.'.projects.phases.setup', $project->project_id)
             )];
         }
 
@@ -350,7 +378,7 @@ class ProjectPolicy
             'Complete all project phases before completing the project.',
             $outstanding === 1 ? '1 incomplete phase' : $outstanding.' incomplete phases',
             $outstanding === 1 ? 'Go to the open phase' : 'Go to the open phases',
-            route('technician.projects.show', $project->project_id).'#phases'
+            route($portal.'.projects.show', $project->project_id).'#phases'
         )];
     }
 

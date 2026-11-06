@@ -382,48 +382,53 @@
     font-size: 0.85rem;
 }
 
-/* ---- Report viewer: tinted by report type ---- */
+/* ---- Report viewer: a colored left border and colored text ---- */
 
 /*
  * The same two accents in both portals, and the same as the report cards on a
  * project's page: blue for progress, red for an incident.
  */
 .report-accent-progress {
-    --bs-modal-bg: var(--bs-primary-bg-subtle);
-    border: 1px solid var(--bs-primary);
-    background-color: var(--bs-primary-bg-subtle);
+    --report-line: #1b5688;
 }
 
 .report-accent-incident {
-    --bs-modal-bg: var(--bs-danger-bg-subtle);
-    border: 1px solid var(--bs-danger);
-    background-color: var(--bs-danger-bg-subtle);
+    --report-line: #b42318;
+}
+
+.report-accent-progress,
+.report-accent-incident {
+    --bs-modal-bg: #fff;
+    border: 0;
+    border-left: 5px solid var(--report-line);
+    background-color: #fff;
 }
 
 .report-accent-progress .modal-header,
 .report-accent-incident .modal-header {
-    background: rgba(0, 0, 0, .03);
+    background: #fff;
 }
 
-.report-accent-progress .modal-header,
-.report-accent-progress .modal-footer {
-    border-color: var(--bs-primary);
-}
-
-.report-accent-incident .modal-header,
-.report-accent-incident .modal-footer {
-    border-color: var(--bs-danger);
-}
-
-.report-accent-progress .schedule-modal-eyebrow {
-    color: var(--bs-primary-text-emphasis);
-}
-
+.report-accent-progress .schedule-modal-eyebrow,
 .report-accent-incident .schedule-modal-eyebrow {
-    color: var(--bs-danger-text-emphasis);
+    color: var(--report-line);
 }
 
 .report-accent-progress .report-description,
 .report-accent-incident .report-description {
     background: #fff;
+}
+
+.report-accent-progress [data-view-type] .badge:first-child,
+.report-accent-incident [data-view-type] .badge:first-child {
+    padding: 0;
+    background: transparent !important;
+    color: var(--report-line);
+    font-size: .875rem;
+}
+
+.report-accent-progress .schedule-section-heading,
+.report-accent-incident .schedule-section-heading {
+    background: transparent;
+    color: var(--report-line);
 }

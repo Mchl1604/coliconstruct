@@ -62,7 +62,8 @@
         // An overdue project satisfies it: overdue is derived, and a late
         // project is stored as Ongoing. Closing it off is exactly what the
         // banner below asks for.
-        $canComplete = $project->isCompletableBy(auth()->user());
+        $canComplete = auth()->user()->can('offersCompletion', $project);
+        $completeTarget = $completionBlockers === [] ? '#editProjectDescriptionModal' : '#completeBlockedModal';
 
         // Readable before setup, changeable after it - see EnsureProjectIsSetUp.
         $awaitingSetup = $project->awaitingInitialSetup();
@@ -137,7 +138,7 @@
 
                 @if ($canComplete && ! $project->isOverdue())
                     <button type="button" class="btn btn-success project-header-action" data-bs-toggle="modal"
-                        data-bs-target="#completeProjectModal" aria-label="Complete Project" title="{{ $awaitingSetup ? $setupFirst : 'Complete Project' }}" @disabled($awaitingSetup)>
+                        data-bs-target="{{ $completeTarget }}" data-project-complete aria-label="Complete Project" title="{{ $awaitingSetup ? $setupFirst : 'Complete Project' }}" @disabled($awaitingSetup)>
                         <i class="bi bi-check-circle" aria-hidden="true"></i>
                     </button>
                 @endif
@@ -278,112 +279,7 @@
              banner is drawn only when the project is overdue, and the header
              button only when it is not. --}}
         @if ($canComplete)
-            {{-- Same fields as the Projects page completion modal, so both
-                 routes into completion collect identical information. --}}
-            <div class="modal fade" id="completeProjectModal" tabindex="-1"
-                aria-labelledby="completeProjectModalLabel" aria-hidden="true">
-                <div class="modal-dialog modal-lg">
-                    <div class="modal-content">
-                        <form method="POST"
-                            action="{{ route('super-admin.projects.complete', $project->project_id) }}"
-                            enctype="multipart/form-data">
-                            @csrf
-
-                            <div class="modal-header bg-success text-white">
-                                <h5 class="modal-title" id="completeProjectModalLabel">
-                                    <i class="bi bi-check-circle me-2"></i>
-                                    Complete Project &mdash; {{ $project->reference_no }}
-                                </h5>
-                                <button type="button" class="btn-close btn-close-white"
-                                    data-bs-dismiss="modal"></button>
-                            </div>
-
-                            <div class="modal-body">
-                                <p class="mb-3">
-                                    Mark <strong>{{ $project->reference_no }}</strong> as completed?
-                                </p>
-
-                                {{-- Said before the project starts waiting rather than
-                                     after, because afterwards it is a week too late to
-                                     be useful. Not a blocker and deliberately not
-                                     styled as one: completion is never refused for want
-                                     of a registered client. --}}
-                                @if ($confirmabilityState === \App\Services\CompletionConfirmability::UNREACHABLE)
-                                    <div class="alert alert-warning d-flex gap-2" role="status">
-                                        <i class="bi bi-person-slash fs-5 lh-1" aria-hidden="true"></i>
-                                        <div>
-                                            <p class="fw-semibold mb-1">
-                                                No client account can currently confirm this project.
-                                            </p>
-                                            <p class="mb-0 small">
-                                                Auto-completes after {{ \App\Models\Project::completionConfirmationDays() }} days.
-                                            </p>
-                                        </div>
-                                    </div>
-                                @endif
-
-                                {{-- What the completion rules object to. A lead technician is
-                                     refused outright; an administrator may go ahead, but the
-                                     reason is written onto the project and into the activity
-                                     log, so the decision is never a silent one. --}}
-                                @if (! empty($completionBlockers))
-                                    <div class="alert alert-warning" role="alert">
-                                        <p class="fw-semibold mb-2">
-                                            <i class="bi bi-exclamation-triangle me-1"></i>
-                                            This project is not ready to be completed
-                                        </p>
-                                        <ul class="mb-2 ps-3">
-                                            @foreach ($completionBlockers as $blocker)
-                                                <li>{{ $blocker }}</li>
-                                            @endforeach
-                                        </ul>
-                                        <label class="form-label fw-semibold mb-1" for="completionOverrideReason">
-                                            Reason for completing it anyway
-                                        </label>
-                                        <textarea class="form-control" id="completionOverrideReason"
-                                            name="completion_override_reason" rows="2" minlength="10" maxlength="500"
-                                            required
-                                            placeholder="Why complete it now?"></textarea>
-                                    </div>
-                                @endif
-
-                                <div class="mb-3">
-                                    <label class="form-label fw-semibold">Completion Date</label>
-                                    <input type="text" class="form-control" value="{{ \App\Support\BusinessTime::today()->format(\App\Support\BusinessTime::DATE) }} (today)" readonly>
-                                    <div class="form-text">A project is always completed as of today.</div>
-                                </div>
-
-                                <div class="mb-3">
-                                    <label class="form-label fw-semibold">Completion Summary</label>
-                                    <textarea class="form-control" name="completion_summary" rows="3"
-                                        placeholder="Summarize the work that was completed..." required></textarea>
-                                </div>
-
-                                <div class="mb-3">
-                                    <label class="form-label fw-semibold">Completion Remarks</label>
-                                    <textarea class="form-control" name="completion_remarks" rows="2"
-                                        placeholder="Any additional remarks (optional)"></textarea>
-                                </div>
-
-                                <div class="mb-1">
-                                    <label class="form-label fw-semibold">Upload Completion Photos</label>
-                                    <input type="file" class="form-control" name="completion_photos[]"
-                                        accept=".jpg,.jpeg,.png" multiple>
-                                    <div class="form-text">JPG or PNG. Multiple allowed.</div>
-                                </div>
-                            </div>
-
-                            <div class="modal-footer">
-                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                                <button type="submit" class="btn btn-success">
-                                    <i class="bi bi-check-lg me-1"></i>
-                                    Confirm Completion
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            </div>
+            <x-project-complete-blocked :blockers="$completionBlockers" />
         @endif
 
         {{-- Paused. Everything below stays readable - the history is the point
@@ -844,7 +740,7 @@
 
                             @if ($canComplete)
                                 <button type="button" class="btn btn-sm btn-success" data-bs-toggle="modal"
-                                    data-bs-target="#completeProjectModal" @disabled($awaitingSetup)>
+                                    data-bs-target="{{ $completeTarget }}" data-project-complete @disabled($awaitingSetup)>
                                     <i class="bi bi-check-circle me-1" aria-hidden="true"></i>
                                     Mark as Complete
                                 </button>
@@ -1300,7 +1196,9 @@
                 </div>
                 {{-- Each type's detail form, folded, then the Notes. --}}
                 <x-project-description :project="$project"
-                    :edit-target="$isReadOnly ? null : 'editProjectDescriptionModal'" />
+                    :edit-target="auth()->user()->can('updateServiceReport', $project) ? 'editProjectDescriptionModal' : null" />
+
+                <x-project-completion-photos :project="$project" />
 
             </div>
         </div>
@@ -1667,7 +1565,7 @@
                             </form>
 
                             <div class="d-flex flex-wrap gap-2">
-                                @if (auth()->user()->canReach(\App\Support\RoleAccess::SCHEDULING))
+                                @if (\App\Support\RoleAccess::can(auth()->user(), \App\Support\RoleAccess::OVERALL_PROGRESS))
                                     <a href="{{ route('reports.project-progress', $project->project_id) }}" class="btn btn-outline-primary">
                                         <i class="bi bi-graph-up me-1" aria-hidden="true"></i>
                                         Overall Progress
@@ -1699,8 +1597,7 @@
                                  Activity Logs entry recording that it was
                                  archived. --}}
                             <div data-report-card="{{ $report->id }}"
-                                class="card mb-3
-    {{ $report->report_type == 'progress' ? 'border-primary bg-primary-subtle' : 'border-danger bg-danger-subtle' }}">
+                                class="card mb-3 report-summary-card {{ $report->report_type == 'progress' ? '' : 'is-incident' }}">
 
                                 <div class="card-header d-flex justify-content-between">
 
@@ -1713,7 +1610,7 @@
                                              log, the technician portal and the
                                              client's own page all called the
                                              same thing a "Progress Report". --}}
-                                        <span class="badge {{ $report->typeBadgeClass() }}">
+                                        <span class="report-summary-type">
                                             {{ $report->typeLabel() }}
                                         </span>
                                         <x-report-review-status :report="$report" />
@@ -3144,9 +3041,11 @@
     {{-- Asks before replacing a lead technician, and before removing a
          document. Both were browser confirm() dialogs, which could not say who
          comes off the project or why the server refused. --}}
-    @unless ($isReadOnly)
-        <x-project-details-modal :project="$project" />
-    @endunless
+    @can('updateServiceReport', $project)
+        <x-project-details-modal :project="$project"
+            :complete-url="$canComplete ? route('super-admin.projects.complete', $project->project_id) : null"
+            :client-cannot-confirm="$confirmabilityState === \App\Services\CompletionConfirmability::UNREACHABLE" />
+    @endcan
     <x-confirm-dialog />
 
     @if ($quotationHistoryCount > 0)
@@ -3205,6 +3104,7 @@
         <script src="/js/accountPicker.js"></script>
         {{-- The Change Client dialog's two modes. --}}
         <script src="/js/super-admin/changeClient.js"></script>
+        <script src="/js/projectTabLink.js"></script>
         <script src="/js/super-admin/projectDetails.js"></script>
         <script src="/js/super-admin/projectHistory.js"></script>
         {{-- The Materials tab: its history table and its three dialogs. --}}

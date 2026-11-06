@@ -29,10 +29,16 @@ document.addEventListener("DOMContentLoaded", function () {
         const search = root.querySelector("[data-quotation-material-search]");
         const lines = JSON.parse(root.dataset.rows || "[]");
 
-        // Every job has labor, so a new quotation starts with the line for it.
-        // It can be removed if this job has none.
-        if (!lines.length) {
-            lines.push({ kind: "labor", description: "Labor cost", unit: "lot", quantity: "1", unit_price: "", material: null });
+        function laborCount() {
+            return lines.filter(function (line) {
+                return line.kind === "labor";
+            }).length;
+        }
+
+        // Every quotation has its labor line: it is there from the start and
+        // stays. It has no unit.
+        if (!laborCount()) {
+            lines.unshift({ kind: "labor", description: "Labor cost", unit: "", quantity: "1", unit_price: "", material: null });
         }
 
         function total() {
@@ -142,7 +148,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
                 if (line.material) {
                     unitCell.textContent = line.material.unit;
-                } else {
+                } else if (line.kind !== "labor") {
                     const unit = input("text", base + "[unit]", line.unit, {
                         className: "form-control form-control-sm",
                         maxLength: 20,
@@ -183,7 +189,10 @@ document.addEventListener("DOMContentLoaded", function () {
                 remove.title = "Remove";
                 remove.innerHTML = '<i class="bi bi-x-lg" aria-hidden="true"></i>';
                 remove.dataset.quotationRemove = String(index);
-                removeCell.appendChild(remove);
+
+                if (line.kind !== "labor" || laborCount() > 1) {
+                    removeCell.appendChild(remove);
+                }
 
                 row.append(nameCell, qtyCell, unitCell, priceCell, amountCell, removeCell);
                 rowsBody.appendChild(row);

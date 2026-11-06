@@ -5,6 +5,7 @@
 
     Expects $snapshot (ProgressReportBuilder::gather(), plus remarks once
     filed) and $viewablePhotoIds (ProgressReportBuilder::viewablePhotoIds()).
+    $hideNotes leaves the remarks to a section of their own.
 --}}
 @php
     $section = fn (string $title) => '<h6 class="report-doc-heading">'.e($title).'</h6>';
@@ -121,7 +122,7 @@
 
     {{-- Issues and the plan for tomorrow are no longer asked; only reports filed before then have them. --}}
     @foreach (['remarks' => 'Additional Remarks', 'issues' => 'Issues / Delays', 'next_plan' => 'Plan for Tomorrow'] as $key => $label)
-        @if (filled($snapshot[$key] ?? null))
+        @if (! ($hideNotes ?? false) && filled($snapshot[$key] ?? null))
             {!! $section($label) !!}
             <p class="small mb-3" style="white-space: pre-line">{{ $snapshot[$key] }}</p>
         @endif

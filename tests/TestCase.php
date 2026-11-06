@@ -5,6 +5,7 @@ namespace Tests;
 use App\Models\Client;
 use App\Models\Project;
 use App\Models\ProjectPhase;
+use App\Models\Task;
 use App\Models\User;
 use App\Services\ClientProjects;
 use App\Services\SystemContentService;
@@ -138,6 +139,41 @@ abstract class TestCase extends BaseTestCase
      * at all - simply does not call this. ProjectCompletionRulesTest is built
      * that way throughout.
      */
+    /**
+     * A project with nothing standing in the way of Complete Project: its
+     * phases set up and closed, and its tasks done.
+     */
+    protected function makeCompletable(Project $project): void
+    {
+        if (! $project->phases()->exists()) {
+            $this->finalizePhases($project);
+        }
+
+        $this->completePhases($project);
+
+        $project->tasks()->whereIn('status', Task::OPEN_STATUSES)->update(['status' => 'completed']);
+
+        if (! $project->tasks()->exists()) {
+            Task::create([
+                'project_id' => $project->project_id,
+                'phase_id' => $this->defaultPhaseId($project),
+                'task_title' => 'Finished work',
+                'task_description' => 'Done',
+                'status' => 'completed',
+            ]);
+        }
+
+        $project->unsetRelation('tasks');
+    }
+
+    /**
+     * The photo a lead has to add on Project Details before completing.
+     */
+    protected function addCompletionPhoto(Project $project): void
+    {
+        $project->completionPhotos()->create(['photo_path' => 'completion_photos/test.jpg', 'uploaded_at' => now()]);
+    }
+
     protected function completePhases(Project $project): void
     {
         $project->phases()->whereNull('completed_at')->update([

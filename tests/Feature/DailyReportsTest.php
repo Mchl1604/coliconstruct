@@ -371,9 +371,11 @@ class DailyReportsTest extends TestCase
             ->assertSee($own->url(), false)
             ->assertDontSee($colleagues->url(), false);
 
-        $this->actingAs($this->account('admin', 'hr@example.test'))->get($url)
+        $this->actingAs($this->account('admin_officer', 'officer@example.test'))->get($url)
             ->assertOk()
             ->assertSee($colleagues->url(), false);
+
+        $this->assertNotSame(200, $this->actingAs($this->account('admin', 'hr@example.test'))->get($url)->getStatusCode());
 
         $outsider = $this->account('technician', 'outsider@example.test');
         Technician::create(['account_id' => $outsider->id, 'role' => 'technician']);
@@ -391,10 +393,16 @@ class DailyReportsTest extends TestCase
             ->assertOk()
             ->assertSee($url, false);
 
-        $this->actingAs($this->account('admin', 'hr@example.test'))
+        $this->actingAs($this->account('admin_officer', 'officer@example.test'))
             ->get(route('super-admin.projects.show', $this->project->project_id))
             ->assertOk()
             ->assertSee($url, false);
+
+        $this->actingAs($this->account('admin', 'hr@example.test'))
+            ->get(route('super-admin.projects.show', $this->project->project_id))
+            ->assertOk()
+            ->assertDontSee($url, false)
+            ->assertDontSee('Overall Progress');
     }
 
     public function test_opened_from_a_project_it_asks_for_no_project_and_returns_there(): void

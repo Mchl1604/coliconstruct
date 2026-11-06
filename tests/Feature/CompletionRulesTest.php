@@ -4,16 +4,21 @@ namespace Tests\Feature;
 
 use App\Models\Client;
 use App\Models\Project;
+use App\Models\ProjectDetail;
 use App\Models\ProjectTechnician;
+use App\Models\ProjectType;
 use App\Models\Schedule;
 use App\Models\Task;
 use App\Models\Technician;
 use App\Models\User;
 use App\Policies\ProjectPolicy;
+use App\Support\DetailFieldScope;
+use App\Support\ServiceReportForms;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Concerns\ProjectsAreAlreadySetUp;
 use Tests\TestCase;
 
@@ -556,108 +561,179 @@ class CompletionRulesTest extends TestCase
     }
 
     // ==================================================================
-    // The office is not held to the phase rules
+    // Nobody goes past the rules
     // ==================================================================
 
-    public function test_an_admin_may_complete_a_project_with_no_phases(): void
+    public function test_an_hr_admin_cannot_complete_a_finished_project(): void
     {
-        Storage::fake('uploads');
-
-        $this->closedTask();
-        $this->actingAs($this->employee('admin', 'admin@example.test'));
-
-        $this->post(
-            route('super-admin.projects.complete', $this->project->project_id),
-            $this->completionPayload(photos: false)
-        )->assertRedirect();
-
-        $this->assertSame(
-            Project::STATUS_AWAITING_CLIENT_CONFIRMATION,
-            $this->project->refresh()->status
-        );
-        // Not an override: there was nothing for them to override.
-        $this->assertNull($this->project->completion_override_reason);
-    }
-
-    public function test_an_admin_may_complete_a_project_with_phases_outstanding(): void
-    {
-        Storage::fake('uploads');
-
-        $this->finalizePhases($this->project, 3);
-        $this->closedTask();
-
-        $this->actingAs($this->employee('admin', 'admin@example.test'));
-
-        $this->post(
-            route('super-admin.projects.complete', $this->project->project_id),
-            $this->completionPayload(photos: false)
-        )->assertRedirect();
-
-        $this->assertSame(
-            Project::STATUS_AWAITING_CLIENT_CONFIRMATION,
-            $this->project->refresh()->status
-        );
-        $this->assertNull($this->project->completion_override_reason);
-    }
-
-    public function test_a_super_admin_may_complete_a_project_with_no_phases(): void
-    {
-        Storage::fake('uploads');
-
-        $this->closedTask();
-        $this->actingAs($this->employee('super_admin', 'boss@example.test'));
-
-        $this->post(
-            route('super-admin.projects.complete', $this->project->project_id),
-            $this->completionPayload(photos: false)
-        )->assertRedirect();
-
-        $this->assertSame(
-            Project::STATUS_AWAITING_CLIENT_CONFIRMATION,
-            $this->project->refresh()->status
-        );
-    }
-
-    public function test_a_super_admin_may_complete_a_project_with_phases_outstanding(): void
-    {
-        Storage::fake('uploads');
-
         $this->finalizePhases($this->project, 2);
         $this->closedTask();
+        $this->completePhases($this->project);
 
-        $this->actingAs($this->employee('super_admin', 'boss@example.test'));
+        $this->actingAs($this->employee('admin', 'admin@example.test'));
 
         $this->post(
             route('super-admin.projects.complete', $this->project->project_id),
             $this->completionPayload(photos: false)
         )->assertRedirect();
 
-        $this->assertSame(
-            Project::STATUS_AWAITING_CLIENT_CONFIRMATION,
-            $this->project->refresh()->status
-        );
+        $this->assertSame('ongoing', $this->project->refresh()->status);
     }
 
     /**
-     * Stated against the policy as well as through the routes, because this is
-     * where the two roles part company and it should be readable in one place.
+     * @return array<string, array{0: string}>
      */
-    public function test_the_phase_refusals_are_the_crews_alone(): void
+    public static function officeCompleters(): array
+    {
+        return ['admin officer' => ['admin_officer'], 'super admin' => ['super_admin']];
+    }
+
+    #[DataProvider('officeCompleters')]
+    public function test_the_office_cannot_complete_a_project_with_no_phases(string $role): void
+    {
+        $this->closedTask();
+        $this->actingAs($this->employee($role, 'office@example.test'));
+
+        $this->post(
+            route('super-admin.projects.complete', $this->project->project_id),
+            $this->completionPayload(photos: false) + ['completion_override_reason' => 'Going ahead for the test.']
+        )->assertSessionHas('error');
+
+        $this->assertSame('ongoing', $this->project->refresh()->status);
+    }
+
+    #[DataProvider('officeCompleters')]
+    public function test_the_office_cannot_complete_a_project_with_phases_outstanding(string $role): void
+    {
+        $this->finalizePhases($this->project, 3);
+        $this->closedTask();
+        $this->actingAs($this->employee($role, 'office@example.test'));
+
+        $this->post(
+            route('super-admin.projects.complete', $this->project->project_id),
+            $this->completionPayload(photos: false)
+        )->assertSessionHas('error');
+
+        $this->assertSame('ongoing', $this->project->refresh()->status);
+    }
+
+    #[DataProvider('officeCompleters')]
+    public function test_the_office_completes_a_finished_project_without_a_photo(string $role): void
     {
         $this->finalizePhases($this->project, 2);
         $this->closedTask();
+        $this->completePhases($this->project);
+        $this->project->completionPhotos()->delete();
+
+        $this->actingAs($this->employee($role, 'office@example.test'));
+
+        $this->post(
+            route('super-admin.projects.complete', $this->project->project_id),
+            $this->completionPayload(photos: false)
+        )->assertRedirect(route('super-admin.projects'));
+
+        $project = $this->project->refresh();
+
+        $this->assertSame(Project::STATUS_AWAITING_CLIENT_CONFIRMATION, $project->status);
+        $this->assertSame('Ramon Cruz', $project->report_performed_by);
+        $this->assertSame('Maria Santos', $project->report_witnessed_by);
+        // The bottom Remarks are what the client is sent.
+        $this->assertSame('Everything on site is finished.', $project->completion_summary);
+    }
+
+    public function test_the_sign_off_is_required_and_reopens_the_form(): void
+    {
+        $this->finalizePhases($this->project, 2);
+        $this->closedTask();
+        $this->completePhases($this->project);
+
+        $this->actingAs($this->employee('super_admin', 'boss@example.test'));
+
+        $page = route('super-admin.projects.show', $this->project->project_id);
+
+        $this->from($page)->post(route('super-admin.projects.complete', $this->project->project_id), [
+            'completing' => '1',
+            'report_performed_by' => '',
+            'report_witnessed_by' => '',
+            'report_remarks' => '',
+        ])->assertRedirect($page)->assertSessionHasErrorsIn('details', [
+            'report_performed_by' => 'Enter Performed By.',
+            'report_witnessed_by' => 'Enter Witnessed and Accepted By.',
+            'report_remarks' => 'Enter Remarks.',
+        ]);
+
+        $this->assertSame('ongoing', $this->project->refresh()->status);
+
+        $this->followingRedirects()
+            ->from($page)
+            ->post(route('super-admin.projects.complete', $this->project->project_id), ['completing' => '1'])
+            ->assertSee('data-completing="1"', false)
+            ->assertSee('Enter Performed By.');
+    }
+
+    public function test_an_incomplete_checklist_blocks_everyone_until_it_is_ticked(): void
+    {
+        $type = ProjectType::query()->firstOrCreate(['type_name' => ServiceReportForms::CLEANING_TYPE]);
+        $this->project->projectTypes()->syncWithoutDetaching([$type->type_id]);
+
+        $detail = ProjectDetail::query()->forceCreate([
+            'project_id' => $this->project->project_id,
+            'type_id' => $type->type_id,
+            'scope' => DetailFieldScope::Unit,
+            'sort_order' => 0,
+            'values' => ['brand' => 'LG'],
+            'labels' => [],
+            'checklist' => ['indoor_filters'],
+        ]);
+
+        $this->finalizePhases($this->project, 2);
+        $this->closedTask();
+        $this->completePhases($this->project);
 
         $policy = app(ProjectPolicy::class);
-        $admin = $this->employee('admin', 'admin@example.test');
-        $superAdmin = $this->employee('super_admin', 'boss@example.test');
+        $project = $this->project->fresh();
 
-        $this->assertNotSame([], $policy->blockersFor($this->project, $this->leadAccount));
-        $this->assertNotSame([], $policy->blockersFor($this->project, $this->mate->account));
-        // No viewer is the stricter reading, which is the crew's.
-        $this->assertNotSame([], $policy->blockersFor($this->project));
+        foreach ([$this->leadAccount, $this->employee('super_admin', 'boss@example.test')] as $user) {
+            $this->assertContains('1 unit has an incomplete checklist.', $policy->blockersFor($project, $user));
+        }
 
-        $this->assertSame([], $policy->blockersFor($this->project, $admin));
-        $this->assertSame([], $policy->blockersFor($this->project, $superAdmin));
+        $detail->forceFill(['checklist' => array_keys(ServiceReportForms::checklistItems())])->save();
+
+        $this->assertNotContains('1 unit has an incomplete checklist.', $policy->blockersFor($project->fresh(), $this->leadAccount));
+    }
+
+    public function test_a_lead_adds_completion_photos_on_project_details(): void
+    {
+        Storage::fake('uploads');
+
+        $this->finalizePhases($this->project, 2);
+        $this->completePhases($this->project);
+        $this->actingAs($this->leadAccount);
+
+        $this->assertContains('Add at least one completion photo.', app(ProjectPolicy::class)->blockersFor($this->project, $this->leadAccount));
+
+        $this->get(route('technician.projects.show', $this->project))
+            ->assertOk()
+            ->assertSee('id="completion-photos"', false);
+
+        $this->post(route('technician.projects.completion-photos.store', $this->project->project_id), [
+            'completion_photos' => [UploadedFile::fake()->image('handover.jpg')],
+        ])->assertSessionHas('success');
+
+        $photo = $this->project->completionPhotos()->sole();
+
+        $this->assertNotContains('Add at least one completion photo.', app(ProjectPolicy::class)->blockersFor($this->project, $this->leadAccount));
+
+        // Not a thing a plain technician may touch.
+        $this->actingAs($this->mate->account)
+            ->delete(route('technician.projects.completion-photos.destroy', [$this->project->project_id, $photo->completion_photo_id]))
+            ->assertRedirect();
+        $this->assertSame(1, $this->project->completionPhotos()->count());
+
+        $this->actingAs($this->leadAccount)
+            ->delete(route('technician.projects.completion-photos.destroy', [$this->project->project_id, $photo->completion_photo_id]))
+            ->assertSessionHas('success');
+        $this->assertSame(0, $this->project->completionPhotos()->count());
     }
 
     // ==================================================================
@@ -745,6 +821,8 @@ class CompletionRulesTest extends TestCase
             'completed_by' => $this->mate->account->id,
         ])->save();
 
+        $this->addCompletionPhoto($this->project);
+
         return $task;
     }
 
@@ -754,8 +832,12 @@ class CompletionRulesTest extends TestCase
     private function completionPayload(bool $photos = true): array
     {
         return array_filter([
+            'completing' => '1',
             'completion_date' => CarbonImmutable::today()->toDateString(),
             'completion_summary' => 'Everything on site is finished.',
+            'report_performed_by' => 'Ramon Cruz',
+            'report_witnessed_by' => 'Maria Santos',
+            'report_remarks' => 'Everything on site is finished.',
             'completion_photos' => $photos
                 ? [UploadedFile::fake()->image('handover.jpg')]
                 : null,

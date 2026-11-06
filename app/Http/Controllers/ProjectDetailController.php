@@ -33,11 +33,15 @@ class ProjectDetailController extends Controller
     {
         $project = Project::with('projectTypes')->findOrFail($id);
 
+        $page = $request->user()->isLeadTechnician() ? 'technician.projects.show' : 'super-admin.projects.show';
+
         if ($project->isReadOnly()) {
             return redirect()
-                ->route('super-admin.projects.show', $id)
+                ->route($page, $id)
                 ->with('error', 'This project can no longer be edited.');
         }
+
+        $this->authorize('updateServiceReport', $project);
 
         $types = $project->projectTypes;
 
@@ -74,7 +78,7 @@ class ProjectDetailController extends Controller
         );
 
         return redirect()
-            ->route('super-admin.projects.show', $id)
+            ->route($page, $id)
             ->with('success', 'Description saved.');
     }
 }

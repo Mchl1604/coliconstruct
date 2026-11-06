@@ -578,7 +578,7 @@ class PartialDayScheduleTest extends TestCase
     /**
      * Today is bookable, but only for hours still ahead at the office.
      */
-    public function test_a_time_that_has_already_passed_today_is_refused(): void
+    public function test_an_hourly_booking_today_is_refused_whatever_the_time(): void
     {
         // 06:00 UTC is 2:00 PM in Manila, so the morning has gone.
         $this->travelTo(CarbonImmutable::parse('2026-08-12 06:00:00', 'UTC'));
@@ -594,16 +594,16 @@ class PartialDayScheduleTest extends TestCase
             'project_date' => '2026-08-12',
             'start_time' => '08:00',
             'end_time' => '10:00',
-        ])->assertSessionHasErrors(['start_time']);
+        ])->assertSessionHasErrors(['project_date']);
 
-        // Later the same day is still fair game.
+        // Later the same day is refused too: work starts tomorrow at the earliest.
         $this->post(route('super-admin.projects.create.store'), [
             ...$this->wizardPayload($lead, $technician),
             'scheduling_mode' => Schedule::MODE_PARTIAL_DAY,
             'project_date' => '2026-08-12',
             'start_time' => '15:00',
             'end_time' => '17:00',
-        ])->assertSessionHasNoErrors();
+        ])->assertSessionHasErrors(['project_date']);
     }
 
     public function test_the_wizard_refuses_hours_a_technician_has_already_promised(): void

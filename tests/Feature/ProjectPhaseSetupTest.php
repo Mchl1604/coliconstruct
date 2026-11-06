@@ -14,6 +14,7 @@ use App\Models\Technician;
 use App\Models\User;
 use App\Services\ClientProjects;
 use App\Services\DashboardMetrics;
+use App\Services\ProjectCompletion;
 use App\Services\ProjectPhaseProgress;
 use App\Services\ProjectPhaseRules;
 use App\Services\ProjectReopen;
@@ -1459,16 +1460,19 @@ class ProjectPhaseSetupTest extends TestCase
 
     /**
      * Close the project out the way a person does - through the endpoint, so
-     * these tests rest on the real action rather than on a direct write.
+     * these tests rest on the real service rather than on a direct write. The
+     * endpoint in front of it is covered by CompletionRulesTest.
      */
     private function completeProject(): void
     {
-        $this->actingAs($this->superAdmin)
-            ->post(route('super-admin.projects.complete', $this->project->project_id), [
-                'completion_date' => now()->toDateString(),
-                'completion_summary' => 'The work is finished and the site is clear.',
-            ])
-            ->assertSessionHasNoErrors();
+        $this->actingAs($this->superAdmin);
+
+        app(ProjectCompletion::class)->requestCompletion(
+            $this->project,
+            ['completion_summary' => 'The work is finished and the site is clear.'],
+            null,
+            $this->superAdmin
+        );
 
         $this->project = $this->project->fresh();
     }

@@ -40,7 +40,7 @@
                             <th>Project</th>
                             <th>Material</th>
                             <th>Qty</th>
-                            <th title="On hand less reserved">Available</th>
+                            <th title="Free for new projects">Available</th>
                             <th>Requested By</th>
                             <th>Status</th>
                             <th class="text-center">Actions</th>

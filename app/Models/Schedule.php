@@ -4,7 +4,6 @@ namespace App\Models;
 
 use App\Services\SystemContentService;
 use App\Support\BusinessTime;
-use App\Support\RoleAccess;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -568,17 +567,15 @@ class Schedule extends Model
     }
 
     /**
-     * The first day this account may book work for: today for a Super Admin,
-     * tomorrow for everyone else. With nobody signed in - a command, a job -
-     * there is nobody to hold to it, and today stands.
+     * The first day this account may book work for: tomorrow, for everyone.
+     * With nobody signed in - a command, a job - there is nobody to hold to it,
+     * and today stands.
      */
     public static function earliestBookable(?User $user): CarbonImmutable
     {
         $today = self::businessToday();
 
-        return $user === null || RoleAccess::can($user, RoleAccess::BOOK_TODAY)
-            ? $today
-            : $today->addDay();
+        return $user === null ? $today : $today->addDay();
     }
 
     /**

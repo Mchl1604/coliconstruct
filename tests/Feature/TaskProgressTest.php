@@ -14,6 +14,7 @@ use App\Models\TaskUpdateImage;
 use App\Models\Technician;
 use App\Models\User;
 use App\Services\TaskScheduleRules;
+use App\Support\BusinessTime;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -59,6 +60,34 @@ class TaskProgressTest extends TestCase
     // ------------------------------------------------------------------
     // New tasks start tomorrow at the earliest
     // ------------------------------------------------------------------
+
+    public function test_the_office_cannot_move_a_tasks_start_onto_today(): void
+    {
+        $task = Task::query()->create([
+            'phase_id' => $this->defaultPhaseId($this->project),
+            'project_id' => $this->project->project_id,
+            'technician_id' => $this->mate->technician_id,
+            'task_title' => 'Later work',
+            'task_description' => 'Later',
+            'start_date' => BusinessTime::today()->addDays(2)->toDateString(),
+            'due_date' => BusinessTime::today()->addDays(3)->toDateString(),
+            'status' => 'pending',
+        ]);
+
+        $owner = User::factory()->create(['email' => 'owner@example.test']);
+        $owner->forceFill(['role' => User::ROLE_SUPER_ADMIN, 'user_code' => 'EMP-9001', 'status' => User::STATUS_ACTIVE, 'must_change_password' => false])->save();
+
+        $this->actingAs($owner)->from(route('super-admin.projects.show', $this->project->project_id))
+            ->put(route('super-admin.tasks.update', $task->task_id), [
+                'task_title' => 'Later work',
+                'task_description' => 'Later',
+                'phase_id' => $task->phase_id,
+                'technician_id' => $task->technician_id,
+                'start_date' => BusinessTime::today()->toDateString(),
+                'due_date' => BusinessTime::today()->addDays(3)->toDateString(),
+            ])
+            ->assertSessionHasErrors('start_date');
+    }
 
     public function test_a_lead_cannot_raise_a_task_for_today(): void
     {
