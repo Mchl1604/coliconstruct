@@ -48,15 +48,7 @@
 
                     <div class="modal-body sr-modal-body">
                         <div class="sr-sheet qt-sheet" data-service-report-sheet>
-                            <div class="sr-letterhead">
-                                <img src="/img/coliconstructlogor.png" alt="" class="sr-logo">
-                                <div class="sr-company">
-                                    <div class="sr-company-name">COLICONSTRUCT ENGINEERING SERVICES</div>
-                                    <div class="sr-company-line">HEATING - VENTILATION - AIRCONDITIONING</div>
-                                    <div class="sr-company-small">#20 NHA Industrial Luzon Ave. Brgy. Gavino Madera G.M.A, Cavite</div>
-                                    <div class="sr-company-small">Email: coliconstructengineering@gmail.com HP: 0956-154-4599</div>
-                                </div>
-                            </div>
+                            <x-sheet-letterhead />
 
                             <div class="sr-title">QUOTATION</div>
 
@@ -100,11 +92,16 @@
                                             </tr>
                                             @foreach ($groups->get($kind) as $item)
                                                 <tr>
-                                                    <td>{{ $item->description }}</td>
-                                                    <td class="qt-number">{{ rtrim(rtrim((string) $item->quantity, '0'), '.') }}</td>
-                                                    <td>{{ $item->unit }}</td>
-                                                    <td class="qt-number">{{ number_format((float) $item->unit_price, 2) }}</td>
-                                                    <td class="qt-number">{{ number_format($item->amount(), 2) }}</td>
+                                                    @if ($item->kind === \App\Models\QuotationItem::KIND_LABOR)
+                                                        {{-- A cost, not a count: the amount alone. --}}
+                                                        <td colspan="4">{{ $item->description }}</td>
+                                                    @else
+                                                        <td>{{ $item->description }}</td>
+                                                        <td class="qt-number">{{ rtrim(rtrim((string) $item->quantity, '0'), '.') }}</td>
+                                                        <td>{{ $item->unit }}</td>
+                                                        <td class="qt-number">&#8369; {{ number_format((float) $item->unit_price, 2) }}</td>
+                                                    @endif
+                                                    <td class="qt-number">&#8369; {{ number_format($item->amount(), 2) }}</td>
                                                 </tr>
                                             @endforeach
                                         @endif

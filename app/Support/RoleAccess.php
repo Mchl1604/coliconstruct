@@ -45,6 +45,13 @@ class RoleAccess
     public const OVERALL_PROGRESS = 'overall-progress';
 
     /**
+     * Changing a project itself: editing it, its client and documents, putting
+     * it on hold or resuming it, cancelling, reopening, recording a client's
+     * confirmation. Not its team or schedule, which HR Admin keeps.
+     */
+    public const MANAGE_PROJECTS = 'manage-projects';
+
+    /**
      * @var array<string, array<int, string>>
      */
     private const AREAS = [
@@ -58,8 +65,8 @@ class RoleAccess
      * @var array<string, array<int, string>>
      */
     private const CAPABILITIES = [
-        User::ROLE_SUPER_ADMIN => [self::CREATE_PROJECTS, self::MANAGE_TASKS, self::FILE_REPORTS, self::MANAGE_PROJECT_MATERIALS, self::OVERALL_PROGRESS],
-        User::ROLE_ADMIN_OFFICER => [self::CREATE_PROJECTS, self::MANAGE_PROJECT_MATERIALS, self::OVERALL_PROGRESS],
+        User::ROLE_SUPER_ADMIN => [self::CREATE_PROJECTS, self::MANAGE_TASKS, self::FILE_REPORTS, self::MANAGE_PROJECT_MATERIALS, self::OVERALL_PROGRESS, self::MANAGE_PROJECTS],
+        User::ROLE_ADMIN_OFFICER => [self::CREATE_PROJECTS, self::MANAGE_PROJECT_MATERIALS, self::OVERALL_PROGRESS, self::MANAGE_PROJECTS],
         User::ROLE_PURCHASING_ADMIN => [self::MANAGE_PROJECT_MATERIALS],
     ];
 

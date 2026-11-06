@@ -140,8 +140,11 @@ class ProjectQuotation
                 'unit' => $row['kind'] === QuotationItem::KIND_LABOR
                     ? null
                     : ($material?->unit->value ?? (trim((string) ($row['unit'] ?? '')) ?: null)),
-                'quantity' => round((float) $row['quantity'], 2),
-                'unit_price' => round((float) $row['unit_price'], 2),
+                // Labor is one amount, kept as a quantity of one.
+                'quantity' => $row['kind'] === QuotationItem::KIND_LABOR ? 1 : round((float) $row['quantity'], 2),
+                'unit_price' => $row['kind'] === QuotationItem::KIND_LABOR
+                    ? round((float) $row['quantity'] * (float) $row['unit_price'], 2)
+                    : round((float) $row['unit_price'], 2),
                 'sort_order' => $position,
             ]);
         }

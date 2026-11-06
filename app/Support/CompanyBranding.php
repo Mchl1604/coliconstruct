@@ -24,19 +24,22 @@ class CompanyBranding
      * email footer's and a deployment may leave them blank, which is fine in
      * an inbox and not fine on a document.
      *
-     * The address is the Company Address on System Contents > Contact, so
-     * the public Contact page and every document print the same one. It is a
+     * The address, email and phone are the ones on System Contents > Contact,
+     * so the public Contact page and every document print the same ones. It is a
      * multi-line field there, folded onto one line here.
      *
      * @return array<string, string>
      */
     public static function letterhead(): array
     {
-        $address = (string) app(SystemContentService::class)->get('contact.address');
+        $contents = app(SystemContentService::class);
+        $address = (string) $contents->get('contact.address');
 
         return [
             'name' => 'Coliconstruct Engineering Services',
             'address' => trim(preg_replace('/\s*\R\s*/', ', ', trim($address))),
+            'email' => trim((string) $contents->get('contact.email')),
+            'phone' => trim((string) $contents->get('contact.phone')),
             'system' => 'Coliconstruct Project Management System',
         ];
     }

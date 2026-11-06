@@ -12,10 +12,12 @@ use App\Models\ProjectType;
 use App\Models\QuotationHistory;
 use App\Models\QuotationItem;
 use App\Models\StockMovement;
+use App\Models\SystemContent;
 use App\Models\Technician;
 use App\Models\User;
 use App\Services\ProjectMaterialPlan;
 use App\Services\ProjectQuotation;
+use App\Services\SystemContentService;
 use App\Support\MaterialUnit;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Concerns\ProjectsAreAlreadySetUp;
@@ -225,6 +227,36 @@ class QuotationFormTest extends TestCase
             ->assertDontSee('PROJECT NO:')
             ->assertDontSee('data-quotation-add="labor"', false)
             ->assertSee('data-quotation-add="other"', false);
+    }
+
+    public function test_labor_is_one_amount_and_the_sheet_uses_the_configured_contact_details(): void
+    {
+        $project = $this->project(['quotation' => 2300]);
+        app(ProjectQuotation::class)->save($project, [
+            ['kind' => 'material', 'material_id' => $this->material()->material_id, 'quantity' => 2, 'unit_price' => 150],
+            ['kind' => 'labor', 'description' => 'Labor cost', 'quantity' => 2, 'unit_price' => 1000],
+        ]);
+
+        $labor = $project->quotationItems()->where('kind', 'labor')->sole();
+        $this->assertSame(1.0, (float) $labor->quantity);
+        $this->assertSame(2000.0, (float) $labor->unit_price);
+
+        SystemContent::query()->updateOrCreate(['content_key' => 'contact.address'], ['content_value' => '1 Configured Street, Cavite']);
+        SystemContent::query()->updateOrCreate(['content_key' => 'contact.email'], ['content_value' => 'office@configured.test']);
+        app(SystemContentService::class)->flush();
+
+        $this->actingAsSuperAdmin();
+
+        $page = $this->get(route('super-admin.projects.show', $project->project_id))->assertOk();
+
+        $page->assertSee('1 Configured Street, Cavite')
+            ->assertSee('Email: office@configured.test')
+            ->assertDontSee('NHA Industrial')
+            // Every price carries the peso sign.
+            ->assertSee('&#8369; 150.00', false)
+            ->assertSee('&#8369; 300.00', false)
+            ->assertSee('<td colspan="4">Labor cost</td>', false)
+            ->assertSee('&#8369; 2,000.00', false);
     }
 
     public function test_only_those_who_create_projects_may_edit(): void

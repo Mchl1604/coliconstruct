@@ -101,7 +101,7 @@ class RegisteredUserAssignmentTest extends TestCase
      */
     public function test_project_details_has_no_linked_account_panel(): void
     {
-        $admin = $this->account('admin', 'admin@example.test');
+        $admin = $this->account('admin_officer', 'admin@example.test');
         $client = $this->account('client', 'owner@example.test', 'Owning');
         $project = $this->project('owner@example.test', $client);
 
