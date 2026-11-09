@@ -104,6 +104,9 @@ class Task extends Model
      */
     public const NOT_STARTED_REFUSAL = 'This task cannot be completed before its start date.';
 
+    /** Why the crew cannot work a task on a phase the project has not reached. */
+    public const PHASE_NOT_STARTED_REFUSAL = "This task's phase has not started yet.";
+
     protected $fillable = [
         'project_id',
         'phase_id',
@@ -621,6 +624,43 @@ class Task extends Model
     public function waitsForStartDate(?User $user): bool
     {
         return $user !== null && $user->isTechnician() && $this->startsInFuture();
+    }
+
+    /**
+     * Whether this task sits on a phase the project has not reached yet.
+     *
+     * Phases are worked in order: the current one is the earliest not
+     * finished, so any other open phase is still to come. The crew - a
+     * technician or a lead - neither completes nor posts progress on it until
+     * the phases before it are closed. The office is never held to it.
+     */
+    public function waitsForPhase(?User $user): bool
+    {
+        if ($user === null || ! $user->needsTechnicianRecord() || $this->phase_id === null) {
+            return false;
+        }
+
+        $project = $this->project;
+        $phase = $project?->phases->firstWhere('phase_id', $this->phase_id);
+
+        if ($phase === null || $phase->isCompleted()) {
+            return false;
+        }
+
+        return $project->currentPhase()?->phase_id !== $phase->phase_id;
+    }
+
+    /**
+     * Why this account must wait before closing the task, or null when
+     * nothing but time stands in the way: its phase first, then its start date.
+     */
+    public function waitingRefusal(?User $user): ?string
+    {
+        if ($this->waitsForPhase($user)) {
+            return self::PHASE_NOT_STARTED_REFUSAL;
+        }
+
+        return $this->waitsForStartDate($user) ? self::NOT_STARTED_REFUSAL : null;
     }
 
     /**

@@ -1091,8 +1091,10 @@ class TechnicianPortalController extends Controller
         // Read off the task as it stands in the database, not off whatever the
         // page was drawn from: the button may have been enabled when it was
         // rendered, or never have been drawn at all.
-        if ($task->waitsForStartDate($request->user())) {
-            return $this->failed($request, Task::NOT_STARTED_REFUSAL);
+        $waitingRefusal = $task->waitingRefusal($request->user());
+
+        if ($waitingRefusal !== null) {
+            return $this->failed($request, $waitingRefusal);
         }
 
         $this->authorize('complete', $task);
@@ -1391,7 +1393,7 @@ class TechnicianPortalController extends Controller
         $user = request()->user();
 
         return $user !== null && app(TaskPolicy::class)->blockedByStartDate($user, $task)
-            ? Task::NOT_STARTED_REFUSAL
+            ? $task->waitingRefusal($user)
             : null;
     }
 

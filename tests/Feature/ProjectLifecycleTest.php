@@ -188,7 +188,13 @@ class ProjectLifecycleTest extends TestCase
 
         $this->assertNotSame('completed', $tasks[0]->fresh()->status);
 
-        foreach ($tasks as $task) {
+        // Phases are worked in order: the second task waits for the first phase.
+        $this->assertRefused($this->actingAs($this->mate)->post(route('technician.tasks.complete', $tasks[1]->task_id), [
+            'completion_notes' => 'Done.',
+            'images' => [UploadedFile::fake()->image('done.jpg')],
+        ]));
+
+        foreach ($tasks as $index => $task) {
             $this->actingAs($this->mate)
                 ->post(route('technician.tasks.complete', $task->task_id), [
                     'completion_notes' => 'Done.',
@@ -196,6 +202,11 @@ class ProjectLifecycleTest extends TestCase
                 ])->assertStepWorked()->assertSessionHasNoErrors();
 
             $this->assertSame('completed', $task->fresh()->status);
+
+            // --- The lead closes the phase, which opens the next.
+            $this->actingAs($this->lead)
+                ->post(route('technician.projects.phases.complete', [$project->project_id, $phases[$index]->phase_id]))
+                ->assertStepWorked()->assertSessionHas('success');
         }
 
         // --- Materials: the lead may only ask.
@@ -271,12 +282,7 @@ class ProjectLifecycleTest extends TestCase
             ->assertStepWorked()->assertSessionHas('success');
         $this->assertSame(IncidentReport::STATUS_CLOSED, $incident->fresh()->status);
 
-        // --- The lead closes the phases and asks to complete.
-        foreach ($phases as $phase) {
-            $this->actingAs($this->lead)
-                ->post(route('technician.projects.phases.complete', [$project->project_id, $phase->phase_id]))
-                ->assertStepWorked()->assertSessionHas('success');
-        }
+        // --- The lead asks to complete.
 
         $this->actingAs($this->lead)
             ->post(route('technician.projects.complete', $project->project_id), [

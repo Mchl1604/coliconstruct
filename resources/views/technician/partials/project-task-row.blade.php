@@ -88,7 +88,7 @@
                      task begins. The backend refuses it
                      either way; see TaskPolicy. --}}
                 <button type="button" class="btn btn-sm btn-success" disabled
-                    title="{{ \App\Models\Task::NOT_STARTED_REFUSAL }}">
+                    title="{{ $task->waitingRefusal(auth()->user()) }}">
                     <i class="bi bi-check-lg" aria-hidden="true"></i>
                 </button>
             @endcan

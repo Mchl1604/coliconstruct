@@ -70,6 +70,10 @@ class TaskProgress
             return 'This task has not started yet.';
         }
 
+        if ($task->waitsForPhase($user)) {
+            return Task::PHASE_NOT_STARTED_REFUSAL;
+        }
+
         // Your own task, or one on a project you are leading today.
         $ownsTask = (int) $user->technicianId() === (int) $task->technician_id;
         $leadsProject = $user->isLeadTechnician() && $this->projects->worksOn($user, $project);

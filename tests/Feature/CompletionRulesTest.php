@@ -9,6 +9,7 @@ use App\Models\Project;
 use App\Models\ProjectDetail;
 use App\Models\ProjectMaterial;
 use App\Models\ProjectMaterialEntry;
+use App\Models\ProjectPhase;
 use App\Models\ProjectTechnician;
 use App\Models\ProjectType;
 use App\Models\Schedule;
@@ -383,6 +384,92 @@ class CompletionRulesTest extends TestCase
         $response->assertOk();
         $response->assertJsonPath('tasks.0.can_complete', false);
         $response->assertJsonPath('tasks.0.completion_blocked_reason', Task::NOT_STARTED_REFUSAL);
+    }
+
+    // ==================================================================
+    // A task, on a phase the project has not reached
+    // ==================================================================
+
+    public function test_the_crew_cannot_complete_a_task_on_a_later_phase(): void
+    {
+        $phases = $this->finalizePhases($this->project, 2);
+        $mateTask = $this->task($this->mate, 'Commission', startsIn: -1, phase: $phases[1]);
+        $leadTask = $this->task($this->lead, 'Inspect', startsIn: -1, phase: $phases[1]);
+
+        $this->actingAs($this->mate->account)
+            ->postJson(route('technician.tasks.complete', $mateTask), [
+                'completion_notes' => 'Done early.',
+                'images' => [UploadedFile::fake()->image('done.jpg')],
+            ])
+            ->assertStatus(422)
+            ->assertJsonPath('error', Task::PHASE_NOT_STARTED_REFUSAL);
+
+        $this->actingAs($this->leadAccount)
+            ->postJson(route('technician.tasks.complete', $leadTask), ['completion_notes' => 'Done early.'])
+            ->assertStatus(422)
+            ->assertJsonPath('error', Task::PHASE_NOT_STARTED_REFUSAL);
+
+        $this->assertSame('pending', $mateTask->refresh()->status);
+        $this->assertSame('pending', $leadTask->refresh()->status);
+    }
+
+    public function test_the_crew_cannot_post_progress_on_a_later_phase(): void
+    {
+        $phases = $this->finalizePhases($this->project, 2);
+        $task = $this->task($this->mate, 'Commission', startsIn: -1, phase: $phases[1]);
+
+        foreach ([$this->mate->account, $this->leadAccount] as $account) {
+            $this->actingAs($account)
+                ->postJson(route('technician.tasks.updates.store', $task), ['notes' => 'Started early.'])
+                ->assertStatus(422)
+                ->assertJsonPath('error', Task::PHASE_NOT_STARTED_REFUSAL);
+        }
+
+        $this->assertSame(0, $task->updates()->count());
+    }
+
+    public function test_a_task_opens_once_the_phase_before_it_is_done(): void
+    {
+        $phases = $this->finalizePhases($this->project, 2);
+        $task = $this->task($this->mate, 'Commission', startsIn: -1, phase: $phases[1]);
+        $phases[0]->forceFill(['completed_at' => now()])->save();
+
+        $this->actingAs($this->mate->account)
+            ->post(route('technician.tasks.complete', $task), [
+                'completion_notes' => 'Commissioned.',
+                'images' => [UploadedFile::fake()->image('done.jpg')],
+            ])
+            ->assertRedirect();
+
+        $this->assertSame('completed', $task->refresh()->status);
+    }
+
+    public function test_the_office_may_still_close_a_task_on_a_later_phase(): void
+    {
+        $phases = $this->finalizePhases($this->project, 2);
+        $task = $this->task($this->mate, 'Commission', startsIn: -1, phase: $phases[1]);
+
+        $this->actingAs($this->employee('super_admin', 'boss@example.test'));
+
+        $this->patch(route('super-admin.tasks.complete', $task->task_id), [
+            'images' => [UploadedFile::fake()->image('done.jpg')],
+        ])->assertRedirect();
+
+        $this->assertSame('completed', $task->refresh()->status);
+    }
+
+    public function test_the_project_page_greys_out_a_later_phase_task_with_the_reason(): void
+    {
+        $phases = $this->finalizePhases($this->project, 2);
+        $this->task($this->mate, 'Commission', startsIn: -1, phase: $phases[1]);
+
+        $this->actingAs($this->mate->account);
+
+        $this->getWithTables(route('technician.projects.show', $this->project))
+            ->assertOk()
+            ->assertSee(e(Task::PHASE_NOT_STARTED_REFUSAL), false)
+            ->assertDontSee('data-bs-target="#completeTaskModal', false)
+            ->assertDontSee('data-bs-target="#taskUpdateModal', false);
     }
 
     // ==================================================================
@@ -945,10 +1032,11 @@ class CompletionRulesTest extends TestCase
         return CarbonImmutable::today()->addDays($offset)->toDateString();
     }
 
-    private function task(Technician $technician, string $title, int $startsIn = 0): Task
+    private function task(Technician $technician, string $title, int $startsIn = 0, ?ProjectPhase $phase = null): Task
     {
         return Task::create([
             'project_id' => $this->project->project_id,
+            'phase_id' => $phase?->phase_id,
             'technician_id' => $technician->technician_id,
             'task_title' => $title,
             'task_description' => 'Do the thing',

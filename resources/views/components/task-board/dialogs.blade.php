@@ -18,7 +18,7 @@
     @if ($task->isOpen()
         && $task->status !== 'unassigned'
         && ($canManage || $isMine)
-        && ! $task->waitsForStartDate(auth()->user()))
+        && $task->waitingRefusal(auth()->user()) === null)
         <x-task-complete-modal :task="$task"
             :action="route($completeRoute, $task->task_id)" :method="$completeMethod" />
     @endif

@@ -11,8 +11,8 @@
     // technician - see TaskPolicy, which
     // refuses the request as well. A lead and
     // the office may close it early.
-    $startsLater = $canComplete
-        && $task->waitsForStartDate(auth()->user());
+    $waitingRefusal = $canComplete ? $task->waitingRefusal(auth()->user()) : null;
+    $startsLater = $waitingRefusal !== null;
     $canComplete = $canComplete && ! $startsLater;
     // What, if anything, is stopping this task
     // proceeding. One rule decides it - see
@@ -117,7 +117,7 @@
                      becomes live on its own the day the task
                      starts, with nobody to change anything. --}}
                 <button type="button" class="btn btn-sm btn-success py-1 px-2" disabled
-                    title="{{ \App\Models\Task::NOT_STARTED_REFUSAL }}">
+                    title="{{ $waitingRefusal }}">
                     <i class="bi bi-check-lg" aria-hidden="true"></i>
                 </button>
             @endif

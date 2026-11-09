@@ -80,21 +80,22 @@ class TaskPolicy
      */
     public function complete(User $user, Task $task): bool
     {
-        return $this->completableBy($user, $task) && ! $task->waitsForStartDate($user);
+        return $this->completableBy($user, $task) && $task->waitingRefusal($user) === null;
     }
 
     /**
-     * Whether the start date is the only thing standing in the way.
+     * Whether waiting - for the task's phase or its start date - is the only
+     * thing standing in the way.
      *
      * What the boards draw a disabled button from: a refusal that simply
      * removes the control leaves the technician to wonder where it went, so
-     * the button stays, greyed, carrying Task::NOT_STARTED_REFUSAL. False
+     * the button stays, greyed, carrying Task::waitingRefusal(). False
      * where the task was never this person's to close anyway, because there is
      * no button to grey out in that case.
      */
     public function blockedByStartDate(User $user, Task $task): bool
     {
-        return $task->waitsForStartDate($user) && $this->completableBy($user, $task);
+        return $task->waitingRefusal($user) !== null && $this->completableBy($user, $task);
     }
 
     /**
