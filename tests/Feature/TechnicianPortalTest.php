@@ -1278,6 +1278,36 @@ class TechnicianPortalTest extends TestCase
         }
     }
 
+    public function test_the_crew_never_sees_the_contract_file(): void
+    {
+        Storage::fake('uploads');
+        Storage::disk('uploads')->put('documents/contract.pdf', 'contract');
+
+        $this->project->client->forceFill(['client_type' => 'Commercial'])->save();
+
+        $contract = Document::query()->forceCreate([
+            'project_id' => $this->project->project_id,
+            'document_type' => 'contract',
+            'document_name' => 'Signed Contract.pdf',
+            'document_path' => 'documents/contract.pdf',
+        ]);
+
+        foreach ([$this->leadAccount, $this->mate->account] as $crew) {
+            $this->actingAs($crew);
+
+            $this->get(route('technician.projects.show', $this->project))
+                ->assertOk()
+                ->assertDontSee('Signed Contract.pdf')
+                ->assertDontSee(route('media.document', $contract->document_id), false);
+
+            $this->assertNotSame(200, $this->get(route('media.document', $contract->document_id))->getStatusCode());
+        }
+
+        $this->actingAs($this->account('super_admin', 'office@example.test'))
+            ->get(route('media.document', $contract->document_id))
+            ->assertOk();
+    }
+
     public function test_the_report_remarks_are_optional(): void
     {
         $this->project->schedules()->delete();

@@ -21,12 +21,10 @@
 
         // The types the crew may see, in the order Document::TYPES states -
         // so this page can never fall out of step with the administrative one
-        // about what a type is called or where it sits. Quotation is dropped
-        // because what a project is worth is commercial information, and
-        // Contract only exists on Commercial work.
+        // about what a type is called or where it sits. The quotation and the
+        // contract are the office's: what the job is worth and what was agreed.
         $crewDocumentTypes = collect(\App\Models\Document::TYPES)
-            ->reject(fn ($label, $type) => $type === 'quotation'
-                || ($type === 'contract' && $client?->client_type !== 'Commercial'));
+            ->except(\App\Models\Document::OFFICE_ONLY_TYPES);
 
         $clientTypeClass = match (strtolower($client?->client_type ?? '')) {
             'residential' => 'bi bi-house-door',

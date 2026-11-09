@@ -61,9 +61,9 @@ class UploadedFileController extends Controller
     {
         $this->authorizeProject($request, $document->project);
 
-        // The crew's page leaves the quotation out because it holds the prices,
-        // so asking for it by id does not hand it over either.
-        abort_if($document->document_type === 'quotation' && $request->user()->needsTechnicianRecord(), 403);
+        // The crew's page leaves the quotation and the contract out, so asking
+        // for either by id does not hand it over either.
+        abort_if(in_array($document->document_type, Document::OFFICE_ONLY_TYPES, true) && $request->user()->needsTechnicianRecord(), 403);
 
         return $this->stream($document->document_path, $document->document_name);
     }

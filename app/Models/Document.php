@@ -55,6 +55,14 @@ class Document extends Model
     ];
 
     /**
+     * The types the crew - a technician or a lead - never sees: the prices
+     * and the agreement are the office's.
+     *
+     * @var array<int, string>
+     */
+    public const OFFICE_ONLY_TYPES = ['quotation', 'contract'];
+
+    /**
      * The rules one uploaded file is held to, shared by every form that takes
      * one so none of them can drift.
      *
