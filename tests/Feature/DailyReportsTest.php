@@ -672,6 +672,26 @@ class DailyReportsTest extends TestCase
         $this->assertSame(1, ActivityLog::query()->where('action', ActivityLog::INCIDENT_REVIEWED)->count());
     }
 
+    public function test_back_still_leads_to_the_list_after_saving_the_review(): void
+    {
+        $this->actingAs($this->leadAccount)->post(route('technician.incident-reports.store'), $this->incidentPayload());
+        $incident = IncidentReport::query()->firstOrFail();
+        $documentUrl = route('reports.document', $incident->technician_report_id);
+        $listUrl = route('super-admin.reports.index');
+
+        $this->actingAsSuperAdminAccount();
+
+        $this->from($listUrl)->get($documentUrl)->assertSee('href="'.$listUrl.'"', false);
+
+        $this->from($documentUrl)
+            ->put(route('super-admin.incident-reports.status', $incident), ['status' => 'closed', 'resolution_notes' => 'Fixed.'])
+            ->assertRedirect($documentUrl);
+
+        $this->from($documentUrl)->get($documentUrl)
+            ->assertSee('href="'.$listUrl.'"', false)
+            ->assertSee('<option value="closed" selected', false);
+    }
+
     public function test_the_lead_cannot_review(): void
     {
         $this->actingAs($this->leadAccount)->post(route('technician.incident-reports.store'), $this->incidentPayload());

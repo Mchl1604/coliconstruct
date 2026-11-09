@@ -124,7 +124,7 @@ class ProgressReportController extends Controller
 
         return view('reports.document', [
             'report' => $report->load(['project.client', 'images', 'incident.persons.technician.account']),
-            'backUrl' => url()->previous(),
+            'backUrl' => $this->backUrl($request, 'reports.back.'.$report->getKey()),
             'canReview' => $user->canReach(RoleAccess::SCHEDULING) && $report->hasIncidentDetails(),
             'viewablePhotoIds' => $report->isGenerated() ? $this->builder->viewablePhotoIds($user, $report->report_data) : [],
         ]);
@@ -153,6 +153,25 @@ class ProgressReportController extends Controller
             'generatedBy' => $user->fullName(),
             'backUrl' => url()->previous(),
         ]);
+    }
+
+    /**
+     * Where Back goes: the page this one was opened from. Saving the review
+     * redirects back here, which makes this page its own "previous" - so the
+     * page it was first opened from is remembered for the session.
+     */
+    private function backUrl(Request $request, string $sessionKey): ?string
+    {
+        $previous = url()->previous();
+        $withoutQuery = fn (string $url): string => strtok($url, '?#') ?: $url;
+
+        if ($withoutQuery($previous) !== $request->url()) {
+            $request->session()->put($sessionKey, $previous);
+
+            return $previous;
+        }
+
+        return $request->session()->get($sessionKey);
     }
 
     private function canRead(User $user, ?Project $project): bool

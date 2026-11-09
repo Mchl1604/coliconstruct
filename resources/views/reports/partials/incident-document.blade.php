@@ -141,7 +141,7 @@
                     <label class="form-label small fw-semibold" for="incidentStatus">Status</label>
                     <select class="form-select" id="incidentStatus" name="status">
                         @foreach (\App\Models\IncidentReport::STATUSES as $value => $label)
-                            <option value="{{ $value }}" @selected($incident->status === $value)>{{ $label }}</option>
+                            <option value="{{ $value }}" @selected(old('status', $incident->status) === $value)>{{ $label }}</option>
                         @endforeach
                     </select>
                 </div>

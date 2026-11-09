@@ -230,6 +230,16 @@
         initSidebar();
     });
 
+    // Pressing the browser's Back can put a page back exactly as it was left,
+    // from the back/forward cache - an incident still Unresolved after it was
+    // resolved. Nothing signed-in is meant to be kept (see
+    // PreventCachingSignedInPages), so a restored page is fetched again.
+    global.addEventListener('pageshow', function (event) {
+        if (event.persisted) {
+            global.location.reload();
+        }
+    });
+
     global.adminShell = {
         showToast: showToast,
         carryToasts: carryToasts,
