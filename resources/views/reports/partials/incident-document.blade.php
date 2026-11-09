@@ -67,25 +67,6 @@
         </div>
     @endif
 
-    @if ($incident->damage_description || $incident->cause || $incident->immediate_action)
-        <div class="report-form-section is-amber">
-            <h6 class="report-form-section-title">
-                <i class="bi bi-tools" aria-hidden="true"></i>
-                Damage and Response
-            </h6>
-            <div class="row g-3">
-                {!! $field('Damage', $incident->damage_description) !!}
-                {!! $field('Cause', $incident->label('CAUSES', 'cause')) !!}
-                @if ($incident->immediate_action)
-                    <div class="col-12">
-                        <div class="small text-secondary">Immediate action</div>
-                        <p class="mb-0" style="white-space: pre-line">{{ $incident->immediate_action }}</p>
-                    </div>
-                @endif
-            </div>
-        </div>
-    @endif
-
     <div class="report-form-section is-blue">
         <h6 class="report-form-section-title">
             <i class="bi bi-people" aria-hidden="true"></i>

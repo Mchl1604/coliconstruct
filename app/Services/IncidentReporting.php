@@ -100,11 +100,8 @@ class IncidentReporting
                 'injury_body_part' => $data['incident_type'] === 'injury' ? ($data['injury_body_part'] ?? null) : null,
                 'injury_type' => $data['incident_type'] === 'injury' ? ($data['injury_type'] ?? null) : null,
                 'injury_treatment' => $data['incident_type'] === 'injury' ? ($data['injury_treatment'] ?? null) : null,
-                'damage_description' => $this->text($data['damage_description'] ?? null, 255),
                 'refrigerant_type' => $data['incident_type'] === 'refrigerant_leak' ? ($data['refrigerant_type'] ?? null) : null,
                 'refrigerant_amount' => $data['incident_type'] === 'refrigerant_leak' && filled($data['refrigerant_amount'] ?? null) ? $data['refrigerant_amount'] : null,
-                'immediate_action' => $this->text($data['immediate_action'] ?? null, 2000),
-                'cause' => $data['cause'] ?? null,
                 'other_details' => $this->otherDetails($data) ?: null,
                 'status' => IncidentReport::STATUS_OPEN,
             ]);

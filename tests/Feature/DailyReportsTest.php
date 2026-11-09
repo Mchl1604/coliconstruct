@@ -518,14 +518,14 @@ class DailyReportsTest extends TestCase
             ->get(route('technician.incident-reports.create', ['project' => $this->project->project_id, 'from' => 'project']))
             ->assertOk();
 
-        foreach (['severity', 'location_details', 'task_id', 'damage_owner', 'damage_cost', 'preventive_action', 'work_stopped', 'client_notified'] as $field) {
+        foreach (['severity', 'location_details', 'task_id', 'damage_owner', 'damage_cost', 'preventive_action', 'work_stopped', 'client_notified', 'damage_description', 'cause', 'immediate_action'] as $field) {
             $response->assertDontSee('name="'.$field.'"', false);
         }
     }
 
     public function test_other_asks_what_and_reads_back_as_what_was_typed(): void
     {
-        $base = ['incident_type' => 'other', 'location' => 'other', 'cause' => 'other'];
+        $base = ['incident_type' => 'other', 'location' => 'other'];
 
         $this->actingAs($this->leadAccount)
             ->post(route('technician.incident-reports.store'), $this->incidentPayload($base))
@@ -536,7 +536,6 @@ class DailyReportsTest extends TestCase
         $this->post(route('technician.incident-reports.store'), $this->incidentPayload($base + [
             'incident_type_other' => 'Stray dog on site',
             'location_other' => 'Client garage',
-            'cause_other' => 'Open gate',
         ]))->assertSessionHas('success');
 
         $report = TechnicianReport::query()->firstOrFail();
@@ -547,8 +546,7 @@ class DailyReportsTest extends TestCase
         $this->get($report->documentUrl())
             ->assertOk()
             ->assertSee('Stray dog on site')
-            ->assertSee('Client garage')
-            ->assertSee('Open gate');
+            ->assertSee('Client garage');
 
         // An injury's Other is not asked for on another kind of incident.
         $this->post(route('technician.incident-reports.store'), $this->incidentPayload([
@@ -808,8 +806,6 @@ class DailyReportsTest extends TestCase
             'injury_body_part' => 'arm',
             'injury_type' => 'sprain',
             'injury_treatment' => 'lost_time',
-            'immediate_action' => 'First aid on site.',
-            'cause' => 'unsafe_condition',
         ], $overrides);
     }
 

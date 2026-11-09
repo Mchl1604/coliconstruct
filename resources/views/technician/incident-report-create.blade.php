@@ -143,26 +143,6 @@
                 </div>
             </div>
 
-            <div class="report-form-section is-amber">
-                <h6 class="report-form-section-title">
-                    <i class="bi bi-tools" aria-hidden="true"></i>
-                    Damage and Response
-                </h6>
-                <div class="row g-3">
-                    <div class="col-md-6">
-                        <label class="form-label fw-semibold" for="incident_damage_description">What was damaged</label>
-                        <input type="text" class="form-control" id="incident_damage_description" name="damage_description"
-                            maxlength="255" placeholder="Optional" value="{{ old('damage_description') }}">
-                    </div>
-                    <div class="col-md-6">{!! $select('cause', 'Cause', IncidentReport::CAUSES, false, 'Not known') !!}</div>
-                    <div class="col-12">
-                        <label class="form-label fw-semibold" for="incident_immediate_action">Immediate action</label>
-                        <textarea class="form-control" id="incident_immediate_action" name="immediate_action" rows="2"
-                            maxlength="2000">{{ old('immediate_action') }}</textarea>
-                    </div>
-                </div>
-            </div>
-
             {{-- The people: a team member picked from the team, or anyone else
                  by name. Rows added by incidentForm.js. --}}
             <div class="report-form-section is-blue">

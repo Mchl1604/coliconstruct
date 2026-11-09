@@ -55,7 +55,6 @@ class IncidentReport extends Model
         'injury_body_part' => 'injury',
         'injury_type' => 'injury',
         'refrigerant_type' => 'refrigerant_leak',
-        'cause' => null,
     ];
 
     /**
