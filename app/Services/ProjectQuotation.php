@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Material;
 use App\Models\Project;
 use App\Models\QuotationItem;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Validation\Rule;
 
@@ -56,6 +57,7 @@ class ProjectQuotation
             'quotation_discount_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'quotation_special_discount' => ['nullable', 'numeric', 'min:0', 'max:9999999999'],
             ...collect(self::TERM_FIELDS)->map(fn (int $max): array => ['nullable', 'string', 'max:'.$max])->all(),
+            'quoted_at' => ['nullable', 'date_format:Y-m-d'],
         ];
     }
 
@@ -85,6 +87,7 @@ class ProjectQuotation
             'quotation_payment_terms.max' => 'Terms of payment are too long.',
             'quotation_prepared_by.max' => 'The Prepared By name is too long.',
             'quotation_approved_by.max' => 'The Approved By name is too long.',
+            'quoted_at.date_format' => 'Choose a valid quotation date.',
         ];
     }
 
@@ -209,10 +212,10 @@ class ProjectQuotation
 
     /**
      * Replace the project's lines, discounts and terms with what was
-     * submitted, and date the quotation today.
+     * submitted, dated as chosen - today when no date was given.
      *
      * @param  array<int, array<string, mixed>>  $rows
-     * @param  array<string, mixed>  $terms  the submitted TERM_FIELDS
+     * @param  array<string, mixed>  $terms  the submitted TERM_FIELDS and quoted_at
      */
     public function save(Project $project, array $rows, mixed $discountPercent = 0, mixed $specialDiscount = 0, array $terms = []): void
     {
@@ -223,7 +226,7 @@ class ProjectQuotation
             'quotation_discount_percent' => $breakdown['discount_percent'],
             'quotation_special_discount' => $breakdown['special_discount'],
             ...$this->terms($terms),
-            'quoted_at' => now(),
+            'quoted_at' => filled($terms['quoted_at'] ?? null) ? Carbon::createFromFormat('Y-m-d', $terms['quoted_at'])->startOfDay() : now(),
         ])->save();
 
         $project->quotationItems()->delete();

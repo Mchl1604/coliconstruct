@@ -398,7 +398,8 @@
                         :material-url="route('super-admin.projects.material-options')"
                         :discount-percent="old('quotation_discount_percent', '')"
                         :special-discount="old('quotation_special_discount', '')"
-                        :terms="collect(\App\Services\ProjectQuotation::TERM_FIELDS)->map(fn ($max, $field) => old($field, $field === 'quotation_prepared_by' ? auth()->user()?->fullName() : ''))->all()" />
+                        :terms="collect(\App\Services\ProjectQuotation::TERM_FIELDS)->map(fn ($max, $field) => old($field, $field === 'quotation_prepared_by' ? auth()->user()?->fullName() : ''))->all()"
+                        :quoted-at="old('quoted_at', now()->format('Y-m-d'))" />
 
                     {{-- Read by the review step. The total is never typed. --}}
                     <input type="hidden" data-summary-input="quotation_amount" data-quotation-review-total>

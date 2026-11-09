@@ -236,7 +236,8 @@
                                 :rows="$reopen ? $quotation->editorRows((array) old('quotation_items', [])) : $quotation->savedRows($project)"
                                 :discount-percent="$reopen ? old('quotation_discount_percent') : ((float) $project->quotation_discount_percent ?: '')"
                                 :special-discount="$reopen ? old('quotation_special_discount') : ((float) $project->quotation_special_discount ?: '')"
-                                :terms="collect(\App\Services\ProjectQuotation::TERM_FIELDS)->map(fn ($max, $field) => $reopen ? old($field) : $project->{$field})->all()" />
+                                :terms="collect(\App\Services\ProjectQuotation::TERM_FIELDS)->map(fn ($max, $field) => $reopen ? old($field) : $project->{$field})->all()"
+                                :quoted-at="$reopen ? old('quoted_at') : ($quotedOn ?? now())->format('Y-m-d')" />
                         </div>
 
                         <div class="modal-footer">

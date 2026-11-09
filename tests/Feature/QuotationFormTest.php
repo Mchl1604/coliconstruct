@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Http\Controllers\ProjectQuotationController;
 use App\Models\Client;
 use App\Models\Material;
 use App\Models\MaterialType;
@@ -329,6 +330,33 @@ class QuotationFormTest extends TestCase
         $this->get(route('super-admin.projects.show', $project->project_id))
             ->assertSee('09 Mar 2026')
             ->assertDontSee('02 Mar 2026');
+    }
+
+    public function test_the_date_can_be_chosen_on_the_edit_form(): void
+    {
+        $material = $this->material();
+        $project = $this->project();
+
+        $this->travelTo(now()->setDate(2026, 3, 2)->setTime(10, 0));
+        app(ProjectQuotation::class)->save($project, $this->lines($material));
+
+        $this->actingAsSuperAdmin();
+
+        $this->get(route('super-admin.projects.show', $project->project_id))
+            ->assertSee('name="quoted_at" class="form-control" value="2026-03-02"', false);
+
+        $url = route('super-admin.projects.quotation.update', $project->project_id);
+
+        $this->put($url, ['quotation_items' => $this->lines($material), 'quoted_at' => 'not a date'])
+            ->assertSessionHasErrorsIn(ProjectQuotationController::ERROR_BAG, 'quoted_at');
+
+        $this->put($url, ['quotation_items' => $this->lines($material), 'quoted_at' => '2026-02-20'])
+            ->assertSessionHas('success');
+
+        $this->assertSame('2026-02-20', $project->fresh()->quoted_at->format('Y-m-d'));
+
+        $this->get(route('super-admin.projects.show', $project->project_id))
+            ->assertSee('20 Feb 2026');
     }
 
     public function test_an_old_project_offers_a_breakdown_only_to_those_who_can_add_one(): void

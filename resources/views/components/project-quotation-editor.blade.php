@@ -6,6 +6,7 @@
     $materialUrl: where the material search looks.
     $discountPercent, $specialDiscount: the discounts, blank for none.
     $terms: the printed terms and signatories, by ProjectQuotation::TERM_FIELDS.
+    $quotedAt: the date printed on the sheet, Y-m-d.
 --}}
 @props([
     'rows' => [],
@@ -13,6 +14,7 @@
     'discountPercent' => '',
     'specialDiscount' => '',
     'terms' => [],
+    'quotedAt' => '',
 ])
 
 @php
@@ -94,6 +96,12 @@
     <p class="text-secondary small mb-0" data-quotation-empty>No lines yet.</p>
 
     <div class="row g-3 mt-1">
+        <div class="col-md-6">
+            <label for="{{ $fieldId }}quotedAt" class="form-label">Quotation Date</label>
+            <input type="date" id="{{ $fieldId }}quotedAt" name="quoted_at" class="form-control" value="{{ $quotedAt }}">
+        </div>
+        <div class="col-md-6"></div>
+
         @foreach ([
             'quotation_notes' => 'Notes',
             'quotation_inclusions' => 'Inclusions',
