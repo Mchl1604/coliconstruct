@@ -8,11 +8,13 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * A lead asking for material for a project they run.
+ * A lead asking for material for a project they run - or asking to send some
+ * back.
  *
- * Nothing moves until it is approved: approving adds it to the project and
- * takes it off the shelf through ProjectMaterialLedger, in the same transaction.
- * See MaterialRequests.
+ * Nothing moves until it is approved: approving a supply request adds it to
+ * the project and takes it off the shelf, and approving a return records it
+ * and puts it back on the shelf, through ProjectMaterialLedger in the same
+ * transaction. See MaterialRequests.
  */
 class MaterialRequest extends Model
 {
@@ -24,6 +26,12 @@ class MaterialRequest extends Model
     public const STATUS_APPROVED = 'approved';
 
     public const STATUS_REJECTED = 'rejected';
+
+    /** More material for the project. */
+    public const TYPE_SUPPLY = 'supply';
+
+    /** Material going back from the site to the warehouse. */
+    public const TYPE_RETURN = 'return';
 
     /**
      * @var array<string, string>
@@ -44,7 +52,11 @@ class MaterialRequest extends Model
     protected $fillable = [
         'project_id',
         'material_id',
+        'request_type',
+        'project_material_id',
         'quantity',
+        'entry_date',
+        'notes',
         'status',
         'requested_by',
         'decided_by',
@@ -61,6 +73,7 @@ class MaterialRequest extends Model
         return [
             'quantity' => 'decimal:2',
             'decided_at' => 'datetime',
+            'entry_date' => 'date',
         ];
     }
 
@@ -82,6 +95,21 @@ class MaterialRequest extends Model
     public function decider(): BelongsTo
     {
         return $this->belongsTo(User::class, 'decided_by');
+    }
+
+    public function projectMaterial(): BelongsTo
+    {
+        return $this->belongsTo(ProjectMaterial::class, 'project_material_id', 'project_material_id');
+    }
+
+    public function isReturn(): bool
+    {
+        return $this->request_type === self::TYPE_RETURN;
+    }
+
+    public function typeLabel(): string
+    {
+        return $this->isReturn() ? 'Return' : 'Request';
     }
 
     public function isPending(): bool

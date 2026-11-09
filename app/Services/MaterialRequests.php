@@ -6,13 +6,15 @@ use App\Models\ActivityLog;
 use App\Models\Material;
 use App\Models\MaterialRequest;
 use App\Models\Project;
+use App\Models\ProjectMaterial;
+use App\Models\ProjectMaterialEntry;
 use App\Models\User;
 use App\Support\BusinessTime;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 /**
- * A lead asks for material; the inventory side decides.
+ * A lead asks for material, or to send some back; the inventory side decides.
  *
  * The only place a request is written. Approving goes through
  * ProjectMaterialLedger::add(), so it is held to what is available exactly as
@@ -64,7 +66,55 @@ class MaterialRequests
     }
 
     /**
-     * Add what was asked for to the project, off the shelf.
+     * A lead sending material back from the site. Nothing moves until it is
+     * approved; what is on site is checked now and again on approval.
+     *
+     * @throws RuntimeException
+     */
+    public function requestReturn(Project $project, ProjectMaterial $line, float|int|string $quantity, string $date, ?string $notes, User $by): MaterialRequest
+    {
+        $material = $line->material;
+        $problem = $material->unit->quantityProblem($quantity);
+
+        if ($problem !== null) {
+            throw new RuntimeException($problem);
+        }
+
+        $onSite = $this->ledger->onSite($line);
+
+        if (round((float) $quantity, 2) > round($onSite, 2)) {
+            throw new RuntimeException($onSite <= 0
+                ? sprintf('No %s remaining.', $material->displayName())
+                : sprintf('Only %s %s remaining.', $material->unit->format($onSite), $material->unit->value));
+        }
+
+        $materialRequest = MaterialRequest::create([
+            'project_id' => $project->project_id,
+            'material_id' => $material->material_id,
+            'request_type' => MaterialRequest::TYPE_RETURN,
+            'project_material_id' => $line->project_material_id,
+            'quantity' => round((float) $quantity, 2),
+            'entry_date' => $date,
+            'notes' => filled($notes) ? trim($notes) : null,
+            'status' => MaterialRequest::STATUS_PENDING,
+            'requested_by' => $by->id,
+        ]);
+
+        $this->activityLogger->record(
+            ActivityLog::MATERIAL_REQUESTED,
+            null,
+            sprintf('Asked to return %s of %s from %s.', $this->amount($materialRequest), $material->displayName(), $project->reference_no),
+            $project
+        );
+
+        $this->notifications->materialRequested($materialRequest);
+
+        return $materialRequest;
+    }
+
+    /**
+     * Add what was asked for to the project, off the shelf - or, for a
+     * return, record it and put it back on the shelf.
      *
      * @throws RuntimeException
      */
@@ -73,12 +123,25 @@ class MaterialRequests
         $project = $materialRequest->project;
 
         if (! $this->rules->canManage($by, $project)) {
-            throw new RuntimeException('This project takes no more materials.');
+            throw new RuntimeException($materialRequest->isReturn()
+                ? 'This project is closed.'
+                : 'This project takes no more materials.');
         }
 
         DB::transaction(function () use ($materialRequest, $project, $by): void {
             $locked = $this->lockPending($materialRequest);
-            $entry = $this->ledger->add($project, $locked->material, $locked->quantity, BusinessTime::today(), null, $by);
+
+            $entry = $locked->isReturn()
+                ? $this->ledger->record(
+                    $project,
+                    $locked->projectMaterial ?? throw new RuntimeException('That material is not on this project.'),
+                    ProjectMaterialEntry::TYPE_RETURNED,
+                    $locked->quantity,
+                    $locked->entry_date ?? BusinessTime::today(),
+                    $locked->notes,
+                    $by
+                )
+                : $this->ledger->add($project, $locked->material, $locked->quantity, BusinessTime::today(), null, $by);
 
             $locked->forceFill([
                 'status' => MaterialRequest::STATUS_APPROVED,
@@ -138,7 +201,7 @@ class MaterialRequests
     private function lockPending(MaterialRequest $materialRequest): MaterialRequest
     {
         $locked = MaterialRequest::query()
-            ->with(['material', 'project'])
+            ->with(['material', 'project', 'projectMaterial.material'])
             ->whereKey($materialRequest->getKey())
             ->lockForUpdate()
             ->firstOrFail();

@@ -7,6 +7,7 @@ use App\Models\Material;
 use App\Models\MaterialRequest;
 use App\Models\Notification;
 use App\Models\Project;
+use App\Models\ProjectMaterial;
 use App\Models\ProjectMaterialEntry;
 use App\Models\ProjectTechnician;
 use App\Models\StockMovement;
@@ -282,6 +283,91 @@ class MaterialRequestTest extends TestCase
 
         $this->getTablePage(route('inventory.material-requests.table'), ['order' => [['column' => 6, 'dir' => 'asc']]])
             ->assertSee('Copper Tube 1/4');
+    }
+
+    public function test_a_lead_return_waits_for_approval_then_goes_back_on_the_shelf(): void
+    {
+        $line = $this->onSite(4);
+
+        $this->actingAs($this->lead)
+            ->get(route('technician.projects.show', $this->project->project_id))
+            ->assertSee('Return Material')
+            ->assertSee('Inventory approves returns first.');
+
+        $this->returnMaterial($line, 3)->assertSessionHas('success', 'Return sent for approval.');
+
+        $return = MaterialRequest::query()->where('request_type', MaterialRequest::TYPE_RETURN)->sole();
+
+        $this->assertTrue($return->isPending());
+        $this->assertSame(1, ProjectMaterialEntry::count());
+        $this->assertSame(6.0, $this->copper->fresh()->onHand());
+        $this->assertTrue(Notification::query()->where('title', 'Material Return')->where('user_id', $this->buyer->id)->exists());
+
+        $this->actingAs($this->buyer);
+
+        $this->getTablePage(route('inventory.material-requests.table'))
+            ->assertSee('Return')
+            ->assertSee('Left over');
+
+        $this->postJson(route('inventory.material-requests.approve', $return))->assertOk();
+
+        $entry = ProjectMaterialEntry::query()->where('entry_type', ProjectMaterialEntry::TYPE_RETURNED)->sole();
+
+        $this->assertSame(MaterialRequest::STATUS_APPROVED, $return->fresh()->status);
+        $this->assertSame($entry->material_entry_id, $return->fresh()->project_material_entry_id);
+        $this->assertSame('Left over', $entry->notes);
+        $this->assertSame(9.0, $this->copper->fresh()->onHand());
+        $this->assertTrue(Notification::query()->where('title', 'Material Return Approved')->where('user_id', $this->lead->id)->exists());
+    }
+
+    public function test_a_rejected_return_moves_nothing(): void
+    {
+        $line = $this->onSite(4);
+        $this->returnMaterial($line, 2);
+        $return = MaterialRequest::query()->where('request_type', MaterialRequest::TYPE_RETURN)->sole();
+
+        $this->actingAs($this->buyer)
+            ->postJson(route('inventory.material-requests.reject', $return), ['reason' => 'Still needed on site.'])
+            ->assertOk();
+
+        $this->assertSame(0, ProjectMaterialEntry::query()->where('entry_type', ProjectMaterialEntry::TYPE_RETURNED)->count());
+        $this->assertSame(6.0, $this->copper->fresh()->onHand());
+    }
+
+    public function test_a_lead_cannot_return_more_than_is_on_site(): void
+    {
+        $line = $this->onSite(4);
+
+        $this->returnMaterial($line, 5)->assertSessionHas('error');
+
+        $this->assertSame(0, MaterialRequest::query()->where('request_type', MaterialRequest::TYPE_RETURN)->count());
+    }
+
+    /**
+     * Four of copper on the project, approved off a shelf of ten.
+     */
+    private function onSite(float|int $quantity): ProjectMaterial
+    {
+        $this->stock(10);
+        $this->requestMaterial($quantity);
+
+        $this->actingAs($this->buyer)
+            ->postJson(route('inventory.material-requests.approve', MaterialRequest::query()->firstOrFail()))
+            ->assertOk();
+
+        return ProjectMaterial::query()->where('project_id', $this->project->project_id)->sole();
+    }
+
+    private function returnMaterial(ProjectMaterial $line, float|int $quantity)
+    {
+        return $this->actingAs($this->lead)
+            ->post(route('technician.projects.materials.record', $this->project->project_id), [
+                'project_material_id' => $line->project_material_id,
+                'entry_type' => ProjectMaterialEntry::TYPE_RETURNED,
+                'quantity' => $quantity,
+                'entry_date' => BusinessTime::today()->toDateString(),
+                'notes' => 'Left over',
+            ]);
     }
 
     private function requestMaterial(float|int $quantity)

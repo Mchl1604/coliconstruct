@@ -13,7 +13,9 @@ use App\Support\RoleAccess;
  *
  *   Add, and void an addition: Super Admin, Admin Officer, Purchasing Admin.
  *   Record use:                Super Admin, Admin Officer, the project's lead.
- *   Record a return:           Super Admin, Admin Officer, Purchasing Admin.
+ *   Record a return:           Super Admin, Admin Officer, Purchasing Admin;
+ *                              the project's lead too, but theirs waits as a
+ *                              request for one of those three to approve.
  *   Request more:              the project's lead, who adds nothing themselves.
  *
  * An HR Admin reads the tab. The same two-sided use as ProjectPhaseRules: the
@@ -27,7 +29,7 @@ class ProjectMaterialRules
     /**
      * Everything this account may do here, for the Materials tab to draw.
      *
-     * @return array{add: bool, use: bool, return: bool, request: bool}
+     * @return array{add: bool, use: bool, return: bool, request: bool, return_needs_approval: bool}
      */
     public function abilities(?User $user, Project $project): array
     {
@@ -36,6 +38,7 @@ class ProjectMaterialRules
             'use' => $this->canRecordType($user, $project, ProjectMaterialEntry::TYPE_USED),
             'return' => $this->canRecordType($user, $project, ProjectMaterialEntry::TYPE_RETURNED),
             'request' => $this->canRequest($user, $project),
+            'return_needs_approval' => $this->returnNeedsApproval($user, $project),
         ];
     }
 
@@ -62,7 +65,7 @@ class ProjectMaterialRules
         }
 
         if ($this->isLeadOn($user, $project)) {
-            return $type === ProjectMaterialEntry::TYPE_USED;
+            return in_array($type, [ProjectMaterialEntry::TYPE_USED, ProjectMaterialEntry::TYPE_RETURNED], true);
         }
 
         if ($user->role === User::ROLE_PURCHASING_ADMIN) {
@@ -70,6 +73,15 @@ class ProjectMaterialRules
         }
 
         return RoleAccess::can($user, RoleAccess::MANAGE_PROJECT_MATERIALS);
+    }
+
+    /**
+     * Whether a return from this account waits for the inventory side to
+     * approve it rather than moving stock at once: the lead's does.
+     */
+    public function returnNeedsApproval(?User $user, Project $project): bool
+    {
+        return $user !== null && $this->isLeadOn($user, $project) && ! $this->canManage($user, $project);
     }
 
     /**

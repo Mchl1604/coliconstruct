@@ -3,7 +3,7 @@
     // ProjectMaterialLedger::summary() - one row per material with its figures.
     'summary',
     // ProjectMaterialRules::abilities(), asked again by every endpoint.
-    'abilities' => ['add' => false, 'use' => false, 'return' => false, 'request' => false],
+    'abilities' => ['add' => false, 'use' => false, 'return' => false, 'request' => false, 'return_needs_approval' => false],
     // Which portal's routes the forms post to: 'super-admin', 'inventory' or
     // 'technician'.
     'portal' => 'super-admin',
@@ -36,6 +36,9 @@
     $today = \App\Support\BusinessTime::today()->toDateString();
     $hasOnSite = $summary->contains(fn (array $row): bool => $row['on_site'] > 0);
     $canRecord = $abilities['use'] || $abilities['return'];
+    // A lead's return waits for the inventory side to approve it.
+    $returnNeedsApproval = $abilities['return_needs_approval'] ?? false;
+    $returnLabel = $returnNeedsApproval ? 'Return Material' : 'Record Return';
     $canAskForMore = $abilities['add'] || $abilities['request'];
     $hasActions = $canRecord || $canAskForMore;
     $moreLabel = $abilities['add'] ? 'Add Material' : 'Request Material';
@@ -71,7 +74,7 @@
                             data-bs-target="#recordMaterialModal" data-material-entry-type="returned"
                             @disabled(! $hasOnSite)>
                             <i class="bi bi-arrow-return-left me-1" aria-hidden="true"></i>
-                            Record Return
+                            {{ $returnLabel }}
                         </button>
                     @endif
                     @if ($canAskForMore)
@@ -181,7 +184,7 @@
                                                     data-bs-toggle="modal" data-bs-target="#recordMaterialModal"
                                                     data-material-entry-type="returned"
                                                     data-material-line="{{ $row['line']->project_material_id }}"
-                                                    title="Record return" @disabled($row['on_site'] <= 0)>
+                                                    title="{{ $returnNeedsApproval ? 'Return material' : 'Record return' }}" @disabled($row['on_site'] <= 0)>
                                                     <i class="bi bi-arrow-return-left" aria-hidden="true"></i>
                                                 </button>
                                             @endif
@@ -225,7 +228,12 @@
                         @foreach ($materialRequests as $materialRequest)
                             <tr>
                                 <td class="text-nowrap">{{ \App\Support\BusinessTime::at($materialRequest->created_at)?->format(\App\Support\BusinessTime::DATE) }}</td>
-                                <td><span class="material-name">{{ $materialRequest->material?->displayName() }}</span></td>
+                                <td>
+                                    <span class="material-name">{{ $materialRequest->material?->displayName() }}</span>
+                                    @if ($materialRequest->isReturn())
+                                        <span class="badge text-bg-info ms-1">Return</span>
+                                    @endif
+                                </td>
                                 <td class="text-end material-qty">
                                     {{ $materialRequest->material?->unit->format($materialRequest->quantity) }}
                                     {{ $materialRequest->material?->unit->value }}
@@ -277,13 +285,14 @@
          toggle at the top; the button that opened it chooses which. A Purchasing
          Admin has the one choice. --}}
     <div class="modal fade" id="recordMaterialModal" tabindex="-1" aria-hidden="true"
-        aria-labelledby="recordMaterialTitle" data-record-material-modal>
+        aria-labelledby="recordMaterialTitle" data-record-material-modal
+        data-return-title="{{ $returnLabel }}">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
                 <form method="POST" action="{{ route($routePrefix.'record', $project->project_id) }}">
                     @csrf
                     <div class="modal-header">
-                        <h5 class="modal-title" id="recordMaterialTitle" data-record-material-title>{{ $abilities['use'] ? 'Record Use' : 'Record Return' }}</h5>
+                        <h5 class="modal-title" id="recordMaterialTitle" data-record-material-title>{{ $abilities['use'] ? 'Record Use' : $returnLabel }}</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                     </div>
 
@@ -300,6 +309,13 @@
                                 <label class="btn btn-outline-primary" for="recordMaterialReturned">Returned</label>
                             @endif
                         </div>
+
+                        @if ($returnNeedsApproval)
+                            <div class="alert alert-info small py-2 d-none" role="note" data-record-material-approval>
+                                <i class="bi bi-hourglass-split me-1" aria-hidden="true"></i>
+                                Inventory approves returns first.
+                            </div>
+                        @endif
 
                         <div class="mb-3">
                             <label class="form-label fw-semibold" for="recordMaterialLine">Material</label>

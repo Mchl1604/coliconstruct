@@ -11,6 +11,7 @@ use App\Models\ProjectMaterial;
 use App\Models\ProjectMaterialEntry;
 use App\Services\ActivityLogger;
 use App\Services\MaterialCatalog;
+use App\Services\MaterialRequests;
 use App\Services\ProjectMaterialLedger;
 use App\Services\ProjectMaterialRules;
 use App\Services\StockAvailability;
@@ -270,6 +271,17 @@ class ProjectMaterialController extends Controller
 
         if ($line === null) {
             return $this->refused($request, $project, 'That material is not on this project.');
+        }
+
+        // A lead's return waits for the inventory side to approve it.
+        if ($data['entry_type'] === ProjectMaterialEntry::TYPE_RETURNED && $this->rules->returnNeedsApproval($request->user(), $project)) {
+            try {
+                app(MaterialRequests::class)->requestReturn($project, $line, $data['quantity'], $data['entry_date'], $data['notes'] ?? null, $request->user());
+            } catch (RuntimeException $exception) {
+                return $this->refused($request, $project, $exception->getMessage());
+            }
+
+            return $this->done($request, $project, 'Return sent for approval.');
         }
 
         try {

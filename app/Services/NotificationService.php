@@ -1694,9 +1694,9 @@ class NotificationService
     {
         $this->deliver(
             $this->inventoryStaff(),
-            'Material Requested',
+            $materialRequest->isReturn() ? 'Material Return' : 'Material Requested',
             sprintf(
-                '%s requested %s %s of %s for %s.',
+                $materialRequest->isReturn() ? '%s wants to return %s %s of %s from %s.' : '%s requested %s %s of %s for %s.',
                 $this->actorName(),
                 $materialRequest->material->unit->format($materialRequest->quantity),
                 $materialRequest->material->unit->value,
@@ -1718,9 +1718,10 @@ class NotificationService
 
         $this->deliver(
             $materialRequest->requester,
-            $approved ? 'Material Request Approved' : 'Material Request Rejected',
+            sprintf('Material %s %s', $materialRequest->typeLabel(), $approved ? 'Approved' : 'Rejected'),
             sprintf(
-                '%s for %s was %s.',
+                '%s %s for %s was %s.',
+                $materialRequest->isReturn() ? 'Return of' : 'Request for',
                 $materialRequest->material->displayName(),
                 $this->projectLabel($materialRequest->project),
                 $approved ? 'approved' : 'rejected: '.$materialRequest->rejection_reason

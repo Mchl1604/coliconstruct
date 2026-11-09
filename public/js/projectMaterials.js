@@ -70,7 +70,15 @@
         const checked = modal.querySelector("[data-record-material-type]:checked");
         const title = modal.querySelector("[data-record-material-title]");
 
-        title.textContent = checked && checked.value === "returned" ? "Record Return" : "Record Use";
+        const returning = checked && checked.value === "returned";
+        const approval = modal.querySelector("[data-record-material-approval]");
+
+        title.textContent = returning ? modal.dataset.returnTitle || "Record Return" : "Record Use";
+
+        // A lead's return is sent for approval rather than recorded.
+        if (approval) {
+            approval.classList.toggle("d-none", !returning);
+        }
 
         if (!option) {
             unit.textContent = "";

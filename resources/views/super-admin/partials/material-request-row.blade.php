@@ -3,7 +3,9 @@
 @php
     $material = $materialRequest->material;
     $amount = $material?->unit->format($materialRequest->quantity).' '.$material?->unit->value;
-    $label = $amount.' of '.$material?->displayName().' for '.$materialRequest->project?->reference_no;
+    $label = $materialRequest->isReturn()
+        ? 'Return of '.$amount.' of '.$material?->displayName().' from '.$materialRequest->project?->reference_no
+        : $amount.' of '.$material?->displayName().' for '.$materialRequest->project?->reference_no;
 @endphp
 <tr>
     <td class="text-nowrap">{{ \App\Support\BusinessTime::at($materialRequest->created_at)?->format(\App\Support\BusinessTime::DATE) }}</td>
@@ -11,11 +13,19 @@
         <a href="{{ route('inventory.projects.show', $materialRequest->project_id) }}">{{ $materialRequest->project?->reference_no }}</a>
         <div class="material-meta">{{ $materialRequest->project?->name }}</div>
     </td>
-    <td><span class="material-name">{{ $material?->displayName() }}</span></td>
+    <td>
+        <span class="material-name">{{ $material?->displayName() }}</span>
+        @if ($materialRequest->isReturn())
+            <span class="badge text-bg-info ms-1">Return</span>
+            @if ($materialRequest->notes)
+                <div class="material-meta">{{ $materialRequest->notes }}</div>
+            @endif
+        @endif
+    </td>
     <td class="text-nowrap material-qty">{{ $amount }}</td>
     {{-- What approving is held to, right now; a decided request has no use for it. --}}
     <td class="text-nowrap">
-        @if ($materialRequest->isPending() && $available !== null)
+        @if ($materialRequest->isPending() && $available !== null && ! $materialRequest->isReturn())
             <span class="material-qty fw-semibold {{ $available < (float) $materialRequest->quantity ? 'text-danger' : 'text-success' }}">{{ $material?->unit->format($available) }} {{ $material?->unit->value }}</span>
             @if ($available < (float) $materialRequest->quantity)
                 <div class="material-meta text-danger">Not enough</div>
