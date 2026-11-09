@@ -487,7 +487,11 @@ class ProjectController extends Controller
                     'client_id' => $client->client_id,
                     'name' => $client->primaryName(),
                     'status' => 'unscheduled',
-                    'quotation' => app(ProjectQuotation::class)->total(array_values($validated['quotation_items'])),
+                    'quotation' => app(ProjectQuotation::class)->total(
+                        array_values($validated['quotation_items']),
+                        $validated['quotation_discount_percent'] ?? 0,
+                        $validated['quotation_special_discount'] ?? 0
+                    ),
                     'target_end_date' => $validated['target_end_date'],
                     ...ProjectAddress::columns($validated),
                     'description' => $validated['project_description'] ?? null,
@@ -520,9 +524,15 @@ class ProjectController extends Controller
                 );
 
                 // The Quotation step: free of stock. Only the plan below is not.
-                app(ProjectQuotation::class)->save($project, array_values($validated['quotation_items']));
+                app(ProjectQuotation::class)->save(
+                    $project,
+                    array_values($validated['quotation_items']),
+                    $validated['quotation_discount_percent'] ?? 0,
+                    $validated['quotation_special_discount'] ?? 0,
+                    $validated
+                );
 
-                // The Materials step: the plan, which reserves stock from now
+                // The Materials step: the plan, which takes stock out from now
                 // on, held to what is available. Whatever the wizard ticked to
                 // request goes to Purchasing with it.
                 $plan = app(ProjectMaterialPlan::class);

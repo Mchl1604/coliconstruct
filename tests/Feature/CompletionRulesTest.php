@@ -3,15 +3,22 @@
 namespace Tests\Feature;
 
 use App\Models\Client;
+use App\Models\Material;
+use App\Models\Notification;
 use App\Models\Project;
 use App\Models\ProjectDetail;
+use App\Models\ProjectMaterial;
+use App\Models\ProjectMaterialEntry;
 use App\Models\ProjectTechnician;
 use App\Models\ProjectType;
 use App\Models\Schedule;
+use App\Models\StockMovement;
 use App\Models\Task;
 use App\Models\Technician;
 use App\Models\User;
 use App\Policies\ProjectPolicy;
+use App\Services\ProjectMaterialLedger;
+use App\Services\StockLedger;
 use App\Support\DetailFieldScope;
 use App\Support\ServiceReportForms;
 use Carbon\CarbonImmutable;
@@ -641,6 +648,149 @@ class CompletionRulesTest extends TestCase
         $this->assertSame('Everything on site is finished.', $project->completion_summary);
     }
 
+    public function test_complete_opens_leftover_materials_first_when_some_remain(): void
+    {
+        $this->finalizePhases($this->project, 2);
+        $this->closedTask();
+        $this->completePhases($this->project);
+
+        $this->actingAs($this->employee('super_admin', 'boss@example.test'));
+
+        $page = route('super-admin.projects.show', $this->project->project_id);
+
+        $this->get($page)
+            ->assertOk()
+            ->assertSee('data-bs-target="#editProjectDescriptionModal" data-project-complete', false)
+            ->assertDontSee('data-leftover-materials-modal', false);
+
+        $line = $this->assignedMaterial(5);
+
+        $this->get($page)
+            ->assertOk()
+            ->assertSee('data-bs-target="#leftoverMaterialsModal" data-project-complete', false)
+            ->assertSee('data-leftover-materials-modal', false)
+            ->assertSee('Leftover Materials')
+            ->assertSee('/js/leftoverMaterials.js', false);
+
+        // All used: straight to the Service Report form again.
+        app(ProjectMaterialLedger::class)->record($this->project, $line, ProjectMaterialEntry::TYPE_USED, 5, CarbonImmutable::today(), null, $this->leadAccount);
+
+        $this->get($page)
+            ->assertSee('data-bs-target="#editProjectDescriptionModal" data-project-complete', false)
+            ->assertDontSee('data-leftover-materials-modal', false);
+    }
+
+    public function test_completing_returns_unused_materials_and_tells_inventory_staff(): void
+    {
+        $this->finalizePhases($this->project, 2);
+        $this->closedTask();
+        $this->completePhases($this->project);
+
+        $buyer = $this->employee('purchasing_admin', 'buyer@example.test');
+        $officer = $this->employee('admin_officer', 'officer@example.test');
+        $boss = $this->employee('super_admin', 'boss@example.test');
+        $line = $this->assignedMaterial(5);
+
+        app(ProjectMaterialLedger::class)->record($this->project, $line, ProjectMaterialEntry::TYPE_USED, 2, CarbonImmutable::today(), null, $this->leadAccount);
+
+        $this->assertSame(5.0, $line->material->fresh()->onHand());
+
+        $this->actingAs($boss);
+
+        $this->post(route('super-admin.projects.complete', $this->project->project_id), $this->completionPayload(photos: false))
+            ->assertSessionHasNoErrors()
+            ->assertRedirect(route('super-admin.projects'));
+
+        $this->assertSame(Project::STATUS_AWAITING_CLIENT_CONFIRMATION, $this->project->refresh()->status);
+        $this->assertSame(3.0, (float) ProjectMaterialEntry::query()->where('entry_type', ProjectMaterialEntry::TYPE_UNUSED)->sum('quantity'));
+        $this->assertSame(8.0, $line->material->fresh()->onHand());
+
+        foreach ([$buyer, $officer, $boss] as $user) {
+            $this->assertSame(1, Notification::query()->where('user_id', $user->id)->where('title', 'Unused Materials Returned')->count());
+        }
+
+        $this->assertSame(0, Notification::query()->where('user_id', $this->leadAccount->id)->where('title', 'Unused Materials Returned')->count());
+    }
+
+    public function test_the_admin_officer_completes_but_cannot_edit_the_report(): void
+    {
+        $this->finalizePhases($this->project, 2);
+        $this->closedTask();
+        $this->completePhases($this->project);
+
+        $this->actingAs($this->employee('admin_officer', 'officer@example.test'));
+
+        $this->get(route('super-admin.projects.show', $this->project->project_id))
+            ->assertOk()
+            ->assertSee('data-complete-url="'.route('super-admin.projects.complete', $this->project->project_id).'"', false)
+            ->assertSee('data-bs-target="#editProjectDescriptionModal" data-project-complete', false);
+
+        $this->put(route('super-admin.projects.details.update', $this->project->project_id), [
+            'report_performed_by' => 'Officer Edit',
+        ])->assertRedirect();
+        $this->assertNull($this->project->fresh()->report_performed_by);
+
+        $this->post(route('super-admin.projects.complete', $this->project->project_id), $this->completionPayload(photos: false))
+            ->assertSessionHasNoErrors()
+            ->assertRedirect(route('super-admin.projects'));
+
+        $this->assertSame(Project::STATUS_AWAITING_CLIENT_CONFIRMATION, $this->project->refresh()->status);
+        $this->assertSame('Ramon Cruz', $this->project->report_performed_by);
+    }
+
+    public function test_remarks_are_optional_when_completing(): void
+    {
+        $this->finalizePhases($this->project, 2);
+        $this->closedTask();
+        $this->completePhases($this->project);
+
+        $this->actingAs($this->employee('super_admin', 'boss@example.test'));
+
+        $payload = $this->completionPayload(photos: false);
+        unset($payload['report_remarks']);
+
+        $this->post(route('super-admin.projects.complete', $this->project->project_id), $payload)
+            ->assertSessionHasNoErrors()
+            ->assertRedirect(route('super-admin.projects'));
+
+        $project = $this->project->refresh();
+
+        $this->assertSame(Project::STATUS_AWAITING_CLIENT_CONFIRMATION, $project->status);
+        $this->assertNull($project->report_remarks);
+        $this->assertNull($project->completion_summary);
+    }
+
+    public function test_performed_by_prefills_with_the_lead_until_one_is_saved(): void
+    {
+        $this->finalizePhases($this->project, 2);
+        $this->closedTask();
+        $this->completePhases($this->project);
+        $this->leadAccount->forceFill(['name' => 'Lito Lead'])->save();
+
+        $this->actingAs($this->employee('super_admin', 'boss@example.test'));
+
+        $page = route('super-admin.projects.show', $this->project->project_id);
+
+        $this->get($page)
+            ->assertOk()
+            ->assertSee('name="report_performed_by"', false)
+            ->assertSee('value="Lito Lead"', false);
+
+        $this->project->update(['report_performed_by' => 'Ramon Cruz']);
+
+        $this->get($page)
+            ->assertSee('value="Ramon Cruz"', false)
+            ->assertDontSee('value="Lito Lead"', false);
+
+        $this->followingRedirects()
+            ->from($page)
+            ->post(route('super-admin.projects.complete', $this->project->project_id), [
+                'completing' => '1',
+                'report_performed_by' => 'Typed Name',
+            ])
+            ->assertSee('value="Typed Name"', false);
+    }
+
     public function test_the_sign_off_is_required_and_reopens_the_form(): void
     {
         $this->finalizePhases($this->project, 2);
@@ -659,8 +809,7 @@ class CompletionRulesTest extends TestCase
         ])->assertRedirect($page)->assertSessionHasErrorsIn('details', [
             'report_performed_by' => 'Enter Performed By.',
             'report_witnessed_by' => 'Enter Witnessed and Accepted By.',
-            'report_remarks' => 'Enter Remarks.',
-        ]);
+        ])->assertSessionDoesntHaveErrors('report_remarks', null, 'details');
 
         $this->assertSame('ongoing', $this->project->refresh()->status);
 
@@ -829,6 +978,25 @@ class CompletionRulesTest extends TestCase
     /**
      * @return array<string, mixed>
      */
+    /**
+     * Ten in stock, $quantity of them assigned to the project.
+     */
+    private function assignedMaterial(float|int $quantity): ProjectMaterial
+    {
+        $material = Material::factory()->create(['name' => 'Copper Tube']);
+        app(StockLedger::class)->receive($material, StockMovement::TYPE_STOCK_IN, 10, CarbonImmutable::today(), [], $this->leadAccount);
+
+        $line = ProjectMaterial::create([
+            'project_id' => $this->project->project_id,
+            'material_id' => $material->material_id,
+            'quantity_needed' => $quantity,
+        ]);
+
+        app(StockLedger::class)->syncAssignments($this->project, $this->leadAccount);
+
+        return $line;
+    }
+
     private function completionPayload(bool $photos = true): array
     {
         return array_filter([

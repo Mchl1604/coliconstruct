@@ -261,50 +261,13 @@ class Material extends Model
 
     /**
      * What is available as SQL, correlated to the material row being read:
-     * on hand less each live project's plan that has not been released.
+     * what is on the shelf. Stock assigned to a project already left it.
      */
     private static function availableSql(): string
     {
-        $onHand = '(SELECT COALESCE(SUM(quantity), 0) FROM tbl_stock_movements'
+        return '(SELECT ROUND(COALESCE(SUM(quantity), 0), 2) FROM tbl_stock_movements'
             .' WHERE tbl_stock_movements.material_id = tbl_materials.material_id'
             .' AND tbl_stock_movements.voided_at IS NULL'
             .' AND tbl_stock_movements.is_reservation = 0)';
-
-        $released = '(SELECT COALESCE(-SUM(released.quantity), 0) FROM tbl_stock_movements released'
-            .' WHERE released.project_id = plans.project_id'
-            .' AND released.material_id = plans.material_id'
-            .' AND released.voided_at IS NULL'
-            .' AND released.is_reservation = 0'
-            .' AND released.project_material_entry_id IS NULL)';
-
-        $givenBack = '(SELECT COALESCE(SUM(returned.quantity), 0) FROM tbl_stock_movements returned'
-            .' WHERE returned.project_id = plans.project_id'
-            .' AND returned.material_id = plans.material_id'
-            .' AND returned.voided_at IS NULL'
-            .' AND returned.is_reservation = 1'
-            .' AND returned.quantity > 0)';
-
-        $usedOffShelf = '(SELECT COALESCE(-SUM(used.quantity), 0) FROM tbl_stock_movements used'
-            .' INNER JOIN tbl_project_material_entries used_entry ON used_entry.material_entry_id = used.project_material_entry_id'
-            .' WHERE used.project_id = plans.project_id'
-            .' AND used.material_id = plans.material_id'
-            .' AND used.voided_at IS NULL'
-            .' AND used.is_reservation = 0'
-            ." AND used_entry.entry_type = 'used')";
-
-        $outstanding = "plans.quantity_needed - CASE WHEN {$released} > 0 THEN {$released} ELSE 0 END - {$givenBack} - {$usedOffShelf}";
-
-        $closed = collect(Project::READ_ONLY_STATUSES)->map(fn (string $status): string => "'{$status}'")->implode(', ');
-
-        $reserved = '(SELECT COALESCE(SUM(CASE'
-            ." WHEN {$outstanding} > 0 THEN {$outstanding}"
-            .' ELSE 0 END), 0)'
-            .' FROM tbl_project_materials plans'
-            .' INNER JOIN tbl_projects live ON live.project_id = plans.project_id'
-            .' WHERE plans.material_id = tbl_materials.material_id'
-            .' AND live.is_archived = 0'
-            ." AND live.status NOT IN ({$closed}))";
-
-        return "ROUND({$onHand} - {$reserved}, 2)";
     }
 }

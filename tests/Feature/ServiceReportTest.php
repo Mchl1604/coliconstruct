@@ -141,7 +141,7 @@ class ServiceReportTest extends TestCase
 
         $header = fn (): array => app(ServiceReport::class)->for($project->fresh())['header'];
 
-        $this->assertNotSame('', $header()['last_modified']);
+        $this->assertSame('', $header()['date']);
         $this->assertArrayNotHasKey('time_start', $header());
         $this->assertArrayNotHasKey('time_end', $header());
 
@@ -149,7 +149,7 @@ class ServiceReportTest extends TestCase
 
         $this->get(route('super-admin.projects.show', $project->project_id))
             ->assertOk()
-            ->assertSee('LAST MODIFIED:')
+            ->assertSee('DATE:')
             ->assertDontSee('TIME START')
             ->assertDontSee('TIME END');
     }
@@ -369,7 +369,7 @@ class ServiceReportTest extends TestCase
         $this->assertSame(['indoor_panel'], $detail->refresh()->checklist);
     }
 
-    public function test_only_the_super_admin_admin_officer_and_lead_on_the_project_edit_the_report(): void
+    public function test_only_the_super_admin_and_lead_on_the_project_edit_the_report(): void
     {
         $project = $this->projectWith(['Equipment Repair']);
         $this->unit($project, 'Equipment Repair', ['brand' => 'LG', 'equipment_type' => 'VRF', 'trouble_description' => 'Noisy']);
@@ -434,11 +434,14 @@ class ServiceReportTest extends TestCase
             ->assertSessionHas('success');
         $this->assertSame('Lead Tech', $project->fresh()->report_performed_by);
 
+        // The Admin Officer reads it, but no longer edits it.
         $this->actingAs($account(User::ROLE_ADMIN_OFFICER, 'officer@example.test'))
             ->get($page)
-            ->assertSee('name="report_performed_by"', false);
-        $this->put($office, $payload('Officer'))->assertSessionHas('success');
-        $this->assertSame('Officer', $project->fresh()->report_performed_by);
+            ->assertOk()
+            ->assertSee('data-service-report-sheet', false)
+            ->assertDontSee('data-bs-target="#editProjectDescriptionModal"', false);
+        $this->put($office, $payload('Officer'))->assertRedirect();
+        $this->assertSame('Lead Tech', $project->fresh()->report_performed_by);
 
         $this->actingAsSuperAdmin();
         $this->put($office, $payload('Owner'))->assertSessionHas('success');
@@ -507,24 +510,37 @@ class ServiceReportTest extends TestCase
         $this->assertSame(['indoor_swing'], $saved->checklist);
     }
 
-    public function test_the_header_shows_when_the_report_was_last_modified(): void
+    public function test_the_date_stays_blank_until_the_project_is_completed(): void
     {
         $project = $this->projectWith(['Equipment Repair']);
-        Project::query()->whereKey($project->project_id)->update(['created_at' => '2026-01-10 10:00:00']);
-
-        $this->assertSame('Jan 10, 2026', app(ServiceReport::class)->for($project->fresh())['header']['last_modified']);
-
         $this->unit($project, 'Equipment Repair', ['brand' => 'LG']);
-        ProjectDetail::query()->where('project_id', $project->project_id)->update(['updated_at' => '2026-03-05 10:00:00']);
 
-        $this->assertSame('Mar 5, 2026', app(ServiceReport::class)->for($project->fresh())['header']['last_modified']);
+        $this->assertSame('', app(ServiceReport::class)->for($project->fresh())['header']['date']);
+
+        $project->update(['completed_at' => '2026-03-05 10:00:00']);
+
+        $this->assertSame('Mar 5, 2026', app(ServiceReport::class)->for($project->fresh())['header']['date']);
 
         $this->actingAsSuperAdmin();
 
         $this->get(route('super-admin.projects.show', $project->project_id))
             ->assertOk()
-            ->assertSeeInOrder(['LAST MODIFIED:', 'Mar 5, 2026'])
-            ->assertDontSee('>DATE:<', false);
+            ->assertSeeInOrder(['DATE:', 'Mar 5, 2026'])
+            ->assertDontSee('LAST MODIFIED:');
+    }
+
+    public function test_the_header_shows_the_project_reference_no(): void
+    {
+        $project = $this->projectWith(['Equipment Repair']);
+        $project->update(['reference_no' => 'REF-HEADER-01']);
+
+        $this->assertSame('REF-HEADER-01', app(ServiceReport::class)->for($project->fresh())['header']['reference_no']);
+
+        $this->actingAsSuperAdmin();
+
+        $this->get(route('super-admin.projects.show', $project->project_id))
+            ->assertOk()
+            ->assertSeeInOrder(['SERVICE REPORT', 'PROJECT REF NO:', 'REF-HEADER-01', 'DATE:']);
     }
 
     public function test_the_signatories_are_edited_and_printed_but_not_asked_at_creation(): void

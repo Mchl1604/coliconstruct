@@ -461,6 +461,41 @@ class CreateProjectTest extends TestCase
         $this->assertDatabaseCount('tbl_projects', 0);
     }
 
+    public function test_the_wizard_takes_the_discounts_off_the_quotation(): void
+    {
+        ProjectType::create(['type_name' => 'Aircon Installation']);
+
+        $skill = Skill::create(['skill_name' => 'Aircon Installation']);
+
+        $leadTechnician = $this->createWizardTechnician('lead_technician', 'Lead Technician');
+        $technician = $this->createWizardTechnician('technician', 'Juan Technician');
+
+        DB::table('tbl_skill_map')->insert([
+            'technician_id' => $technician->technician_id,
+            'skill_id' => $skill->skill_id,
+        ]);
+
+        $payload = $this->baseProjectPayload($leadTechnician, $technician);
+        $payload['quotation_discount_percent'] = '10';
+        $payload['quotation_special_discount'] = '25';
+        $payload['quotation_payment_terms'] = 'Full payment on completion';
+        $payload['quotation_prepared_by'] = 'Kianne Solis';
+
+        $this->post(route('super-admin.projects.create.store'), $payload)
+            ->assertRedirect(route('super-admin.projects'));
+
+        $project = Project::query()->sole();
+
+        // 1,250.00 less 10% (125.00) less 25.00.
+        $this->assertSame(1100.0, (float) $project->quotation);
+        $this->assertSame(10.0, (float) $project->quotation_discount_percent);
+        $this->assertSame(25.0, (float) $project->quotation_special_discount);
+        $this->assertNotNull($project->quoted_at);
+        $this->assertSame('Full payment on completion', $project->quotation_payment_terms);
+        $this->assertSame('Kianne Solis', $project->quotation_prepared_by);
+        $this->assertNull($project->quotation_notes);
+    }
+
     /**
      * A document past the size limit is a field error on the wizard, not a
      * blunt "content too large" page - provided it is inside PHP's own

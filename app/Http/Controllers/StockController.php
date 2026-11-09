@@ -71,7 +71,7 @@ class StockController extends Controller
             [[0, 'asc']],
         );
 
-        // Reserved and Available for the rows on this page only - the sum
+        // Assigned and Available for the rows on this page only - the sum
         // runs across every live project's plan.
         $figures = $this->availability->forMaterials($page->items->pluck('material_id')->all());
 
@@ -131,7 +131,7 @@ class StockController extends Controller
 
     /**
      * The dialog's material search: what matches what was typed, each with
-     * how many are on hand, reserved by live projects, and available.
+     * how many are on hand, assigned to live projects, and available.
      */
     public function options(Request $request, MaterialCatalog $catalog): JsonResponse
     {

@@ -118,18 +118,15 @@ class ServiceReport
     private function header(Project $project): array
     {
         $client = $project->client;
-        // The report's own rows: saving it or ticking its checklist. Until there
-        // are any, the report is as old as the project.
-        $lastModified = $project->details
-            ->filter(fn (ProjectDetail $detail): bool => isset(ServiceReportForms::SECTION_BY_TYPE[$project->projectTypes->firstWhere('type_id', $detail->type_id)?->type_name]))
-            ->max('updated_at') ?? $project->created_at;
 
         return [
             'client_name' => (string) ($client?->primaryName() ?? ''),
+            'reference_no' => (string) $project->reference_no,
             'address' => (string) $project->address,
             'contact_person' => (string) ($client?->fullname ?? ''),
             'contact_no' => (string) ($client?->contact_number ?? ''),
-            'last_modified' => BusinessTime::format($lastModified, 'M j, Y', ''),
+            // Blank until the project is completed, for writing in on site.
+            'date' => BusinessTime::format($project->completed_at, 'M j, Y', ''),
         ];
     }
 }

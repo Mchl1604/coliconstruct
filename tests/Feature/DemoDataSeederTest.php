@@ -26,6 +26,7 @@ use App\Models\User;
 use App\Policies\ProjectPolicy;
 use App\Services\PhaseTemplateMerger;
 use App\Services\ProjectDetailForms;
+use App\Services\ProjectMaterialLedger;
 use App\Services\ProjectStatusRules;
 use App\Services\ProjectTeam;
 use App\Support\DetailFieldScope;
@@ -511,7 +512,7 @@ class DemoDataSeederTest extends TestCase
         }
     }
 
-    public function test_three_projects_are_ready_to_complete_on_the_demo_day(): void
+    public function test_two_projects_are_ready_to_complete_on_the_demo_day(): void
     {
         $this->runSeeder();
 
@@ -519,10 +520,11 @@ class DemoDataSeederTest extends TestCase
         $this->travelTo($demoDay->max(CarbonImmutable::now())->setTime(9, 0));
 
         $policy = app(ProjectPolicy::class);
+        $ledger = app(ProjectMaterialLedger::class);
         $officer = User::query()->where('role', User::ROLE_ADMIN_OFFICER)->firstOrFail();
-        $ready = $this->demoProjects();
+        $ready = $this->demoProjects('ready');
 
-        $this->assertCount(3, $ready);
+        $this->assertCount(2, $ready);
 
         foreach ($ready as $project) {
             $project->refresh();
@@ -530,12 +532,46 @@ class DemoDataSeederTest extends TestCase
             $this->assertSame([], $policy->blockersFor($project, $officer), $project->name);
         }
 
+        // One leaves materials for the Leftover Materials step, one does not.
+        $leftovers = $ready->map(fn (Project $project): bool => $ledger->hasLeftovers($project))->sort()->values()->all();
+        $this->assertSame([false, true], $leftovers);
+
         $active = Project::query()->where('status', 'ongoing')->get()
             ->filter(fn (Project $project): bool => $project->schedules->contains(
                 fn ($schedule): bool => $schedule->startsOn()->lte($demoDay) && $schedule->endsOn()->gte($demoDay)
             ));
 
         $this->assertGreaterThanOrEqual(5, $active->count());
+    }
+
+    public function test_two_active_projects_have_a_task_on_the_demo_day_alone(): void
+    {
+        $this->runSeeder();
+
+        $demoDay = CarbonImmutable::parse(DemoDataCatalog::DEMO_DAY)->max(CarbonImmutable::now()->startOfDay())->toDateString();
+        $names = collect(DemoDataCatalog::projects())->where('today_task', true)->pluck('name');
+
+        $this->assertCount(2, $names);
+
+        $this->travelTo(CarbonImmutable::parse($demoDay)->setTime(9, 0));
+
+        foreach (Project::query()->whereIn('name', $names)->get() as $project) {
+            $this->assertTrue($project->refresh()->isActiveToday(), $project->name);
+
+            $today = Task::query()->where('project_id', $project->project_id)
+                ->whereDate('start_date', $demoDay)
+                ->whereDate('due_date', $demoDay)
+                ->get();
+
+            $this->assertNotEmpty($today, $project->name);
+            $this->assertTrue($today->every(fn (Task $task): bool => $task->status === 'pending' && $task->technician_id !== null), $project->name);
+
+            // Nothing earlier is left open.
+            $this->assertFalse(Task::query()->where('project_id', $project->project_id)
+                ->whereDate('due_date', '<', $demoDay)
+                ->where('status', '!=', 'completed')
+                ->exists(), $project->name);
+        }
     }
 
     public function test_the_statuses_still_hold_fourteen_days_later(): void
@@ -787,9 +823,13 @@ class DemoDataSeederTest extends TestCase
     /**
      * @return Collection<int, Project>
      */
-    private function demoProjects(): Collection
+    private function demoProjects(?string $scenario = null): Collection
     {
-        $descriptions = collect(DemoDataCatalog::projects())->where('demo', true)->pluck('description')->all();
+        $descriptions = collect(DemoDataCatalog::projects())
+            ->where('demo', true)
+            ->when($scenario !== null, fn ($specs) => $specs->where('scenario', $scenario))
+            ->pluck('description')
+            ->all();
 
         return Project::query()->whereIn('description', $descriptions)->get();
     }

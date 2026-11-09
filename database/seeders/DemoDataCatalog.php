@@ -37,7 +37,7 @@ final class DemoDataCatalog
      * data is seeded before it. Seeded on the day or later, they count from
      * the seeding day instead.
      */
-    public const DEMO_DAY = '2026-11-09';
+    public const DEMO_DAY = '2026-11-10';
 
     public const AIRCON_INSTALLATION = 'Aircon Installation';
 
@@ -203,6 +203,8 @@ final class DemoDataCatalog
      *   unscheduled, pending, ongoing      what the dates imply
      *   overdue                            Ongoing with every date passed - Needs Rescheduling
      *   on_hold                            paused on `held_on`; `preserved` is the rest of its plan
+     *   ready                              work done, waiting on Complete Project;
+     *                                      `leftovers` leaves some of the plan on site
      *   awaiting                           work done, waiting on the client
      *   completed                          closed by `method`
      *   cancelled                          called off on `cancelled`
@@ -699,6 +701,8 @@ final class DemoDataCatalog
                 'description' => 'Replacement of the ballroom\'s ageing package units with two 25 TR ducted units, new insulated ducting and a zoned controller so the room can be split for smaller events. Work is split into two stretches around the hotel\'s event bookings.',
                 'quotation' => 2350000,
                 'incident' => ['title' => 'Limited Ceiling Access', 'description' => 'An evening event in the ballroom meant the ceiling access panels had to stay closed after 3 PM. The crew moved to the morning shift for the rest of the week.'],
+                // The task under way on the demo day starts and ends on it.
+                'today_task' => true,
                 'created' => -16,
                 'ranges' => [[-2, 6], [24, 33]],
                 'target' => 40,
@@ -718,9 +722,11 @@ final class DemoDataCatalog
             ],
 
             // ---------------------------------------------------------------
-            // Demo day: three with every phase and task done, ready for
-            // Complete Project. Dates count from DEMO_DAY. The ongoing work
-            // above is under way on that day too.
+            // Demo day: two with every phase and task done, ready for
+            // Complete Project - one with leftover materials, one without -
+            // and one under way with a task that starts and ends on the day.
+            // Dates count from DEMO_DAY. The ongoing work above is under way
+            // on that day too.
             // ---------------------------------------------------------------
             [
                 'name' => 'Office Aircon General Cleaning - Greenfield Business Suites',
@@ -728,6 +734,8 @@ final class DemoDataCatalog
                 'types' => [self::AIRCON_CLEANING],
                 'scenario' => 'ready',
                 'demo' => true,
+                // Everything planned was used.
+                'leftovers' => false,
                 'description' => 'General cleaning of the wall-mounted units on the fifth floor. The work is done; the report is ready to sign off.',
                 'quotation' => 18500,
                 'created' => -12,
@@ -739,13 +747,14 @@ final class DemoDataCatalog
                 'name' => 'Server Room Aircon Repair - Sta. Rosa Fitness Hub',
                 'client' => 'mark.javier',
                 'types' => [self::AIRCON_REPAIR],
-                'scenario' => 'ready',
+                'scenario' => 'ongoing',
                 'demo' => true,
-                'description' => 'Repair of a split-type unit that tripped its breaker. The capacitor was replaced and the unit has run cleanly since.',
+                'today_task' => true,
+                'description' => 'Repair of a split-type unit that tripped its breaker. The faulty capacitor is being replaced and the unit tested.',
                 'quotation' => 9800,
                 'created' => -10,
-                'ranges' => [[-7, 1]],
-                'target' => 5,
+                'ranges' => [[-4, 3]],
+                'target' => 7,
                 'technicians' => 1,
             ],
             [
@@ -754,6 +763,8 @@ final class DemoDataCatalog
                 'types' => [self::AIRCON_INSTALLATION],
                 'scenario' => 'ready',
                 'demo' => true,
+                // Some of the plan is still on site, for Leftover Materials.
+                'leftovers' => true,
                 'description' => 'Installation of a 1.5 HP inverter split-type unit in the master bedroom. Installed and tested; awaiting sign-off.',
                 'quotation' => 52000,
                 'created' => -14,

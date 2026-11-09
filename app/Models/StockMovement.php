@@ -77,6 +77,7 @@ class StockMovement extends Model
         'project_id',
         'project_material_entry_id',
         'is_reservation',
+        'is_assignment',
         'notes',
         'recorded_by',
         'recorded_by_name',
@@ -88,6 +89,7 @@ class StockMovement extends Model
         'quantity' => 'decimal:2',
         'movement_date' => 'date',
         'is_reservation' => 'boolean',
+        'is_assignment' => 'boolean',
         'voided_at' => 'datetime',
     ];
 
@@ -130,8 +132,9 @@ class StockMovement extends Model
     }
 
     /**
-     * The movements that change the count: not voided, and not a project's
-     * reservation, which records a claim while the stock stays on the shelf.
+     * The movements that change the count: not voided, and not one of the old
+     * reservation rows, which recorded a claim while the stock stayed on the
+     * shelf. A plan's assignment does count - it is a real stock out.
      *
      * @param  Builder<self>  $query
      * @return Builder<self>
@@ -143,7 +146,7 @@ class StockMovement extends Model
 
     /**
      * Stock a Used entry took straight off the shelf, from a plan nobody had
-     * released yet - see StockLedger::takeForUse().
+     * released yet. Only written before plans became stock outs.
      *
      * @param  Builder<self>  $query
      * @return Builder<self>

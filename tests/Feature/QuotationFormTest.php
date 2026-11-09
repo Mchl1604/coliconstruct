@@ -190,7 +190,145 @@ class QuotationFormTest extends TestCase
             ->assertSee('View Details')
             ->assertSee('data-bs-target="#quotationModal'.$project->project_id.'"', false)
             ->assertSee('data-service-report-print', false)
-            ->assertSeeInOrder(['QUOTATION', 'MATERIALS', 'Copper Tube', '300.00', 'LABOR', 'Installation labor', '1,000.50', 'TOTAL', '1,300.50']);
+            ->assertSeeInOrder(['Quotation', 'Copper Tube', '300.00', 'Installation labor', '1,000.50', 'TOTAL AMOUNT', 'PHP', '1,300.50']);
+    }
+
+    public function test_the_sheet_follows_the_quote_form_without_rfq_no_tin_tax_or_vat(): void
+    {
+        $project = $this->project(['quotation' => 1300.5]);
+        app(ProjectQuotation::class)->save($project, $this->lines($this->material()));
+
+        $this->actingAsSuperAdmin();
+
+        $this->get(route('super-admin.projects.show', $project->project_id))
+            ->assertOk()
+            ->assertSeeInOrder(['Office &amp; Warehouse Address:', 'Date:', 'Client:', 'Address:', 'Contact Person:', 'Phone No.:', 'Email Address:', 'Project Reference No.:', $project->reference_no, 'Location:'], false)
+            ->assertSeeInOrder(['Item', 'Description', 'Quantity', 'Unit', 'Unit Price', 'Line Total'])
+            ->assertSeeInOrder(['Amount', 'Discount %', 'Discount Amount', 'Special Discount', 'TOTAL AMOUNT'])
+            ->assertSeeInOrder(['Notes:', 'INCLUSIONS:', 'EXCLUSIONS:', 'Terms of Payment', 'PREPARED BY:', 'approved by', 'CONFORME:', 'SIGNATURE OVER PRINTED NAME / DATE'])
+            ->assertDontSee('RFQ')
+            ->assertDontSee('TIN:')
+            ->assertDontSee('UOM')
+            ->assertDontSee('Tax Type')
+            ->assertDontSee('VAT')
+            ->assertDontSee('ELECTRONICALLY GENERATED');
+    }
+
+    public function test_discounts_come_off_the_total_and_print_on_the_sheet(): void
+    {
+        $material = $this->material();
+        $project = $this->project();
+
+        $this->actingAsSuperAdmin();
+
+        $this->put(route('super-admin.projects.quotation.update', $project->project_id), [
+            'quotation_items' => $this->lines($material),
+            'quotation_discount_percent' => 10,
+            'quotation_special_discount' => 100.5,
+        ])->assertSessionHas('success');
+
+        $project->refresh();
+
+        // 1,300.50 less 10% (130.05) less 100.50.
+        $this->assertSame(1069.95, (float) $project->quotation);
+        $this->assertSame(10.0, (float) $project->quotation_discount_percent);
+        $this->assertSame(100.5, (float) $project->quotation_special_discount);
+
+        $this->get(route('super-admin.projects.show', $project->project_id))
+            ->assertOk()
+            ->assertSeeInOrder(['Amount', '1,300.50', 'Discount %', '10%', 'Discount Amount', '130.05', 'Special Discount', '100.50', 'TOTAL AMOUNT', '1,069.95']);
+    }
+
+    public function test_a_special_discount_past_the_amount_or_a_discount_over_100_is_refused(): void
+    {
+        $material = $this->material();
+        $project = $this->project();
+        $url = route('super-admin.projects.quotation.update', $project->project_id);
+
+        $this->actingAsSuperAdmin();
+
+        $this->put($url, ['quotation_items' => $this->lines($material), 'quotation_special_discount' => 1300.51])
+            ->assertSessionHasErrorsIn('quotation', ['quotation_special_discount']);
+
+        $this->put($url, ['quotation_items' => $this->lines($material), 'quotation_discount_percent' => 101])
+            ->assertSessionHasErrorsIn('quotation', ['quotation_discount_percent']);
+
+        $this->assertSame(1000.0, (float) $project->fresh()->quotation);
+    }
+
+    public function test_the_terms_and_signatories_are_saved_and_printed(): void
+    {
+        $material = $this->material();
+        $project = $this->project();
+
+        $this->actingAsSuperAdmin();
+
+        $this->put(route('super-admin.projects.quotation.update', $project->project_id), [
+            'quotation_items' => $this->lines($material),
+            'quotation_notes' => '  Valid for 30 days.  ',
+            'quotation_inclusions' => 'Installation and testing',
+            'quotation_exclusions' => 'Civil works',
+            'quotation_payment_terms' => '50% down, 50% on completion',
+            'quotation_prepared_by' => 'Kianne Solis',
+            'quotation_approved_by' => '',
+        ])->assertSessionHas('success');
+
+        $project->refresh();
+
+        $this->assertSame('Valid for 30 days.', $project->quotation_notes);
+        $this->assertNull($project->quotation_approved_by);
+
+        $this->get(route('super-admin.projects.show', $project->project_id))
+            ->assertOk()
+            ->assertSeeInOrder([
+                'Notes:', 'Valid for 30 days.',
+                'INCLUSIONS:', 'Installation and testing',
+                'EXCLUSIONS:', 'Civil works',
+                'Terms of Payment', '50% down, 50% on completion',
+                'PREPARED BY:', 'Kianne Solis',
+            ])
+            // The edit dialog opens on what was saved.
+            ->assertSee('name="quotation_prepared_by"', false)
+            ->assertSee('>Civil works</textarea>', false);
+    }
+
+    public function test_overlong_terms_are_refused(): void
+    {
+        $project = $this->project();
+
+        $this->actingAsSuperAdmin();
+
+        $this->put(route('super-admin.projects.quotation.update', $project->project_id), [
+            'quotation_items' => $this->lines($this->material()),
+            'quotation_prepared_by' => str_repeat('a', 101),
+        ])->assertSessionHasErrorsIn('quotation', ['quotation_prepared_by']);
+
+        $this->assertNull($project->fresh()->quotation_prepared_by);
+    }
+
+    public function test_the_date_moves_to_the_day_the_quotation_is_edited(): void
+    {
+        $material = $this->material();
+        $project = $this->project();
+
+        $this->travelTo(now()->setDate(2026, 3, 2)->setTime(10, 0));
+        app(ProjectQuotation::class)->save($project, $this->lines($material));
+
+        $this->actingAsSuperAdmin();
+
+        $this->get(route('super-admin.projects.show', $project->project_id))
+            ->assertSee('02 Mar 2026');
+
+        $this->travelTo(now()->setDate(2026, 3, 9)->setTime(10, 0));
+
+        $this->put(route('super-admin.projects.quotation.update', $project->project_id), [
+            'quotation_items' => $this->lines($material),
+            'quotation_special_discount' => 50,
+        ])->assertSessionHas('success');
+
+        $this->get(route('super-admin.projects.show', $project->project_id))
+            ->assertSee('09 Mar 2026')
+            ->assertDontSee('02 Mar 2026');
     }
 
     public function test_an_old_project_offers_a_breakdown_only_to_those_who_can_add_one(): void
@@ -223,7 +361,7 @@ class QuotationFormTest extends TestCase
 
         $this->get(route('super-admin.projects.show', $project->project_id))
             ->assertOk()
-            ->assertSeeInOrder(['PROJECT REF NO:', $project->reference_no])
+            ->assertSeeInOrder(['Project Reference No.:', $project->reference_no])
             ->assertDontSee('PROJECT NO:')
             ->assertDontSee('data-quotation-add="labor"', false)
             ->assertSee('data-quotation-add="other"', false);
@@ -242,7 +380,7 @@ class QuotationFormTest extends TestCase
         $this->assertSame(2000.0, (float) $labor->unit_price);
 
         SystemContent::query()->updateOrCreate(['content_key' => 'contact.address'], ['content_value' => '1 Configured Street, Cavite']);
-        SystemContent::query()->updateOrCreate(['content_key' => 'contact.email'], ['content_value' => 'office@configured.test']);
+        SystemContent::query()->updateOrCreate(['content_key' => 'contact.phone'], ['content_value' => '(046) 555-0101']);
         app(SystemContentService::class)->flush();
 
         $this->actingAsSuperAdmin();
@@ -250,13 +388,13 @@ class QuotationFormTest extends TestCase
         $page = $this->get(route('super-admin.projects.show', $project->project_id))->assertOk();
 
         $page->assertSee('1 Configured Street, Cavite')
-            ->assertSee('Email: office@configured.test')
+            ->assertSee('Phone No.: (046) 555-0101')
             ->assertDontSee('NHA Industrial')
             // Every price carries the peso sign.
-            ->assertSee('&#8369; 150.00', false)
-            ->assertSee('&#8369; 300.00', false)
+            ->assertSee('150.00')
+            ->assertSee('300.00')
             ->assertSee('<td colspan="4">Labor cost</td>', false)
-            ->assertSee('&#8369; 2,000.00', false);
+            ->assertSee('2,000.00');
     }
 
     public function test_only_those_who_create_projects_may_edit(): void

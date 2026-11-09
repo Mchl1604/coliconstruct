@@ -1,5 +1,5 @@
 /**
- * The Inventory page: every material with its total, reserved and available.
+ * The Inventory page: every material with its total, assigned and available.
  *
  * The buttons above the table and on its rows open one dialog for Stock In and
  * Stock Out, which takes several materials at once. Every write goes to the
@@ -267,7 +267,7 @@ document.addEventListener("DOMContentLoaded", function () {
         label.textContent = material.label;
         figures.className = "small text-secondary";
         figures.textContent =
-            "Total " + formatQuantity((material.reserved || 0) + material.available) + " · Available " + formatQuantity(material.available) + " " + material.unit;
+            "Total " + formatQuantity((material.assigned || 0) + material.available) + " · Available " + formatQuantity(material.available) + " " + material.unit;
         name.append(label, figures);
 
         group.className = "input-group input-group-sm stock-line-qty";

@@ -169,7 +169,11 @@ class StoreProjectRequest extends FormRequest
                 // The quotation lines: free of stock, but each material listed
                 // and quoted once, in a quantity its unit allows.
                 if (! $validator->errors()->has('quotation_items*') && is_array($this->input('quotation_items'))) {
-                    foreach (app(ProjectQuotation::class)->errors(array_values($this->input('quotation_items'))) as $key => $message) {
+                    foreach (app(ProjectQuotation::class)->errors(
+                        array_values($this->input('quotation_items')),
+                        $this->input('quotation_discount_percent'),
+                        $this->input('quotation_special_discount')
+                    ) as $key => $message) {
                         $validator->errors()->add($key, $message);
                     }
                 }

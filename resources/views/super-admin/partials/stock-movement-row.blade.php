@@ -42,7 +42,7 @@
     </td>
     <td class="small">{{ $movement->recorderName() }}</td>
     <td class="text-center">
-        @unless ($movement->isVoided() || $movement->is_reservation)
+        @unless ($movement->isVoided() || $movement->is_reservation || $movement->is_assignment)
             <button type="button" class="btn btn-sm btn-outline-danger py-1 px-2"
                 data-stock-void="{{ $movement->stock_movement_id }}"
                 data-stock-void-label="{{ $movement->typeLabel() }} of {{ $unit?->format(abs($quantity)) }} {{ $unit?->value }} {{ $material?->displayName() }}"

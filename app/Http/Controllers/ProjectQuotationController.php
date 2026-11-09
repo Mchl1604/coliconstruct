@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Validator;
 /**
  * Project Details -> Quotation -> Edit: changing the breakdown after the
  * project was created. A change in the total goes in the quotation history.
- * Reserved stock is left alone: the Materials tab shows any gap.
+ * Assigned stock is left alone: the Materials tab shows any gap.
  */
 class ProjectQuotationController extends Controller
 {
@@ -41,7 +41,11 @@ class ProjectQuotationController extends Controller
         $validated = Validator::make($request->all(), $this->quotation->rules(), $this->quotation->messages())
             ->after(function (\Illuminate\Validation\Validator $validator) use ($request): void {
                 if ($validator->errors()->isEmpty()) {
-                    foreach ($this->quotation->errors(array_values((array) $request->input('quotation_items'))) as $key => $message) {
+                    foreach ($this->quotation->errors(
+                        array_values((array) $request->input('quotation_items')),
+                        $request->input('quotation_discount_percent'),
+                        $request->input('quotation_special_discount')
+                    ) as $key => $message) {
                         $validator->errors()->add($key, $message);
                     }
                 }
@@ -49,14 +53,16 @@ class ProjectQuotationController extends Controller
             ->validateWithBag(self::ERROR_BAG);
 
         $rows = array_values($validated['quotation_items']);
-        $total = $this->quotation->total($rows);
+        $discountPercent = $validated['quotation_discount_percent'] ?? 0;
+        $specialDiscount = $validated['quotation_special_discount'] ?? 0;
+        $total = $this->quotation->total($rows, $discountPercent, $specialDiscount);
         $amountChanged = false;
 
-        DB::transaction(function () use ($project, $rows, $total, $request, &$amountChanged): void {
+        DB::transaction(function () use ($project, $rows, $discountPercent, $specialDiscount, $validated, $total, $request, &$amountChanged): void {
             $locked = Project::query()->lockForUpdate()->findOrFail($project->project_id);
             $previous = $locked->quotation;
 
-            $this->quotation->save($locked, $rows);
+            $this->quotation->save($locked, $rows, $discountPercent, $specialDiscount, $validated);
 
             $amountChanged = ! QuotationChange::sameAmount($previous, $total);
 

@@ -63,7 +63,13 @@
         // project is stored as Ongoing. Closing it off is exactly what the
         // banner below asks for.
         $canComplete = auth()->user()->can('offersCompletion', $project);
-        $completeTarget = $completionBlockers === [] ? '#editProjectDescriptionModal' : '#completeBlockedModal';
+        // Materials still on site open Leftover Materials first.
+        $hasLeftovers = $completionBlockers === [] && app(\App\Services\ProjectMaterialLedger::class)->hasLeftovers($project);
+        $completeTarget = match (true) {
+            $completionBlockers !== [] => '#completeBlockedModal',
+            $hasLeftovers => '#leftoverMaterialsModal',
+            default => '#editProjectDescriptionModal',
+        };
 
         // Readable before setup, changeable after it - see EnsureProjectIsSetUp.
         $awaitingSetup = $project->awaitingInitialSetup();
@@ -3041,11 +3047,16 @@
     {{-- Asks before replacing a lead technician, and before removing a
          document. Both were browser confirm() dialogs, which could not say who
          comes off the project or why the server refused. --}}
-    @can('updateServiceReport', $project)
+    @if ($canComplete && $hasLeftovers)
+        <x-leftover-materials-modal />
+    @endif
+    {{-- Also drawn for an Admin Officer, who cannot edit the report but
+         still completes the project through this form. --}}
+    @if ($canComplete || auth()->user()->can('updateServiceReport', $project))
         <x-project-details-modal :project="$project"
             :complete-url="$canComplete ? route('super-admin.projects.complete', $project->project_id) : null"
             :client-cannot-confirm="$confirmabilityState === \App\Services\CompletionConfirmability::UNREACHABLE" />
-    @endcan
+    @endif
     <x-confirm-dialog />
 
     @if ($quotationHistoryCount > 0)
@@ -3110,6 +3121,8 @@
         {{-- The Materials tab: its history table and its three dialogs. --}}
         <script src="/js/materialPicker.js"></script>
         <script src="/js/projectMaterials.js"></script>
+        {{-- Complete Project with materials still on site. --}}
+        <script src="/js/leftoverMaterials.js"></script>
         {{-- Lets a #fragment open the tab holding it - the page is two tabs
              now, and the phases panel, the client details and the task
              board are all inside one of them. Completing a phase redirects

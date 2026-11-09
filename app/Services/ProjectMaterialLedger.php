@@ -27,9 +27,9 @@ use RuntimeException;
  * Quantities are added up in hundredths - integers - because the columns hold
  * two decimals and floating-point sums of 0.1 m lengths do not come out even.
  *
- * The warehouse follows the site: an addition taken from stock comes off the
- * shelf, so does a use of a plan nobody released, and a return and the
- * leftovers at close-out go back on it - see
+ * The warehouse follows the site: the plan and an addition come off the
+ * shelf when they are assigned, and a return and the leftovers at close-out
+ * go back on it - see
  * StockLedger. Each of those writes in the same transaction as its entry, so
  * one is never saved without the other.
  */
@@ -39,6 +39,7 @@ class ProjectMaterialLedger
         private readonly ActivityLogger $activityLogger,
         private readonly StockLedger $stock,
         private readonly StockAvailability $availability,
+        private readonly NotificationService $notifications,
     ) {}
 
     /**
@@ -189,13 +190,10 @@ class ProjectMaterialLedger
 
             $entry = $this->write($line, $type, $quantity, $date, $notes, $by);
 
-            // A return goes back to the warehouse, or back to being free when
-            // it never left. A use of what was never released takes it off
-            // the shelf.
+            // A return goes back to the warehouse. A use moves nothing: what
+            // is assigned to the project already left the shelf.
             if ($type === ProjectMaterialEntry::TYPE_RETURNED) {
                 $this->stock->returnFromSite($entry, $material, $quantity, $by);
-            } else {
-                $this->stock->takeForUse($entry, $material, $quantity, $by);
             }
 
             $this->activityLogger->record(
@@ -284,10 +282,11 @@ class ProjectMaterialLedger
      *
      * No warning and no refusal: a job often ends with a few meters of tube
      * left, and that is a fact to keep, not a problem to stop the close on.
-     * Called when a project becomes Completed or Cancelled - never at
-     * Awaiting Client Confirmation, which can still be reopened. Running it
-     * twice writes nothing the second time, because the first left nothing
-     * on site.
+     * Called when Complete Project is submitted and when a project is
+     * cancelled. A project reopened afterwards starts with nothing on site;
+     * adding more is up to whoever reopens it. Running it twice writes
+     * nothing the second time, because the first left nothing on site.
+     * Inventory staff are told what went back on the shelf.
      *
      * Only what the warehouse actually handed the project goes back on the
      * shelf. A plan nobody released is "on site" in this ledger's sums but
@@ -305,6 +304,7 @@ class ProjectMaterialLedger
 
         $today = BusinessTime::today()->toDateString();
         $written = 0;
+        $returned = [];
 
         foreach ($lines as $line) {
             $onSite = $this->onSiteHundredths($line);
@@ -328,6 +328,12 @@ class ProjectMaterialLedger
 
             if ($returnable > 0) {
                 $this->stock->returnForEntry($entry, $line->material, $returnable, null);
+                $returned[] = sprintf(
+                    '%s %s of %s',
+                    $line->material->unit->format($returnable),
+                    $line->material->unit->value,
+                    $line->material->displayName()
+                );
             }
 
             $written++;
@@ -347,7 +353,18 @@ class ProjectMaterialLedger
             );
         }
 
+        $this->notifications->leftoverMaterialsReturned($project, $returned);
+
         return $written;
+    }
+
+    /**
+     * Whether anything is still on site - what Complete Project would record
+     * as unused and return to stock.
+     */
+    public function hasLeftovers(Project $project): bool
+    {
+        return $project->materials()->get()->contains(fn (ProjectMaterial $line): bool => $this->onSiteHundredths($line) > 0);
     }
 
     // ------------------------------------------------------------------

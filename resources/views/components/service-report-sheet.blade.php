@@ -41,7 +41,8 @@
         </colgroup>
         <tr>
             <td><span class="sr-label">CLIENT NAME:</span> {{ $header['client_name'] }}</td>
-            <td colspan="2"><span class="sr-label">LAST MODIFIED:</span> {{ $header['last_modified'] }}</td>
+            <td><span class="sr-label">PROJECT REF NO:</span> {{ $header['reference_no'] }}</td>
+            <td><span class="sr-label">DATE:</span> {{ $header['date'] }}</td>
         </tr>
         <tr>
             <td><span class="sr-label">ADDRESS:</span> {{ $header['address'] }}</td>

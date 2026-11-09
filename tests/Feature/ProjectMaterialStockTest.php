@@ -30,9 +30,9 @@ use Tests\TestCase;
 /**
  * Phase 3: a project's materials and the warehouse.
  *
- * The create wizard's plan reserves stock, a release by Purchasing ends the
- * reservation, and what the project's Materials tab records on site moves
- * the warehouse with it.
+ * The create wizard's plan assigns stock to the project as a Stock Out, and
+ * what the project's Materials tab records on site moves the warehouse with
+ * it. Leftovers go back on the shelf when the project is closed out.
  */
 class ProjectMaterialStockTest extends TestCase
 {
@@ -62,7 +62,7 @@ class ProjectMaterialStockTest extends TestCase
     // The create wizard
     // ------------------------------------------------------------------
 
-    public function test_the_wizard_saves_the_plan_and_it_reserves_stock(): void
+    public function test_the_wizard_saves_the_plan_and_it_assigns_stock(): void
     {
         $this->stockIn($this->aircon, 10);
 
@@ -74,8 +74,9 @@ class ProjectMaterialStockTest extends TestCase
 
         $this->assertSame(4.0, (float) $project->materials()->value('quantity_needed'));
 
+        // Assigned is a stock out: the shelf holds 6, the project 4.
         $this->assertSame(
-            ['on_hand' => 10.0, 'reserved' => 4.0, 'available' => 6.0],
+            ['on_hand' => 6.0, 'assigned' => 4.0, 'available' => 6.0],
             app(StockAvailability::class)->forMaterial($this->aircon)
         );
 
@@ -167,15 +168,16 @@ class ProjectMaterialStockTest extends TestCase
         $this->assertSame(0, Project::count());
     }
 
-    public function test_available_stock_never_goes_below_zero(): void
+    public function test_assigning_never_takes_more_than_is_on_hand(): void
     {
-        $this->plan($this->project('REF-RES-4'), $this->aircon, 3);
         $this->stockIn($this->aircon, 1);
+        $this->plan($this->project('REF-RES-4'), $this->aircon, 3);
 
         $this->assertSame(
-            ['on_hand' => 1.0, 'reserved' => 3.0, 'available' => 0.0],
+            ['on_hand' => 0.0, 'assigned' => 3.0, 'available' => 0.0],
             app(StockAvailability::class)->forMaterial($this->aircon)
         );
+        $this->assertSame(-1.0, (float) StockMovement::query()->where('is_assignment', true)->sum('quantity'));
 
         $this->getTablePage(route('inventory.stock.index'), ['search' => 'split'])
             ->assertSee('text-danger fw-semibold">0</span>', false);
@@ -237,46 +239,47 @@ class ProjectMaterialStockTest extends TestCase
     // Reservations
     // ------------------------------------------------------------------
 
-    public function test_a_release_by_purchasing_ends_the_reservation(): void
+    public function test_assigned_counts_what_a_live_project_holds_on_site_or_not(): void
     {
-        $project = $this->project('REF-RES-1');
-        $this->plan($project, $this->aircon, 4);
         $this->stockIn($this->aircon, 10);
-
-        $this->assertSame(4.0, app(StockAvailability::class)->forMaterial($this->aircon)['reserved']);
-
-        $this->postJson(route('inventory.stock.issue'), [
-            'material_id' => $this->aircon->material_id,
-            'quantity' => 4,
-            'movement_date' => now()->toDateString(),
-            'project_id' => $project->project_id,
-        ])->assertOk();
+        $project = $this->project('REF-RES-1');
+        $line = $this->plan($project, $this->aircon, 4);
 
         $this->assertSame(
-            ['on_hand' => 6.0, 'reserved' => 0.0, 'available' => 6.0],
+            ['on_hand' => 6.0, 'assigned' => 4.0, 'available' => 6.0],
+            app(StockAvailability::class)->forMaterial($this->aircon)
+        );
+
+        // Used on site: still off the shelf, no longer with the project.
+        app(ProjectMaterialLedger::class)->record($project, $line, ProjectMaterialEntry::TYPE_USED, 1, today(), null, $this->admin);
+
+        $this->assertSame(
+            ['on_hand' => 6.0, 'assigned' => 3.0, 'available' => 6.0],
             app(StockAvailability::class)->forMaterial($this->aircon)
         );
     }
 
-    public function test_a_closed_project_reserves_nothing(): void
+    public function test_a_closed_project_holds_nothing_assigned(): void
     {
         $project = $this->project('REF-RES-2', 'completed');
-        $this->plan($project, $this->aircon, 4);
+        ProjectMaterial::create(['project_id' => $project->project_id, 'material_id' => $this->aircon->material_id, 'quantity_needed' => 4]);
 
-        $this->assertSame(0.0, app(StockAvailability::class)->forMaterial($this->aircon)['reserved']);
+        $this->assertSame(0.0, app(StockAvailability::class)->forMaterial($this->aircon)['assigned']);
     }
 
-    public function test_the_stock_table_shows_reserved_and_available(): void
+    public function test_the_stock_table_shows_assigned_and_available(): void
     {
-        $this->plan($this->project('REF-RES-3'), $this->aircon, 3);
         $this->stockIn($this->aircon, 5);
+        $this->plan($this->project('REF-RES-3'), $this->aircon, 3);
 
-        // Total, reserved, available.
+        // Total, assigned to projects, available.
         $this->getTablePage(route('inventory.stock.index'), ['search' => 'split'])
             ->assertSeeInOrder(['fw-semibold ">5</span>', 'small ">3</td>', '">2</span>'], false);
+
+        $this->get(route('inventory.index'))->assertOk()->assertSee('Assigned to Projects')->assertDontSee('>Reserved<', false);
     }
 
-    public function test_reserving_writes_a_stock_out_that_leaves_the_total_alone(): void
+    public function test_assigning_writes_a_stock_out_that_counts(): void
     {
         $this->stockIn($this->aircon, 10);
         $project = $this->project('REF-RES-OUT');
@@ -285,15 +288,16 @@ class ProjectMaterialStockTest extends TestCase
             ['material_id' => $this->aircon->material_id, 'quantity' => 10],
         ], $this->admin);
 
-        $row = StockMovement::query()->where('is_reservation', true)->sole();
+        $row = StockMovement::query()->where('is_assignment', true)->sole();
 
         $this->assertSame(StockMovement::TYPE_STOCK_OUT, $row->movement_type);
         $this->assertSame(-10.0, (float) $row->quantity);
+        $this->assertFalse($row->is_reservation);
         $this->assertSame($project->project_id, $row->project_id);
-        $this->assertSame('Reserved', $row->notes);
+        $this->assertSame('Assigned to project', $row->notes);
 
         $this->assertSame(
-            ['on_hand' => 10.0, 'reserved' => 10.0, 'available' => 0.0],
+            ['on_hand' => 0.0, 'assigned' => 10.0, 'available' => 0.0],
             app(StockAvailability::class)->forMaterial($this->aircon)
         );
 
@@ -301,7 +305,7 @@ class ProjectMaterialStockTest extends TestCase
             ->assertSeeInOrder(['fw-semibold ">10</span>', 'small ">10</td>', '>0</span>', 'Out of Stock'], false);
 
         $this->getTablePage(route('inventory.stock.movements'), ['type' => StockMovement::TYPE_STOCK_OUT])
-            ->assertSee('Reserved')
+            ->assertSee('Assigned to project')
             ->assertDontSee('data-stock-void', false);
 
         $this->assertSame(1, Notification::query()->where('title', 'Out of Stock')->count());
@@ -333,9 +337,9 @@ class ProjectMaterialStockTest extends TestCase
     {
         $this->stockIn($this->aircon, 10);
         $this->stockIn($this->copper, 10);
-        $first = $this->project('REF-RES-A');
-        $this->plan($first, $this->aircon, 6);
-        $this->plan($this->project('REF-RES-B'), $this->aircon, 4);
+        $this->plan($this->project('REF-RES-A'), $this->aircon, 6);
+        $second = $this->project('REF-RES-B');
+        $this->plan($second, $this->aircon, 4);
 
         $outOfStock = fn (): array => Material::query()->inStockStatus(Material::STOCK_OUT)->pluck('material_id')->all();
 
@@ -343,47 +347,45 @@ class ProjectMaterialStockTest extends TestCase
         $this->assertSame([$this->copper->material_id], Material::query()->inStockStatus(Material::STOCK_IN)->pluck('material_id')->all());
         $this->assertSame(Material::STOCK_OUT, $this->aircon->fresh()->stockStatus());
 
-        // Released by hand: the shelf and the claim fall together, so none is free.
-        app(StockLedger::class)->issue($this->aircon, 6, now()->toDateString(), ['project_id' => $first->project_id], $this->admin);
-
-        $this->assertSame(
-            ['on_hand' => 4.0, 'reserved' => 4.0, 'available' => 0.0],
-            app(StockAvailability::class)->forMaterial($this->aircon)
-        );
-        $this->assertSame([$this->aircon->material_id], $outOfStock());
-
-        // The project closes: its claim ends, and the rest is free again.
-        Project::query()->where('reference_no', 'REF-RES-B')->update(['status' => 'cancelled']);
+        // The second project closes: its leftovers come back and are free again.
+        $second->update(['status' => 'cancelled']);
+        app(ProjectMaterialLedger::class)->closeOut($second->fresh(), 'Left over at cancellation.');
 
         $this->assertSame([], $outOfStock());
+        $this->assertSame(
+            ['on_hand' => 4.0, 'assigned' => 6.0, 'available' => 4.0],
+            app(StockAvailability::class)->forMaterial($this->aircon)
+        );
     }
 
-    public function test_changing_a_plan_replaces_its_reservation_row_and_a_row_cannot_be_voided(): void
+    public function test_changing_a_plan_replaces_its_assignment_row_and_a_row_cannot_be_voided(): void
     {
         $this->stockIn($this->aircon, 10);
         $project = $this->project('REF-RES-EDIT');
         $plan = app(ProjectMaterialPlan::class);
-        $reservations = fn () => StockMovement::query()->notVoided()->where('is_reservation', true);
+        $assignments = fn () => StockMovement::query()->notVoided()->where('is_assignment', true);
 
         $plan->save($project, [['material_id' => $this->aircon->material_id, 'quantity' => 4]], $this->admin);
         $plan->save($project, [['material_id' => $this->aircon->material_id, 'quantity' => 4]], $this->admin);
 
-        $this->assertSame(1, $reservations()->count());
+        $this->assertSame(1, $assignments()->count());
+        $this->assertSame(6.0, $this->aircon->fresh()->onHand());
 
         $plan->save($project, [['material_id' => $this->aircon->material_id, 'quantity' => 7]], $this->admin);
 
-        $active = $reservations()->sole();
+        $active = $assignments()->sole();
         $this->assertSame(-7.0, (float) $active->quantity);
-        $this->assertSame(10.0, $this->aircon->fresh()->onHand());
+        $this->assertSame(3.0, $this->aircon->fresh()->onHand());
 
         $this->postJson(route('inventory.stock.void', $active))
             ->assertStatus(422)
-            ->assertJsonPath('error', 'Reserved by the project. Change it there.');
+            ->assertJsonPath('error', 'Assigned to the project. Change it there.');
 
         $plan->save($project, [], $this->admin);
 
-        $this->assertSame(0, $reservations()->count());
-        $this->assertSame(0.0, app(StockAvailability::class)->forMaterial($this->aircon)['reserved']);
+        $this->assertSame(0, $assignments()->count());
+        $this->assertSame(10.0, $this->aircon->fresh()->onHand());
+        $this->assertSame(0.0, app(StockAvailability::class)->forMaterial($this->aircon)['assigned']);
     }
 
     // ------------------------------------------------------------------
@@ -430,11 +432,11 @@ class ProjectMaterialStockTest extends TestCase
         $this->assertSame(1.0, $this->copper->fresh()->onHand());
     }
 
-    public function test_an_addition_cannot_take_stock_another_project_reserved(): void
+    public function test_an_addition_cannot_take_stock_another_project_holds(): void
     {
         $project = $this->project('REF-TAB-7');
-        $this->plan($this->project('REF-TAB-8'), $this->copper, 8);
         $this->stockIn($this->copper, 10);
+        $this->plan($this->project('REF-TAB-8'), $this->copper, 8);
         $this->finalizePhases($project);
 
         $this->post(route('super-admin.projects.materials.add', $project->project_id), [
@@ -443,7 +445,7 @@ class ProjectMaterialStockTest extends TestCase
         ])->assertSessionHas('error', 'Only 2 m available. Ask Purchasing.');
 
         $this->assertSame(0, ProjectMaterialEntry::count());
-        $this->assertSame(10.0, $this->copper->fresh()->onHand());
+        $this->assertSame(2.0, $this->copper->fresh()->onHand());
     }
 
     public function test_the_project_form_takes_from_stock_today_with_no_notes(): void
@@ -483,8 +485,8 @@ class ProjectMaterialStockTest extends TestCase
     public function test_the_project_picker_and_add_more_show_available_stock(): void
     {
         $project = $this->project('REF-TAB-10');
-        $this->plan($project, $this->copper, 4);
         $this->stockIn($this->copper, 10);
+        $this->plan($project, $this->copper, 4);
         $this->finalizePhases($project);
 
         $this->getJson(route('super-admin.projects.materials.suggest', [$project->project_id, 'q' => 'copper']))
@@ -517,7 +519,7 @@ class ProjectMaterialStockTest extends TestCase
         $this->assertNotNull(StockMovement::query()->where('project_material_entry_id', $return->material_entry_id)->value('voided_at'));
     }
 
-    public function test_returning_an_unreleased_plan_frees_it_and_leaves_the_total_alone(): void
+    public function test_returning_part_of_the_plan_puts_it_back_on_the_shelf(): void
     {
         $project = $this->project('REF-RET-1');
         $this->stockIn($this->copper, 10);
@@ -530,45 +532,40 @@ class ProjectMaterialStockTest extends TestCase
 
         $return = $ledger->record($project, $line, ProjectMaterialEntry::TYPE_RETURNED, 4, today(), null, $this->admin);
 
-        $this->assertSame(['on_hand' => 10.0, 'reserved' => 6.0, 'available' => 4.0], $figures());
+        $this->assertSame(['on_hand' => 4.0, 'assigned' => 6.0, 'available' => 4.0], $figures());
         $this->assertNotContains($this->copper->material_id, $outOfStock());
 
         $row = StockMovement::query()->where('project_material_entry_id', $return->material_entry_id)->sole();
         $this->assertSame(StockMovement::TYPE_RETURNED, $row->movement_type);
-        $this->assertTrue($row->is_reservation);
+        $this->assertFalse($row->is_reservation);
 
-        // Voiding the entry puts the claim back.
+        // Voiding the entry takes it off the shelf again.
         $ledger->void($project, $return, $this->admin);
 
-        $this->assertSame(['on_hand' => 10.0, 'reserved' => 10.0, 'available' => 0.0], $figures());
+        $this->assertSame(['on_hand' => 0.0, 'assigned' => 10.0, 'available' => 0.0], $figures());
         $this->assertContains($this->copper->material_id, $outOfStock());
     }
 
-    public function test_a_return_goes_on_the_shelf_only_for_what_really_left_it(): void
+    public function test_a_return_puts_back_what_the_project_holds(): void
     {
         $project = $this->project('REF-RET-2');
         $this->stockIn($this->copper, 15);
         $line = $this->plan($project, $this->copper, 10);
-        $ledger = app(ProjectMaterialLedger::class);
-
-        // Half released: the shelf drops by 5 and 5 stay reserved.
-        app(StockLedger::class)->issue($this->copper, 5, today(), ['project_id' => $project->project_id], $this->admin);
 
         $this->assertSame(
-            ['on_hand' => 10.0, 'reserved' => 5.0, 'available' => 5.0],
+            ['on_hand' => 5.0, 'assigned' => 10.0, 'available' => 5.0],
             app(StockAvailability::class)->forMaterial($this->copper)
         );
 
-        // 5 came back from site, and 2 more of the plan are no longer needed.
-        $ledger->record($project, $line, ProjectMaterialEntry::TYPE_RETURNED, 7, today(), null, $this->admin);
+        app(ProjectMaterialLedger::class)->record($project, $line, ProjectMaterialEntry::TYPE_RETURNED, 7, today(), null, $this->admin);
 
         $this->assertSame(
-            ['on_hand' => 15.0, 'reserved' => 3.0, 'available' => 12.0],
+            ['on_hand' => 12.0, 'assigned' => 3.0, 'available' => 12.0],
             app(StockAvailability::class)->forMaterial($this->copper)
         );
     }
 
-    public function test_a_stock_in_return_of_an_unreleased_plan_leaves_the_total_alone(): void
+    public function test_a_stock_in_return_from_a_project_goes_on_the_shelf(): void
     {
         $project = $this->project('REF-RET-3');
         $this->stockIn($this->copper, 10);
@@ -582,13 +579,11 @@ class ProjectMaterialStockTest extends TestCase
             'project_id' => $project->project_id,
         ])->assertOk();
 
-        $this->assertSame(
-            ['on_hand' => 10.0, 'reserved' => 7.0, 'available' => 3.0],
-            app(StockAvailability::class)->forMaterial($this->copper)
-        );
+        $this->assertSame(3.0, app(StockAvailability::class)->forMaterial($this->copper)['available']);
+        $this->assertSame(0, StockMovement::query()->where('is_reservation', true)->count());
     }
 
-    public function test_using_an_unreleased_plan_takes_it_off_the_shelf_for_good(): void
+    public function test_using_moves_no_stock(): void
     {
         $project = $this->project('REF-USE-1');
         $this->stockIn($this->copper, 10);
@@ -598,23 +593,21 @@ class ProjectMaterialStockTest extends TestCase
 
         $used = $ledger->record($project, $line, ProjectMaterialEntry::TYPE_USED, 4, today(), null, $this->admin);
 
-        $this->assertSame(['on_hand' => 6.0, 'reserved' => 6.0, 'available' => 0.0], $figures());
-        $this->assertSame(Material::STOCK_OUT, $this->copper->fresh()->stockStatus());
-        $this->assertSame(-4.0, (float) StockMovement::query()->where('project_material_entry_id', $used->material_entry_id)->value('quantity'));
+        $this->assertSame(['on_hand' => 0.0, 'assigned' => 6.0, 'available' => 0.0], $figures());
+        $this->assertFalse(StockMovement::query()->where('project_material_entry_id', $used->material_entry_id)->exists());
 
-        // Voiding the use puts it back on the shelf and back in the claim.
         $ledger->void($project, $used, $this->admin);
-        $this->assertSame(['on_hand' => 10.0, 'reserved' => 10.0, 'available' => 0.0], $figures());
+        $this->assertSame(['on_hand' => 0.0, 'assigned' => 10.0, 'available' => 0.0], $figures());
 
         $ledger->record($project, $line, ProjectMaterialEntry::TYPE_USED, 10, today(), null, $this->admin);
         $project->update(['status' => 'completed']);
         $ledger->closeOut($project->fresh(), 'done');
 
-        // The job is closed and everything was used: nothing comes back.
-        $this->assertSame(['on_hand' => 0.0, 'reserved' => 0.0, 'available' => 0.0], $figures());
+        // Everything was used: nothing comes back.
+        $this->assertSame(['on_hand' => 0.0, 'assigned' => 0.0, 'available' => 0.0], $figures());
     }
 
-    public function test_using_what_purchasing_released_does_not_take_it_twice(): void
+    public function test_close_out_returns_what_was_not_used(): void
     {
         $project = $this->project('REF-USE-2');
         $this->stockIn($this->copper, 15);
@@ -622,18 +615,15 @@ class ProjectMaterialStockTest extends TestCase
         $ledger = app(ProjectMaterialLedger::class);
         $figures = fn (): array => app(StockAvailability::class)->forMaterial($this->copper);
 
-        // Half released by hand, then 7 used: the 5 unreleased come off the
-        // shelf, the other 2 were already off it.
-        app(StockLedger::class)->issue($this->copper, 5, today(), ['project_id' => $project->project_id], $this->admin);
         $ledger->record($project, $line, ProjectMaterialEntry::TYPE_USED, 7, today(), null, $this->admin);
 
-        $this->assertSame(['on_hand' => 5.0, 'reserved' => 0.0, 'available' => 5.0], $figures());
+        $this->assertSame(['on_hand' => 5.0, 'assigned' => 3.0, 'available' => 5.0], $figures());
 
-        // The 3 still on site come back at close-out.
+        // The 3 still with the project come back at close-out.
         $project->update(['status' => 'completed']);
         $ledger->closeOut($project->fresh(), 'done');
 
-        $this->assertSame(['on_hand' => 8.0, 'reserved' => 0.0, 'available' => 8.0], $figures());
+        $this->assertSame(['on_hand' => 8.0, 'assigned' => 0.0, 'available' => 8.0], $figures());
     }
 
     public function test_returning_material_bought_for_the_job_is_new_to_the_shelf(): void
@@ -649,27 +639,37 @@ class ProjectMaterialStockTest extends TestCase
         $this->assertSame(2.0, $this->copper->fresh()->onHand());
     }
 
-    public function test_close_out_returns_only_what_the_warehouse_released(): void
+    public function test_close_out_returns_leftovers_and_tells_inventory_staff(): void
     {
-        $project = $this->project('REF-TAB-6');
-        $this->plan($project, $this->aircon, 5);
-        $this->stockIn($this->aircon, 10);
+        $officer = $this->account(User::ROLE_ADMIN_OFFICER);
+        $buyer = $this->account(User::ROLE_PURCHASING_ADMIN);
+        $hr = $this->account(User::ROLE_ADMIN);
 
-        // Purchasing released three of the five planned.
-        $this->postJson(route('inventory.stock.issue'), [
-            'material_id' => $this->aircon->material_id,
-            'quantity' => 3,
-            'movement_date' => now()->toDateString(),
-            'project_id' => $project->project_id,
-        ])->assertOk();
+        $project = $this->project('REF-TAB-6');
+        $this->stockIn($this->aircon, 10);
+        $this->plan($project, $this->aircon, 5);
+
+        $this->assertSame(5.0, $this->aircon->fresh()->onHand());
 
         app(ProjectMaterialLedger::class)->closeOut($project, 'Left over at completion.');
 
-        // All five are "unused" on the project; only the three that left
-        // the shelf come back to it.
         $this->assertSame(5.0, (float) ProjectMaterialEntry::query()->where('entry_type', ProjectMaterialEntry::TYPE_UNUSED)->value('quantity'));
         $this->assertSame(10.0, $this->aircon->fresh()->onHand());
         $this->assertSame('System', StockMovement::query()->where('movement_type', StockMovement::TYPE_RETURNED)->value('recorded_by_name'));
+
+        $notice = fn (User $user) => Notification::query()->where('user_id', $user->id)->where('title', 'Unused Materials Returned');
+
+        foreach ([$this->admin, $officer, $buyer] as $user) {
+            $this->assertSame(1, $notice($user)->count());
+        }
+
+        $this->assertStringContainsString('REF-TAB-6', $notice($buyer)->value('message'));
+        $this->assertStringContainsString('Split-Type Inverter 1.5 HP (Daikin)', $notice($buyer)->value('message'));
+        $this->assertSame(0, $notice($hr)->count());
+
+        // Nothing left: a second close-out writes and tells nothing.
+        app(ProjectMaterialLedger::class)->closeOut($project, 'Left over at completion.');
+        $this->assertSame(1, $notice($buyer)->count());
     }
 
     // ------------------------------------------------------------------
@@ -686,13 +686,20 @@ class ProjectMaterialStockTest extends TestCase
         ])->assertOk();
     }
 
+    /**
+     * A plan line, taken out of stock the way the wizard's plan is.
+     */
     private function plan(Project $project, Material $material, float|int $quantity): ProjectMaterial
     {
-        return ProjectMaterial::create([
+        $line = ProjectMaterial::create([
             'project_id' => $project->project_id,
             'material_id' => $material->material_id,
             'quantity_needed' => $quantity,
         ]);
+
+        app(StockLedger::class)->syncAssignments($project, $this->admin);
+
+        return $line;
     }
 
     private function project(string $reference, string $status = 'ongoing'): Project

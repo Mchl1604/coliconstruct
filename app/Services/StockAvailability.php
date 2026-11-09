@@ -10,44 +10,27 @@ use App\Models\StockMovement;
 use Illuminate\Support\Facades\DB;
 
 /**
- * How much of each material is on hand, how much of that live projects have
- * already claimed, and what is left for anything new.
+ * How much of each material is in the warehouse, how much live projects hold,
+ * and what is left for anything new.
  *
- *     Reserved  = for each live project, what it planned less what the
- *                 warehouse has released to it, what it gave back
- *                 unreleased, and what it used straight off the shelf -
- *                 never below zero
- *     Available = On Hand - Reserved - never below zero
+ *     Available            = On Hand: every counted movement summed
+ *     Assigned to Projects = for each live project, what remains with it -
+ *                            planned + added - used - returned - unused -
+ *                            whether it is on site yet or not
+ *     Total                = Available + Assigned to Projects
  *
- * A project's plan reserves stock from the moment it is saved, so a second
- * project cannot be promised the same ten units. The reservation shrinks as
- * Purchasing releases the materials with a Stock Out against the project,
- * and ends when the project closes or is archived.
- *
- * The wizard holds a new plan to what is available - see
- * ProjectMaterialPlan::limitToAvailable(). A plan saved before that may still
- * reserve more than is on hand: Reserved keeps the whole claim, and Available
- * simply reads zero.
- *
- * A plan also writes Stock Out rows marked as reservations, so the history
- * shows the claim. They never count: Reserved is already the claim, and adding
- * them would take it off twice.
- *
- * Giving back part of a plan nobody released writes a Returned row marked the
- * same way. That stock never left the shelf, so On Hand stays as it is and only
- * the claim shrinks - see StockLedger::splitReturn().
- *
- * Only movements made by hand count as a release. One the project's Materials
- * tab wrote - extra brought to site, a return, leftovers at close-out - is
- * about stock beyond the plan, not the plan itself.
+ * Assigning stock to a project is a Stock Out: the plan writes one when the
+ * project is saved - see StockLedger::syncAssignments() - and extra material
+ * added on the Materials tab writes another. Using it moves nothing more; a
+ * return, and leftovers at completion, put it back on the shelf.
  */
 class StockAvailability
 {
     /**
      * @param  array<int, int>  $materialIds
-     * @return array<int, array{on_hand: float, reserved: float, available: float}>
+     * @return array<int, array{on_hand: float, assigned: float, available: float}>
      */
-    public function forMaterials(array $materialIds, ?Project $except = null): array
+    public function forMaterials(array $materialIds): array
     {
         $materialIds = array_values(array_unique(array_map('intval', $materialIds)));
 
@@ -62,18 +45,17 @@ class StockAvailability
             ->select('material_id', DB::raw('SUM(quantity) as total'))
             ->pluck('total', 'material_id');
 
-        $reserved = $this->reserved($materialIds, $except);
+        $assigned = $this->assigned($materialIds);
 
         $figures = [];
 
         foreach ($materialIds as $materialId) {
-            $held = $this->hundredths($onHand[$materialId] ?? 0);
-            $claimed = $reserved[$materialId] ?? 0;
+            $held = max(0, $this->hundredths($onHand[$materialId] ?? 0));
 
             $figures[$materialId] = [
                 'on_hand' => round($held / 100, 2),
-                'reserved' => round($claimed / 100, 2),
-                'available' => round(max(0, $held - $claimed) / 100, 2),
+                'assigned' => round(($assigned[$materialId] ?? 0) / 100, 2),
+                'available' => round($held / 100, 2),
             ];
         }
 
@@ -83,11 +65,11 @@ class StockAvailability
     /**
      * One material's figures.
      *
-     * @return array{on_hand: float, reserved: float, available: float}
+     * @return array{on_hand: float, assigned: float, available: float}
      */
-    public function forMaterial(Material $material, ?Project $except = null): array
+    public function forMaterial(Material $material): array
     {
-        return $this->forMaterials([(int) $material->material_id], $except)[(int) $material->material_id];
+        return $this->forMaterials([(int) $material->material_id])[(int) $material->material_id];
     }
 
     /**
@@ -107,118 +89,52 @@ class StockAvailability
     }
 
     /**
-     * How much of one project's plan for one material is still claimed and
-     * has never left the shelf.
-     */
-    public function claimedBy(Project $project, Material $material): float
-    {
-        $planned = ProjectMaterial::query()
-            ->where('project_id', $project->project_id)
-            ->where('material_id', $material->material_id)
-            ->value('quantity_needed');
-
-        $released = StockMovement::query()
-            ->counted()
-            ->whereNull('project_material_entry_id')
-            ->where('project_id', $project->project_id)
-            ->where('material_id', $material->material_id)
-            ->sum('quantity');
-
-        $givenBack = StockMovement::query()
-            ->notVoided()
-            ->where('is_reservation', true)
-            ->where('quantity', '>', 0)
-            ->where('project_id', $project->project_id)
-            ->where('material_id', $material->material_id)
-            ->sum('quantity');
-
-        $usedOffShelf = StockMovement::query()
-            ->counted()
-            ->usedOnSite()
-            ->where('project_id', $project->project_id)
-            ->where('material_id', $material->material_id)
-            ->sum('quantity');
-
-        $outstanding = $this->hundredths($planned)
-            - max(0, -$this->hundredths($released))
-            - $this->hundredths($givenBack)
-            + $this->hundredths($usedOffShelf);
-
-        return round(max(0, $outstanding) / 100, 2);
-    }
-
-    /**
-     * material_id => hundredths claimed by live projects' plans.
+     * material_id => hundredths still with live projects.
      *
      * @param  array<int, int>  $materialIds
      * @return array<int, int>
      */
-    private function reserved(array $materialIds, ?Project $except): array
+    private function assigned(array $materialIds): array
     {
-        $plans = ProjectMaterial::query()
+        $lines = ProjectMaterial::query()
             ->whereIn('material_id', $materialIds)
             ->whereHas('project', fn ($project) => $project
                 ->where('is_archived', false)
                 ->whereNotIn('status', Project::READ_ONLY_STATUSES))
-            ->when($except?->exists, fn ($query) => $query->where('project_id', '!=', $except->project_id))
-            ->get(['project_id', 'material_id', 'quantity_needed']);
+            ->get(['project_material_id', 'material_id', 'quantity_needed']);
 
-        if ($plans->isEmpty()) {
+        if ($lines->isEmpty()) {
             return [];
         }
 
-        // project_id|material_id => hundredths released by hand.
-        $released = StockMovement::query()
-            ->counted()
-            ->whereNull('project_material_entry_id')
-            ->whereIn('project_id', $plans->pluck('project_id')->unique()->all())
-            ->whereIn('material_id', $materialIds)
-            ->groupBy('project_id', 'material_id')
-            ->select('project_id', 'material_id', DB::raw('SUM(quantity) as total'))
-            ->get()
-            ->mapWithKeys(fn (StockMovement $row): array => [
-                $row->project_id.'|'.$row->material_id => -$this->hundredths($row->getAttributes()['total'] ?? 0),
-            ]);
-
-        // project_id|material_id => hundredths given back unreleased.
-        $givenBack = StockMovement::query()
+        // project_material_id => entry type => hundredths.
+        $entries = ProjectMaterialEntry::query()
             ->notVoided()
-            ->where('is_reservation', true)
-            ->where('quantity', '>', 0)
-            ->whereIn('project_id', $plans->pluck('project_id')->unique()->all())
-            ->whereIn('material_id', $materialIds)
-            ->groupBy('project_id', 'material_id')
-            ->select('project_id', 'material_id', DB::raw('SUM(quantity) as total'))
+            ->whereIn('project_material_id', $lines->modelKeys())
+            ->groupBy('project_material_id', 'entry_type')
+            ->select('project_material_id', 'entry_type', DB::raw('SUM(quantity) as total'))
             ->get()
-            ->mapWithKeys(fn (StockMovement $row): array => [
-                $row->project_id.'|'.$row->material_id => $this->hundredths($row->getAttributes()['total'] ?? 0),
-            ]);
+            ->groupBy('project_material_id')
+            ->map(fn ($rows) => $rows->mapWithKeys(fn (ProjectMaterialEntry $row): array => [
+                $row->entry_type => $this->hundredths($row->getAttributes()['total'] ?? 0),
+            ]));
 
-        // project_id|material_id => hundredths used straight off the shelf.
-        $usedOffShelf = StockMovement::query()
-            ->counted()
-            ->usedOnSite()
-            ->whereIn('project_id', $plans->pluck('project_id')->unique()->all())
-            ->whereIn('material_id', $materialIds)
-            ->groupBy('project_id', 'material_id')
-            ->select('project_id', 'material_id', DB::raw('SUM(quantity) as total'))
-            ->get()
-            ->mapWithKeys(fn (StockMovement $row): array => [
-                $row->project_id.'|'.$row->material_id => -$this->hundredths($row->getAttributes()['total'] ?? 0),
-            ]);
+        $assigned = [];
 
-        $reserved = [];
+        foreach ($lines as $line) {
+            $figures = $entries->get($line->project_material_id, collect());
+            $remaining = $this->hundredths($line->quantity_needed)
+                + ($figures[ProjectMaterialEntry::TYPE_ADDED] ?? 0)
+                - ($figures[ProjectMaterialEntry::TYPE_USED] ?? 0)
+                - ($figures[ProjectMaterialEntry::TYPE_RETURNED] ?? 0)
+                - ($figures[ProjectMaterialEntry::TYPE_UNUSED] ?? 0);
 
-        foreach ($plans as $plan) {
-            $key = $plan->project_id.'|'.$plan->material_id;
-            $outstanding = $this->hundredths($plan->quantity_needed) - max(0, $released[$key] ?? 0) - ($givenBack[$key] ?? 0) - ($usedOffShelf[$key] ?? 0);
-
-            if ($outstanding > 0) {
-                $reserved[(int) $plan->material_id] = ($reserved[(int) $plan->material_id] ?? 0) + $outstanding;
+            if ($remaining > 0) {
+                $assigned[(int) $line->material_id] = ($assigned[(int) $line->material_id] ?? 0) + $remaining;
             }
         }
 
-        return $reserved;
+        return $assigned;
     }
 
     private function hundredths(mixed $quantity): int

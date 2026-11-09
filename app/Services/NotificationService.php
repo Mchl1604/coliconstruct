@@ -1666,6 +1666,28 @@ class NotificationService
     }
 
     /**
+     * A project closed with materials nobody used, and they went back on the
+     * shelf. Super Admin, Admin Officer and Purchasing hear it.
+     *
+     * @param  array<int, string>  $lines  "2 m of Copper Tube" for each material returned.
+     */
+    public function leftoverMaterialsReturned(Project $project, array $lines): void
+    {
+        if ($lines === []) {
+            return;
+        }
+
+        $this->deliver(
+            $this->inventoryStaff(),
+            'Unused Materials Returned',
+            sprintf('Unused from %s, back in stock: %s.', $this->projectLabel($project), implode(', ', $lines)),
+            Notification::MODULE_INVENTORY,
+            $project,
+            route('inventory.movements', [], false)
+        );
+    }
+
+    /**
      * A lead has asked for material. Whoever can decide hears it.
      */
     public function materialRequested(MaterialRequest $materialRequest): void

@@ -1,0 +1,164 @@
+TESTING INSTRUCTIONS - Coliconstruct roles, inventory, tasks and reports
+(paste this into a new Claude Code session opened in C:\Users\michael\Herd\coliconstruct)
+
+You are testing six phases of work on branch enhance-project-details. Test them in the
+browser (built-in browser, http://coliconstruct.test), report what passes and what fails
+with exact steps, and fix real bugs you find (with tests). Ask before committing.
+
+STATE OF THE BRANCH
+- Committed: Phase 1 (roles, c09560d) and Phase 2 (inventory, ac36853).
+- UNCOMMITTED in the working tree: Phases 3, 4, 5 and 6 (see below).
+
+SETUP
+1. Run the new migrations on the local MySQL database:
+     php artisan migrate
+   Adds: stock movement -> project entry link, tbl_task_updates (+ images),
+   tbl_technician_reports.report_data, tbl_incident_reports, tbl_incident_persons.
+2. Accounts. Password for all = the shared demo password in demo-accounts.md.
+     purchasing.test@example.com      Purchasing Admin
+     admin.officer.test@example.com   Admin Officer
+     cristina.reyes@example.com       HR Admin (demo)
+   Lead technicians and technicians: see demo-accounts.md. Pick a lead who is on an
+   ONGOING project that is scheduled TODAY (check the project's schedule as an admin).
+   The Super Admin's own password is the user's - ask them, never guess.
+3. Sign out between roles. Never change passwords or settings of real accounts.
+
+AUTOMATED TESTS
+- php artisan test --compact   (run serially; takes ~7 minutes)
+- These 4 already failed before this work - ignore them:
+    ConfigurationUserManagementTest::test_the_page_renders_all_three_tabs
+    HighSeverityAuditFixesTest::test_the_schedule_report_leaves_cancelled_work_out
+    BusinessTimeDisplayTest (2 tests about completion_date)
+- Date-related tests also fail between 16:00 and 24:00 UTC (pre-existing).
+- New test files: OfficeRoleAccessTest, MaterialCatalogTest, StockLedgerTest, BrandListTest,
+  MaterialSubtypeTest, ProjectMaterialStockTest, TaskProgressTest, DailyReportsTest.
+
+-------------------------------------------------------------------------------
+PHASE 1 - ROLES (Super Admin, HR Admin, Admin Officer, Purchasing Admin)
+-------------------------------------------------------------------------------
+[ ] Purchasing Admin signs in to /inventory. Sidebar: Inventory, Configuration only.
+    Typing /super-admin/dashboard or /super-admin/projects sends them back to Inventory.
+[ ] HR Admin: no Inventory in sidebar; /inventory redirects to the dashboard.
+    Configuration has User Management, Activity Logs, Inquiries - no Inventory Settings.
+[ ] Admin Officer: everything HR Admin has + Inventory + Inventory Settings tab.
+[ ] Super Admin can create Admin Officer and Purchasing Admin accounts; HR Admin's role
+    dropdown offers only Lead Technician and Technician.
+[ ] HR Admin cannot deactivate or reset the password of a Purchasing Admin / Admin Officer.
+
+-------------------------------------------------------------------------------
+PHASE 2 - INVENTORY (as Purchasing Admin)
+-------------------------------------------------------------------------------
+[ ] Inventory > Stock: figures (Materials / Low Stock / Out of Stock); filters Status,
+    Type, Sub-type; columns On Hand, Reserved, Available, Reorder At, Status.
+[ ] Stock In (Delivery with supplier + DR no.; Return from site with project).
+[ ] Stock Out more than on hand -> refused in the dialog. Closed projects are greyed out.
+[ ] Adjust Count: count equal to record -> refused; reason required.
+[ ] History opens Movements filtered to that material; Void works; voiding a delivery
+    that was already issued -> "Already issued. Void later entries first."
+[ ] Set a Reorder At level in Materials; issue stock down to it -> one "Low Stock"
+    notification (to Super Admin, Admin Officer, Purchasing Admin, NOT HR Admin);
+    to zero -> "Out of Stock". Clean up test data by voiding.
+[ ] Configuration > Inventory Settings: types with sub-type chips; Sub-types dialog
+    (add / rename / remove-with-inline-confirm); brands add / rename / remove.
+    Removing a type, sub-type or brand that has materials is blocked.
+[ ] Inventory > Materials: Add/Edit with Type -> Sub-type (follows the type), Brand
+    dropdown, Reorder At. "Edit types and brands" link opens the Configuration tab.
+
+-------------------------------------------------------------------------------
+PHASE 3 - MATERIALS IN PROJECT CREATION + STOCK LINKS  (never browser-tested)
+-------------------------------------------------------------------------------
+[ ] Super Admin > Projects > Create: 5 steps; step 3 = Materials (optional).
+    Search, add a line, type a quantity. Each line shows Available + On hand/Reserved
+    and a badge (In Stock / "Short N"). A shortage shows a yellow warning.
+[ ] Review step lists the materials. Saving with a shortage still works and the
+    Purchasing Admin gets a "Materials Short" notification.
+[ ] Quantity 1.5 for a whole-number unit -> wizard comes back with the error and the
+    lines still filled in.
+[ ] After saving: Inventory > Stock shows Reserved up / Available down for that material.
+    A Stock Out against that project (Purchasing) lowers Reserved again.
+[ ] Before setup, the project's Materials tab already lists those materials (read only,
+    no Add Material yet). Set Up Project asks for phases only: no Materials step, no Next
+    button, just Finish Setup. After Finish Setup the same materials are still on the
+    Materials tab and Add Material appears.
+[ ] Project > Materials tab > Add Material has "Source":
+      From the warehouse -> takes stock; refused "Only X in stock. Ask Purchasing." if short.
+      Bought directly -> no stock change.
+    Returned entries add stock back; voiding an entry voids its stock movement.
+[ ] Complete or cancel a project -> leftovers go back to stock, but only up to what the
+    warehouse actually released to that project (system movement "Left over at close-out").
+
+-------------------------------------------------------------------------------
+PHASE 4 - TASKS  (never browser-tested)
+-------------------------------------------------------------------------------
+[ ] Creating a task with start date today or earlier is refused
+    ("New tasks start tomorrow or later.") on: admin Tasks board, admin Project Details
+    Add Task, lead's Add Task, and Phase Setup draft tasks. The create pickers grey out
+    today and earlier. Editing an existing task keeps its dates (no refusal).
+[ ] As the technician holding a started task (ongoing project, booked today):
+    task row shows a blue journal "Add today's update" button -> notes + photos (max 5)
+    -> "Update posted."; posting again the same day edits it; first update turns
+    Pending into Ongoing.
+[ ] As the lead: can post on a technician's behalf ("posted by ..." in the timeline).
+[ ] Task details dialog (both portals, admin too) shows a "Progress" timeline with photos.
+[ ] Refusals: task not started yet, project on hold, technician not on the team,
+    not a booked day, another technician's task.
+
+-------------------------------------------------------------------------------
+PHASE 5 - GENERATED DAILY PROGRESS REPORT  (never browser-tested)
+-------------------------------------------------------------------------------
+[ ] As the lead: Reports page and Project Details now have "Progress Report" and
+    "Incident Report" buttons (the old free-text Submit Report button is gone for leads).
+[ ] Progress Report: choose project + day (default today) -> Gather shows: progress bar
+    (phases %, current phase), team on site, that day's task updates, completed and
+    overdue tasks, materials recorded that day, incidents that day.
+[ ] Fill remarks / issues / plan for tomorrow (+ photos) -> File Report -> back on
+    Reports with "Progress report filed."
+[ ] Filing a second one for the same project and day -> refused. Future day or an
+    unscheduled day -> refused.
+[ ] The report's viewer (lead Reports page, admin Reports page, both Project Details
+    pages) shows a text summary plus "View Full Report" -> printable page with Print
+    (browser print -> Save as PDF). Editing a task afterwards does NOT change the report.
+[ ] Plain technicians can open the full report page of their project but cannot generate.
+
+-------------------------------------------------------------------------------
+PHASE 6 - STRUCTURED INCIDENT REPORT  (never browser-tested)
+-------------------------------------------------------------------------------
+[ ] As the lead: Incident Report -> choose project -> form with dropdowns: Type, Severity,
+    Date/Time, Where (+exact spot), Phase, Task, What happened; Injury section appears
+    only for Injury (body part, injury, treatment); Refrigerant section only for
+    Refrigerant Leak; Damage (what, owner, cost); Response (immediate action, to prevent
+    it, cause, work stopped, client notified); People Involved rows (team member from the
+    team, or a typed name + who + involvement); photos.
+[ ] Injury without treatment -> "Choose the treatment given."
+[ ] Serious or Critical -> administrators get "Serious Incident"/"Critical Incident"
+    notifications at once (plus the normal "report filed" one).
+[ ] Full report page shows everything; Injury + Lost time shows
+    "Lost-time injury. May need a DOLE report."
+[ ] As HR Admin / Super Admin on that page: Review form - Status Open / Under Review /
+    Closed + resolution notes. Closing without notes is refused. Leads cannot review.
+[ ] Plain technicians cannot open the incident form.
+
+-------------------------------------------------------------------------------
+PROJECT ADDRESS - SPLIT, LUZON ONLY
+-------------------------------------------------------------------------------
+[ ] Create wizard, step 2: Province, City / Municipality, Barangay, Street, House No.
+    Each list fills after the one before it. No Visayas or Mindanao province is offered.
+    House No. is optional; the rest are required. Review shows the one-line address.
+[ ] Project Details > Edit Details: a split address opens filled in; changing the province
+    clears the two lists below it; saving updates the address shown on the page.
+[ ] An old address that could not be fully read shows "Current: ..." above the fields, and
+    the project cannot be saved until the missing parts are chosen.
+[ ] php artisan projects:split-addresses --dry-run lists the addresses it cannot finish.
+
+-------------------------------------------------------------------------------
+KNOWN LIMITS / DECISIONS (not bugs)
+-------------------------------------------------------------------------------
+- Admins can still file free-text reports from their Reports page / Project Details
+  (only the lead's flow was replaced).
+- "PDF" for reports = the browser's print dialog on the full report page.
+- Add to List from a project picks brand from the list but has no sub-type field;
+  Purchasing sets sub-types in Inventory.
+- Materials are planned only in the create wizard. Between creating a project and finishing
+  its setup the plan cannot be changed; after setup, changes go through the Materials tab.
+
+When finished, list results per checkbox, fixes made, and ask the user before committing.

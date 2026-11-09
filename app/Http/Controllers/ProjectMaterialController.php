@@ -121,7 +121,7 @@ class ProjectMaterialController extends Controller
 
     /**
      * The create wizard's material search: what matches what was typed, each
-     * with how many are on hand, reserved by live projects, and available.
+     * with how many are on hand, assigned to live projects, and available.
      *
      * Not tied to a project - there is none yet - so it offers the plain
      * suggestions, and the office alone reaches it.

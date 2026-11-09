@@ -247,43 +247,187 @@ body.sr-printing > *:not(#serviceReportPrint) {
     margin-left: 1mm;
 }
 
-/* ---------- The quotation sheet ---------- */
+/* ---------- The quotation sheet: the company's boxed quotation form ---------- */
 
-.qt-lines {
+.qt-sheet {
+    --qt-blue: #4a6d8c;
+    --qt-navy: #1f5fa8;
+    --qt-line: #b9b9b9;
+    color: #333;
+    font-size: 7.5pt;
+}
+
+.qt-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+}
+
+.qt-company {
+    color: var(--qt-blue);
+    font-size: 15pt;
+    font-weight: 700;
+}
+
+.qt-company span {
+    color: var(--qt-navy);
+}
+
+.qt-title {
+    color: #333;
+    font-size: 15pt;
+    font-weight: 700;
+}
+
+.qt-office {
+    display: grid;
+    grid-template-columns: 26mm 1fr;
+    gap: 3mm;
+    margin-top: 3mm;
+    font-size: 6.5pt;
+}
+
+.qt-office-label {
+    font-weight: 700;
+}
+
+.qt-field {
+    display: block;
+    min-height: 5.5mm;
+    padding: 1mm 1.5mm;
+    border: .75pt solid var(--qt-line);
+    background: #fff;
+    overflow-wrap: anywhere;
+}
+
+.qt-date {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 4mm;
+    margin-top: 4mm;
+}
+
+.qt-date .qt-field {
+    min-width: 18mm;
+}
+
+.qt-form {
     margin-top: 3mm;
 }
 
-.qt-lines thead th {
-    padding: .8mm 1.2mm;
-    border: .75pt solid #000;
-    font-size: 7pt;
-    font-weight: 700;
+.qt-row {
+    display: flex;
+    align-items: center;
+    gap: 2mm;
+    margin-bottom: 2mm;
 }
 
-.qt-number {
-    text-align: right;
+.qt-label {
+    flex: none;
+    width: 25mm;
 }
 
-.qt-group td {
-    font-size: 7pt;
-    font-weight: 700;
+.qt-label-mid {
+    width: auto;
+    margin-left: 3mm;
 }
 
-.qt-total td {
-    font-weight: 700;
-    text-align: right;
+.qt-row .qt-field {
+    flex: 1;
+}
+
+.qt-row .qt-field-wide {
+    flex: 1.6;
+}
+
+.qt-row .qt-field-ref {
+    flex: 1.4;
+}
+
+.qt-lines {
+    width: 100%;
+    margin-top: 1mm;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+
+.qt-lines th,
+.qt-lines td {
+    padding: 1mm 1.5mm;
+    border: .75pt solid var(--qt-line);
+    vertical-align: top;
+    overflow-wrap: anywhere;
+}
+
+.qt-lines th {
+    font-size: 6.5pt;
+    font-weight: 400;
+    text-align: left;
 }
 
 .qt-lines tr {
     break-inside: avoid;
 }
 
-.qt-lines thead th {
-    text-align: left;
+.qt-number {
+    text-align: right;
 }
 
-.qt-lines thead th.qt-number {
-    text-align: right;
+.qt-totals {
+    display: grid;
+    grid-template-columns: 25mm 12mm 38mm;
+    align-items: center;
+    gap: 2.5mm 4mm;
+    width: max-content;
+    margin: 3mm 0 0 auto;
+}
+
+.qt-currency {
+    font-weight: 700;
+}
+
+.qt-block {
+    margin-top: 5mm;
+}
+
+.qt-block > div:not(.qt-field) {
+    margin-top: 2.5mm;
+    margin-bottom: 1mm;
+}
+
+.qt-field-block {
+    min-height: 6mm;
+    white-space: pre-line;
+}
+
+.qt-sign {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1.25fr;
+    gap: 4mm;
+    margin-top: 4mm;
+}
+
+.qt-field-sign {
+    margin-top: 1mm;
+}
+
+.qt-conforme {
+    padding-top: 8mm;
+}
+
+.qt-conforme-title {
+    margin-bottom: 6mm;
+    font-size: 9pt;
+    font-weight: 700;
+}
+
+.qt-conforme-line {
+    padding-top: 6mm;
+    border-top: .75pt dashed var(--qt-line);
+    font-size: 6.5pt;
+    font-weight: 700;
+    text-align: center;
 }
 
 .sr-signatory-label {

@@ -108,14 +108,14 @@ class ProjectPolicy
     }
 
     /**
-     * The Super Admin, the Admin Officer, or a lead on the project edits the
-     * Service Report and detail forms while the work is live. Everyone else
-     * reads them.
+     * The Super Admin, or a lead on the project, edits the Service Report and
+     * detail forms while the work is live. Everyone else reads them - the
+     * Admin Officer included, who fills them only at creation and in the
+     * Complete Project form.
      */
     public function updateServiceReport(User $user, Project $project): bool
     {
         return ($user->isSuperAdmin()
-                || $user->role === User::ROLE_ADMIN_OFFICER
                 || ($user->isLeadTechnician() && $this->worksOn($user, $project)))
             && ! $project->isReadOnly()
             && ! $project->isArchived();

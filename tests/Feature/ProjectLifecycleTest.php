@@ -105,9 +105,9 @@ class ProjectLifecycleTest extends TestCase
 
         $project = Project::query()->firstOrFail();
 
-        // The plan reserves stock from the start.
+        // The plan is a stock out from the start: assigned to the project.
         $this->assertSame(
-            ['on_hand' => 30.0, 'reserved' => 10.0, 'available' => 20.0],
+            ['on_hand' => 20.0, 'assigned' => 10.0, 'available' => 20.0],
             app(StockAvailability::class)->forMaterial($this->copper)
         );
 
@@ -170,15 +170,9 @@ class ProjectLifecycleTest extends TestCase
         $workDay = $firstDay->addDay();
         $this->travelTo($workDay->setTime(9, 0));
 
-        // --- Purchasing releases the plan: the reservation ends.
-        $this->actingAs($this->buyer)->postJson(route('inventory.stock.issue-many'), [
-            'items' => [['material_id' => $this->copper->material_id, 'quantity' => 10]],
-            'movement_date' => $workDay->toDateString(),
-            'project_id' => $project->project_id,
-        ])->assertOk();
-
+        // --- Nothing to release: the plan left the shelf when it was saved.
         $this->assertSame(
-            ['on_hand' => 20.0, 'reserved' => 0.0, 'available' => 20.0],
+            ['on_hand' => 20.0, 'assigned' => 10.0, 'available' => 20.0],
             app(StockAvailability::class)->forMaterial($this->copper)
         );
 
@@ -322,7 +316,7 @@ class ProjectLifecycleTest extends TestCase
         // Planned 10 + approved 4 went out; 7 used, 2 returned, 5 left over.
         $this->assertSame(23.0, $this->copper->fresh()->onHand());
         $this->assertSame(
-            ['on_hand' => 23.0, 'reserved' => 0.0, 'available' => 23.0],
+            ['on_hand' => 23.0, 'assigned' => 0.0, 'available' => 23.0],
             app(StockAvailability::class)->forMaterial($this->copper)
         );
 

@@ -11,8 +11,8 @@ use Illuminate\Support\Facades\Validator;
 
 /**
  * Complete Project, as both portals post it: the Service Report form with its
- * sign-off required. Saved in one transaction with the completion itself, and
- * the bottom Remarks are the summary the client is sent.
+ * signatories required and Remarks optional. Saved in one transaction with the
+ * completion itself, and the bottom Remarks are the summary the client is sent.
  */
 class ProjectCompletionForm
 {
@@ -36,13 +36,12 @@ class ProjectCompletionForm
                 ...$this->detailForms->rules($types),
                 'report_performed_by' => ['required', 'string', 'max:150'],
                 'report_witnessed_by' => ['required', 'string', 'max:150'],
-                'report_remarks' => ['required', 'string', 'max:2000'],
+                'report_remarks' => ['nullable', 'string', 'max:2000'],
             ],
             [
                 ...$this->detailForms->messages($types),
                 'report_performed_by.required' => 'Enter Performed By.',
                 'report_witnessed_by.required' => 'Enter Witnessed and Accepted By.',
-                'report_remarks.required' => 'Enter Remarks.',
             ],
             $this->detailForms->attributes($types)
         )->validateWithBag(ProjectDetailController::ERROR_BAG);
@@ -59,12 +58,12 @@ class ProjectCompletionForm
             $project->update([
                 'report_performed_by' => $validated['report_performed_by'],
                 'report_witnessed_by' => $validated['report_witnessed_by'],
-                'report_remarks' => $validated['report_remarks'],
+                'report_remarks' => $validated['report_remarks'] ?? null,
             ]);
 
             $this->completion->requestCompletion(
                 $project,
-                ['completion_summary' => $validated['report_remarks']],
+                ['completion_summary' => $validated['report_remarks'] ?? null],
                 null,
                 $by
             );

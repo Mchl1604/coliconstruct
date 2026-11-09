@@ -13,7 +13,10 @@ use Illuminate\Validation\Rule;
  * saved. The total is what the project's quotation column holds.
  *
  * Submitted as quotation_items[n][kind, material_id, description, unit,
- * quantity, unit_price], from the create wizard and the edit dialog alike. A
+ * quantity, unit_price], with quotation_discount_percent and
+ * quotation_special_discount beside them, and the printed terms in
+ * TERM_FIELDS, from the create wizard and the edit dialog alike. The total is
+ * the lines less both discounts. A
  * line may quote more than is in stock: only the Materials step is held to
  * that, by ProjectMaterialPlan.
  */
@@ -21,6 +24,21 @@ class ProjectQuotation
 {
     /** More lines than any quotation lists, and a ceiling on a tampered form. */
     public const MAX_LINES = 200;
+
+    /**
+     * The free text the sheet prints under the totals, by column, with the most
+     * each may hold.
+     *
+     * @var array<string, int>
+     */
+    public const TERM_FIELDS = [
+        'quotation_notes' => 2000,
+        'quotation_inclusions' => 2000,
+        'quotation_exclusions' => 2000,
+        'quotation_payment_terms' => 1000,
+        'quotation_prepared_by' => 100,
+        'quotation_approved_by' => 100,
+    ];
 
     /**
      * @return array<string, array<int, mixed>>
@@ -35,6 +53,9 @@ class ProjectQuotation
             'quotation_items.*.unit' => ['nullable', 'string', 'max:20'],
             'quotation_items.*.quantity' => ['required', 'numeric', 'gt:0', 'max:9999999'],
             'quotation_items.*.unit_price' => ['required', 'numeric', 'min:0', 'max:9999999999'],
+            'quotation_discount_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'quotation_special_discount' => ['nullable', 'numeric', 'min:0', 'max:9999999999'],
+            ...collect(self::TERM_FIELDS)->map(fn (int $max): array => ['nullable', 'string', 'max:'.$max])->all(),
         ];
     }
 
@@ -53,6 +74,17 @@ class ProjectQuotation
             'quotation_items.*.unit_price.required' => 'Enter a price for every quotation line.',
             'quotation_items.*.unit_price.numeric' => 'Enter a price for every quotation line.',
             'quotation_items.*.unit_price.min' => 'Quotation prices cannot be negative.',
+            'quotation_discount_percent.numeric' => 'Enter the discount as a number.',
+            'quotation_discount_percent.min' => 'The discount must be 0 to 100%.',
+            'quotation_discount_percent.max' => 'The discount must be 0 to 100%.',
+            'quotation_special_discount.numeric' => 'Enter the special discount as an amount.',
+            'quotation_special_discount.min' => 'The special discount cannot be negative.',
+            'quotation_notes.max' => 'Notes are too long.',
+            'quotation_inclusions.max' => 'Inclusions are too long.',
+            'quotation_exclusions.max' => 'Exclusions are too long.',
+            'quotation_payment_terms.max' => 'Terms of payment are too long.',
+            'quotation_prepared_by.max' => 'The Prepared By name is too long.',
+            'quotation_approved_by.max' => 'The Approved By name is too long.',
         ];
     }
 
@@ -63,7 +95,7 @@ class ProjectQuotation
      * @param  array<int, array<string, mixed>>  $rows
      * @return array<string, string>
      */
-    public function errors(array $rows): array
+    public function errors(array $rows, mixed $discountPercent = 0, mixed $specialDiscount = 0): array
     {
         $errors = [];
         $materials = $this->materialsOf($rows);
@@ -101,7 +133,13 @@ class ProjectQuotation
             }
         }
 
-        if ($this->total($rows) > (float) Project::MAX_QUOTATION) {
+        $breakdown = $this->breakdown($rows, $discountPercent, $specialDiscount);
+
+        if ($breakdown['special_discount'] > $breakdown['subtotal'] - $breakdown['discount_amount']) {
+            $errors['quotation_special_discount'] = 'The special discount is more than the amount.';
+        }
+
+        if ($breakdown['total'] > (float) Project::MAX_QUOTATION) {
             $errors['quotation_items'] = Project::MAX_QUOTATION_MESSAGE;
         }
 
@@ -109,21 +147,84 @@ class ProjectQuotation
     }
 
     /**
-     * @param  array<int, array<string, mixed>>  $rows
-     */
-    public function total(array $rows): float
-    {
-        return round(collect($rows)->sum(fn (array $row): float => round((float) ($row['quantity'] ?? 0) * (float) ($row['unit_price'] ?? 0), 2)), 2);
-    }
-
-    /**
-     * Replace the project's lines with what was submitted.
+     * The amount owed: the lines less both discounts.
      *
      * @param  array<int, array<string, mixed>>  $rows
      */
-    public function save(Project $project, array $rows): void
+    public function total(array $rows, mixed $discountPercent = 0, mixed $specialDiscount = 0): float
+    {
+        return $this->breakdown($rows, $discountPercent, $specialDiscount)['total'];
+    }
+
+    /**
+     * The figures under the lines, as the sheet prints them.
+     *
+     * @param  array<int, array<string, mixed>>  $rows
+     * @return array{subtotal: float, discount_percent: float, discount_amount: float, special_discount: float, total: float}
+     */
+    public function breakdown(array $rows, mixed $discountPercent = 0, mixed $specialDiscount = 0): array
+    {
+        $subtotal = round(collect($rows)->sum(fn (array $row): float => round((float) ($row['quantity'] ?? 0) * (float) ($row['unit_price'] ?? 0), 2)), 2);
+        $percent = round(min(max((float) $discountPercent, 0), 100), 2);
+        $special = round(max((float) $specialDiscount, 0), 2);
+        $discountAmount = round($subtotal * $percent / 100, 2);
+
+        return [
+            'subtotal' => $subtotal,
+            'discount_percent' => $percent,
+            'discount_amount' => $discountAmount,
+            'special_discount' => $special,
+            'total' => round(max($subtotal - $discountAmount - $special, 0), 2),
+        ];
+    }
+
+    /**
+     * The breakdown of what the project has saved.
+     *
+     * @return array{subtotal: float, discount_percent: float, discount_amount: float, special_discount: float, total: float}
+     */
+    public function savedBreakdown(Project $project): array
+    {
+        return $this->breakdown(
+            $project->quotationItems
+                ->map(fn (QuotationItem $item): array => ['quantity' => $item->quantity, 'unit_price' => $item->unit_price])
+                ->all(),
+            $project->quotation_discount_percent,
+            $project->quotation_special_discount
+        );
+    }
+
+    /**
+     * The printed terms out of what was submitted: trimmed, blank as null.
+     *
+     * @param  array<string, mixed>  $input
+     * @return array<string, string|null>
+     */
+    public function terms(array $input): array
+    {
+        return collect(self::TERM_FIELDS)
+            ->map(fn (int $max, string $field): ?string => trim((string) ($input[$field] ?? '')) ?: null)
+            ->all();
+    }
+
+    /**
+     * Replace the project's lines, discounts and terms with what was
+     * submitted, and date the quotation today.
+     *
+     * @param  array<int, array<string, mixed>>  $rows
+     * @param  array<string, mixed>  $terms  the submitted TERM_FIELDS
+     */
+    public function save(Project $project, array $rows, mixed $discountPercent = 0, mixed $specialDiscount = 0, array $terms = []): void
     {
         $materials = $this->materialsOf($rows);
+        $breakdown = $this->breakdown($rows, $discountPercent, $specialDiscount);
+
+        $project->forceFill([
+            'quotation_discount_percent' => $breakdown['discount_percent'],
+            'quotation_special_discount' => $breakdown['special_discount'],
+            ...$this->terms($terms),
+            'quoted_at' => now(),
+        ])->save();
 
         $project->quotationItems()->delete();
 

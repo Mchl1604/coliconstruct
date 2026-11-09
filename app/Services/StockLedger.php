@@ -18,8 +18,9 @@ use RuntimeException;
  *
  *     On Hand = the sum of every movement that is not voided
  *
- * A project's plan also shows here as Stock Out rows marked as reservations -
- * see syncReservations(). They record the claim and never change the count.
+ * A project's plan is a real Stock Out, marked as the project's assignment -
+ * see syncAssignments(). Older plans wrote uncounted reservation rows; those
+ * stay on the history and never change the count.
  *
  * The only place a stock movement is written. Nothing here keeps a running
  * total - every figure is summed from the movements, the way
@@ -66,10 +67,6 @@ class StockLedger
         return DB::transaction(function () use ($material, $type, $quantity, $date, $details, $project, $by): StockMovement {
             $this->lock($material);
 
-            $wanted = $this->hundredths($quantity);
-            $split = $type === StockMovement::TYPE_RETURNED && $project !== null
-                ? $this->splitReturn($project, $material, $wanted)
-                : ['shelf' => $wanted, 'claim' => 0];
             $row = [
                 'reference_no' => $details['reference_no'] ?? null,
                 // A supplier delivers; a return comes back from a project.
@@ -78,13 +75,7 @@ class StockLedger
                 'notes' => $details['notes'] ?? null,
             ];
 
-            if ($split['claim'] > 0) {
-                $movement = $this->write($material, $type, $split['claim'], $date, $row + ['is_reservation' => true], $by);
-            }
-
-            if ($split['shelf'] > 0) {
-                $movement = $this->write($material, $type, $split['shelf'], $date, $row, $by);
-            }
+            $movement = $this->write($material, $type, $this->hundredths($quantity), $date, $row, $by);
 
             $this->activityLogger->record(
                 $type === StockMovement::TYPE_STOCK_IN ? ActivityLog::STOCK_RECEIVED : ActivityLog::STOCK_RETURNED,
@@ -284,8 +275,8 @@ class StockLedger
             throw new RuntimeException('Already voided.');
         }
 
-        if ($movement->is_reservation) {
-            throw new RuntimeException('Reserved by the project. Change it there.');
+        if ($movement->is_reservation || $movement->is_assignment) {
+            throw new RuntimeException('Assigned to the project. Change it there.');
         }
 
         DB::transaction(function () use ($movement, $by): void {
@@ -331,9 +322,8 @@ class StockLedger
     /**
      * Take an Added entry's quantity out of stock.
      *
-     * Refused past what is available, so it never takes stock a live project
-     * has reserved - the entry is refused with it, so the site and the shelf
-     * never disagree. Material bought straight from a supplier is recorded
+     * Refused past what is on the shelf - the entry is refused with it, so
+     * the site and the shelf never disagree. Material bought straight from a supplier is recorded
      * without this - see ProjectMaterialLedger::add().
      *
      * @throws RuntimeException
@@ -379,90 +369,12 @@ class StockLedger
     }
 
     /**
-     * A Used entry from the project's Materials tab. What the warehouse never
-     * released is still on the shelf, so using it takes it off now: On Hand
-     * and the project's claim fall together. Anything the project already
-     * holds was taken off when it was released.
-     */
-    public function takeForUse(ProjectMaterialEntry $entry, Material $material, float|int|string $quantity, User $by): void
-    {
-        $project = $entry->project;
-
-        if ($project === null) {
-            return;
-        }
-
-        DB::transaction(function () use ($entry, $material, $quantity, $project, $by): void {
-            $this->lock($material);
-
-            $fromShelf = min(
-                $this->hundredths($quantity),
-                $this->hundredths($this->availability->claimedBy($project, $material)),
-                $this->onHandHundredths($material)
-            );
-
-            if ($fromShelf <= 0) {
-                return;
-            }
-
-            $this->write($material, StockMovement::TYPE_STOCK_OUT, -$fromShelf, $entry->entry_date, [
-                'project_id' => $project->project_id,
-                'project_material_entry_id' => $entry->material_entry_id,
-                'notes' => 'Used on site',
-            ], $by);
-
-            $this->activityLogger->record(
-                ActivityLog::STOCK_ISSUED,
-                null,
-                sprintf(
-                    'Took %s of %s off the shelf, used on %s.',
-                    $this->amount($material, $fromShelf / 100),
-                    $material->displayName(),
-                    $project->reference_no
-                ),
-                $project
-            );
-        });
-    }
-
-    /**
-     * A Returned entry from the project's Materials tab: what really left the
-     * shelf goes back on it, and the rest only shrinks the project's claim.
+     * A Returned entry from the project's Materials tab: it goes back on the
+     * shelf, since everything assigned to the project already left it.
      */
     public function returnFromSite(ProjectMaterialEntry $entry, Material $material, float|int|string $quantity, User $by): void
     {
-        $project = $entry->project;
-
-        DB::transaction(function () use ($entry, $material, $quantity, $project, $by): void {
-            $this->lock($material);
-
-            $split = $this->splitReturn($project, $material, $this->hundredths($quantity));
-
-            if ($split['claim'] > 0) {
-                $this->write($material, StockMovement::TYPE_RETURNED, $split['claim'], $entry->entry_date, [
-                    'project_id' => $project?->project_id,
-                    'project_material_entry_id' => $entry->material_entry_id,
-                    'is_reservation' => true,
-                    'notes' => 'Returned from site',
-                ], $by);
-
-                $this->activityLogger->record(
-                    ActivityLog::STOCK_RETURNED,
-                    null,
-                    sprintf(
-                        'Released %s of %s reserved by %s.',
-                        $this->amount($material, $split['claim'] / 100),
-                        $material->displayName(),
-                        $project?->reference_no
-                    ),
-                    $project ?? $material
-                );
-            }
-
-            if ($split['shelf'] > 0) {
-                $this->returnForEntry($entry, $material, $split['shelf'] / 100, $by);
-            }
-        });
+        $this->returnForEntry($entry, $material, $quantity, $by);
     }
 
     /**
@@ -522,18 +434,19 @@ class StockLedger
     }
 
     /**
-     * Make the history's reservation rows match the project's plan: a line
-     * that changed or left has its row voided, and a new quantity gets a new
-     * one, so saving the same plan twice writes nothing.
+     * Take a new project's plan out of stock: one Stock Out per line, marked
+     * as the project's assignment. A line that changed or left has its row
+     * voided first, so saving the same plan twice writes nothing. Capped at
+     * what is on hand - the wizard already holds the plan to Available.
      */
-    public function syncReservations(Project $project, ?User $by): void
+    public function syncAssignments(Project $project, ?User $by): void
     {
         DB::transaction(function () use ($project, $by): void {
             $plan = $project->materials()->with('material')->get()->keyBy('material_id');
             $current = StockMovement::query()
                 ->notVoided()
-                ->where('is_reservation', true)
-                ->where('quantity', '<', 0)
+                ->where('is_assignment', true)
+                ->whereNull('project_material_entry_id')
                 ->where('project_id', $project->project_id)
                 ->get()
                 ->keyBy('material_id');
@@ -548,23 +461,25 @@ class StockLedger
             }
 
             foreach ($plan as $materialId => $line) {
-                $wanted = $this->hundredths($line->quantity_needed);
-
-                if ($wanted <= 0 || $current->has($materialId)) {
+                if ($current->has($materialId)) {
                     continue;
                 }
 
                 $material = $this->lock($line->material);
-                // The plan is already saved, so what it claims is in this figure.
-                $after = $this->availableHundredths($material);
+                $before = $this->onHandHundredths($material);
+                $wanted = min($this->hundredths($line->quantity_needed), max(0, $before));
+
+                if ($wanted <= 0) {
+                    continue;
+                }
 
                 $this->write($material, StockMovement::TYPE_STOCK_OUT, -$wanted, BusinessTime::today(), [
                     'project_id' => $project->project_id,
-                    'is_reservation' => true,
-                    'notes' => 'Reserved',
+                    'is_assignment' => true,
+                    'notes' => 'Assigned to project',
                 ], $by);
 
-                $this->alertIfRunningLow($material, $after + $wanted, $after);
+                $this->alertIfRunningLow($material, $before, $before - $wanted);
             }
         });
     }
@@ -607,28 +522,6 @@ class StockLedger
         return Material::query()->whereKey($material->getKey())->lockForUpdate()->firstOrFail();
     }
 
-    /**
-     * Where a return from a project goes, in hundredths.
-     *
-     * What the warehouse handed the project goes back on the shelf first. Past
-     * that, what is still only reserved never left, so it just shrinks the
-     * claim. Anything beyond both, such as material bought straight from a
-     * supplier, is new to the shelf.
-     *
-     * @return array{shelf: int, claim: int}
-     */
-    private function splitReturn(?Project $project, Material $material, int $wanted): array
-    {
-        if ($project === null) {
-            return ['shelf' => $wanted, 'claim' => 0];
-        }
-
-        $handedOut = min($wanted, $this->hundredths($this->availability->heldBy($project, $material)));
-        $claim = min($wanted - $handedOut, $this->hundredths($this->availability->claimedBy($project, $material)));
-
-        return ['shelf' => $wanted - $claim, 'claim' => $claim];
-    }
-
     private function availableHundredths(Material $material): int
     {
         return $this->hundredths($this->availability->forMaterial($material)['available']);
@@ -645,7 +538,7 @@ class StockLedger
     }
 
     /**
-     * @param  array{reference_no?: string|null, supplier?: string|null, project_id?: int|null, project_material_entry_id?: int|null, is_reservation?: bool, notes?: string|null}  $details
+     * @param  array{reference_no?: string|null, supplier?: string|null, project_id?: int|null, project_material_entry_id?: int|null, is_reservation?: bool, is_assignment?: bool, notes?: string|null}  $details
      */
     private function write(Material $material, string $type, int $hundredths, CarbonInterface|string $date, array $details, ?User $by): StockMovement
     {
@@ -659,6 +552,7 @@ class StockLedger
             'project_id' => $details['project_id'] ?? null,
             'project_material_entry_id' => $details['project_material_entry_id'] ?? null,
             'is_reservation' => $details['is_reservation'] ?? false,
+            'is_assignment' => $details['is_assignment'] ?? false,
             'notes' => $this->text($details['notes'] ?? null, 255),
             'recorded_by' => $by?->id,
             'recorded_by_name' => $by?->fullName() ?? 'System',

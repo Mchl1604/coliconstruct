@@ -25,6 +25,9 @@
     $completing = $reopen && $completeUrl && old('completing');
     $hasReport = app(\App\Services\ServiceReport::class)->reportTypes($project)->isNotEmpty();
     $saveUrl = $action ?? route('super-admin.projects.details.update', $project->project_id);
+    $performedBy = $reopen
+        ? old('report_performed_by')
+        : (filled($project->report_performed_by) ? $project->report_performed_by : $project->leadAssignment()?->technician?->name);
 @endphp
 
 @if ($detailTypes->isNotEmpty() || $completeUrl)
@@ -70,12 +73,12 @@
                                 <div class="row g-2">
                                     <div class="col-md-6">
                                         <label class="form-label small mb-1" for="reportPerformedBy">Performed By</label>
-                                        <input type="text" class="form-control form-control-sm" id="reportPerformedBy" name="report_performed_by"
-                                            maxlength="150" value="{{ $reopen ? old('report_performed_by') : $project->report_performed_by }}">
+                                        <input type="text" class="form-control form-control-sm" id="reportPerformedBy" name="report_performed_by" data-signoff-required
+                                            maxlength="150" value="{{ $performedBy }}">
                                     </div>
                                     <div class="col-md-6">
                                         <label class="form-label small mb-1" for="reportWitnessedBy">Witnessed and Accepted By</label>
-                                        <input type="text" class="form-control form-control-sm" id="reportWitnessedBy" name="report_witnessed_by"
+                                        <input type="text" class="form-control form-control-sm" id="reportWitnessedBy" name="report_witnessed_by" data-signoff-required
                                             maxlength="150" value="{{ $reopen ? old('report_witnessed_by') : $project->report_witnessed_by }}">
                                     </div>
                                     <div class="col-12">
@@ -160,7 +163,8 @@
 
                     if (signOff) {
                         signOff.classList.toggle('d-none', !completing && modal.dataset.hasReport !== '1');
-                        signOff.querySelectorAll('input, textarea').forEach(function (field) {
+                        // Remarks stay optional.
+                        signOff.querySelectorAll('[data-signoff-required]').forEach(function (field) {
                             field.required = completing;
                         });
                     }

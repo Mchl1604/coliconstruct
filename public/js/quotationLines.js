@@ -30,6 +30,10 @@ document.addEventListener("DOMContentLoaded", function () {
         const rowsBody = root.querySelector("[data-quotation-rows]");
         const empty = root.querySelector("[data-quotation-empty]");
         const totalText = root.querySelector("[data-quotation-total]");
+        const subtotalText = root.querySelector("[data-quotation-subtotal]");
+        const discountAmountText = root.querySelector("[data-quotation-discount-amount]");
+        const percentInput = root.querySelector("[data-quotation-discount-percent]");
+        const specialInput = root.querySelector("[data-quotation-special-discount]");
         const search = root.querySelector("[data-quotation-material-search]");
         const lines = JSON.parse(root.dataset.rows || "[]");
 
@@ -53,10 +57,25 @@ document.addEventListener("DOMContentLoaded", function () {
             lines.unshift({ kind: "labor", description: "Labor cost", unit: "", quantity: "1", unit_price: "", material: null });
         }
 
+        function subtotal() {
+            return Math.round(
+                lines.reduce(function (sum, line) {
+                    return sum + amountOf(line);
+                }, 0) * 100,
+            ) / 100;
+        }
+
+        // The same sums as ProjectQuotation::breakdown().
+        function discountAmount() {
+            const percent = Math.min(Math.max(Number(percentInput ? percentInput.value : 0) || 0, 0), 100);
+
+            return Math.round(subtotal() * percent) / 100;
+        }
+
         function total() {
-            return lines.reduce(function (sum, line) {
-                return sum + amountOf(line);
-            }, 0);
+            const special = Math.max(Number(specialInput ? specialInput.value : 0) || 0, 0);
+
+            return Math.max(Math.round((subtotal() - discountAmount() - special) * 100) / 100, 0);
         }
 
         function stockNote(line) {
@@ -71,6 +90,11 @@ document.addEventListener("DOMContentLoaded", function () {
 
         function announce() {
             totalText.textContent = money(total());
+
+            if (subtotalText) {
+                subtotalText.textContent = money(subtotal());
+                discountAmountText.textContent = money(discountAmount());
+            }
             empty.classList.toggle("d-none", lines.length > 0);
 
             root.dispatchEvent(
@@ -270,6 +294,12 @@ document.addEventListener("DOMContentLoaded", function () {
 
             rowsBody.querySelector('[data-quotation-note="' + index + '"]').textContent = stockNote(lines[index]);
             announce();
+        });
+
+        [percentInput, specialInput].forEach(function (field) {
+            if (field) {
+                field.addEventListener("input", announce);
+            }
         });
 
         rowsBody.addEventListener("click", function (event) {

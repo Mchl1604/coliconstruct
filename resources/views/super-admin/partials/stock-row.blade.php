@@ -1,11 +1,11 @@
 {{-- One row of Inventory -> Stock, rendered by StockController::index() for
-     serverTable.js. Reserved and Available come from StockAvailability, as
+     serverTable.js. Assigned and Available come from StockAvailability, as
      $figures, and Total is the two together. The status reads Available. --}}
 @php
     $onHand = $material->onHand();
-    $reserved = (float) ($figures['reserved'] ?? 0);
+    $assigned = (float) ($figures['assigned'] ?? 0);
     $available = (float) ($figures['available'] ?? $onHand);
-    $total = $reserved + $available;
+    $total = $assigned + $available;
     $status = $material->stockStatus($available);
     $unit = $material->unit;
     $payload = [
@@ -14,7 +14,7 @@
         'unit' => $unit->value,
         'allows_fractions' => $unit->allowsFractions(),
         'on_hand' => $onHand,
-        'reserved' => $reserved,
+        'assigned' => $assigned,
         'available' => $available,
     ];
 @endphp
@@ -38,7 +38,7 @@
         <span class="material-qty fw-semibold {{ $total <= 0 ? 'is-zero' : '' }}">{{ $unit->format($total) }}</span>
         <span class="material-unit-chip" title="{{ $unit->label() }}">{{ $unit->value }}</span>
     </td>
-    <td class="text-nowrap small {{ $reserved > 0 ? '' : 'text-secondary' }}">{{ $unit->format($reserved) }}</td>
+    <td class="text-nowrap small {{ $assigned > 0 ? '' : 'text-secondary' }}">{{ $unit->format($assigned) }}</td>
     <td class="text-nowrap">
         <span class="material-qty {{ $available <= 0 ? 'text-danger fw-semibold' : '' }}">{{ $unit->format($available) }}</span>
     </td>

@@ -39,7 +39,13 @@
         // ProjectPolicy::offersCompletion(), which refuses a Pending,
         // Unscheduled or paused project outright. A technician reads this page
         // and completes their own tasks on it, nothing more.
-        $completeTarget = $completionBlockers === [] ? '#editProjectDescriptionModal' : '#completeBlockedModal';
+        // Materials still on site open Leftover Materials first.
+        $hasLeftovers = $completionBlockers === [] && app(\App\Services\ProjectMaterialLedger::class)->hasLeftovers($project);
+        $completeTarget = match (true) {
+            $completionBlockers !== [] => '#completeBlockedModal',
+            $hasLeftovers => '#leftoverMaterialsModal',
+            default => '#editProjectDescriptionModal',
+        };
     @endphp
 
     {{-- `project-details-page` is what applies the brand blue from the
@@ -1032,6 +1038,9 @@
         <x-project-complete-blocked :blockers="$completionBlockers" />
     @endif
 
+    @if ($canCloseProject && $hasLeftovers)
+        <x-leftover-materials-modal />
+    @endif
     @can('updateServiceReport', $project)
         <x-project-details-modal :project="$project"
             :action="route('technician.projects.details.update', $project->project_id)"
@@ -1046,6 +1055,8 @@
         {{-- The Materials tab: its history table and its three dialogs. --}}
         <script src="/js/materialPicker.js"></script>
         <script src="/js/projectMaterials.js"></script>
+        {{-- Complete Project with materials still on site. --}}
+        <script src="/js/leftoverMaterials.js"></script>
 
         {{-- The task list is a DataTable here for the same reason it is one on
              the administrative copy of this page: a project can run to dozens

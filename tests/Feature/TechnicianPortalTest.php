@@ -1277,7 +1277,7 @@ class TechnicianPortalTest extends TestCase
         }
     }
 
-    public function test_the_report_remarks_are_required(): void
+    public function test_the_report_remarks_are_optional(): void
     {
         $this->project->schedules()->delete();
         $this->schedule($this->project, -10, -1);
@@ -1290,9 +1290,10 @@ class TechnicianPortalTest extends TestCase
         $this->post(
             route('technician.projects.complete', $this->project),
             $this->completionPayload(['report_remarks' => ''])
-        )->assertSessionHasErrorsIn('details', 'report_remarks');
+        )->assertSessionHasNoErrors();
 
-        $this->assertSame('ongoing', $this->project->refresh()->status);
+        $this->assertSame(Project::STATUS_AWAITING_CLIENT_CONFIRMATION, $this->project->refresh()->status);
+        $this->assertNull($this->project->report_remarks);
     }
 
     public function test_a_project_with_no_tasks_cannot_be_completed(): void

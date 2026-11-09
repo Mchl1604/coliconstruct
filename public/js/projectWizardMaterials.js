@@ -3,7 +3,7 @@
  * warehouse as it is typed.
  *
  * Each picked material becomes a line with its quantity and its stock figures
- * - available is what other live projects have not reserved. A line
+ * - available is what is on the shelf, not assigned to a project. A line
  * cannot take more than is available: a larger number falls back to the most
  * it can have, and a checkbox offers to request the rest from Purchasing.
  *
@@ -245,7 +245,7 @@ document.addEventListener("DOMContentLoaded", function () {
             available.className = "material-qty fw-semibold";
             available.textContent = formatQty(material.available) + " " + material.unit;
             onHand.className = "material-meta";
-            onHand.textContent = "Total " + formatQty((material.reserved || 0) + material.available) + " · Reserved " + formatQty(material.reserved);
+            onHand.textContent = "Total " + formatQty((material.assigned || 0) + material.available) + " · Assigned " + formatQty(material.assigned || 0);
             availableCell.append(available, onHand);
 
             // Stock

@@ -215,7 +215,7 @@ class ProjectMaterialPlan
             );
         }
 
-        $this->stock->syncReservations($project, $by);
+        $this->stock->syncAssignments($project, $by);
     }
 
     /**

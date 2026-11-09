@@ -123,6 +123,11 @@ class ProjectCompletion
         // the last phase impossible to close - see closeOutstandingPhases().
         $this->closeOutstandingPhases($project);
 
+        // What nobody used is recorded as unused and goes back on the shelf
+        // now, and inventory staff are told. A reopened project starts with
+        // nothing on site.
+        app(ProjectMaterialLedger::class)->closeOut($project, 'Left over at completion.');
+
         // Dates booked past the completion date are released: the work is
         // done, so the project must stop reading as booked and its technicians
         // must stop reading as busy.
@@ -259,10 +264,9 @@ class ProjectCompletion
             'client_confirmation_recorded_at' => $recordedBy ? CarbonImmutable::now() : null,
         ]);
 
-        // Completed is final, so whatever material is still on site is
-        // recorded as unused now - not at Awaiting Client Confirmation, which
-        // can still be reopened and worked on. No warning: leftovers are a
-        // fact to keep, not a reason to stop the close.
+        // Already done when completion was requested; this catches a project
+        // that was awaiting confirmation before that rule, and writes
+        // nothing otherwise.
         app(ProjectMaterialLedger::class)->closeOut($project, 'Left over at completion.');
     }
 

@@ -38,7 +38,6 @@ use App\Services\ProjectDetailForms;
 use App\Services\ProjectQuotation;
 use App\Services\ProjectTypeCatalog;
 use App\Services\ServiceReport;
-use App\Services\StockAvailability;
 use App\Services\SystemContentService;
 use App\Services\TargetDateChange;
 use App\Services\UserAccountService;
@@ -101,7 +100,7 @@ use Throwable;
  *     what it quoted. Now and then a line quotes past the plan.
  *   - Service Report fields only known on site, and the checklists, are filled
  *     only as far as the work has gone.
- *   - The warehouse follows the work: materials released to a started project,
+ *   - The warehouse follows the work: materials assigned to each project,
  *     what came back from it, a delivery so every material has stock (a few
  *     deliberately low or out), and a few lead requests awaiting a decision.
  *   - Progress reports carry the generated snapshot, and incident reports the
@@ -1289,6 +1288,11 @@ class DemoDataSeeder extends Seeder
                     $due = collect($days)->last(fn (array $day): bool => $day['range'] === $start['range']);
                 }
 
+                // The demo's task: starts and ends on the demo day.
+                if (($spec['today_task'] ?? false) && $start['date'] <= $this->demoDate() && $this->demoDate() <= $due['date']) {
+                    $start = $due = ['date' => $this->demoDate(), 'range' => $start['range']];
+                }
+
                 $isFinalTask = $phaseIndex === count($phases) - 1;
                 $holder = $isFinalTask ? $lead : $crew[$this->taskCounter++ % count($crew)];
                 $state = $this->taskState($spec, $outcome, $due['date'], $taskNumber, $taskTotal);
@@ -1423,8 +1427,9 @@ class DemoDataSeeder extends Seeder
             default => 1.0,
         };
         $finished = in_array($outcome, ['awaiting', 'completed'], true);
+        // Leftovers go back when Complete Project is submitted.
         $closedOn = match ($outcome) {
-            'completed' => end($worked) ?: null,
+            'completed', 'awaiting' => end($worked) ?: null,
             'cancelled' => min($this->date($spec['cancelled']), $today),
             default => null,
         };
@@ -1443,19 +1448,21 @@ class DemoDataSeeder extends Seeder
             ]);
             $planned++;
             $firstLine ??= $line;
-            $this->stockMovement($material, StockMovement::TYPE_STOCK_OUT, -$quantity, $plannedAt->toDateString(), $lead, $project, notes: 'Reserved', isReservation: true);
+            // The plan is a stock out from the day it is saved.
+            $this->stockMovement($material, StockMovement::TYPE_STOCK_OUT, -$quantity, $plannedAt->toDateString(), $lead, $project, notes: 'Assigned to project', isAssignment: true);
 
             if ($share === 0.0 || $worked === []) {
                 continue;
             }
 
-            // Purchasing released the plan when the work began.
-            $this->stockMovement($material, StockMovement::TYPE_STOCK_OUT, -$quantity, $worked[0], $this->buyer(), $project);
-
             $fractional = $material->unit->allowsFractions();
             // A finished job uses about all of it; one line in three comes in
             // under plan, and that is what is returned or left over.
-            $usedShare = $finished ? (($project->project_id + $index) % 3 === 0 ? 0.8 : 1.0) : $share;
+            $usedShare = match ($spec['leftovers'] ?? null) {
+                true => 0.6,
+                false => 1.0,
+                default => $finished ? (($project->project_id + $index) % 3 === 0 ? 0.8 : 1.0) : $share,
+            };
             $used = $fractional
                 ? round($quantity * $usedShare, 1)
                 : (float) floor($quantity * $usedShare);
@@ -1475,7 +1482,7 @@ class DemoDataSeeder extends Seeder
 
             // Half the leftovers of a finished job go back to the office; the
             // rest are still on site when it closes.
-            if ($finished && $left > 0 && ($project->project_id + $index) % 2 === 0) {
+            if ($finished && $left > 0 && ! ($spec['leftovers'] ?? false) && ($project->project_id + $index) % 2 === 0) {
                 // A lead records use only; Purchasing takes the return.
                 $entry = $this->materialEntry($line, ProjectMaterialEntry::TYPE_RETURNED, $left, end($worked), $this->buyer());
                 $this->stockMovement($material, StockMovement::TYPE_RETURNED, $left, end($worked), $this->buyer(), $project, $entry, 'Returned from site');
@@ -1556,7 +1563,7 @@ class DemoDataSeeder extends Seeder
     /**
      * Written straight onto the row, signed as StockLedger signs it.
      */
-    private function stockMovement(Material $material, string $type, float|int $quantity, string $date, ?User $by, ?Project $project = null, ?ProjectMaterialEntry $entry = null, ?string $notes = null, bool $isReservation = false): void
+    private function stockMovement(Material $material, string $type, float|int $quantity, string $date, ?User $by, ?Project $project = null, ?ProjectMaterialEntry $entry = null, ?string $notes = null, bool $isAssignment = false): void
     {
         $at = CarbonImmutable::parse($date.' 08:00', Schedule::BUSINESS_TIMEZONE)
             ->setTimezone(config('app.timezone'))
@@ -1569,7 +1576,7 @@ class DemoDataSeeder extends Seeder
             'movement_date' => $date,
             'project_id' => $project?->project_id,
             'project_material_entry_id' => $entry?->material_entry_id,
-            'is_reservation' => $isReservation,
+            'is_assignment' => $isAssignment,
             'notes' => $notes,
             'recorded_by' => $by?->id,
             'recorded_by_name' => $by?->fullName() ?? 'System',
@@ -1579,17 +1586,14 @@ class DemoDataSeeder extends Seeder
     }
 
     /**
-     * A delivery that covers everything the projects took and still reserve,
-     * and leaves most materials with stock to spare. Every ninth has none to
+     * A delivery that covers everything the projects took, and leaves most
+     * materials with stock to spare. Every ninth has none to
      * spare, and the next only what its reorder level asks for, or two.
      */
     private function stockTheWarehouse(): void
     {
         $materials = Material::query()->active()->orderBy('material_id')->get();
-        $figures = app(StockAvailability::class)->forMaterials($materials->pluck('material_id')->all());
-
         foreach ($materials as $index => $material) {
-            $figure = $figures[(int) $material->material_id];
 
             $spare = match ($index % 9) {
                 0 => 0.0,
@@ -1597,7 +1601,8 @@ class DemoDataSeeder extends Seeder
                 default => (float) (20 + ($index % 5) * 10),
             };
 
-            $wanted = ceil($figure['reserved'] + $spare) - $figure['on_hand'];
+            // Before this delivery the plans have taken the count below zero.
+            $wanted = ceil($spare - $material->onHand());
 
             if ($wanted > 0) {
                 $this->stockMovement($material, StockMovement::TYPE_STOCK_IN, $wanted, $this->date(-400), $this->buyer(), notes: 'Opening stock');
@@ -1704,7 +1709,8 @@ class DemoDataSeeder extends Seeder
 
         return match ($outcome) {
             'completed', 'awaiting', 'ready' => 'completed',
-            'ongoing' => $due < $today ? 'completed' : 'pending',
+            // Everything before the demo day's task is done by then.
+            'ongoing' => $due < (($spec['today_task'] ?? false) ? max($today, $this->demoDate()) : $today) ? 'completed' : 'pending',
             // Late work: the first part got done, the rest ran out of dates.
             'overdue' => $taskNumber < (int) ceil($taskTotal * 0.6) ? 'completed' : 'pending',
             'on_hold' => $due <= $this->date($spec['held_on']) ? 'completed' : 'pending',
@@ -2202,6 +2208,14 @@ class DemoDataSeeder extends Seeder
      * A moment on the office's calendar, in the application's timezone, and
      * never later than now - nothing seeded may claim to have happened yet.
      */
+    /**
+     * The demo day, or today once it has passed.
+     */
+    private function demoDate(): string
+    {
+        return max($this->today->toDateString(), DemoDataCatalog::DEMO_DAY);
+    }
+
     private function moment(int $offset, string $time): CarbonImmutable
     {
         return $this->today
