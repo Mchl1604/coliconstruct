@@ -502,6 +502,20 @@ class StockLedgerTest extends TestCase
         ]);
     }
 
+    public function test_the_dialog_searches_projects_and_shows_the_one_chosen(): void
+    {
+        $open = $this->project('PRJ-OPEN-1');
+        $this->project('PRJ-DONE-1', 'completed');
+
+        $this->get(route('inventory.index'))
+            ->assertOk()
+            ->assertSee('data-stock-project-search', false)
+            ->assertSee('data-stock-project-chosen', false)
+            ->assertSee('<option value="'.$open->project_id.'" data-open="1">', false)
+            ->assertSee('PRJ-OPEN-1 · Aircon Installation')
+            ->assertSee('PRJ-DONE-1 · Aircon Installation');
+    }
+
     private function project(string $reference, string $status = 'ongoing'): Project
     {
         return Project::create([

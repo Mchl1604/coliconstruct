@@ -50,9 +50,25 @@
                                 data-stock-field="movement_date">
                         </div>
 
-                        <div class="col-sm-6" data-stock-for="in-return out">
-                            <label class="form-label small fw-semibold mb-1" for="stockProject">Project</label>
-                            <select class="form-select" id="stockProject" data-stock-field="project_id">
+                        {{-- Searched rather than scrolled. The select stays as what
+                             is sent; the search and the chosen card drive it. --}}
+                        <div class="col-12" data-stock-for="in-return out">
+                            <label class="form-label small fw-semibold mb-1" for="stockProjectSearch">Project</label>
+                            <div class="material-picker" data-stock-project-picker>
+                                <input type="search" class="form-control" id="stockProjectSearch" autocomplete="off"
+                                    placeholder="Search ref no. or name" data-stock-project-search
+                                    role="combobox" aria-expanded="false" aria-controls="stockProjectMenu">
+                                <div class="material-picker-menu d-none" id="stockProjectMenu" role="listbox"
+                                    data-stock-project-menu></div>
+                            </div>
+                            <div class="stock-project-chosen d-none" data-stock-project-chosen>
+                                <i class="bi bi-folder2-open text-primary" aria-hidden="true"></i>
+                                <span class="fw-semibold flex-grow-1" data-stock-project-label></span>
+                                <button type="button" class="btn btn-sm btn-outline-secondary py-0" data-stock-project-clear>
+                                    Change
+                                </button>
+                            </div>
+                            <select class="d-none" id="stockProject" data-stock-field="project_id" aria-hidden="true" tabindex="-1">
                                 <option value="">None</option>
                                 @foreach ($projects as $project)
                                     <option value="{{ $project['project_id'] }}" data-open="{{ $project['is_open'] ? '1' : '0' }}">

@@ -225,7 +225,144 @@ document.addEventListener("DOMContentLoaded", function () {
         if (project.selectedOptions[0]?.disabled) {
             project.value = "";
         }
+
+        showChosenProject();
     }
+
+    // ------------------------------------------------------------------
+    // The project: searched, then shown as the one card the batch goes to
+    // ------------------------------------------------------------------
+
+    const projectSearch = modalEl.querySelector("[data-stock-project-search]");
+    const projectMenu = modalEl.querySelector("[data-stock-project-menu]");
+    const projectPicker = modalEl.querySelector("[data-stock-project-picker]");
+    const projectChosen = modalEl.querySelector("[data-stock-project-chosen]");
+    const projectLabel = modalEl.querySelector("[data-stock-project-label]");
+    let projectMatches = [];
+    let projectActive = -1;
+
+    function showChosenProject() {
+        const option = field("project_id").selectedOptions[0];
+        const chosen = option && option.value !== "";
+
+        projectLabel.textContent = chosen ? option.textContent.trim() : "";
+        projectChosen.classList.toggle("d-none", !chosen);
+        projectPicker.classList.toggle("d-none", chosen);
+        closeProjectMenu();
+    }
+
+    function closeProjectMenu() {
+        projectMenu.classList.add("d-none");
+        projectSearch.setAttribute("aria-expanded", "false");
+        projectActive = -1;
+    }
+
+    function chooseProject(option) {
+        field("project_id").value = option.value;
+        projectSearch.value = "";
+        showChosenProject();
+    }
+
+    function highlightProject(index) {
+        projectActive = index;
+        projectMenu.querySelectorAll(".material-picker-option").forEach(function (item, itemIndex) {
+            item.classList.toggle("is-active", itemIndex === index);
+
+            if (itemIndex === index) {
+                item.scrollIntoView({ block: "nearest" });
+            }
+        });
+    }
+
+    /** The projects this mode may name whose label holds every typed word. */
+    function renderProjectMenu() {
+        const words = projectSearch.value.toLowerCase().split(/\s+/).filter(Boolean);
+
+        projectMatches = Array.from(field("project_id").options).filter(function (option) {
+            const label = option.textContent.toLowerCase();
+
+            return (
+                option.value !== "" &&
+                !option.disabled &&
+                words.every(function (word) {
+                    return label.indexOf(word) !== -1;
+                })
+            );
+        });
+
+        projectMenu.replaceChildren();
+
+        if (!projectMatches.length) {
+            const empty = document.createElement("div");
+
+            empty.className = "material-picker-empty";
+            empty.textContent = "No matching projects.";
+            projectMenu.appendChild(empty);
+        }
+
+        projectMatches.slice(0, 50).forEach(function (option, index) {
+            const item = document.createElement("div");
+
+            item.className = "material-picker-option";
+            item.setAttribute("role", "option");
+            item.textContent = option.textContent.trim();
+            item.addEventListener("mousedown", function (event) {
+                event.preventDefault();
+                chooseProject(option);
+            });
+            item.addEventListener("mousemove", function () {
+                if (projectActive !== index) {
+                    highlightProject(index);
+                }
+            });
+            projectMenu.appendChild(item);
+        });
+
+        projectMenu.classList.remove("d-none");
+        projectSearch.setAttribute("aria-expanded", "true");
+        highlightProject(projectMatches.length ? 0 : -1);
+    }
+
+    projectSearch.addEventListener("input", renderProjectMenu);
+    projectSearch.addEventListener("focus", renderProjectMenu);
+    projectSearch.addEventListener("blur", closeProjectMenu);
+
+    projectSearch.addEventListener("keydown", function (event) {
+        const open = !projectMenu.classList.contains("d-none");
+        const shown = Math.min(projectMatches.length, 50);
+
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault();
+
+            if (!open) {
+                renderProjectMenu();
+
+                return;
+            }
+
+            if (shown) {
+                highlightProject((projectActive + (event.key === "ArrowDown" ? 1 : shown - 1)) % shown);
+            }
+        } else if (event.key === "Enter") {
+            // Never sends the form from the search.
+            event.preventDefault();
+
+            if (open && projectMatches[projectActive]) {
+                chooseProject(projectMatches[projectActive]);
+            }
+        } else if (event.key === "Escape" && open) {
+            // Closes the list, not the dialog.
+            event.preventDefault();
+            event.stopPropagation();
+            closeProjectMenu();
+        }
+    });
+
+    modalEl.querySelector("[data-stock-project-clear]").addEventListener("click", function () {
+        field("project_id").value = "";
+        showChosenProject();
+        projectSearch.focus();
+    });
 
     function listedIds() {
         return Array.from(linesEl.querySelectorAll("[data-stock-line]")).map(function (line) {

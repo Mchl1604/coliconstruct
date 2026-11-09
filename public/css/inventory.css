@@ -165,3 +165,14 @@ button.inventory-stat:hover {
 .stock-line-qty {
     flex: 0 1 10rem;
 }
+
+/* The project the whole batch goes to or comes back from. */
+.stock-project-chosen {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    padding: .5rem .75rem;
+    border: 1px solid #cfe0f1;
+    border-radius: .6rem;
+    background: #f4f9fe;
+}
