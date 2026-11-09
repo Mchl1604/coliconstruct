@@ -566,7 +566,7 @@ class DemoDataSeeder extends Seeder
             'quotation' => $spec['quotation'],
             'target_end_date' => $this->date($spec['target']),
             ...app(ProjectAddressSplitter::class)->split($spec['address'] ?? $clientSpec['address']),
-            'description' => $spec['description'],
+            'description' => ($spec['notes'] ?? true) ? $spec['description'] : null,
             'first_viewed_at' => ($spec['new'] ?? false) ? null : $createdAt->addMinutes(35),
             'created_at' => $createdAt,
             'updated_at' => $createdAt,
@@ -1888,11 +1888,10 @@ class DemoDataSeeder extends Seeder
                 $project->forceFill(['status' => $outcome === 'pending' ? 'pending' : 'ongoing'])->save();
                 break;
 
-                // Every phase and task done, the checklist ticked and the photos
-                // in: Complete Project is all that is left.
+                // Every phase and task done and the checklist ticked: Complete
+                // Project is all that is left, photos and all.
             case 'ready':
                 $project->forceFill(['status' => 'ongoing'])->save();
-                $this->attachCompletionPhotos($project, $profile, $this->moment(-1, '16:00'));
                 break;
 
             case 'on_hold':

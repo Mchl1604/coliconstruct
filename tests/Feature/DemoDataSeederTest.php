@@ -536,6 +536,12 @@ class DemoDataSeederTest extends TestCase
         $leftovers = $ready->map(fn (Project $project): bool => $ledger->hasLeftovers($project))->sort()->values()->all();
         $this->assertSame([false, true], $leftovers);
 
+        // Photos and Notes are for the demo to fill in.
+        foreach ($ready as $project) {
+            $this->assertNull($project->description, $project->name);
+            $this->assertSame(0, $project->completionPhotos()->count(), $project->name);
+        }
+
         $active = Project::query()->where('status', 'ongoing')->get()
             ->filter(fn (Project $project): bool => $project->schedules->contains(
                 fn ($schedule): bool => $schedule->startsOn()->lte($demoDay) && $schedule->endsOn()->gte($demoDay)
@@ -825,12 +831,15 @@ class DemoDataSeederTest extends TestCase
      */
     private function demoProjects(?string $scenario = null): Collection
     {
-        $descriptions = collect(DemoDataCatalog::projects())
+        $specs = collect(DemoDataCatalog::projects())
             ->where('demo', true)
-            ->when($scenario !== null, fn ($specs) => $specs->where('scenario', $scenario))
-            ->pluck('description')
-            ->all();
+            ->when($scenario !== null, fn ($specs) => $specs->where('scenario', $scenario));
+        [$withNotes, $withoutNotes] = $specs->partition(fn (array $spec): bool => $spec['notes'] ?? true);
 
-        return Project::query()->whereIn('description', $descriptions)->get();
+        // Only those seeded without Notes have none.
+        return Project::query()
+            ->whereIn('description', $withNotes->pluck('description')->all())
+            ->when($withoutNotes->isNotEmpty(), fn ($query) => $query->orWhereNull('description'))
+            ->get();
     }
 }

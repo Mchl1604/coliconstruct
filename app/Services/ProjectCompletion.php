@@ -37,7 +37,7 @@ use Illuminate\Validation\Rule;
 class ProjectCompletion
 {
     /**
-     * Completion photos, added on Project Details ahead of completing.
+     * Completion photos, sent with the Complete Project form.
      *
      * @return array<string, array<int, string>>
      */

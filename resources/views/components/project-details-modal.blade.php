@@ -3,8 +3,8 @@
     through project-details-editor, the same sections the create wizard uses,
     filled with what was saved - or with what was typed, reopened on its own
     error bag after a refused save. Opened from the Service Report dialog or Edit Details.
-    Complete Project opens the same form with its sign-off required, and posts
-    it to $completeUrl.
+    Complete Project opens the same form with its sign-off required; Next goes
+    on to the Completion Photos dialog, whose button posts it to $completeUrl.
     Notes stay in the Edit Project dialog, beside the project's other text.
 --}}
 @props([
@@ -37,8 +37,8 @@
         @if ($completing) data-completing="1" @endif>
         <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content">
-                <form method="POST" action="{{ $completing ? $completeUrl : $saveUrl }}"
-                    class="d-flex flex-column overflow-hidden" data-project-details-form @if ($completing) data-workspace-native @endif>
+                <form method="POST" action="{{ $completing ? $completeUrl : $saveUrl }}" id="{{ $id }}Form"
+                    enctype="multipart/form-data" class="d-flex flex-column overflow-hidden" data-project-details-form @if ($completing) data-workspace-native @endif>
                     @csrf
                     <input type="hidden" name="_method" value="{{ $completing ? 'POST' : 'PUT' }}" data-form-method>
                     <input type="hidden" name="completing" value="1" data-completing-input @disabled(! $completing)>
@@ -120,12 +120,16 @@
 
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                        <button type="submit" class="btn {{ $completing ? 'btn-success' : 'btn-primary' }}" data-form-submit>{{ $completing ? 'Complete Project' : 'Save' }}</button>
+                        <button type="submit" class="btn {{ $completing ? 'btn-success' : 'btn-primary' }}" data-form-submit>{{ $completing ? 'Next' : 'Save' }}</button>
                     </div>
                 </form>
             </div>
         </div>
     </div>
+
+    @if ($completeUrl)
+        <x-completion-photos-modal :project="$project" :form="$id.'Form'" />
+    @endif
 
     @push('scripts')
         <script src="/js/projectDetailsForm.js"></script>
@@ -152,7 +156,7 @@
                     form.toggleAttribute('data-workspace-native', completing);
                     pick('[data-form-method]').value = completing ? 'POST' : 'PUT';
                     pick('[data-form-title]').textContent = completing ? 'Complete Project' : 'Edit Description';
-                    submit.textContent = completing ? 'Complete Project' : 'Save';
+                    submit.textContent = completing ? 'Next' : 'Save';
                     submit.classList.toggle('btn-success', completing);
                     submit.classList.toggle('btn-primary', !completing);
 
@@ -171,9 +175,36 @@
                 };
 
                 modal.addEventListener('show.bs.modal', function (event) {
+                    // Back from Completion Photos: still completing.
+                    if (event.relatedTarget && event.relatedTarget.hasAttribute('data-completion-photos-back')) {
+                        return;
+                    }
+
                     setMode(event.relatedTarget
                         ? event.relatedTarget.hasAttribute('data-project-complete')
                         : modal.dataset.completing === '1');
+                });
+
+                // Completing: Next checks this form, then the photos dialog sends it.
+                const photos = document.querySelector('[data-completion-photos-modal]');
+                let toPhotos = false;
+
+                form.addEventListener('submit', function (event) {
+                    if (!photos || pick('[data-form-method]').value !== 'POST' || form.dataset.photosSent === '1') {
+                        return;
+                    }
+
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                    toPhotos = true;
+                    bootstrap.Modal.getInstance(modal).hide();
+                });
+
+                modal.addEventListener('hidden.bs.modal', function () {
+                    if (toPhotos) {
+                        toPhotos = false;
+                        bootstrap.Modal.getOrCreateInstance(photos).show();
+                    }
                 });
 
                 // A refused save comes back with the dialog open on what was typed.

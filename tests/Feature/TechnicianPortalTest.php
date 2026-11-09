@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Http\Controllers\ProjectDetailController;
 use App\Http\Controllers\TechnicianPortalController;
 use App\Models\Client;
 use App\Models\Document;
@@ -1239,28 +1240,28 @@ class TechnicianPortalTest extends TestCase
 
     /**
      * A lead is on site, so the photographs are the evidence that the work is
-     * done. They are added on Project Details, ahead of completing.
+     * done. They are sent from the Completion Photos step of the form.
      */
     public function test_completion_photos_are_required(): void
     {
+        Storage::fake('uploads');
+
         $this->project->schedules()->delete();
         $this->schedule($this->project, -10, -1);
         $this->task($this->mate, 'Done', 'completed');
         $this->completePhases($this->project);
-        $this->addCompletionPhoto($this->project);
 
         $this->actingAs($this->leadAccount);
 
-        $this->project->completionPhotos()->delete();
-
-        $response = $this->postJson(
-            route('technician.projects.complete', $this->project),
-            $this->completionPayload()
-        );
-
-        $response->assertStatus(422);
-        $response->assertJsonPath('blockers.0.message', 'Add at least one completion photo.');
+        $this->post(route('technician.projects.complete', $this->project), $this->completionPayload(['completion_photos' => null]))
+            ->assertSessionHasErrorsIn(ProjectDetailController::ERROR_BAG, ['completion_photos' => 'Choose at least one photo.']);
         $this->assertSame('ongoing', $this->project->refresh()->status);
+
+        $this->post(route('technician.projects.complete', $this->project), $this->completionPayload())
+            ->assertSessionHasNoErrors();
+
+        $this->assertTrue($this->project->refresh()->isAwaitingClientConfirmation());
+        $this->assertSame(1, $this->project->completionPhotos()->count());
     }
 
     public function test_the_crew_cannot_fetch_the_quotation_file_by_its_id(): void
@@ -1333,7 +1334,8 @@ class TechnicianPortalTest extends TestCase
         $this->project->refresh();
         $this->assertSame(Project::STATUS_AWAITING_CLIENT_CONFIRMATION, $this->project->status);
         $this->assertSame('Everything on site is finished.', $this->project->completion_summary);
-        $this->assertCount(1, $this->project->completionPhotos);
+        // The one already there and the one sent with the form.
+        $this->assertCount(2, $this->project->completionPhotos);
     }
 
     public function test_a_lead_cannot_complete_a_project_they_are_not_on(): void
@@ -1472,9 +1474,9 @@ class TechnicianPortalTest extends TestCase
             []
         )->assertStatus(422)->json('blockers');
 
-        // The open task, the phases it is holding up, and the missing photo. All
-        // are things the lead can go and deal with, so all carry a link.
-        $this->assertCount(3, $blockers);
+        // The open task and the phases it is holding up. Both are things the
+        // lead can go and deal with, so both carry a link.
+        $this->assertCount(2, $blockers);
         $this->assertSame(
             route('technician.projects.show', $this->project->project_id).'#phases',
             $blockers[0]['action']['url']

@@ -736,6 +736,8 @@ final class DemoDataCatalog
                 'demo' => true,
                 // Everything planned was used.
                 'leftovers' => false,
+                // No Notes: the description below only finds it again.
+                'notes' => false,
                 'description' => 'General cleaning of the wall-mounted units on the fifth floor. The work is done; the report is ready to sign off.',
                 'quotation' => 18500,
                 'created' => -12,
@@ -765,6 +767,7 @@ final class DemoDataCatalog
                 'demo' => true,
                 // Some of the plan is still on site, for Leftover Materials.
                 'leftovers' => true,
+                'notes' => false,
                 'description' => 'Installation of a 1.5 HP inverter split-type unit in the master bedroom. Installed and tested; awaiting sign-off.',
                 'quotation' => 52000,
                 'created' => -14,

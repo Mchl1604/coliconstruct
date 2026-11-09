@@ -171,19 +171,6 @@ class ProjectPolicy
     }
 
     /**
-     * Completion photos go on ahead of completing, by whoever may complete the
-     * project, at any point while it is live.
-     */
-    public function manageCompletionPhotos(User $user, Project $project): bool
-    {
-        return ($user->isSuperAdmin()
-                || $user->role === User::ROLE_ADMIN_OFFICER
-                || ($user->isLeadTechnician() && $this->worksOn($user, $project)))
-            && ! $project->isReadOnly()
-            && ! $project->isArchived();
-    }
-
-    /**
      * Whether this person may close the project out now. blockersFor() spells
      * out what stands in the way, and nobody may go past it.
      */
@@ -220,7 +207,7 @@ class ProjectPolicy
      *
      * Who is asking matters in three places. A Super Admin may close out a
      * project that has not reached its first scheduled day - see
-     * Project::isCompletableBy(). A lead must have added a completion photo.
+     * Project::isCompletableBy(). The lead's completion photo is asked for on the form.
      * And the links go to the asker's own portal. Everything else reads the
      * work recorded on the project and refuses everybody alike.
      *
@@ -315,16 +302,6 @@ class ProjectPolicy
                 $uncheckedUnits === 1 ? '1 incomplete checklist' : $uncheckedUnits.' incomplete checklists',
                 'Go to the checklist',
                 $projectUrl.'#checklist'
-            );
-        }
-
-        // A lead is on site, so the photographs are the evidence.
-        if (($viewer === null || $viewer->isLeadTechnician()) && ! $project->completionPhotos()->exists()) {
-            $blockers[] = $this->blocker(
-                'Add at least one completion photo.',
-                'no completion photo',
-                'Go to Completion Photos',
-                $projectUrl.'#completion-photos'
             );
         }
 

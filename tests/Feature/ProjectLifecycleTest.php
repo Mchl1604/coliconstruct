@@ -279,11 +279,6 @@ class ProjectLifecycleTest extends TestCase
         }
 
         $this->actingAs($this->lead)
-            ->post(route('technician.projects.completion-photos.store', $project->project_id), [
-                'completion_photos' => [UploadedFile::fake()->image('finished.jpg')],
-            ])->assertStepWorked();
-
-        $this->actingAs($this->lead)
             ->post(route('technician.projects.complete', $project->project_id), [
                 'completion_summary' => 'All done.',
                 'report_performed_by' => 'Ramon Cruz',

@@ -852,38 +852,40 @@ class CompletionRulesTest extends TestCase
         $this->assertNotContains('1 unit has an incomplete checklist.', $policy->blockersFor($project->fresh(), $this->leadAccount));
     }
 
-    public function test_a_lead_adds_completion_photos_on_project_details(): void
+    public function test_completion_photos_are_a_step_after_the_service_report(): void
     {
         Storage::fake('uploads');
 
         $this->finalizePhases($this->project, 2);
+        $this->closedTask();
         $this->completePhases($this->project);
-        $this->actingAs($this->leadAccount);
 
-        $this->assertContains('Add at least one completion photo.', app(ProjectPolicy::class)->blockersFor($this->project, $this->leadAccount));
+        $this->project->completionPhotos()->delete();
 
-        $this->get(route('technician.projects.show', $this->project))
-            ->assertOk()
-            ->assertSee('id="completion-photos"', false);
-
-        $this->post(route('technician.projects.completion-photos.store', $this->project->project_id), [
-            'completion_photos' => [UploadedFile::fake()->image('handover.jpg')],
-        ])->assertSessionHas('success');
-
-        $photo = $this->project->completionPhotos()->sole();
-
-        $this->assertNotContains('Add at least one completion photo.', app(ProjectPolicy::class)->blockersFor($this->project, $this->leadAccount));
-
-        // Not a thing a plain technician may touch.
-        $this->actingAs($this->mate->account)
-            ->delete(route('technician.projects.completion-photos.destroy', [$this->project->project_id, $photo->completion_photo_id]))
-            ->assertRedirect();
-        $this->assertSame(1, $this->project->completionPhotos()->count());
+        // No longer a blocker: the photos come with the form.
+        $this->assertSame([], app(ProjectPolicy::class)->blockersFor($this->project, $this->leadAccount));
 
         $this->actingAs($this->leadAccount)
-            ->delete(route('technician.projects.completion-photos.destroy', [$this->project->project_id, $photo->completion_photo_id]))
-            ->assertSessionHas('success');
-        $this->assertSame(0, $this->project->completionPhotos()->count());
+            ->get(route('technician.projects.show', $this->project))
+            ->assertOk()
+            ->assertDontSee('id="completion-photos"', false)
+            ->assertSee('data-completion-photos-modal', false)
+            ->assertSee('enctype="multipart/form-data"', false)
+            ->assertSee('form="editProjectDescriptionModalForm"', false)
+            ->assertSee('data-photos-required', false);
+
+        // The office may complete without one.
+        $this->actingAs($this->employee('super_admin', 'boss@example.test'))
+            ->get(route('super-admin.projects.show', $this->project->project_id))
+            ->assertSee('data-completion-photos-modal', false)
+            ->assertSee('Photos are optional.')
+            ->assertDontSee('data-photos-required', false);
+
+        $this->post(route('super-admin.projects.complete', $this->project->project_id), $this->completionPayload())
+            ->assertSessionHasNoErrors();
+
+        $this->assertTrue($this->project->refresh()->isAwaitingClientConfirmation());
+        $this->assertSame(1, $this->project->completionPhotos()->count());
     }
 
     // ==================================================================

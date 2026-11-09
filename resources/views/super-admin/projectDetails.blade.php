@@ -1204,8 +1204,6 @@
                 <x-project-description :project="$project"
                     :edit-target="auth()->user()->can('updateServiceReport', $project) ? 'editProjectDescriptionModal' : null" />
 
-                <x-project-completion-photos :project="$project" />
-
             </div>
         </div>
         <!-- Team + Date -->
