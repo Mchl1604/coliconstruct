@@ -2,8 +2,9 @@
  * Complete Project with materials still on site.
  *
  * The Complete button opens the Leftover Materials dialog first. The page's
- * own Materials card is moved into it while it is open, so every button on
- * the card works as it does on the tab. A button that opens one of the card's
+ * own Materials card is moved into it while it is open, so its buttons work
+ * as they do on the tab - except Add/Request Material, which the dialog's
+ * own style hides. A button that opens one of the card's
  * dialogs closes this one first, puts the card back, then opens that dialog -
  * Bootstrap does not stack dialogs. When that dialog is cancelled, or after
  * its save redraws the page, the flow comes back here; once nothing is left

@@ -670,6 +670,7 @@ class CompletionRulesTest extends TestCase
             ->assertSee('data-bs-target="#leftoverMaterialsModal" data-project-complete', false)
             ->assertSee('data-leftover-materials-modal', false)
             ->assertSee('Leftover Materials')
+            ->assertSee('[data-leftover-slot] [data-bs-target="#addMaterialModal"]', false)
             ->assertSee('/js/leftoverMaterials.js', false);
 
         // All used: straight to the Service Report form again.

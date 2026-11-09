@@ -6,6 +6,13 @@
      stock when the project is completed - see ProjectMaterialLedger::closeOut(). --}}
 @props(['continueTarget' => '#editProjectDescriptionModal'])
 
+{{-- Only used and returned are recorded here: no adding or requesting more. --}}
+<style>
+    [data-leftover-slot] [data-bs-target="#addMaterialModal"] {
+        display: none !important;
+    }
+</style>
+
 <div class="modal fade" id="leftoverMaterialsModal" tabindex="-1" aria-hidden="true"
     aria-labelledby="leftoverMaterialsTitle" data-leftover-materials-modal>
     <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
