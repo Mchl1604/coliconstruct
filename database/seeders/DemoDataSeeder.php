@@ -1021,6 +1021,10 @@ class DemoDataSeeder extends Seeder
      */
     private function attachDocuments(Project $project, array $spec, array $clientSpec, User $client, array $profile, User $admin, User $lead, CarbonImmutable $createdAt): void
     {
+        // Files are uploaded by those who create projects - an Admin Officer
+        // or the Super Admin - never an HR Admin, who cannot.
+        $uploader = $this->projectCreator($admin);
+
         $documents = ['assessment' => 'Assessment Report', 'quotation' => 'Quotation'];
 
         if ($clientSpec['client_type'] === 'Commercial') {
@@ -1065,7 +1069,7 @@ class DemoDataSeeder extends Seeder
                 'duration' => $this->durationLabel($spec),
                 'preparedBy' => $type === 'assessment'
                     ? ['name' => $lead->fullName(), 'position' => $lead->position ?: $lead->roleLabel()]
-                    : ['name' => $admin->fullName(), 'position' => $admin->position ?: $admin->roleLabel()],
+                    : ['name' => $uploader->fullName(), 'position' => $uploader->position ?: $uploader->roleLabel()],
             ]);
 
             $path = UploadStore::folder('documents').'/'.Str::uuid()->toString().'.pdf';
@@ -1090,9 +1094,9 @@ class DemoDataSeeder extends Seeder
                 'document_type' => $type,
                 'document_name' => $document->document_name,
                 'event' => DocumentHistory::EVENT_UPLOADED,
-                'actor_id' => $admin->id,
-                'actor_name' => $admin->fullName(),
-                'actor_role' => $admin->role,
+                'actor_id' => $uploader->id,
+                'actor_name' => $uploader->fullName(),
+                'actor_role' => $uploader->role,
                 'created_at' => $createdAt,
             ]);
         }

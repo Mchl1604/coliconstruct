@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\ActivityLog;
 use App\Models\Client;
 use App\Models\Document;
+use App\Models\DocumentHistory;
 use App\Models\Material;
 use App\Models\MaterialRequest;
 use App\Models\Project;
@@ -784,6 +785,13 @@ class DemoDataSeederTest extends TestCase
                 ->concat(TaskImage::query()->pluck('image_path'));
 
             $this->assertSame($photos->count(), $photos->unique()->count(), 'Two records share one photo file.');
+
+            // Files are uploaded by those who may: never an HR Admin.
+            $this->assertGreaterThan(0, DocumentHistory::count());
+            $this->assertSame(
+                [],
+                array_diff(DocumentHistory::query()->distinct()->pluck('actor_role')->all(), [User::ROLE_ADMIN_OFFICER, User::ROLE_SUPER_ADMIN])
+            );
 
             // And the office can actually open one of each.
             $admin = User::query()->where('email', 'cristina.reyes@'.DemoDataCatalog::EMAIL_DOMAIN)->firstOrFail();
