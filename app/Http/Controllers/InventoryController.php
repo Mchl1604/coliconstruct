@@ -9,11 +9,13 @@ use App\Models\StockMovement;
 use App\Services\MaterialCatalog;
 use App\Services\ProjectMaterialLedger;
 use App\Services\ProjectMaterialRules;
+use App\Services\ProjectStatusRules;
 use App\Support\ServerTable;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 
 /**
  * The Inventory side of the office portal: three pages, Materials, Inventory
@@ -67,44 +69,80 @@ class InventoryController extends Controller
     }
 
     /**
-     * Every live project, for those whose way into one is its materials.
+     * Every live project, for those whose way into one is its materials -
+     * with the same status tabs as the office's Projects page.
      */
     public function projects(): View
     {
-        return view('super-admin.inventory-projects');
+        return view('super-admin.inventory-projects', [
+            'statusTabs' => Project::statusTabs($this->listedProjects(), null, withAttention: true),
+        ]);
     }
 
     /**
-     * One page of the projects table, for serverTable.js.
+     * One page of the projects table, for serverTable.js, narrowed to the
+     * open tab by the same Project::tabKey() the counts are taken from.
      */
     public function projectsTable(Request $request): JsonResponse
     {
         $table = ServerTable::fromRequest($request);
+        $tab = (string) $request->query('tab', 'all');
 
-        $page = $table->paginate(
-            Project::query()
-                ->with('client')
-                ->where('is_archived', false)
-                ->withCount(['materialRequests as pending_requests_count' => fn (Builder $query) => $query
-                    ->where('status', MaterialRequest::STATUS_PENDING)]),
-            [
-                0 => 'reference_no',
-                1 => 'name',
-                3 => 'status',
+        $projects = $this->listedProjects()
+            ->when($tab !== 'all', fn (Collection $projects): Collection => $projects->filter(
+                fn (Project $project): bool => $project->tabKey() === $tab
+                    || in_array($tab, $project->attentionTabKeys(), true)
+            ));
+
+        $page = $table->paginateCollection(
+            $projects,
+            sortable: [
+                0 => fn (Project $project): ?string => $project->reference_no,
+                1 => fn (Project $project): ?string => $project->name,
+                3 => fn (Project $project): int => $project->tabRank(),
             ],
-            fn (Builder $builder, string $word, string $like) => $builder
-                ->where('reference_no', 'like', $like)
-                ->orWhere('name', 'like', $like)
-                ->orWhereHas('client', fn (Builder $client) => $client
-                    ->where('company_name', 'like', $like)
-                    ->orWhere('fullname', 'like', $like)),
-            [[0, 'desc']],
+            search: fn (Project $project, string $word): bool => ServerTable::matchesAny(
+                $word,
+                $project->reference_no,
+                $project->name,
+                $project->client?->company_name,
+                $project->client?->fullname,
+                $project->statusLabel(),
+            ),
+            defaultOrder: [[3, 'asc'], [0, 'desc']],
         );
+
+        $page->items->loadCount(['materialRequests as pending_requests_count' => fn (Builder $query) => $query
+            ->where('status', MaterialRequest::STATUS_PENDING)]);
 
         return $table->respond(
             $page,
             fn (Project $project): string => view('super-admin.partials.inventory-project-row', ['project' => $project])->render(),
         );
+    }
+
+    /**
+     * The live projects, their statuses brought up to date - as the office's
+     * Projects page lists them.
+     *
+     * @return Collection<int, Project>
+     */
+    private function listedProjects(): Collection
+    {
+        $projects = Project::query()
+            ->with(['client', 'schedules', 'projectTypes', 'rosterTechnicians', 'projectTechnicians.technician.account'])
+            ->where('is_archived', false)
+            ->where('status', '!=', 'archived')
+            ->orderByDesc('project_id')
+            ->get();
+
+        $rules = app(ProjectStatusRules::class);
+
+        foreach ($projects as $project) {
+            $rules->apply($project);
+        }
+
+        return $projects;
     }
 
     /**

@@ -260,6 +260,31 @@ class RoleCapabilitiesTest extends TestCase
         $this->assertNotSame(session('success'), 'Report submitted successfully.');
     }
 
+    public function test_a_purchasing_admin_reads_projects_under_the_same_tabs_with_the_eye(): void
+    {
+        $this->project('REF-TAB-LIVE');
+        $this->project('REF-TAB-CANC')->forceFill(['status' => 'cancelled'])->save();
+
+        $this->actingAs($this->account(User::ROLE_PURCHASING_ADMIN));
+
+        $this->get(route('inventory.projects'))
+            ->assertOk()
+            ->assertSee('data-project-status-tabs="inventoryProjectsTable"', false)
+            ->assertSee('data-status-filter="all"', false)
+            ->assertSee('data-status-filter="cancelled"', false)
+            ->assertSee('/js/projectStatusTabs.js', false);
+
+        $this->getTablePage(route('inventory.projects.table'), ['tab' => 'cancelled'])
+            ->assertSee('REF-TAB-CANC')
+            ->assertDontSee('REF-TAB-LIVE')
+            ->assertSee('bi-eye', false)
+            ->assertSee('title="View project"', false);
+
+        $this->getTablePage(route('inventory.projects.table'))
+            ->assertSee('REF-TAB-CANC')
+            ->assertSee('REF-TAB-LIVE');
+    }
+
     private function project(string $reference): Project
     {
         return Project::create([
