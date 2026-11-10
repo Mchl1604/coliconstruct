@@ -1084,7 +1084,7 @@ document.addEventListener("DOMContentLoaded", function () {
             window.flatpickr(projectDateInput, {
                 ...FRIENDLY_DATE,
                 minDate: earliestStart,
-                disable: [partialDayBlocked, window.bookingCalendar.blocks(dateInput)],
+                disable: [partialDayBlocked, window.bookingCalendar.blocks(projectDateInput)],
                 onChange: function () {
                     // The hours on offer belong to the date just chosen.
                     const startTime = row.querySelector("[data-range-start-time]");
