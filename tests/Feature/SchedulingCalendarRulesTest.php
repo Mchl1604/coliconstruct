@@ -22,7 +22,8 @@ use Tests\TestCase;
 /**
  * Who may book which days: nobody but the Super Admin books for today, a lead's
  * tasks start tomorrow at the earliest, and holidays are skipped inside a range
- * and refused at either end of one.
+ * - including one booked before the holiday was added - and refused at either
+ * end of one.
  */
 class SchedulingCalendarRulesTest extends TestCase
 {
@@ -221,6 +222,45 @@ class SchedulingCalendarRulesTest extends TestCase
         $this->assertSame(0, Schedule::count());
     }
 
+    #[DataProvider('endsOnHoliday')]
+    public function test_projects_are_not_screened_for_a_range_starting_or_ending_on_a_holiday(int $start, int $end): void
+    {
+        Holiday::factory()->create(['holiday_date' => $this->day(5), 'name' => 'Bonifacio Day']);
+
+        $this->actingAs($this->superAdmin)
+            ->getJson(route('super-admin.schedules.assignable', [
+                'scheduling_mode' => Schedule::MODE_DATE_BASED,
+                'start_date' => $this->day($start),
+                'end_date' => $this->day($end),
+            ]))
+            ->assertStatus(422)
+            ->assertJsonPath('error', CarbonImmutable::parse($this->day(5))->format(BusinessTime::DATE).' is a non-working day: Bonifacio Day.');
+    }
+
+    public function test_projects_are_still_screened_for_a_range_across_a_holiday(): void
+    {
+        Holiday::factory()->create(['holiday_date' => $this->day(5)]);
+
+        $this->actingAs($this->superAdmin)
+            ->getJson(route('super-admin.schedules.assignable', [
+                'scheduling_mode' => Schedule::MODE_DATE_BASED,
+                'start_date' => $this->day(3),
+                'end_date' => $this->day(7),
+            ]))
+            ->assertOk();
+    }
+
+    public function test_the_calendar_day_dialog_says_when_a_day_is_non_working(): void
+    {
+        $this->actingAs($this->superAdmin)
+            ->get(route('super-admin.schedules.index'))
+            ->assertOk()
+            ->assertSee('data-add-non-working', false);
+
+        $script = (string) file_get_contents(base_path('public/js/super-admin/schedule.js'));
+        $this->assertStringContainsString('nonWorkingName !== null', $script);
+    }
+
     public function test_hours_may_not_be_booked_on_a_holiday(): void
     {
         Holiday::factory()->create(['holiday_date' => $this->day(5), 'name' => 'Bonifacio Day']);
@@ -238,14 +278,21 @@ class SchedulingCalendarRulesTest extends TestCase
         $this->assertSame(0, Schedule::count());
     }
 
-    public function test_a_booking_made_before_the_holiday_stays_as_it_is(): void
+    public function test_a_holiday_added_later_splits_the_bookings_across_it(): void
     {
-        $schedule = Schedule::create([
+        $technician = $this->technician(User::ROLE_TECHNICIAN);
+        app(ProjectTeam::class)->attach($this->project, $technician->technician_id, $this->superAdmin->id);
+        $schedule = $this->booking($this->project, 3, 7);
+        app(ProjectTeam::class)->linkScheduleToTeam($schedule, $this->project);
+
+        $task = Task::create([
             'project_id' => $this->project->project_id,
-            'start_datetime' => $this->day(3).' 00:00:00',
-            'end_datetime' => $this->day(7).' 23:59:59',
-            'scheduling_mode' => Schedule::MODE_DATE_BASED,
-            'status' => 'scheduled',
+            'technician_id' => $technician->technician_id,
+            'task_title' => 'Fit the bracket',
+            'task_description' => 'Fit it.',
+            'status' => 'pending',
+            'start_date' => $this->day(5),
+            'due_date' => $this->day(5),
         ]);
 
         $this->actingAs($this->superAdmin);
@@ -253,10 +300,52 @@ class SchedulingCalendarRulesTest extends TestCase
         $this->postJson(route('super-admin.configuration.holidays.store'), [
             'holiday_date' => $this->day(5),
             'name' => 'Bonifacio Day',
-        ])->assertOk();
+        ])->assertOk()->assertJsonPath('message', 'Bonifacio Day added. 1 booking split.');
 
-        $this->assertSame(1, Schedule::count());
-        $this->assertSame($this->day(7), $schedule->fresh()->endsOn()->toDateString());
+        $rows = Schedule::query()->orderBy('start_datetime')->get();
+
+        $this->assertCount(2, $rows);
+        $this->assertSame([$this->day(3), $this->day(4)], [$rows[0]->startsOn()->toDateString(), $rows[0]->endsOn()->toDateString()]);
+        $this->assertSame([$this->day(6), $this->day(7)], [$rows[1]->startsOn()->toDateString(), $rows[1]->endsOn()->toDateString()]);
+        $this->assertFalse($this->project->fresh()->isScheduledOn($this->day(5)));
+
+        foreach ($rows as $row) {
+            $this->assertSame(1, ScheduleTechnician::query()->where('schedule_id', $row->schedule_id)->count());
+        }
+
+        $this->assertNull($task->fresh()->due_date);
+    }
+
+    public function test_a_holiday_added_later_keeps_past_days_and_single_day_bookings(): void
+    {
+        $running = $this->booking($this->project, -3, 3);
+        $single = $this->booking($this->project('REF-CAL-2'), 5, 5);
+
+        $this->actingAs($this->superAdmin);
+
+        foreach ([-1, 0, 5] as $offset) {
+            $this->postJson(route('super-admin.configuration.holidays.store'), [
+                'holiday_date' => $this->day($offset),
+                'name' => 'Day '.$offset,
+            ])->assertOk();
+        }
+
+        $this->assertSame(2, Schedule::count());
+        $this->assertSame([$this->day(-3), $this->day(3)], [$running->fresh()->startsOn()->toDateString(), $running->fresh()->endsOn()->toDateString()]);
+        $this->assertNotNull($single->fresh());
+    }
+
+    private function booking(Project $project, int $start, int $end): Schedule
+    {
+        $project->update(['status' => 'pending']);
+
+        return Schedule::create([
+            'project_id' => $project->project_id,
+            'start_datetime' => $this->day($start).' 00:00:00',
+            'end_datetime' => $this->day($end).' 23:59:59',
+            'scheduling_mode' => Schedule::MODE_DATE_BASED,
+            'status' => 'scheduled',
+        ]);
     }
 
     public function test_the_super_admin_keeps_the_list(): void
@@ -331,6 +420,22 @@ class SchedulingCalendarRulesTest extends TestCase
         $this->assertSame('Christmas Day', Holiday::query()->whereDate('holiday_date', '2027-12-25')->value('name'));
         $this->assertFalse(Holiday::query()->whereDate('holiday_date', '2027-02-25')->exists());
         $this->assertFalse(Holiday::query()->whereDate('holiday_date', '2026-02-25')->exists());
+    }
+
+    public function test_the_deploy_migration_seeds_the_days_and_rolls_back_only_its_own(): void
+    {
+        $migration = require database_path('migrations/2026_11_10_002434_seed_philippine_non_working_days.php');
+
+        Holiday::factory()->create(['holiday_date' => '2026-11-30', 'name' => 'Renamed Here']);
+
+        $migration->up();
+        $this->assertSame(1, Holiday::count());
+
+        $migration->seedDays();
+        $this->assertSame(38, Holiday::count());
+
+        $migration->down();
+        $this->assertSame(['Renamed Here'], Holiday::query()->pluck('name')->all());
     }
 
     public function test_every_portal_with_a_calendar_is_told_the_non_working_days(): void

@@ -884,6 +884,7 @@
                     <hr class="my-4">
 
                     {{-- Step 1: reveal the add-project flow --}}
+                    <div class="alert alert-secondary mb-0 d-none" role="status" data-add-non-working></div>
                     <button type="button" class="btn btn-primary" data-add-project-toggle>
                         <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
                         Add Project

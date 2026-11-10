@@ -6,6 +6,7 @@ use App\Models\ActivityLog;
 use App\Models\Client;
 use App\Models\Document;
 use App\Models\DocumentHistory;
+use App\Models\Holiday;
 use App\Models\Material;
 use App\Models\MaterialRequest;
 use App\Models\Project;
@@ -37,6 +38,7 @@ use Carbon\CarbonImmutable;
 use Database\Seeders\DemoDataCatalog;
 use Database\Seeders\DemoDataSeeder;
 use Database\Seeders\MaterialSeeder;
+use Database\Seeders\PhilippineNonWorkingDaySeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Hash;
@@ -227,6 +229,31 @@ class DemoDataSeederTest extends TestCase
         }
 
         $this->assertSame([], $unskilled, 'Crew without the specialty for their project.');
+    }
+
+    public function test_no_booking_covers_a_non_working_day(): void
+    {
+        (new PhilippineNonWorkingDaySeeder)->run();
+
+        // A few near today as well, so the test bites whatever day it runs on.
+        foreach ([-3, 4, 9, 20] as $offset) {
+            Holiday::query()->firstOrCreate(
+                ['holiday_date' => Schedule::businessToday()->addDays($offset)->toDateString()],
+                ['name' => 'Test Day '.$offset],
+            );
+        }
+
+        $this->runSeeder();
+
+        $this->assertSame(60, Project::count());
+        $this->assertSame(collect(self::EXPECTED_STATUSES)->sortKeys()->all(), $this->statusCounts());
+
+        $covering = Schedule::query()->with('project')->get()->filter(fn (Schedule $schedule): bool => Holiday::query()
+            ->whereDate('holiday_date', '>=', $schedule->startsOn()->toDateString())
+            ->whereDate('holiday_date', '<=', $schedule->endsOn()->toDateString())
+            ->exists());
+
+        $this->assertSame([], $covering->map(fn (Schedule $schedule): string => $schedule->project->name.' '.$schedule->describe())->values()->all());
     }
 
     /**

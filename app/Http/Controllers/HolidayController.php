@@ -5,12 +5,15 @@ namespace App\Http\Controllers;
 use App\Models\ActivityLog;
 use App\Models\Holiday;
 use App\Services\ActivityLogger;
+use App\Services\HolidayCalendar;
 use App\Support\BusinessTime;
 use App\Support\ServerTable;
+use Carbon\CarbonImmutable;
 use Closure;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 
 /**
@@ -19,7 +22,10 @@ use Illuminate\Support\Facades\Validator;
  */
 class HolidayController extends Controller
 {
-    public function __construct(private readonly ActivityLogger $activityLogger) {}
+    public function __construct(
+        private readonly ActivityLogger $activityLogger,
+        private readonly HolidayCalendar $holidays,
+    ) {}
 
     /**
      * One page of the list, for serverTable.js.
@@ -62,19 +68,29 @@ class HolidayController extends Controller
         }
 
         $data = $validator->validated();
-        $holiday = Holiday::create([
-            'holiday_date' => $data['holiday_date'],
-            'name' => trim($data['name']),
-            'created_by' => $request->user()?->id,
-        ]);
+
+        [$holiday, $split] = DB::transaction(function () use ($data, $request): array {
+            $holiday = Holiday::create([
+                'holiday_date' => $data['holiday_date'],
+                'name' => trim($data['name']),
+                'created_by' => $request->user()?->id,
+            ]);
+
+            return [$holiday, $this->holidays->splitBookingsOn(CarbonImmutable::parse($data['holiday_date']))];
+        });
 
         $this->activityLogger->record(ActivityLog::HOLIDAY_ADDED, null, sprintf(
-            "Added non-working day '%s' on %s.",
+            "Added non-working day '%s' on %s%s.",
             $holiday->name,
-            $holiday->holiday_date->format(BusinessTime::DATE)
+            $holiday->holiday_date->format(BusinessTime::DATE),
+            $split > 0 ? sprintf(' and split %d %s around it', $split, $split === 1 ? 'booking' : 'bookings') : ''
         ));
 
-        return response()->json(['message' => $holiday->name.' added.']);
+        return response()->json([
+            'message' => $split > 0
+                ? sprintf('%s added. %d %s split.', $holiday->name, $split, $split === 1 ? 'booking' : 'bookings')
+                : $holiday->name.' added.',
+        ]);
     }
 
     public function destroy(Holiday $holiday): JsonResponse

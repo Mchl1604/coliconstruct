@@ -438,6 +438,15 @@ class ScheduleController extends Controller
             return response()->json(['error' => $validator->errors()->first()], 422);
         }
 
+        // Said now rather than on save: nobody screens projects for a slot the
+        // booking could never start or end in.
+        $holidays = app(HolidayCalendar::class);
+        $refusal = $holidays->refusalFor($entry['start']) ?? $holidays->refusalFor($entry['end']);
+
+        if ($refusal !== null) {
+            return response()->json(['error' => $refusal], 422);
+        }
+
         $isPartialDay = $entry['mode'] === Schedule::MODE_PARTIAL_DAY;
 
         $candidates = Project::query()

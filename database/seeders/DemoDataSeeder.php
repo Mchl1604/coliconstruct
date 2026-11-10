@@ -7,6 +7,7 @@ use App\Models\Client;
 use App\Models\DetailFormField;
 use App\Models\Document;
 use App\Models\DocumentHistory;
+use App\Models\Holiday;
 use App\Models\IncidentPerson;
 use App\Models\IncidentReport;
 use App\Models\Material;
@@ -213,6 +214,13 @@ class DemoDataSeeder extends Seeder
     private array $uploaded = [];
 
     private int $taskCounter = 0;
+
+    /**
+     * The dates nobody works, read once - see avoidNonWorkingDays().
+     *
+     * @var array<string, true>|null
+     */
+    private ?array $nonWorkingDates = null;
 
     /**
      * The material list, keyed by name|brand|unit, read once.
@@ -521,9 +529,84 @@ class DemoDataSeeder extends Seeder
                 'ranges' => array_map(fn (array $range): array => [$range[0] + $shift, $range[1] + $shift], $spec['ranges']),
                 'target' => $spec['target'] + $shift,
             ] : $spec)
+            ->map(fn (array $spec): array => $this->avoidNonWorkingDays($spec))
             ->sortBy(fn (array $spec): int => $spec['ranges'][0][0] ?? PHP_INT_MAX)
             ->values()
             ->all();
+    }
+
+    /**
+     * The catalog's ranges with the non-working days left out, the way a
+     * booking made on the calendar would be: a range running across one is
+     * split around it, and one that is nothing but non-working days moves to
+     * the next working day. Read from the list, so a site that has none seeds
+     * the catalog as written.
+     *
+     * @param  array<string, mixed>  $spec
+     * @return array<string, mixed>
+     */
+    private function avoidNonWorkingDays(array $spec): array
+    {
+        $this->nonWorkingDates ??= Holiday::query()
+            ->pluck('holiday_date')
+            ->mapWithKeys(fn ($date): array => [CarbonImmutable::parse($date)->toDateString() => true])
+            ->all();
+
+        foreach (['ranges', 'preserved'] as $key) {
+            if (isset($spec[$key])) {
+                $spec[$key] = collect($spec[$key])
+                    ->flatMap(fn (array $range): array => $this->workingRuns($range[0], $range[1]))
+                    ->values()
+                    ->all();
+            }
+        }
+
+        return $spec;
+    }
+
+    private function isNonWorking(int $offset): bool
+    {
+        return isset($this->nonWorkingDates[$this->date($offset)]);
+    }
+
+    /**
+     * [first, last] runs of working days between two offsets, inclusive.
+     *
+     * @return array<int, array{0: int, 1: int}>
+     */
+    private function workingRuns(int $from, int $to): array
+    {
+        $runs = [];
+        $runStart = null;
+
+        for ($offset = $from; $offset <= $to; $offset++) {
+            $isWorking = ! $this->isNonWorking($offset);
+
+            if ($isWorking && $runStart === null) {
+                $runStart = $offset;
+            }
+
+            if (! $isWorking && $runStart !== null) {
+                $runs[] = [$runStart, $offset - 1];
+                $runStart = null;
+            }
+        }
+
+        if ($runStart !== null) {
+            $runs[] = [$runStart, $to];
+        }
+
+        if ($runs === []) {
+            $next = $to + 1;
+
+            while ($this->isNonWorking($next)) {
+                $next++;
+            }
+
+            $runs[] = [$next, $next];
+        }
+
+        return $runs;
     }
 
     // ------------------------------------------------------------------

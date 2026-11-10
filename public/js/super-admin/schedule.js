@@ -2599,6 +2599,17 @@ document.addEventListener("DOMContentLoaded", function () {
         const dateSuccessEl = modal.querySelector("[data-date-success]");
 
         const toggleBtn = modal.querySelector("[data-add-project-toggle]");
+        const nonWorkingNote = modal.querySelector("[data-add-non-working]");
+
+        function nonWorkingNameOf(dateString) {
+            const parts = String(dateString || "").split("-").map(Number);
+
+            return parts.length === 3 && window.bookingCalendar
+                ? window.bookingCalendar.nameOf(
+                      new Date(parts[0], parts[1] - 1, parts[2]),
+                  )
+                : null;
+        }
         const panel = modal.querySelector("[data-add-project-panel]");
         const startInput = modal.querySelector("[data-add-start]");
         const endInput = modal.querySelector("[data-add-end]");
@@ -2675,10 +2686,22 @@ document.addEventListener("DOMContentLoaded", function () {
             // Nothing may be booked onto a day that has already gone - the
             // server refuses it, and offering the form here only produces an
             // error the person could not have avoided.
+            //
+            // Nor onto a non-working day: the note says why instead.
+            const nonWorkingName = nonWorkingNameOf(selectedDate);
+
             toggleBtn.classList.toggle(
                 "d-none",
-                selectedDate < normalizeDateString(new Date()),
+                selectedDate < normalizeDateString(new Date()) ||
+                    nonWorkingName !== null,
             );
+
+            if (nonWorkingNote) {
+                nonWorkingNote.textContent = nonWorkingName
+                    ? "Non-working day: " + nonWorkingName + ". No bookings."
+                    : "";
+                nonWorkingNote.classList.toggle("d-none", !nonWorkingName);
+            }
             clearResults();
             showError("");
             showSuccess("");
@@ -3273,6 +3296,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     ...FRIENDLY_DATE,
                     allowInput: false,
                     minDate: selectedDate,
+                    disable: [window.bookingCalendar.blocks(endInput)],
                     onChange: function () {
                         loadEligible();
                     },
